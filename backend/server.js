@@ -16,8 +16,8 @@ const configuration = new Configuration({
   basePath: PlaidEnvironments.sandbox,
   baseOptions: {
     headers: {
-      "PLAID-CLIENT-ID": "client_id",
-      "PLAID-SECRET": "secret_id",
+      "PLAID-CLIENT-ID": "6726f1c5869739001904fb8b",
+      "PLAID-SECRET": "0608c4b8a83d6f7a8cc4430cb98377",
     },
   },
 });
@@ -30,11 +30,12 @@ app.post("/api/create_link_token", async (req, res) => {
     const tokenResponse = await plaidClient.linkTokenCreate({
       user: { client_user_id: "user-id" },
       client_name: "Finance App",
-      products: ["transactions"],
+      products: ["transactions", "auth", "identity"],
       country_codes: ["US"],
       language: "en",
+      redirect_uri: "https://financify-redirect.com/oauth-complete",
+      additional_consented_products: ["investments", "liabilities"], // Example: Adding credit_cards as an additional product
     });
-
     res.json(tokenResponse.data);
   } catch (error) {
     console.error("Error creating link token:", error);
@@ -65,6 +66,117 @@ app.post("/api/exchange_public_token", async (req, res) => {
     });
   } catch (error) {
     console.error("Error exchanging public token:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post("/api/accounts/balance", async (req, res) => {
+  const { access_token } = req.body;
+  try {
+    const response = await plaidClient.accountsBalanceGet({ access_token });
+    res.json(response.data);
+  } catch (error) {
+    console.error("Error fetching balance:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get accounts and balances
+app.post("/api/accounts", async (req, res) => {
+  const { access_token } = req.body;
+
+  try {
+    const accountsResponse = await plaidClient.accountsGet({
+      access_token,
+    });
+
+    res.json({
+      accounts: accountsResponse.data.accounts,
+    });
+  } catch (error) {
+    console.error("Error fetching accounts:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// get institution
+app.post("/api/institution", async (req, res) => {
+  const { access_token } = req.body;
+
+  try {
+    const itemResponse = await plaidClient.itemGet({
+      access_token,
+    });
+
+    const institutionId = itemResponse.data.item.institution_id;
+
+    const institutionResponse = await plaidClient.institutionsGetById({
+      institution_id: institutionId,
+      country_codes: ["US"],
+    });
+
+    res.json({
+      institution: institutionResponse.data.institution,
+    });
+  } catch (error) {
+    console.error("Error fetching institution:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get identity information
+app.post("/api/identity", async (req, res) => {
+  const { access_token } = req.body;
+
+  try {
+    const identityResponse = await plaidClient.identityGet({
+      access_token,
+    });
+
+    res.json({
+      identity: identityResponse.data.accounts,
+    });
+  } catch (error) {
+    console.error("Error fetching identity:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get investments
+app.post("/api/investments", async (req, res) => {
+  const { access_token } = req.body;
+
+  try {
+    const investmentsResponse = await plaidClient.investmentsHoldingsGet({
+      access_token,
+    });
+
+    res.json({
+      holdings: investmentsResponse.data.holdings,
+      securities: investmentsResponse.data.securities,
+      accounts: investmentsResponse.data.accounts,
+    });
+  } catch (error) {
+    console.error("Error fetching investments:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+//   // Get liabilities
+app.post("/api/liabilities", async (req, res) => {
+  const { access_token } = req.body;
+
+  try {
+    const liabilitiesResponse = await plaidClient.liabilitiesGet({
+      access_token,
+    });
+
+    res.json({
+      liabilities: liabilitiesResponse.data.liabilities,
+      accounts: liabilitiesResponse.data.accounts,
+    });
+  } catch (error) {
+    console.error("Error fetching liabilities:", error);
     res.status(500).json({ error: error.message });
   }
 });
