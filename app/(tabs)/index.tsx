@@ -286,14 +286,28 @@ function HomeScreen() {
           <Text style={styles.loadingText}>Loading...</Text>
         </View>
       ) : !isConnected ? (
-        <View style={styles.container}>
-          <Text style={styles.title}>Connect Your Bank Account</Text>
-          <TouchableOpacity
-            style={styles.button}
-            onPress={handleConnectAccount}
-          >
-            <Text style={styles.buttonText}>Connect Account</Text>
-          </TouchableOpacity>
+        <View style={styles.welcomeContainer}>
+          <View style={styles.welcomeContent}>
+            <Text style={styles.welcomeTitle}>
+              Welcome to Your Financial Hub
+            </Text>
+            <Text style={styles.welcomeSubtitle}>
+              Connect your bank account to get started
+            </Text>
+            <View style={styles.connectButtonContainer}>
+              <TouchableOpacity
+                style={styles.connectButton}
+                onPress={handleConnectAccount}
+              >
+                <Text style={styles.connectButtonText}>
+                  Connect Your Account
+                </Text>
+              </TouchableOpacity>
+              <Text style={styles.securityText}>
+                Bank-level security • 256-bit encryption
+              </Text>
+            </View>
+          </View>
         </View>
       ) : (
         <View style={styles.dashboardContainer}>
@@ -303,7 +317,7 @@ function HomeScreen() {
               style={styles.disconnectButton}
               onPress={handleDisconnect}
             >
-              <Text style={styles.buttonText}>Disconnect</Text>
+              <Text style={styles.disconnectButtonText}>Disconnect</Text>
             </TouchableOpacity>
           </View>
 
@@ -313,6 +327,7 @@ function HomeScreen() {
               <Text style={styles.institutionName}>{institution.name}</Text>
               {identity && identity.length > 0 && identity[0].owners && (
                 <Text style={styles.userName}>
+                  Welcome back,{" "}
                   {identity[0].owners[0]?.names[0] || "Account Holder"}
                 </Text>
               )}
@@ -320,305 +335,280 @@ function HomeScreen() {
           )}
 
           {/* Tab Navigation */}
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={styles.tabContainer}
-          >
-            <TouchableOpacity
-              style={[styles.tab, activeTab === "overview" && styles.activeTab]}
-              onPress={() => handleTabChange("overview")}
+          <View style={styles.tabContainerWrapper}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.tabContainer}
+              contentContainerStyle={styles.tabContentContainer}
             >
-              <Text
+              <TouchableOpacity
                 style={[
-                  styles.tabText,
-                  activeTab === "overview" && styles.activeTabText,
+                  styles.tab,
+                  activeTab === "overview" && styles.activeTab,
                 ]}
+                onPress={() => handleTabChange("overview")}
               >
-                Overview
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.tab, activeTab === "accounts" && styles.activeTab]}
-              onPress={() => handleTabChange("accounts")}
-            >
-              <Text
+                <Text
+                  style={[
+                    styles.tabText,
+                    activeTab === "overview" && styles.activeTabText,
+                  ]}
+                >
+                  Overview
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
                 style={[
-                  styles.tabText,
-                  activeTab === "accounts" && styles.activeTabText,
+                  styles.tab,
+                  activeTab === "accounts" && styles.activeTab,
                 ]}
+                onPress={() => handleTabChange("accounts")}
               >
-                Accounts
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[
-                styles.tab,
-                activeTab === "transactions" && styles.activeTab,
-              ]}
-              onPress={() => handleTabChange("transactions")}
-            >
-              <Text
+                <Text
+                  style={[
+                    styles.tabText,
+                    activeTab === "accounts" && styles.activeTabText,
+                  ]}
+                >
+                  Accounts
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
                 style={[
-                  styles.tabText,
-                  activeTab === "transactions" && styles.activeTabText,
+                  styles.tab,
+                  activeTab === "transactions" && styles.activeTab,
                 ]}
+                onPress={() => handleTabChange("transactions")}
               >
-                Transactions
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[
-                styles.tab,
-                activeTab === "investments" && styles.activeTab,
-              ]}
-              onPress={() => handleTabChange("investments")}
-            >
-              <Text
+                <Text
+                  style={[
+                    styles.tabText,
+                    activeTab === "transactions" && styles.activeTabText,
+                  ]}
+                >
+                  Transactions
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
                 style={[
-                  styles.tabText,
-                  activeTab === "investments" && styles.activeTabText,
+                  styles.tab,
+                  activeTab === "investments" && styles.activeTab,
                 ]}
+                onPress={() => handleTabChange("investments")}
               >
-                Investments
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[
-                styles.tab,
-                activeTab === "liabilities" && styles.activeTab,
-              ]}
-              onPress={() => handleTabChange("liabilities")}
-            >
-              <Text
+                <Text
+                  style={[
+                    styles.tabText,
+                    activeTab === "investments" && styles.activeTabText,
+                  ]}
+                >
+                  Investments
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
                 style={[
-                  styles.tabText,
-                  activeTab === "liabilities" && styles.activeTabText,
+                  styles.tab,
+                  activeTab === "liabilities" && styles.activeTab,
                 ]}
+                onPress={() => handleTabChange("liabilities")}
               >
-                Liabilities
-              </Text>
-            </TouchableOpacity>
-          </ScrollView>
+                <Text
+                  style={[
+                    styles.tabText,
+                    activeTab === "liabilities" && styles.activeTabText,
+                  ]}
+                >
+                  Liabilities
+                </Text>
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
 
           {/* Content Area */}
-          <ScrollView style={styles.contentScroll}>
-            {isLoading ? (
-              <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color="#007bff" />
-                <Text style={styles.loadingText}>Loading data...</Text>
-              </View>
-            ) : (
-              <View style={styles.contentContainer}>
-                {activeTab === "overview" && (
-                  <View>
-                    <Text style={styles.sectionTitle}>Accounts Summary</Text>
-                    {accounts.length > 0 ? (
-                      <View style={styles.summaryContainer}>
-                        <Text style={styles.summaryText}>
-                          Total Accounts: {accounts.length}
-                        </Text>
-                        <Text style={styles.summaryText}>
-                          Total Balance:{" "}
-                          {formatCurrency(
-                            accounts.reduce(
-                              (sum, account) =>
-                                sum + (account.balances.current || 0),
-                              0
-                            ),
-                            accounts[0].balances.iso_currency_code
-                          )}
-                        </Text>
-                      </View>
-                    ) : (
-                      <Text style={styles.emptyText}>No accounts found.</Text>
-                    )}
-                  </View>
-                )}
-
-                {activeTab === "accounts" && (
-                  <View>
-                    <Text style={styles.sectionTitle}>Your Accounts</Text>
-                    {accounts.map((account) => (
-                      <View key={account.account_id} style={styles.accountItem}>
-                        <Text style={styles.accountName}>{account.name}</Text>
-                        <Text style={styles.accountType}>
-                          {account.subtype} ({account.type})
-                        </Text>
-                        <View style={styles.balanceRow}>
-                          <Text>Current Balance:</Text>
-                          <Text style={styles.balanceAmount}>
+          <View style={styles.contentWrapper}>
+            <ScrollView>
+              {isLoading ? (
+                <View style={styles.loadingContainer}>
+                  <ActivityIndicator size="large" color="#007bff" />
+                  <Text style={styles.loadingText}>Loading data...</Text>
+                </View>
+              ) : (
+                <View style={styles.contentContainer}>
+                  {activeTab === "overview" && (
+                    <View>
+                      <Text style={styles.sectionTitle}>Accounts Summary</Text>
+                      {accounts.length > 0 ? (
+                        <View style={styles.summaryContainer}>
+                          <Text style={styles.summaryText}>
+                            Total Accounts: {accounts.length}
+                          </Text>
+                          <Text style={styles.summaryText}>
+                            Total Balance:{" "}
                             {formatCurrency(
-                              account.balances.current,
-                              account.balances.iso_currency_code
+                              accounts.reduce(
+                                (sum, account) =>
+                                  sum + (account.balances.current || 0),
+                                0
+                              ),
+                              accounts[0].balances.iso_currency_code
                             )}
                           </Text>
                         </View>
-                        {account.balances.available !== null && (
-                          <View style={styles.balanceRow}>
-                            <Text>Available Balance:</Text>
+                      ) : (
+                        <Text style={styles.emptyText}>No accounts found.</Text>
+                      )}
+                    </View>
+                  )}
+
+                  {activeTab === "accounts" && (
+                    <View>
+                      <Text style={styles.sectionTitle}>Your Accounts</Text>
+                      <View style={styles.accountsGrid}>
+                        {accounts.map((account) => (
+                          <View
+                            key={account.account_id}
+                            style={styles.accountCard}
+                          >
+                            <View style={styles.accountCardHeader}>
+                              <Text style={styles.accountType}>
+                                {account.subtype.charAt(0).toUpperCase() +
+                                  account.subtype.slice(1)}
+                              </Text>
+                            </View>
+                            <Text style={styles.accountName}>
+                              {account.name}
+                            </Text>
+                            <Text style={styles.balanceLabel}>
+                              Available Balance
+                            </Text>
                             <Text style={styles.balanceAmount}>
                               {formatCurrency(
-                                account.balances.available,
+                                account.balances.available ||
+                                  account.balances.current,
                                 account.balances.iso_currency_code
                               )}
                             </Text>
                           </View>
-                        )}
+                        ))}
                       </View>
-                    ))}
-                  </View>
-                )}
+                    </View>
+                  )}
 
-                {activeTab === "transactions" && (
-                  <View>
-                    <Text style={styles.sectionTitle}>Recent Transactions</Text>
-                    {transactions.length > 0 ? (
-                      transactions.map((transaction) => (
-                        <View
-                          key={transaction.transaction_id}
-                          style={styles.transactionItem}
-                        >
-                          <View style={styles.transactionHeader}>
-                            <Text style={styles.transactionName}>
-                              {transaction.name}
-                            </Text>
-                            <Text
-                              style={[
-                                styles.transactionAmount,
-                                transaction.amount > 0
-                                  ? styles.negativeAmount
-                                  : styles.positiveAmount,
-                              ]}
-                            >
-                              {formatCurrency(
-                                Math.abs(transaction.amount),
-                                transaction.iso_currency_code
-                              )}
-                            </Text>
-                          </View>
-                          <Text style={styles.transactionDate}>
-                            {transaction.date}
-                          </Text>
-                          {transaction.pending && (
-                            <View style={styles.pendingBadge}>
-                              <Text style={styles.pendingText}>Pending</Text>
-                            </View>
-                          )}
-                        </View>
-                      ))
-                    ) : (
-                      <Text style={styles.emptyText}>
-                        No transactions found.
+                  {activeTab === "transactions" && (
+                    <View>
+                      <Text style={styles.sectionTitle}>
+                        Recent Transactions
                       </Text>
-                    )}
-                  </View>
-                )}
-
-                {activeTab === "investments" && (
-                  <View>
-                    <Text style={styles.sectionTitle}>Investment Holdings</Text>
-                    {investments ? (
-                      investments.holdings.length > 0 ? (
-                        investments.holdings.map((holding) => {
-                          const security = investments.securities.find(
-                            (s) => s.security_id === holding.security_id
-                          );
-                          return (
-                            <View
-                              key={`${holding.security_id}-${holding.account_id}`}
-                              style={styles.holdingItem}
-                            >
-                              <Text style={styles.holdingName}>
-                                {security?.name || "Unknown Security"}
-                                {security?.ticker_symbol
-                                  ? ` (${security.ticker_symbol})`
-                                  : ""}
+                      {transactions.length > 0 ? (
+                        transactions.map((transaction) => (
+                          <View
+                            key={transaction.transaction_id}
+                            style={styles.transactionItem}
+                          >
+                            <View style={styles.transactionHeader}>
+                              <Text style={styles.transactionName}>
+                                {transaction.name}
                               </Text>
-                              <Text>Quantity: {holding.quantity}</Text>
-                              <Text>
-                                Value:{" "}
+                              <Text
+                                style={[
+                                  styles.transactionAmount,
+                                  transaction.amount > 0
+                                    ? styles.negativeAmount
+                                    : styles.positiveAmount,
+                                ]}
+                              >
                                 {formatCurrency(
-                                  holding.institution_value,
-                                  "USD"
+                                  Math.abs(transaction.amount),
+                                  transaction.iso_currency_code
                                 )}
                               </Text>
                             </View>
-                          );
-                        })
+                            <Text style={styles.transactionDate}>
+                              {transaction.date}
+                            </Text>
+                            {transaction.pending && (
+                              <View style={styles.pendingBadge}>
+                                <Text style={styles.pendingText}>Pending</Text>
+                              </View>
+                            )}
+                          </View>
+                        ))
                       ) : (
                         <Text style={styles.emptyText}>
-                          No investment holdings found.
+                          No transactions found.
                         </Text>
-                      )
-                    ) : (
-                      <Text style={styles.emptyText}>
-                        Investment data not available.
+                      )}
+                    </View>
+                  )}
+
+                  {activeTab === "investments" && (
+                    <View>
+                      <Text style={styles.sectionTitle}>
+                        Investment Holdings
                       </Text>
-                    )}
-                  </View>
-                )}
-
-                {activeTab === "liabilities" && (
-                  <View>
-                    <Text style={styles.sectionTitle}>Liabilities</Text>
-                    {liabilities ? (
-                      <>
-                        {liabilities.liabilities.credit?.length > 0 && (
-                          <View>
-                            <Text style={styles.subsectionTitle}>
-                              Credit Cards
-                            </Text>
-                            {liabilities.liabilities.credit.map((card) => {
-                              const account = liabilities.accounts.find(
-                                (a) => a.account_id === card.account_id
-                              );
-                              return (
-                                <View
-                                  key={card.account_id}
-                                  style={styles.liabilityItem}
-                                >
-                                  <Text style={styles.liabilityName}>
-                                    {account?.name || "Credit Card"}
-                                  </Text>
-                                  <Text>
-                                    Balance:{" "}
-                                    {formatCurrency(
-                                      account?.balances.current || 0
-                                    )}
-                                  </Text>
-                                  <Text>
-                                    APR:{" "}
-                                    {card.aprs[0]?.apr_percentage.toFixed(2)}%
-                                  </Text>
-                                  {card.last_payment_date && (
-                                    <Text>
-                                      Last Payment: {card.last_payment_date}
-                                    </Text>
+                      {investments ? (
+                        investments.holdings.length > 0 ? (
+                          investments.holdings.map((holding) => {
+                            const security = investments.securities.find(
+                              (s) => s.security_id === holding.security_id
+                            );
+                            return (
+                              <View
+                                key={`${holding.security_id}-${holding.account_id}`}
+                                style={styles.holdingItem}
+                              >
+                                <Text style={styles.holdingName}>
+                                  {security?.name || "Unknown Security"}
+                                  {security?.ticker_symbol
+                                    ? ` (${security.ticker_symbol})`
+                                    : ""}
+                                </Text>
+                                <Text>Quantity: {holding.quantity}</Text>
+                                <Text>
+                                  Value:{" "}
+                                  {formatCurrency(
+                                    holding.institution_value,
+                                    "USD"
                                   )}
-                                </View>
-                              );
-                            })}
-                          </View>
-                        )}
+                                </Text>
+                              </View>
+                            );
+                          })
+                        ) : (
+                          <Text style={styles.emptyText}>
+                            No investment holdings found.
+                          </Text>
+                        )
+                      ) : (
+                        <Text style={styles.emptyText}>
+                          Investment data not available.
+                        </Text>
+                      )}
+                    </View>
+                  )}
 
-                        {liabilities.liabilities.mortgage?.length > 0 && (
-                          <View>
-                            <Text style={styles.subsectionTitle}>
-                              Mortgages
-                            </Text>
-                            {liabilities.liabilities.mortgage.map(
-                              (mortgage) => {
+                  {activeTab === "liabilities" && (
+                    <View>
+                      <Text style={styles.sectionTitle}>Liabilities</Text>
+                      {liabilities ? (
+                        <>
+                          {liabilities.liabilities.credit?.length > 0 && (
+                            <View>
+                              <Text style={styles.subsectionTitle}>
+                                Credit Cards
+                              </Text>
+                              {liabilities.liabilities.credit.map((card) => {
                                 const account = liabilities.accounts.find(
-                                  (a) => a.account_id === mortgage.account_id
+                                  (a) => a.account_id === card.account_id
                                 );
                                 return (
                                   <View
-                                    key={mortgage.account_id}
+                                    key={card.account_id}
                                     style={styles.liabilityItem}
                                   >
                                     <Text style={styles.liabilityName}>
-                                      {account?.name || "Mortgage"}
+                                      {account?.name || "Credit Card"}
                                     </Text>
                                     <Text>
                                       Balance:{" "}
@@ -626,10 +616,88 @@ function HomeScreen() {
                                         account?.balances.current || 0
                                       )}
                                     </Text>
-                                    {mortgage.interest_rate && (
+                                    <Text>
+                                      APR:{" "}
+                                      {card.aprs[0]?.apr_percentage.toFixed(2)}%
+                                    </Text>
+                                    {card.last_payment_date && (
+                                      <Text>
+                                        Last Payment: {card.last_payment_date}
+                                      </Text>
+                                    )}
+                                  </View>
+                                );
+                              })}
+                            </View>
+                          )}
+
+                          {liabilities.liabilities.mortgage?.length > 0 && (
+                            <View>
+                              <Text style={styles.subsectionTitle}>
+                                Mortgages
+                              </Text>
+                              {liabilities.liabilities.mortgage.map(
+                                (mortgage) => {
+                                  const account = liabilities.accounts.find(
+                                    (a) => a.account_id === mortgage.account_id
+                                  );
+                                  return (
+                                    <View
+                                      key={mortgage.account_id}
+                                      style={styles.liabilityItem}
+                                    >
+                                      <Text style={styles.liabilityName}>
+                                        {account?.name || "Mortgage"}
+                                      </Text>
+                                      <Text>
+                                        Balance:{" "}
+                                        {formatCurrency(
+                                          account?.balances.current || 0
+                                        )}
+                                      </Text>
+                                      {mortgage.interest_rate && (
+                                        <Text>
+                                          Interest Rate:{" "}
+                                          {mortgage.interest_rate.percentage.toFixed(
+                                            2
+                                          )}
+                                          %
+                                        </Text>
+                                      )}
+                                    </View>
+                                  );
+                                }
+                              )}
+                            </View>
+                          )}
+
+                          {liabilities.liabilities.student?.length > 0 && (
+                            <View>
+                              <Text style={styles.subsectionTitle}>
+                                Student Loans
+                              </Text>
+                              {liabilities.liabilities.student.map((loan) => {
+                                const account = liabilities.accounts.find(
+                                  (a) => a.account_id === loan.account_id
+                                );
+                                return (
+                                  <View
+                                    key={loan.account_id}
+                                    style={styles.liabilityItem}
+                                  >
+                                    <Text style={styles.liabilityName}>
+                                      {account?.name || "Student Loan"}
+                                    </Text>
+                                    <Text>
+                                      Balance:{" "}
+                                      {formatCurrency(
+                                        account?.balances.current || 0
+                                      )}
+                                    </Text>
+                                    {loan.interest_rate_percentage && (
                                       <Text>
                                         Interest Rate:{" "}
-                                        {mortgage.interest_rate.percentage.toFixed(
+                                        {loan.interest_rate_percentage.toFixed(
                                           2
                                         )}
                                         %
@@ -637,65 +705,29 @@ function HomeScreen() {
                                     )}
                                   </View>
                                 );
-                              }
-                            )}
-                          </View>
-                        )}
-
-                        {liabilities.liabilities.student?.length > 0 && (
-                          <View>
-                            <Text style={styles.subsectionTitle}>
-                              Student Loans
-                            </Text>
-                            {liabilities.liabilities.student.map((loan) => {
-                              const account = liabilities.accounts.find(
-                                (a) => a.account_id === loan.account_id
-                              );
-                              return (
-                                <View
-                                  key={loan.account_id}
-                                  style={styles.liabilityItem}
-                                >
-                                  <Text style={styles.liabilityName}>
-                                    {account?.name || "Student Loan"}
-                                  </Text>
-                                  <Text>
-                                    Balance:{" "}
-                                    {formatCurrency(
-                                      account?.balances.current || 0
-                                    )}
-                                  </Text>
-                                  {loan.interest_rate_percentage && (
-                                    <Text>
-                                      Interest Rate:{" "}
-                                      {loan.interest_rate_percentage.toFixed(2)}
-                                      %
-                                    </Text>
-                                  )}
-                                </View>
-                              );
-                            })}
-                          </View>
-                        )}
-
-                        {!liabilities.liabilities.credit?.length &&
-                          !liabilities.liabilities.mortgage?.length &&
-                          !liabilities.liabilities.student?.length && (
-                            <Text style={styles.emptyText}>
-                              No liabilities found.
-                            </Text>
+                              })}
+                            </View>
                           )}
-                      </>
-                    ) : (
-                      <Text style={styles.emptyText}>
-                        Liability data not available.
-                      </Text>
-                    )}
-                  </View>
-                )}
-              </View>
-            )}
-          </ScrollView>
+
+                          {!liabilities.liabilities.credit?.length &&
+                            !liabilities.liabilities.mortgage?.length &&
+                            !liabilities.liabilities.student?.length && (
+                              <Text style={styles.emptyText}>
+                                No liabilities found.
+                              </Text>
+                            )}
+                        </>
+                      ) : (
+                        <Text style={styles.emptyText}>
+                          Liability data not available.
+                        </Text>
+                      )}
+                    </View>
+                  )}
+                </View>
+              )}
+            </ScrollView>
+          </View>
         </View>
       )}
     </SafeAreaView>
@@ -711,8 +743,10 @@ const styles = StyleSheet.create({
   },
   container: {
     flex: 1,
+    backgroundColor: "#ffffff",
     justifyContent: "center",
     alignItems: "center",
+    padding: 24,
   },
   loadingContainer: {
     flex: 1,
@@ -732,14 +766,22 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    padding: 15,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
     backgroundColor: "#fff",
     borderBottomWidth: 1,
-    borderBottomColor: "#eaeaea",
+    borderBottomColor: "rgba(0,0,0,0.05)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 3,
   },
   headerTitle: {
-    fontSize: 18,
-    fontWeight: "bold",
+    fontSize: 22,
+    fontWeight: "600",
+    color: "#1a1a1a",
+    letterSpacing: 0.3,
   },
   title: {
     fontSize: 24,
@@ -751,13 +793,15 @@ const styles = StyleSheet.create({
     borderRadius: 5,
   },
   disconnectButton: {
-    backgroundColor: "#dc3545",
-    padding: 8,
-    borderRadius: 5,
+    backgroundColor: "rgba(220, 53, 69, 0.1)",
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
   },
-  buttonText: {
-    color: "white",
-    fontSize: 16,
+  disconnectButtonText: {
+    color: "#dc3545",
+    fontSize: 14,
+    fontWeight: "600",
   },
   connectedText: {
     fontSize: 18,
@@ -765,44 +809,63 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   institutionContainer: {
-    padding: 15,
-    backgroundColor: "#f8f9fa",
+    padding: 20,
+    backgroundColor: "#fff",
     borderBottomWidth: 1,
-    borderBottomColor: "#eaeaea",
+    borderBottomColor: "rgba(0,0,0,0.05)",
   },
   institutionName: {
-    fontSize: 18,
-    fontWeight: "bold",
+    fontSize: 20,
+    fontWeight: "600",
+    color: "#2c3e50",
+    marginBottom: 4,
   },
   userName: {
-    fontSize: 16,
+    fontSize: 15,
     color: "#666",
-    marginTop: 5,
+    letterSpacing: 0.2,
+  },
+  tabContainerWrapper: {
+    height: 48,
+    backgroundColor: "#fff",
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(0,0,0,0.05)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
   },
   tabContainer: {
-    backgroundColor: "#fff",
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: "#eaeaea",
+    height: "100%",
+  },
+  tabContentContainer: {
+    height: "100%",
+    alignItems: "center",
+    paddingHorizontal: 12,
   },
   tab: {
-    paddingHorizontal: 20,
-    paddingVertical: 8,
-    marginHorizontal: 5,
-    borderRadius: 20,
+    paddingHorizontal: 16,
+    height: "100%",
+    marginHorizontal: 4,
+    justifyContent: "center",
+    borderRadius: 6,
+    position: "relative",
   },
   activeTab: {
-    backgroundColor: "#007bff",
+    backgroundColor: "rgba(0, 123, 255, 0.1)",
   },
   tabText: {
-    fontSize: 16,
-    color: "#555",
+    fontSize: 14,
+    fontWeight: "500",
+    color: "#666",
+    letterSpacing: 0.2,
   },
   activeTabText: {
-    color: "#fff",
-    fontWeight: "bold",
+    color: "#007bff",
+    fontWeight: "600",
   },
-  contentScroll: {
+  contentWrapper: {
     flex: 1,
   },
   contentContainer: {
@@ -835,33 +898,61 @@ const styles = StyleSheet.create({
     fontSize: 16,
     marginBottom: 5,
   },
-  accountItem: {
-    backgroundColor: "#fff",
-    padding: 15,
-    borderRadius: 10,
-    marginBottom: 15,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.2,
-    shadowRadius: 2,
-    elevation: 2,
+  accountsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+    paddingHorizontal: 5,
+    marginTop: 8,
   },
-  accountName: {
-    fontSize: 16,
-    fontWeight: "bold",
+  accountCard: {
+    width: "46%", // Slightly smaller width
+    backgroundColor: "#ffffff",
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 12,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: "rgba(0,0,0,0.03)",
+  },
+  accountCardHeader: {
+    marginBottom: 8,
+    flexDirection: "row",
+    alignItems: "center",
   },
   accountType: {
-    fontSize: 14,
-    color: "#666",
-    marginBottom: 10,
+    fontSize: 11,
+    color: "#4A90E2", // More refined blue
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    backgroundColor: "rgba(74,144,226,0.1)", // Light blue background
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
   },
-  balanceRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginTop: 5,
+  accountName: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#2c3e50",
+    marginBottom: 12,
+    lineHeight: 18,
+  },
+  balanceLabel: {
+    fontSize: 11,
+    color: "#8c8c8c",
+    marginBottom: 2,
+    letterSpacing: 0.2,
   },
   balanceAmount: {
-    fontWeight: "bold",
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#1a1a1a",
+    letterSpacing: 0.3,
   },
   transactionItem: {
     backgroundColor: "#fff",
@@ -949,5 +1040,63 @@ const styles = StyleSheet.create({
     fontStyle: "italic",
     textAlign: "center",
     marginTop: 20,
+  },
+  welcomeContainer: {
+    flex: 1,
+    backgroundColor: "#ffffff",
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 24,
+  },
+  welcomeContent: {
+    width: "100%",
+    maxWidth: 400,
+    alignItems: "center",
+  },
+  welcomeTitle: {
+    fontSize: 28,
+    fontWeight: "700",
+    color: "#1a1a1a",
+    textAlign: "center",
+    marginBottom: 12,
+    letterSpacing: 0.3,
+  },
+  welcomeSubtitle: {
+    fontSize: 16,
+    color: "#666666",
+    textAlign: "center",
+    marginBottom: 32,
+    lineHeight: 24,
+    letterSpacing: 0.2,
+  },
+  connectButtonContainer: {
+    width: "100%",
+    alignItems: "center",
+  },
+  connectButton: {
+    backgroundColor: "#4A90E2", // More refined blue
+    paddingVertical: 16,
+    paddingHorizontal: 32,
+    borderRadius: 12,
+    width: "100%",
+    shadowColor: "#4A90E2",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  connectButtonText: {
+    color: "#ffffff",
+    fontSize: 16,
+    fontWeight: "600",
+    textAlign: "center",
+    letterSpacing: 0.5,
+  },
+  securityText: {
+    marginTop: 16,
+    fontSize: 13,
+    color: "#888888",
+    textAlign: "center",
+    letterSpacing: 0.2,
   },
 });
