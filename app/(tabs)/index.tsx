@@ -25,8 +25,6 @@ function HomeScreen() {
   const [accounts, setAccounts] = useState([]);
   const [identity, setIdentity] = useState(null);
   const [transactions, setTransactions] = useState([]);
-  const [investments, setInvestments] = useState(null);
-  const [liabilities, setLiabilities] = useState(null);
 
   // Load connection state when component mounts
   useEffect(() => {
@@ -123,44 +121,6 @@ function HomeScreen() {
     }
   };
 
-  const fetchInvestments = async () => {
-    if (!accessToken) return;
-    setIsLoading(true);
-
-    try {
-      const response = await fetch("http://localhost:8080/api/investments", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ access_token: accessToken }),
-      });
-      const data = await response.json();
-      setInvestments(data);
-    } catch (error) {
-      console.error("Error fetching investments:", error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const fetchLiabilities = async () => {
-    if (!accessToken) return;
-    setIsLoading(true);
-
-    try {
-      const response = await fetch("http://localhost:8080/api/liabilities", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ access_token: accessToken }),
-      });
-      const data = await response.json();
-      setLiabilities(data);
-    } catch (error) {
-      console.error("Error fetching liabilities:", error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
   const handleTabChange = (tab) => {
     setActiveTab(tab);
 
@@ -168,12 +128,6 @@ function HomeScreen() {
     switch (tab) {
       case "transactions":
         fetchTransactions();
-        break;
-      case "investments":
-        fetchInvestments();
-        break;
-      case "liabilities":
-        fetchLiabilities();
         break;
     }
   };
@@ -390,38 +344,6 @@ function HomeScreen() {
                   Transactions
                 </Text>
               </TouchableOpacity>
-              <TouchableOpacity
-                style={[
-                  styles.tab,
-                  activeTab === "investments" && styles.activeTab,
-                ]}
-                onPress={() => handleTabChange("investments")}
-              >
-                <Text
-                  style={[
-                    styles.tabText,
-                    activeTab === "investments" && styles.activeTabText,
-                  ]}
-                >
-                  Investments
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[
-                  styles.tab,
-                  activeTab === "liabilities" && styles.activeTab,
-                ]}
-                onPress={() => handleTabChange("liabilities")}
-              >
-                <Text
-                  style={[
-                    styles.tabText,
-                    activeTab === "liabilities" && styles.activeTabText,
-                  ]}
-                >
-                  Liabilities
-                </Text>
-              </TouchableOpacity>
             </ScrollView>
           </View>
 
@@ -537,189 +459,6 @@ function HomeScreen() {
                       ) : (
                         <Text style={styles.emptyText}>
                           No transactions found.
-                        </Text>
-                      )}
-                    </View>
-                  )}
-
-                  {activeTab === "investments" && (
-                    <View>
-                      <Text style={styles.sectionTitle}>
-                        Investment Holdings
-                      </Text>
-                      {investments ? (
-                        investments.holdings.length > 0 ? (
-                          investments.holdings.map((holding) => {
-                            const security = investments.securities.find(
-                              (s) => s.security_id === holding.security_id
-                            );
-                            return (
-                              <View
-                                key={`${holding.security_id}-${holding.account_id}`}
-                                style={styles.holdingItem}
-                              >
-                                <Text style={styles.holdingName}>
-                                  {security?.name || "Unknown Security"}
-                                  {security?.ticker_symbol
-                                    ? ` (${security.ticker_symbol})`
-                                    : ""}
-                                </Text>
-                                <Text>Quantity: {holding.quantity}</Text>
-                                <Text>
-                                  Value:{" "}
-                                  {formatCurrency(
-                                    holding.institution_value,
-                                    "USD"
-                                  )}
-                                </Text>
-                              </View>
-                            );
-                          })
-                        ) : (
-                          <Text style={styles.emptyText}>
-                            No investment holdings found.
-                          </Text>
-                        )
-                      ) : (
-                        <Text style={styles.emptyText}>
-                          Investment data not available.
-                        </Text>
-                      )}
-                    </View>
-                  )}
-
-                  {activeTab === "liabilities" && (
-                    <View>
-                      <Text style={styles.sectionTitle}>Liabilities</Text>
-                      {liabilities ? (
-                        <>
-                          {liabilities.liabilities.credit?.length > 0 && (
-                            <View>
-                              <Text style={styles.subsectionTitle}>
-                                Credit Cards
-                              </Text>
-                              {liabilities.liabilities.credit.map((card) => {
-                                const account = liabilities.accounts.find(
-                                  (a) => a.account_id === card.account_id
-                                );
-                                return (
-                                  <View
-                                    key={card.account_id}
-                                    style={styles.liabilityItem}
-                                  >
-                                    <Text style={styles.liabilityName}>
-                                      {account?.name || "Credit Card"}
-                                    </Text>
-                                    <Text>
-                                      Balance:{" "}
-                                      {formatCurrency(
-                                        account?.balances.current || 0
-                                      )}
-                                    </Text>
-                                    <Text>
-                                      APR:{" "}
-                                      {card.aprs[0]?.apr_percentage.toFixed(2)}%
-                                    </Text>
-                                    {card.last_payment_date && (
-                                      <Text>
-                                        Last Payment: {card.last_payment_date}
-                                      </Text>
-                                    )}
-                                  </View>
-                                );
-                              })}
-                            </View>
-                          )}
-
-                          {liabilities.liabilities.mortgage?.length > 0 && (
-                            <View>
-                              <Text style={styles.subsectionTitle}>
-                                Mortgages
-                              </Text>
-                              {liabilities.liabilities.mortgage.map(
-                                (mortgage) => {
-                                  const account = liabilities.accounts.find(
-                                    (a) => a.account_id === mortgage.account_id
-                                  );
-                                  return (
-                                    <View
-                                      key={mortgage.account_id}
-                                      style={styles.liabilityItem}
-                                    >
-                                      <Text style={styles.liabilityName}>
-                                        {account?.name || "Mortgage"}
-                                      </Text>
-                                      <Text>
-                                        Balance:{" "}
-                                        {formatCurrency(
-                                          account?.balances.current || 0
-                                        )}
-                                      </Text>
-                                      {mortgage.interest_rate && (
-                                        <Text>
-                                          Interest Rate:{" "}
-                                          {mortgage.interest_rate.percentage.toFixed(
-                                            2
-                                          )}
-                                          %
-                                        </Text>
-                                      )}
-                                    </View>
-                                  );
-                                }
-                              )}
-                            </View>
-                          )}
-
-                          {liabilities.liabilities.student?.length > 0 && (
-                            <View>
-                              <Text style={styles.subsectionTitle}>
-                                Student Loans
-                              </Text>
-                              {liabilities.liabilities.student.map((loan) => {
-                                const account = liabilities.accounts.find(
-                                  (a) => a.account_id === loan.account_id
-                                );
-                                return (
-                                  <View
-                                    key={loan.account_id}
-                                    style={styles.liabilityItem}
-                                  >
-                                    <Text style={styles.liabilityName}>
-                                      {account?.name || "Student Loan"}
-                                    </Text>
-                                    <Text>
-                                      Balance:{" "}
-                                      {formatCurrency(
-                                        account?.balances.current || 0
-                                      )}
-                                    </Text>
-                                    {loan.interest_rate_percentage && (
-                                      <Text>
-                                        Interest Rate:{" "}
-                                        {loan.interest_rate_percentage.toFixed(
-                                          2
-                                        )}
-                                        %
-                                      </Text>
-                                    )}
-                                  </View>
-                                );
-                              })}
-                            </View>
-                          )}
-
-                          {!liabilities.liabilities.credit?.length &&
-                            !liabilities.liabilities.mortgage?.length &&
-                            !liabilities.liabilities.student?.length && (
-                              <Text style={styles.emptyText}>
-                                No liabilities found.
-                              </Text>
-                            )}
-                        </>
-                      ) : (
-                        <Text style={styles.emptyText}>
-                          Liability data not available.
                         </Text>
                       )}
                     </View>

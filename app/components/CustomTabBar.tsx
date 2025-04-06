@@ -6,10 +6,10 @@ import {
   Platform,
   Text,
 } from "react-native";
-import { useRouter, usePathname, Slot } from "expo-router";
+import { useRouter, usePathname } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 
-export default function TabLayout() {
+export default function CustomTabBar() {
   const router = useRouter();
   const pathname = usePathname();
 
@@ -17,7 +17,7 @@ export default function TabLayout() {
     {
       name: "Home",
       icon: "home-outline",
-      route: "/(tabs)",
+      route: "/(tabs)/index",
     },
     {
       name: "Finny",
@@ -33,49 +33,38 @@ export default function TabLayout() {
   ];
 
   return (
-    <View style={styles.wrapper}>
-      <View style={styles.content}>
-        <Slot />
-        {/* This is where your tab screens like index.tsx will render */}
-      </View>
-      <View style={styles.tabBarContainer}>
-        {tabs.map((tab, index) => {
-          const isFocused = pathname === tab.route;
-          return (
-            <TouchableOpacity
-              key={index}
-              onPress={() => router.push(tab.route)}
-              style={[styles.tabButton, tab.isCenter && styles.centerTab]}
-              activeOpacity={0.8}
-            >
-              <Ionicons
-                name={tab.icon as any}
-                size={tab.isCenter ? 30 : 24}
-                color={isFocused ? "#4A90E2" : "#ccc"}
-              />
-              {!tab.isCenter && (
-                <Text
-                  style={[styles.tabLabel, isFocused && styles.focusedLabel]}
-                >
-                  {tab.name}
-                </Text>
-              )}
-            </TouchableOpacity>
-          );
-        })}
-      </View>
+    <View style={styles.tabBarContainer}>
+      {tabs.map((tab, index) => {
+        const isFocused = pathname === tab.route;
+        return (
+          <TouchableOpacity
+            key={index}
+            onPress={() => router.push(tab.route)}
+            style={[
+              styles.tabButton,
+              tab.isCenter && styles.centerTab,
+              isFocused && styles.focusedTab,
+            ]}
+            activeOpacity={0.8}
+          >
+            <Ionicons
+              name={tab.icon as any}
+              size={tab.isCenter ? 30 : 24}
+              color={isFocused ? "#4A90E2" : "#ccc"}
+            />
+            {!tab.isCenter && (
+              <Text style={[styles.tabLabel, isFocused && styles.focusedLabel]}>
+                {tab.name}
+              </Text>
+            )}
+          </TouchableOpacity>
+        );
+      })}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  wrapper: {
-    flex: 1,
-    backgroundColor: "#121212",
-  },
-  content: {
-    flex: 1,
-  },
   tabBarContainer: {
     flexDirection: "row",
     justifyContent: "space-around",
@@ -116,4 +105,5 @@ const styles = StyleSheet.create({
     color: "#4A90E2",
     fontWeight: "600",
   },
+  focusedTab: {},
 });
