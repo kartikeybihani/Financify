@@ -30,11 +30,11 @@ app.post("/api/create_link_token", async (req, res) => {
     const tokenResponse = await plaidClient.linkTokenCreate({
       user: { client_user_id: "user-id" },
       client_name: "Finance App",
-      products: ["transactions", "auth", "identity"],
+      products: ["auth", "identity", "investments", "transactions"],
       country_codes: ["US"],
       language: "en",
       redirect_uri: "https://financify-redirect.com/oauth-complete",
-      additional_consented_products: ["investments", "liabilities"], // Example: Adding credit_cards as an additional product
+      additional_consented_products: ["liabilities"],
     });
     res.json(tokenResponse.data);
   } catch (error) {
@@ -55,7 +55,6 @@ app.post("/api/exchange_public_token", async (req, res) => {
     const accessToken = tokenResponse.data.access_token;
     const itemId = tokenResponse.data.item_id;
 
-    // In a real app, you would store these tokens securely
     console.log("Access Token:", accessToken);
     console.log("Item ID:", itemId);
 
@@ -70,6 +69,7 @@ app.post("/api/exchange_public_token", async (req, res) => {
   }
 });
 
+// Get bank account balances
 app.post("/api/accounts/balance", async (req, res) => {
   const { access_token } = req.body;
   try {
@@ -81,80 +81,68 @@ app.post("/api/accounts/balance", async (req, res) => {
   }
 });
 
-// Get accounts and balances
+// Get accounts
 app.post("/api/accounts", async (req, res) => {
   const { access_token } = req.body;
-
   try {
-    const accountsResponse = await plaidClient.accountsGet({
-      access_token,
-    });
-
-    res.json({
-      accounts: accountsResponse.data.accounts,
-    });
+    const accountsResponse = await plaidClient.accountsGet({ access_token });
+    res.json({ accounts: accountsResponse.data.accounts });
   } catch (error) {
     console.error("Error fetching accounts:", error);
     res.status(500).json({ error: error.message });
   }
 });
 
-// get institution
+// Get institution info
 app.post("/api/institution", async (req, res) => {
   const { access_token } = req.body;
-
   try {
-    const itemResponse = await plaidClient.itemGet({
-      access_token,
-    });
-
+    const itemResponse = await plaidClient.itemGet({ access_token });
     const institutionId = itemResponse.data.item.institution_id;
-
     const institutionResponse = await plaidClient.institutionsGetById({
       institution_id: institutionId,
       country_codes: ["US"],
     });
-
-    res.json({
-      institution: institutionResponse.data.institution,
-    });
+    res.json({ institution: institutionResponse.data.institution });
   } catch (error) {
     console.error("Error fetching institution:", error);
     res.status(500).json({ error: error.message });
   }
 });
 
-// Get identity information
+// Get identity info
 app.post("/api/identity", async (req, res) => {
   const { access_token } = req.body;
-
   try {
-    const identityResponse = await plaidClient.identityGet({
-      access_token,
-    });
-
-    res.json({
-      identity: identityResponse.data.accounts,
-    });
+    const identityResponse = await plaidClient.identityGet({ access_token });
+    res.json({ identity: identityResponse.data.accounts });
   } catch (error) {
     console.error("Error fetching identity:", error);
     res.status(500).json({ error: error.message });
   }
 });
 
-// Get investments
+// Get investments holdings + transactions
 app.post("/api/investments", async (req, res) => {
   const { access_token } = req.body;
-
   try {
-    const investmentsResponse = await plaidClient.investmentsHoldingsGet({
+    const holdingsResponse = await plaidClient.investmentsHoldingsGet({
       access_token,
     });
+    const transactionsResponse = await plaidClient.investmentsTransactionsGet({
+      access_token,
+      start_date: "2020-01-01",
+      end_date: new Date().toISOString().split("T")[0],
+    });
+
+    console.log("Investments (from /api/investments):", holdingsResponse.data);
+    console.log("Investment Transactions:", transactionsResponse.data);
 
     res.json({
-      holdings: investmentsResponse.data.holdings,
-      securities: investmentsResponse.data.securities,
-      accounts: investmentsResponse.data.accounts,
+      holdings: holdingsResponse.data.holdings,
+      securities: holdingsResponse.data.securities,
+      investment_transactions:
+        transactionsResponse.data.investment_transactions,
     });
   } catch (error) {
     console.error("Error fetching investments:", error);
@@ -162,15 +150,13 @@ app.post("/api/investments", async (req, res) => {
   }
 });
 
-//   // Get liabilities
+// Get liabilities
 app.post("/api/liabilities", async (req, res) => {
   const { access_token } = req.body;
-
   try {
     const liabilitiesResponse = await plaidClient.liabilitiesGet({
       access_token,
     });
-
     res.json({
       liabilities: liabilitiesResponse.data.liabilities,
       accounts: liabilitiesResponse.data.accounts,
@@ -184,41 +170,29 @@ app.post("/api/liabilities", async (req, res) => {
 // Get transactions
 app.post("/api/transactions", async (req, res) => {
   const { access_token } = req.body;
-
   try {
-    // Get current date and 30 days ago
     const now = new Date();
     const startDate = new Date(now);
     startDate.setDate(startDate.getDate() - 30);
 
-    const formattedStartDate = startDate.toISOString().split("T")[0];
-    const formattedEndDate = now.toISOString().split("T")[0];
+    const formattedStart = startDate.toISOString().split("T")[0];
+    const formattedEnd = now.toISOString().split("T")[0];
 
     const transactionsResponse = await plaidClient.transactionsGet({
       access_token,
-      start_date: formattedStartDate,
-      end_date: formattedEndDate,
+      start_date: formattedStart,
+      end_date: formattedEnd,
     });
 
-    const transactions = transactionsResponse.data.transactions;
-    console.log("Transactions:", transactions);
-
-    res.json({ transactions });
+    console.log("Transactions:", transactionsResponse.data.transactions);
+    res.json({ transactions: transactionsResponse.data.transactions });
   } catch (error) {
     console.error("Error fetching transactions:", error);
     res.status(500).json({ error: error.message });
   }
 });
 
+// Start server
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
-
-// To run this server:
-// 1. Save this file as server.js
-// 2. Run: npm init -y
-// 3. Run: npm install express cors body-parser plaid
-// 4. Set environment variables:
-//    - export PLAID_CLIENT_ID='your_client_id'
-//    - export PLAID_SECRET='your_secret'
-// 5. Run: node server.js

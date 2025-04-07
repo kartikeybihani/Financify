@@ -21,7 +21,7 @@ export default function TabLayout() {
     },
     {
       name: "Finny",
-      icon: "chatbubble-ellipses-outline",
+      icon: "apps",
       route: "/(tabs)/finny",
       isCenter: true,
     },
