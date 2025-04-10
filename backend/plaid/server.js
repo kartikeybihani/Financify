@@ -1,10 +1,27 @@
 // server.js
-import { runFinnyAdvisor } from "../ai/runFinnyAdvisor";
+import { runFinnyAdvisor } from "../ai/runFinnyAdvisor.js";
+import express from "express";
+import cors from "cors";
+import bodyParser from "body-parser";
+import { Configuration, PlaidApi, PlaidEnvironments } from "plaid";
+import dotenv from "dotenv";
+import { fileURLToPath } from "url";
+import { dirname, join } from "path";
+import fs from "fs";
 
-const express = require("express");
-const cors = require("cors");
-const bodyParser = require("body-parser");
-const { Configuration, PlaidApi, PlaidEnvironments } = require("plaid");
+// Get the directory path of the current module
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+// Load environment variables
+dotenv.config({ path: join(__dirname, ".env") });
+dotenv.config({ path: join(__dirname, ".env.local") });
+// Also load from parent directory's .env files
+dotenv.config({ path: join(__dirname, "..", ".env") });
+dotenv.config({ path: join(__dirname, "..", ".env.local") });
+// Also load from ai directory's .env files
+dotenv.config({ path: join(__dirname, "..", "ai", ".env") });
+dotenv.config({ path: join(__dirname, "..", "ai", ".env.local") });
 
 const app = express();
 const PORT = 8080;
@@ -208,6 +225,45 @@ app.post("/api/finny/nudges", async (req, res) => {
   } catch (error) {
     console.error("Error in /api/finny/nudges:", error);
     res.status(500).json({ error: "Failed to generate nudges" });
+  }
+});
+
+// --- NEW ROUTE --- //
+app.post("/api/finny/ask", async (req, res) => {
+  try {
+    const { transactions, accounts, investments, liabilities, message } =
+      req.body;
+
+    if (!transactions || !message) {
+      return res.status(400).json({ error: "Missing required data." });
+    }
+
+    const result = await runFinnyAdvisor({
+      transactions,
+      accounts,
+      investments,
+      liabilities,
+      message,
+    });
+
+    // Save interaction to disk for now (simulate memory layer)
+    const logPath = join(__dirname, "finny-interactions.json");
+    const entry = {
+      timestamp: new Date().toISOString(),
+      message,
+      context: result.context,
+      nudges: result.nudges,
+    };
+    const logs = fs.existsSync(logPath)
+      ? JSON.parse(fs.readFileSync(logPath))
+      : [];
+    logs.push(entry);
+    fs.writeFileSync(logPath, JSON.stringify(logs, null, 2));
+
+    res.json({ nudges: result.nudges });
+  } catch (error) {
+    console.error("Error in /api/finny/ask:", error);
+    res.status(500).json({ error: "Failed to get AI advice" });
   }
 });
 

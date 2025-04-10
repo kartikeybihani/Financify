@@ -11,7 +11,9 @@ import {
   FlatList,
   Dimensions,
   Animated,
+  ActivityIndicator,
 } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
 
 const chatMessagesInitial = [
@@ -76,10 +78,50 @@ export default function FinnyScreen() {
     label: "",
     description: "",
   });
+  const [loading, setLoading] = useState(false);
+  const [isTyping, setIsTyping] = useState(false);
   const scrollViewRef = useRef<ScrollView>(null);
   const timelineAnimations = useRef<Animated.Value[]>(
     timelineData.map(() => new Animated.Value(0))
   ).current;
+
+  // Add typing animation values
+  const dotAnimations = useRef([
+    new Animated.Value(0),
+    new Animated.Value(0),
+    new Animated.Value(0),
+  ]).current;
+
+  // Add typing animation effect
+  useEffect(() => {
+    if (isTyping) {
+      const animateDots = () => {
+        const animations = dotAnimations.map((dot, index) => {
+          return Animated.sequence([
+            Animated.delay(index * 200),
+            Animated.loop(
+              Animated.sequence([
+                Animated.timing(dot, {
+                  toValue: 1,
+                  duration: 400,
+                  useNativeDriver: true,
+                }),
+                Animated.timing(dot, {
+                  toValue: 0,
+                  duration: 400,
+                  useNativeDriver: true,
+                }),
+              ])
+            ),
+          ]);
+        });
+        Animated.parallel(animations).start();
+      };
+      animateDots();
+    } else {
+      dotAnimations.forEach((dot) => dot.setValue(0));
+    }
+  }, [isTyping]);
 
   // Animate timeline items when tab changes
   useEffect(() => {
@@ -108,39 +150,144 @@ export default function FinnyScreen() {
     }
   }, [chatMessages]);
 
-  const handleSend = () => {
+  const isFinanceRelated = (text: string) => {
+    const keywords = [
+      "save",
+      "invest",
+      "debt",
+      "budget",
+      "money",
+      "spending",
+      "goal",
+      "finance",
+      "income",
+      "retirement",
+      "subscription",
+      "bank",
+      "accounts",
+      "FIRE",
+    ];
+    return keywords.some((keyword) => text.toLowerCase().includes(keyword));
+  };
+
+  const handleSend = async () => {
     if (!userInput.trim()) return;
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+
     const newMessage = {
       id: Date.now().toString(),
       sender: "user",
       text: userInput,
     };
-    const finnyReply = {
-      id: Date.now().toString() + "_f",
-      sender: "finny",
-      text: "Thanks! I'll remember that.",
-    };
-    setChatMessages([...chatMessages, newMessage, finnyReply]);
+
+    setChatMessages((prev) => [...prev, newMessage]);
     setUserInput("");
+    setIsTyping(true);
     setShowNudges(false);
+
+    // if (!isFinanceRelated(userInput)) {
+    //   const reply = {
+    //     id: Date.now().toString() + "_f",
+    //     sender: "finny",
+    //     text: "I can only help you with your financial life here! Ask me anything about spending, investing, saving!",
+    //   };
+    //   setChatMessages((prev) => [...prev, reply]);
+    //   setIsTyping(false);
+    //   return;
+    // }
+
+    try {
+      const stored = await AsyncStorage.getItem("financialData");
+      const parsed = JSON.parse(stored || "{}");
+      const res = await fetch("http://localhost:8080/api/finny/ask", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: userInput,
+          transactions: parsed.transactions,
+          accounts: parsed.accounts,
+          investments: parsed.investments,
+          liabilities: parsed.liabilities,
+        }),
+      });
+
+      const data = await res.json();
+      const reply = {
+        id: Date.now().toString() + "_f",
+        sender: "finny",
+        text:
+          data.nudges?.join("\n\n") ||
+          "Sorry, I wasn't able to generate advice just now.",
+      };
+
+      setChatMessages((prev) => [...prev, reply]);
+    } catch (error) {
+      console.error("AI error:", error);
+      setChatMessages((prev) => [
+        ...prev,
+        {
+          id: Date.now().toString() + "_f",
+          sender: "finny",
+          text: "Something went wrong. Try again later.",
+        },
+      ]);
+    } finally {
+      setIsTyping(false);
+    }
   };
 
   // Handle nudge box click
-  const handleNudgeClick = (nudgeText: string) => {
+  const handleNudgeClick = async (nudgeText: string) => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+
     const newMessage = {
       id: Date.now().toString(),
       sender: "user",
       text: nudgeText,
     };
-    const finnyReply = {
-      id: Date.now().toString() + "_f",
-      sender: "finny",
-      text: getFinnyResponse(nudgeText),
-    };
-    setChatMessages([...chatMessages, newMessage, finnyReply]);
+
+    setChatMessages((prev) => [...prev, newMessage]);
     setShowNudges(false);
+    setLoading(true);
+
+    try {
+      const stored = await AsyncStorage.getItem("financialData");
+      const parsed = JSON.parse(stored || "{}");
+      const res = await fetch("http://localhost:8080/api/finny/ask", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: nudgeText,
+          transactions: parsed.transactions,
+          accounts: parsed.accounts,
+          investments: parsed.investments,
+          liabilities: parsed.liabilities,
+        }),
+      });
+
+      const data = await res.json();
+      const reply = {
+        id: Date.now().toString() + "_f",
+        sender: "finny",
+        text:
+          data.nudges?.join("\n\n") ||
+          "Sorry, I wasn't able to generate advice just now.",
+      };
+
+      setChatMessages((prev) => [...prev, reply]);
+    } catch (error) {
+      console.error("AI error:", error);
+      setChatMessages((prev) => [
+        ...prev,
+        {
+          id: Date.now().toString() + "_f",
+          sender: "finny",
+          text: "Something went wrong. Try again later.",
+        },
+      ]);
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Get a contextual response based on the user's nudge
@@ -267,17 +414,43 @@ export default function FinnyScreen() {
                 <Text style={styles.chatText}>{msg.text}</Text>
               </View>
             ))}
+
+            {isTyping && (
+              <View style={[styles.chatBubble, styles.chatLeft]}>
+                <View style={styles.typingIndicator}>
+                  {dotAnimations.map((dot, index) => (
+                    <Animated.View
+                      key={index}
+                      style={[
+                        styles.typingDot,
+                        {
+                          opacity: dot,
+                          transform: [
+                            {
+                              translateY: dot.interpolate({
+                                inputRange: [0, 1],
+                                outputRange: [0, -4],
+                              }),
+                            },
+                          ],
+                        },
+                      ]}
+                    />
+                  ))}
+                </View>
+              </View>
+            )}
           </ScrollView>
           <View style={styles.inputBar}>
             <TextInput
-              placeholder="Type a message..."
+              placeholder="Ask Finny anything about money..."
               placeholderTextColor="#888"
               style={styles.input}
               value={userInput}
               onChangeText={setUserInput}
               onSubmitEditing={handleSend}
             />
-            <TouchableOpacity onPress={handleSend}>
+            <TouchableOpacity onPress={handleSend} disabled={loading}>
               <Ionicons name="send" size={22} color="#4A90E2" />
             </TouchableOpacity>
           </View>
@@ -732,5 +905,18 @@ const styles = StyleSheet.create({
   saveButtonText: {
     color: "#fff",
     fontWeight: "600",
+  },
+  typingIndicator: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 8,
+  },
+  typingDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: "#4A90E2",
+    marginHorizontal: 2,
   },
 });
