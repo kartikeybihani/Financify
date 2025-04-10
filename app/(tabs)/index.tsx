@@ -11,6 +11,7 @@ import {
   SafeAreaView,
   ActivityIndicator,
   RefreshControl,
+  Image,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -21,40 +22,16 @@ import {
   handleDisconnect,
   fetchInitialData,
 } from "../utils/plaid";
+import {
+  Account,
+  Identity,
+  Holding,
+  Security,
+  Investments,
+} from "../types/plaid";
 
 if (Platform.OS === "android") {
   UIManager.setLayoutAnimationEnabledExperimental?.(true);
-}
-
-interface Account {
-  name: string;
-  subtype: string;
-  balances: {
-    current: number;
-  };
-  type: string;
-}
-
-interface Identity {
-  owners?: Array<{
-    names?: string[];
-  }>;
-}
-
-interface Holding {
-  security_id: string;
-  institution_value: number;
-}
-
-interface Security {
-  security_id: string;
-  name: string;
-  ticker_symbol?: string;
-}
-
-interface Investments {
-  holdings?: Holding[];
-  securities?: Security[];
 }
 
 export default function HomeScreen() {
@@ -257,18 +234,42 @@ export default function HomeScreen() {
           <Text style={styles.greetingText}>Hi {userName}</Text>
           <Text style={styles.subGreeting}>Welcome Back!</Text>
         </View>
-        <TouchableOpacity
-          style={styles.disconnectButton}
-          onPress={onDisconnect}
-        >
-          <Ionicons name="log-out-outline" size={22} color="#ff6b6b" />
-        </TouchableOpacity>
+        {isConnected && (
+          <TouchableOpacity
+            style={styles.disconnectButton}
+            onPress={onDisconnect}
+          >
+            <Ionicons name="log-out-outline" size={22} color="#ff6b6b" />
+          </TouchableOpacity>
+        )}
       </View>
 
       {loading ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#4A90E2" />
           <Text style={styles.loadingText}>Loading your financial data...</Text>
+        </View>
+      ) : !isConnected ? (
+        <View style={styles.disconnectedContainer}>
+          <View style={styles.disconnectedContent}>
+            <Ionicons name="wallet-outline" size={80} color="#4A90E2" />
+            <Text style={styles.disconnectedTitle}>
+              Connect Your Bank Account
+            </Text>
+            <Text style={styles.disconnectedDescription}>
+              Link your bank accounts to see your financial overview, track your
+              net worth, and manage your investments all in one place.
+            </Text>
+            <TouchableOpacity
+              style={styles.connectButton}
+              onPress={handleConnect}
+              disabled={!linkToken}
+            >
+              <Text style={styles.connectButtonText}>
+                {linkToken ? "Connect Bank Account" : "Loading..."}
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
       ) : (
         <ScrollView

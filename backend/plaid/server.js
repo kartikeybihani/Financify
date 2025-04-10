@@ -1,4 +1,6 @@
 // server.js
+import { runFinnyAdvisor } from "../ai/runFinnyAdvisor";
+
 const express = require("express");
 const cors = require("cors");
 const bodyParser = require("body-parser");
@@ -135,8 +137,8 @@ app.post("/api/investments", async (req, res) => {
       end_date: new Date().toISOString().split("T")[0],
     });
 
-    console.log("Investments (from /api/investments):", holdingsResponse.data);
-    console.log("Investment Transactions:", transactionsResponse.data);
+    // console.log("Investments (from /api/investments):", holdingsResponse.data);
+    // console.log("Investment Transactions:", transactionsResponse.data);
 
     res.json({
       holdings: holdingsResponse.data.holdings,
@@ -189,6 +191,23 @@ app.post("/api/transactions", async (req, res) => {
   } catch (error) {
     console.error("Error fetching transactions:", error);
     res.status(500).json({ error: error.message });
+  }
+});
+
+// Get transactions with category
+app.post("/api/finny/nudges", async (req, res) => {
+  try {
+    const { transactions } = req.body;
+
+    if (!transactions || !Array.isArray(transactions)) {
+      return res.status(400).json({ error: "Missing transactions array" });
+    }
+
+    const result = await runFinnyAdvisor(transactions);
+    res.json(result);
+  } catch (error) {
+    console.error("Error in /api/finny/nudges:", error);
+    res.status(500).json({ error: "Failed to generate nudges" });
   }
 });
 
