@@ -1,0 +1,164 @@
+import { StyleSheet } from "react-native";
+
+export default StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: "#121212",
+  },
+  headerCentered: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    paddingVertical: 20,
+    backgroundColor: "#121212",
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: "#fff",
+  },
+  tabSwitcher: {
+    flexDirection: "row",
+    justifyContent: "space-around",
+    backgroundColor: "#1c1c1c",
+    borderRadius: 12,
+    marginHorizontal: 20,
+    marginBottom: 10,
+  },
+  tabButton: {
+    paddingVertical: 10,
+    flex: 1,
+    alignItems: "center",
+    borderRadius: 12,
+  },
+  activeTab: {
+    backgroundColor: "#2e2e2e",
+  },
+  tabText: {
+    color: "#aaa",
+    fontSize: 14,
+  },
+  activeText: {
+    color: "#4A90E2",
+    fontWeight: "600",
+  },
+  chatArea: {
+    flex: 1,
+    backgroundColor: "#121212",
+  },
+  chatContainer: {
+    flex: 1,
+    paddingBottom: 80, // Space for input bar
+  },
+  chatScroll: {
+    flex: 1,
+    padding: 20,
+  },
+  chatBubble: {
+    maxWidth: "80%",
+    padding: 10,
+    borderRadius: 10,
+    marginVertical: 6,
+  },
+  chatLeft: {
+    alignSelf: "flex-start",
+    backgroundColor: "#2c2c2c",
+  },
+  chatRight: {
+    alignSelf: "flex-end",
+    backgroundColor: "#4A90E2",
+  },
+  chatText: {
+    color: "#fff",
+    fontSize: 15,
+    lineHeight: 22,
+  },
+  chatMoney: {
+    fontWeight: "600",
+    color: "#4A90E2",
+  },
+  inputBarContainer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: "#121212",
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderTopWidth: 1,
+    borderTopColor: "#2c2c2c",
+  },
+  inputBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#1f1f1f",
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  scrollToBottomButton: {
+    position: 'absolute',
+    right: 20,
+    bottom: 100,
+    backgroundColor: '#1f1f1f',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+  },
+  input: {
+    flex: 1,
+    fontSize: 14,
+    color: "#fff",
+  },
+  nudgeContainer: {
+    marginBottom: 20,
+    paddingHorizontal: 10,
+  },
+  nudgeGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+  },
+  nudgeBox: {
+    backgroundColor: "#2a2a2a",
+    borderRadius: 12,
+    padding: 8,
+    marginBottom: 10,
+    width: "47%",
+    shadowColor: "#4A90E2",
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 5,
+    borderWidth: 1,
+    borderColor: "rgba(74, 144, 226, 0.2)",
+  },
+  nudgeText: {
+    color: "#fff",
+    fontSize: 13,
+    textAlign: "center",
+  },
+  typingIndicator: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 8,
+  },
+  typingDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: "#4A90E2",
+    marginHorizontal: 2,
+  },
+}); 

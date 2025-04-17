@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
-  StyleSheet,
   TouchableOpacity,
   LayoutAnimation,
   Platform,
@@ -11,7 +10,6 @@ import {
   SafeAreaView,
   ActivityIndicator,
   RefreshControl,
-  Image,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -27,21 +25,23 @@ import {
   Identity,
   Holding,
   Security,
-  Investments,
+  Investment,
 } from "../types/plaid";
+import { useRouter } from "expo-router";
 
 if (Platform.OS === "android") {
   UIManager.setLayoutAnimationEnabledExperimental?.(true);
 }
 
 export default function HomeScreen() {
+  const router = useRouter();
   const [expandedSections, setExpandedSections] = useState<string[]>([]);
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [institution, setInstitution] = useState<any>(null);
   const [identity, setIdentity] = useState<Identity[]>([]);
-  const [investments, setInvestments] = useState<Investments | null>(null);
+  const [investments, setInvestments] = useState<Investment | null>(null);
   const [liabilities, setLiabilities] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -157,21 +157,6 @@ export default function HomeScreen() {
     });
   };
 
-  const onDisconnect = async () => {
-    setAccessToken(null);
-    setIsConnected(false);
-    setAccounts([]);
-    setInstitution(null);
-    setIdentity([]);
-    setInvestments(null);
-    setLiabilities(null);
-    setDataFetched(false);
-    // Clear stored data
-    await AsyncStorage.removeItem("financialData");
-    const token = await handleDisconnect();
-    setLinkToken(token);
-  };
-
   const formatCurrency = (amount: number, currency = "USD", decimals = 2) => {
     return new Intl.NumberFormat("en-US", {
       style: "currency",
@@ -227,21 +212,20 @@ export default function HomeScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.header}>
-        <TouchableOpacity>
+        <TouchableOpacity
+          onPress={() =>
+            router.push({
+              pathname: "/settings",
+              params: { userName },
+            })
+          }
+        >
           <Ionicons name="menu" size={26} color="#fff" />
         </TouchableOpacity>
         <View style={styles.headerTextContainer}>
           <Text style={styles.greetingText}>Hi {userName}</Text>
           <Text style={styles.subGreeting}>Welcome Back!</Text>
         </View>
-        {isConnected && (
-          <TouchableOpacity
-            style={styles.disconnectButton}
-            onPress={onDisconnect}
-          >
-            <Ionicons name="log-out-outline" size={22} color="#ff6b6b" />
-          </TouchableOpacity>
-        )}
       </View>
 
       {loading ? (

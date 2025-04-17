@@ -267,6 +267,47 @@ app.post("/api/finny/ask", async (req, res) => {
   }
 });
 
+// server.js (or add this to routes section)
+app.post("/api/finny/goal-intent", async (req, res) => {
+  const { message } = req.body;
+  const systemPrompt = `
+You are a helpful financial assistant. Extract the financial goal from the following user message.
+Return a JSON object like this: 
+{ "label": string, "target": number|null, "timeline": string|null }
+
+- "label" is what the goal is for, like "Vacation", "Laptop", or "Emergency Fund"
+- "target" is the amount of money to be saved (in USD), or null if not specified
+- "timeline" is the target date, year, or rough deadline like "2025" or "in 6 months", or null if not stated
+
+If you're not sure about a value, return null.
+`;
+
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: "gpt-4",
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: message },
+      ],
+    }),
+  });
+
+  const data = await response.json();
+  const text = data.choices?.[0]?.message?.content || "{}";
+
+  try {
+    const parsed = JSON.parse(text);
+    return res.json(parsed);
+  } catch (e) {
+    return res.json({ label: null, target: null, timeline: null });
+  }
+});
+
 // Start server
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);

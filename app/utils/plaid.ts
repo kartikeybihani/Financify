@@ -161,3 +161,16 @@ export const fetchInitialData = async (token: string) => {
     return null;
   }
 };
+
+const plaidUtils = {
+  initializePlaid: fetchInitialData,
+  getPlaidLinkToken: fetchLinkToken,
+  exchangePublicToken: handlePlaidConnect,
+  getAccounts: fetchAccounts,
+  getTransactions: fetchInvestments,
+  getInvestments: fetchInvestments,
+  getLiabilities: fetchLiabilities,
+  disconnectPlaid: handleDisconnect,
+};
+
+export default plaidUtils;
