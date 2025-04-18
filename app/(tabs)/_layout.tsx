@@ -36,7 +36,6 @@ export default function TabLayout() {
     <View style={styles.wrapper}>
       <View style={styles.content}>
         <Slot />
-        {/* This is where your tab screens like index.tsx will render */}
       </View>
       <View style={styles.tabBarContainer}>
         {tabs.map((tab, index) => {
@@ -44,7 +43,7 @@ export default function TabLayout() {
           return (
             <TouchableOpacity
               key={index}
-              onPress={() => router.push(tab.route)}
+              onPress={() => router.push(tab.route as any)}
               style={[styles.tabButton, tab.isCenter && styles.centerTab]}
               activeOpacity={0.8}
             >

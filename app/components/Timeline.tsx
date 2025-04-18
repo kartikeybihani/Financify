@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -8,19 +8,27 @@ import {
   TextInput,
   Animated,
   LayoutAnimation,
+  Modal,
+  Dimensions,
+  DeviceEventEmitter,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import DateTimePicker from "@react-native-community/datetimepicker";
+import AddGoalModal from "./AddGoalModal";
 
 // Define the type for timeline items
 interface TimelineItem {
+  id?: string; // Make ID optional since we'll add it in the parent
   year: string;
   label: string;
   description: string;
 }
 
 interface TimelineProps {
-  timelineData: TimelineItem[];
+  timelineData: (TimelineItem & { id: string })[]; // Require ID in props
   timelineAnimations: Animated.Value[];
+  deleteGoal: (goalToDelete: TimelineItem) => void;
 }
 
 // Helper function to get appropriate icon for timeline items
@@ -33,9 +41,47 @@ const getTimelineIcon = (label: string): any => {
   return "flag-outline";
 };
 
+// Helper function to convert month name to number for sorting
+const getMonthNumber = (monthName: string): number => {
+  const months = [
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
+  ];
+  return months.indexOf(monthName);
+};
+
+// Helper function to parse timeline item date
+const parseTimelineDate = (
+  dateStr: string
+): { month: number; year: number } => {
+  const parts = dateStr.split(" ");
+  if (parts.length === 2) {
+    return {
+      month: getMonthNumber(parts[0]),
+      year: parseInt(parts[1]),
+    };
+  }
+  // Fallback for old format or invalid dates
+  return {
+    month: 0,
+    year: parseInt(dateStr),
+  };
+};
+
 export default function Timeline({
   timelineData,
   timelineAnimations,
+  deleteGoal,
 }: TimelineProps) {
   const [selectedMilestone, setSelectedMilestone] =
     useState<TimelineItem | null>(null);
@@ -45,32 +91,118 @@ export default function Timeline({
     label: "",
     description: "",
   });
+  const [descriptionHeight, setDescriptionHeight] = useState(80);
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [selectedDate, setSelectedDate] = useState(new Date());
+  const modalAnimation = useRef(new Animated.Value(0)).current;
+  const [isModalVisible, setIsModalVisible] = useState(false);
+
+  // Sort timeline data by date
+  const sortedTimelineData = [...timelineData].sort((a, b) => {
+    const dateA = parseTimelineDate(a.year);
+    const dateB = parseTimelineDate(b.year);
+
+    if (dateA.year !== dateB.year) {
+      return dateA.year - dateB.year;
+    }
+    return dateA.month - dateB.month;
+  });
+
+  // Handle modal visibility
+  const showModal = () => {
+    setIsModalVisible(true);
+    setShowAddGoalModal(true);
+    Animated.spring(modalAnimation, {
+      toValue: 1,
+      useNativeDriver: true,
+      tension: 50,
+      friction: 7,
+    }).start();
+  };
+
+  const hideModal = () => {
+    Animated.timing(modalAnimation, {
+      toValue: 0,
+      duration: 200,
+      useNativeDriver: true,
+    }).start(() => {
+      setIsModalVisible(false);
+      setShowAddGoalModal(false);
+      // Reset form state
+      setNewGoal({ year: "", label: "", description: "" });
+      setSelectedDate(new Date());
+    });
+  };
+
+  // Clean up the modal state when component unmounts
+  useEffect(() => {
+    return () => {
+      modalAnimation.setValue(0);
+      setIsModalVisible(false);
+      setShowAddGoalModal(false);
+    };
+  }, []);
 
   // Handle adding a new goal
   const handleAddGoal = () => {
-    if (!newGoal.year || !newGoal.label || !newGoal.description) {
+    if (!newGoal.label || !selectedDate) {
       // Show validation error
       return;
     }
 
+    // Format the date as year and month
+    const year = selectedDate.getFullYear().toString();
+    const month = selectedDate.toLocaleString("default", { month: "long" });
+
     // Create a new goal with a unique ID
     const goalToAdd: TimelineItem = {
-      year: newGoal.year,
+      year: `${month} ${year}`,
       label: newGoal.label,
-      description: newGoal.description,
+      description: newGoal.description || "No description provided",
     };
 
-    // Add the new goal to the timeline data
-    // In a real app, this would update a database or state management
-    // For now, we'll just show a success message
-    setShowAddGoalModal(false);
-    setNewGoal({ year: "", label: "", description: "" });
+    // Reset and close modal
+    hideModal();
+  };
+
+  const handleDateChange = (event: any, date?: Date) => {
+    setShowDatePicker(false);
+    if (date) {
+      setSelectedDate(date);
+    }
+  };
+
+  const handleSaveGoal = async (goal: TimelineItem) => {
+    try {
+      // Get existing goals
+      const existingGoals = await AsyncStorage.getItem("goals");
+      const parsedGoals = JSON.parse(existingGoals || "[]");
+
+      // Add new goal with ID
+      const goalWithId = {
+        ...goal,
+        id: Date.now().toString(),
+      };
+
+      const updatedGoals = [...parsedGoals, goalWithId];
+
+      // Save updated goals
+      await AsyncStorage.setItem("goals", JSON.stringify(updatedGoals));
+
+      // Emit event to refresh timeline
+      DeviceEventEmitter.emit("goalsUpdated", updatedGoals);
+
+      // Close modal
+      setShowAddGoalModal(false);
+    } catch (error) {
+      console.error("Error saving goal:", error);
+    }
   };
 
   return (
     <View style={styles.timelineContainer}>
       <ScrollView contentContainerStyle={styles.timelineWrapper}>
-        {timelineData.map((item, index) => {
+        {sortedTimelineData.map((item, index) => {
           const animatedStyle = {
             opacity: timelineAnimations[index],
             transform: [
@@ -83,29 +215,25 @@ export default function Timeline({
             ],
           };
 
-          const isSelected = selectedMilestone?.year === item.year;
+          const isSelected = selectedMilestone?.id === item.id;
 
           return (
             <TouchableOpacity
-              key={index}
+              key={item.id} // Use the unique ID as key
               onPress={() => {
                 LayoutAnimation.configureNext(
                   LayoutAnimation.Presets.easeInEaseOut
                 );
                 setSelectedMilestone(isSelected ? null : item);
               }}
+              onLongPress={() => deleteGoal(item)}
               style={[
                 styles.timelineRow,
                 isSelected && styles.selectedTimelineRow,
               ]}
               activeOpacity={0.8}
             >
-              <View
-                style={[
-                  styles.timelineDot,
-                  isSelected && styles.selectedTimelineDot,
-                ]}
-              />
+              <View style={styles.timelineDot} />
               <View style={styles.timelineLine} />
               <Animated.View style={[styles.timelineContent, animatedStyle]}>
                 <View style={styles.timelineHeader}>
@@ -142,70 +270,11 @@ export default function Timeline({
       </TouchableOpacity>
 
       {/* Add Goal Modal */}
-      {showAddGoalModal && (
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Add New Goal</Text>
-
-            <View style={styles.inputContainer}>
-              <Text style={styles.inputLabel}>Year</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="2025"
-                placeholderTextColor="#666"
-                value={newGoal.year}
-                onChangeText={(text) => setNewGoal({ ...newGoal, year: text })}
-                keyboardType="numeric"
-              />
-            </View>
-
-            <View style={styles.inputContainer}>
-              <Text style={styles.inputLabel}>Goal Title</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Buy a House"
-                placeholderTextColor="#666"
-                value={newGoal.label}
-                onChangeText={(text) => setNewGoal({ ...newGoal, label: text })}
-              />
-            </View>
-
-            <View style={styles.inputContainer}>
-              <Text style={styles.inputLabel}>Description</Text>
-              <TextInput
-                style={[styles.input, styles.textArea]}
-                placeholder="A major milestone in your financial journey"
-                placeholderTextColor="#666"
-                value={newGoal.description}
-                onChangeText={(text) =>
-                  setNewGoal({ ...newGoal, description: text })
-                }
-                multiline
-                numberOfLines={3}
-              />
-            </View>
-
-            <View style={styles.modalButtons}>
-              <TouchableOpacity
-                style={[styles.modalButton, styles.cancelButton]}
-                onPress={() => {
-                  setShowAddGoalModal(false);
-                  setNewGoal({ year: "", label: "", description: "" });
-                }}
-              >
-                <Text style={styles.cancelButtonText}>Cancel</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.modalButton, styles.saveButton]}
-                onPress={handleAddGoal}
-              >
-                <Text style={styles.saveButtonText}>Save</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      )}
+      <AddGoalModal
+        visible={showAddGoalModal}
+        onClose={hideModal}
+        onSave={handleSaveGoal}
+      />
     </View>
   );
 }
@@ -243,14 +312,6 @@ const styles = StyleSheet.create({
     borderColor: "#121212",
     zIndex: 2,
   },
-  selectedTimelineDot: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: "#4A90E2",
-    borderWidth: 3,
-    borderColor: "#121212",
-  },
   timelineLine: {
     position: "absolute",
     left: 18,
@@ -258,7 +319,6 @@ const styles = StyleSheet.create({
     width: 2,
     height: "100%",
     backgroundColor: "#333",
-    textDecorationStyle: "double",
   },
   timelineContent: {
     marginLeft: 8,
@@ -324,63 +384,74 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   modalOverlay: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
+    flex: 1,
     backgroundColor: "rgba(0, 0, 0, 0.7)",
     justifyContent: "center",
     alignItems: "center",
-    zIndex: 1000,
+    paddingHorizontal: 20,
   },
   modalContent: {
     backgroundColor: "#1f1f1f",
-    borderRadius: 16,
-    padding: 20,
-    width: "90%",
+    borderRadius: 20,
+    padding: 24,
+    width: "100%",
     maxWidth: 400,
     borderWidth: 1,
     borderColor: "#333",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 5,
   },
   modalTitle: {
-    fontSize: 18,
+    fontSize: 24,
     fontWeight: "700",
     color: "#fff",
-    marginBottom: 20,
+    marginBottom: 24,
     textAlign: "center",
   },
   inputContainer: {
-    marginBottom: 16,
+    marginBottom: 20,
   },
   inputLabel: {
-    fontSize: 14,
-    color: "#aaa",
-    marginBottom: 6,
+    fontSize: 16,
+    color: "#fff",
+    marginBottom: 8,
+    fontWeight: "600",
   },
   input: {
-    flex: 1,
-    fontSize: 14,
+    backgroundColor: "#2a2a2a",
+    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    fontSize: 16,
     color: "#fff",
+    borderWidth: 1,
+    borderColor: "#333",
+    marginBottom: 4,
   },
   textArea: {
-    height: 80,
-    textAlignVertical: "top",
+    minHeight: 80,
+    maxHeight: 150,
+    paddingTop: 12,
   },
   modalButtons: {
     flexDirection: "row",
     justifyContent: "space-between",
-    marginTop: 10,
+    marginTop: 24,
   },
   modalButton: {
     flex: 1,
-    paddingVertical: 12,
-    borderRadius: 8,
+    paddingVertical: 14,
+    borderRadius: 12,
     alignItems: "center",
-    marginHorizontal: 5,
+    marginHorizontal: 6,
   },
   cancelButton: {
     backgroundColor: "#333",
+    borderWidth: 1,
+    borderColor: "#444",
   },
   saveButton: {
     backgroundColor: "#4A90E2",
@@ -388,9 +459,31 @@ const styles = StyleSheet.create({
   cancelButtonText: {
     color: "#fff",
     fontWeight: "600",
+    fontSize: 16,
   },
   saveButtonText: {
     color: "#fff",
     fontWeight: "600",
+    fontSize: 16,
+  },
+  inputError: {
+    color: "#ff6b6b",
+    fontSize: 12,
+    marginTop: 4,
+  },
+  datePickerButton: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    backgroundColor: "#2a2a2a",
+    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderWidth: 1,
+    borderColor: "#333",
+  },
+  datePickerButtonText: {
+    fontSize: 16,
+    color: "#fff",
   },
 });

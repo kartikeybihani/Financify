@@ -71,7 +71,8 @@ export const fetchAccounts = async (token: string) => {
       body: JSON.stringify({ access_token: token }),
     });
     const data = await res.json();
-    console.log("Accounts data:", JSON.stringify(data, null, 2));
+    // console.log("Accounts data:", JSON.stringify(data, null, 2));
+    console.log("Accounts data loaded...");
     return data.accounts;
   } catch (err) {
     console.error("Error fetching accounts:", err);
@@ -103,7 +104,8 @@ export const fetchInvestments = async (token: string) => {
       body: JSON.stringify({ access_token: token }),
     });
     const data = await res.json();
-    console.log("✅ Investments full response:", JSON.stringify(data, null, 2));
+    // console.log("✅ Investments full response:", JSON.stringify(data, null, 2));
+    console.log("Investments data loaded...");
 
     return {
       holdings: data.holdings || [],
@@ -128,7 +130,7 @@ export const fetchLiabilities = async (token: string) => {
       body: JSON.stringify({ access_token: token }),
     });
     const data = await res.json();
-    console.log("Liabilities data:", data);
+    console.log("Liabilities data loaded...");
     return data.liabilities || [];
   } catch (err) {
     console.error("Error fetching liabilities:", err);

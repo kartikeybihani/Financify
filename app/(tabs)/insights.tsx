@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -10,14 +10,34 @@ import {
   ActivityIndicator,
   Modal,
   FlatList,
+  DeviceEventEmitter,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { styles } from "../styles/insightsStyles";
 const screenWidth = Dimensions.get("window").width;
 
-// Dummy insights preserved
-const dummyInsights = [
+// Define types
+interface Transaction {
+  amount: number;
+  category?: string[];
+  date: string;
+  name: string;
+}
+
+interface CategoryBreakdown {
+  [key: string]: number;
+}
+
+interface Insight {
+  icon: keyof typeof Ionicons.glyphMap;
+  title: string;
+  description: string;
+  details: string;
+}
+
+// Dummy insights with proper typing
+const dummyInsights: Insight[] = [
   {
     icon: "trending-up",
     title: "Spending Up 12% This Month",
@@ -29,44 +49,66 @@ const dummyInsights = [
 ];
 
 export default function InsightsScreen() {
-  const [selectedCard, setSelectedCard] = useState(null);
-  const [transactions, setTransactions] = useState([]);
-  const [realInsights, setRealInsights] = useState([]);
-  const [categoryBreakdown, setCategoryBreakdown] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [selectedCard, setSelectedCard] = useState<number | null>(null);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [realInsights, setRealInsights] = useState<Insight[]>([]);
+  const [categoryBreakdown, setCategoryBreakdown] = useState<
+    [string, number][]
+  >([]);
+  const [loading, setLoading] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState("All Categories");
   const [showFilterModal, setShowFilterModal] = useState(false);
-  const [categories, setCategories] = useState([]);
+  const [categories, setCategories] = useState<string[]>(["All Categories"]);
+  const isMounted = useRef(false);
+  const hasData = useRef(false);
+
+  const loadData = async () => {
+    // Try to load data from AsyncStorage first without setting loading state
+    const storedData = await AsyncStorage.getItem("financialData");
+    if (storedData) {
+      const data = JSON.parse(storedData);
+      if (data.transactions && data.transactions.length > 0) {
+        setTransactions(data.transactions);
+        processTransactionsData(data.transactions);
+        hasData.current = true;
+        return;
+      }
+    }
+
+    // Only show loading if we need to fetch data
+    setLoading(true);
+    try {
+      await fetchTransactions();
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const loadData = async () => {
-      try {
-        // Try to load data from AsyncStorage first
-        const storedData = await AsyncStorage.getItem("financialData");
-        if (storedData) {
-          const data = JSON.parse(storedData);
+    // Only load data on first mount
+    if (!isMounted.current) {
+      loadData();
+      isMounted.current = true;
+    }
 
-          // Check if we have transactions data
-          if (data.transactions && data.transactions.length > 0) {
-            setTransactions(data.transactions);
-            processTransactionsData(data.transactions);
-          } else {
-            // If no transactions in storage, fetch them
-            await fetchTransactions();
-          }
-        } else {
-          // If no data in storage, fetch it
-          await fetchTransactions();
+    // Listen for refresh events from home screen
+    const subscription = DeviceEventEmitter.addListener(
+      "financialDataRefreshed",
+      (data) => {
+        if (data.transactions) {
+          setTransactions(data.transactions);
+          processTransactionsData(data.transactions);
+          hasData.current = true;
+        } else if (!hasData.current) {
+          loadData();
         }
-      } catch (err) {
-        console.error("Error loading data:", err);
-        await fetchTransactions();
-      } finally {
-        setLoading(false);
       }
-    };
+    );
 
-    loadData();
+    // Cleanup
+    return () => {
+      subscription.remove();
+    };
   }, []);
 
   const fetchTransactions = async () => {
@@ -104,12 +146,12 @@ export default function InsightsScreen() {
     }
   };
 
-  const processTransactionsData = (transactionsData) => {
+  const processTransactionsData = (transactionsData: Transaction[]) => {
     const expenses = transactionsData.filter((tx) => tx.amount > 0);
     const totalSpent = expenses.reduce((acc, tx) => acc + tx.amount, 0);
 
-    const categoriesObj = {};
-    for (let tx of expenses) {
+    const categoriesObj: CategoryBreakdown = {};
+    for (const tx of expenses) {
       const category = tx.category?.[0] || "Other";
       categoriesObj[category] = (categoriesObj[category] || 0) + tx.amount;
     }
@@ -119,7 +161,6 @@ export default function InsightsScreen() {
     );
     setCategoryBreakdown(sortedCategories);
 
-    // Extract unique categories for the filter
     const uniqueCategories = [
       "All Categories",
       ...new Set(expenses.map((tx) => tx.category?.[0] || "Other")),
@@ -127,8 +168,9 @@ export default function InsightsScreen() {
     setCategories(uniqueCategories);
 
     const topCategory = sortedCategories[0];
+    if (!topCategory) return;
 
-    const newInsights = [
+    const newInsights: Insight[] = [
       {
         icon: "cash-outline",
         title: `You spent $${totalSpent.toLocaleString("en-US", {
@@ -148,8 +190,12 @@ export default function InsightsScreen() {
     setRealInsights(newInsights);
   };
 
-  const formatDate = (dateStr) => {
-    const options = { year: "numeric", month: "long", day: "numeric" };
+  const formatDate = (dateStr: string) => {
+    const options: Intl.DateTimeFormatOptions = {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    };
     return new Date(dateStr).toLocaleDateString("en-US", options);
   };
 
@@ -227,7 +273,7 @@ export default function InsightsScreen() {
         <Text style={styles.headerTitle}>Insights</Text>
       </View>
 
-      {loading ? (
+      {loading && !hasData.current ? (
         <ActivityIndicator
           size="large"
           color="#4A90E2"

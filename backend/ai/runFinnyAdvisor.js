@@ -8,6 +8,7 @@ export async function runFinnyAdvisor({
   investments = {},
   liabilities = [],
   message,
+  goals = [],
 }) {
   const {
     summaryText: spendingSummary,
@@ -53,6 +54,18 @@ export async function runFinnyAdvisor({
         .join("\n")
     : "No liabilities.";
 
+  // Format goals summary
+  const goalsSummary = goals.length
+    ? goals
+        .map(
+          (goal) =>
+            `- ${goal.label} (Target: ${goal.year})\n  ${
+              goal.description || "No description provided"
+            }`
+        )
+        .join("\n")
+    : "No financial goals set.";
+
   let fullContext = `
 User asked: "${message || "a financial question"}"
 
@@ -64,6 +77,9 @@ ${spendingSummary}
 
 ${metricsBlock}
 
+🎯 Financial Goals:
+${goalsSummary}
+
 🏦 Bank Accounts:
 ${accountSummary}
 
@@ -74,8 +90,9 @@ ${investmentSummary}
 ${liabilitySummary}
 ---
 
-Please help the user make sense of their current financial life.
-If they are overspending or falling behind, be kind and uplifting—but direct.
+Please help the user make sense of their current financial life and goals.
+If they ask about goals, provide specific advice related to their timeline and targets.
+If they are overspending or falling behind on goals, be kind and uplifting—but direct.
 If they're doing well, celebrate and motivate them to go further.
 Always speak with care, clarity but be encouraging at all times.
 `;
@@ -87,6 +104,15 @@ Always speak with care, clarity but be encouraging at all times.
   ) {
     fullContext +=
       "\n\nAnswer concisely. Give numbers first. Avoid emotional commentary unless user asks for help.\nHighlight any dollar amounts.";
+  }
+
+  // Add specific instructions for goal-related questions
+  if (
+    message &&
+    message.toLowerCase().match(/goal|target|timeline|plan|saving for/i)
+  ) {
+    fullContext +=
+      "\n\nFocus on their specific goals and timeline. Give actionable advice to help reach their targets.\nIf no goals are set, encourage setting some.";
   }
 
   const nudges = await getFinnySuggestions(fullContext);

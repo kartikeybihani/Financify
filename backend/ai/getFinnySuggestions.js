@@ -50,7 +50,7 @@ export async function getFinnySuggestions(contextString) {
         Authorization: `Bearer ${OPENAI_API_KEY}`,
       },
       body: JSON.stringify({
-        model: "gpt-4",
+        model: "gpt-4o-mini",
         temperature: 0.7,
         messages: [
           { role: "system", content: systemPrompt },
@@ -60,6 +60,7 @@ export async function getFinnySuggestions(contextString) {
     });
 
     const data = await response.json();
+    console.log("Data:", data);
     const text = data.choices[0].message.content;
 
     // Return the text directly as a single nudge instead of trying to parse JSON
