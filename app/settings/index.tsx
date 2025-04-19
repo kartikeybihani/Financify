@@ -1,42 +1,102 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
   SafeAreaView,
-  Share,
-  Dimensions,
-  Alert,
+  Image,
   Linking,
+  Share,
+  Switch,
+  Alert,
+  ScrollView,
 } from "react-native";
-import { Ionicons, MaterialIcons } from "@expo/vector-icons";
+import {
+  Ionicons,
+  MaterialIcons,
+  FontAwesome,
+  Entypo,
+  AntDesign,
+} from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter, useLocalSearchParams } from "expo-router";
-
-const { height } = Dimensions.get("window");
+import { supabase } from "../lib/supabase/supabase";
+import FeedbackModal from "../components/FeedbackModal";
 
 export default function SettingsScreen() {
   const router = useRouter();
   const { userName } = useLocalSearchParams();
+  const [userData, setUserData] = useState<any>(null);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+  const [darkModeEnabled, setDarkModeEnabled] = useState(true);
+  const [biometricsEnabled, setBiometricsEnabled] = useState(false);
+  const [showFeedbackModal, setShowFeedbackModal] = useState(false);
+
+  useEffect(() => {
+    fetchUserData();
+  }, []);
+
+  const fetchUserData = async () => {
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (user) {
+        setUserData(user);
+      }
+    } catch (error) {
+      console.error("Error fetching user data:", error);
+    }
+  };
+
+  const handleDisconnectBank = async () => {
+    Alert.alert(
+      "Disconnect & Clear Data",
+      "This will disconnect your bank accounts and clear app data. Your account will remain active.",
+      [
+        {
+          text: "Cancel",
+          style: "cancel",
+        },
+        {
+          text: "Disconnect & Clear",
+          style: "destructive",
+          onPress: async () => {
+            await AsyncStorage.removeItem("financialData");
+            await AsyncStorage.removeItem("bankConnections");
+            await AsyncStorage.removeItem("goals");
+            await AsyncStorage.removeItem("chatMessages");
+            Alert.alert(
+              "Success",
+              "Bank accounts have been disconnected and data cleared"
+            );
+          },
+        },
+      ]
+    );
+  };
 
   const handleLogout = async () => {
-    Alert.alert("Log Out", "Are you sure you want to log out?", [
-      { text: "Cancel", style: "cancel" },
+    Alert.alert("Confirm Logout", "Are you sure you want to log out?", [
       {
-        text: "Log Out",
+        text: "Cancel",
+        style: "cancel",
+      },
+      {
+        text: "Logout",
         style: "destructive",
         onPress: async () => {
+          await supabase.auth.signOut();
           await AsyncStorage.removeItem("accessToken");
-          await AsyncStorage.removeItem("financialData");
-          router.back();
+          router.replace("/(auth)/login");
         },
       },
     ]);
   };
 
   const handleCallFounder = () => {
-    // Implementation
+    Linking.openURL("tel:+1234567890");
   };
 
   const handleShareApp = async () => {
@@ -52,234 +112,267 @@ export default function SettingsScreen() {
   const renderSettingsItem = (
     icon: JSX.Element,
     title: string,
-    onPress: () => void
+    onPress: () => void,
+    showBorder = true,
+    rightElement?: JSX.Element
   ) => (
-    <TouchableOpacity style={[styles.settingsItem]} onPress={onPress}>
+    <TouchableOpacity
+      style={[styles.settingsItem, showBorder && styles.settingsItemBorder]}
+      onPress={onPress}
+    >
       <View style={styles.settingsItemLeft}>
         {icon}
         <Text style={styles.settingsItemText}>{title}</Text>
       </View>
-      <MaterialIcons name="chevron-right" size={24} color="#666" />
+      {rightElement || (
+        <MaterialIcons name="chevron-right" size={24} color="#666" />
+      )}
     </TouchableOpacity>
   );
 
-  return (
-    <View style={styles.overlay}>
-      <TouchableOpacity style={styles.backdrop} onPress={() => router.back()} />
-      <View style={styles.modalContainer}>
-        <SafeAreaView style={styles.container}>
-          <TouchableOpacity
-            style={styles.closeButton}
-            onPress={() => router.back()}
-          >
-            <Ionicons name="close" size={24} color="#fff" />
-          </TouchableOpacity>
+  const renderSwitchItem = (
+    icon: JSX.Element,
+    title: string,
+    value: boolean,
+    onValueChange: (value: boolean) => void,
+    showBorder = true
+  ) => (
+    <View
+      style={[styles.settingsItem, showBorder && styles.settingsItemBorder]}
+    >
+      <View style={styles.settingsItemLeft}>
+        {icon}
+        <Text style={styles.settingsItemText}>{title}</Text>
+      </View>
+      <Switch
+        value={value}
+        onValueChange={onValueChange}
+        trackColor={{ false: "#333", true: "#4A90E2" }}
+        thumbColor={value ? "#fff" : "#f4f3f4"}
+      />
+    </View>
+  );
 
-          <View style={styles.profileSection}>
-            <View style={styles.profileImageContainer}>
-              <Text style={styles.profileInitial}>
-                {String(userName)[0]?.toUpperCase()}
+  const renderSettingsGroup = (title: string, children: React.ReactNode) => (
+    <View style={styles.settingsGroup}>
+      <Text style={styles.sectionTitle}>{title}</Text>
+      <View style={styles.settingsGroupContent}>{children}</View>
+    </View>
+  );
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <ScrollView
+        style={styles.scrollView}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.headerContainer}>
+          <View style={styles.headerRow}>
+            <TouchableOpacity
+              style={styles.closeButton}
+              onPress={() => router.back()}
+            >
+              <Ionicons name="chevron-back-sharp" size={28} color="#fff" />
+            </TouchableOpacity>
+            <View style={styles.profileInfo}>
+              <Text style={styles.userName}>
+                {userData?.user_metadata?.full_name || userName}
+              </Text>
+              <Text style={styles.userEmail}>
+                {userData?.email || "Loading..."}
               </Text>
             </View>
-            <Text style={styles.userName}>{userName}</Text>
-            <Text style={styles.userEmail}>user@example.com</Text>
           </View>
+        </View>
 
-          <View style={styles.settingsSection}>
-            <View style={styles.settingsGroup}>
-              {renderSettingsItem(
-                <Ionicons
-                  name="person-outline"
-                  size={24}
-                  color="#4A90E2"
-                  style={styles.icon}
-                />,
-                "Personal Information",
-                () => {}
-              )}
-              {renderSettingsItem(
-                <MaterialIcons
-                  name="feedback"
-                  size={24}
-                  color="#4A90E2"
-                  style={styles.icon}
-                />,
-                "Give Feedback",
-                () => {}
-              )}
-            </View>
+        {renderSettingsGroup(
+          "Account",
+          <>
+            {renderSettingsItem(
+              <Ionicons name="person-outline" size={24} color="#4A90E2" />,
+              "Personal Information",
+              () =>
+                router.push({
+                  pathname: "/settings/personal-info",
+                  params: { userName },
+                }),
+              true
+            )}
+            {renderSettingsItem(
+              <Ionicons name="card-outline" size={24} color="#4A90E2" />,
+              "Connected Accounts",
+              () => {},
+              true
+            )}
+            {renderSwitchItem(
+              <Ionicons
+                name="notifications-outline"
+                size={24}
+                color="#4A90E2"
+              />,
+              "Push Notifications",
+              notificationsEnabled,
+              setNotificationsEnabled
+            )}
+            {renderSwitchItem(
+              <Ionicons name="finger-print" size={24} color="#4A90E2" />,
+              "Biometric Login",
+              biometricsEnabled,
+              setBiometricsEnabled,
+              false
+            )}
+          </>
+        )}
 
-            <View style={[styles.settingsGroup, { marginTop: 16 }]}>
-              {renderSettingsItem(
-                <Ionicons
-                  name="call-outline"
-                  size={24}
-                  color="#4A90E2"
-                  style={styles.icon}
-                />,
-                "Call the Founder",
-                handleCallFounder
-              )}
-              {renderSettingsItem(
-                <Ionicons
-                  name="share-outline"
-                  size={24}
-                  color="#4A90E2"
-                  style={styles.icon}
-                />,
-                "Share the App",
-                handleShareApp
-              )}
-            </View>
-          </View>
+        {renderSettingsGroup(
+          "Support",
+          <>
+            {renderSettingsItem(
+              <MaterialIcons name="feedback" size={24} color="#4A90E2" />,
+              "Give Feedback",
+              () => setShowFeedbackModal(true),
+              true
+            )}
+            {renderSettingsItem(
+              <Ionicons name="call-outline" size={24} color="#4A90E2" />,
+              "Call Founder",
+              handleCallFounder,
+              true
+            )}
+            {renderSettingsItem(
+              <Ionicons name="share-outline" size={24} color="#4A90E2" />,
+              "Share the App",
+              handleShareApp,
+              false
+            )}
+          </>
+        )}
 
-          <View style={styles.logoutSection}>
-            <TouchableOpacity
-              style={styles.logoutButton}
-              onPress={handleLogout}
-            >
-              <View style={styles.settingsItemLeft}>
-                <MaterialIcons
-                  name="logout"
-                  size={24}
-                  color="#4A90E2"
-                  style={styles.icon}
-                />
-                <Text style={styles.settingsItemText}>Log Out</Text>
-              </View>
-              <MaterialIcons name="chevron-right" size={24} color="#666" />
-            </TouchableOpacity>
-          </View>
+        {renderSettingsGroup(
+          "Data",
+          <>
+            {renderSettingsItem(
+              <Ionicons name="wallet-outline" size={24} color="#ff6b6b" />,
+              "Disconnect & Clear Data",
+              handleDisconnectBank,
+              true
+            )}
+            {renderSettingsItem(
+              <MaterialIcons name="logout" size={24} color="#ff6b6b" />,
+              "Log Out",
+              handleLogout,
+              false
+            )}
+          </>
+        )}
 
-          <View style={styles.footer}>
-            <Text style={styles.version}>Version 1.0.0</Text>
-          </View>
-        </SafeAreaView>
-      </View>
-    </View>
+        <View style={styles.footer}>
+          <Text style={styles.version}>Version 1.0.0</Text>
+          <Text style={styles.copyright}>© 2025 Financify</Text>
+        </View>
+      </ScrollView>
+
+      <FeedbackModal
+        visible={showFeedbackModal}
+        onClose={() => setShowFeedbackModal(false)}
+        userName={String(userName)}
+      />
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    justifyContent: "flex-end",
-  },
-  backdrop: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "black",
-  },
-  modalContainer: {
-    backgroundColor: "#121212",
-    height: height * 0.95,
-    paddingTop: 20,
-  },
   container: {
     flex: 1,
+    backgroundColor: "#121212",
   },
-  closeButton: {
-    position: "absolute",
-    top: 10,
-    right: 20,
-    zIndex: 1,
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: "#2c2c2c",
-    justifyContent: "center",
-    alignItems: "center",
+  scrollView: {
+    flex: 1,
   },
-  profileSection: {
-    alignItems: "center",
-    paddingVertical: 30,
+  headerContainer: {
+    paddingTop: 10,
+    paddingBottom: 16,
     borderBottomWidth: 1,
     borderBottomColor: "#2c2c2c",
   },
-  profileImageContainer: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: "#4A90E2",
+  headerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingTop: 8,
+  },
+  closeButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    // backgroundColor: "rgba(255, 255, 255, 0.1)",
     justifyContent: "center",
     alignItems: "center",
-    marginBottom: 15,
-    shadowColor: "#4A90E2",
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.3,
-    shadowRadius: 4.65,
-    elevation: 8,
   },
-  profileInitial: {
-    fontSize: 32,
-    fontWeight: "bold",
-    color: "#fff",
+  profileInfo: {
+    marginLeft: 16,
+    flex: 1,
   },
   userName: {
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: "600",
     color: "#fff",
-    marginBottom: 5,
+    letterSpacing: 0.5,
   },
   userEmail: {
-    fontSize: 16,
+    fontSize: 13,
     color: "#888",
-  },
-  settingsSection: {
-    paddingHorizontal: 16,
-    paddingTop: 20,
+    letterSpacing: 0.2,
+    marginTop: 2,
   },
   settingsGroup: {
-    backgroundColor: "#1E1E1E",
-    borderRadius: 16,
+    marginTop: 24,
+    paddingHorizontal: 16,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#888",
+    marginBottom: 12,
+    marginLeft: 4,
+  },
+  settingsGroupContent: {
+    backgroundColor: "rgba(255, 255, 255, 0.05)",
+    borderRadius: 12,
     overflow: "hidden",
   },
   settingsItem: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingVertical: 15,
-    paddingHorizontal: 20,
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+  },
+  settingsItemBorder: {
     borderBottomWidth: 1,
-    borderBottomColor: "#2c2c2c",
+    borderBottomColor: "rgba(255, 255, 255, 0.1)",
   },
   settingsItemLeft: {
     flexDirection: "row",
     alignItems: "center",
   },
-  icon: {
-    marginRight: 15,
-  },
   settingsItemText: {
     fontSize: 16,
     color: "#fff",
-  },
-  logoutSection: {
-    position: "absolute",
-    bottom: 60,
-    left: 0,
-    right: 0,
-    paddingHorizontal: 16,
-  },
-  logoutButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    backgroundColor: "#1E1E1E",
-    paddingVertical: 15,
-    paddingHorizontal: 20,
-    borderRadius: 16,
+    marginLeft: 15,
   },
   footer: {
-    position: "absolute",
-    bottom: 20,
-    width: "100%",
+    paddingVertical: 20,
     alignItems: "center",
+    marginTop: 40,
   },
   version: {
     fontSize: 14,
+    color: "#666",
+    marginBottom: 4,
+  },
+  copyright: {
+    fontSize: 12,
     color: "#666",
   },
 });

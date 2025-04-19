@@ -881,5 +881,32 @@
       "Couldn't generate nudges right now. Try again later.",
       "Make sure your spending is up to date in the app!"
     ]
+  },
+  {
+    "timestamp": "2025-04-18T20:23:54.561Z",
+    "message": "Explain FIRE to me",
+    "context": "\nUser asked: \"Explain FIRE to me\"\n\nTone: STRESSED\n\n---\n📊 Financial Summary:\nUser earned approx. $504.22 this month and spent $17999.46.\n  Top spending categories: Transfer ($13700.00), Payment ($2103.50), Food and Drink ($1105.73).\n  Recurring transactions detected: 0.\n  Subscriptions: None.\n  Net savings: $-17495.24.\n\n\n📌 Key Metrics:\n- Total Income: $504.22\n- Total Spent: $17999.46\n- Net Savings: $-17495.24\n- Top Categories: Transfer ($13700.00), Payment ($2103.50), Food and Drink ($1105.73)\n- Subscriptions: 0\n- Recurring Payments: 0\n\n\n🎯 Financial Goals:\nNo financial goals set.\n\n🏦 Bank Accounts:\nPlaid Checking: $110\nPlaid Saving: $210\nPlaid CD: $1000\nPlaid Credit Card: $410\nPlaid Money Market: $43200\nPlaid 401k: $23631.9805\nPlaid Cash Management: $12060\n\n📈 Investments:\n$2.11 in KDwjlXj1Rqt58dVvmzRguxJybmyQL8FgeWWAy\n$20.84 in NDVQrXQoqzt5v3bAe8qRt4A7mK7wvZCLEBBJk\n$115.57268 in 9EWp9Xpqk1ua6DyXQb89ikMARWA6eyUzAbPMg\n$430 in lngLy3Le7vflLnAzKqwZs19l6bl8P5H1jG9Zz\n$636.309 in JDdP7XPMklt5vwPmDN45t3KAoWAPmjtpaW7DP\n$948.08 in QDQ13y1Ezxt51QbDb6A8cjk9EK978our9NaAM\n$1373.6865 in nnmo8doZ4lfKNEDe3mPJipLGkaGw3jfPrpxoN\n$1855.875 in MD9eKXeplrt5yKRlzLqXiavwb6wrdxUb3wdnM\n$7397.49 in eW4jmnjd6AtjxXVrjmj6SX1dNEdZp3Cy8RnRQ\n$12345.67 in d6ePmbPxgWCWmMVv66q9iPV94n91vMtov5Are\n\n💳 Liabilities:\nNo liabilities.\n---\n\nPlease help the user make sense of their current financial life and goals.\nIf they ask about goals, provide specific advice related to their timeline and targets.\nIf they are overspending or falling behind on goals, be kind and uplifting—but direct.\nIf they're doing well, celebrate and motivate them to go further.\nAlways speak with care, clarity but be encouraging at all times.\n",
+    "nudges": [
+      "Couldn't generate nudges right now. Try again later.",
+      "Make sure your spending is up to date in the app!"
+    ]
+  },
+  {
+    "timestamp": "2025-04-19T01:03:04.790Z",
+    "message": "How can I save more money?",
+    "context": "\nUser asked: \"How can I save more money?\"\n\nTone: STRESSED\n\n---\n📊 Financial Summary:\nUser earned approx. $504.22 this month and spent $11149.46.\n  Top spending categories: Transfer ($6850.00), Payment ($2103.50), Food and Drink ($1105.73).\n  Recurring transactions detected: 0.\n  Subscriptions: None.\n  Net savings: $-10645.24.\n\n\n📌 Key Metrics:\n- Total Income: $504.22\n- Total Spent: $11149.46\n- Net Savings: $-10645.24\n- Top Categories: Transfer ($6850.00), Payment ($2103.50), Food and Drink ($1105.73)\n- Subscriptions: 0\n- Recurring Payments: 0\n\n\n🎯 Financial Goals:\nNo financial goals set.\n\n🏦 Bank Accounts:\nPlaid Checking: $110\nPlaid Saving: $210\nPlaid CD: $1000\nPlaid Credit Card: $410\nPlaid Money Market: $43200\nPlaid 401k: $23631.9805\nPlaid Cash Management: $12060\n\n📈 Investments:\n$2.11 in KDwjlXj1Rqt58dVvmzRguxJybmyQL8FgeWWAy\n$20.84 in NDVQrXQoqzt5v3bAe8qRt4A7mK7wvZCLEBBJk\n$115.57268 in 9EWp9Xpqk1ua6DyXQb89ikMARWA6eyUzAbPMg\n$430 in lngLy3Le7vflLnAzKqwZs19l6bl8P5H1jG9Zz\n$636.309 in JDdP7XPMklt5vwPmDN45t3KAoWAPmjtpaW7DP\n$948.08 in QDQ13y1Ezxt51QbDb6A8cjk9EK978our9NaAM\n$1373.6865 in nnmo8doZ4lfKNEDe3mPJipLGkaGw3jfPrpxoN\n$1855.875 in MD9eKXeplrt5yKRlzLqXiavwb6wrdxUb3wdnM\n$7397.49 in eW4jmnjd6AtjxXVrjmj6SX1dNEdZp3Cy8RnRQ\n$12345.67 in d6ePmbPxgWCWmMVv66q9iPV94n91vMtov5Are\n\n💳 Liabilities:\nNo liabilities.\n---\n\nPlease help the user make sense of their current financial life and goals.\nIf they ask about goals, provide specific advice related to their timeline and targets.\nIf they are overspending or falling behind on goals, be kind and uplifting—but direct.\nIf they're doing well, celebrate and motivate them to go further.\nAlways speak with care, clarity but be encouraging at all times.\n",
+    "nudges": [
+      "Couldn't generate nudges right now. Try again later.",
+      "Make sure your spending is up to date in the app!"
+    ]
+  },
+  {
+    "timestamp": "2025-04-19T08:03:12.801Z",
+    "message": "How can I save more money?",
+    "context": "\nUser asked: \"How can I save more money?\"\n\nTone: STRESSED\n\n---\n📊 Financial Summary:\nUser earned approx. $504.22 this month and spent $11179.86.\n  Top spending categories: Transfer ($6850.00), Payment ($2128.50), Food and Drink ($1105.73).\n  Recurring transactions detected: 0.\n  Subscriptions: None.\n  Net savings: $-10675.64.\n\n\n📌 Key Metrics:\n- Total Income: $504.22\n- Total Spent: $11179.86\n- Net Savings: $-10675.64\n- Top Categories: Transfer ($6850.00), Payment ($2128.50), Food and Drink ($1105.73)\n- Subscriptions: 0\n- Recurring Payments: 0\n\n\n🎯 Financial Goals:\nNo financial goals set.\n\n🏦 Bank Accounts:\nPlaid Checking: $110\nPlaid Saving: $210\nPlaid CD: $1000\nPlaid Credit Card: $410\nPlaid Money Market: $43200\nPlaid 401k: $23631.9805\nPlaid Cash Management: $12060\n\n📈 Investments:\n$2.11 in KDwjlXj1Rqt58dVvmzRguxJybmyQL8FgeWWAy\n$20.84 in NDVQrXQoqzt5v3bAe8qRt4A7mK7wvZCLEBBJk\n$115.57268 in 9EWp9Xpqk1ua6DyXQb89ikMARWA6eyUzAbPMg\n$430 in lngLy3Le7vflLnAzKqwZs19l6bl8P5H1jG9Zz\n$636.309 in JDdP7XPMklt5vwPmDN45t3KAoWAPmjtpaW7DP\n$948.08 in QDQ13y1Ezxt51QbDb6A8cjk9EK978our9NaAM\n$1373.6865 in nnmo8doZ4lfKNEDe3mPJipLGkaGw3jfPrpxoN\n$1855.875 in MD9eKXeplrt5yKRlzLqXiavwb6wrdxUb3wdnM\n$7397.49 in eW4jmnjd6AtjxXVrjmj6SX1dNEdZp3Cy8RnRQ\n$12345.67 in d6ePmbPxgWCWmMVv66q9iPV94n91vMtov5Are\n\n💳 Liabilities:\nNo liabilities.\n---\n\nPlease help the user make sense of their current financial life and goals.\nIf they ask about goals, provide specific advice related to their timeline and targets.\nIf they are overspending or falling behind on goals, be kind and uplifting—but direct.\nIf they're doing well, celebrate and motivate them to go further.\nAlways speak with care, clarity but be encouraging at all times.\n",
+    "nudges": [
+      "Couldn't generate nudges right now. Try again later.",
+      "Make sure your spending is up to date in the app!"
+    ]
   }
 ]

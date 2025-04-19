@@ -12,7 +12,7 @@ import {
   RefreshControl,
   DeviceEventEmitter,
 } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+import { Feather, Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { styles } from "../styles/homeStyles";
 import {
@@ -178,7 +178,7 @@ export default function HomeScreen() {
           router.push({ pathname: "/settings", params: { userName } })
         }
       >
-        <Ionicons name="menu" size={26} color="#fff" />
+        <Feather name="menu" size={28} color="#fff" />
       </TouchableOpacity>
       <View style={styles.headerTextContainer}>
         <Text style={styles.greetingText}>Hi {userName}</Text>

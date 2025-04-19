@@ -27,43 +27,66 @@ import { useGoals } from "../hooks/useGoals";
 import { Timeline as TimelineType } from "../types/finny";
 import styles from "../styles/finnyStyles";
 
-// Types
-interface TimelineItem {
-  id?: string;
-  year: string;
-  label: string;
-  description: string;
-}
-
 interface Timeline {
   month: string;
   year: string;
 }
 
-interface ChatMessage {
-  id: string;
-  sender: "user" | "finny";
-  text: string;
-  timestamp?: number;
-}
-
 // Merge the new styles with the existing styles import
 const mergedStyles = StyleSheet.create({
   ...styles,
-  clearChatButton: {
-    marginLeft: 10,
-    padding: 5,
-    backgroundColor: "#f00",
-    borderRadius: 5,
+  headerContainer: {
+    position: "relative",
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    paddingVertical: 16,
+    backgroundColor: "#121212",
   },
-  clearChatText: {
-    color: "#fff",
-    fontWeight: "bold",
+  titleContainer: {
+    flexDirection: "row",
+    alignItems: "center",
   },
-  clearChatIcon: {
+  clearButton: {
     position: "absolute",
-    top: 10,
-    right: 10,
+    right: 16,
+    top: "50%",
+    transform: [{ translateY: -12 }],
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "rgba(255, 59, 48, 0.1)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 59, 48, 0.2)",
+  },
+  inputBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#1f1f1f",
+    borderRadius: 25,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    marginHorizontal: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: "rgba(74, 144, 226, 0.2)",
+  },
+  sendButton: {
+    backgroundColor: "#4A90E2",
+    width: 35,
+    height: 35,
+    borderRadius: 17.5,
+    justifyContent: "center",
+    alignItems: "center",
+    marginLeft: 10,
+  },
+  input: {
+    flex: 1,
+    fontSize: 15,
+    color: "#fff",
+    paddingVertical: 8,
   },
 });
 
@@ -250,21 +273,23 @@ export default function FinnyScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <View style={mergedStyles.headerCentered}>
-        <Ionicons
-          name="sparkles"
-          size={24}
-          color="#4A90E2"
-          style={{ marginRight: 8 }}
-        />
-        <Text style={mergedStyles.headerTitle}>Finny</Text>
-        <Ionicons
-          name="trash-bin"
-          size={24}
-          color="#f00"
-          style={mergedStyles.clearChatIcon}
+      <View style={mergedStyles.headerContainer}>
+        <View style={mergedStyles.titleContainer}>
+          <Ionicons
+            name="sparkles"
+            size={24}
+            color="#4A90E2"
+            style={{ marginRight: 8 }}
+          />
+          <Text style={mergedStyles.headerTitle}>Finny</Text>
+        </View>
+        <TouchableOpacity
+          style={mergedStyles.clearButton}
           onPress={clearChat}
-        />
+          activeOpacity={0.7}
+        >
+          <Ionicons name="trash-outline" size={16} color="#FF3B30" />
+        </TouchableOpacity>
       </View>
 
       <View style={styles.tabSwitcher}>
@@ -340,17 +365,21 @@ export default function FinnyScreen() {
           </View>
 
           <View style={styles.inputBarContainer}>
-            <View style={styles.inputBar}>
+            <View style={mergedStyles.inputBar}>
               <TextInput
                 placeholder="Ask Finny anything about money..."
                 placeholderTextColor="#888"
-                style={styles.input}
+                style={mergedStyles.input}
                 value={userInput}
                 onChangeText={setUserInput}
                 onSubmitEditing={() => handleSend()}
               />
-              <TouchableOpacity onPress={() => handleSend()}>
-                <Ionicons name="send" size={22} color="#4A90E2" />
+              <TouchableOpacity
+                style={mergedStyles.sendButton}
+                onPress={() => handleSend()}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="send" size={18} color="#fff" />
               </TouchableOpacity>
             </View>
           </View>
