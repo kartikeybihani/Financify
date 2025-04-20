@@ -12,6 +12,7 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 import { supabase } from "../lib/supabase/supabase";
 import { useRouter } from "expo-router";
 
@@ -73,93 +74,113 @@ export default function LoginScreen() {
       behavior={Platform.OS === "ios" ? "padding" : "height"}
       style={styles.container}
     >
-      <View style={styles.contentContainer}>
-        <Image
-          source={require("../assets/main1.png")}
-          style={styles.logo}
-          resizeMode="contain"
-        />
+      <LinearGradient
+        colors={["#1A1A2E", "#16213E", "#0D1117"]}
+        locations={[0, 0.5, 1]}
+        style={styles.gradientBackground}
+      >
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={() => router.back()}
+        >
+          <Ionicons name="arrow-back" size={24} color="#fff" />
+        </TouchableOpacity>
 
-        <Text style={styles.title}>Welcome Back</Text>
-        <Text style={styles.subtitle}>Sign in to continue</Text>
-
-        <View style={styles.inputContainer}>
-          <Text style={styles.label}>Email</Text>
-          <TextInput
-            style={[styles.input, errors.email && styles.inputError]}
-            placeholder="Enter your email"
-            placeholderTextColor="#666"
-            onChangeText={setEmail}
-            autoCapitalize="none"
-            keyboardType="email-address"
-            autoComplete="email"
+        <View style={styles.contentContainer}>
+          <Image
+            source={require("../assets/main1.png")}
+            style={styles.logo}
+            resizeMode="contain"
           />
-          {errors.email ? (
-            <Text style={styles.errorText}>{errors.email}</Text>
-          ) : null}
 
-          <Text style={styles.label}>Password</Text>
-          <View
-            style={[
-              styles.passwordContainer,
-              errors.password && styles.inputError,
-            ]}
-          >
+          <Text style={styles.title}>Welcome Back</Text>
+          <Text style={styles.subtitle}>Sign in to continue</Text>
+
+          <View style={styles.inputContainer}>
+            <Text style={styles.label}>Email</Text>
             <TextInput
-              style={styles.passwordInput}
-              placeholder="Enter your password"
-              placeholderTextColor="#666"
-              secureTextEntry={!showPassword}
-              onChangeText={setPassword}
+              style={[styles.input, errors.email && styles.inputError]}
+              placeholder="Enter your email"
+              placeholderTextColor="rgba(255, 255, 255, 0.4)"
+              onChangeText={setEmail}
+              autoCapitalize="none"
+              keyboardType="email-address"
+              autoComplete="email"
             />
-            <TouchableOpacity
-              style={styles.passwordToggle}
-              onPress={() => setShowPassword(!showPassword)}
+            {errors.email ? (
+              <Text style={styles.errorText}>{errors.email}</Text>
+            ) : null}
+
+            <Text style={styles.label}>Password</Text>
+            <View
+              style={[
+                styles.passwordContainer,
+                errors.password && styles.inputError,
+              ]}
             >
-              <Ionicons
-                name={showPassword ? "eye-off" : "eye"}
-                size={24}
-                color="#666"
+              <TextInput
+                style={styles.passwordInput}
+                placeholder="Enter your password"
+                placeholderTextColor="rgba(255, 255, 255, 0.4)"
+                secureTextEntry={!showPassword}
+                onChangeText={setPassword}
               />
+              <TouchableOpacity
+                style={styles.passwordToggle}
+                onPress={() => setShowPassword(!showPassword)}
+              >
+                <Ionicons
+                  name={showPassword ? "eye-off" : "eye"}
+                  size={24}
+                  color="rgba(255, 255, 255, 0.4)"
+                />
+              </TouchableOpacity>
+            </View>
+            {errors.password ? (
+              <Text style={styles.errorText}>{errors.password}</Text>
+            ) : null}
+
+            <TouchableOpacity style={styles.forgotPassword}>
+              <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
             </TouchableOpacity>
           </View>
-          {errors.password ? (
-            <Text style={styles.errorText}>{errors.password}</Text>
-          ) : null}
 
-          <TouchableOpacity style={styles.forgotPassword}>
-            <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
+          <TouchableOpacity
+            style={[styles.button, loading && styles.buttonDisabled]}
+            onPress={handleLogin}
+            disabled={loading}
+          >
+            <LinearGradient
+              colors={["#4A90E2", "#5DA0F2"]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.gradientButton}
+            >
+              {loading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.buttonText}>Login</Text>
+              )}
+            </LinearGradient>
           </TouchableOpacity>
-        </View>
 
-        <TouchableOpacity
-          style={[styles.button, loading && styles.buttonDisabled]}
-          onPress={handleLogin}
-          disabled={loading}
-        >
-          {loading ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.buttonText}>Login</Text>
-          )}
-        </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => router.replace("../signup")}
+            style={styles.linkContainer}
+          >
+            <Text style={styles.linkText}>
+              Don't have an account?{" "}
+              <Text style={styles.linkTextBold}>Sign up</Text>
+            </Text>
+          </TouchableOpacity>
 
-        <TouchableOpacity
-          onPress={() => router.replace("../signup")}
-          style={styles.linkContainer}
-        >
-          <Text style={styles.linkText}>
-            Don't have an account?{" "}
-            <Text style={styles.linkTextBold}>Sign up</Text>
+          <Text style={styles.termsText}>
+            By logging in, you agree to our{" "}
+            <Text style={styles.termsLink}>Terms of Service</Text> and{" "}
+            <Text style={styles.termsLink}>Privacy Policy</Text>
           </Text>
-        </TouchableOpacity>
-
-        <Text style={styles.termsText}>
-          By logging in, you agree to our{" "}
-          <Text style={styles.termsLink}>Terms of Service</Text> and{" "}
-          <Text style={styles.termsLink}>Privacy Policy</Text>
-        </Text>
-      </View>
+        </View>
+      </LinearGradient>
     </KeyboardAvoidingView>
   );
 }
@@ -167,12 +188,15 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#121212",
+  },
+  gradientBackground: {
+    flex: 1,
   },
   contentContainer: {
     flex: 1,
     justifyContent: "center",
     padding: 24,
+    paddingTop: 100,
   },
   logo: {
     width: 100,
@@ -188,7 +212,7 @@ const styles = StyleSheet.create({
   },
   subtitle: {
     fontSize: 16,
-    color: "#666",
+    color: "rgba(255, 255, 255, 0.6)",
     textAlign: "center",
     marginTop: 8,
     marginBottom: 32,
@@ -202,22 +226,22 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   input: {
-    backgroundColor: "#1f1f1f",
+    backgroundColor: "rgba(255, 255, 255, 0.06)",
     color: "#fff",
     padding: 16,
     borderRadius: 6,
     marginBottom: 18,
     fontSize: 16,
     borderWidth: 1,
-    borderColor: "#333",
+    borderColor: "rgba(255, 255, 255, 0.1)",
   },
   passwordContainer: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#1f1f1f",
+    backgroundColor: "rgba(255, 255, 255, 0.06)",
     borderRadius: 6,
     borderWidth: 1,
-    borderColor: "#333",
+    borderColor: "rgba(255, 255, 255, 0.1)",
     marginBottom: 8,
   },
   passwordInput: {
@@ -246,11 +270,13 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   button: {
-    backgroundColor: "#4A90E2",
-    padding: 16,
     borderRadius: 6,
-    alignItems: "center",
+    overflow: "hidden",
     marginTop: 8,
+  },
+  gradientButton: {
+    padding: 16,
+    alignItems: "center",
   },
   buttonDisabled: {
     opacity: 0.7,
@@ -265,7 +291,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   linkText: {
-    color: "#666",
+    color: "rgba(255, 255, 255, 0.6)",
     fontSize: 14,
   },
   linkTextBold: {
@@ -273,7 +299,7 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
   },
   termsText: {
-    color: "#666",
+    color: "rgba(255, 255, 255, 0.6)",
     fontSize: 12,
     textAlign: "center",
     marginTop: 24,
@@ -283,5 +309,14 @@ const styles = StyleSheet.create({
   termsLink: {
     color: "#4A90E2",
     textDecorationLine: "underline",
+  },
+  backButton: {
+    position: "absolute",
+    top: 60,
+    left: 24,
+    zIndex: 10,
+    width: 40,
+    height: 40,
+    justifyContent: "center",
   },
 });

@@ -90,6 +90,7 @@ export default function SettingsScreen() {
           await supabase.auth.signOut();
           await AsyncStorage.removeItem("accessToken");
           router.replace("/(auth)/login");
+          console.log("User logged out");
         },
       },
     ]);

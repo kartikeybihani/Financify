@@ -14,6 +14,7 @@ import {
   Dimensions,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 import { supabase } from "../lib/supabase/supabase";
 import { useRouter } from "expo-router";
 
@@ -118,11 +119,12 @@ export default function SignupScreen() {
     const { error } = await supabase.auth.signUp({
       email,
       password,
-      options: {
-        data: {
-          age,
-          phone_number: phone.replace(/[^\d]/g, ""),
-        },
+    });
+
+    await supabase.auth.updateUser({
+      data: {
+        age,
+        phone_number: phone.replace(/[^\d]/g, ""),
       },
     });
 
@@ -158,122 +160,142 @@ export default function SignupScreen() {
       behavior={Platform.OS === "ios" ? "padding" : "height"}
       style={styles.container}
     >
-      <ScrollView contentContainerStyle={styles.scrollContainer}>
-        <View style={styles.contentContainer}>
-          <Image
-            source={require("../assets/main1.png")}
-            style={styles.logo}
-            resizeMode="contain"
-          />
+      <LinearGradient
+        colors={["#1A1A2E", "#16213E", "#0D1117"]}
+        locations={[0, 0.5, 1]}
+        style={styles.gradientBackground}
+      >
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={() => router.back()}
+        >
+          <Ionicons name="arrow-back" size={24} color="#fff" />
+        </TouchableOpacity>
 
-          <Text style={styles.title}>Create Account</Text>
-          <Text style={styles.subtitle}>Join us today!</Text>
-
-          <View style={styles.inputContainer}>
-            <Text style={styles.label}>Email</Text>
-            <TextInput
-              style={[styles.input, errors.email && styles.inputError]}
-              placeholder="Enter your email"
-              placeholderTextColor="#666"
-              onChangeText={setEmail}
-              autoCapitalize="none"
-              keyboardType="email-address"
-              autoComplete="email"
+        <ScrollView contentContainerStyle={styles.scrollContainer}>
+          <View style={styles.contentContainer}>
+            <Image
+              source={require("../assets/main1.png")}
+              style={styles.logo}
+              resizeMode="contain"
             />
-            {errors.email ? (
-              <Text style={styles.errorText}>{errors.email}</Text>
-            ) : null}
 
-            <Text style={styles.label}>Password</Text>
-            <View style={styles.passwordContainer}>
+            <Text style={styles.title}>Create Account</Text>
+            <Text style={styles.subtitle}>Join us today!</Text>
+
+            <View style={styles.inputContainer}>
+              <Text style={styles.label}>Email</Text>
               <TextInput
-                style={[
-                  styles.passwordInput,
-                  errors.password && styles.inputError,
-                ]}
-                placeholder="Create a password"
+                style={[styles.input, errors.email && styles.inputError]}
+                placeholder="Enter your email"
                 placeholderTextColor="#666"
-                secureTextEntry={!showPassword}
-                onChangeText={setPassword}
+                onChangeText={setEmail}
+                autoCapitalize="none"
+                keyboardType="email-address"
+                autoComplete="email"
               />
-              <TouchableOpacity
-                style={styles.passwordToggle}
-                onPress={() => setShowPassword(!showPassword)}
+              {errors.email ? (
+                <Text style={styles.errorText}>{errors.email}</Text>
+              ) : null}
+
+              <Text style={styles.label}>Password</Text>
+              <View style={styles.passwordContainer}>
+                <TextInput
+                  style={[
+                    styles.passwordInput,
+                    errors.password && styles.inputError,
+                  ]}
+                  placeholder="Create a password"
+                  placeholderTextColor="#666"
+                  secureTextEntry={!showPassword}
+                  onChangeText={setPassword}
+                />
+                <TouchableOpacity
+                  style={styles.passwordToggle}
+                  onPress={() => setShowPassword(!showPassword)}
+                >
+                  <Ionicons
+                    name={showPassword ? "eye-off" : "eye"}
+                    size={24}
+                    color="#666"
+                  />
+                </TouchableOpacity>
+              </View>
+              {errors.password ? (
+                <Text style={styles.errorText}>{errors.password}</Text>
+              ) : null}
+
+              <View style={styles.rowContainer}>
+                <View style={styles.ageColumn}>
+                  <Text style={styles.label}>Age</Text>
+                  <TextInput
+                    style={[styles.ageInput, errors.age && styles.inputError]}
+                    placeholder="24"
+                    placeholderTextColor="#666"
+                    keyboardType="numeric"
+                    onChangeText={handleAgeChange}
+                    value={age}
+                    maxLength={3}
+                  />
+                  {errors.age ? (
+                    <Text style={styles.errorText}>{errors.age}</Text>
+                  ) : null}
+                </View>
+
+                <View style={styles.phoneColumn}>
+                  <Text style={styles.label}>Phone Number</Text>
+                  <TextInput
+                    style={[styles.input, errors.phone && styles.inputError]}
+                    placeholder="(123)-456-7890"
+                    placeholderTextColor="#666"
+                    keyboardType="phone-pad"
+                    onChangeText={handlePhoneChange}
+                    value={phone}
+                  />
+                  {errors.phone ? (
+                    <Text style={styles.errorText}>{errors.phone}</Text>
+                  ) : null}
+                </View>
+              </View>
+            </View>
+
+            <TouchableOpacity
+              style={[styles.button, loading && styles.buttonDisabled]}
+              onPress={handleSignUp}
+              disabled={loading}
+            >
+              <LinearGradient
+                colors={["#4A90E2", "#5DA0F2"]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.gradientButton}
               >
-                <Ionicons
-                  name={showPassword ? "eye-off" : "eye"}
-                  size={24}
-                  color="#666"
-                />
-              </TouchableOpacity>
-            </View>
-            {errors.password ? (
-              <Text style={styles.errorText}>{errors.password}</Text>
-            ) : null}
+                {loading ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.buttonText}>Create Account</Text>
+                )}
+              </LinearGradient>
+            </TouchableOpacity>
 
-            <View style={styles.rowContainer}>
-              <View style={styles.ageColumn}>
-                <Text style={styles.label}>Age</Text>
-                <TextInput
-                  style={[styles.ageInput, errors.age && styles.inputError]}
-                  placeholder="24"
-                  placeholderTextColor="#666"
-                  keyboardType="numeric"
-                  onChangeText={handleAgeChange}
-                  value={age}
-                  maxLength={3}
-                />
-                {errors.age ? (
-                  <Text style={styles.errorText}>{errors.age}</Text>
-                ) : null}
-              </View>
+            <TouchableOpacity
+              onPress={() => router.replace("../login")}
+              style={styles.linkContainer}
+            >
+              <Text style={styles.linkText}>
+                Already have an account?{" "}
+                <Text style={styles.linkTextBold}>Login</Text>
+              </Text>
+            </TouchableOpacity>
 
-              <View style={styles.phoneColumn}>
-                <Text style={styles.label}>Phone Number</Text>
-                <TextInput
-                  style={[styles.input, errors.phone && styles.inputError]}
-                  placeholder="(123)-456-7890"
-                  placeholderTextColor="#666"
-                  keyboardType="phone-pad"
-                  onChangeText={handlePhoneChange}
-                  value={phone}
-                />
-                {errors.phone ? (
-                  <Text style={styles.errorText}>{errors.phone}</Text>
-                ) : null}
-              </View>
-            </View>
-          </View>
-
-          <TouchableOpacity
-            style={[styles.button, loading && styles.buttonDisabled]}
-            onPress={handleSignUp}
-            disabled={loading}
-          >
-            {loading ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.buttonText}>Create Account</Text>
-            )}
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            onPress={() => router.replace("../login")}
-            style={styles.linkContainer}
-          >
-            <Text style={styles.linkText}>
-              Already have an account?{" "}
-              <Text style={styles.linkTextBold}>Login</Text>
+            <Text style={styles.termsText}>
+              By creating an account, you agree to our{" "}
+              <Text style={styles.termsLink}>Terms of Service</Text> and{" "}
+              <Text style={styles.termsLink}>Privacy Policy</Text>
             </Text>
-          </TouchableOpacity>
-
-          <Text style={styles.termsText}>
-            By creating an account, you agree to our{" "}
-            <Text style={styles.termsLink}>Terms of Service</Text> and{" "}
-            <Text style={styles.termsLink}>Privacy Policy</Text>
-          </Text>
-        </View>
-      </ScrollView>
+          </View>
+        </ScrollView>
+      </LinearGradient>
     </KeyboardAvoidingView>
   );
 }
@@ -281,7 +303,9 @@ export default function SignupScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#121212",
+  },
+  gradientBackground: {
+    flex: 1,
   },
   scrollContainer: {
     flexGrow: 1,
@@ -290,6 +314,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     padding: 24,
+    paddingTop: 100,
   },
   logo: {
     width: 100,
@@ -305,7 +330,7 @@ const styles = StyleSheet.create({
   },
   subtitle: {
     fontSize: 16,
-    color: "#666",
+    color: "rgba(255, 255, 255, 0.6)",
     textAlign: "center",
     marginTop: 8,
     marginBottom: 32,
@@ -331,22 +356,22 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   input: {
-    backgroundColor: "#1f1f1f",
+    backgroundColor: "rgba(255, 255, 255, 0.06)",
     color: "#fff",
     padding: 16,
     borderRadius: 6,
     marginBottom: 20,
     fontSize: 16,
     borderWidth: 1,
-    borderColor: "#333",
+    borderColor: "rgba(255, 255, 255, 0.1)",
   },
   passwordContainer: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#1f1f1f",
+    backgroundColor: "rgba(255, 255, 255, 0.06)",
     borderRadius: 6,
     borderWidth: 1,
-    borderColor: "#333",
+    borderColor: "rgba(255, 255, 255, 0.1)",
     marginBottom: 8,
   },
   passwordInput: {
@@ -359,14 +384,14 @@ const styles = StyleSheet.create({
     padding: 10,
   },
   ageInput: {
-    backgroundColor: "#1f1f1f",
+    backgroundColor: "rgba(255, 255, 255, 0.06)",
     color: "#fff",
     padding: 16,
     borderRadius: 6,
     marginBottom: 8,
     fontSize: 16,
     borderWidth: 1,
-    borderColor: "#333",
+    borderColor: "rgba(255, 255, 255, 0.1)",
     height: 50,
     textAlign: "center",
   },
@@ -379,9 +404,11 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   button: {
-    backgroundColor: "#4A90E2",
-    padding: 16,
     borderRadius: 6,
+    overflow: "hidden",
+  },
+  gradientButton: {
+    padding: 16,
     alignItems: "center",
   },
   buttonDisabled: {
@@ -397,7 +424,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   linkText: {
-    color: "#666",
+    color: "rgba(255, 255, 255, 0.6)",
     fontSize: 14,
   },
   linkTextBold: {
@@ -405,7 +432,7 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
   },
   termsText: {
-    color: "#666",
+    color: "rgba(255, 255, 255, 0.6)",
     fontSize: 12,
     textAlign: "center",
     marginTop: 24,
@@ -415,5 +442,14 @@ const styles = StyleSheet.create({
   termsLink: {
     color: "#4A90E2",
     textDecorationLine: "underline",
+  },
+  backButton: {
+    position: "absolute",
+    top: 60,
+    left: 24,
+    zIndex: 10,
+    width: 40,
+    height: 40,
+    justifyContent: "center",
   },
 });

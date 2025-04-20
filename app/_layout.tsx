@@ -5,7 +5,7 @@ import { StatusBar } from "expo-status-bar";
 import { useFonts } from "expo-font";
 import { useEffect } from "react";
 import "react-native-reanimated";
-import { AuthProvider, useAuth } from "./contexts/AuthContext";
+import AuthProvider, { useAuth } from "./contexts/AuthContext";
 
 // import { useColorScheme } from "@/hooks/useColorScheme";
 
@@ -21,18 +21,20 @@ function RootLayoutNav() {
     if (isLoading) return;
 
     const inAuthGroup = segments[0] === "(auth)";
+    const inOnboardingGroup = segments[0] === "(onboarding)";
 
-    if (session && inAuthGroup) {
+    if (session && (inAuthGroup || inOnboardingGroup)) {
       // Redirect authenticated users to the home screen
       router.replace("/(tabs)");
-    } else if (!session && !inAuthGroup) {
-      // Redirect unauthenticated users to the login screen
-      router.replace("/(auth)/login");
+    } else if (!session && !inAuthGroup && !inOnboardingGroup) {
+      // Redirect unauthenticated users to the onboarding flow
+      router.replace("/(onboarding)/spark");
     }
   }, [session, segments, isLoading]);
 
   return (
     <Stack screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="(onboarding)" options={{ headerShown: false }} />
       <Stack.Screen name="(auth)" options={{ headerShown: false }} />
       <Stack.Screen
         name="(tabs)"
