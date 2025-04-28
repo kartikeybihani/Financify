@@ -7,18 +7,38 @@ import {
   SafeAreaView,
   ScrollView,
   Alert,
+  Modal,
+  TextInput,
+  Button,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { supabase } from "../lib/supabase/supabase";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 export default function PersonalInfoScreen() {
   const router = useRouter();
   const { userName } = useLocalSearchParams();
   const [userData, setUserData] = useState<any>(null);
+  const [showEmailModal, setShowEmailModal] = useState(false);
+  const [showPhoneModal, setShowPhoneModal] = useState(false);
+  const [newEmail, setNewEmail] = useState("");
+  const [newPhone, setNewPhone] = useState("");
 
   useEffect(() => {
-    fetchUserData();
+    const loadUserData = async () => {
+      try {
+        const storedUserData = await AsyncStorage.getItem("userData");
+        if (storedUserData) {
+          setUserData(JSON.parse(storedUserData));
+        } else {
+          await fetchUserData();
+        }
+      } catch (error) {
+        console.error("Error loading user data from storage:", error);
+      }
+    };
+    loadUserData();
   }, []);
 
   const fetchUserData = async () => {
@@ -28,9 +48,48 @@ export default function PersonalInfoScreen() {
       } = await supabase.auth.getUser();
       if (user) {
         setUserData(user);
+        await AsyncStorage.setItem("userData", JSON.stringify(user));
       }
     } catch (error) {
       console.error("Error fetching user data:", error);
+    }
+  };
+
+  const handleSaveEmail = async () => {
+    try {
+      const { data, error } = await supabase.auth.updateUser({
+        email: newEmail,
+      });
+      if (error) {
+        Alert.alert("Error", error.message);
+      } else {
+        const updatedUserData = { ...userData, email: newEmail };
+        setUserData(updatedUserData);
+        await AsyncStorage.setItem("userData", JSON.stringify(updatedUserData));
+        setShowEmailModal(false);
+      }
+    } catch (error: any) {
+      console.error("Error updating email:", error);
+      Alert.alert("Error updating email", error.message);
+    }
+  };
+
+  const handleSavePhone = async () => {
+    try {
+      const { data, error } = await supabase.auth.updateUser({
+        phone: newPhone,
+      });
+      if (error) {
+        Alert.alert("Error", error.message);
+      } else {
+        const updatedUserData = { ...userData, phone: newPhone };
+        setUserData(updatedUserData);
+        await AsyncStorage.setItem("userData", JSON.stringify(updatedUserData));
+        setShowPhoneModal(false);
+      }
+    } catch (error: any) {
+      console.error("Error updating phone:", error);
+      Alert.alert("Error updating phone", error.message);
     }
   };
 
@@ -39,22 +98,38 @@ export default function PersonalInfoScreen() {
     label: string,
     value: string,
     onPress?: () => void
-  ) => (
-    <View style={styles.infoItem}>
-      <View style={styles.infoItemLeft}>
-        <Ionicons name={icon} size={24} color="#4A90E2" style={styles.icon} />
-        <View>
-          <Text style={styles.label}>{label}</Text>
-          <Text style={styles.value}>{value}</Text>
-        </View>
-      </View>
-      {onPress && (
-        <TouchableOpacity onPress={onPress}>
+  ) => {
+    if (onPress) {
+      return (
+        <TouchableOpacity style={styles.infoItem} onPress={onPress}>
+          <View style={styles.infoItemLeft}>
+            <Ionicons
+              name={icon}
+              size={24}
+              color="#4A90E2"
+              style={styles.icon}
+            />
+            <View>
+              <Text style={styles.label}>{label}</Text>
+              <Text style={styles.value}>{value}</Text>
+            </View>
+          </View>
           <Ionicons name="chevron-forward" size={24} color="#666" />
         </TouchableOpacity>
-      )}
-    </View>
-  );
+      );
+    }
+    return (
+      <View style={styles.infoItem}>
+        <View style={styles.infoItemLeft}>
+          <Ionicons name={icon} size={24} color="#4A90E2" style={styles.icon} />
+          <View>
+            <Text style={styles.label}>{label}</Text>
+            <Text style={styles.value}>{value}</Text>
+          </View>
+        </View>
+      </View>
+    );
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -80,29 +155,29 @@ export default function PersonalInfoScreen() {
               userData?.user_metadata?.full_name || userName || "Not available"
             )}
             <View style={styles.divider} />
-            <TouchableOpacity onPress={() => {}}>
-              {renderInfoItem(
-                "mail-outline",
-                "Email",
-                userData?.email || "Not available",
-                () => {
-                  /* Handle email edit */
-                }
-              )}
-            </TouchableOpacity>
+            {renderInfoItem(
+              "mail-outline",
+              "Email",
+              userData?.email || "Not available",
+              () => {
+                setNewEmail(userData?.email || "");
+                setShowEmailModal(true);
+              }
+            )}
             <View style={styles.divider} />
-            <TouchableOpacity onPress={() => {}}>
-              {renderInfoItem(
-                "call-outline",
-                "Phone",
-                userData?.phone ||
-                  userData?.user_metadata?.phone_number ||
-                  "Not available",
-                () => {
-                  /* Handle phone edit */
-                }
-              )}
-            </TouchableOpacity>
+            {renderInfoItem(
+              "call-outline",
+              "Phone",
+              userData?.phone ||
+                userData?.user_metadata?.phone_number ||
+                "Not available",
+              () => {
+                setNewPhone(
+                  userData?.phone || userData?.user_metadata?.phone_number || ""
+                );
+                setShowPhoneModal(true);
+              }
+            )}
             <View style={styles.divider} />
             <View style={styles.horizontalFields}>
               <View style={styles.horizontalField}>
@@ -124,6 +199,59 @@ export default function PersonalInfoScreen() {
           </View>
         </View>
       </ScrollView>
+
+      {/* Email Edit Modal */}
+      <Modal visible={showEmailModal} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContainer}>
+            <Text style={styles.modalTitle}>Edit Email</Text>
+            <TextInput
+              value={newEmail}
+              onChangeText={setNewEmail}
+              style={styles.input}
+              placeholder="Enter new email"
+              keyboardType="email-address"
+              autoCapitalize="none"
+            />
+            <View style={styles.modalButtons}>
+              <Button
+                title="Cancel"
+                onPress={() => {
+                  setShowEmailModal(false);
+                  setNewEmail("");
+                }}
+              />
+              <Button title="Save" onPress={handleSaveEmail} />
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Phone Edit Modal */}
+      <Modal visible={showPhoneModal} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContainer}>
+            <Text style={styles.modalTitle}>Edit Phone</Text>
+            <TextInput
+              value={newPhone}
+              onChangeText={setNewPhone}
+              style={styles.input}
+              placeholder="Enter new phone"
+              keyboardType="phone-pad"
+            />
+            <View style={styles.modalButtons}>
+              <Button
+                title="Cancel"
+                onPress={() => {
+                  setShowPhoneModal(false);
+                  setNewPhone("");
+                }}
+              />
+              <Button title="Save" onPress={handleSavePhone} />
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -218,5 +346,33 @@ const styles = StyleSheet.create({
     color: "#ff4444",
     fontSize: 16,
     fontWeight: "600",
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  modalContainer: {
+    width: "80%",
+    backgroundColor: "#fff",
+    borderRadius: 8,
+    padding: 20,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: "600",
+    marginBottom: 12,
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: "#ccc",
+    borderRadius: 4,
+    padding: 8,
+    marginBottom: 12,
+  },
+  modalButtons: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
   },
 });

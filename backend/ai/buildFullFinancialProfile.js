@@ -4,7 +4,8 @@ export function buildFullFinancialProfile(
   transactions,
   accounts = [],
   investments = {},
-  liabilities = []
+  liabilities = [],
+  goals = []
 ) {
   const categoryTotals = {};
   let totalSpent = 0;
@@ -62,6 +63,18 @@ export function buildFullFinancialProfile(
   Net savings: $${netSavings.toFixed(2)}.
   `;
 
+  // Add goals to the profile
+  const goalsSummary = goals.length
+    ? goals
+        .map(
+          (goal) =>
+            `- ${goal.label} (Target: ${goal.year})\n  ${
+              goal.description || "No description provided"
+            }`
+        )
+        .join("\n")
+    : "No financial goals set.";
+
   return {
     summaryText: summaryText.trim(),
     keyMetrics: {
@@ -73,5 +86,6 @@ export function buildFullFinancialProfile(
       recurringCount: recurringSuspects.length,
     },
     sentiment: tone,
+    goalsSummary,
   };
 }

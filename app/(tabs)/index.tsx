@@ -28,6 +28,8 @@ import {
   Security,
 } from "../types/plaid";
 import { useRouter } from "expo-router";
+import { supabase } from "../lib/supabase/supabase";
+import { LinearGradient } from "expo-linear-gradient";
 
 if (Platform.OS === "android") {
   UIManager.setLayoutAnimationEnabledExperimental?.(true);
@@ -40,6 +42,7 @@ export default function HomeScreen() {
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [linkToken, setLinkToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   // Financial data states
@@ -51,6 +54,8 @@ export default function HomeScreen() {
   const [expandedSections, setExpandedSections] = useState<string[]>([]);
 
   const hasLoadedOnce = useRef(false);
+
+  const [userData, setUserData] = useState<any>(null);
 
   // Save data to AsyncStorage
   const saveDataToStorage = async (data: any) => {
@@ -130,13 +135,14 @@ export default function HomeScreen() {
   // Initial setup and data loading
   useEffect(() => {
     const initializeApp = async () => {
-      if (hasLoadedOnce.current) return; // 🔒 skip if already loaded
-
-      setIsLoading(true); // only show loading once (first mount)
-
       try {
-        const token = await AsyncStorage.getItem("accessToken");
+        // Fetch user data from Supabase
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        setUserData(user);
 
+        const token = await AsyncStorage.getItem("accessToken");
         if (token) {
           setAccessToken(token);
           const dataLoaded = await loadDataFromStorage();
@@ -150,12 +156,30 @@ export default function HomeScreen() {
       } catch (error) {
         console.error("Error during initialization:", error);
       } finally {
-        hasLoadedOnce.current = true; // ✅ persist session memory
+        setIsInitialLoad(false);
         setIsLoading(false);
       }
     };
 
     initializeApp();
+
+    // Set up event listener for financial data updates
+    const subscription = DeviceEventEmitter.addListener(
+      "financialDataRefreshed",
+      (data) => {
+        if (data) {
+          setAccounts(data.accounts || []);
+          setIdentity(data.identity || []);
+          setInvestments(data.investments || null);
+          setLiabilities(data.liabilities || null);
+          setInstitution(data.institution || null);
+        }
+      }
+    );
+
+    return () => {
+      subscription.remove();
+    };
   }, []);
 
   // Helper functions
@@ -175,13 +199,18 @@ export default function HomeScreen() {
     <View style={styles.header}>
       <TouchableOpacity
         onPress={() =>
-          router.push({ pathname: "/settings", params: { userName } })
+          router.push({
+            pathname: "/settings",
+            params: { userName: userData?.user_metadata?.full_name || "there" },
+          })
         }
       >
         <Feather name="menu" size={28} color="#fff" />
       </TouchableOpacity>
       <View style={styles.headerTextContainer}>
-        <Text style={styles.greetingText}>Hi {userName}</Text>
+        <Text style={styles.greetingText}>
+          Hi {userData?.user_metadata?.full_name || "there"}
+        </Text>
         <Text style={styles.subGreeting}>Welcome Back!</Text>
       </View>
     </View>
@@ -275,7 +304,10 @@ export default function HomeScreen() {
           <View key={idx} style={styles.goalCard}>
             <Text style={styles.goalTitle}>{goal.title}</Text>
             <View style={styles.progressBarBackground}>
-              <View
+              <LinearGradient
+                colors={["#4A90E2", "#007AFF"]}
+                start={[0, 0]}
+                end={[1, 0]}
                 style={[
                   styles.progressBarFill,
                   { width: `${goal.progress * 100}%` },
@@ -502,7 +534,11 @@ export default function HomeScreen() {
     <SafeAreaView style={styles.safeArea}>
       {renderHeader()}
 
-      {!accessToken ? (
+      {isInitialLoad ? (
+        <View style={styles.loadingOverlay}>
+          <ActivityIndicator size="large" color="#4A90E2" />
+        </View>
+      ) : !accessToken ? (
         renderDisconnectedState()
       ) : (
         <>

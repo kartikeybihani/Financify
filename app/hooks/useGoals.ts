@@ -3,6 +3,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Goal, GoalSetup, TimelineItem, Timeline } from '../types/finny';
 import finnyConstants from '../constants/finny';
 
+// Helper function to generate random progress
+const getRandomProgress = () => Math.floor(Math.random() * (80 - 20 + 1)) + 20;
+
 export const useGoals = (pushChat: (sender: "user" | "finny", text: string) => void) => {
   const [goalSetup, setGoalSetup] = useState<GoalSetup>({ step: "none" });
   const [timelineData, setTimelineData] = useState<(TimelineItem & { id: string })[]>([]);
@@ -19,6 +22,7 @@ export const useGoals = (pushChat: (sender: "user" | "finny", text: string) => v
           year: g.year,
           label: g.label,
           description: g.description || "User-defined goal",
+          progress: g.progress || getRandomProgress(),
         }));
 
         const milestonesWithIds = finnyConstants.FUTURE_MILESTONES.map((m) => ({
@@ -73,11 +77,15 @@ export const useGoals = (pushChat: (sender: "user" | "finny", text: string) => v
           return true;
         }
 
+        // Determine the correct year for the specified month
+        const currentYear = new Date().getFullYear();
+        const currentMonth = new Date().getMonth(); // 0-11
+        const targetMonth = new Date(`${parsedDate.timeline.month} 1`).getMonth();
+        const targetYear = parsedDate.timeline.year || (currentMonth > targetMonth ? currentYear + 1 : currentYear);
+
         const timeline: Timeline = {
           month: parsedDate.timeline.month || "January",
-          year: parsedDate.timeline.year
-            ? parsedDate.timeline.year.toString()
-            : new Date().getFullYear().toString(),
+          year: targetYear.toString(),
         };
         updated.timeline = timeline;
 
@@ -95,7 +103,7 @@ export const useGoals = (pushChat: (sender: "user" | "finny", text: string) => v
         };
         await saveGoal(finalGoal);
 
-        response = `Perfect! I've set up your goal to save $${Number(updated.target).toLocaleString()} for ${updated.label} by ${updated.timeline.month} ${updated.timeline.year}. 🎯\n\nI'll help you track your progress and provide tips to reach this goal.`;
+        response = `Perfect! I've set up your goal to save $${Number(updated.target).toLocaleString()} for ${updated.label} by ${updated.timeline.month} ${updated.timeline.year}. 🎯\n\nI'll help you track your progress and provide plan to reach this goal.`;
 
         updated.step = "none";
       } catch (error) {
@@ -121,6 +129,7 @@ export const useGoals = (pushChat: (sender: "user" | "finny", text: string) => v
       const goalWithId = {
         ...goal,
         id: Date.now().toString(),
+        progress: getRandomProgress(),
       };
 
       await AsyncStorage.setItem(
@@ -134,6 +143,7 @@ export const useGoals = (pushChat: (sender: "user" | "finny", text: string) => v
           year: g.year,
           label: g.label,
           description: g.description || "User-defined goal",
+          progress: g.progress || getRandomProgress(),
         })
       );
 
@@ -178,6 +188,7 @@ export const useGoals = (pushChat: (sender: "user" | "finny", text: string) => v
         year: goal.year,
         label: goal.label,
         description: goal.description || "User-defined goal",
+        progress: goal.progress || 0,
       }));
 
       setTimelineData(
@@ -197,6 +208,7 @@ export const useGoals = (pushChat: (sender: "user" | "finny", text: string) => v
   return {
     goalSetup,
     timelineData,
+    setTimelineData,
     setGoalSetup,
     handleGoalSetup,
     saveGoal,

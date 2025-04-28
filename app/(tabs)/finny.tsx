@@ -26,10 +26,17 @@ import { useChat } from "../hooks/useChat";
 import { useGoals } from "../hooks/useGoals";
 import { Timeline as TimelineType } from "../types/finny";
 import styles from "../styles/finnyStyles";
+import finnyConstants from "../constants/finny";
 
 interface Timeline {
   month: string;
   year: string;
+}
+
+interface Milestone {
+  label: string;
+  year: string;
+  description: string;
 }
 
 // Merge the new styles with the existing styles import
@@ -120,13 +127,59 @@ export default function FinnyScreen() {
     clearChat,
     pushChat,
     pushChatWithDelay,
-    handleFinnyResponse,
+    handleUserMessage,
   } = useChat();
 
-  const { goalSetup, timelineData, setGoalSetup, handleGoalSetup, deleteGoal } =
-    useGoals(pushChat);
+  const {
+    goalSetup,
+    timelineData,
+    setTimelineData,
+    setGoalSetup,
+    handleGoalSetup,
+    deleteGoal,
+    saveGoal,
+  } = useGoals(pushChat);
 
   // Effects
+  useEffect(() => {
+    // Listen for goals updated event
+    const subscription = DeviceEventEmitter.addListener(
+      "goalsUpdated",
+      async () => {
+        try {
+          // Get existing goals
+          const existingGoals = await AsyncStorage.getItem("goals");
+          const parsedGoals = JSON.parse(existingGoals || "[]");
+
+          // Transform goals to timeline format
+          const transformedGoals = parsedGoals.map((g: any) => ({
+            id: g.id || `existing-${g.label}`,
+            year: g.year,
+            label: g.label,
+            description: g.description || "User-defined goal",
+          }));
+
+          // Get milestones with IDs
+          const milestonesWithIds = finnyConstants.FUTURE_MILESTONES.map(
+            (m: Milestone) => ({
+              ...m,
+              id: `milestone-${m.label}`,
+            })
+          );
+
+          // Update timeline data
+          setTimelineData([...transformedGoals, ...milestonesWithIds]);
+        } catch (error) {
+          console.error("Error updating timeline data:", error);
+        }
+      }
+    );
+
+    return () => {
+      subscription.remove();
+    };
+  }, []);
+
   useEffect(() => {
     if (isTyping) {
       animateTypingDots();
@@ -231,14 +284,15 @@ export default function FinnyScreen() {
           step: nextStep,
           label: label || undefined,
           target: target ? String(target) : undefined,
-          timeline: timeline,
+          timeline: timeline || goalSetup.timeline,
         });
 
-        await pushChatWithDelay("finny", [response]);
+        console.log("Finny:", response);
+        await pushChat("finny", response);
         return;
       }
 
-      await handleFinnyResponse(messageText);
+      await handleUserMessage(messageText);
     } catch (error) {
       console.error("❌ Error handling message:", error);
       pushChat("finny", "Something went wrong. Please try again.");

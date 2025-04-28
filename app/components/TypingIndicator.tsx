@@ -19,9 +19,9 @@ export const TypingIndicator = ({ dotAnimations }: TypingIndicatorProps) => {
                 opacity: dot,
                 transform: [
                   {
-                    translateY: dot.interpolate({
+                    scale: dot.interpolate({
                       inputRange: [0, 1],
-                      outputRange: [0, -4],
+                      outputRange: [0.8, 1.2], // Simulate eyes opening and closing
                     }),
                   },
                 ],

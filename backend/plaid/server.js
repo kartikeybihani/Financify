@@ -332,12 +332,12 @@ IMPORTANT: Always return a valid timeline object with month and year if any date
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: "gpt-4",
+      model: "gpt-4o-mini",
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: message },
       ],
-      temperature: 0.7,
+      temperature: 0.5,
     }),
   });
 

@@ -8,5 +8,5 @@ export default function Index() {
     return null;
   }
 
-  return <Redirect href={session ? "/(tabs)" : "/(auth)/login"} />;
+  return <Redirect href={session ? "/(tabs)" : "/(onboarding)/spark"} />;
 }

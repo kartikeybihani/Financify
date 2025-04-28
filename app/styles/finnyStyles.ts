@@ -48,7 +48,7 @@ export default StyleSheet.create({
   },
   chatContainer: {
     flex: 1,
-    paddingBottom: 80, // Space for input bar
+    paddingBottom: 120, // Increased space for input bar
   },
   chatScroll: {
     flex: 1,
@@ -95,7 +95,7 @@ export default StyleSheet.create({
     right: 0,
     backgroundColor: "#121212",
     paddingTop: 12,
-    paddingBottom: 24,
+    paddingBottom: 12,
     borderTopWidth: 1,
     borderTopColor: "rgba(44, 44, 44, 0.8)",
     shadowColor: "#000",
@@ -118,7 +118,7 @@ export default StyleSheet.create({
   scrollToBottomButton: {
     position: 'absolute',
     right: 20,
-    bottom: 100,
+    bottom: 120, // Moved up to avoid overlap with input bar
     backgroundColor: '#1f1f1f',
     width: 40,
     height: 40,

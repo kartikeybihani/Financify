@@ -23,6 +23,7 @@ interface TimelineItem {
   year: string;
   label: string;
   description: string;
+  progress?: number; // Add progress field (0-100)
 }
 
 interface TimelineProps {
@@ -247,6 +248,23 @@ export default function Timeline({
                   </View>
                 </View>
                 <Text style={styles.timelineLabel}>{item.label}</Text>
+                {typeof item.progress === "number" && (
+                  <View style={styles.progressContainer}>
+                    <View style={styles.progressBarBackground}>
+                      <Animated.View
+                        style={[
+                          styles.progressBarFill,
+                          {
+                            width: `${item.progress}%`,
+                            backgroundColor:
+                              item.progress >= 100 ? "#4CD964" : "#4A90E2",
+                          },
+                        ]}
+                      />
+                    </View>
+                    <Text style={styles.progressText}>{item.progress}%</Text>
+                  </View>
+                )}
                 {isSelected && (
                   <View style={styles.timelineDescriptionContainer}>
                     <Text style={styles.timelineDescription}>
@@ -348,7 +366,7 @@ const styles = StyleSheet.create({
     fontWeight: "500",
   },
   timelineDescriptionContainer: {
-    marginTop: 8,
+    marginTop: 12,
     padding: 10,
     backgroundColor: "#2a2a2a",
     borderRadius: 8,
@@ -485,5 +503,29 @@ const styles = StyleSheet.create({
   datePickerButtonText: {
     fontSize: 16,
     color: "#fff",
+  },
+  progressContainer: {
+    marginTop: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  progressBarBackground: {
+    flex: 1,
+    height: 6,
+    backgroundColor: "#2a2a2a",
+    borderRadius: 3,
+    overflow: "hidden",
+  },
+  progressBarFill: {
+    height: "100%",
+    borderRadius: 3,
+  },
+  progressText: {
+    fontSize: 12,
+    color: "#aaa",
+    fontWeight: "600",
+    minWidth: 40,
+    textAlign: "right",
   },
 });

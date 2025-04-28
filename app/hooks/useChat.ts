@@ -66,18 +66,28 @@ export const useChat = () => {
   };
 
   const pushChatWithDelay = async (sender: "user" | "finny", messages: string[]) => {
-    for (let i = 0; i < messages.length; i++) {
-      if (sender === "finny" && i > 0) {
-        setIsTyping(true);
-        await new Promise((resolve) => setTimeout(resolve, 1000 + Math.random() * 1000));
-      }
+    try {
+      for (let i = 0; i < messages.length; i++) {
+        if (sender === "finny") {
+          setIsTyping(true);
+          await new Promise((resolve) => setTimeout(resolve, 1000 + Math.random() * 1000));
+        }
 
-      pushChat(sender, messages[i]);
+        pushChat(sender, messages[i]);
 
-      if (sender === "finny" && i < messages.length - 1) {
-        setIsTyping(false);
+        if (i === messages.length - 1) {
+          setIsTyping(false);
+        }
       }
+    } finally {
+      setIsTyping(false); // Ensure typing is turned off even if there's an error
     }
+  };
+
+  const handleUserMessage = async (messageText: string) => {
+    setIsTyping(true); // Start typing indicator immediately
+    await handleFinnyResponse(messageText);
+    setIsTyping(false); // Stop typing indicator after response
   };
 
   const handleFinnyResponse = async (messageText: string) => {
@@ -141,7 +151,7 @@ export const useChat = () => {
     clearChat,
     pushChat,
     pushChatWithDelay,
-    handleFinnyResponse,
+    handleUserMessage,
   };
 };
 

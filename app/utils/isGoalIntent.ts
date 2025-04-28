@@ -37,6 +37,14 @@ export const isGoalIntent = async (input: string) => {
       "help me save",
       "want to save",
       "need to save",
+      "set up",
+      "set up a goal",
+      "set up a fund",
+      "set up a fund for",
+      "set up a goal for",
+      "set up a fund for",
+      "set up a goal for",
+      "set up a fund for",
     ];
   
     // Check for explicit goal-setting phrases

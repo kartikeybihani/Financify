@@ -11,6 +11,7 @@ import {
   Switch,
   Alert,
   ScrollView,
+  DeviceEventEmitter,
 } from "react-native";
 import {
   Ionicons,
@@ -23,6 +24,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { supabase } from "../lib/supabase/supabase";
 import FeedbackModal from "../components/FeedbackModal";
+import { handleDisconnect } from "../utils/plaid";
 
 export default function SettingsScreen() {
   const router = useRouter();
@@ -34,7 +36,19 @@ export default function SettingsScreen() {
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
 
   useEffect(() => {
-    fetchUserData();
+    const loadUserData = async () => {
+      try {
+        const storedUserData = await AsyncStorage.getItem("userData");
+        if (storedUserData) {
+          setUserData(JSON.parse(storedUserData));
+        } else {
+          await fetchUserData();
+        }
+      } catch (error) {
+        console.error("Error loading user data from storage:", error);
+      }
+    };
+    loadUserData();
   }, []);
 
   const fetchUserData = async () => {
@@ -44,6 +58,7 @@ export default function SettingsScreen() {
       } = await supabase.auth.getUser();
       if (user) {
         setUserData(user);
+        await AsyncStorage.setItem("userData", JSON.stringify(user));
       }
     } catch (error) {
       console.error("Error fetching user data:", error);
@@ -52,25 +67,37 @@ export default function SettingsScreen() {
 
   const handleDisconnectBank = async () => {
     Alert.alert(
-      "Disconnect & Clear Data",
-      "This will disconnect your bank accounts and clear app data. Your account will remain active.",
+      "Disconnect Bank Account",
+      "This will disconnect your bank accounts and clear all financial data. Your account will remain active.",
       [
         {
           text: "Cancel",
           style: "cancel",
         },
         {
-          text: "Disconnect & Clear",
+          text: "Disconnect",
           style: "destructive",
           onPress: async () => {
-            await AsyncStorage.removeItem("financialData");
-            await AsyncStorage.removeItem("bankConnections");
-            await AsyncStorage.removeItem("goals");
-            await AsyncStorage.removeItem("chatMessages");
-            Alert.alert(
-              "Success",
-              "Bank accounts have been disconnected and data cleared"
-            );
+            try {
+              await handleDisconnect();
+              DeviceEventEmitter.emit("financialDataRefreshed", {
+                accounts: [],
+                identity: null,
+                investments: null,
+                liabilities: null,
+                institution: null,
+              });
+              Alert.alert(
+                "Success",
+                "Bank accounts have been disconnected successfully"
+              );
+            } catch (error) {
+              console.error("Error disconnecting bank:", error);
+              Alert.alert(
+                "Error",
+                "Failed to disconnect bank accounts. Please try again."
+              );
+            }
           },
         },
       ]
@@ -88,8 +115,7 @@ export default function SettingsScreen() {
         style: "destructive",
         onPress: async () => {
           await supabase.auth.signOut();
-          await AsyncStorage.removeItem("accessToken");
-          router.replace("/(auth)/login");
+          router.replace("/(onboarding)/spark");
           console.log("User logged out");
         },
       },

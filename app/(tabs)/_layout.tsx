@@ -5,8 +5,9 @@ import {
   StyleSheet,
   Platform,
   Text,
+  TouchableOpacityProps,
 } from "react-native";
-import { useRouter, usePathname, Slot } from "expo-router";
+import { Tabs, useRouter, usePathname } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 
 export default function TabLayout() {
@@ -15,84 +16,81 @@ export default function TabLayout() {
 
   const tabs = [
     {
-      name: "Home",
+      name: "index",
+      label: "Home",
       icon: "home-outline",
-      route: "/(tabs)",
     },
     {
-      name: "Finny",
+      name: "finny",
+      label: "Finny",
       icon: "apps",
-      route: "/(tabs)/finny",
       isCenter: true,
     },
     {
-      name: "Insights",
+      name: "insights",
+      label: "Insights",
       icon: "stats-chart-outline",
-      route: "/(tabs)/insights",
     },
   ];
 
   return (
-    <View style={styles.wrapper}>
-      <View style={styles.content}>
-        <Slot />
-      </View>
-      <View style={styles.tabBarContainer}>
-        {tabs.map((tab, index) => {
-          const isFocused = pathname === tab.route;
-          return (
-            <TouchableOpacity
-              key={index}
-              onPress={() => router.push(tab.route as any)}
-              style={[styles.tabButton, tab.isCenter && styles.centerTab]}
-              activeOpacity={0.8}
-            >
-              <Ionicons
-                name={tab.icon as any}
-                size={tab.isCenter ? 30 : 24}
-                color={isFocused ? "#4A90E2" : "#ccc"}
-              />
-              {!tab.isCenter && (
-                <Text
-                  style={[styles.tabLabel, isFocused && styles.focusedLabel]}
-                >
-                  {tab.name}
-                </Text>
-              )}
-            </TouchableOpacity>
-          );
-        })}
-      </View>
-    </View>
+    <Tabs
+      screenOptions={{
+        headerShown: false,
+        tabBarStyle: {
+          height: 70,
+          paddingBottom: Platform.OS === "ios" ? 20 : 10,
+          backgroundColor: "#121212",
+          borderTopWidth: 1,
+          borderTopColor: "#222",
+          shadowColor: "#000",
+          shadowOpacity: 0.1,
+          shadowRadius: 10,
+          elevation: 10,
+        },
+        tabBarBackground: () => (
+          <View style={{ flex: 1, backgroundColor: "#121212" }} />
+        ),
+      }}
+    >
+      {tabs.map((tab) => (
+        <Tabs.Screen
+          key={tab.name}
+          name={tab.name}
+          options={{
+            tabBarShowLabel: !tab.isCenter,
+            tabBarLabel: ({ focused }) => (
+              <Text style={[styles.tabLabel, focused && styles.focusedLabel]}>
+                {tab.label}
+              </Text>
+            ),
+            tabBarIcon: ({ focused }) => (
+              <View style={tab.isCenter ? styles.centerTab : undefined}>
+                <Ionicons
+                  name={tab.icon as any}
+                  size={tab.isCenter ? 30 : 24}
+                  color={focused ? "#4A90E2" : "#ccc"}
+                />
+              </View>
+            ),
+            tabBarButton: (props) => {
+              const { style, ...otherProps } = props as TouchableOpacityProps;
+              return (
+                <TouchableOpacity
+                  {...otherProps}
+                  style={style}
+                  activeOpacity={0.8}
+                />
+              );
+            },
+          }}
+        />
+      ))}
+    </Tabs>
   );
 }
 
 const styles = StyleSheet.create({
-  wrapper: {
-    flex: 1,
-    backgroundColor: "#121212",
-  },
-  content: {
-    flex: 1,
-  },
-  tabBarContainer: {
-    flexDirection: "row",
-    justifyContent: "space-around",
-    alignItems: "center",
-    height: 70,
-    paddingBottom: Platform.OS === "ios" ? 20 : 10,
-    backgroundColor: "#121212",
-    borderTopWidth: 1,
-    borderTopColor: "#222",
-    shadowColor: "#000",
-    shadowOpacity: 0.1,
-    shadowRadius: 10,
-    elevation: 10,
-  },
-  tabButton: {
-    alignItems: "center",
-    justifyContent: "center",
-  },
   centerTab: {
     backgroundColor: "#1f1f1f",
     borderRadius: 50,

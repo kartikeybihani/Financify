@@ -181,7 +181,7 @@ export default function SparkOfClarity() {
           AppleAuthentication.AppleAuthenticationScope.EMAIL,
         ],
       });
-      console.log("Apple sign in successful");
+      console.log("Apple sign in successful: ", credential);
 
       if (credential.identityToken) {
         console.log("Authenticating with Supabase...");
@@ -193,6 +193,8 @@ export default function SparkOfClarity() {
           provider: "apple",
           token: credential.identityToken,
         });
+
+        console.log("User: ", user);
 
         if (error) {
           console.error("Supabase auth error:", error);
@@ -258,6 +260,18 @@ export default function SparkOfClarity() {
                 },
               ]}
             >
+              <View style={styles.brandContainer}>
+                <Text style={styles.brandName}>Financify</Text>
+                <LinearGradient
+                  colors={[
+                    "rgba(74, 144, 226, 0.3)",
+                    "rgba(93, 160, 242, 0.1)",
+                  ]}
+                  style={styles.brandUnderline}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                />
+              </View>
               <Text style={styles.title}>
                 Your Financial{"\n"}
                 <Text style={styles.titleHighlight}>Growth</Text> Begins
@@ -433,24 +447,47 @@ const styles = StyleSheet.create({
   heroImage: {
     width: width * 0.4,
     height: width * 0.4,
-    marginBottom: 40,
+    marginBottom: 20,
   },
   textContainer: {
     alignItems: "center",
     width: "100%",
   },
-  title: {
-    fontSize: 36,
-    fontWeight: "800",
+  brandContainer: {
+    alignItems: "center",
+    marginBottom: 24,
+  },
+  brandName: {
+    fontSize: 42,
+    fontWeight: "900",
     color: "#fff",
     textAlign: "center",
+    marginBottom: 8,
+    letterSpacing: 1.2,
+    textShadowColor: "rgba(74, 144, 226, 0.4)",
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 12,
+    fontFamily: Platform.OS === "ios" ? "System" : "Roboto",
+    includeFontPadding: false,
+  },
+  brandUnderline: {
+    height: 3,
+    width: 180,
+    borderRadius: 1.5,
+    marginTop: 4,
+  },
+  title: {
+    fontSize: 22,
+    fontWeight: "600",
+    color: "rgba(255, 255, 255, 0.85)",
+    textAlign: "center",
     marginBottom: 30,
-    lineHeight: 44,
-    letterSpacing: 0.5,
+    lineHeight: 30,
+    letterSpacing: 0.3,
   },
   titleHighlight: {
     color: "#4A90E2",
-    fontWeight: "900",
+    fontWeight: "700",
   },
   cardContainer: {
     width: "100%",

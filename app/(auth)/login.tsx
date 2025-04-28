@@ -1,20 +1,19 @@
 import React, { useState } from "react";
 import {
   View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  StyleSheet,
   Alert,
-  Image,
-  KeyboardAvoidingView,
-  Platform,
-  ActivityIndicator,
+  StyleSheet,
+  Animated,
+  Dimensions,
+  Easing,
 } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient";
-import { supabase } from "../lib/supabase/supabase";
 import { useRouter } from "expo-router";
+import { supabase } from "../lib/supabase/supabase";
+import AuthTemplate from "../components/auth/AuthTemplate";
+import AuthInput from "../components/auth/AuthInput";
+import AuthButton from "../components/auth/AuthButton";
+
+const { width } = Dimensions.get("window");
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -22,301 +21,242 @@ export default function LoginScreen() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [errors, setErrors] = useState({
-    email: "",
-    password: "",
-  });
+  const [formError, setFormError] = useState("");
+  const [step, setStep] = useState(1);
+  const [resetEmail, setResetEmail] = useState("");
+
+  // Animation values
+  const fadeAnim = useState(new Animated.Value(1))[0];
+  const slideAnim = useState(new Animated.Value(0))[0];
+  const scaleAnim = useState(new Animated.Value(1))[0];
+
+  const animateTransition = (forward = true) => {
+    const slideValue = forward ? width : -width;
+
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 0,
+        duration: 250,
+        useNativeDriver: true,
+        easing: Easing.out(Easing.cubic),
+      }),
+      Animated.timing(slideAnim, {
+        toValue: slideValue,
+        duration: 250,
+        useNativeDriver: true,
+        easing: Easing.out(Easing.cubic),
+      }),
+      Animated.timing(scaleAnim, {
+        toValue: 0.95,
+        duration: 250,
+        useNativeDriver: true,
+      }),
+    ]).start(() => {
+      setStep(forward ? 2 : 1);
+      slideAnim.setValue(slideValue * -1);
+
+      Animated.parallel([
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 250,
+          useNativeDriver: true,
+          easing: Easing.out(Easing.cubic),
+        }),
+        Animated.timing(slideAnim, {
+          toValue: 0,
+          duration: 250,
+          useNativeDriver: true,
+          easing: Easing.out(Easing.cubic),
+        }),
+        Animated.timing(scaleAnim, {
+          toValue: 1,
+          duration: 250,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    });
+  };
 
   const validateForm = () => {
-    let isValid = true;
-    const newErrors = {
-      email: "",
-      password: "",
-    };
+    if (!email && !password) {
+      setFormError("Please fill out all required fields");
+      return false;
+    }
 
     if (!email) {
-      newErrors.email = "Email is required";
-      isValid = false;
-    } else if (!/\S+@\S+\.\S+/.test(email)) {
-      newErrors.email = "Please enter a valid email";
-      isValid = false;
+      setFormError("Please enter your email");
+      return false;
+    }
+
+    if (!/\S+@\S+\.\S+/.test(email)) {
+      setFormError("Please enter a valid email address");
+      return false;
     }
 
     if (!password) {
-      newErrors.password = "Password is required";
-      isValid = false;
+      setFormError("Please enter your password");
+      return false;
     }
 
-    setErrors(newErrors);
-    return isValid;
+    setFormError("");
+    return true;
   };
 
   const handleLogin = async () => {
     if (!validateForm()) return;
 
     setLoading(true);
-
     const { error } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
-
     setLoading(false);
 
     if (error) {
-      Alert.alert("Login Failed", error.message);
+      setFormError(error.message);
     }
-    // No need to manually navigate - AuthContext will handle this
+  };
+
+  const handleForgotPassword = async () => {
+    if (!resetEmail) {
+      setFormError("Please enter your email address");
+      return;
+    }
+    if (!/\S+@\S+\.\S+/.test(resetEmail)) {
+      setFormError("Please enter a valid email address");
+      return;
+    }
+
+    setLoading(true);
+    const { error } = await supabase.auth.resetPasswordForEmail(resetEmail);
+    setLoading(false);
+
+    if (error) {
+      setFormError(error.message);
+    } else {
+      Alert.alert(
+        "Password Reset Email Sent",
+        "Check your email for password reset instructions.",
+        [{ text: "OK", onPress: () => animateTransition(false) }]
+      );
+    }
   };
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
-      style={styles.container}
+    <AuthTemplate
+      title={step === 1 ? "Welcome Back" : "Reset Password"}
+      subtitle={
+        step === 1
+          ? "Sign in to continue"
+          : "Enter your email to reset password"
+      }
+      showFooter={step === 1}
+      footerLinkText="Don't have an account?"
+      footerLinkHighlight="Sign up"
+      footerLinkAction={() => router.replace("../signup")}
     >
-      <LinearGradient
-        colors={["#1A1A2E", "#16213E", "#0D1117"]}
-        locations={[0, 0.5, 1]}
-        style={styles.gradientBackground}
+      <Animated.View
+        style={[
+          styles.inputContainer,
+          {
+            opacity: fadeAnim,
+            transform: [{ translateX: slideAnim }, { scale: scaleAnim }],
+          },
+        ]}
       >
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => router.back()}
-        >
-          <Ionicons name="arrow-back" size={24} color="#fff" />
-        </TouchableOpacity>
-
-        <View style={styles.contentContainer}>
-          <Image
-            source={require("../assets/main1.png")}
-            style={styles.logo}
-            resizeMode="contain"
-          />
-
-          <Text style={styles.title}>Welcome Back</Text>
-          <Text style={styles.subtitle}>Sign in to continue</Text>
-
-          <View style={styles.inputContainer}>
-            <Text style={styles.label}>Email</Text>
-            <TextInput
-              style={[styles.input, errors.email && styles.inputError]}
-              placeholder="Enter your email"
-              placeholderTextColor="rgba(255, 255, 255, 0.4)"
-              onChangeText={setEmail}
+        {step === 1 ? (
+          <>
+            <AuthInput
+              label="Email"
+              placeholder="kb@gmail.com"
               autoCapitalize="none"
               keyboardType="email-address"
               autoComplete="email"
+              value={email}
+              onChangeText={(text) => {
+                setEmail(text);
+                setFormError("");
+              }}
+              error={!email && !!formError}
             />
-            {errors.email ? (
-              <Text style={styles.errorText}>{errors.email}</Text>
-            ) : null}
 
-            <Text style={styles.label}>Password</Text>
-            <View
-              style={[
-                styles.passwordContainer,
-                errors.password && styles.inputError,
-              ]}
-            >
-              <TextInput
-                style={styles.passwordInput}
-                placeholder="Enter your password"
-                placeholderTextColor="rgba(255, 255, 255, 0.4)"
-                secureTextEntry={!showPassword}
-                onChangeText={setPassword}
-              />
-              <TouchableOpacity
-                style={styles.passwordToggle}
-                onPress={() => setShowPassword(!showPassword)}
-              >
-                <Ionicons
-                  name={showPassword ? "eye-off" : "eye"}
-                  size={24}
-                  color="rgba(255, 255, 255, 0.4)"
-                />
-              </TouchableOpacity>
-            </View>
-            {errors.password ? (
-              <Text style={styles.errorText}>{errors.password}</Text>
-            ) : null}
+            <AuthInput.Password
+              label="Password"
+              placeholder="Enter your password"
+              value={password}
+              onChangeText={(text) => {
+                setPassword(text);
+                setFormError("");
+              }}
+              showPassword={showPassword}
+              onTogglePassword={() => setShowPassword(!showPassword)}
+              error={!password && !!formError}
+            />
 
-            <TouchableOpacity style={styles.forgotPassword}>
-              <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
-            </TouchableOpacity>
-          </View>
+            <AuthButton
+              title="Forgot Password?"
+              variant="text"
+              onPress={() => animateTransition(true)}
+            />
+          </>
+        ) : (
+          <AuthInput
+            label="Email"
+            placeholder="kb@gmail.com"
+            autoCapitalize="none"
+            keyboardType="email-address"
+            autoComplete="email"
+            value={resetEmail}
+            onChangeText={(text) => {
+              setResetEmail(text);
+              setFormError("");
+            }}
+            error={!resetEmail && !!formError}
+          />
+        )}
+      </Animated.View>
 
-          <TouchableOpacity
-            style={[styles.button, loading && styles.buttonDisabled]}
-            onPress={handleLogin}
-            disabled={loading}
-          >
-            <LinearGradient
-              colors={["#4A90E2", "#5DA0F2"]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={styles.gradientButton}
-            >
-              {loading ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text style={styles.buttonText}>Login</Text>
-              )}
-            </LinearGradient>
-          </TouchableOpacity>
+      {formError ? (
+        <Animated.Text
+          style={[
+            styles.formErrorText,
+            {
+              opacity: fadeAnim,
+              transform: [{ translateX: slideAnim }],
+            },
+          ]}
+        >
+          {formError}
+        </Animated.Text>
+      ) : null}
 
-          <TouchableOpacity
-            onPress={() => router.replace("../signup")}
-            style={styles.linkContainer}
-          >
-            <Text style={styles.linkText}>
-              Don't have an account?{" "}
-              <Text style={styles.linkTextBold}>Sign up</Text>
-            </Text>
-          </TouchableOpacity>
+      <AuthButton
+        title={step === 1 ? "Login" : "Reset Password"}
+        loading={loading}
+        onPress={step === 1 ? handleLogin : handleForgotPassword}
+      />
 
-          <Text style={styles.termsText}>
-            By logging in, you agree to our{" "}
-            <Text style={styles.termsLink}>Terms of Service</Text> and{" "}
-            <Text style={styles.termsLink}>Privacy Policy</Text>
-          </Text>
-        </View>
-      </LinearGradient>
-    </KeyboardAvoidingView>
+      {step === 2 && (
+        <AuthButton
+          title="Go Back"
+          variant="text"
+          onPress={() => animateTransition(false)}
+          icon="arrow-back"
+        />
+      )}
+    </AuthTemplate>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  gradientBackground: {
-    flex: 1,
-  },
-  contentContainer: {
-    flex: 1,
-    justifyContent: "center",
-    padding: 24,
-    paddingTop: 100,
-  },
-  logo: {
-    width: 100,
-    height: 100,
-    alignSelf: "center",
-    marginBottom: 20,
-  },
-  title: {
-    fontSize: 24,
-    color: "#fff",
-    textAlign: "center",
-    fontWeight: "bold",
-  },
-  subtitle: {
-    fontSize: 16,
-    color: "rgba(255, 255, 255, 0.6)",
-    textAlign: "center",
-    marginTop: 8,
-    marginBottom: 32,
-  },
   inputContainer: {
-    marginBottom: 24,
+    marginBottom: 10,
   },
-  label: {
-    color: "#fff",
-    marginBottom: 4,
-    fontSize: 14,
-  },
-  input: {
-    backgroundColor: "rgba(255, 255, 255, 0.06)",
-    color: "#fff",
-    padding: 16,
-    borderRadius: 6,
-    marginBottom: 18,
-    fontSize: 16,
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.1)",
-  },
-  passwordContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "rgba(255, 255, 255, 0.06)",
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.1)",
-    marginBottom: 8,
-  },
-  passwordInput: {
-    flex: 1,
-    color: "#fff",
-    padding: 16,
-    fontSize: 16,
-  },
-  passwordToggle: {
-    padding: 10,
-  },
-  inputError: {
-    borderColor: "#ff4444",
-  },
-  errorText: {
+  formErrorText: {
     color: "#ff4444",
-    fontSize: 12,
-    marginBottom: 8,
-  },
-  forgotPassword: {
-    alignSelf: "flex-end",
-    marginTop: 4,
-  },
-  forgotPasswordText: {
-    color: "#4A90E2",
     fontSize: 14,
-  },
-  button: {
-    borderRadius: 6,
-    overflow: "hidden",
-    marginTop: 8,
-  },
-  gradientButton: {
-    padding: 16,
-    alignItems: "center",
-  },
-  buttonDisabled: {
-    opacity: 0.7,
-  },
-  buttonText: {
-    color: "#fff",
-    fontWeight: "bold",
-    fontSize: 16,
-  },
-  linkContainer: {
-    marginTop: 16,
-    alignItems: "center",
-  },
-  linkText: {
-    color: "rgba(255, 255, 255, 0.6)",
-    fontSize: 14,
-  },
-  linkTextBold: {
-    color: "#4A90E2",
-    fontWeight: "bold",
-  },
-  termsText: {
-    color: "rgba(255, 255, 255, 0.6)",
-    fontSize: 12,
     textAlign: "center",
-    marginTop: 24,
-    paddingHorizontal: 20,
-    lineHeight: 18,
-  },
-  termsLink: {
-    color: "#4A90E2",
-    textDecorationLine: "underline",
-  },
-  backButton: {
-    position: "absolute",
-    top: 60,
-    left: 24,
-    zIndex: 10,
-    width: 40,
-    height: 40,
-    justifyContent: "center",
+    marginBottom: 15,
+    marginTop: 5,
   },
 });

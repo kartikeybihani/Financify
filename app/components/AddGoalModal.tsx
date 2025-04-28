@@ -16,12 +16,18 @@ import DateTimePicker from "@react-native-community/datetimepicker";
 interface AddGoalModalProps {
   visible: boolean;
   onClose: () => void;
-  onSave: (goal: { year: string; label: string; description: string }) => void;
+  onSave: (goal: {
+    year: string;
+    label: string;
+    description: string;
+    progress?: number;
+  }) => void;
 }
 
 const initialGoalState = {
   label: "",
   description: "",
+  progress: 0,
 };
 
 export default function AddGoalModal({
@@ -112,6 +118,7 @@ export default function AddGoalModal({
         year: `${month} ${year}`,
         label: goal.label,
         description: goal.description,
+        progress: goal.progress,
       });
 
       handleClose();
@@ -219,6 +226,27 @@ export default function AddGoalModal({
                     }
                   />
                 )}
+              </View>
+
+              <View style={styles.inputContainer}>
+                <Text style={styles.label}>Progress</Text>
+                <View style={styles.progressInputContainer}>
+                  <TextInput
+                    style={[styles.input, styles.progressInput]}
+                    placeholder="0"
+                    placeholderTextColor="#666"
+                    value={goal.progress?.toString() || ""}
+                    onChangeText={(text) => {
+                      const progress = Math.min(
+                        100,
+                        Math.max(0, parseInt(text) || 0)
+                      );
+                      setGoal((prev) => ({ ...prev, progress }));
+                    }}
+                    keyboardType="numeric"
+                  />
+                  <Text style={styles.progressSymbol}>%</Text>
+                </View>
               </View>
 
               <View style={styles.inputContainer}>
@@ -387,5 +415,23 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 4,
     marginLeft: 4,
+  },
+  progressInputContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#2a2a2a",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#333",
+  },
+  progressInput: {
+    flex: 1,
+    marginBottom: 0,
+    borderWidth: 0,
+  },
+  progressSymbol: {
+    color: "#666",
+    fontSize: 16,
+    paddingRight: 16,
   },
 });

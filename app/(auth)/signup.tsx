@@ -12,29 +12,92 @@ import {
   ActivityIndicator,
   ScrollView,
   Dimensions,
+  Animated,
+  Easing,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { supabase } from "../lib/supabase/supabase";
 import { useRouter } from "expo-router";
 
+const { width } = Dimensions.get("window");
+
 const MINIMUM_AGE = 18;
 const MAXIMUM_AGE = 100;
 
 export default function SignupScreen() {
   const router = useRouter();
+  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [age, setAge] = useState("");
   const [phone, setPhone] = useState("");
   const [loading, setLoading] = useState(false);
-  const [errors, setErrors] = useState({
-    email: "",
-    password: "",
-    age: "",
-    phone: "",
-  });
+  const [step, setStep] = useState(1);
+  const [formError, setFormError] = useState("");
+
+  // Enhanced animation values
+  const fadeAnim = useState(new Animated.Value(1))[0];
+  const slideAnim = useState(new Animated.Value(0))[0];
+  const scaleAnim = useState(new Animated.Value(1))[0];
+
+  const animateTransition = (forward = true) => {
+    const slideValue = forward ? width : -width;
+
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 0,
+        duration: 250,
+        useNativeDriver: true,
+        easing: Easing.out(Easing.cubic),
+      }),
+      Animated.timing(slideAnim, {
+        toValue: slideValue,
+        duration: 250,
+        useNativeDriver: true,
+        easing: Easing.out(Easing.cubic),
+      }),
+      Animated.timing(scaleAnim, {
+        toValue: 0.95,
+        duration: 250,
+        useNativeDriver: true,
+      }),
+    ]).start(() => {
+      setStep(forward ? 2 : 1);
+      slideAnim.setValue(slideValue * -1);
+
+      Animated.parallel([
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 250,
+          useNativeDriver: true,
+          easing: Easing.out(Easing.cubic),
+        }),
+        Animated.timing(slideAnim, {
+          toValue: 0,
+          duration: 250,
+          useNativeDriver: true,
+          easing: Easing.out(Easing.cubic),
+        }),
+        Animated.timing(scaleAnim, {
+          toValue: 1,
+          duration: 250,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    });
+  };
+
+  const handleContinue = () => {
+    if (validateStep1()) {
+      animateTransition(true);
+    }
+  };
+
+  const handleBack = () => {
+    animateTransition(false);
+  };
 
   const formatPhoneNumber = (text: string) => {
     const numbers = text.replace(/[^\d]/g, "");
@@ -51,94 +114,128 @@ export default function SignupScreen() {
   };
 
   const handleAgeChange = (text: string) => {
-    // Only allow numbers
     const numbersOnly = text.replace(/[^0-9]/g, "");
     setAge(numbersOnly);
   };
 
-  const validateForm = () => {
+  const validateStep1 = () => {
     let isValid = true;
-    const newErrors = {
-      email: "",
-      password: "",
-      age: "",
-      phone: "",
-    };
+    let errorFields = [];
 
-    // Email validation
+    if (!name.trim()) {
+      errorFields.push("name");
+      isValid = false;
+    }
+
     if (!email) {
-      newErrors.email = "Email is required";
+      errorFields.push("email");
       isValid = false;
     } else if (!/\S+@\S+\.\S+/.test(email)) {
-      newErrors.email = "Please enter a valid email";
-      isValid = false;
+      setFormError("Please enter a valid email address");
+      return false;
     }
 
-    // Password validation
     if (!password) {
-      newErrors.password = "Password is required";
+      errorFields.push("password");
       isValid = false;
     } else if (password.length < 6) {
-      newErrors.password = "Password must be at least 6 characters";
-      isValid = false;
+      setFormError("Password must be at least 6 characters");
+      return false;
     }
 
-    // Age validation
+    if (!isValid) {
+      setFormError("Please fill out all required fields");
+    } else {
+      setFormError("");
+    }
+    return isValid;
+  };
+
+  const validateStep2 = () => {
+    let isValid = true;
+    let errorFields = [];
+
     if (!age) {
-      newErrors.age = "Age is required";
+      errorFields.push("age");
       isValid = false;
     } else {
       const ageNum = parseInt(age);
       if (isNaN(ageNum) || ageNum < 18) {
-        newErrors.age = "You must be at least 18 years old";
-        isValid = false;
+        setFormError("You must be at least 18 years old");
+        return false;
       } else if (ageNum > 100) {
-        newErrors.age = "Please enter a valid age";
-        isValid = false;
+        setFormError("Please enter a valid age");
+        return false;
       }
     }
 
-    // Phone validation
     const phoneNumbers = phone.replace(/[^\d]/g, "");
     if (!phone) {
-      newErrors.phone = "Phone number is required";
+      errorFields.push("phone");
       isValid = false;
     } else if (phoneNumbers.length !== 10) {
-      newErrors.phone = "Please enter a valid 10-digit phone number";
-      isValid = false;
+      setFormError("Please enter a valid 10-digit phone number");
+      return false;
     }
 
-    setErrors(newErrors);
+    if (!isValid) {
+      setFormError("Please fill out all required fields");
+    } else {
+      setFormError("");
+    }
     return isValid;
   };
 
   const handleSignUp = async () => {
-    if (!validateForm()) return;
+    if (!validateStep2()) return;
 
     setLoading(true);
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-    });
+    try {
+      // First sign up the user
+      const { error: signUpError, data: signUpData } =
+        await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            data: {
+              full_name: name,
+              age,
+              phone_number: phone.replace(/[^\d]/g, ""),
+            },
+          },
+        });
 
-    await supabase.auth.updateUser({
-      data: {
-        age,
-        phone_number: phone.replace(/[^\d]/g, ""),
-      },
-    });
+      if (signUpError) throw signUpError;
 
-    setLoading(false);
+      // Check if email confirmation is required
+      if (signUpData?.session === null) {
+        Alert.alert(
+          "Verification Required",
+          "Please check your email for a verification link to complete your registration.",
+          [
+            {
+              text: "OK",
+              onPress: () => router.replace("../login"),
+            },
+          ]
+        );
+        return;
+      }
 
-    if (error) {
-      Alert.alert("Signup Error", error.message);
-    } else {
-      Alert.alert("Success", "Account created successfully!", [
-        {
-          text: "OK",
-          onPress: () => router.replace("/(tabs)"),
-        },
-      ]);
+      // If no email confirmation required, sign in the user
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (signInError) throw signInError;
+
+      // Navigate to tabs
+      router.replace("/(tabs)");
+    } catch (error: any) {
+      Alert.alert("Error", error.message);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -183,85 +280,148 @@ export default function SignupScreen() {
             <Text style={styles.title}>Create Account</Text>
             <Text style={styles.subtitle}>Join us today!</Text>
 
-            <View style={styles.inputContainer}>
-              <Text style={styles.label}>Email</Text>
-              <TextInput
-                style={[styles.input, errors.email && styles.inputError]}
-                placeholder="Enter your email"
-                placeholderTextColor="#666"
-                onChangeText={setEmail}
-                autoCapitalize="none"
-                keyboardType="email-address"
-                autoComplete="email"
-              />
-              {errors.email ? (
-                <Text style={styles.errorText}>{errors.email}</Text>
-              ) : null}
-
-              <Text style={styles.label}>Password</Text>
-              <View style={styles.passwordContainer}>
-                <TextInput
-                  style={[
-                    styles.passwordInput,
-                    errors.password && styles.inputError,
-                  ]}
-                  placeholder="Create a password"
-                  placeholderTextColor="#666"
-                  secureTextEntry={!showPassword}
-                  onChangeText={setPassword}
-                />
-                <TouchableOpacity
-                  style={styles.passwordToggle}
-                  onPress={() => setShowPassword(!showPassword)}
-                >
-                  <Ionicons
-                    name={showPassword ? "eye-off" : "eye"}
-                    size={24}
-                    color="#666"
+            <Animated.View
+              style={[
+                styles.inputContainer,
+                {
+                  opacity: fadeAnim,
+                  transform: [{ translateX: slideAnim }, { scale: scaleAnim }],
+                },
+              ]}
+            >
+              {step === 1 ? (
+                <>
+                  <Text style={styles.label}>Name</Text>
+                  <TextInput
+                    style={[
+                      styles.input,
+                      !name.trim() && formError ? styles.inputError : null,
+                    ]}
+                    placeholder="Kartik Bihani"
+                    placeholderTextColor="#666"
+                    onChangeText={(text) => {
+                      setName(text);
+                      setFormError("");
+                    }}
+                    value={name}
                   />
-                </TouchableOpacity>
-              </View>
-              {errors.password ? (
-                <Text style={styles.errorText}>{errors.password}</Text>
-              ) : null}
 
-              <View style={styles.rowContainer}>
-                <View style={styles.ageColumn}>
+                  <Text style={styles.label}>Email</Text>
+                  <TextInput
+                    style={[
+                      styles.input,
+                      !email && formError ? styles.inputError : null,
+                    ]}
+                    placeholder="kb@gmail.com"
+                    placeholderTextColor="#666"
+                    onChangeText={(text) => {
+                      setEmail(text);
+                      setFormError("");
+                    }}
+                    autoCapitalize="none"
+                    keyboardType="email-address"
+                    autoComplete="email"
+                    value={email}
+                  />
+
+                  <Text style={styles.label}>Password</Text>
+                  <View
+                    style={[
+                      styles.passwordContainer,
+                      !password && formError ? styles.inputError : null,
+                      { marginBottom: 15 },
+                    ]}
+                  >
+                    <TextInput
+                      style={styles.passwordInput}
+                      placeholder="Create a password"
+                      placeholderTextColor="#666"
+                      secureTextEntry={!showPassword}
+                      onChangeText={(text) => {
+                        setPassword(text);
+                        setFormError("");
+                      }}
+                      value={password}
+                    />
+                    <TouchableOpacity
+                      style={styles.passwordToggle}
+                      onPress={() => setShowPassword(!showPassword)}
+                    >
+                      <Ionicons
+                        name={showPassword ? "eye-off" : "eye"}
+                        size={24}
+                        color="#666"
+                      />
+                    </TouchableOpacity>
+                  </View>
+                </>
+              ) : (
+                <>
                   <Text style={styles.label}>Age</Text>
                   <TextInput
-                    style={[styles.ageInput, errors.age && styles.inputError]}
+                    style={[
+                      styles.input,
+                      !age && formError ? styles.inputError : null,
+                    ]}
                     placeholder="24"
                     placeholderTextColor="#666"
                     keyboardType="numeric"
-                    onChangeText={handleAgeChange}
+                    onChangeText={(text) => {
+                      handleAgeChange(text);
+                      setFormError("");
+                    }}
                     value={age}
                     maxLength={3}
                   />
-                  {errors.age ? (
-                    <Text style={styles.errorText}>{errors.age}</Text>
-                  ) : null}
-                </View>
 
-                <View style={styles.phoneColumn}>
                   <Text style={styles.label}>Phone Number</Text>
                   <TextInput
-                    style={[styles.input, errors.phone && styles.inputError]}
+                    style={[
+                      styles.input,
+                      !phone && formError ? styles.inputError : null,
+                    ]}
                     placeholder="(123)-456-7890"
                     placeholderTextColor="#666"
                     keyboardType="phone-pad"
-                    onChangeText={handlePhoneChange}
+                    onChangeText={(text) => {
+                      handlePhoneChange(text);
+                      setFormError("");
+                    }}
                     value={phone}
                   />
-                  {errors.phone ? (
-                    <Text style={styles.errorText}>{errors.phone}</Text>
-                  ) : null}
-                </View>
-              </View>
-            </View>
+                </>
+              )}
+            </Animated.View>
+
+            {formError ? (
+              <Animated.Text
+                style={[
+                  styles.formErrorText,
+                  {
+                    opacity: fadeAnim,
+                    transform: [{ translateX: slideAnim }],
+                  },
+                ]}
+              >
+                {formError}
+              </Animated.Text>
+            ) : null}
+
+            {step === 2 && (
+              <TouchableOpacity
+                style={styles.backStepButton}
+                onPress={handleBack}
+              >
+                <Ionicons name="arrow-back" size={18} color="#4A90E2" />
+                <Text style={styles.backStepText}>
+                  {"Change your details?       "}
+                </Text>
+              </TouchableOpacity>
+            )}
 
             <TouchableOpacity
               style={[styles.button, loading && styles.buttonDisabled]}
-              onPress={handleSignUp}
+              onPress={step === 1 ? handleContinue : handleSignUp}
               disabled={loading}
             >
               <LinearGradient
@@ -273,7 +433,9 @@ export default function SignupScreen() {
                 {loading ? (
                   <ActivityIndicator color="#fff" />
                 ) : (
-                  <Text style={styles.buttonText}>Create Account</Text>
+                  <Text style={styles.buttonText}>
+                    {step === 1 ? "Continue" : "Create Account"}
+                  </Text>
                 )}
               </LinearGradient>
             </TouchableOpacity>
@@ -336,7 +498,7 @@ const styles = StyleSheet.create({
     marginBottom: 32,
   },
   inputContainer: {
-    marginBottom: 24,
+    marginBottom: 10,
   },
   rowContainer: {
     flexDirection: "row",
@@ -360,7 +522,7 @@ const styles = StyleSheet.create({
     color: "#fff",
     padding: 16,
     borderRadius: 6,
-    marginBottom: 20,
+    marginBottom: 25,
     fontSize: 16,
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.1)",
@@ -401,7 +563,7 @@ const styles = StyleSheet.create({
   errorText: {
     color: "#ff4444",
     fontSize: 12,
-    marginBottom: 8,
+    marginBottom: 15,
   },
   button: {
     borderRadius: 6,
@@ -451,5 +613,25 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     justifyContent: "center",
+  },
+  formErrorText: {
+    color: "#ff4444",
+    fontSize: 14,
+    textAlign: "center",
+    marginBottom: 15,
+    marginTop: 5,
+  },
+  backStepButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 8,
+    marginBottom: 15,
+    gap: 8,
+  },
+  backStepText: {
+    color: "#4A90E2",
+    fontSize: 14,
+    fontWeight: "600",
   },
 });
