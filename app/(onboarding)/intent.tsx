@@ -17,7 +17,6 @@ const options = [
   { id: "save", label: "I want to save for something" },
   { id: "lost", label: "I feel lost with money" },
   { id: "overview", label: "I want to see everything in one place" },
-  { id: "curious", label: "Just curious" },
 ];
 
 export default function IntentScreen() {
