@@ -3,6 +3,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Goal, GoalSetup, TimelineItem, Timeline } from '../types/finny';
 import finnyConstants from '../constants/finny';
 
+const BASE_URL = "https://financify-rose.vercel.app";
+
 // Helper function to generate random progress
 const getRandomProgress = () => Math.floor(Math.random() * (80 - 20 + 1)) + 20;
 
@@ -61,7 +63,7 @@ export const useGoals = (pushChat: (sender: "user" | "finny", text: string) => v
     } else if (goalSetup.step === "year") {
       try {
         const dateIntent = await fetch(
-          "http://localhost:8080/api/finny/goal-intent",
+          `${BASE_URL}/api/goal-intent`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },

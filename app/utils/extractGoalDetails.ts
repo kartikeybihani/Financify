@@ -11,9 +11,11 @@ interface GoalDetails {
   timeline: Timeline | null;
 }
 
+const BASE_URL = "https://financify-rose.vercel.app";
+
 export const extractGoalDetails = async (input: string): Promise<GoalDetails> => {
   try {
-    const res = await fetch("http://localhost:8080/api/finny/goal-intent", {
+    const res = await fetch(`${BASE_URL}/api/goal-intent`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ message: input }),
