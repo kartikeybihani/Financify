@@ -236,7 +236,7 @@ app.post("/api/finny/ask", async (req, res) => {
       req.body;
 
     if (!transactions || !message) {
-      return res.status(400).json({ error: "Missing required data." });
+      return res.status(400).json({ error: "Missing required data bro." });
     }
 
     const result = await runFinnyAdvisor({

@@ -99,7 +99,7 @@ export const useChat = () => {
       const goals = JSON.parse(savedGoals || "[]");
 
       console.log("Sending request to Finny API...");
-      const res = await fetch(`${BASE_URL}/api/ask`, {
+      const res = await fetch(`${BASE_URL}/api/finny/ask`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -112,9 +112,10 @@ export const useChat = () => {
         }),
       });
 
-      console.log("Response:", res);
+      console.log("Response:", JSON.stringify(res, null, 2));
       const data = await res.json();
-      console.log("Finny:", data.nudges);
+      console.log("Data 2:", data);
+      console.log("Finny 2:", data.nudges);
       
       const messages = data.nudges?.join("\n\n") || "Sorry, I wasn't able to generate advice just now.";
       const splitMessages = splitIntoMessages(messages);

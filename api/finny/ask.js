@@ -11,8 +11,14 @@ export default async function handler(req, res) {
     const { transactions, accounts, investments, liabilities, message, goals } =
       req.body;
 
+    console.log("Transactions:", transactions);
+    console.log("Message:", message);
+    console.log("Accounts:", accounts);
+    console.log("Investments:", investments);
+    console.log("Liabilities:", liabilities);
+    console.log("Goals:", goals);
     if (!transactions || !message) {
-      return res.status(400).json({ error: "Missing required data." });
+      return res.status(400).json({ error: "Missing required data bruhhh." });
     }
 
     const result = await runFinnyAdvisor({
