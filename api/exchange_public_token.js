@@ -1,4 +1,4 @@
-import { client } from "./plaidClient";
+import { client } from "./plaidClient.js";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
