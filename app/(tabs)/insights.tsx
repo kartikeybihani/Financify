@@ -103,12 +103,13 @@ export default function InsightsScreen() {
   };
 
   const fetchFreshData = async () => {
+    const BASE_URL = "https://financify-rose.vercel.app";
     try {
       setIsLoading(true);
       const token = await AsyncStorage.getItem("accessToken");
       if (!token) return;
 
-      const res = await fetch("http://localhost:8080/api/transactions", {
+      const res = await fetch(`${BASE_URL}/api/transactions`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

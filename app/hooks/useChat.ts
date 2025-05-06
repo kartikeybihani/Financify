@@ -91,14 +91,15 @@ export const useChat = () => {
   };
 
   const handleFinnyResponse = async (messageText: string) => {
+    const BASE_URL = "https://financify-rose.vercel.app";
     try {
       const stored = await AsyncStorage.getItem("financialData");
       const savedGoals = await AsyncStorage.getItem("goals");
       const parsed = JSON.parse(stored || "{}");
       const goals = JSON.parse(savedGoals || "[]");
 
-      // console.log("Sending request to Finny API...");
-      const res = await fetch("http://localhost:8080/api/finny/ask", {
+      console.log("Sending request to Finny API...");
+      const res = await fetch(`${BASE_URL}/api/ask`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -111,6 +112,7 @@ export const useChat = () => {
         }),
       });
 
+      console.log("Response:", res);
       const data = await res.json();
       console.log("Finny:", data.nudges);
       
