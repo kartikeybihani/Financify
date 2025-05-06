@@ -1,10 +1,12 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { open, create } from "react-native-plaid-link-sdk";
 
+const BASE_URL = "https://financify-rose.vercel.app";
+
 // === Create Link Token ===
 export const fetchLinkToken = async () => {
   try {
-    const res = await fetch("http://localhost:8080/api/create_link_token", {
+    const res = await fetch(`${BASE_URL}/api/create_link_token`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
     });
@@ -27,10 +29,12 @@ export const handlePlaidConnect = async (
   create({ token: linkToken });
   open({
     onSuccess: async ({ publicToken }) => {
-      const res = await fetch("http://localhost:8080/api/exchange_public_token", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ public_token: publicToken }),
+      const res = await fetch(
+        `${BASE_URL}/api/exchange_public_token`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ public_token: publicToken }),
       });
       const data = await res.json();
       const token = data.access_token;
@@ -67,7 +71,7 @@ export const fetchInstitution = async (token: string) => {
 
 export const fetchAccounts = async (token: string) => {
   try {
-    const res = await fetch("http://localhost:8080/api/accounts", {
+    const res = await fetch(`${BASE_URL}/api/accounts`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ access_token: token }),

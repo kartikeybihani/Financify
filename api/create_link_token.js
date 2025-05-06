@@ -24,6 +24,7 @@ export default async function handler(req, res) {
       products: ["auth", "transactions"],
       country_codes: ["US"],
       language: "en",
+      redirect_uri: "https://financify-rose.vercel.app/oauth-complete",
     });
     res.status(200).json(response.data);
   } catch (error) {
