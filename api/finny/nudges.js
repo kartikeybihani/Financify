@@ -1,4 +1,4 @@
-import { runFinnyAdvisor } from "../backend/ai/runFinnyAdvisor.js";
+import { runFinnyAdvisor } from "../../backend/ai/runFinnyAdvisor.js";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {

@@ -1,4 +1,4 @@
-import { runFinnyAdvisor } from "../backend/ai/runFinnyAdvisor.js";
+import { runFinnyAdvisor } from "../../backend/ai/runFinnyAdvisor.js";
 import fs from "fs";
 import { join } from "path";
 
