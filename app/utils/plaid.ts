@@ -56,7 +56,7 @@ export const handleDisconnect = async () => {
 // === Plaid Data Fetchers ===
 export const fetchInstitution = async (token: string) => {
   try {
-    const res = await fetch("http://localhost:8080/api/institution", {
+    const res = await fetch(`${BASE_URL}/api/institution`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ access_token: token }),
@@ -77,7 +77,6 @@ export const fetchAccounts = async (token: string) => {
       body: JSON.stringify({ access_token: token }),
     });
     const data = await res.json();
-    // console.log("Accounts data:", JSON.stringify(data, null, 2));
     console.log("Accounts data loaded...");
     return data.accounts;
   } catch (err) {
@@ -88,7 +87,7 @@ export const fetchAccounts = async (token: string) => {
 
 export const fetchIdentity = async (token: string) => {
   try {
-    const res = await fetch("http://localhost:8080/api/identity", {
+    const res = await fetch(`${BASE_URL}/api/identity`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ access_token: token }),
@@ -104,19 +103,18 @@ export const fetchIdentity = async (token: string) => {
 // ✅ NEW: Fetch Investments (Holdings + Transactions)
 export const fetchInvestments = async (token: string) => {
   try {
-    const res = await fetch("http://localhost:8080/api/investments", {
+    const res = await fetch(`${BASE_URL}/api/investments`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ access_token: token }),
     });
     const data = await res.json();
-    // console.log("✅ Investments full response:", JSON.stringify(data, null, 2));
     console.log("Investments data loaded...");
 
     return {
       holdings: data.holdings || [],
       securities: data.securities || [],
-      investmentTransactions: data.investmentTransactions || [],
+      investmentTransactions: data.investment_transactions || [],
     };
   } catch (err) {
     console.error("Error fetching investments:", err);
@@ -130,7 +128,7 @@ export const fetchInvestments = async (token: string) => {
 
 export const fetchLiabilities = async (token: string) => {
   try {
-    const res = await fetch("http://localhost:8080/api/liabilities", {
+    const res = await fetch(`${BASE_URL}/api/liabilities`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ access_token: token }),

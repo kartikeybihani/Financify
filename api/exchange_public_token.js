@@ -1,16 +1,4 @@
-import { Configuration, PlaidApi, PlaidEnvironments } from "plaid";
-
-const config = new Configuration({
-  basePath: PlaidEnvironments.sandbox,
-  baseOptions: {
-    headers: {
-      "PLAID-CLIENT-ID": process.env.PLAID_CLIENT_ID,
-      "PLAID-SECRET": process.env.PLAID_SECRET,
-    },
-  },
-});
-
-const client = new PlaidApi(config);
+import { client } from "./plaidClient";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {

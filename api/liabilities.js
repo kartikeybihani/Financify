@@ -7,8 +7,13 @@ export default async function handler(req, res) {
 
   try {
     const { access_token } = req.body;
-    const response = await client.accountsGet({ access_token });
-    res.status(200).json(response.data);
+    const liabilitiesResponse = await client.liabilitiesGet({
+      access_token,
+    });
+    res.status(200).json({
+      liabilities: liabilitiesResponse.data.liabilities,
+      accounts: liabilitiesResponse.data.accounts,
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
