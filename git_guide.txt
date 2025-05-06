@@ -1,0 +1,58 @@
+# Git Workflow Guide for Financify
+
+## Current Branch Structure
+- main: Production branch
+- develop: Development branch
+- feature/*: Feature branches
+
+## Best Practices
+1. Always create new feature branches from develop
+2. Keep feature branches focused on single features
+3. Use clear commit messages (Feature: Description)
+4. Regularly pull from develop to stay updated
+5. Delete feature branches after merging
+
+## Common Commands
+
+# Create new feature branch
+git checkout develop
+git pull origin develop
+git checkout -b feature/your-feature-name
+
+# Daily workflow
+git add .
+git commit -m "Feature: Your feature description"
+git push origin feature/your-feature-name
+
+# Update from develop
+git checkout develop
+git pull origin develop
+git checkout feature/your-feature-name
+git merge develop
+
+# Create Pull Request
+1. Push your changes
+2. Go to GitHub
+3. Create PR from feature branch to develop
+4. Get code review
+5. Merge after approval
+
+# After PR merge
+git checkout develop
+git pull origin develop
+git branch -d feature/your-feature-name
+
+## Troubleshooting
+# Undo last commit
+git reset HEAD~1
+
+# Stash changes
+git stash
+git stash pop
+
+# Fix merge conflicts
+git mergetool
+
+# Clean up local branches
+git fetch --prune
+git branch -d old-branch-name 

@@ -9,6 +9,7 @@ export const fetchLinkToken = async () => {
       headers: { "Content-Type": "application/json" },
     });
     const data = await res.json();
+    console.log("Link token:", data.link_token);
     return data.link_token;
   } catch (err) {
     console.error("Error fetching link token:", err);
@@ -33,6 +34,7 @@ export const handlePlaidConnect = async (
       });
       const data = await res.json();
       const token = data.access_token;
+      console.log("Plaid token:", token);
       await AsyncStorage.setItem("accessToken", token);
       onSuccess(token);
     },
