@@ -16,6 +16,7 @@ export interface Goal {
   target: number;
   year: string;
   description: string;
+  progress?: number;
 }
 
 export interface GoalSetup {

@@ -63,7 +63,7 @@ export const useGoals = (pushChat: (sender: "user" | "finny", text: string) => v
     } else if (goalSetup.step === "year") {
       try {
         const dateIntent = await fetch(
-          `${BASE_URL}/api/goal-intent`,
+          `${BASE_URL}/api/finny/goal-intent`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -72,22 +72,17 @@ export const useGoals = (pushChat: (sender: "user" | "finny", text: string) => v
         );
 
         const parsedDate = await dateIntent.json();
+        console.log("Date intent response:", parsedDate);
 
-        if (!parsedDate.timeline) {
+        if (!parsedDate.timeline || !parsedDate.timeline.month || !parsedDate.timeline.year) {
           response = "I didn't quite catch that date. Could you specify when you'd like to achieve this goal? For example: 'next spring', 'December 2024', or 'in 6 months'";
           pushChat("finny", response);
           return true;
         }
 
-        // Determine the correct year for the specified month
-        const currentYear = new Date().getFullYear();
-        const currentMonth = new Date().getMonth(); // 0-11
-        const targetMonth = new Date(`${parsedDate.timeline.month} 1`).getMonth();
-        const targetYear = parsedDate.timeline.year || (currentMonth > targetMonth ? currentYear + 1 : currentYear);
-
         const timeline: Timeline = {
-          month: parsedDate.timeline.month || "January",
-          year: targetYear.toString(),
+          month: parsedDate.timeline.month,
+          year: parsedDate.timeline.year.toString(),
         };
         updated.timeline = timeline;
 
@@ -105,7 +100,7 @@ export const useGoals = (pushChat: (sender: "user" | "finny", text: string) => v
         };
         await saveGoal(finalGoal);
 
-        response = `Perfect! I've set up your goal to save $${Number(updated.target).toLocaleString()} for ${updated.label} by ${updated.timeline.month} ${updated.timeline.year}. 🎯\n\nI'll help you track your progress and provide plan to reach this goal.`;
+        response = `Perfect! I've set up your goal to save $${Number(updated.target).toLocaleString()} for ${updated.label} by ${updated.timeline.month} ${updated.timeline.year}. 🎯\n\nI'll help you track your progress and provide a plan to reach this goal.`;
 
         updated.step = "none";
       } catch (error) {

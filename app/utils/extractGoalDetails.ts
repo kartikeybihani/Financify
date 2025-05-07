@@ -15,13 +15,15 @@ const BASE_URL = "https://financify-rose.vercel.app";
 
 export const extractGoalDetails = async (input: string): Promise<GoalDetails> => {
   try {
-    const res = await fetch(`${BASE_URL}/api/goal-intent`, {
+    const res = await fetch(`${BASE_URL}/api/finny/goal-intent`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ message: input }),
     });
+    console.log("Response:", res);
 
     const data = await res.json();
+    console.log("Data:", data);
     return {
       label: data.label || null,
       target: data.target || null,
