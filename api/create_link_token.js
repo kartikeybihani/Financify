@@ -9,7 +9,13 @@ export default async function handler(req, res) {
     const response = await client.linkTokenCreate({
       user: { client_user_id: "user-id" },
       client_name: "Financify",
-      products: ["auth", "transactions"],
+      products: [
+        "auth",
+        "identity",
+        "investments",
+        "transactions",
+        "liabilities",
+      ],
       country_codes: ["US"],
       language: "en",
       redirect_uri: "https://financify-rose.vercel.app/oauth-complete",

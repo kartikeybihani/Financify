@@ -10,11 +10,20 @@ export default async function handler(req, res) {
     const holdingsResponse = await client.investmentsHoldingsGet({
       access_token,
     });
+
+    console.log("Holdings:", holdingsResponse.data.holdings);
+    console.log("Securities:", holdingsResponse.data.securities);
+
     const transactionsResponse = await client.investmentsTransactionsGet({
       access_token,
       start_date: "2020-01-01",
       end_date: new Date().toISOString().split("T")[0],
     });
+
+    console.log(
+      "Investment Transactions:",
+      transactionsResponse.data.investment_transactions
+    );
 
     res.status(200).json({
       holdings: holdingsResponse.data.holdings,
