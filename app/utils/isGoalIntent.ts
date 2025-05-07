@@ -1,8 +1,9 @@
 export const isGoalIntent = async (input: string) => {
     const lower = input.toLowerCase();
+    let confidence = 0;
   
-    // Negative indicators (if these are present, it's likely not a goal setup)
-    const negativeIndicators = [
+    // Strong negative indicators (immediate rejection)
+    const strongNegativeIndicators = [
       "should i",
       "can i",
       "could i",
@@ -17,15 +18,26 @@ export const isGoalIntent = async (input: string) => {
       "advice",
       "recommend",
       "suggestion",
+      "worth",
+      "expensive",
+      "cost",
+      "price",
+      "budget",
+      "affordable",
     ];
   
-    // Check for negative indicators first
-    for (const phrase of negativeIndicators) {
-      if (lower.includes(phrase)) return false;
+    // Check for strong negative indicators first
+    for (const phrase of strongNegativeIndicators) {
+      if (lower.includes(phrase)) {
+        // Check if it's a genuine question about feasibility
+        if (lower.includes("?") || lower.includes("but")) {
+          return { isGoal: false, confidence: 0.9 };
+        }
+      }
     }
   
-    // Core goal-setting phrases (stronger indicators)
-    const goalSetters = [
+    // Strong goal-setting indicators
+    const strongGoalSetters = [
       "start saving for",
       "save up for",
       "saving towards",
@@ -37,46 +49,111 @@ export const isGoalIntent = async (input: string) => {
       "help me save",
       "want to save",
       "need to save",
-      "set up",
       "set up a goal",
       "set up a fund",
-      "set up a fund for",
-      "set up a goal for",
-      "set up a fund for",
-      "set up a goal for",
-      "set up a fund for",
     ];
   
-    // Check for explicit goal-setting phrases
-    for (const phrase of goalSetters) {
-      if (lower.includes(phrase)) return true;
+    // Check for strong goal-setting phrases
+    for (const phrase of strongGoalSetters) {
+      if (lower.includes(phrase)) {
+        confidence += 0.8;
+      }
     }
   
-    // Secondary phrases (weaker indicators, only count if no negative indicators)
-    const secondaryPhrases = [
+    // Moderate goal indicators
+    const moderateGoalSetters = [
       "i want to get",
       "i wanna get",
       "plan for",
       "work towards",
       "i want to buy",
       "i wanna buy",
+      "save for",
+      "saving for",
+      "goal to",
+      "target to",
     ];
   
-    // Only check secondary phrases if there's a clear savings/future context
-    for (const phrase of secondaryPhrases) {
+    for (const phrase of moderateGoalSetters) {
       if (lower.includes(phrase)) {
-        // Look for savings/future context
-        const hasSavingsContext = lower.includes("save") || 
-                                 lower.includes("future") || 
-                                 lower.includes("eventually") ||
-                                 lower.includes("someday") ||
-                                 lower.includes("one day");
-        
-        if (hasSavingsContext) return true;
+        confidence += 0.5;
       }
     }
   
-    return false;
+    // Future-oriented context
+    const futureContext = [
+      "future",
+      "eventually",
+      "someday",
+      "one day",
+      "later",
+      "next",
+      "coming",
+      "upcoming",
+    ];
+  
+    let hasFutureContext = false;
+    for (const phrase of futureContext) {
+      if (lower.includes(phrase)) {
+        hasFutureContext = true;
+        confidence += 0.3;
+        break;
+      }
+    }
+  
+    // Financial context
+    const financialContext = [
+      "save",
+      "money",
+      "fund",
+      "budget",
+      "cost",
+      "price",
+      "amount",
+      "dollars",
+      "$",
+    ];
+  
+    let hasFinancialContext = false;
+    for (const phrase of financialContext) {
+      if (lower.includes(phrase)) {
+        hasFinancialContext = true;
+        confidence += 0.2;
+        break;
+      }
+    }
+  
+    // Decision-making indicators (reduce confidence)
+    const decisionIndicators = [
+      "but",
+      "however",
+      "though",
+      "although",
+      "if",
+      "maybe",
+      "perhaps",
+      "possibly",
+      "considering",
+      "thinking about",
+    ];
+  
+    for (const phrase of decisionIndicators) {
+      if (lower.includes(phrase)) {
+        confidence *= 0.7;
+      }
+    }
+  
+    // Normalize confidence to 0-1 range
+    confidence = Math.min(Math.max(confidence, 0), 1);
+  
+    return {
+      isGoal: confidence >= 0.6,
+      confidence,
+      context: {
+        hasFutureContext,
+        hasFinancialContext,
+      },
+    };
   };
   
 export default isGoalIntent;

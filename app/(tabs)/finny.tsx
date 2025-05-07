@@ -39,64 +39,6 @@ interface Milestone {
   description: string;
 }
 
-// Merge the new styles with the existing styles import
-const mergedStyles = StyleSheet.create({
-  ...styles,
-  headerContainer: {
-    position: "relative",
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-    paddingVertical: 16,
-    backgroundColor: "#121212",
-  },
-  titleContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  clearButton: {
-    position: "absolute",
-    right: 16,
-    top: "50%",
-    transform: [{ translateY: -12 }],
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: "rgba(255, 59, 48, 0.1)",
-    borderWidth: 1,
-    borderColor: "rgba(255, 59, 48, 0.2)",
-  },
-  inputBar: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#1f1f1f",
-    borderRadius: 25,
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    marginHorizontal: 16,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: "rgba(74, 144, 226, 0.2)",
-  },
-  sendButton: {
-    backgroundColor: "#4A90E2",
-    width: 35,
-    height: 35,
-    borderRadius: 17.5,
-    justifyContent: "center",
-    alignItems: "center",
-    marginLeft: 10,
-  },
-  input: {
-    flex: 1,
-    fontSize: 15,
-    color: "#fff",
-    paddingVertical: 8,
-  },
-});
-
 export default function FinnyScreen() {
   // State
   const [activeTab, setActiveTab] = useState<"chat" | "timeline">("chat");
@@ -327,18 +269,18 @@ export default function FinnyScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <View style={mergedStyles.headerContainer}>
-        <View style={mergedStyles.titleContainer}>
+      <View style={styles.headerContainer}>
+        <View style={styles.titleContainer}>
           <Ionicons
             name="sparkles"
             size={24}
             color="#4A90E2"
             style={{ marginRight: 8 }}
           />
-          <Text style={mergedStyles.headerTitle}>Finny</Text>
+          <Text style={styles.headerTitle}>Finny</Text>
         </View>
         <TouchableOpacity
-          style={mergedStyles.clearButton}
+          style={styles.clearButton}
           onPress={clearChat}
           activeOpacity={0.7}
         >
@@ -419,17 +361,17 @@ export default function FinnyScreen() {
           </View>
 
           <View style={styles.inputBarContainer}>
-            <View style={mergedStyles.inputBar}>
+            <View style={styles.inputBar}>
               <TextInput
                 placeholder="Ask Finny anything about money..."
                 placeholderTextColor="#888"
-                style={mergedStyles.input}
+                style={styles.input}
                 value={userInput}
                 onChangeText={setUserInput}
                 onSubmitEditing={() => handleSend()}
               />
               <TouchableOpacity
-                style={mergedStyles.sendButton}
+                style={styles.sendButton}
                 onPress={() => handleSend()}
                 activeOpacity={0.7}
               >

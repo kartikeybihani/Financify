@@ -337,7 +337,6 @@ IMPORTANT: Always return a valid timeline object with month and year if any date
         { role: "system", content: systemPrompt },
         { role: "user", content: message },
       ],
-      temperature: 0.5,
     }),
   });
 

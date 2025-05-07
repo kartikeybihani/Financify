@@ -51,7 +51,6 @@ export async function getFinnySuggestions(contextString) {
       },
       body: JSON.stringify({
         model: "gpt-4o-mini",
-        temperature: 0.7,
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: contextString },
