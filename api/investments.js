@@ -11,9 +11,6 @@ export default async function handler(req, res) {
       access_token,
     });
 
-    console.log("Holdings:", holdingsResponse.data.holdings);
-    console.log("Securities:", holdingsResponse.data.securities);
-
     const transactionsResponse = await client.investmentsTransactionsGet({
       access_token,
       start_date: "2020-01-01",

@@ -110,7 +110,6 @@ export const fetchInvestments = async (token: string) => {
     });
     const data = await res.json();
     console.log("Investments data loaded...");
-    console.log("Investments:", data);
     return {
       holdings: data.holdings || [],
       securities: data.securities || [],
