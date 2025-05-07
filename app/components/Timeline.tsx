@@ -11,11 +11,13 @@ import {
   Modal,
   Dimensions,
   DeviceEventEmitter,
+  Alert,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import AddGoalModal from "./AddGoalModal";
+import GoalNotification from "./GoalNotification";
 
 // Define the type for timeline items
 interface TimelineItem {
@@ -29,7 +31,7 @@ interface TimelineItem {
 interface TimelineProps {
   timelineData: (TimelineItem & { id: string })[]; // Require ID in props
   timelineAnimations: Animated.Value[];
-  deleteGoal: (goalToDelete: TimelineItem) => void;
+  deleteGoal: (goalToDelete: TimelineItem) => Promise<string | null>;
 }
 
 // Helper function to get appropriate icon for timeline items
@@ -97,6 +99,10 @@ export default function Timeline({
   const [selectedDate, setSelectedDate] = useState(new Date());
   const modalAnimation = useRef(new Animated.Value(0)).current;
   const [isModalVisible, setIsModalVisible] = useState(false);
+  const [notification, setNotification] = useState({
+    visible: false,
+    message: "",
+  });
 
   // Sort timeline data by date
   const sortedTimelineData = [...timelineData].sort((a, b) => {
@@ -143,6 +149,26 @@ export default function Timeline({
       setShowAddGoalModal(false);
     };
   }, []);
+
+  const handleDeleteGoal = (goalToDelete: TimelineItem) => {
+    Alert.alert("Delete Goal", "Are you sure you want to delete this goal?", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: () => {
+          deleteGoal(goalToDelete).then((message: string | null) => {
+            if (message) {
+              setNotification({
+                visible: true,
+                message: message,
+              });
+            }
+          });
+        },
+      },
+    ]);
+  };
 
   // Handle adding a new goal
   const handleAddGoal = () => {
@@ -202,6 +228,12 @@ export default function Timeline({
 
   return (
     <View style={styles.timelineContainer}>
+      {notification.visible && (
+        <GoalNotification
+          message={notification.message}
+          onClose={() => setNotification({ visible: false, message: "" })}
+        />
+      )}
       <ScrollView contentContainerStyle={styles.timelineWrapper}>
         {sortedTimelineData.map((item, index) => {
           const animatedStyle = {
@@ -227,7 +259,7 @@ export default function Timeline({
                 );
                 setSelectedMilestone(isSelected ? null : item);
               }}
-              onLongPress={() => deleteGoal(item)}
+              onLongPress={() => handleDeleteGoal(item)}
               style={[
                 styles.timelineRow,
                 isSelected && styles.selectedTimelineRow,
