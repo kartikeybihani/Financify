@@ -16,6 +16,9 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { styles } from "../styles/insightsStyles";
+import CategoryGrid from "../components/CategoryGrid";
+import CategoryDetailModal from "../components/CategoryDetailModal";
+import FilterModal from "../components/FilterModal";
 const screenWidth = Dimensions.get("window").width;
 
 // Define types
@@ -24,6 +27,9 @@ interface Transaction {
   category?: string[];
   date: string;
   name: string;
+  personal_finance_category?: {
+    primary: string;
+  };
 }
 
 interface CategoryBreakdown {
@@ -43,16 +49,32 @@ interface Insight {
 
 // Add some nice colors for categories
 const categoryColors = {
-  Food: "#FF6B6B",
-  Shopping: "#4ECDC4",
-  Transportation: "#45B7D1",
-  Entertainment: "#96CEB4",
-  Bills: "#FFEEAD",
+  FOOD_AND_DRINK: "#FF6B6B",
+  GENERAL_MERCHANDISE: "#4ECDC4",
+  TRANSPORTATION: "#45B7D1",
+  ENTERTAINMENT: "#96CEB4",
+  LOAN_PAYMENTS: "#FFEEAD",
+  TRAVEL: "#4A90E2",
+  PERSONAL_CARE: "#D4A5A5",
+  GENERAL_SERVICES: "#9B786F",
+  INCOME: "#A8E6CF",
   Other: "#4A90E2",
-  Housing: "#D4A5A5",
-  Travel: "#9B786F",
-  Healthcare: "#A8E6CF",
-  Education: "#FFD3B6",
+};
+
+const formatCategoryName = (category: string): string => {
+  const categoryMap: { [key: string]: string } = {
+    FOOD_AND_DRINK: "Food & Drink",
+    GENERAL_MERCHANDISE: "Shopping",
+    TRANSPORTATION: "Transportation",
+    ENTERTAINMENT: "Entertainment",
+    LOAN_PAYMENTS: "Loan Payments",
+    TRAVEL: "Travel",
+    PERSONAL_CARE: "Personal Care",
+    GENERAL_SERVICES: "Services",
+    INCOME: "Income",
+    Other: "Other",
+  };
+  return categoryMap[category] || category;
 };
 
 // Dummy insights with proper typing
@@ -78,6 +100,11 @@ export default function InsightsScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState("All Categories");
   const [showFilterModal, setShowFilterModal] = useState(false);
+  const [showCategoryDetail, setShowCategoryDetail] = useState(false);
+  const [selectedCategoryDetail, setSelectedCategoryDetail] = useState<{
+    category: string;
+    data: { amount: number; percentage: number; color: string };
+  } | null>(null);
   const [categories, setCategories] = useState<string[]>(["All Categories"]);
   const hasData = useRef(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -171,12 +198,20 @@ export default function InsightsScreen() {
   }, []);
 
   const processTransactionsData = (transactionsData: Transaction[]) => {
+    // console.log("Processing transactions:", transactionsData);
     const expenses = transactionsData.filter((tx) => tx.amount > 0);
+    // console.log("Filtered expenses:", expenses);
     const totalSpent = expenses.reduce((acc, tx) => acc + tx.amount, 0);
 
     const categoriesObj: CategoryBreakdown = {};
     for (const tx of expenses) {
-      const category = tx.category?.[0] || "Other";
+      const category = tx.personal_finance_category?.primary || "Other";
+      // console.log(
+      //   "Transaction category:",
+      //   category,
+      //   "for transaction:",
+      //   tx.name
+      // );
       if (!categoriesObj[category]) {
         categoriesObj[category] = {
           amount: 0,
@@ -188,6 +223,8 @@ export default function InsightsScreen() {
       }
       categoriesObj[category].amount += tx.amount;
     }
+
+    // console.log("Categories object:", categoriesObj);
 
     // Calculate percentages
     Object.keys(categoriesObj).forEach((category) => {
@@ -202,8 +239,11 @@ export default function InsightsScreen() {
 
     const uniqueCategories = [
       "All Categories",
-      ...new Set(expenses.map((tx) => tx.category?.[0] || "Other")),
-    ];
+      ...new Set(
+        expenses.map((tx) => tx.personal_finance_category?.primary || "Other")
+      ),
+    ].map((cat) => (cat === "All Categories" ? cat : formatCategoryName(cat)));
+    // console.log("Unique categories:", uniqueCategories);
     setCategories(uniqueCategories);
 
     const topCategory = sortedCategories[0];
@@ -241,64 +281,18 @@ export default function InsightsScreen() {
   // Filter transactions based on selected category
   const filteredTransactions = transactions.filter((tx) => {
     if (selectedCategory === "All Categories") return true;
-    return tx.category?.[0] === selectedCategory;
-  });
-
-  // Render the filter modal
-  const renderFilterModal = () => {
-    return (
-      <Modal
-        visible={showFilterModal}
-        transparent={true}
-        animationType="slide"
-        onRequestClose={() => setShowFilterModal(false)}
-      >
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={() => setShowFilterModal(false)}
-        >
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Filter by Category</Text>
-              <TouchableOpacity onPress={() => setShowFilterModal(false)}>
-                <Ionicons name="close" size={24} color="#fff" />
-              </TouchableOpacity>
-            </View>
-            <FlatList
-              data={categories}
-              keyExtractor={(item) => item}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={[
-                    styles.filterItem,
-                    selectedCategory === item && styles.selectedFilterItem,
-                  ]}
-                  onPress={() => {
-                    setSelectedCategory(item);
-                    setShowFilterModal(false);
-                  }}
-                >
-                  <Text
-                    style={[
-                      styles.filterItemText,
-                      selectedCategory === item &&
-                        styles.selectedFilterItemText,
-                    ]}
-                  >
-                    {item}
-                  </Text>
-                  {selectedCategory === item && (
-                    <Ionicons name="checkmark" size={20} color="#4A90E2" />
-                  )}
-                </TouchableOpacity>
-              )}
-            />
-          </View>
-        </TouchableOpacity>
-      </Modal>
+    const txCategory = tx.personal_finance_category?.primary || "Other";
+    const formattedTxCategory = formatCategoryName(txCategory);
+    console.log(
+      "Filtering transaction:",
+      tx.name,
+      "Category:",
+      formattedTxCategory,
+      "Selected:",
+      selectedCategory
     );
-  };
+    return formattedTxCategory === selectedCategory;
+  });
 
   const onRefresh = async () => {
     if (!hasData.current) return;
@@ -314,18 +308,26 @@ export default function InsightsScreen() {
     category: string
   ): keyof typeof Ionicons.glyphMap => {
     const iconMap: { [key: string]: keyof typeof Ionicons.glyphMap } = {
-      Food: "restaurant",
-      Shopping: "cart",
-      Transportation: "car",
-      Entertainment: "game-controller",
-      Bills: "document-text",
-      Housing: "home",
-      Travel: "airplane",
-      Healthcare: "medical",
-      Education: "school",
+      FOOD_AND_DRINK: "restaurant",
+      GENERAL_MERCHANDISE: "cart",
+      TRANSPORTATION: "car",
+      ENTERTAINMENT: "game-controller",
+      LOAN_PAYMENTS: "card",
+      TRAVEL: "airplane",
+      PERSONAL_CARE: "fitness",
+      GENERAL_SERVICES: "briefcase",
+      INCOME: "cash",
       Other: "apps",
     };
     return iconMap[category] || "apps";
+  };
+
+  const handleCategoryPress = (
+    category: string,
+    data: { amount: number; percentage: number; color: string }
+  ) => {
+    setSelectedCategoryDetail({ category, data });
+    setShowCategoryDetail(true);
   };
 
   return (
@@ -368,66 +370,12 @@ export default function InsightsScreen() {
           {(!isLoading || hasData.current) && (
             <>
               <Text style={styles.sectionLabel}>Spending Overview</Text>
-              <View style={styles.categoryGridContainer}>
-                <View style={styles.totalSpendingCard}>
-                  <Text style={styles.totalSpendingLabel}>Total Spent</Text>
-                  <Text style={styles.totalSpendingAmount}>
-                    $
-                    {categoryBreakdown
-                      .reduce((acc, [_, data]) => acc + data.amount, 0)
-                      .toLocaleString("en-US", {
-                        minimumFractionDigits: 0,
-                        maximumFractionDigits: 0,
-                      })}
-                  </Text>
-                  <Text style={styles.totalSpendingPeriod}>This Month</Text>
-                </View>
-                <View style={styles.categoryGrid}>
-                  {categoryBreakdown
-                    .slice(0, 4)
-                    .map(([category, data], idx) => (
-                      <View key={idx} style={styles.categoryGridItem}>
-                        <View style={styles.categoryGridHeader}>
-                          <View
-                            style={[
-                              styles.categoryIcon,
-                              { backgroundColor: data.color },
-                            ]}
-                          >
-                            <Ionicons
-                              name={getCategoryIcon(category)}
-                              size={16}
-                              color="#fff"
-                            />
-                          </View>
-                          <Text style={styles.gridCategoryPercentage}>
-                            {data.percentage.toFixed(0)}%
-                          </Text>
-                        </View>
-                        <Text
-                          style={styles.gridCategoryLabel}
-                          numberOfLines={1}
-                        >
-                          {category}
-                        </Text>
-                        <Text style={styles.gridCategoryAmount}>
-                          ${data.amount.toLocaleString()}
-                        </Text>
-                        <View style={styles.miniProgressBar}>
-                          <View
-                            style={[
-                              styles.miniProgressFill,
-                              {
-                                width: `${data.percentage}%`,
-                                backgroundColor: data.color,
-                              },
-                            ]}
-                          />
-                        </View>
-                      </View>
-                    ))}
-                </View>
-              </View>
+              <CategoryGrid
+                categoryBreakdown={categoryBreakdown}
+                onCategoryPress={handleCategoryPress}
+                formatCategoryName={formatCategoryName}
+                getCategoryIcon={getCategoryIcon}
+              />
 
               <Text style={[styles.sectionLabel, { marginTop: 32 }]}>
                 Smart Insights
@@ -490,7 +438,10 @@ export default function InsightsScreen() {
                   <View>
                     <Text style={styles.txName}>{tx.name}</Text>
                     <Text style={styles.txMeta}>
-                      {tx.category?.[0] || "Other"} • {formatDate(tx.date)}
+                      {formatCategoryName(
+                        tx.personal_finance_category?.primary || "Other"
+                      )}{" "}
+                      • {formatDate(tx.date)}
                     </Text>
                   </View>
                   <Text style={styles.txAmount}>-${tx.amount.toFixed(2)}</Text>
@@ -499,7 +450,27 @@ export default function InsightsScreen() {
             </>
           )}
 
-          {renderFilterModal()}
+          <FilterModal
+            visible={showFilterModal}
+            onClose={() => setShowFilterModal(false)}
+            categories={categories}
+            selectedCategory={selectedCategory}
+            onSelectCategory={setSelectedCategory}
+            formatCategoryName={formatCategoryName}
+          />
+
+          {selectedCategoryDetail && (
+            <CategoryDetailModal
+              visible={showCategoryDetail}
+              onClose={() => setShowCategoryDetail(false)}
+              category={selectedCategoryDetail.category}
+              data={selectedCategoryDetail.data}
+              transactions={transactions}
+              formatCategoryName={formatCategoryName}
+              getCategoryIcon={getCategoryIcon}
+              formatDate={formatDate}
+            />
+          )}
         </ScrollView>
       )}
     </SafeAreaView>
