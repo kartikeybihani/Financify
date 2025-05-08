@@ -36,34 +36,22 @@ export default function SettingsScreen() {
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
 
   useEffect(() => {
-    const loadUserData = async () => {
+    const fetchAndSetUserData = async () => {
       try {
-        const storedUserData = await AsyncStorage.getItem("userData");
-        if (storedUserData) {
-          setUserData(JSON.parse(storedUserData));
-        } else {
-          await fetchUserData();
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (user) {
+          setUserData(user);
+          await AsyncStorage.setItem("userData", JSON.stringify(user));
+          console.log("[SettingsIndex] Current user email:", user.email);
         }
       } catch (error) {
-        console.error("Error loading user data from storage:", error);
+        console.error("Error fetching user data:", error);
       }
     };
-    loadUserData();
+    fetchAndSetUserData();
   }, []);
-
-  const fetchUserData = async () => {
-    try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (user) {
-        setUserData(user);
-        await AsyncStorage.setItem("userData", JSON.stringify(user));
-      }
-    } catch (error) {
-      console.error("Error fetching user data:", error);
-    }
-  };
 
   const handleDisconnectBank = async () => {
     Alert.alert(
@@ -114,6 +102,9 @@ export default function SettingsScreen() {
         text: "Logout",
         style: "destructive",
         onPress: async () => {
+          if (userData?.email) {
+            console.log("[SettingsIndex] Logging out user:", userData.email);
+          }
           await supabase.auth.signOut();
           router.replace("/(onboarding)/spark");
           console.log("User logged out");

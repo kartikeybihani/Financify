@@ -189,54 +189,17 @@ export default function SignupScreen() {
   const handleSignUp = async () => {
     if (!validateStep2()) return;
 
-    setLoading(true);
-    try {
-      // First sign up the user
-      const { error: signUpError, data: signUpData } =
-        await supabase.auth.signUp({
-          email,
-          password,
-          options: {
-            data: {
-              full_name: name,
-              age,
-              phone_number: phone.replace(/[^\d]/g, ""),
-            },
-          },
-        });
-
-      if (signUpError) throw signUpError;
-
-      // Check if email confirmation is required
-      if (signUpData?.session === null) {
-        Alert.alert(
-          "Verification Required",
-          "Please check your email for a verification link to complete your registration.",
-          [
-            {
-              text: "OK",
-              onPress: () => router.replace("../login"),
-            },
-          ]
-        );
-        return;
-      }
-
-      // If no email confirmation required, sign in the user
-      const { error: signInError } = await supabase.auth.signInWithPassword({
+    // Navigate to intent screen with user data
+    router.replace({
+      pathname: "/(onboarding)/intent",
+      params: {
+        name,
         email,
         password,
-      });
-
-      if (signInError) throw signInError;
-
-      // Navigate to tabs
-      router.replace("/(tabs)");
-    } catch (error: any) {
-      Alert.alert("Error", error.message);
-    } finally {
-      setLoading(false);
-    }
+        age,
+        phone: phone.replace(/[^\d]/g, ""),
+      },
+    });
   };
 
   const handlePhoneChange = (text: string) => {
@@ -348,7 +311,7 @@ export default function SignupScreen() {
                       onPress={() => setShowPassword(!showPassword)}
                     >
                       <Ionicons
-                        name={showPassword ? "eye-off" : "eye"}
+                        name={showPassword ? "eye" : "eye-off"}
                         size={24}
                         color="#666"
                       />

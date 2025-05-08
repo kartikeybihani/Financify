@@ -26,34 +26,22 @@ export default function PersonalInfoScreen() {
   const [newPhone, setNewPhone] = useState("");
 
   useEffect(() => {
-    const loadUserData = async () => {
+    const fetchAndSetUserData = async () => {
       try {
-        const storedUserData = await AsyncStorage.getItem("userData");
-        if (storedUserData) {
-          setUserData(JSON.parse(storedUserData));
-        } else {
-          await fetchUserData();
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (user) {
+          setUserData(user);
+          await AsyncStorage.setItem("userData", JSON.stringify(user));
+          console.log("[PersonalInfo] Current user email:", user.email);
         }
       } catch (error) {
-        console.error("Error loading user data from storage:", error);
+        console.error("Error fetching user data:", error);
       }
     };
-    loadUserData();
+    fetchAndSetUserData();
   }, []);
-
-  const fetchUserData = async () => {
-    try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (user) {
-        setUserData(user);
-        await AsyncStorage.setItem("userData", JSON.stringify(user));
-      }
-    } catch (error) {
-      console.error("Error fetching user data:", error);
-    }
-  };
 
   const handleSaveEmail = async () => {
     try {

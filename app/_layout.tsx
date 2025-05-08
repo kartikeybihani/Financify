@@ -22,13 +22,40 @@ function RootLayoutNav() {
 
     const inAuthGroup = segments[0] === "(auth)";
     const inOnboardingGroup = segments[0] === "(onboarding)";
+    const isSparkScreen = segments[1] === "spark";
+    const isIntentScreen = segments[1] === "intent";
+    const isConnectionScreen = segments[1] === "accountconnection";
 
-    if (session && (inAuthGroup || inOnboardingGroup)) {
-      // Redirect authenticated users to the home screen
+    if (!session) {
+      // Unauthenticated user - direct to spark screen
+      if (!isSparkScreen && !inAuthGroup) {
+        router.replace("/(onboarding)/spark");
+      }
+      return;
+    }
+
+    // User is authenticated
+    const hasCompletedOnboarding =
+      session.user.user_metadata?.intent &&
+      session.user.user_metadata?.hasConnectedBank;
+
+    if (!hasCompletedOnboarding) {
+      // New user needs to complete onboarding
+      if (
+        !session.user.user_metadata?.intent &&
+        !isIntentScreen &&
+        !isConnectionScreen
+      ) {
+        router.replace("/(onboarding)/intent");
+      } else if (
+        !session.user.user_metadata?.hasConnectedBank &&
+        !isConnectionScreen
+      ) {
+        router.replace("/(onboarding)/accountconnection");
+      }
+    } else if (hasCompletedOnboarding && (inAuthGroup || inOnboardingGroup)) {
+      // Existing user with completed onboarding
       router.replace("/(tabs)");
-    } else if (!session && !inAuthGroup && !inOnboardingGroup) {
-      // Redirect unauthenticated users to the onboarding flow
-      router.replace("/(onboarding)/spark");
     }
   }, [session, segments, isLoading]);
 
