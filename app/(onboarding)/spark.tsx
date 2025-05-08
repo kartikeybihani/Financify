@@ -262,6 +262,7 @@ export default function SparkOfClarity() {
             >
               <View style={styles.brandContainer}>
                 <Text style={styles.brandName}>Financify</Text>
+                <Text style={styles.aiTagline}>Powered by Next Gen AI</Text>
                 <LinearGradient
                   colors={[
                     "rgba(74, 144, 226, 0.3)",
@@ -273,8 +274,10 @@ export default function SparkOfClarity() {
                 />
               </View>
               <Text style={styles.title}>
-                Your Financial{"\n"}
-                <Text style={styles.titleHighlight}>Growth</Text> Begins
+                Your guide to{"\n"}
+                <Text style={styles.titleHighlight}>
+                  Financial Clarity and Control.
+                </Text>
               </Text>
 
               <View style={styles.cardContainer}>
@@ -302,10 +305,16 @@ export default function SparkOfClarity() {
                       Calm • Goals • Clarity
                     </Text>
                   </Animated.View>
+                  <View style={styles.transformationContainer}>
+                    <Text style={styles.transformationText}>
+                      Your Transformation starts here
+                    </Text>
+                  </View>
                 </View>
                 {!started && (
-                  <Text style={styles.cardCaption}>
-                    Before vs After Financify
+                  <Text style={styles.microcopy}>
+                    We use real data, smart AI, and goal-based planning to guide
+                    your money — without judgment.
                   </Text>
                 )}
               </View>
@@ -331,6 +340,9 @@ export default function SparkOfClarity() {
                     <Text style={styles.primaryButtonText}>Let's Begin</Text>
                   </LinearGradient>
                 </TouchableOpacity>
+                <Text style={styles.fluffText}>
+                  No Fluff. No dashboards. Just clarity.
+                </Text>
               </Animated.View>
             ) : (
               <View style={styles.authButtons}>
@@ -462,13 +474,20 @@ const styles = StyleSheet.create({
     fontWeight: "900",
     color: "#fff",
     textAlign: "center",
-    marginBottom: 8,
+    marginBottom: 4,
     letterSpacing: 1.2,
     textShadowColor: "rgba(74, 144, 226, 0.4)",
     textShadowOffset: { width: 0, height: 2 },
     textShadowRadius: 12,
     fontFamily: Platform.OS === "ios" ? "System" : "Roboto",
     includeFontPadding: false,
+  },
+  aiTagline: {
+    fontSize: 12,
+    color: "rgba(255, 255, 255, 0.5)",
+    textAlign: "center",
+    marginBottom: 8,
+    letterSpacing: 0.5,
   },
   brandUnderline: {
     height: 3,
@@ -492,6 +511,7 @@ const styles = StyleSheet.create({
   cardContainer: {
     width: "100%",
     alignItems: "center",
+    height: 210,
   },
   subtitleContainer: {
     backgroundColor: "rgba(255, 255, 255, 0.06)",
@@ -501,12 +521,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.1)",
     position: "relative",
-    height: 120,
-    marginBottom: 8,
+    height: 135,
+    marginBottom: 18,
   },
   card: {
     position: "absolute",
-    top: 0,
+    top: -25,
     left: 0,
     right: 0,
     bottom: 0,
@@ -517,7 +537,7 @@ const styles = StyleSheet.create({
   },
   cardBack: {
     position: "absolute",
-    top: 0,
+    top: -25,
     left: 0,
     right: 0,
     bottom: 0,
@@ -578,7 +598,7 @@ const styles = StyleSheet.create({
   },
   buttonSection: {
     width: "100%",
-    marginTop: 20,
+    marginTop: 8,
   },
   primaryButton: {
     width: "100%",
@@ -669,8 +689,41 @@ const styles = StyleSheet.create({
     fontWeight: "500",
     letterSpacing: 0.5,
   },
+  transformationContainer: {
+    position: "absolute",
+    bottom: 12,
+    left: 0,
+    right: 0,
+    alignItems: "center",
+    marginTop: 0,
+  },
+  transformationText: {
+    color: "rgba(255, 255, 255, 0.7)",
+    fontSize: 13,
+    textAlign: "center",
+    fontWeight: "500",
+    letterSpacing: 0.5,
+    marginTop: 12,
+  },
+  microcopy: {
+    color: "rgba(255, 255, 255, 0.5)",
+    fontSize: 13,
+    textAlign: "center",
+    marginTop: 20,
+    marginBottom: 2,
+    lineHeight: 18,
+    paddingHorizontal: 20,
+  },
   appleButton: {
     width: "100%",
     height: 56,
+  },
+  fluffText: {
+    color: "rgba(255,255,255,0.45)",
+    fontSize: 13,
+    textAlign: "center",
+    marginTop: 10,
+    fontWeight: "400",
+    letterSpacing: 0.2,
   },
 });
