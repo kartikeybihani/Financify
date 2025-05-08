@@ -38,6 +38,11 @@ export default function SettingsScreen() {
   useEffect(() => {
     const fetchAndSetUserData = async () => {
       try {
+        const storedUserData = await AsyncStorage.getItem("userData");
+        if (storedUserData) {
+          setUserData(JSON.parse(storedUserData));
+        }
+        // Always fetch latest user from Supabase
         const {
           data: { user },
         } = await supabase.auth.getUser();
@@ -106,7 +111,7 @@ export default function SettingsScreen() {
             console.log("[SettingsIndex] Logging out user:", userData.email);
           }
           await supabase.auth.signOut();
-          router.replace("/(onboarding)/spark");
+          router.replace("/(onboarding)/welcome");
           console.log("User logged out");
         },
       },

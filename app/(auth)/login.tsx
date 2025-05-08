@@ -114,6 +114,14 @@ export default function LoginScreen() {
 
     if (error) {
       setFormError(error.message);
+    } else {
+      // Fetch user and log email
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (user) {
+        console.log("User logged in:", user.email);
+      }
     }
   };
 
@@ -237,12 +245,14 @@ export default function LoginScreen() {
       />
 
       {step === 2 && (
-        <AuthButton
-          title="Go Back"
-          variant="text"
-          onPress={() => animateTransition(false)}
-          icon="arrow-back"
-        />
+        <View style={{ marginTop: 10 }}>
+          <AuthButton
+            title="Go Back"
+            variant="text"
+            onPress={() => animateTransition(false)}
+            icon="arrow-back"
+          />
+        </View>
       )}
     </AuthTemplate>
   );
