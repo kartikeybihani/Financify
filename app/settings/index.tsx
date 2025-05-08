@@ -41,9 +41,9 @@ export default function SettingsScreen() {
         const storedUserData = await AsyncStorage.getItem("userData");
         if (storedUserData) {
           setUserData(JSON.parse(storedUserData));
-        } else {
-          await fetchUserData();
         }
+        // Always fetch latest user from Supabase
+        await fetchUserData();
       } catch (error) {
         console.error("Error loading user data from storage:", error);
       }
@@ -115,7 +115,7 @@ export default function SettingsScreen() {
         style: "destructive",
         onPress: async () => {
           await supabase.auth.signOut();
-          router.replace("/(onboarding)/spark");
+          router.replace("/(onboarding)/welcome");
           console.log("User logged out");
         },
       },

@@ -28,7 +28,7 @@ function RootLayoutNav() {
       router.replace("/(tabs)");
     } else if (!session && !inAuthGroup && !inOnboardingGroup) {
       // Redirect unauthenticated users to the onboarding flow
-      router.replace("/(onboarding)/spark");
+      router.replace("/(onboarding)/welcome");
     }
   }, [session, segments, isLoading]);
 

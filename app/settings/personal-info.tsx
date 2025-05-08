@@ -15,6 +15,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { supabase } from "../lib/supabase/supabase";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import EditEmailModal from "../components/menu/EditEmailModal";
+import EditPhoneModal from "../components/menu/EditPhoneModal";
 
 export default function PersonalInfoScreen() {
   const router = useRouter();
@@ -31,9 +33,9 @@ export default function PersonalInfoScreen() {
         const storedUserData = await AsyncStorage.getItem("userData");
         if (storedUserData) {
           setUserData(JSON.parse(storedUserData));
-        } else {
-          await fetchUserData();
         }
+        // Always fetch latest user from Supabase
+        await fetchUserData();
       } catch (error) {
         console.error("Error loading user data from storage:", error);
       }
@@ -55,41 +57,33 @@ export default function PersonalInfoScreen() {
     }
   };
 
-  const handleSaveEmail = async () => {
+  const handleSaveEmail = async (email: string) => {
     try {
       const { data, error } = await supabase.auth.updateUser({
-        email: newEmail,
+        email,
       });
-      if (error) {
-        Alert.alert("Error", error.message);
-      } else {
-        const updatedUserData = { ...userData, email: newEmail };
-        setUserData(updatedUserData);
-        await AsyncStorage.setItem("userData", JSON.stringify(updatedUserData));
-        setShowEmailModal(false);
-      }
+      if (error) throw error;
+      const updatedUserData = { ...userData, email };
+      setUserData(updatedUserData);
+      await AsyncStorage.setItem("userData", JSON.stringify(updatedUserData));
+      setShowEmailModal(false);
     } catch (error: any) {
-      console.error("Error updating email:", error);
-      Alert.alert("Error updating email", error.message);
+      throw error;
     }
   };
 
-  const handleSavePhone = async () => {
+  const handleSavePhone = async (phone: string) => {
     try {
       const { data, error } = await supabase.auth.updateUser({
-        phone: newPhone,
+        phone,
       });
-      if (error) {
-        Alert.alert("Error", error.message);
-      } else {
-        const updatedUserData = { ...userData, phone: newPhone };
-        setUserData(updatedUserData);
-        await AsyncStorage.setItem("userData", JSON.stringify(updatedUserData));
-        setShowPhoneModal(false);
-      }
+      if (error) throw error;
+      const updatedUserData = { ...userData, phone };
+      setUserData(updatedUserData);
+      await AsyncStorage.setItem("userData", JSON.stringify(updatedUserData));
+      setShowPhoneModal(false);
     } catch (error: any) {
-      console.error("Error updating phone:", error);
-      Alert.alert("Error updating phone", error.message);
+      throw error;
     }
   };
 
@@ -201,57 +195,28 @@ export default function PersonalInfoScreen() {
       </ScrollView>
 
       {/* Email Edit Modal */}
-      <Modal visible={showEmailModal} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContainer}>
-            <Text style={styles.modalTitle}>Edit Email</Text>
-            <TextInput
-              value={newEmail}
-              onChangeText={setNewEmail}
-              style={styles.input}
-              placeholder="Enter new email"
-              keyboardType="email-address"
-              autoCapitalize="none"
-            />
-            <View style={styles.modalButtons}>
-              <Button
-                title="Cancel"
-                onPress={() => {
-                  setShowEmailModal(false);
-                  setNewEmail("");
-                }}
-              />
-              <Button title="Save" onPress={handleSaveEmail} />
-            </View>
-          </View>
-        </View>
-      </Modal>
+      <EditEmailModal
+        visible={showEmailModal}
+        value={newEmail}
+        onChange={setNewEmail}
+        onCancel={() => {
+          setShowEmailModal(false);
+          setNewEmail("");
+        }}
+        onSave={handleSaveEmail}
+      />
 
       {/* Phone Edit Modal */}
-      <Modal visible={showPhoneModal} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContainer}>
-            <Text style={styles.modalTitle}>Edit Phone</Text>
-            <TextInput
-              value={newPhone}
-              onChangeText={setNewPhone}
-              style={styles.input}
-              placeholder="Enter new phone"
-              keyboardType="phone-pad"
-            />
-            <View style={styles.modalButtons}>
-              <Button
-                title="Cancel"
-                onPress={() => {
-                  setShowPhoneModal(false);
-                  setNewPhone("");
-                }}
-              />
-              <Button title="Save" onPress={handleSavePhone} />
-            </View>
-          </View>
-        </View>
-      </Modal>
+      <EditPhoneModal
+        visible={showPhoneModal}
+        value={newPhone}
+        onChange={setNewPhone}
+        onCancel={() => {
+          setShowPhoneModal(false);
+          setNewPhone("");
+        }}
+        onSave={handleSavePhone}
+      />
     </SafeAreaView>
   );
 }

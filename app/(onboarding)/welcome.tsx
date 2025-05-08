@@ -16,13 +16,12 @@ import {
 import { useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
-import { BlurView } from "expo-blur";
 import * as AppleAuthentication from "expo-apple-authentication";
 import { supabase } from "../lib/supabase/supabase";
 
 const { width } = Dimensions.get("window");
 
-export default function SparkOfClarity() {
+export default function WelcomeScreen() {
   const router = useRouter();
   const [started, setStarted] = useState(false);
 
