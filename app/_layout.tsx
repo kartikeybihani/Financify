@@ -22,14 +22,15 @@ function RootLayoutNav() {
 
     const inAuthGroup = segments[0] === "(auth)";
     const inOnboardingGroup = segments[0] === "(onboarding)";
-    const isSparkScreen = segments[1] === "spark";
+    const inTabsGroup = segments[0] === "(tabs)";
     const isIntentScreen = segments[1] === "intent";
     const isConnectionScreen = segments[1] === "accountconnection";
+    const isWelcomeScreen = segments[1] === "welcome";
 
     if (!session) {
-      // Unauthenticated user - direct to spark screen
-      if (!isSparkScreen && !inAuthGroup) {
-        router.replace("/(onboarding)/spark");
+      // Unauthenticated user - direct to welcome screen
+      if (!inAuthGroup && !inOnboardingGroup) {
+        router.replace("/(onboarding)/welcome");
       }
       return;
     }
@@ -53,9 +54,13 @@ function RootLayoutNav() {
       ) {
         router.replace("/(onboarding)/accountconnection");
       }
-    } else if (hasCompletedOnboarding && (inAuthGroup || inOnboardingGroup)) {
+    } else if (hasCompletedOnboarding) {
       // Existing user with completed onboarding
-      router.replace("/(tabs)");
+      if (inAuthGroup || inOnboardingGroup) {
+        router.replace("/(tabs)");
+      } else if (!inTabsGroup && segments[0] !== "settings") {
+        router.replace("/(tabs)");
+      }
     }
   }, [session, segments, isLoading]);
 
@@ -73,12 +78,11 @@ function RootLayoutNav() {
       <Stack.Screen
         name="settings"
         options={{
+          headerShown: false,
           presentation: "modal",
           animation: "slide_from_bottom",
-          headerShown: false,
-          contentStyle: {
-            backgroundColor: "transparent",
-          },
+          gestureEnabled: true,
+          gestureDirection: "vertical",
         }}
       />
       <Stack.Screen name="+not-found" />

@@ -197,14 +197,7 @@ export default function HomeScreen() {
   // Render functions
   const renderHeader = () => (
     <View style={styles.header}>
-      <TouchableOpacity
-        onPress={() =>
-          router.push({
-            pathname: "/settings",
-            params: { userName: userData?.user_metadata?.full_name || "there" },
-          })
-        }
-      >
+      <TouchableOpacity onPress={() => router.push("/settings")}>
         <Feather name="menu" size={28} color="#fff" />
       </TouchableOpacity>
       <View style={styles.headerTextContainer}>
@@ -532,25 +525,29 @@ export default function HomeScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      {renderHeader()}
-
-      {isInitialLoad ? (
-        <View style={styles.loadingOverlay}>
-          <ActivityIndicator size="large" color="#4A90E2" />
-        </View>
-      ) : !accessToken ? (
-        renderDisconnectedState()
-      ) : (
-        <>
-          {isLoading ? (
-            <View style={styles.loadingOverlay}>
-              <ActivityIndicator size="large" color="#4A90E2" />
-            </View>
-          ) : (
-            renderConnectedState()
-          )}
-        </>
-      )}
+      <LinearGradient
+        colors={["#1A1A2E", "#16213E", "#0D1117"]}
+        style={styles.gradientBackground}
+      >
+        {renderHeader()}
+        {isInitialLoad ? (
+          <View style={styles.loadingOverlay}>
+            <ActivityIndicator size="large" color="#4A90E2" />
+          </View>
+        ) : !accessToken ? (
+          renderDisconnectedState()
+        ) : (
+          <>
+            {isLoading ? (
+              <View style={styles.loadingOverlay}>
+                <ActivityIndicator size="large" color="#4A90E2" />
+              </View>
+            ) : (
+              renderConnectedState()
+            )}
+          </>
+        )}
+      </LinearGradient>
     </SafeAreaView>
   );
 }

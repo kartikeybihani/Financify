@@ -80,30 +80,18 @@ export default function IntentScreen() {
   const handleContinue = async () => {
     if (!selected) return;
 
-    try {
-      // Update user metadata with intent
-      const { error } = await supabase.auth.updateUser({
-        data: { intent: selected },
-      });
-
-      if (error) throw error;
-
-      // Navigate to account connection
-      router.replace({
-        pathname: "/(onboarding)/accountconnection",
-        params: {
-          intent: selected,
-          name: params.name,
-          email: params.email,
-          password: params.password,
-          age: params.age,
-          phone: params.phone,
-        },
-      });
-    } catch (error) {
-      console.error("Error updating intent:", error);
-      Alert.alert("Error", "Failed to save your selection. Please try again.");
-    }
+    // Navigate to account connection with all params including selected intent
+    router.replace({
+      pathname: "/(onboarding)/accountconnection",
+      params: {
+        intent: selected,
+        name: params.name,
+        email: params.email,
+        password: params.password,
+        age: params.age,
+        phone: params.phone,
+      },
+    });
   };
 
   const renderOption = (option: (typeof options)[0], index: number) => {

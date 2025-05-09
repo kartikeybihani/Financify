@@ -155,13 +155,13 @@ export default function PersonalInfoScreen() {
             {renderInfoItem(
               "call-outline",
               "Phone",
-              userData?.phone ||
-                userData?.user_metadata?.phone_number ||
-                "Not available",
+              userData?.user_metadata?.phone_number || "Not available",
               () => {
-                setNewPhone(
-                  userData?.phone || userData?.user_metadata?.phone_number || ""
+                console.log(
+                  "Opening phone modal with value:",
+                  userData?.user_metadata?.phone_number || ""
                 );
+                setNewPhone(userData?.user_metadata?.phone_number || "");
                 setShowPhoneModal(true);
               }
             )}

@@ -336,6 +336,10 @@ export const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
   },
+  gradientBackground: {
+    flex: 1,
+    width: '100%',
+  },
 });
 
 export default styles;

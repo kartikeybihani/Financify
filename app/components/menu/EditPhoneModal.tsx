@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Modal,
   View,
@@ -9,6 +9,7 @@ import {
   StyleSheet,
   Alert,
   Platform,
+  Animated,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
@@ -35,6 +36,15 @@ function getDigitsFromFormatted(input: string) {
   return input.replace(/\D/g, "");
 }
 
+function formatPhoneUS(digits: string) {
+  if (!digits) return "";
+  let formatted = "";
+  if (digits.length > 0) formatted += "(" + digits.slice(0, 3);
+  if (digits.length >= 4) formatted += ")-" + digits.slice(3, 6);
+  if (digits.length >= 7) formatted += "-" + digits.slice(6, 10);
+  return formatted;
+}
+
 export default function EditPhoneModal({
   visible,
   value,
@@ -42,20 +52,86 @@ export default function EditPhoneModal({
   onCancel,
   onSave,
 }: EditPhoneModalProps) {
-  // Only store digits after country code
-  const initialDigits = getDigitsFromFormatted(value.replace(/^\+1\s*/, ""));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [digits, setDigits] = useState(initialDigits);
+  const [digits, setDigits] = useState("");
+  const [inputValue, setInputValue] = useState("");
+  const [verificationCode, setVerificationCode] = useState("");
+  const [showVerification, setShowVerification] = useState(false);
+  const [slideAnim] = useState(new Animated.Value(0));
+  const originalPhoneDigitsRef = React.useRef("");
 
-  const handleSave = async () => {
-    if (!digits.trim() || digits.length !== 10) {
+  useEffect(() => {
+    if (visible) {
+      const rawDigits = getDigitsFromFormatted(value);
+      setDigits(rawDigits);
+      setInputValue(formatPhoneUS(rawDigits));
+      if (!originalPhoneDigitsRef.current) {
+        originalPhoneDigitsRef.current = rawDigits;
+      }
+      setError("");
+      setShowVerification(false);
+      setVerificationCode("");
+      slideAnim.setValue(0);
+    } else {
+      // Reset ref when modal closes
+      originalPhoneDigitsRef.current = "";
+    }
+  }, [visible]);
+
+  const handleCancel = () => {
+    setShowVerification(false);
+    setVerificationCode("");
+    const rawDigits = getDigitsFromFormatted(value);
+    setDigits(rawDigits);
+    setInputValue(formatPhoneUS(rawDigits));
+    setError("");
+    slideAnim.setValue(0);
+    onCancel();
+  };
+
+  const handleChange = (text: string) => {
+    const onlyDigits = getDigitsFromFormatted(text);
+    setDigits(onlyDigits.slice(0, 10));
+    setInputValue(formatPhoneUS(onlyDigits.slice(0, 10)));
+    onChange(formatPhoneUS(onlyDigits.slice(0, 10)));
+  };
+
+  const handleContinue = async () => {
+    const formattedDigits = digits.replace(/\D/g, "");
+    if (!formattedDigits || formattedDigits.length !== 10) {
       setError("Please enter a valid 10-digit phone number.");
+      return;
+    }
+    if (formattedDigits === originalPhoneDigitsRef.current) {
+      setError("Please enter a different phone number.");
       return;
     }
     setLoading(true);
     setError("");
     try {
+      setShowVerification(true);
+      Animated.timing(slideAnim, {
+        toValue: 1,
+        duration: 300,
+        useNativeDriver: true,
+      }).start();
+    } catch (e: any) {
+      setError(e.message || "Error sending verification code");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSave = async () => {
+    if (!verificationCode.trim() || verificationCode.length !== 6) {
+      setError("Please enter a valid 6-digit code.");
+      return;
+    }
+    setLoading(true);
+    setError("");
+    try {
+      // Here you would verify the code before saving
       await onSave(`+1 ${formatPhoneInput(digits)}`);
     } catch (e: any) {
       setError(e.message || "Error updating phone");
@@ -64,11 +140,83 @@ export default function EditPhoneModal({
     }
   };
 
-  const handleChange = (text: string) => {
-    const onlyDigits = getDigitsFromFormatted(text);
-    setDigits(onlyDigits.slice(0, 10));
-    onChange(`+1 ${formatPhoneInput(onlyDigits.slice(0, 10))}`);
-  };
+  const renderPhoneInput = () => (
+    <Animated.View
+      style={[
+        styles.inputContainer,
+        {
+          transform: [
+            {
+              translateX: slideAnim.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0, -500],
+              }),
+            },
+          ],
+          opacity: slideAnim.interpolate({
+            inputRange: [0, 1],
+            outputRange: [1, 0],
+          }),
+        },
+      ]}
+    >
+      <Text style={styles.subtitle}>
+        We'll use this for account recovery and security.
+      </Text>
+      <View style={styles.inputRow}>
+        <Text style={styles.prefix}>+1 </Text>
+        <TextInput
+          value={inputValue}
+          onChangeText={handleChange}
+          style={styles.input}
+          placeholder="(123)-456-7890"
+          placeholderTextColor="#B4B4B4"
+          keyboardType="phone-pad"
+          editable={!loading}
+          maxLength={14}
+          selectionColor="#4A90E2"
+        />
+      </View>
+    </Animated.View>
+  );
+
+  const renderVerificationInput = () => (
+    <Animated.View
+      style={[
+        styles.inputContainer,
+        {
+          transform: [
+            {
+              translateX: slideAnim.interpolate({
+                inputRange: [0, 1],
+                outputRange: [500, 0],
+              }),
+            },
+          ],
+          opacity: slideAnim.interpolate({
+            inputRange: [0, 1],
+            outputRange: [0, 1],
+          }),
+        },
+      ]}
+    >
+      <Text style={styles.subtitle}>
+        Please enter the verification code we sent to you
+      </Text>
+      <TextInput
+        value={verificationCode}
+        onChangeText={(text) =>
+          setVerificationCode(text.replace(/[^0-9]/g, "").slice(0, 6))
+        }
+        style={styles.input}
+        placeholder="Enter 6-digit code"
+        placeholderTextColor="#B4B4B4"
+        keyboardType="number-pad"
+        maxLength={6}
+        editable={!loading}
+      />
+    </Animated.View>
+  );
 
   return (
     <Modal visible={visible} transparent animationType="slide">
@@ -76,34 +224,19 @@ export default function EditPhoneModal({
         <View style={styles.sheet}>
           <TouchableOpacity
             style={styles.closeIcon}
-            onPress={onCancel}
+            onPress={handleCancel}
             disabled={loading}
           >
             <Ionicons name="close" size={28} color="#B4B4B4" />
           </TouchableOpacity>
           <Text style={styles.title}>Update your phone</Text>
-          <Text style={styles.subtitle}>
-            We'll use this for account recovery and security.
-          </Text>
-          <View style={styles.inputRow}>
-            <Text style={styles.prefix}>+1 </Text>
-            <TextInput
-              value={formatPhoneInput(digits)}
-              onChangeText={handleChange}
-              style={styles.input}
-              placeholder="(123)-456-7890"
-              placeholderTextColor="#B4B4B4"
-              keyboardType="phone-pad"
-              editable={!loading}
-              maxLength={14}
-              selectionColor="#4A90E2"
-            />
-          </View>
+          {renderPhoneInput()}
+          {renderVerificationInput()}
           {error ? <Text style={styles.error}>{error}</Text> : null}
           <View style={styles.buttonRow}>
             <TouchableOpacity
               style={[styles.button, styles.cancelButton]}
-              onPress={onCancel}
+              onPress={handleCancel}
               disabled={loading}
             >
               <Text style={styles.cancelButtonText}>Cancel</Text>
@@ -114,13 +247,15 @@ export default function EditPhoneModal({
                 styles.saveButton,
                 loading && { opacity: 0.7 },
               ]}
-              onPress={handleSave}
+              onPress={showVerification ? handleSave : handleContinue}
               disabled={loading}
             >
               {loading ? (
-                <ActivityIndicator color="#fff" />
+                <ActivityIndicator color="#000" />
               ) : (
-                <Text style={styles.saveButtonText}>Save</Text>
+                <Text style={styles.saveButtonText}>
+                  {showVerification ? "Save" : "Continue"}
+                </Text>
               )}
             </TouchableOpacity>
           </View>
@@ -174,6 +309,13 @@ const styles = StyleSheet.create({
     marginBottom: 22,
     textAlign: "center",
   },
+  inputContainer: {
+    width: "100%",
+    position: "absolute",
+    top: 100,
+    left: 32,
+    right: 32,
+  },
   inputRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -211,7 +353,8 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     width: "100%",
-    marginTop: 24,
+    marginTop: "auto",
+    marginBottom: 20,
     gap: 16,
   },
   button: {
@@ -225,7 +368,7 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   saveButton: {
-    backgroundColor: "#4A90E2",
+    backgroundColor: "#fff",
     marginLeft: 8,
   },
   cancelButtonText: {
@@ -234,7 +377,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   saveButtonText: {
-    color: "#fff",
+    color: "#000",
     fontWeight: "700",
     fontSize: 16,
   },
