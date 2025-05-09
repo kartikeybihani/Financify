@@ -19,7 +19,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { supabase } from "../lib/supabase/supabase";
 import { useRouter } from "expo-router";
-
+import AsyncStorage from "@react-native-async-storage/async-storage";
 const { width } = Dimensions.get("window");
 
 const MINIMUM_AGE = 18;
@@ -189,17 +189,35 @@ export default function SignupScreen() {
   const handleSignUp = async () => {
     if (!validateStep2()) return;
 
-    // Navigate to intent screen with user data
-    router.replace({
-      pathname: "/(onboarding)/intent",
-      params: {
-        name,
-        email,
-        password,
-        age,
-        phone: phone.replace(/[^\d]/g, ""),
+    setLoading(true);
+
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          full_name: name,
+          age,
+          phone_number: phone,
+          onboarding_complete: false,
+        },
       },
     });
+
+    console.log("Signup data: ", data);
+
+    setLoading(false);
+
+    if (error) {
+      Alert.alert("Signup Failed", error.message);
+      return;
+    }
+
+    // ✅ Save onboarding progress so we can resume if app is closed
+    await AsyncStorage.setItem("onboarding_started", "true");
+
+    // ✅ Move to intent screen
+    router.replace("/(onboarding)/intent");
   };
 
   const handlePhoneChange = (text: string) => {
@@ -208,12 +226,6 @@ export default function SignupScreen() {
       setPhone(formattedNumber);
     }
   };
-
-  // Generate age options
-  const ageOptions = Array.from(
-    { length: MAXIMUM_AGE - MINIMUM_AGE + 1 },
-    (_, i) => MINIMUM_AGE + i
-  );
 
   return (
     <KeyboardAvoidingView

@@ -1,3 +1,4 @@
+// app/(root)/_layout.tsx
 import React from "react";
 import { Stack, useRouter, useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
@@ -7,9 +8,6 @@ import { useEffect } from "react";
 import "react-native-reanimated";
 import AuthProvider, { useAuth } from "./contexts/AuthContext";
 
-// import { useColorScheme } from "@/hooks/useColorScheme";
-
-// Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
 
 function RootLayoutNav() {
@@ -20,47 +18,35 @@ function RootLayoutNav() {
   useEffect(() => {
     if (isLoading) return;
 
-    const inAuthGroup = segments[0] === "(auth)";
-    const inOnboardingGroup = segments[0] === "(onboarding)";
-    const inTabsGroup = segments[0] === "(tabs)";
-    const isIntentScreen = segments[1] === "intent";
-    const isConnectionScreen = segments[1] === "accountconnection";
-    const isWelcomeScreen = segments[1] === "welcome";
+    const inAuth = segments[0] === "(auth)";
+    const inOnboarding = segments[0] === "(onboarding)";
+    const inTabs = segments[0] === "(tabs)";
 
     if (!session) {
-      // Unauthenticated user - direct to welcome screen
-      if (!inAuthGroup && !inOnboardingGroup) {
+      if (!inAuth && !inOnboarding) {
         router.replace("/(onboarding)/welcome");
       }
       return;
     }
 
-    // User is authenticated
-    const hasCompletedOnboarding =
-      session.user.user_metadata?.intent &&
-      session.user.user_metadata?.hasConnectedBank;
+    const meta = session.user.user_metadata || {};
+    const onboardingDone = meta.onboarding_complete === true;
+    const hasIntent = !!meta.intent;
+    const hasBank = !!meta.hasConnectedBank;
 
-    if (!hasCompletedOnboarding) {
-      // New user needs to complete onboarding
-      if (
-        !session.user.user_metadata?.intent &&
-        !isIntentScreen &&
-        !isConnectionScreen
-      ) {
+    if (!onboardingDone) {
+      if (!hasIntent) {
         router.replace("/(onboarding)/intent");
-      } else if (
-        !session.user.user_metadata?.hasConnectedBank &&
-        !isConnectionScreen
-      ) {
+      } else if (!hasBank) {
         router.replace("/(onboarding)/accountconnection");
+      } else {
+        router.replace("/(onboarding)/final");
       }
-    } else if (hasCompletedOnboarding) {
-      // Existing user with completed onboarding
-      if (inAuthGroup || inOnboardingGroup) {
-        router.replace("/(tabs)");
-      } else if (!inTabsGroup && segments[0] !== "settings") {
-        router.replace("/(tabs)");
-      }
+      return;
+    }
+
+    if (inAuth || inOnboarding) {
+      router.replace("/(tabs)");
     }
   }, [session, segments, isLoading]);
 
@@ -68,13 +54,7 @@ function RootLayoutNav() {
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name="(onboarding)" options={{ headerShown: false }} />
       <Stack.Screen name="(auth)" options={{ headerShown: false }} />
-      <Stack.Screen
-        name="(tabs)"
-        options={{
-          headerShown: false,
-          gestureEnabled: false,
-        }}
-      />
+      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen
         name="settings"
         options={{
@@ -91,20 +71,15 @@ function RootLayoutNav() {
 }
 
 export default function RootLayout() {
-  // const colorScheme = useColorScheme();
   const [loaded] = useFonts({
     SpaceMono: require("../assets/fonts/SpaceMono-Regular.ttf"),
   });
 
   useEffect(() => {
-    if (loaded) {
-      SplashScreen.hideAsync();
-    }
+    if (loaded) SplashScreen.hideAsync();
   }, [loaded]);
 
-  if (!loaded) {
-    return null;
-  }
+  if (!loaded) return null;
 
   return (
     <AuthProvider>

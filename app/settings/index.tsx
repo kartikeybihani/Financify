@@ -49,7 +49,10 @@ export default function SettingsScreen() {
         if (user) {
           setUserData(user);
           await AsyncStorage.setItem("userData", JSON.stringify(user));
-          console.log("[SettingsIndex] Current user email:", user.email);
+          console.log(
+            "[SettingsIndex] Current user email:",
+            user.user_metadata.full_name
+          );
         }
       } catch (error) {
         console.error("Error fetching user data:", error);

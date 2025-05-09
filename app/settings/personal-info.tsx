@@ -17,6 +17,7 @@ import { supabase } from "../lib/supabase/supabase";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import EditEmailModal from "../components/menu/EditEmailModal";
 import EditPhoneModal from "../components/menu/EditPhoneModal";
+import EditNameModal from "../components/menu/EditNameModal";
 
 export default function PersonalInfoScreen() {
   const router = useRouter();
@@ -26,6 +27,8 @@ export default function PersonalInfoScreen() {
   const [showPhoneModal, setShowPhoneModal] = useState(false);
   const [newEmail, setNewEmail] = useState("");
   const [newPhone, setNewPhone] = useState("");
+  const [newName, setNewName] = useState("");
+  const [showNameModal, setShowNameModal] = useState(false);
 
   useEffect(() => {
     const fetchAndSetUserData = async () => {
@@ -75,6 +78,24 @@ export default function PersonalInfoScreen() {
       setUserData(updatedUserData);
       await AsyncStorage.setItem("userData", JSON.stringify(updatedUserData));
       setShowPhoneModal(false);
+    } catch (error: any) {
+      throw error;
+    }
+  };
+
+  const handleSaveName = async (name: string) => {
+    try {
+      const { data, error } = await supabase.auth.updateUser({
+        data: { full_name: name },
+      });
+      if (error) throw error;
+      const updatedUserData = {
+        ...userData,
+        user_metadata: { ...userData.user_metadata, full_name: name },
+      };
+      setUserData(updatedUserData);
+      await AsyncStorage.setItem("userData", JSON.stringify(updatedUserData));
+      setShowNameModal(false);
     } catch (error: any) {
       throw error;
     }
@@ -139,7 +160,11 @@ export default function PersonalInfoScreen() {
             {renderInfoItem(
               "person-outline",
               "Name",
-              userData?.user_metadata?.full_name || userName || "Not available"
+              userData?.user_metadata?.full_name || userName || "Not available",
+              () => {
+                setNewName(userData?.user_metadata?.full_name || "");
+                setShowNameModal(true);
+              }
             )}
             <View style={styles.divider} />
             {renderInfoItem(
@@ -182,6 +207,18 @@ export default function PersonalInfoScreen() {
           </View>
         </View>
       </ScrollView>
+
+      {/* Name Edit Modal */}
+      <EditNameModal
+        visible={showNameModal}
+        value={userData?.user_metadata?.full_name || ""}
+        onChange={setNewName}
+        onCancel={() => {
+          setShowNameModal(false);
+          setNewName("");
+        }}
+        onSave={handleSaveName}
+      />
 
       {/* Email Edit Modal */}
       <EditEmailModal

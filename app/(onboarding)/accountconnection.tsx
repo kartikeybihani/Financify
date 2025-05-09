@@ -45,58 +45,32 @@ export default function AccountConnectionScreen() {
     initializePlaid();
   }, []);
 
-  const createUser = async (accessToken: string) => {
+  const updateUserAfterBankConnect = async (accessToken: string) => {
     try {
-      // Create user with Supabase
-      const { error: signUpError, data: signUpData } =
-        await supabase.auth.signUp({
-          email: params.email as string,
-          password: params.password as string,
-          phone: params.phone as string,
-          options: {
-            data: {
-              full_name: params.name,
-              age: params.age,
-              phone_number: params.phone,
-              intent: params.intent,
-              hasConnectedBank: true,
-            },
-          },
-        });
+      const { data: userData, error: userError } =
+        await supabase.auth.getUser();
 
-      if (signUpError) throw signUpError;
-
-      // Check if email confirmation is required
-      if (signUpData?.session === null) {
-        Alert.alert(
-          "Verification Required",
-          "Please check your email for a verification link to complete your registration.",
-          [
-            {
-              text: "OK",
-              onPress: () => router.replace("/(auth)/login"),
-            },
-          ]
-        );
-        return;
+      if (userError || !userData.user) {
+        throw new Error("User not found");
       }
 
-      // If no email confirmation required, sign in the user
-      const { error: signInError } = await supabase.auth.signInWithPassword({
-        email: params.email as string,
-        password: params.password as string,
+      const { error: updateError } = await supabase.auth.updateUser({
+        data: {
+          hasConnectedBank: true,
+        },
       });
 
-      if (signInError) throw signInError;
+      if (updateError) {
+        throw updateError;
+      }
 
-      // Save access token
       await AsyncStorage.setItem("accessToken", accessToken);
 
-      // Navigate to tabs
-      router.replace("/(tabs)");
+      // Navigate to final screen after updating user metadata
+      router.replace("/(onboarding)/final");
     } catch (error: any) {
-      console.error("Error creating user:", error);
-      Alert.alert("Error", error.message);
+      console.error("Error updating user:", error);
+      Alert.alert("Error", error.message || "Something went wrong");
     }
   };
 
@@ -122,7 +96,7 @@ export default function AccountConnectionScreen() {
           [
             {
               text: "Continue",
-              onPress: () => createUser(accessToken),
+              onPress: () => updateUserAfterBankConnect(accessToken),
             },
           ]
         );
