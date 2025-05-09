@@ -298,7 +298,7 @@ export default function SettingsScreen() {
       <FeedbackModal
         visible={showFeedbackModal}
         onClose={() => setShowFeedbackModal(false)}
-        userName={String(userName)}
+        userName={userData?.user_metadata?.full_name || userName || ""}
       />
     </SafeAreaView>
   );

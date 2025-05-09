@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -25,9 +25,13 @@ export default function FeedbackModal({
   onClose,
   userName,
 }: FeedbackModalProps) {
-  const [name, setName] = useState(userName);
+  const [name, setName] = useState(userName || "");
   const [feedback, setFeedback] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (visible) setName(userName || "");
+  }, [visible, userName]);
 
   const handleSubmit = async () => {
     if (!name.trim() || !feedback.trim()) {

@@ -157,10 +157,6 @@ export default function PersonalInfoScreen() {
               "Phone",
               userData?.user_metadata?.phone_number || "Not available",
               () => {
-                console.log(
-                  "Opening phone modal with value:",
-                  userData?.user_metadata?.phone_number || ""
-                );
                 setNewPhone(userData?.user_metadata?.phone_number || "");
                 setShowPhoneModal(true);
               }
