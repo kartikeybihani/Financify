@@ -1,4 +1,9 @@
-import React from "react";
+import React, {
+  useRef,
+  useEffect,
+  forwardRef,
+  useImperativeHandle,
+} from "react";
 import {
   View,
   TouchableOpacity,
@@ -6,9 +11,46 @@ import {
   Platform,
   Text,
   TouchableOpacityProps,
+  Image,
+  Animated,
 } from "react-native";
 import { Tabs, useRouter, usePathname } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import { Easing } from "react-native";
+
+const FinnyTabIcon = forwardRef(({ focused }: { focused: boolean }, ref) => {
+  const rotation = useRef(new Animated.Value(0)).current;
+
+  const animate = () => {
+    rotation.setValue(0);
+    Animated.timing(rotation, {
+      toValue: 1,
+      duration: 1200,
+      easing: Easing.inOut(Easing.ease),
+      useNativeDriver: true,
+    }).start();
+  };
+
+  useImperativeHandle(ref, () => ({ animate }));
+
+  const rotate = rotation.interpolate({
+    inputRange: [0, 1],
+    outputRange: ["0deg", "360deg"],
+  });
+
+  return (
+    <Animated.Image
+      source={require("../assets/main1.png")}
+      style={{
+        width: 36,
+        height: 36,
+        tintColor: focused ? "#4A90E2" : "#ccc",
+        transform: [{ rotate }],
+      }}
+      resizeMode="contain"
+    />
+  );
+});
 
 export default function TabLayout() {
   const router = useRouter();
@@ -32,6 +74,8 @@ export default function TabLayout() {
       icon: "stats-chart-outline",
     },
   ];
+
+  const finnyIconRef = useRef<any>(null);
 
   return (
     <Tabs
@@ -66,24 +110,53 @@ export default function TabLayout() {
             ),
             tabBarIcon: ({ focused }) => (
               <View style={tab.isCenter ? styles.centerTab : undefined}>
-                <Ionicons
-                  name={tab.icon as any}
-                  size={tab.isCenter ? 30 : 24}
-                  color={focused ? "#4A90E2" : "#ccc"}
-                />
+                {tab.name === "finny" ? (
+                  <FinnyTabIcon ref={finnyIconRef} focused={focused} />
+                ) : (
+                  <Ionicons
+                    name={tab.icon as any}
+                    size={tab.isCenter ? 30 : 24}
+                    color={focused ? "#4A90E2" : "#ccc"}
+                  />
+                )}
               </View>
             ),
             tabBarButton: (props) => {
               const { style, ...otherProps } = props as TouchableOpacityProps;
+              if (tab.name === "finny") {
+                return (
+                  <TouchableOpacity
+                    {...otherProps}
+                    style={style}
+                    activeOpacity={0.8}
+                    onPress={(e) => {
+                      if (finnyIconRef.current) finnyIconRef.current.animate();
+                      if (props.onPress) props.onPress(e);
+                    }}
+                  ></TouchableOpacity>
+                );
+              }
               return (
                 <TouchableOpacity
                   {...otherProps}
                   style={style}
                   activeOpacity={0.8}
-                />
+                  onPress={(e) => {
+                    if (props.onPress) props.onPress(e);
+                  }}
+                ></TouchableOpacity>
               );
             },
           }}
+          listeners={
+            tab.name === "finny"
+              ? {
+                  focus: () => {
+                    if (finnyIconRef.current) finnyIconRef.current.animate();
+                  },
+                }
+              : undefined
+          }
         />
       ))}
     </Tabs>

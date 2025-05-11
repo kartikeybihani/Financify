@@ -51,7 +51,7 @@ export default function SettingsScreen() {
           await AsyncStorage.setItem("userData", JSON.stringify(user));
           console.log(
             "[SettingsIndex] Current user email:",
-            user.user_metadata.full_name
+            user.user_metadata.full_name || user.email
           );
         }
       } catch (error) {
