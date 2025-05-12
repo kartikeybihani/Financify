@@ -25,24 +25,32 @@ export const handlePlaidConnect = async (
   onSuccess: (token: string) => void
 ) => {
   if (!linkToken) return;
+  console.log("In handlePlaidConnect");
+  console.log("Doing the exchange_public_token call...");
 
   create({ token: linkToken });
+  console.log("Created the create function");
   open({
     onSuccess: async ({ publicToken }) => {
-      const res = await fetch(
-        `${BASE_URL}/api/exchange_public_token`,
-        {
+      try {
+        console.log("In onSuccess");
+        const res = await fetch(
+          `${BASE_URL}/api/exchange_public_token`,
+          {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ public_token: publicToken }),
       });
-      const data = await res.json();
-      const token = data.access_token;
-      console.log("Plaid token:", token);
-      await AsyncStorage.setItem("accessToken", token);
-      onSuccess(token);
+        const data = await res.json();
+        const token = data.access_token;
+        console.log("Plaid token:", token);
+        await AsyncStorage.setItem("accessToken", token);
+        onSuccess(token);
+      } catch (err) {
+        console.error("Error in onSuccess:", err);
+      }
     },
-    onExit: () => console.log("Plaid flow exited"),
+    onExit: () => console.log("Plaid flow exited here... oops"),
   });
 };
 
