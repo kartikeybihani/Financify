@@ -19,6 +19,7 @@ export const NUDGE_OPTIONS = [
 ];
 
 export const FUTURE_MILESTONES: TimelineItem[] = [
+  // Dummy data for now
   // {
   //   year: "2030",
   //   label: "Buy a Home",

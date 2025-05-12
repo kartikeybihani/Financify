@@ -12,17 +12,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
-
-interface AddGoalModalProps {
-  visible: boolean;
-  onClose: () => void;
-  onSave: (goal: {
-    year: string;
-    label: string;
-    description: string;
-    progress?: number;
-  }) => void;
-}
+import { AddGoalModalProps, GoalInput } from "../types/addGoalModalTypes";
 
 const initialGoalState = {
   label: "",

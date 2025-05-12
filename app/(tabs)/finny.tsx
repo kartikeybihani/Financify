@@ -16,36 +16,18 @@ import {
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
 import { AntDesign } from "@expo/vector-icons";
-import { isGoalIntent } from "../utils/isGoalIntent";
-import { extractGoalDetails } from "../utils/extractGoalDetails";
 import Timeline from "../components/Timeline";
 import { ChatMessageComponent } from "../components/ChatMessage";
-import { TypingIndicator } from "../components/TypingIndicator";
 import { NudgeGrid } from "../components/NudgeGrid";
 import { useChat } from "../hooks/useChat";
 import { useGoals } from "../hooks/useGoals";
-import { Timeline as TimelineType } from "../types/finny";
 import styles from "../styles/finnyStyles";
-import finnyConstants from "../constants/finny";
-
-interface Timeline {
-  month: string;
-  year: string;
-}
-
-interface Milestone {
-  label: string;
-  year: string;
-  description: string;
-}
 
 export default function FinnyScreen() {
-  // State
   const [activeTab, setActiveTab] = useState<"chat" | "timeline">("chat");
   const [userInput, setUserInput] = useState("");
   const [showScrollButton, setShowScrollButton] = useState(false);
 
-  // Refs
   const scrollViewRef = useRef<ScrollView>(null);
   const lastContentOffset = useRef({ y: 0 }).current;
   const isScrolling = useRef(false);
@@ -61,78 +43,37 @@ export default function FinnyScreen() {
       .map(() => new Animated.Value(0))
   ).current;
 
-  // Custom hooks
-  const {
-    chatMessages,
-    isTyping,
-    showNudges,
-    clearChat,
-    pushChat,
-    pushChatWithDelay,
-    handleUserMessage,
-  } = useChat();
+  const { chatMessages, showNudges, clearChat, pushChat, handleUserMessage } =
+    useChat();
 
-  const {
-    goalSetup,
-    timelineData,
-    setTimelineData,
-    setGoalSetup,
-    handleGoalSetup,
-    deleteGoal,
-    saveGoal,
-  } = useGoals(pushChat);
+  const [goalMode, setGoalMode] = useState({
+    active: false,
+    label: null,
+    target: null,
+    timeline: null,
+  });
 
-  // Effects
+  const { timelineData, saveGoal, deleteGoal, refreshGoals } =
+    useGoals(pushChat);
+
   useEffect(() => {
-    // Listen for goals updated event
     const subscription = DeviceEventEmitter.addListener(
       "goalsUpdated",
-      async () => {
-        try {
-          // Get existing goals
-          const existingGoals = await AsyncStorage.getItem("goals");
-          const parsedGoals = JSON.parse(existingGoals || "[]");
-
-          // Transform goals to timeline format
-          const transformedGoals = parsedGoals.map((g: any) => ({
-            id: g.id || `existing-${g.label}`,
-            year: g.year,
-            label: g.label,
-            description: g.description || "User-defined goal",
-          }));
-
-          // Get milestones with IDs
-          const milestonesWithIds = finnyConstants.FUTURE_MILESTONES.map(
-            (m: Milestone) => ({
-              ...m,
-              id: `milestone-${m.label}`,
-            })
-          );
-
-          // Update timeline data
-          setTimelineData([...transformedGoals, ...milestonesWithIds]);
-        } catch (error) {
-          console.error("Error updating timeline data:", error);
-        }
-      }
+      refreshGoals
     );
-
-    return () => {
-      subscription.remove();
-    };
+    return () => subscription.remove();
   }, []);
 
   useEffect(() => {
-    if (isTyping) {
-      animateTypingDots();
-    } else {
-      dotAnimations.forEach((dot) => dot.setValue(0));
-    }
-  }, [isTyping]);
-
-  useEffect(() => {
     if (activeTab === "timeline") {
-      animateTimeline();
+      timelineAnimations.forEach((anim, index) => {
+        Animated.timing(anim, {
+          toValue: 1,
+          duration: 500,
+          delay: index * 150,
+          useNativeDriver: true,
+        }).start();
+      });
     } else if (activeTab === "chat") {
       scrollToBottom();
     } else {
@@ -140,104 +81,125 @@ export default function FinnyScreen() {
     }
   }, [activeTab]);
 
-  // Animations
-  const animateTypingDots = () => {
-    const animations = dotAnimations.map((dot, index) => {
-      return Animated.sequence([
-        Animated.delay(index * 200),
-        Animated.loop(
-          Animated.sequence([
-            Animated.timing(dot, {
-              toValue: 1,
-              duration: 400,
-              useNativeDriver: true,
-            }),
-            Animated.timing(dot, {
-              toValue: 0,
-              duration: 400,
-              useNativeDriver: true,
-            }),
-          ])
-        ),
-      ]);
-    });
-    Animated.parallel(animations).start();
-  };
-
-  const animateTimeline = () => {
-    timelineAnimations.forEach((anim, index) => {
-      Animated.timing(anim, {
-        toValue: 1,
-        duration: 500,
-        delay: index * 150,
-        useNativeDriver: true,
-      }).start();
-    });
-  };
-
-  // Handlers
   const handleSend = async (nudgeText?: string) => {
     const messageText = nudgeText || userInput;
     if (!messageText.trim()) return;
 
-    console.log("Kartik:", messageText);
     pushChat("user", messageText);
     setUserInput("");
 
     try {
-      if (goalSetup.step !== "none") {
-        console.log("🎯 Processing goal setup step:", goalSetup.step);
-        const continueSetup = await handleGoalSetup(messageText);
-        if (continueSetup) return;
+      if (goalMode.active) {
+        const goalRes = await fetch("/api/finny/goal", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: messageText }),
+        });
+
+        const updated = await goalRes.json();
+        const newGoal = {
+          label: updated.label || goalMode.label,
+          target: updated.target || goalMode.target,
+          timeline: updated.timeline || goalMode.timeline,
+        };
+
+        setGoalMode({ active: true, ...newGoal });
+
+        if (!newGoal.label) {
+          await pushChat("finny", "What would you like to call this goal?");
+          return;
+        }
+        if (!newGoal.target) {
+          await pushChat(
+            "finny",
+            `How much do you want to save for "${newGoal.label}"?`
+          );
+          return;
+        }
+        if (!newGoal.timeline) {
+          await pushChat(
+            "finny",
+            `And by when would you like to reach your $${newGoal.target} goal?`
+          );
+          return;
+        }
+
+        await saveGoal(newGoal);
+        await pushChat(
+          "finny",
+          `Awesome! I've added your goal to save $${newGoal.target} for "${newGoal.label}" by ${newGoal.timeline.month} ${newGoal.timeline.year}. 🎯`
+        );
+        DeviceEventEmitter.emit("goalsUpdated");
+        setGoalMode({
+          active: false,
+          label: null,
+          target: null,
+          timeline: null,
+        });
         return;
       }
 
-      const isGoal = await isGoalIntent(messageText);
-      if (isGoal) {
-        console.log("🎯 Goal intent detected, processing...");
-        const parsedGoalDetails = await extractGoalDetails(messageText);
-        const label = parsedGoalDetails.label;
-        const target = parsedGoalDetails.target;
-        const timeline =
-          parsedGoalDetails.timeline &&
-          parsedGoalDetails.timeline.month &&
-          parsedGoalDetails.timeline.year
-            ? ({
-                month: parsedGoalDetails.timeline.month,
-                year: parsedGoalDetails.timeline.year.toString(),
-              } as TimelineType)
-            : undefined;
+      const classifyRes = await fetch("/api/finny/classify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: messageText }),
+      });
 
-        let nextStep: "none" | "label" | "target" | "year" = "none";
-        let response = "Let's set up your financial goal! 🎯\n\n";
+      const { intent, confidence } = await classifyRes.json();
 
-        if (!label) {
-          nextStep = "label";
-          response += "What would you like to call this goal?";
-        } else if (!target) {
-          nextStep = "target";
-          response += `Great! How much do you need to save for ${label}?`;
-        } else if (!timeline) {
-          nextStep = "year";
-          response += `And by when would you like to save $${target.toLocaleString()}?`;
-        }
-
-        setGoalSetup({
-          step: nextStep,
-          label: label || undefined,
-          target: target ? String(target) : undefined,
-          timeline: timeline || goalSetup.timeline,
+      if (intent === "goal" && confidence >= 0.7) {
+        const goalRes = await fetch("/api/finny/goal", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: messageText }),
         });
 
-        console.log("Finny:", response);
-        await pushChat("finny", response);
+        const goalData = await goalRes.json();
+        setGoalMode({
+          active: true,
+          label: goalData.label,
+          target: goalData.target,
+          timeline: goalData.timeline,
+        });
+
+        if (!goalData.label) {
+          await pushChat("finny", "What would you like to call this goal?");
+          return;
+        }
+        if (!goalData.target) {
+          await pushChat(
+            "finny",
+            `How much do you want to save for "${goalData.label}"?`
+          );
+          return;
+        }
+        if (!goalData.timeline) {
+          await pushChat(
+            "finny",
+            `And by when would you like to reach your $${goalData.target} goal?`
+          );
+          return;
+        }
+
+        await saveGoal(goalData);
+        await pushChat(
+          "finny",
+          `Got it. You're saving $${goalData.target} for "${goalData.label}" by ${goalData.timeline.month} ${goalData.timeline.year}. I've saved it! 🎯`
+        );
+        DeviceEventEmitter.emit("goalsUpdated");
+        setGoalMode({
+          active: false,
+          label: null,
+          target: null,
+          timeline: null,
+        });
         return;
       }
 
       await handleUserMessage(messageText);
     } catch (error) {
-      console.error("❌ Error handling message:", error);
-      pushChat("finny", "Something went wrong. Please try again.");
+      console.error("❌ handleSend error:", error);
+      pushChat("finny", "Hmm, something went wrong. Try again?");
     }
   };
 
@@ -328,23 +290,16 @@ export default function FinnyScreen() {
               style={styles.chatScroll}
               onScroll={handleScroll}
               scrollEventThrottle={16}
-              onScrollBeginDrag={() => {
-                isScrolling.current = true;
-              }}
-              onScrollEndDrag={() => {
-                isScrolling.current = false;
-              }}
+              onScrollBeginDrag={() => (isScrolling.current = true)}
+              onScrollEndDrag={() => (isScrolling.current = false)}
               onContentSizeChange={() => {
-                if (shouldScrollToBottom.current) {
-                  scrollToBottom();
-                }
+                if (shouldScrollToBottom.current) scrollToBottom();
               }}
             >
               {showNudges && <NudgeGrid onNudgePress={handleSend} />}
               {chatMessages.map((msg) => (
                 <ChatMessageComponent key={msg.id} message={msg} />
               ))}
-              {isTyping && <TypingIndicator dotAnimations={dotAnimations} />}
             </ScrollView>
 
             {showScrollButton && (

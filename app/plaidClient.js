@@ -12,3 +12,4 @@ const config = new Configuration({
 });
 
 export const client = new PlaidApi(config);
+export default client;

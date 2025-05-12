@@ -42,8 +42,8 @@ const FinnyTabIcon = forwardRef(({ focused }: { focused: boolean }, ref) => {
     <Animated.Image
       source={require("../assets/main1.png")}
       style={{
-        width: 36,
-        height: 36,
+        width: 50,
+        height: 50,
         tintColor: focused ? "#4A90E2" : "#ccc",
         transform: [{ rotate }],
       }}
