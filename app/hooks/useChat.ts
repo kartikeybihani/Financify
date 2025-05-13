@@ -112,7 +112,7 @@ export const useChat = () => {
         }),
       });
 
-      console.log("Response:", JSON.stringify(res, null, 2));
+      console.log("Response:", res.status);
       const data = await res.json();
       console.log("Data 2:", data);
       console.log("Finny 2:", data.nudges);

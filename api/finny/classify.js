@@ -75,10 +75,12 @@ Strictly return only valid JSON. No commentary.`;
     );
 
     const data = await openaiRes.json();
+    console.log("Data:", data);
     const resultText = data.choices?.[0]?.message?.content || "{}";
 
     const parsed = JSON.parse(resultText);
     console.log("Classified:", parsed);
+    console.log("Original message:", message);
     return res.status(200).json(parsed);
   } catch (e) {
     console.error("Error classifying intent:", e);

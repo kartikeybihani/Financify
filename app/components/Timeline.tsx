@@ -28,7 +28,9 @@ const generateId = () => {
 };
 
 interface TimelineProps {
-  deleteGoal: (goalToDelete: any) => Promise<void>;
+  deleteGoal: (id: string) => Promise<void>;
+  timelineAnimations: Animated.Value[];
+  timelineData: Goal[];
 }
 
 const getTimelineIcon = (label: string): any => {
@@ -71,7 +73,11 @@ const parseTimelineDate = (
   return { month: 0, year: parseInt(dateStr) };
 };
 
-export default function Timeline({ deleteGoal }: TimelineProps) {
+export default function Timeline({
+  deleteGoal,
+  timelineAnimations,
+  timelineData,
+}: TimelineProps) {
   const [selectedMilestone, setSelectedMilestone] = useState<Goal | null>(null);
   const [showAddGoalModal, setShowAddGoalModal] = useState(false);
   const [notification, setNotification] = useState({
@@ -81,7 +87,7 @@ export default function Timeline({ deleteGoal }: TimelineProps) {
   const modalAnimation = useRef(new Animated.Value(0)).current;
   const [refreshing, setRefreshing] = useState(false);
 
-  const { timelineData, addManualGoal, refreshGoals } = useGoals(() => {});
+  const { addManualGoal, refreshGoals } = useGoals(() => {});
 
   const sortedTimelineData = React.useMemo(() => {
     console.log("Sorting timeline data:", timelineData);
@@ -108,21 +114,24 @@ export default function Timeline({ deleteGoal }: TimelineProps) {
       {
         text: "Delete",
         style: "destructive",
-        onPress: () => {
-          deleteGoal(goalToDelete.id)
-            .then(() => {
-              setNotification({
-                visible: true,
-                message: "Goal deleted successfully",
-              });
-            })
-            .catch((error) => {
-              console.error("Error deleting goal:", error);
-              setNotification({
-                visible: true,
-                message: "Failed to delete goal",
-              });
+        onPress: async () => {
+          try {
+            await deleteGoal(goalToDelete.id);
+            setNotification({
+              visible: true,
+              message: "Goal deleted successfully",
             });
+            // Reset selected milestone if it was the deleted one
+            if (selectedMilestone?.id === goalToDelete.id) {
+              setSelectedMilestone(null);
+            }
+          } catch (error) {
+            console.error("Error deleting goal:", error);
+            setNotification({
+              visible: true,
+              message: "Failed to delete goal",
+            });
+          }
         },
       },
     ]);
@@ -171,7 +180,17 @@ export default function Timeline({ deleteGoal }: TimelineProps) {
         }
       >
         {sortedTimelineData.map((item, index) => {
-          const animatedStyle = { opacity: 1, transform: [{ translateX: 0 }] };
+          const animatedStyle = {
+            opacity: timelineAnimations[index],
+            transform: [
+              {
+                translateX: timelineAnimations[index].interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [100, 0],
+                }),
+              },
+            ],
+          };
 
           const isSelected = selectedMilestone?.id === item.id;
 

@@ -53,11 +53,11 @@ export function useGoals(pushChat: (sender: string, message: string) => void) {
       const storedGoals = await AsyncStorage.getItem("goals");
       const parsed = storedGoals ? JSON.parse(storedGoals) : [];
       const filtered = parsed.filter((g: Goal) => g.id !== id);
-      setTimelineData(filtered);
       await AsyncStorage.setItem("goals", JSON.stringify(filtered));
-      refreshGoals();
+      setTimelineData(filtered);
     } catch (e) {
       console.error("Error deleting goal:", e);
+      throw e;
     }
   };
 

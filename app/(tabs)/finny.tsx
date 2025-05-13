@@ -50,7 +50,7 @@ export default function FinnyScreen() {
     active: false,
     label: null,
     target: null,
-    timeline: null,
+    timeline: null as { month: string; year: string } | null,
   });
 
   const { timelineData, saveGoal, deleteGoal, refreshGoals } =
@@ -84,23 +84,31 @@ export default function FinnyScreen() {
   const handleSend = async (nudgeText?: string) => {
     const messageText = nudgeText || userInput;
     if (!messageText.trim()) return;
-
+    console.log("messageText", messageText);
     pushChat("user", messageText);
     setUserInput("");
 
     try {
       if (goalMode.active) {
-        const goalRes = await fetch("/api/finny/goal", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message: messageText }),
-        });
+        const goalRes = await fetch(
+          "https://financify-rose.vercel.app/api/finny/goal",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ message: messageText }),
+          }
+        );
 
         const updated = await goalRes.json();
         const newGoal = {
+          id: Date.now().toString(),
           label: updated.label || goalMode.label,
           target: updated.target || goalMode.target,
           timeline: updated.timeline || goalMode.timeline,
+          year: updated.timeline?.year || goalMode.timeline?.year,
+          description: `Save $${updated.target || goalMode.target} for ${
+            updated.label || goalMode.label
+          }`,
         };
 
         setGoalMode({ active: true, ...newGoal });
@@ -139,20 +147,26 @@ export default function FinnyScreen() {
         return;
       }
 
-      const classifyRes = await fetch("/api/finny/classify", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: messageText }),
-      });
+      const classifyRes = await fetch(
+        "https://financify-rose.vercel.app/api/finny/classify",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: messageText }),
+        }
+      );
 
       const { intent, confidence } = await classifyRes.json();
 
       if (intent === "goal" && confidence >= 0.7) {
-        const goalRes = await fetch("/api/finny/goal", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message: messageText }),
-        });
+        const goalRes = await fetch(
+          "https://financify-rose.vercel.app/api/finny/goal",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ message: messageText }),
+          }
+        );
 
         const goalData = await goalRes.json();
         setGoalMode({
