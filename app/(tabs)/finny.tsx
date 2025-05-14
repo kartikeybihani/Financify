@@ -113,7 +113,6 @@ export default function FinnyScreen() {
         };
 
         setGoalMode({ active: true, ...newGoal });
-        pushChat("finny", "Let's set up your goal! 🎯");
         if (!newGoal.label) {
           await pushChat("finny", "What would you like to call this goal?");
           return;
@@ -160,6 +159,7 @@ export default function FinnyScreen() {
       const { intent, confidence } = await classifyRes.json();
 
       if (intent === "goal" && confidence >= 0.7) {
+        pushChat("finny", "Let's set up your goal! 🎯");
         const goalRes = await fetch(
           "https://financify-rose.vercel.app/api/finny/goal",
           {
@@ -184,7 +184,7 @@ export default function FinnyScreen() {
         if (!goalData.target) {
           await pushChat(
             "finny",
-            `How much do you want to save for "${goalData.label}"?`
+            `And how much do you want to save for ${goalData.label}?`
           );
           return;
         }

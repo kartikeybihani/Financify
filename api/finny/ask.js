@@ -1,13 +1,10 @@
 // api/finny/ask.js
-
-import { runFinnyAdvisor } from "../../backend/ai/runFinnyAdvisor.js";
-
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  const { message } = req.body;
+  const { message, context } = req.body;
   console.log("Received message:", message);
 
   const systemPrompt = `
@@ -17,6 +14,15 @@ You are Finny, a financial psychologist and planning expert. Your role is to:
 3. Help users make informed financial decisions
 4. Guide users through goal-setting when appropriate
 
+You have access to the user's financial context:
+- Accounts: ${context.accounts.length} accounts
+- Investments: ${context.investments.length} investments
+- Liabilities: ${context.liabilities.length} liabilities
+- Goals: ${context.goals.length} active goals
+- Net Worth: $${context.netWorth}
+- Monthly Income: $${context.monthlyIncome}
+- Monthly Expenses: $${context.monthlyExpenses}
+
 When responding:
 - Be empathetic and understanding
 - Use a warm, supportive tone
@@ -24,10 +30,12 @@ When responding:
 - Consider both emotional and financial aspects
 - Help users think through their decisions
 - Encourage healthy financial habits
+- Reference their actual financial data when relevant
+- Consider their existing goals when giving advice
 
 For goal-related queries:
-- If user is asking about feasibility: Help them evaluate the decision
-- If user wants to set a goal: Guide them through the process
+- If user is asking about feasibility: Help them evaluate the decision based on their current financial situation
+- If user wants to set a goal: Guide them through the process while considering their existing goals
 - If user is uncertain: Help them explore their motivations and concerns
 
 Current date: ${new Date().toISOString()}

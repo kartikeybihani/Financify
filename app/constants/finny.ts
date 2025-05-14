@@ -4,7 +4,7 @@ export const INITIAL_CHAT_MESSAGES: ChatMessage[] = [
   {
     id: "welcome",
     sender: "finny",
-    text: "Hi there! What do you wanna know?",
+    text: "Hi Kartik! What do you wanna know?",
     timestamp: Date.now(),
   },
 ];

@@ -93,29 +93,40 @@ export const useChat = () => {
   const handleFinnyResponse = async (messageText: string) => {
     const BASE_URL = "https://financify-rose.vercel.app";
     try {
-      const stored = await AsyncStorage.getItem("financialData");
-      const savedGoals = await AsyncStorage.getItem("goals");
+      // Get all financial data from storage
+      const [stored, savedGoals] = await Promise.all([
+        AsyncStorage.getItem("financialData"),
+        AsyncStorage.getItem("goals")
+      ]);
+      
       const parsed = JSON.parse(stored || "{}");
       const goals = JSON.parse(savedGoals || "[]");
 
-      console.log("Sending request to Finny API...");
+      // Prepare financial context
+      const financialContext = {
+        accounts: parsed.accounts || [],
+        investments: parsed.investments || [],
+        liabilities: parsed.liabilities || [],
+        transactions: parsed.transactions || [],
+        goals: goals,
+        netWorth: parsed.netWorth || 0,
+        monthlyIncome: parsed.monthlyIncome || 0,
+        monthlyExpenses: parsed.monthlyExpenses || 0
+      };
+
+      console.log("Sending request to Finny API with context...");
       const res = await fetch(`${BASE_URL}/api/finny/ask`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message: messageText,
-          transactions: parsed.transactions,
-          accounts: parsed.accounts,
-          investments: parsed.investments,
-          liabilities: parsed.liabilities,
-          goals: goals,
+          context: financialContext
         }),
       });
 
       console.log("Response:", res.status);
       const data = await res.json();
-      console.log("Data 2:", data);
-      console.log("Finny 2:", data.nudges);
+      console.log("Finny response:", data.nudges);
       
       const messages = data.nudges?.join("\n\n") || "Sorry, I wasn't able to generate advice just now.";
       const splitMessages = splitIntoMessages(messages);
