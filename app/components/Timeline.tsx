@@ -61,16 +61,41 @@ const getMonthNumber = (monthName: string): number => {
 };
 
 const parseTimelineDate = (
-  dateStr: string
+  dateStr: string | { month: string; year: number }
 ): { month: number; year: number } => {
-  const parts = dateStr.split(" ");
-  if (parts.length === 2) {
+  // Handle timeline object format
+  if (typeof dateStr === "object" && dateStr !== null) {
     return {
-      month: getMonthNumber(parts[0]),
-      year: parseInt(parts[1]),
+      month: getMonthNumber(dateStr.month),
+      year: dateStr.year,
     };
   }
-  return { month: 0, year: parseInt(dateStr) };
+
+  // Handle string format "Month Year" (e.g., "August 2025")
+  if (typeof dateStr === "string") {
+    const parts = dateStr.split(" ");
+    if (parts.length === 2) {
+      return {
+        month: getMonthNumber(parts[0]),
+        year: parseInt(parts[1]),
+      };
+    }
+
+    // Handle format "YYYY" (e.g., "2025")
+    if (parts.length === 1 && !isNaN(parseInt(dateStr))) {
+      return {
+        month: 0, // January
+        year: parseInt(dateStr),
+      };
+    }
+  }
+
+  // Default to current year if invalid format
+  const currentDate = new Date();
+  return {
+    month: currentDate.getMonth(),
+    year: currentDate.getFullYear(),
+  };
 };
 
 export default function Timeline({
@@ -92,8 +117,8 @@ export default function Timeline({
   const sortedTimelineData = React.useMemo(() => {
     console.log("Sorting timeline data:", timelineData);
     return [...timelineData].sort((a, b) => {
-      const dateA = parseTimelineDate(a.year);
-      const dateB = parseTimelineDate(b.year);
+      const dateA = parseTimelineDate(a.timeline || a.year);
+      const dateB = parseTimelineDate(b.timeline || b.year);
       return dateA.year !== dateB.year
         ? dateA.year - dateB.year
         : dateA.month - dateB.month;
@@ -214,7 +239,13 @@ export default function Timeline({
               <View style={styles.timelineLine} />
               <Animated.View style={[styles.timelineContent, animatedStyle]}>
                 <View style={styles.timelineHeader}>
-                  <Text style={styles.timelineYear}>{item.year}</Text>
+                  <Text style={styles.timelineYear}>
+                    {typeof item.year === "object"
+                      ? `${item.year.month} ${item.year.year}`
+                      : item.timeline
+                      ? `${item.timeline.month} ${item.timeline.year}`
+                      : item.year}
+                  </Text>
                   <View style={styles.timelineIconContainer}>
                     <Ionicons
                       name={getTimelineIcon(item.label)}

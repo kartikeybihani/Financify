@@ -109,10 +109,11 @@ export default function FinnyScreen() {
           description: `Save $${updated.target || goalMode.target} for ${
             updated.label || goalMode.label
           }`,
+          progress: Math.floor(Math.random() * 101),
         };
 
         setGoalMode({ active: true, ...newGoal });
-
+        pushChat("finny", "Let's set up your goal! 🎯");
         if (!newGoal.label) {
           await pushChat("finny", "What would you like to call this goal?");
           return;
@@ -120,7 +121,7 @@ export default function FinnyScreen() {
         if (!newGoal.target) {
           await pushChat(
             "finny",
-            `How much do you want to save for "${newGoal.label}"?`
+            `And how much do you want to save for ${newGoal.label}?`
           );
           return;
         }
@@ -195,7 +196,12 @@ export default function FinnyScreen() {
           return;
         }
 
-        await saveGoal(goalData);
+        const goalWithProgress = {
+          ...goalData,
+          id: Date.now().toString(),
+          progress: Math.floor(Math.random() * 101),
+        };
+        await saveGoal(goalWithProgress);
         await pushChat(
           "finny",
           `Got it. You're saving $${goalData.target} for "${goalData.label}" by ${goalData.timeline.month} ${goalData.timeline.year}. I've saved it! 🎯`
