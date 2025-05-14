@@ -102,19 +102,68 @@ export const useChat = () => {
       const parsed = JSON.parse(stored || "{}");
       const goals = JSON.parse(savedGoals || "[]");
 
-      // Prepare financial context
+      // Prepare complete financial context
       const financialContext = {
-        accounts: parsed.accounts || [],
-        investments: parsed.investments || [],
-        liabilities: parsed.liabilities || [],
-        transactions: parsed.transactions || [],
-        goals: goals,
-        netWorth: parsed.netWorth || 0,
-        monthlyIncome: parsed.monthlyIncome || 0,
-        monthlyExpenses: parsed.monthlyExpenses || 0
+        accounts: parsed.accounts?.map((acc: any) => ({
+          name: acc.name,
+          type: acc.type,
+          subtype: acc.subtype,
+          balance: acc.balances.current,
+          available: acc.balances.available,
+          limit: acc.balances.limit,
+          currency: acc.balances.iso_currency_code,
+          institution: acc.institution_name
+        })) || [],
+        investments: parsed.investments?.map((inv: any) => ({
+          name: inv.name,
+          type: inv.type,
+          balance: inv.balances.current,
+          holdings: inv.holdings?.map((h: any) => ({
+            name: h.name,
+            quantity: h.quantity,
+            value: h.institution_value,
+            cost_basis: h.cost_basis,
+            currency: h.iso_currency_code
+          })) || []
+        })) || [],
+        liabilities: parsed.liabilities?.map((liab: any) => ({
+          name: liab.name,
+          type: liab.type,
+          balance: liab.balances.current,
+          limit: liab.balances.limit,
+          apr: liab.apr,
+          interest_rate: liab.interest_rate,
+          minimum_payment: liab.minimum_payment_amount
+        })) || [],
+        transactions: parsed.transactions?.map((txn: any) => ({
+          date: txn.date,
+          amount: txn.amount,
+          category: txn.category,
+          merchant: txn.merchant_name,
+          description: txn.name,
+          account: txn.account_name
+        })) || [],
+        goals: goals.map((goal: any) => ({
+          label: goal.label,
+          target: goal.target,
+          progress: goal.progress,
+          timeline: goal.timeline,
+          description: goal.description
+        })),
+        summary: {
+          netWorth: parsed.netWorth || 0,
+          monthlyIncome: parsed.monthlyIncome || 0,
+          monthlyExpenses: parsed.monthlyExpenses || 0,
+          totalAssets: parsed.accounts?.reduce((sum: number, acc: any) => 
+            sum + (acc.balances.current || 0), 0) || 0,
+          totalLiabilities: parsed.liabilities?.reduce((sum: number, liab: any) => 
+            sum + (liab.balances.current || 0), 0) || 0,
+          totalInvestments: parsed.investments?.reduce((sum: number, inv: any) => 
+            sum + (inv.balances.current || 0), 0) || 0
+        }
       };
 
-      console.log("Sending request to Finny API with context...");
+      console.log("Sending request to Finny API with complete context...");
       const res = await fetch(`${BASE_URL}/api/finny/ask`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
