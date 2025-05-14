@@ -102,64 +102,61 @@ export const useChat = () => {
       const parsed = JSON.parse(stored || "{}");
       const goals = JSON.parse(savedGoals || "[]");
 
-      // Prepare complete financial context
+      // Prepare complete financial context with safe defaults
       const financialContext = {
-        accounts: parsed.accounts?.map((acc: any) => ({
-          name: acc.name,
-          type: acc.type,
-          subtype: acc.subtype,
-          balance: acc.balances.current,
-          available: acc.balances.available,
-          limit: acc.balances.limit,
-          currency: acc.balances.iso_currency_code,
-          institution: acc.institution_name
-        })) || [],
-        investments: parsed.investments?.map((inv: any) => ({
-          name: inv.name,
-          type: inv.type,
-          balance: inv.balances.current,
-          holdings: inv.holdings?.map((h: any) => ({
-            name: h.name,
-            quantity: h.quantity,
-            value: h.institution_value,
-            cost_basis: h.cost_basis,
-            currency: h.iso_currency_code
-          })) || []
-        })) || [],
-        liabilities: parsed.liabilities?.map((liab: any) => ({
-          name: liab.name,
-          type: liab.type,
-          balance: liab.balances.current,
-          limit: liab.balances.limit,
-          apr: liab.apr,
-          interest_rate: liab.interest_rate,
-          minimum_payment: liab.minimum_payment_amount
-        })) || [],
-        transactions: parsed.transactions?.map((txn: any) => ({
-          date: txn.date,
-          amount: txn.amount,
-          category: txn.category,
-          merchant: txn.merchant_name,
-          description: txn.name,
-          account: txn.account_name
-        })) || [],
-        goals: goals.map((goal: any) => ({
-          label: goal.label,
-          target: goal.target,
-          progress: goal.progress,
-          timeline: goal.timeline,
-          description: goal.description
-        })),
+        accounts: Array.isArray(parsed.accounts) ? parsed.accounts.map((acc: any) => ({
+          name: acc.name || 'Unknown Account',
+          type: acc.type || 'unknown',
+          subtype: acc.subtype || 'unknown',
+          balance: acc.balances?.current || 0,
+          available: acc.balances?.available || 0,
+          limit: acc.balances?.limit || 0,
+          currency: acc.balances?.iso_currency_code || 'USD',
+          institution: acc.institution_name || 'Unknown Institution'
+        })) : [],
+        investments: Array.isArray(parsed.investments?.holdings) ? parsed.investments.holdings.map((h: any) => ({
+          name: h.name || 'Unknown Investment',
+          type: h.type || 'unknown',
+          balance: h.institution_value || 0,
+          quantity: h.quantity || 0,
+          value: h.institution_value || 0,
+          cost_basis: h.cost_basis || 0,
+          currency: h.iso_currency_code || 'USD'
+        })) : [],
+        liabilities: Array.isArray(parsed.liabilities) ? parsed.liabilities.map((liab: any) => ({
+          name: liab.name || 'Unknown Liability',
+          type: liab.type || 'unknown',
+          balance: liab.balances?.current || 0,
+          limit: liab.balances?.limit || 0,
+          apr: liab.apr || 0,
+          interest_rate: liab.interest_rate || 0,
+          minimum_payment: liab.minimum_payment_amount || 0
+        })) : [],
+        transactions: Array.isArray(parsed.transactions) ? parsed.transactions.map((txn: any) => ({
+          date: txn.date || new Date().toISOString(),
+          amount: txn.amount || 0,
+          category: Array.isArray(txn.category) ? txn.category : ['uncategorized'],
+          merchant: txn.merchant_name || '',
+          description: txn.name || 'Unknown Transaction',
+          account: txn.account_name || 'Unknown Account'
+        })) : [],
+        goals: Array.isArray(goals) ? goals.map((goal: any) => ({
+          label: goal.label || 'Unnamed Goal',
+          target: goal.target || 0,
+          progress: goal.progress || 0,
+          timeline: goal.timeline || { month: 'Unknown', year: new Date().getFullYear() },
+          description: goal.description || ''
+        })) : [],
         summary: {
           netWorth: parsed.netWorth || 0,
           monthlyIncome: parsed.monthlyIncome || 0,
           monthlyExpenses: parsed.monthlyExpenses || 0,
-          totalAssets: parsed.accounts?.reduce((sum: number, acc: any) => 
-            sum + (acc.balances.current || 0), 0) || 0,
-          totalLiabilities: parsed.liabilities?.reduce((sum: number, liab: any) => 
-            sum + (liab.balances.current || 0), 0) || 0,
-          totalInvestments: parsed.investments?.reduce((sum: number, inv: any) => 
-            sum + (inv.balances.current || 0), 0) || 0
+          totalAssets: Array.isArray(parsed.accounts) ? parsed.accounts.reduce((sum: number, acc: any) => 
+            sum + (acc.balances?.current || 0), 0) : 0,
+          totalLiabilities: Array.isArray(parsed.liabilities) ? parsed.liabilities.reduce((sum: number, liab: any) => 
+            sum + (liab.balances?.current || 0), 0) : 0,
+          totalInvestments: Array.isArray(parsed.investments?.holdings) ? parsed.investments.holdings.reduce((sum: number, inv: any) => 
+            sum + (inv.institution_value || 0), 0) : 0
         }
       };
 

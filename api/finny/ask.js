@@ -19,41 +19,34 @@ You have access to the user's complete financial context:
 ACCOUNTS:
 ${context.accounts
   .map(
-    (acc) => `
-- ${acc.name} (${acc.type}/${acc.subtype})
+    (acc) =>
+      `- ${acc.name.replace(/[^\w\s]/g, "")} (${acc.type}/${acc.subtype})
   Balance: $${acc.balance}
   Available: $${acc.available}
-  Institution: ${acc.institution}
-`
+  Institution: ${acc.institution.replace(/[^\w\s]/g, "")}`
   )
   .join("\n")}
 
 INVESTMENTS:
 ${context.investments
   .map(
-    (inv) => `
-- ${inv.name} (${inv.type})
+    (inv) =>
+      `- ${inv.name.replace(/[^\w\s]/g, "")} (${inv.type})
   Balance: $${inv.balance}
-  Holdings:
-  ${inv.holdings
-    .map(
-      (h) =>
-        `  * ${h.name}: ${h.quantity} shares @ $${h.value} (Cost: $${h.cost_basis})`
-    )
-    .join("\n")}
-`
+  Quantity: ${inv.quantity}
+  Value: $${inv.value}
+  Cost Basis: $${inv.cost_basis}`
   )
   .join("\n")}
 
 LIABILITIES:
 ${context.liabilities
   .map(
-    (liab) => `
-- ${liab.name} (${liab.type})
+    (liab) =>
+      `- ${liab.name.replace(/[^\w\s]/g, "")} (${liab.type})
   Balance: $${liab.balance}
   APR: ${liab.apr}%
-  Minimum Payment: $${liab.minimum_payment}
-`
+  Minimum Payment: $${liab.minimum_payment}`
   )
   .join("\n")}
 
@@ -61,24 +54,28 @@ RECENT TRANSACTIONS:
 ${context.transactions
   .slice(0, 5)
   .map(
-    (txn) => `
-- ${txn.date}: $${txn.amount} at ${txn.merchant || txn.description}
-  Category: ${txn.category.join(", ")}
-  Account: ${txn.account}
-`
+    (txn) =>
+      `- ${txn.date}: $${txn.amount} at ${(
+        txn.merchant || txn.description
+      ).replace(/[^\w\s]/g, "")}
+  Category: ${
+    Array.isArray(txn.category) ? txn.category.join(", ") : "Uncategorized"
+  }
+  Account: ${txn.account.replace(/[^\w\s]/g, "")}`
   )
   .join("\n")}
 
 ACTIVE GOALS:
 ${context.goals
   .map(
-    (goal) => `
-- ${goal.label}
+    (goal) =>
+      `- ${goal.label.replace(/[^\w\s]/g, "")}
   Target: $${goal.target}
   Progress: ${goal.progress}%
-  Timeline: ${goal.timeline?.month} ${goal.timeline?.year}
-  Description: ${goal.description}
-`
+  Timeline: ${goal.timeline?.month || "Unknown"} ${
+        goal.timeline?.year || new Date().getFullYear()
+      }
+  Description: ${goal.description.replace(/[^\w\s]/g, "")}`
   )
   .join("\n")}
 
