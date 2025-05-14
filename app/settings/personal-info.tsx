@@ -211,7 +211,7 @@ export default function PersonalInfoScreen() {
       {/* Name Edit Modal */}
       <EditNameModal
         visible={showNameModal}
-        value={userData?.user_metadata?.full_name || ""}
+        value={userData?.user_metadata?.full_name || userName || ""}
         onChange={setNewName}
         onCancel={() => {
           setShowNameModal(false);

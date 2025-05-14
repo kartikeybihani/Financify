@@ -81,6 +81,7 @@ export default function TabLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
+        tabBarShowLabel: true, // Set globally
         tabBarStyle: {
           height: 70,
           paddingBottom: Platform.OS === "ios" ? 20 : 10,
@@ -102,12 +103,13 @@ export default function TabLayout() {
           key={tab.name}
           name={tab.name}
           options={{
-            tabBarShowLabel: !tab.isCenter,
-            tabBarLabel: ({ focused }) => (
-              <Text style={[styles.tabLabel, focused && styles.focusedLabel]}>
-                {tab.label}
-              </Text>
-            ),
+            tabBarLabel: ({ focused }) => {
+              return (
+                <Text style={[styles.tabLabel, focused && styles.focusedLabel]}>
+                  {tab.label}
+                </Text>
+              );
+            },
             tabBarIcon: ({ focused }) => (
               <View style={tab.isCenter ? styles.centerTab : undefined}>
                 {tab.name === "finny" ? (
@@ -123,28 +125,18 @@ export default function TabLayout() {
             ),
             tabBarButton: (props) => {
               const { style, ...otherProps } = props as TouchableOpacityProps;
-              if (tab.name === "finny") {
-                return (
-                  <TouchableOpacity
-                    {...otherProps}
-                    style={style}
-                    activeOpacity={0.8}
-                    onPress={(e) => {
-                      if (finnyIconRef.current) finnyIconRef.current.animate();
-                      if (props.onPress) props.onPress(e);
-                    }}
-                  ></TouchableOpacity>
-                );
-              }
               return (
                 <TouchableOpacity
                   {...otherProps}
                   style={style}
                   activeOpacity={0.8}
                   onPress={(e) => {
+                    if (tab.name === "finny" && finnyIconRef.current) {
+                      finnyIconRef.current.animate();
+                    }
                     if (props.onPress) props.onPress(e);
                   }}
-                ></TouchableOpacity>
+                />
               );
             },
           }}
