@@ -31,9 +31,9 @@ export const ChatMessageComponent = ({
     <View>
       {showSender && <Text style={styles.senderName}>Finny</Text>}
       <LinearGradient
-        colors={["#4A90E2", "#2E5C8F", "#1A3D66"]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
+        colors={["#1A3D66", "#1A3D66", "#2E5C8F", "#4A90E2"]}
+        start={{ x: 0, y: 2 }}
+        end={{ x: 1, y: 0 }}
         style={[styles.messageContainer, styles.finnyMessageContainer]}
       >
         <Text style={[styles.messageText, styles.finnyMessageText]}>
