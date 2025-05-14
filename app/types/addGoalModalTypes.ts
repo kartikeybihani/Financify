@@ -1,10 +1,13 @@
 // types/addGoalModalTypes.ts
 
 export interface GoalInput {
-    year: string;
     label: string;
     description: string;
     progress?: number;
+    timeline: {
+        month: string;
+        year: number;
+    };
 }
   
 export interface AddGoalModalProps {

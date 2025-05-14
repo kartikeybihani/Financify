@@ -102,13 +102,16 @@ export default function AddGoalModal({
   const handleSave = () => {
     if (validateForm()) {
       const month = selectedDate.toLocaleString("default", { month: "long" });
-      const year = selectedDate.getFullYear().toString();
+      const year = selectedDate.getFullYear();
 
       onSave({
-        year: `${month} ${year}`,
         label: goal.label,
         description: goal.description,
         progress: goal.progress,
+        timeline: {
+          month,
+          year,
+        },
       });
 
       handleClose();

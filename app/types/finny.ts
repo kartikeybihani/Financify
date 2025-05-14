@@ -16,10 +16,12 @@ export interface Goal {
   id: string;
   label: string;
   target?: number;
-  year: string | { month: string; year: number };
   description: string;
   progress?: number;
-  timeline?: { month: string; year: number };
+  timeline: {
+    month: string;
+    year: number;
+  };
 }
 
 export interface ChatMessage {

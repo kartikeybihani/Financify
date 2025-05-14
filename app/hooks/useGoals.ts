@@ -4,11 +4,6 @@ import { useState, useEffect } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Goal } from "../types/finny";
 
-// Simple ID generator
-const generateId = () => {
-  return Date.now().toString(36) + Math.random().toString(36).substr(2);
-};
-
 export function useGoals(pushChat: (sender: string, message: string) => void) {
   const [timelineData, setTimelineData] = useState<Goal[]>([]);
 
