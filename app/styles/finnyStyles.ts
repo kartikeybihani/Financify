@@ -1,4 +1,4 @@
-import { StyleSheet } from "react-native";
+import { StyleSheet, Platform } from "react-native";
 
 export default StyleSheet.create({
   safeArea: {
@@ -6,16 +6,25 @@ export default StyleSheet.create({
     backgroundColor: "#121212",
   },
   headerContainer: {
-    position: "relative",
     flexDirection: "row",
-    justifyContent: "center",
+    justifyContent: "space-between",
     alignItems: "center",
-    paddingVertical: 16,
+    paddingHorizontal: 20,
+    paddingTop: Platform.OS === "ios" ? 10 : 20,
+    paddingBottom: 16,
     backgroundColor: "#121212",
+    borderBottomWidth: 1,
+    borderBottomColor: "#222",
   },
   titleContainer: {
     flexDirection: "row",
     alignItems: "center",
+  },
+  iconContainer: {
+    backgroundColor: "rgba(74, 144, 226, 0.1)",
+    padding: 10,
+    borderRadius: 14,
+    marginRight: 14,
   },
   clearButton: {
     position: "absolute",
@@ -32,9 +41,11 @@ export default StyleSheet.create({
     borderColor: "rgba(255, 59, 48, 0.2)",
   },
   headerTitle: {
-    fontSize: 20,
-    fontWeight: "700",
+    fontSize: 26,
+    fontWeight: "600",
     color: "#fff",
+    letterSpacing: 0.3,
+    fontFamily: Platform.OS === "ios" ? "System" : "sans-serif",
   },
   tabSwitcher: {
     flexDirection: "row",
@@ -110,23 +121,28 @@ export default StyleSheet.create({
   inputBar: {
     flexDirection: "row",
     alignItems: "center",
+    paddingLeft: 10,
+    paddingRight: 10,
     backgroundColor: "#1f1f1f",
-    borderRadius: 25,
-    paddingHorizontal: 20,
+    borderRadius: 15,
     paddingVertical: 12,
-    marginHorizontal: 16,
-    marginBottom: 12,
+    marginHorizontal: 10,
+    marginBottom: 10,
     borderWidth: 1,
     borderColor: "rgba(74, 144, 226, 0.2)",
   },
+  plusButton: {
+    padding: 4,
+    marginRight: 8,
+  },
   sendButton: {
-    backgroundColor: "#4A90E2",
-    width: 35,
-    height: 35,
-    borderRadius: 17.5,
-    justifyContent: "center",
-    alignItems: "center",
-    marginLeft: 10,
+    // backgroundColor: "#4A90E2",
+    // width: 35,
+    // height: 35,
+    // borderRadius: 17.5,
+    // justifyContent: "center",
+    // alignItems: "center",
+    // marginLeft: 10,
   },
   input: {
     flex: 1,

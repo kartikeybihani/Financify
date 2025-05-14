@@ -332,14 +332,13 @@ export default function InsightsScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <View style={styles.headerCentered}>
-        <Ionicons
-          name="stats-chart"
-          size={24}
-          color="#4A90E2"
-          style={{ marginRight: 8 }}
-        />
-        <Text style={styles.headerTitle}>Insights</Text>
+      <View style={styles.headerContainer}>
+        <View style={styles.titleContainer}>
+          <View style={styles.iconContainer}>
+            <Ionicons name="stats-chart" size={24} color="#4A90E2" />
+          </View>
+          <Text style={styles.headerTitle}>Insights</Text>
+        </View>
       </View>
 
       {isInitialLoad ? (

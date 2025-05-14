@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -6,7 +6,6 @@ import {
   ScrollView,
   TouchableOpacity,
   Animated,
-  LayoutAnimation,
   Alert,
   RefreshControl,
   ActivityIndicator,
@@ -15,6 +14,7 @@ import { Ionicons } from "@expo/vector-icons";
 import GoalNotification from "./GoalNotification";
 import AddGoalModal from "./AddGoalModal";
 import TimelineItem from "./TimelineItem";
+import GoalDetailModal from "./GoalDetailModal";
 import { styles } from "../styles/timelineSyles";
 import { useGoals } from "../hooks/useGoals";
 import { Goal } from "../types/finny";
@@ -48,9 +48,10 @@ const Timeline: React.FC<TimelineProps> = ({
   deleteGoal,
   timelineAnimations,
   timelineData,
+  onRefreshStart,
+  onRefreshEnd,
 }) => {
   const [state, setState] = useState<TimelineState>({
-    selectedMilestone: null,
     showAddGoalModal: false,
     notification: {
       visible: false,
@@ -59,6 +60,7 @@ const Timeline: React.FC<TimelineProps> = ({
     refreshing: false,
   });
 
+  const [selectedGoal, setSelectedGoal] = useState<Goal | null>(null);
   const [localTimelineData, setLocalTimelineData] =
     useState<Goal[]>(timelineData);
 
@@ -102,10 +104,6 @@ const Timeline: React.FC<TimelineProps> = ({
                 visible: true,
                 message: "Goal deleted successfully",
               },
-              selectedMilestone:
-                prev.selectedMilestone?.id === goalToDelete.id
-                  ? null
-                  : prev.selectedMilestone,
             }));
           } catch (error) {
             console.error("Error deleting goal:", error);
@@ -122,6 +120,14 @@ const Timeline: React.FC<TimelineProps> = ({
     ]);
   };
 
+  const handleEditGoal = (goal: Goal) => {
+    setState((prev: TimelineState) => ({
+      ...prev,
+      showAddGoalModal: true,
+    }));
+    setSelectedGoal(null);
+  };
+
   const sortedTimelineData = React.useMemo(() => {
     return [...localTimelineData].sort((a, b) => {
       const dateA = a.timeline;
@@ -133,9 +139,14 @@ const Timeline: React.FC<TimelineProps> = ({
   }, [localTimelineData]);
 
   const onRefresh = async () => {
-    setState((prev: TimelineState) => ({ ...prev, refreshing: true }));
-    await refreshGoals();
-    setState((prev: TimelineState) => ({ ...prev, refreshing: false }));
+    try {
+      onRefreshStart?.();
+      setState((prev: TimelineState) => ({ ...prev, refreshing: true }));
+      await refreshGoals();
+    } finally {
+      setState((prev: TimelineState) => ({ ...prev, refreshing: false }));
+      onRefreshEnd?.();
+    }
   };
 
   return (
@@ -154,7 +165,11 @@ const Timeline: React.FC<TimelineProps> = ({
       <ScrollView
         contentContainerStyle={styles.timelineWrapper}
         refreshControl={
-          <RefreshControl refreshing={state.refreshing} onRefresh={onRefresh} />
+          <RefreshControl
+            refreshing={state.refreshing}
+            onRefresh={onRefresh}
+            tintColor="#4A90E2"
+          />
         }
       >
         {sortedTimelineData.map((item, index) => (
@@ -163,15 +178,7 @@ const Timeline: React.FC<TimelineProps> = ({
             item={item}
             index={index}
             animation={timelineAnimations[index]}
-            isSelected={state.selectedMilestone?.id === item.id}
-            onSelect={(goal) =>
-              setState((prev: TimelineState) => ({
-                ...prev,
-                selectedMilestone:
-                  prev.selectedMilestone?.id === goal.id ? null : goal,
-              }))
-            }
-            onDelete={handleDeleteGoal}
+            onPress={() => setSelectedGoal(item)}
           />
         ))}
       </ScrollView>
@@ -204,6 +211,14 @@ const Timeline: React.FC<TimelineProps> = ({
           }))
         }
         onSave={handleSaveGoal}
+      />
+
+      <GoalDetailModal
+        goal={selectedGoal}
+        visible={selectedGoal !== null}
+        onClose={() => setSelectedGoal(null)}
+        onDelete={handleDeleteGoal}
+        onEdit={handleEditGoal}
       />
     </View>
   );

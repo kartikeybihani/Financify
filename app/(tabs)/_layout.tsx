@@ -15,7 +15,7 @@ import {
   Animated,
 } from "react-native";
 import { Tabs, useRouter, usePathname } from "expo-router";
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { Easing } from "react-native";
 
 const FinnyTabIcon = forwardRef(({ focused }: { focused: boolean }, ref) => {
@@ -61,21 +61,28 @@ export default function TabLayout() {
       name: "index",
       label: "Home",
       icon: "home-outline",
+      iconCategory: "Ionicons",
     },
     {
-      name: "finny",
+      name: "chat",
       label: "Finny",
-      icon: "apps",
-      isCenter: true,
+      iconType: "image",
+      icon: require("../assets/icon.png"),
+      iconCategory: null,
+    },
+    {
+      name: "timeline",
+      label: "Goals",
+      icon: "timeline-check-outline",
+      iconCategory: "MaterialCommunityIcons",
     },
     {
       name: "insights",
       label: "Insights",
       icon: "stats-chart-outline",
+      iconCategory: "Ionicons",
     },
   ];
-
-  const finnyIconRef = useRef<any>(null);
 
   return (
     <Tabs
@@ -84,6 +91,7 @@ export default function TabLayout() {
         tabBarShowLabel: true, // Set globally
         tabBarStyle: {
           height: 70,
+          paddingVertical: 5,
           paddingBottom: Platform.OS === "ios" ? 20 : 10,
           backgroundColor: "#121212",
           borderTopWidth: 1,
@@ -110,19 +118,35 @@ export default function TabLayout() {
                 </Text>
               );
             },
-            tabBarIcon: ({ focused }) => (
-              <View style={tab.isCenter ? styles.centerTab : undefined}>
-                {tab.name === "finny" ? (
-                  <FinnyTabIcon ref={finnyIconRef} focused={focused} />
-                ) : (
-                  <Ionicons
+            tabBarIcon: ({ focused }) => {
+              if (tab.iconType === "image") {
+                return (
+                  <View>
+                    <Image
+                      source={tab.icon}
+                      style={{
+                        width: 26,
+                        height: 26,
+                        tintColor: focused ? "#4A90E2" : "#ccc",
+                      }}
+                    />
+                  </View>
+                );
+              }
+              const IconComponent =
+                tab.iconCategory === "Ionicons"
+                  ? Ionicons
+                  : MaterialCommunityIcons;
+              return (
+                <View>
+                  <IconComponent
                     name={tab.icon as any}
-                    size={tab.isCenter ? 30 : 24}
+                    size={24}
                     color={focused ? "#4A90E2" : "#ccc"}
                   />
-                )}
-              </View>
-            ),
+                </View>
+              );
+            },
             tabBarButton: (props) => {
               const { style, ...otherProps } = props as TouchableOpacityProps;
               return (
@@ -131,24 +155,13 @@ export default function TabLayout() {
                   style={style}
                   activeOpacity={0.8}
                   onPress={(e) => {
-                    if (tab.name === "finny" && finnyIconRef.current) {
-                      finnyIconRef.current.animate();
-                    }
                     if (props.onPress) props.onPress(e);
                   }}
                 />
               );
             },
           }}
-          listeners={
-            tab.name === "finny"
-              ? {
-                  focus: () => {
-                    if (finnyIconRef.current) finnyIconRef.current.animate();
-                  },
-                }
-              : undefined
-          }
+          listeners={undefined}
         />
       ))}
     </Tabs>

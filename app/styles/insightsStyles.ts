@@ -1,4 +1,4 @@
-import { StyleSheet, Dimensions } from "react-native";
+import { StyleSheet, Dimensions, Platform } from "react-native";
 
 const { width } = Dimensions.get('window');
 const cardWidth = width * 0.8;
@@ -12,17 +12,33 @@ export const styles = StyleSheet.create({
       padding: 20,
       paddingBottom: 60,
     },
-    headerCentered: {
+    headerContainer: {
       flexDirection: "row",
-      justifyContent: "center",
+      justifyContent: "space-between",
       alignItems: "center",
-      paddingVertical: 20,
+      paddingHorizontal: 20,
+      paddingTop: Platform.OS === "ios" ? 10 : 20,
+      paddingBottom: 16,
       backgroundColor: "#121212",
+      borderBottomWidth: 1,
+      borderBottomColor: "#222",
+    },
+    titleContainer: {
+      flexDirection: "row",
+      alignItems: "center",
+    },
+    iconContainer: {
+      backgroundColor: "rgba(74, 144, 226, 0.1)",
+      padding: 10,
+      borderRadius: 14,
+      marginRight: 14,
     },
     headerTitle: {
-      fontSize: 20,
-      fontWeight: "700",
+      fontSize: 26,
+      fontWeight: "600",
       color: "#fff",
+      letterSpacing: 0.3,
+      fontFamily: Platform.OS === "ios" ? "System" : "sans-serif",
     },
     sectionLabel: {
       fontSize: 16,

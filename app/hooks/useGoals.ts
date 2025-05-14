@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Goal } from "../types/finny";
 
-export function useGoals(pushChat: (sender: string, message: string) => void) {
+export function useGoals(pushChat: (sender: "user" | "finny", message: string) => void) {
   const [timelineData, setTimelineData] = useState<Goal[]>([]);
 
   // Load goals from storage on mount

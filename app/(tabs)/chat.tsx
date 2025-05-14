@@ -16,17 +16,19 @@ import {
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
 import { AntDesign } from "@expo/vector-icons";
-import Timeline from "../components/Timeline";
 import { ChatMessageComponent } from "../components/ChatMessage";
 import { NudgeGrid } from "../components/NudgeGrid";
 import { useChat } from "../hooks/useChat";
 import { useGoals } from "../hooks/useGoals";
 import styles from "../styles/finnyStyles";
+import TypingIndicator from "../components/TypingIndicator";
+import ConversationStartersModal from "../components/ConversationStartersModal";
 
-export default function FinnyScreen() {
-  const [activeTab, setActiveTab] = useState<"chat" | "timeline">("chat");
+export default function ChatScreen() {
   const [userInput, setUserInput] = useState("");
   const [showScrollButton, setShowScrollButton] = useState(false);
+  const [isTyping, setIsTyping] = useState(false);
+  const [showStartersModal, setShowStartersModal] = useState(false);
 
   const scrollViewRef = useRef<ScrollView>(null);
   const lastContentOffset = useRef({ y: 0 }).current;
@@ -37,11 +39,6 @@ export default function FinnyScreen() {
     new Animated.Value(0),
     new Animated.Value(0),
   ]).current;
-  const timelineAnimations = useRef<Animated.Value[]>(
-    Array(10)
-      .fill(0)
-      .map(() => new Animated.Value(0))
-  ).current;
 
   const { chatMessages, showNudges, clearChat, pushChat, handleUserMessage } =
     useChat();
@@ -64,29 +61,13 @@ export default function FinnyScreen() {
     return () => subscription.remove();
   }, []);
 
-  useEffect(() => {
-    if (activeTab === "timeline") {
-      timelineAnimations.forEach((anim, index) => {
-        Animated.timing(anim, {
-          toValue: 1,
-          duration: 500,
-          delay: index * 150,
-          useNativeDriver: true,
-        }).start();
-      });
-    } else if (activeTab === "chat") {
-      scrollToBottom();
-    } else {
-      timelineAnimations.forEach((anim) => anim.setValue(0));
-    }
-  }, [activeTab]);
-
   const handleSend = async (nudgeText?: string) => {
     const messageText = nudgeText || userInput;
     if (!messageText.trim()) return;
     console.log("messageText", messageText);
     pushChat("user", messageText);
     setUserInput("");
+    setIsTyping(true);
 
     try {
       if (goalMode.active) {
@@ -220,6 +201,8 @@ export default function FinnyScreen() {
     } catch (error) {
       console.error("❌ handleSend error:", error);
       pushChat("finny", "Hmm, something went wrong. Try again?");
+    } finally {
+      setIsTyping(false);
     }
   };
 
@@ -253,12 +236,9 @@ export default function FinnyScreen() {
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.headerContainer}>
         <View style={styles.titleContainer}>
-          <Ionicons
-            name="sparkles"
-            size={24}
-            color="#4A90E2"
-            style={{ marginRight: 8 }}
-          />
+          <View style={styles.iconContainer}>
+            <Ionicons name="sparkles" size={24} color="#4A90E2" />
+          </View>
           <Text style={styles.headerTitle}>Finny</Text>
         </View>
         <TouchableOpacity
@@ -270,98 +250,85 @@ export default function FinnyScreen() {
         </TouchableOpacity>
       </View>
 
-      <View style={styles.tabSwitcher}>
-        <TouchableOpacity
-          style={[styles.tabButton, activeTab === "chat" && styles.activeTab]}
-          onPress={() => {
-            setActiveTab("chat");
-            shouldScrollToBottom.current = true;
-          }}
-        >
-          <Text
-            style={[styles.tabText, activeTab === "chat" && styles.activeText]}
+      <View style={styles.chatArea}>
+        <View style={styles.chatContainer}>
+          <ScrollView
+            ref={scrollViewRef}
+            style={styles.chatScroll}
+            onScroll={handleScroll}
+            scrollEventThrottle={16}
+            onScrollBeginDrag={() => (isScrolling.current = true)}
+            onScrollEndDrag={() => (isScrolling.current = false)}
+            onContentSizeChange={() => {
+              if (shouldScrollToBottom.current) scrollToBottom();
+            }}
           >
-            Conversation
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[
-            styles.tabButton,
-            activeTab === "timeline" && styles.activeTab,
-          ]}
-          onPress={() => setActiveTab("timeline")}
-        >
-          <Text
-            style={[
-              styles.tabText,
-              activeTab === "timeline" && styles.activeText,
-            ]}
-          >
-            Timeline
-          </Text>
-        </TouchableOpacity>
-      </View>
+            {showNudges && <NudgeGrid onNudgePress={handleSend} />}
+            {chatMessages.map((msg, index) => (
+              <ChatMessageComponent
+                key={msg.id}
+                message={msg}
+                showSender={
+                  msg.sender === "finny" &&
+                  (index === 0 || chatMessages[index - 1].sender !== "finny")
+                }
+              />
+            ))}
+            {isTyping && <TypingIndicator />}
+          </ScrollView>
 
-      {activeTab === "chat" ? (
-        <View style={styles.chatArea}>
-          <View style={styles.chatContainer}>
-            <ScrollView
-              ref={scrollViewRef}
-              style={styles.chatScroll}
-              onScroll={handleScroll}
-              scrollEventThrottle={16}
-              onScrollBeginDrag={() => (isScrolling.current = true)}
-              onScrollEndDrag={() => (isScrolling.current = false)}
-              onContentSizeChange={() => {
-                if (shouldScrollToBottom.current) scrollToBottom();
+          {showScrollButton && (
+            <TouchableOpacity
+              style={styles.scrollToBottomButton}
+              onPress={() => {
+                shouldScrollToBottom.current = true;
+                scrollToBottom();
               }}
             >
-              {showNudges && <NudgeGrid onNudgePress={handleSend} />}
-              {chatMessages.map((msg) => (
-                <ChatMessageComponent key={msg.id} message={msg} />
-              ))}
-            </ScrollView>
+              <AntDesign name="arrowdown" size={24} color="#fff" />
+            </TouchableOpacity>
+          )}
+        </View>
 
-            {showScrollButton && (
-              <TouchableOpacity
-                style={styles.scrollToBottomButton}
-                onPress={() => {
-                  shouldScrollToBottom.current = true;
-                  scrollToBottom();
-                }}
-              >
-                <AntDesign name="arrowdown" size={24} color="#fff" />
-              </TouchableOpacity>
-            )}
-          </View>
-
-          <View style={styles.inputBarContainer}>
-            <View style={styles.inputBar}>
-              <TextInput
-                placeholder="Ask Finny anything about money..."
-                placeholderTextColor="#888"
-                style={styles.input}
-                value={userInput}
-                onChangeText={setUserInput}
-                onSubmitEditing={() => handleSend()}
+        <View style={styles.inputBarContainer}>
+          <View style={styles.inputBar}>
+            <TouchableOpacity
+              style={styles.plusButton}
+              onPress={() => setShowStartersModal(true)}
+            >
+              <Ionicons name="add" size={24} color="#4A90E2" />
+            </TouchableOpacity>
+            <TextInput
+              placeholder="Ask Finny anything about money..."
+              placeholderTextColor="#888"
+              style={styles.input}
+              value={userInput}
+              onChangeText={setUserInput}
+              onSubmitEditing={() => handleSend()}
+            />
+            <TouchableOpacity
+              style={styles.sendButton}
+              onPress={() => handleSend()}
+              activeOpacity={0.7}
+            >
+              <Ionicons
+                name="arrow-up-circle-sharp"
+                size={32}
+                color="#4A90E2"
               />
-              <TouchableOpacity
-                style={styles.sendButton}
-                onPress={() => handleSend()}
-                activeOpacity={0.7}
-              >
-                <Ionicons name="send" size={18} color="#fff" />
-              </TouchableOpacity>
-            </View>
+            </TouchableOpacity>
           </View>
         </View>
-      ) : (
-        <Timeline
-          timelineData={timelineData}
-          timelineAnimations={timelineAnimations}
-          deleteGoal={deleteGoal}
-        />
-      )}
+      </View>
+
+      <ConversationStartersModal
+        visible={showStartersModal}
+        onClose={() => setShowStartersModal(false)}
+        onSelectQuestion={(question) => {
+          setUserInput(question);
+          handleSend(question);
+        }}
+      />
     </SafeAreaView>
   );
 }

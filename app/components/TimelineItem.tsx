@@ -18,9 +18,7 @@ const TimelineItem: React.FC<TimelineItemProps> = ({
   item,
   index,
   animation,
-  isSelected,
-  onSelect,
-  onDelete,
+  onPress,
 }) => {
   const animatedStyle = {
     opacity: animation,
@@ -34,13 +32,18 @@ const TimelineItem: React.FC<TimelineItemProps> = ({
     ],
   };
 
+  const handlePress = () => {
+    if (onPress) {
+      onPress(item);
+    }
+  };
+
   return (
     <TouchableOpacity
       key={item.id}
-      onPress={() => onSelect(item)}
-      onLongPress={() => onDelete(item)}
-      style={[styles.timelineRow, isSelected && styles.selectedTimelineRow]}
-      activeOpacity={0.8}
+      onPress={handlePress}
+      style={styles.timelineRow}
+      activeOpacity={0.7}
     >
       <View style={styles.timelineDot} />
       <View style={styles.timelineLine} />
@@ -73,11 +76,6 @@ const TimelineItem: React.FC<TimelineItemProps> = ({
               />
             </View>
             <Text style={styles.progressText}>{item.progress}%</Text>
-          </View>
-        )}
-        {isSelected && (
-          <View style={styles.timelineDescriptionContainer}>
-            <Text style={styles.timelineDescription}>{item.description}</Text>
           </View>
         )}
       </Animated.View>

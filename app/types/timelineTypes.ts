@@ -7,10 +7,11 @@ export interface TimelineProps {
   deleteGoal: (id: string) => Promise<void>;
   timelineAnimations: Animated.Value[];
   timelineData: Goal[];
+  onRefreshStart?: () => void;
+  onRefreshEnd?: () => void;
 }
 
 export interface TimelineState {
-  selectedMilestone: Goal | null;
   showAddGoalModal: boolean;
   notification: {
     visible: boolean;
@@ -37,9 +38,7 @@ export interface TimelineItemProps {
   item: Goal;
   index: number;
   animation: Animated.Value;
-  isSelected: boolean;
-  onSelect: (goal: Goal) => void;
-  onDelete: (goal: Goal) => void;
+  onPress: (goal: Goal) => void;
 }
 
 export const types = {
