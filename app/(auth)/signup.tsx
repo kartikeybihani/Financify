@@ -209,7 +209,10 @@ export default function SignupScreen() {
     setLoading(false);
 
     if (error) {
-      Alert.alert("Signup Failed", error.message);
+      if (error.message.includes("already registered")) {
+        setFormError("User with this email already exists.");
+        return;
+      }
       return;
     }
 

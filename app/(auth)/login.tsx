@@ -113,7 +113,11 @@ export default function LoginScreen() {
     setLoading(false);
 
     if (error) {
-      setFormError(error.message);
+      if (error.message.includes("Invalid login credentials")) {
+        setFormError("Invalid email or password");
+      } else {
+        setFormError(error.message);
+      }
     } else {
       // Fetch user and log email
       const {
