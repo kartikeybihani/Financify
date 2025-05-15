@@ -93,6 +93,23 @@ export const fetchAccounts = async (token: string) => {
   }
 };
 
+export const triggerWebhook = async (access_token: string) => {
+  const res = await fetch(`${BASE_URL}/api/fire_webhook`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ access_token }),
+  });
+
+  console.log("Webhook triggered");
+  if (!res.ok) {
+    throw new Error("Webhook trigger failed");
+  }
+  console.log("Response from webhook:", await res.json());
+
+  return await res.json();
+};
+
+
 export const fetchIdentity = async (token: string) => {
   try {
     const res = await fetch(`${BASE_URL}/api/identity`, {

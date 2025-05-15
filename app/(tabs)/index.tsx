@@ -19,6 +19,7 @@ import {
   fetchLinkToken,
   handlePlaidConnect,
   fetchInitialData,
+  triggerWebhook,
 } from "../utils/plaid";
 import {
   Account,
@@ -98,6 +99,8 @@ export default function HomeScreen() {
         setInstitution(data.institution || null);
         await saveDataToStorage(data);
         DeviceEventEmitter.emit("financialDataRefreshed", data);
+        await triggerWebhook(token);
+        console.log("Webhook triggered");
       }
     } catch (error) {
       console.error("Error fetching fresh data:", error);

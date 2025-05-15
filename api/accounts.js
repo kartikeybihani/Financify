@@ -8,6 +8,7 @@ export default async function handler(req, res) {
   try {
     const { access_token } = req.body;
     const response = await client.accountsGet({ access_token });
+    console.log("Accounts - " + JSON.stringify(response.data));
     res.status(200).json(response.data);
   } catch (error) {
     res.status(500).json({ error: error.message });
