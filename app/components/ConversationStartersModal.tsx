@@ -63,7 +63,7 @@ const ConversationStartersModal = ({
                   <Ionicons
                     name="arrow-up-circle-sharp"
                     size={32}
-                    color="#fff"
+                    color="white"
                   />
                 </TouchableOpacity>
               </View>
