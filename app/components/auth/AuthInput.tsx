@@ -61,7 +61,7 @@ const PasswordInputComponent = ({
           onPress={onTogglePassword}
         >
           <Ionicons
-            name={showPassword ? "eye-off" : "eye"}
+            name={showPassword ? "eye" : "eye-off"}
             size={24}
             color="rgba(255, 255, 255, 0.4)"
           />
