@@ -14,7 +14,7 @@ export const fetchLinkToken = async () => {
     console.log("Link token:", data.link_token);
     return data.link_token;
   } catch (err) {
-    console.error("Error fetching link token:", err);
+    console.error("Error fetching link token:");
     return null;
   }
 };

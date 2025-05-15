@@ -19,7 +19,7 @@ export default async function handler(req, res) {
       country_codes: ["US"],
       language: "en",
       redirect_uri: "https://financify-rose.vercel.app/oauth-complete",
-      webhook: "https://https://financify-rose.vercel.app/api/webhook",
+      // webhook: "https://https://financify-rose.vercel.app/api/webhook",
     });
     res.status(200).json(response.data);
   } catch (error) {
