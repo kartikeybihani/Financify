@@ -54,6 +54,32 @@ export const handlePlaidConnect = async (
   });
 };
 
+// === Update Mode ===
+export const getUpdateLinkToken = async (access_token: string) => {
+  const res = await fetch(`${BASE_URL}/api/create_update_link_token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ access_token }),
+  });
+
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "Failed to get update token");
+  return data.link_token;
+};
+
+export const openPlaidLink = (link_token: string) => {
+  console.log("Opening Plaid link");
+  create({ token: link_token });
+  open({
+    onSuccess: () => console.log("✅ Update success"),
+    onExit: () => console.log("⛔ Update exited"),
+  });
+
+  console.log("Plaid link opened");
+  // handler.open();
+};
+
+
 // === Disconnect ===
 export const handleDisconnect = async () => {
   await AsyncStorage.removeItem("accessToken");

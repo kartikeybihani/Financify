@@ -11,6 +11,13 @@ export default async function handler(req, res) {
     console.log("Accounts - " + JSON.stringify(response.data));
     res.status(200).json(response.data);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    const plaidError = error.response?.data;
+    console.log("Accounts - Plaid error:", plaidError);
+
+    if (plaidError?.error_code === "ITEM_LOGIN_REQUIRED") {
+      return res.status(400).json({ requires_update_mode: true });
+    }
+
+    res.status(500).json({ error: plaidError?.error_message || error.message });
   }
 }

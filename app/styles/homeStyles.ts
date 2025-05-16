@@ -338,7 +338,17 @@ export const styles = StyleSheet.create({
   },
   gradientBackground: {
     flex: 1,
-    width: '100%',
+  },
+  updateBanner: {
+    backgroundColor: '#FFA500',
+    padding: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  updateBannerText: {
+    color: '#000',
+    fontSize: 14,
+    fontWeight: '600',
   },
 });
 
