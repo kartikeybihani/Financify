@@ -43,3 +43,7 @@ app-example
 .env.*
 **/.env
 **/.env.*
+
+# Additional env files
+backend/ai/.env
+app/lib/supabase/.env
