@@ -37,3 +37,9 @@ yarn-error.*
 
 app-example
 .vercel
+
+# Environment variables
+.env
+.env.*
+**/.env
+**/.env.*
