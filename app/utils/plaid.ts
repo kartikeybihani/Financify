@@ -56,29 +56,43 @@ export const handlePlaidConnect = async (
 
 // === Update Mode ===
 export const getUpdateLinkToken = async (access_token: string) => {
-  const res = await fetch(`${BASE_URL}/api/create_update_link_token`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ access_token }),
-  });
+  try {
+    const res = await fetch(`${BASE_URL}/api/create_update_link_token`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ access_token }),
+    });
 
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || "Failed to get update token");
-  return data.link_token;
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Failed to get update token");
+    return data.link_token;
+  } catch (error) {
+    console.error("Error getting update token:", error);
+    throw error;
+  }
 };
 
-export const openPlaidLink = (link_token: string) => {
-  console.log("Opening Plaid link");
-  create({ token: link_token });
-  open({
-    onSuccess: () => console.log("✅ Update success"),
-    onExit: () => console.log("⛔ Update exited"),
-  });
-
-  console.log("Plaid link opened");
-  // handler.open();
+export const openPlaidLink = async (link_token: string) => {
+  try {
+    console.log("Opening Plaid link for update");
+    create({ token: link_token });
+    return new Promise((resolve, reject) => {
+      open({
+        onSuccess: () => {
+          console.log("✅ Update success");
+          resolve(true);
+        },
+        onExit: (error) => {
+          console.log("⛔ Update exited", error);
+          reject(error || new Error("Update flow exited"));
+        },
+      });
+    });
+  } catch (error) {
+    console.error("Error opening Plaid link:", error);
+    throw error;
+  }
 };
-
 
 // === Disconnect ===
 export const handleDisconnect = async () => {
