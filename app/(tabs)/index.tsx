@@ -169,7 +169,7 @@ export default function HomeScreen() {
       setInvestments(data.investments);
       setLiabilities(data.liabilities);
       setInstitution(data.institution);
-
+      console.log("Fetched fresh data");
       await saveDataToStorage(data);
       DeviceEventEmitter.emit("financialDataRefreshed", data);
     } catch (error) {
