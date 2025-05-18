@@ -15,6 +15,11 @@ export default async function handler(req, res) {
       accounts: liabilitiesResponse.data.accounts,
     });
   } catch (error) {
+    const plaidError = error.response?.data;
+
+    if (plaidError?.error_code === "ITEM_LOGIN_REQUIRED") {
+      return res.status(400).json({ requires_update_mode: true });
+    }
     res.status(500).json({ error: error.message });
   }
 }
