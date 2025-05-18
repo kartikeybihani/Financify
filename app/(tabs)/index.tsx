@@ -92,28 +92,10 @@ export default function HomeScreen() {
   };
 
   // Fetch fresh data from Plaid
-  // const fetchFreshData = async (token: string) => {
-  //   try {
-  //     const data = await fetchInitialData(token);
-  //     if (data) {
-  //       setAccounts(data.accounts || []);
-  //       setIdentity(data.identity || []);
-  //       setInvestments(data.investments || null);
-  //       setLiabilities(data.liabilities || null);
-  //       setInstitution(data.institution || null);
-  //       await saveDataToStorage(data);
-  //       DeviceEventEmitter.emit("financialDataRefreshed", data);
-  //       await triggerWebhook(token);
-  //       console.log("Webhook triggered");
-  //     }
-  //   } catch (error) {
-  //     console.error("Error fetching fresh data:", error);
-  //   }
-  // };
-
   const fetchFreshData = async (token: string) => {
     try {
-      const response = await fetch(
+      // First check if update mode is required
+      const accountsResponse = await fetch(
         "https://financify-rose.vercel.app/api/accounts",
         {
           method: "POST",
@@ -122,9 +104,9 @@ export default function HomeScreen() {
         }
       );
 
-      const data = await response.json();
+      const accountsData = await accountsResponse.json();
 
-      if (data.requires_update_mode) {
+      if (accountsData.requires_update_mode) {
         console.warn("⚠️ Update mode required");
         const newUpdateToken = await getUpdateLinkToken(token);
         setUpdateToken(newUpdateToken);
@@ -132,11 +114,66 @@ export default function HomeScreen() {
         return;
       }
 
-      setAccounts(data.accounts || []);
-      DeviceEventEmitter.emit("financialDataRefreshed", data);
+      // Fetch all data in parallel
+      const [
+        identityResponse,
+        investmentsResponse,
+        liabilitiesResponse,
+        institutionResponse,
+      ] = await Promise.all([
+        fetch("https://financify-rose.vercel.app/api/identity", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ access_token: token }),
+        }),
+        fetch("https://financify-rose.vercel.app/api/investments", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ access_token: token }),
+        }),
+        fetch("https://financify-rose.vercel.app/api/liabilities", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ access_token: token }),
+        }),
+        fetch("https://financify-rose.vercel.app/api/institution", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ access_token: token }),
+        }),
+      ]);
+
+      const [identityData, investmentsData, liabilitiesData, institutionData] =
+        await Promise.all([
+          identityResponse.json(),
+          investmentsResponse.json(),
+          liabilitiesResponse.json(),
+          institutionResponse.json(),
+        ]);
+
+      const data = {
+        accounts: accountsData.accounts || [],
+        identity: identityData.identity || [],
+        investments: {
+          holdings: investmentsData.holdings || [],
+          securities: investmentsData.securities || [],
+          investmentTransactions: investmentsData.investment_transactions || [],
+        },
+        liabilities: liabilitiesData.liabilities || [],
+        institution: institutionData.institution || null,
+      };
+
+      // Update state and save data
+      setAccounts(data.accounts);
+      setIdentity(data.identity);
+      setInvestments(data.investments);
+      setLiabilities(data.liabilities);
+      setInstitution(data.institution);
+
       await saveDataToStorage(data);
+      DeviceEventEmitter.emit("financialDataRefreshed", data);
     } catch (error) {
-      console.error("Error fetching fresh data:", error);
+      console.log("❌ Error fetching data:", error);
     }
   };
 
