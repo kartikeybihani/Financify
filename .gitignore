@@ -41,8 +41,10 @@ app-example
 # Environment variables
 .env
 .env.*
+!.env.example
 **/.env
 **/.env.*
+!**/.env.example
 
 # Additional env files
 backend/ai/.env
