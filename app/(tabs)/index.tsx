@@ -17,7 +17,6 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { styles } from "../styles/homeStyles";
 import {
   fetchLinkToken,
-  handlePlaidConnect,
   fetchInitialData,
   triggerWebhook,
   getUpdateLinkToken,
@@ -192,16 +191,6 @@ export default function HomeScreen() {
     setRefreshing(false);
   };
 
-  // Handle Plaid connection
-  const handleConnect = async () => {
-    if (!linkToken) return;
-    await handlePlaidConnect(linkToken, async (token) => {
-      await AsyncStorage.setItem("accessToken", token);
-      setAccessToken(token);
-      await fetchFreshData(token);
-    });
-  };
-
   // Toggle section expansion
   const toggleSection = (section: string) => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -216,10 +205,10 @@ export default function HomeScreen() {
   useEffect(() => {
     const initializeApp = async () => {
       try {
-        // Fetch user data from Supabase
         const {
           data: { user },
         } = await supabase.auth.getUser();
+        console.log("User in home screen:", user);
         setUserData(user);
 
         const { data, error } = await supabase
@@ -228,21 +217,20 @@ export default function HomeScreen() {
           .eq("id", user?.id)
           .single();
 
+        console.log("Data in home screen:", data);
         const token = data?.access_token || null;
-        console.log("Token in home screen:", token);
+        console.log("✅ Loaded token from Supabase:", token);
 
         if (token) {
           setAccessToken(token);
           const dataLoaded = await loadDataFromStorage();
-          if (!dataLoaded) {
-            await fetchFreshData(token);
-          }
-        } else if (!token) {
-          const newLinkToken = await fetchLinkToken();
-          setLinkToken(newLinkToken);
+          if (!dataLoaded) await fetchFreshData(token);
+        } else {
+          setAccessToken(null);
         }
-      } catch (error) {
-        console.error("Error during initialization:", error);
+      } catch (err) {
+        console.error("❌ Error initializing app:", err);
+        setAccessToken(null);
       } finally {
         setIsInitialLoad(false);
         setIsLoading(false);
@@ -293,28 +281,6 @@ export default function HomeScreen() {
           Hi {userData?.user_metadata?.full_name || "there"}
         </Text>
         <Text style={styles.subGreeting}>Welcome Back!</Text>
-      </View>
-    </View>
-  );
-
-  const renderDisconnectedState = () => (
-    <View style={styles.disconnectedContainer}>
-      <View style={styles.disconnectedContent}>
-        <Ionicons name="wallet-outline" size={80} color="#4A90E2" />
-        <Text style={styles.disconnectedTitle}>Connect Your Bank Account</Text>
-        <Text style={styles.disconnectedDescription}>
-          Link your bank accounts to see your financial overview, track your net
-          worth, and manage your investments all in one place.
-        </Text>
-        <TouchableOpacity
-          style={styles.connectButton}
-          onPress={handleConnect}
-          disabled={!linkToken}
-        >
-          <Text style={styles.connectButtonText}>
-            {linkToken ? "Connect Bank Account" : "Loading..."}
-          </Text>
-        </TouchableOpacity>
       </View>
     </View>
   );
@@ -618,25 +584,33 @@ export default function HomeScreen() {
         style={styles.gradientBackground}
       >
         {renderHeader()}
-        {showUpdateBanner && (
-          <TouchableOpacity
-            style={styles.updateBanner}
-            onPress={handleUpdateBannerPress}
-          >
-            <Text style={styles.updateBannerText}>
-              ⚠️ Your bank connection needs updating. Tap here.
+
+        {!accessToken ? (
+          <View style={styles.disconnectedContainer}>
+            <Text style={styles.disconnectedTitle}>Something went wrong</Text>
+            <Text style={styles.disconnectedDescription}>
+              We couldn't find your connected bank account. Please reconnect
+              from settings.
             </Text>
-          </TouchableOpacity>
-        )}
-        {isInitialLoad ? (
-          <View style={styles.loadingOverlay}>
             <ActivityIndicator size="large" color="#4A90E2" />
           </View>
-        ) : !accessToken ? (
-          renderDisconnectedState()
         ) : (
           <>
-            {isLoading ? (
+            {showUpdateBanner && (
+              <TouchableOpacity
+                style={styles.updateBanner}
+                onPress={handleUpdateBannerPress}
+              >
+                <Text style={styles.updateBannerText}>
+                  ⚠️ Your bank connection needs updating. Tap here.
+                </Text>
+              </TouchableOpacity>
+            )}
+            {isInitialLoad ? (
+              <View style={styles.loadingOverlay}>
+                <ActivityIndicator size="large" color="#4A90E2" />
+              </View>
+            ) : isLoading ? (
               <View style={styles.loadingOverlay}>
                 <ActivityIndicator size="large" color="#4A90E2" />
               </View>
