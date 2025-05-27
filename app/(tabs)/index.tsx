@@ -222,14 +222,22 @@ export default function HomeScreen() {
         } = await supabase.auth.getUser();
         setUserData(user);
 
-        const token = await AsyncStorage.getItem("accessToken");
+        const { data, error } = await supabase
+          .from("user_tokens")
+          .select("access_token")
+          .eq("id", user?.id)
+          .single();
+
+        const token = data?.access_token || null;
+        console.log("Token in home screen:", token);
+
         if (token) {
           setAccessToken(token);
           const dataLoaded = await loadDataFromStorage();
           if (!dataLoaded) {
             await fetchFreshData(token);
           }
-        } else {
+        } else if (!token) {
           const newLinkToken = await fetchLinkToken();
           setLinkToken(newLinkToken);
         }

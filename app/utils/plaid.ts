@@ -1,5 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { open, create } from "react-native-plaid-link-sdk";
+import supabase from "../lib/supabase/supabase";
 
 const BASE_URL = "https://financify-rose.vercel.app";
 
@@ -32,6 +33,9 @@ export const handlePlaidConnect = async (
   console.log("Created the create function");
   open({
     onSuccess: async ({ publicToken }) => {
+      const { data: { user }} = await supabase.auth.getUser();
+      console.log("User ID:", user?.id);
+
       try {
         console.log("In onSuccess");
         const res = await fetch(
@@ -39,12 +43,15 @@ export const handlePlaidConnect = async (
           {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ public_token: publicToken }),
+          body: JSON.stringify({  
+            public_token: publicToken,
+            user_id: user?.id,
+          }),
       });
         const data = await res.json();
         const token = data.access_token;
         console.log("Plaid token:", token);
-        await AsyncStorage.setItem("accessToken", token);
+        // await AsyncStorage.setItem("accessToken", token);
         onSuccess(token);
       } catch (err) {
         console.error("Error in onSuccess:", err);

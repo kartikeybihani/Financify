@@ -19,6 +19,7 @@ import { styles } from "../styles/insightsStyles";
 import CategoryGrid from "../components/CategoryGrid";
 import CategoryDetailModal from "../components/CategoryDetailModal";
 import FilterModal from "../components/FilterModal";
+import supabase from "../lib/supabase/supabase";
 const screenWidth = Dimensions.get("window").width;
 
 // Define types
@@ -133,7 +134,20 @@ export default function InsightsScreen() {
     const BASE_URL = "https://financify-rose.vercel.app";
     try {
       setIsLoading(true);
-      const token = await AsyncStorage.getItem("accessToken");
+
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      const { data: tokenData, error } = await supabase
+        .from("user_tokens")
+        .select("access_token")
+        .eq("id", user?.id)
+        .single();
+
+      const token = tokenData?.access_token || null;
+
+      // const token = await AsyncStorage.getItem("accessToken");
       if (!token) return;
 
       const res = await fetch(`${BASE_URL}/api/transactions`, {
@@ -144,17 +158,17 @@ export default function InsightsScreen() {
         body: JSON.stringify({ access_token: token }),
       });
 
-      const data = await res.json();
-      if (data.transactions) {
-        setTransactions(data.transactions);
-        processTransactionsData(data.transactions);
+      const transactionData = await res.json();
+      if (transactionData.transactions) {
+        setTransactions(transactionData.transactions);
+        processTransactionsData(transactionData.transactions);
         hasData.current = true;
 
         // Update stored data
         const storedData = await AsyncStorage.getItem("financialData");
         if (storedData) {
           const parsedData = JSON.parse(storedData);
-          parsedData.transactions = data.transactions;
+          parsedData.transactions = transactionData.transactions;
           await AsyncStorage.setItem(
             "financialData",
             JSON.stringify(parsedData)

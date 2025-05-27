@@ -57,9 +57,9 @@ export default function IntentScreen() {
   const params = useLocalSearchParams();
   const scaleAnim = useState(new Animated.Value(1))[0];
 
-  useEffect(() => {
-    console.log("[Intent] params: ", params);
-  }, [params]);
+  // useEffect(() => {
+  //   console.log("[Intent] params: ", params);
+  // }, [params]);
 
   const handleSelect = (id: string) => {
     setSelected(id);
