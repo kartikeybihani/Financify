@@ -64,8 +64,18 @@ export default function AccountConnectionScreen() {
         throw updateError;
       }
 
-      await AsyncStorage.setItem("accessToken", accessToken);
+      // await AsyncStorage.setItem("accessToken", accessToken);
 
+      const { error: updateError1 } = await supabase
+        .from("user_tokens")
+        .upsert({
+          id: userData?.user?.id,
+          access_token: accessToken,
+        });
+
+      if (updateError) {
+        throw updateError;
+      }
       // Navigate to final screen after updating user metadata
       router.replace("/(onboarding)/final");
     } catch (error: any) {
