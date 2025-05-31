@@ -63,7 +63,7 @@ const ConversationStartersModal = ({
                   <Ionicons
                     name="arrow-up-circle-sharp"
                     size={32}
-                    color="white"
+                    color="#4A90E2"
                   />
                 </TouchableOpacity>
               </View>
@@ -133,7 +133,6 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   sendButton: {
-    // backgroundColor: "#4A90E2",
     width: 32,
     height: 32,
     borderRadius: 16,

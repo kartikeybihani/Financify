@@ -351,7 +351,10 @@ export default function InsightsScreen() {
           <View style={styles.iconContainer}>
             <Ionicons name="stats-chart" size={24} color="#4A90E2" />
           </View>
-          <Text style={styles.headerTitle}>Insights</Text>
+          <View>
+            <Text style={styles.headerTitle}>Insights</Text>
+            <Text style={styles.headerSubtitle}>Your Financial Analytics</Text>
+          </View>
         </View>
       </View>
 

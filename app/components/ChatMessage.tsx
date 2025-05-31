@@ -1,6 +1,21 @@
-import React from "react";
-import { View, Text, StyleSheet } from "react-native";
+import React, { useEffect } from "react";
+import {
+  View,
+  Text,
+  StyleSheet,
+  Image,
+  LayoutAnimation,
+  Platform,
+  UIManager,
+} from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
+
+// Enable LayoutAnimation for Android
+if (Platform.OS === "android") {
+  if (UIManager.setLayoutAnimationEnabledExperimental) {
+    UIManager.setLayoutAnimationEnabledExperimental(true);
+  }
+}
 
 interface ChatMessageProps {
   message: {
@@ -15,6 +30,16 @@ export const ChatMessageComponent = ({
   message,
   showSender = true,
 }: ChatMessageProps) => {
+  useEffect(() => {
+    LayoutAnimation.configureNext(
+      LayoutAnimation.create(
+        300,
+        LayoutAnimation.Types.easeInEaseOut,
+        LayoutAnimation.Properties.opacity
+      )
+    );
+  }, []);
+
   const isUser = message.sender === "user";
 
   if (isUser) {
@@ -27,46 +52,75 @@ export const ChatMessageComponent = ({
     );
   }
 
+  // Split message into points based on numbered or bullet points and paragraphs
+  const points = message.text
+    .split(/\n(?=\d+\.|\•|\-)/g) // split on newlines before bullet-like lines
+    .flatMap((p) => p.split(/\n{2,}/g)) // also break on large gaps
+    .map((p) => p.trim())
+    .filter(Boolean);
+
+  // Debug logging
+  console.log("\n----- Enhanced Message Split Debug -----");
+  console.log("📝 Original Message:");
+  console.log(message.text);
+  console.log("\n📑 Split Messages:");
+  points.forEach((point, index) => {
+    console.log(`\nPoint ${index + 1}:`);
+    console.log(point.trim());
+  });
+  console.log("----------------------------\n");
+
   return (
     <View>
-      {showSender && <Text style={styles.senderName}>Finny</Text>}
-      <LinearGradient
-        colors={["#1A3D66", "#1A3D66", "#2E5C8F", "#4A90E2"]}
-        start={{ x: 0, y: 2 }}
-        end={{ x: 1, y: 0 }}
-        style={[styles.messageContainer, styles.finnyMessageContainer]}
-      >
-        <Text style={[styles.messageText, styles.finnyMessageText]}>
-          {message.text.split("\n").map((line, lineIdx) => {
-            // Handle numbered points (e.g., "1.", "2.")
-            const isNumberedPoint = /^\d+\.\s/.test(line);
-            // Handle bullet points
-            const isBulletPoint = /^[-•]\s/.test(line);
-
-            return (
-              <React.Fragment key={lineIdx}>
-                {lineIdx > 0 && <Text>{"\n"}</Text>}
-                <Text
-                  style={[
-                    isNumberedPoint || isBulletPoint ? styles.pointText : null,
-                  ]}
-                >
-                  {line.split(/(\*\*[^*]+\*\*)/).map((chunk, idx) => {
-                    if (chunk.startsWith("**") && chunk.endsWith("**")) {
-                      return (
-                        <Text key={idx} style={styles.boldText}>
-                          {chunk.slice(2, -2)}
-                        </Text>
-                      );
-                    }
-                    return chunk;
-                  })}
-                </Text>
-              </React.Fragment>
-            );
-          })}
-        </Text>
-      </LinearGradient>
+      {showSender && (
+        <View style={styles.senderInfo}>
+          {/* <Image
+            source={require("../assets/mascot1.jpg")}
+            style={styles.senderAvatar}
+          /> */}
+          <Text style={styles.senderName}>Finny</Text>
+        </View>
+      )}
+      {points.map((point, pointIdx) => (
+        <View
+          key={pointIdx}
+          style={[
+            { flexDirection: "row", alignItems: "flex-start" },
+            { opacity: 1 }, // This helps LayoutAnimation track the view
+          ]}
+        >
+          <LinearGradient
+            colors={["#1A3D66", "#1A3D66", "#2E5C8F", "#4A90E2"]}
+            start={{ x: 0, y: 2 }}
+            end={{ x: 1, y: 0 }}
+            style={[
+              styles.messageContainer,
+              styles.finnyMessageContainer,
+              pointIdx > 0 ? { marginTop: 8 } : {},
+            ]}
+          >
+            <Text style={[styles.messageText, styles.finnyMessageText]}>
+              {point.split("\n").map((line, lineIdx) => (
+                <React.Fragment key={lineIdx}>
+                  {lineIdx > 0 && <Text>{"\n"}</Text>}
+                  <Text>
+                    {line.split(/(\*\*[^*]+\*\*)/).map((chunk, idx) => {
+                      if (chunk.startsWith("**") && chunk.endsWith("**")) {
+                        return (
+                          <Text key={idx} style={styles.boldText}>
+                            {chunk.slice(2, -2)}
+                          </Text>
+                        );
+                      }
+                      return chunk;
+                    })}
+                  </Text>
+                </React.Fragment>
+              ))}
+            </Text>
+          </LinearGradient>
+        </View>
+      ))}
     </View>
   );
 };
@@ -74,9 +128,9 @@ export const ChatMessageComponent = ({
 const styles = StyleSheet.create({
   messageContainer: {
     maxWidth: "80%",
-    padding: 12,
-    borderRadius: 16,
-    marginVertical: 4,
+    padding: 10,
+    borderRadius: 14,
+    marginVertical: 3,
   },
   userMessageContainer: {
     alignSelf: "flex-end",
@@ -91,11 +145,12 @@ const styles = StyleSheet.create({
     shadowColor: "#000",
     shadowOffset: {
       width: 0,
-      height: 2,
+      height: 1,
     },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 3,
+    flex: 1,
   },
   messageText: {
     fontSize: 14,
@@ -107,18 +162,28 @@ const styles = StyleSheet.create({
   finnyMessageText: {
     color: "#fff",
   },
-  pointText: {
-    marginBottom: 8,
-    paddingLeft: 4,
-  },
   boldText: {
-    fontWeight: "700",
+    fontWeight: "600",
+  },
+  senderInfo: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginLeft: 4,
+    marginBottom: 1,
+  },
+  senderAvatar: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    marginRight: 4,
+    transform: [{ scaleX: -1 }],
+    borderWidth: 0.5,
+    borderColor: "#4A90E2",
   },
   senderName: {
-    fontSize: 12,
+    fontSize: 11,
     color: "#888",
-    marginLeft: 8,
-    marginBottom: 2,
+    fontWeight: "500",
   },
 });
 

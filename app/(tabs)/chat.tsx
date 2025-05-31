@@ -12,10 +12,13 @@ import {
   ActivityIndicator,
   Platform,
   DeviceEventEmitter,
+  Image,
+  Easing,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
 import { AntDesign } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 import { ChatMessageComponent } from "../components/ChatMessage";
 import { NudgeGrid } from "../components/NudgeGrid";
 import { useChat } from "../hooks/useChat";
@@ -24,11 +27,51 @@ import styles from "../styles/finnyStyles";
 import TypingIndicator from "../components/TypingIndicator";
 import ConversationStartersModal from "../components/ConversationStartersModal";
 
+interface Suggestion {
+  text: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  color: string;
+  bgColor: string;
+}
+
 export default function ChatScreen() {
   const [userInput, setUserInput] = useState("");
   const [showScrollButton, setShowScrollButton] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
   const [showStartersModal, setShowStartersModal] = useState(false);
+  const [suggestions] = useState<Suggestion[]>([
+    {
+      text: "Set a savings goal",
+      icon: "flag",
+      color: "#4A90E2",
+      bgColor: "#4A90E2",
+    },
+    {
+      text: "Give me a spending tip",
+      icon: "bulb",
+      color: "#FFB156",
+      bgColor: "#FF9500",
+    },
+    {
+      text: "What's my net worth?",
+      icon: "wallet",
+      color: "#4CD964",
+      bgColor: "#34C759",
+    },
+    {
+      text: "Track my expenses",
+      icon: "stats-chart",
+      color: "#FF3B30",
+      bgColor: "#FF3B30",
+    },
+    {
+      text: "Investment advice",
+      icon: "trending-up",
+      color: "#9C27B0",
+      bgColor: "#9C27B0",
+    },
+  ]);
+  const scrollButtonAnimation = useRef(new Animated.Value(0)).current;
 
   const scrollViewRef = useRef<ScrollView>(null);
   const lastContentOffset = useRef({ y: 0 }).current;
@@ -52,6 +95,63 @@ export default function ChatScreen() {
 
   const { timelineData, saveGoal, deleteGoal, refreshGoals } =
     useGoals(pushChat);
+
+  // Remove tagline-related code
+  const mascotFlip = useRef(new Animated.Value(0)).current;
+  const mascotBounce = useRef(new Animated.Value(0)).current;
+  const mascotRotate = useRef(new Animated.Value(0)).current;
+
+  // Setup mascot animations
+  useEffect(() => {
+    const startMascotAnimation = () => {
+      Animated.parallel([
+        // Smooth rotation
+        Animated.sequence([
+          Animated.timing(mascotRotate, {
+            toValue: 1,
+            duration: 1200,
+            easing: Easing.bezier(0.4, 0, 0.2, 1),
+            useNativeDriver: true,
+          }),
+          Animated.timing(mascotRotate, {
+            toValue: 0,
+            duration: 1200,
+            easing: Easing.bezier(0.4, 0, 0.2, 1),
+            useNativeDriver: true,
+          }),
+        ]),
+        // Subtle bounce
+        Animated.sequence([
+          Animated.timing(mascotBounce, {
+            toValue: 1,
+            duration: 600,
+            easing: Easing.elastic(1),
+            useNativeDriver: true,
+          }),
+          Animated.timing(mascotBounce, {
+            toValue: 0,
+            duration: 600,
+            easing: Easing.elastic(1),
+            useNativeDriver: true,
+          }),
+        ]),
+      ]).start(() => {
+        setTimeout(startMascotAnimation, 4000);
+      });
+    };
+
+    startMascotAnimation();
+  }, []);
+
+  const rotate = mascotRotate.interpolate({
+    inputRange: [0, 1],
+    outputRange: ["0deg", "360deg"],
+  });
+
+  const bounce = mascotBounce.interpolate({
+    inputRange: [0, 0.5, 1],
+    outputRange: [1, 1.1, 1],
+  });
 
   useEffect(() => {
     const subscription = DeviceEventEmitter.addListener(
@@ -211,10 +311,20 @@ export default function ChatScreen() {
     const contentHeight = event.nativeEvent.contentSize.height;
     const scrollViewHeight = event.nativeEvent.layoutMeasurement.height;
 
-    setShowScrollButton(
+    const shouldShow =
       currentOffset < contentHeight - scrollViewHeight - 100 &&
-        contentHeight > scrollViewHeight
-    );
+      contentHeight > scrollViewHeight;
+
+    if (shouldShow !== showScrollButton) {
+      setShowScrollButton(shouldShow);
+      Animated.spring(scrollButtonAnimation, {
+        toValue: shouldShow ? 1 : 0,
+        useNativeDriver: true,
+        tension: 80,
+        friction: 9,
+      }).start();
+    }
+
     lastContentOffset.y = currentOffset;
 
     if (currentOffset < lastContentOffset.y) {
@@ -234,19 +344,45 @@ export default function ChatScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
+      <LinearGradient
+        colors={[
+          "rgba(26, 61, 102, 0.85)",
+          "rgba(26, 61, 102, 0.1)",
+          "transparent",
+        ]}
+        style={styles.headerGradient}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0, y: 1 }}
+      />
       <View style={styles.headerContainer}>
         <View style={styles.titleContainer}>
-          <View style={styles.iconContainer}>
-            <Ionicons name="sparkles" size={24} color="#4A90E2" />
+          <View style={styles.mascotContainer}>
+            <Animated.Image
+              source={require("../assets/mascot1.jpg")}
+              style={[
+                styles.mascotImage,
+                {
+                  transform: [
+                    { rotate },
+                    { scale: bounce },
+                    { scaleX: -1 },
+                    { rotateY: rotate },
+                  ],
+                },
+              ]}
+            />
           </View>
-          <Text style={styles.headerTitle}>Finny</Text>
+          {/* <View style={styles.headerContent}>
+            <Text style={styles.headerTitle}>Finny</Text>
+          </View> */}
         </View>
         <TouchableOpacity
           style={styles.clearButton}
           onPress={clearChat}
           activeOpacity={0.7}
         >
-          <Ionicons name="trash-outline" size={16} color="#FF3B30" />
+          <Ionicons name="trash-outline" size={14} color="#FF3B30" />
+          <Text style={styles.clearButtonText}>Clear</Text>
         </TouchableOpacity>
       </View>
 
@@ -278,19 +414,59 @@ export default function ChatScreen() {
           </ScrollView>
 
           {showScrollButton && (
-            <TouchableOpacity
-              style={styles.scrollToBottomButton}
-              onPress={() => {
-                shouldScrollToBottom.current = true;
-                scrollToBottom();
-              }}
+            <Animated.View
+              style={[
+                styles.scrollToBottomButton,
+                {
+                  transform: [
+                    {
+                      scale: scrollButtonAnimation.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [0.5, 1],
+                      }),
+                    },
+                  ],
+                  opacity: scrollButtonAnimation,
+                },
+              ]}
             >
-              <AntDesign name="arrowdown" size={24} color="#fff" />
-            </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => {
+                  shouldScrollToBottom.current = true;
+                  scrollToBottom();
+                }}
+              >
+                <AntDesign name="arrowdown" size={24} color="#fff" />
+              </TouchableOpacity>
+            </Animated.View>
           )}
         </View>
 
         <View style={styles.inputBarContainer}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.suggestionsContainer}
+          >
+            {suggestions.map((suggestion, idx) => (
+              <TouchableOpacity
+                key={idx}
+                onPress={() => handleSend(suggestion.text)}
+                style={[
+                  styles.suggestionChip,
+                  { backgroundColor: suggestion.bgColor },
+                ]}
+              >
+                <Ionicons
+                  name={suggestion.icon}
+                  size={14}
+                  color="#FFFFFF"
+                  style={styles.suggestionIcon}
+                />
+                <Text style={styles.suggestionText}>{suggestion.text}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
           <View style={styles.inputBar}>
             <TouchableOpacity
               style={styles.plusButton}
