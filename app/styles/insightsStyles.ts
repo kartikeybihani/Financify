@@ -29,12 +29,12 @@ export const styles = StyleSheet.create({
     },
     iconContainer: {
       backgroundColor: "rgba(74, 144, 226, 0.1)",
-      padding: 10,
-      borderRadius: 14,
-      marginRight: 14,
+      padding: 8,
+      borderRadius: 12,
+      marginRight: 12,
     },
     headerTitle: {
-      fontSize: 26,
+      fontSize: 20,
       fontWeight: "600",
       color: "#fff",
       letterSpacing: 0.3,

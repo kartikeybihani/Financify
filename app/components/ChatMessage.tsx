@@ -37,15 +37,33 @@ export const ChatMessageComponent = ({
         style={[styles.messageContainer, styles.finnyMessageContainer]}
       >
         <Text style={[styles.messageText, styles.finnyMessageText]}>
-          {message.text.split(/(\*[^*]+\*)/).map((chunk, idx) => {
-            if (chunk.startsWith("*") && chunk.endsWith("*")) {
-              return (
-                <Text key={idx} style={styles.boldText}>
-                  {chunk.slice(1, -1)}
+          {message.text.split("\n").map((line, lineIdx) => {
+            // Handle numbered points (e.g., "1.", "2.")
+            const isNumberedPoint = /^\d+\.\s/.test(line);
+            // Handle bullet points
+            const isBulletPoint = /^[-•]\s/.test(line);
+
+            return (
+              <React.Fragment key={lineIdx}>
+                {lineIdx > 0 && <Text>{"\n"}</Text>}
+                <Text
+                  style={[
+                    isNumberedPoint || isBulletPoint ? styles.pointText : null,
+                  ]}
+                >
+                  {line.split(/(\*\*[^*]+\*\*)/).map((chunk, idx) => {
+                    if (chunk.startsWith("**") && chunk.endsWith("**")) {
+                      return (
+                        <Text key={idx} style={styles.boldText}>
+                          {chunk.slice(2, -2)}
+                        </Text>
+                      );
+                    }
+                    return chunk;
+                  })}
                 </Text>
-              );
-            }
-            return chunk;
+              </React.Fragment>
+            );
           })}
         </Text>
       </LinearGradient>
@@ -88,6 +106,10 @@ const styles = StyleSheet.create({
   },
   finnyMessageText: {
     color: "#fff",
+  },
+  pointText: {
+    marginBottom: 8,
+    paddingLeft: 4,
   },
   boldText: {
     fontWeight: "700",

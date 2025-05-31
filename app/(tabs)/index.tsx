@@ -32,6 +32,9 @@ import {
 import { useRouter } from "expo-router";
 import { supabase } from "../lib/supabase/supabase";
 import { LinearGradient } from "expo-linear-gradient";
+import FinancialBottomSheet from "../components/shared/FinancialBottomSheet";
+import FinancialCard from "../components/shared/FinancialCard";
+import AccountItem from "../components/shared/AccountItem";
 
 if (Platform.OS === "android") {
   UIManager.setLayoutAnimationEnabledExperimental?.(true);
@@ -39,6 +42,22 @@ if (Platform.OS === "android") {
 
 export default function HomeScreen() {
   const router = useRouter();
+
+  // Add encouraging messages array
+  const encouragingMessages = [
+    "Keep going! You got this bro 💪",
+    "Making progress every day! 🚀",
+    "You're crushing it! 🔥",
+    "Small steps, big results 🎯",
+    "Building wealth, one day at a time 💎",
+    "Stay focused, stay winning 🏆",
+    "Your future self will thank you 🙌",
+    "Financial freedom, here we come! 💫",
+  ];
+
+  // Get random message
+  const randomMessage =
+    encouragingMessages[Math.floor(Math.random() * encouragingMessages.length)];
 
   // Core states
   const [accessToken, setAccessToken] = useState<string | null>(null);
@@ -49,16 +68,19 @@ export default function HomeScreen() {
   const [showUpdateBanner, setShowUpdateBanner] = useState(false);
   const [updateToken, setUpdateToken] = useState<string | null>(null);
 
+  // Modal states
+  const [activeModal, setActiveModal] = useState<
+    "accounts" | "investments" | "liabilities" | null
+  >(null);
+
   // Financial data states
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [identity, setIdentity] = useState<Identity[]>([]);
   const [investments, setInvestments] = useState<Investment | null>(null);
   const [liabilities, setLiabilities] = useState<any>(null);
   const [institution, setInstitution] = useState<any>(null);
-  const [expandedSections, setExpandedSections] = useState<string[]>([]);
 
   const hasLoadedOnce = useRef(false);
-
   const [userData, setUserData] = useState<any>(null);
 
   // Save data to AsyncStorage
@@ -191,16 +213,6 @@ export default function HomeScreen() {
     setRefreshing(false);
   };
 
-  // Toggle section expansion
-  const toggleSection = (section: string) => {
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    setExpandedSections((prev) =>
-      prev.includes(section)
-        ? prev.filter((s) => s !== section)
-        : [...prev, section]
-    );
-  };
-
   // Initial setup and data loading
   useEffect(() => {
     const initializeApp = async () => {
@@ -259,282 +271,40 @@ export default function HomeScreen() {
   }, []);
 
   // Helper functions
-  const formatCurrency = (amount: number, currency = "USD", decimals = 2) => {
+  const formatCurrency = (
+    amount: number,
+    currency = "USD",
+    options = { decimals: 1, useKM: true }
+  ) => {
+    if (options.useKM) {
+      if (Math.abs(amount) >= 1000000) {
+        return (
+          new Intl.NumberFormat("en-US", {
+            style: "currency",
+            currency,
+            minimumFractionDigits: options.decimals,
+            maximumFractionDigits: options.decimals,
+          }).format(amount / 1000000) + "M"
+        );
+      }
+      if (Math.abs(amount) >= 1000) {
+        return (
+          new Intl.NumberFormat("en-US", {
+            style: "currency",
+            currency,
+            minimumFractionDigits: options.decimals,
+            maximumFractionDigits: options.decimals,
+          }).format(amount / 1000) + "K"
+        );
+      }
+    }
     return new Intl.NumberFormat("en-US", {
       style: "currency",
       currency,
-      minimumFractionDigits: decimals,
-      maximumFractionDigits: decimals,
+      minimumFractionDigits: options.decimals,
+      maximumFractionDigits: options.decimals,
     }).format(amount);
   };
-
-  const userName = identity?.[0]?.owners?.[0]?.names?.[0] || "there";
-
-  // Render functions
-  const renderHeader = () => (
-    <View style={styles.header}>
-      <TouchableOpacity onPress={() => router.push("/settings")}>
-        <Feather name="menu" size={28} color="#fff" />
-      </TouchableOpacity>
-      <View style={styles.headerTextContainer}>
-        <Text style={styles.greetingText}>
-          Hi {userData?.user_metadata?.full_name || "there"}
-        </Text>
-        <Text style={styles.subGreeting}>Welcome Back!</Text>
-      </View>
-    </View>
-  );
-
-  const renderConnectedState = () => (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={{ paddingBottom: 100 }}
-      refreshControl={
-        <RefreshControl
-          refreshing={refreshing}
-          onRefresh={onRefresh}
-          colors={["#4A90E2"]}
-          tintColor="#4A90E2"
-          progressBackgroundColor="#1f1f1f"
-        />
-      }
-    >
-      <Text style={styles.title}>Net Worth</Text>
-      <View style={styles.netWorthCard}>
-        <Text style={styles.netWorthText}>{formatCurrency(totalBalance)}</Text>
-        <View style={styles.netWorthBreakdown}>
-          <View style={styles.breakdownItem}>
-            <Ionicons
-              name="wallet-outline"
-              size={16}
-              color="#4A90E2"
-              style={styles.breakdownIcon}
-            />
-            <Text style={styles.breakdownLabel}>Accounts</Text>
-            <Text style={styles.breakdownValue}>
-              {formatCurrency(accountsTotal, "USD", 1)}
-            </Text>
-          </View>
-          <View style={styles.breakdownDivider} />
-          <View style={styles.breakdownItem}>
-            <Ionicons
-              name="trending-up-outline"
-              size={16}
-              color="#4A90E2"
-              style={styles.breakdownIcon}
-            />
-            <Text style={styles.breakdownLabel}>Investments</Text>
-            <Text style={styles.breakdownValue}>
-              {formatCurrency(investmentsTotal, "USD", 1)}
-            </Text>
-          </View>
-          <View style={styles.breakdownDivider} />
-          <View style={styles.breakdownItem}>
-            <Ionicons
-              name="card-outline"
-              size={16}
-              color="#4A90E2"
-              style={styles.breakdownIcon}
-            />
-            <Text style={styles.breakdownLabel}>Liabilities</Text>
-            <Text style={styles.breakdownValue}>
-              {formatCurrency(liabilitiesTotal, "USD", 1)}
-            </Text>
-          </View>
-        </View>
-      </View>
-
-      {/* Goals Progress */}
-      <View style={styles.goalsSection}>
-        <Text style={styles.sectionTitle}>Active Goals</Text>
-        {dummyGoals.map((goal, idx) => (
-          <View key={idx} style={styles.goalCard}>
-            <Text style={styles.goalTitle}>{goal.title}</Text>
-            <View style={styles.progressBarBackground}>
-              <LinearGradient
-                colors={["#4A90E2", "#007AFF"]}
-                start={[0, 0]}
-                end={[1, 0]}
-                style={[
-                  styles.progressBarFill,
-                  { width: `${goal.progress * 100}%` },
-                ]}
-              />
-            </View>
-            <Text style={styles.goalPercent}>
-              {Math.round(goal.progress * 100)}%
-            </Text>
-          </View>
-        ))}
-      </View>
-
-      {/* Bank Accounts */}
-      <View style={styles.section}>
-        <TouchableOpacity
-          onPress={() => toggleSection("accounts")}
-          style={styles.sectionHeader}
-        >
-          <Text style={styles.sectionTitle}>Bank Accounts</Text>
-          <Ionicons
-            name={
-              expandedSections.includes("accounts")
-                ? "chevron-up"
-                : "chevron-down"
-            }
-            size={20}
-            color="#888"
-          />
-        </TouchableOpacity>
-        {expandedSections.includes("accounts") && (
-          <View style={styles.sectionContent}>
-            <View style={styles.cardRow}>
-              {categorizedDeposits.map((acc, idx) => (
-                <View key={idx} style={styles.accountCard}>
-                  <View style={styles.cardContent}>
-                    <View style={styles.cardHeader}>
-                      {/* <View style={styles.cardIconContainer}>
-                        <Ionicons
-                          name="wallet-outline"
-                          size={16}
-                          color="#4A90E2"
-                        />
-                      </View> */}
-                      <View style={styles.cardInfo}>
-                        <Text style={styles.cardName} numberOfLines={1}>
-                          {acc.name}
-                        </Text>
-                        <Text style={styles.cardType}>{acc.subtype}</Text>
-                      </View>
-                    </View>
-                    <View style={styles.cardFooter}>
-                      <Text style={styles.cardBalance}>
-                        {formatCurrency(acc.balances.current)}
-                      </Text>
-                    </View>
-                  </View>
-                </View>
-              ))}
-            </View>
-          </View>
-        )}
-      </View>
-
-      {/* Investments */}
-      <View style={styles.section}>
-        <TouchableOpacity
-          onPress={() => toggleSection("investments")}
-          style={styles.sectionHeader}
-        >
-          <Text style={styles.sectionTitle}>Investments</Text>
-          <Ionicons
-            name={
-              expandedSections.includes("investments")
-                ? "chevron-up"
-                : "chevron-down"
-            }
-            size={20}
-            color="#888"
-          />
-        </TouchableOpacity>
-        {expandedSections.includes("investments") && investments && (
-          <View style={styles.sectionContent}>
-            {investments.holdings && investments.holdings.length > 0 ? (
-              <View style={styles.cardRow}>
-                {investments.holdings.map((h: Holding, idx: number) => {
-                  const security = investments.securities?.find(
-                    (s: Security) => s.security_id === h.security_id
-                  );
-                  return (
-                    <View key={idx} style={styles.accountCard}>
-                      <View style={styles.cardContent}>
-                        <View style={styles.cardHeader}>
-                          <View style={styles.cardIconContainer}>
-                            <Ionicons
-                              name="trending-up-outline"
-                              size={16}
-                              color="#4A90E2"
-                            />
-                          </View>
-                          <View style={styles.cardInfo}>
-                            <Text style={styles.cardName}>
-                              {security?.name}
-                            </Text>
-                            <Text style={styles.cardType}>
-                              {security?.ticker_symbol || "N/A"}
-                            </Text>
-                          </View>
-                        </View>
-                        <View style={styles.cardFooter}>
-                          <Text style={styles.cardBalance}>
-                            {formatCurrency(h.institution_value)}
-                          </Text>
-                        </View>
-                      </View>
-                    </View>
-                  );
-                })}
-              </View>
-            ) : (
-              <Text style={styles.itemText}>No investments available.</Text>
-            )}
-          </View>
-        )}
-      </View>
-
-      {/* Liabilities */}
-      <View style={styles.section}>
-        <TouchableOpacity
-          onPress={() => toggleSection("liabilities")}
-          style={styles.sectionHeader}
-        >
-          <Text style={styles.sectionTitle}>Liabilities</Text>
-          <Ionicons
-            name={
-              expandedSections.includes("liabilities")
-                ? "chevron-up"
-                : "chevron-down"
-            }
-            size={20}
-            color="#888"
-          />
-        </TouchableOpacity>
-        {expandedSections.includes("liabilities") && (
-          <View style={styles.sectionContent}>
-            {categorizedLiabilities.length > 0 ? (
-              <View style={styles.cardRow}>
-                {categorizedLiabilities.map((acc, idx) => (
-                  <View key={idx} style={styles.accountCard}>
-                    <View style={styles.cardContent}>
-                      <View style={styles.cardHeader}>
-                        <View style={styles.cardIconContainer}>
-                          <Ionicons
-                            name="card-outline"
-                            size={16}
-                            color="#4A90E2"
-                          />
-                        </View>
-                        <View style={styles.cardInfo}>
-                          <Text style={styles.cardName}>{acc.name}</Text>
-                          <Text style={styles.cardType}>{acc.subtype}</Text>
-                        </View>
-                      </View>
-                      <View style={styles.cardFooter}>
-                        <Text style={styles.cardBalance}>
-                          {formatCurrency(acc.balances.current)}
-                        </Text>
-                      </View>
-                    </View>
-                  </View>
-                ))}
-              </View>
-            ) : (
-              <Text style={styles.itemText}>No liabilities found.</Text>
-            )}
-          </View>
-        )}
-      </View>
-    </ScrollView>
-  );
 
   const categorizedLiabilities = accounts.filter(
     (acc) => acc.type === "loan" || acc.type === "credit"
@@ -577,49 +347,232 @@ export default function HomeScreen() {
     },
   ];
 
+  // Render functions
+  const renderHeader = () => (
+    <View style={styles.header}>
+      <TouchableOpacity onPress={() => router.push("/settings")}>
+        <View style={styles.headerIconContainer}>
+          <Feather name="menu" size={24} color="#4A90E2" />
+        </View>
+      </TouchableOpacity>
+      <View style={styles.headerTextContainer}>
+        <Text style={styles.greetingText}>
+          Hi {userData?.user_metadata?.full_name?.split(" ")[0] || "there"}
+        </Text>
+        <Text style={styles.subGreeting}>Welcome Back!</Text>
+      </View>
+    </View>
+  );
+
   return (
     <SafeAreaView style={styles.safeArea}>
-      <LinearGradient
-        colors={["#1A1A2E", "#16213E", "#0D1117"]}
-        style={styles.gradientBackground}
-      >
-        {renderHeader()}
+      {renderHeader()}
 
-        {!accessToken ? (
-          <View style={styles.disconnectedContainer}>
-            <Text style={styles.disconnectedTitle}>Something went wrong</Text>
-            <Text style={styles.disconnectedDescription}>
-              We couldn't find your connected bank account. Please reconnect
-              from settings.
-            </Text>
-            <ActivityIndicator size="large" color="#4A90E2" />
-          </View>
-        ) : (
-          <>
-            {showUpdateBanner && (
-              <TouchableOpacity
-                style={styles.updateBanner}
-                onPress={handleUpdateBannerPress}
-              >
-                <Text style={styles.updateBannerText}>
-                  ⚠️ Your bank connection needs updating. Tap here.
+      {!accessToken ? (
+        <View style={styles.disconnectedContainer}>
+          <Text style={styles.disconnectedTitle}>Something went wrong</Text>
+          <Text style={styles.disconnectedDescription}>
+            We couldn't find your connected bank account. Please reconnect from
+            settings.
+          </Text>
+          <ActivityIndicator size="large" color="#4A90E2" />
+        </View>
+      ) : (
+        <>
+          {showUpdateBanner && (
+            <TouchableOpacity
+              style={styles.updateBanner}
+              onPress={handleUpdateBannerPress}
+            >
+              <Text style={styles.updateBannerText}>
+                ⚠️ Your bank connection needs updating. Tap here.
+              </Text>
+            </TouchableOpacity>
+          )}
+          {isInitialLoad ? (
+            <View style={styles.loadingOverlay}>
+              <ActivityIndicator size="large" color="#4A90E2" />
+            </View>
+          ) : isLoading ? (
+            <View style={styles.loadingOverlay}>
+              <ActivityIndicator size="large" color="#4A90E2" />
+            </View>
+          ) : (
+            <ScrollView
+              style={styles.container}
+              contentContainerStyle={{ paddingBottom: 100 }}
+              refreshControl={
+                <RefreshControl
+                  refreshing={refreshing}
+                  onRefresh={onRefresh}
+                  colors={["#4A90E2"]}
+                  tintColor="#4A90E2"
+                  progressBackgroundColor="#1f1f1f"
+                />
+              }
+            >
+              {/* Finny Message */}
+              <View style={styles.finnyMessageContainer}>
+                <View style={styles.finnyMessage}>
+                  <View style={styles.finnyIconContainer}>
+                    <Ionicons name="rocket" size={20} color="#4A90E2" />
+                  </View>
+                  <View style={styles.finnyMessageContent}>
+                    <Text style={styles.finnyMessageTitle}>Daily Progress</Text>
+                    <Text style={styles.finnyMessageText}>{randomMessage}</Text>
+                  </View>
+                </View>
+              </View>
+
+              {/* Net Worth */}
+              <View style={styles.netWorthCard}>
+                <Text style={styles.netWorthLabel}>TOTAL NET WORTH</Text>
+                <Text style={styles.netWorthText}>
+                  {formatCurrency(totalBalance, "USD", {
+                    decimals: 2,
+                    useKM: false,
+                  })}
+                </Text>
+                <View style={styles.netWorthTrend}>
+                  <Ionicons name="trending-up" size={16} color="#4ECDC4" />
+                  <Text style={styles.netWorthTrendText}>+2.4% this month</Text>
+                </View>
+              </View>
+
+              {/* Summary Cards */}
+              <View style={styles.summaryRow}>
+                <FinancialCard
+                  title="Accounts"
+                  amount={formatCurrency(accountsTotal, "USD", {
+                    decimals: 1,
+                    useKM: true,
+                  })}
+                  icon="wallet-outline"
+                  onPress={() => setActiveModal("accounts")}
+                  iconColor="#4A90E2"
+                />
+                <FinancialCard
+                  title="Investments"
+                  amount={formatCurrency(investmentsTotal, "USD", {
+                    decimals: 1,
+                    useKM: true,
+                  })}
+                  icon="trending-up"
+                  onPress={() => setActiveModal("investments")}
+                  iconColor="#4ECDC4"
+                />
+                <FinancialCard
+                  title="Liabilities"
+                  amount={formatCurrency(liabilitiesTotal, "USD", {
+                    decimals: 1,
+                    useKM: true,
+                  })}
+                  icon="card-outline"
+                  onPress={() => setActiveModal("liabilities")}
+                  iconColor="#FF6B6B"
+                />
+              </View>
+
+              {/* Goals Progress */}
+              <View style={styles.goalsSection}>
+                <View style={styles.goalsSectionHeader}>
+                  <View style={styles.goalsTitleContainer}>
+                    <Ionicons name="flag" size={20} color="#4A90E2" />
+                    <Text style={styles.sectionTitle}>Your Focus</Text>
+                  </View>
+                  <TouchableOpacity
+                    onPress={() => router.push("/timeline")}
+                    style={styles.viewAllButton}
+                  >
+                    <Text style={styles.viewAllText}>View all goals</Text>
+                  </TouchableOpacity>
+                </View>
+                {dummyGoals.slice(0, 1).map((goal, idx) => (
+                  <View key={idx} style={styles.goalCard}>
+                    <View style={styles.goalHeader}>
+                      <Text style={styles.goalTitle}>{goal.title}</Text>
+                      <Text style={styles.goalAmount}>$1,800 of $3,000</Text>
+                    </View>
+                    <View style={styles.progressBarBackground}>
+                      <View
+                        style={[
+                          styles.progressBarFill,
+                          {
+                            width: `${goal.progress * 100}%`,
+                            backgroundColor: "#4A90E2",
+                          },
+                        ]}
+                      />
+                    </View>
+                    <Text style={styles.goalPercent}>
+                      {Math.round(goal.progress * 100)}%
+                    </Text>
+                  </View>
+                ))}
+              </View>
+
+              {/* Add Account Button */}
+              <TouchableOpacity style={styles.addAccountButton}>
+                <Text style={styles.addAccountButtonText}>
+                  + Add Another Account
                 </Text>
               </TouchableOpacity>
-            )}
-            {isInitialLoad ? (
-              <View style={styles.loadingOverlay}>
-                <ActivityIndicator size="large" color="#4A90E2" />
-              </View>
-            ) : isLoading ? (
-              <View style={styles.loadingOverlay}>
-                <ActivityIndicator size="large" color="#4A90E2" />
-              </View>
-            ) : (
-              renderConnectedState()
-            )}
-          </>
-        )}
-      </LinearGradient>
+
+              {/* Bottom Sheets */}
+              <FinancialBottomSheet
+                visible={activeModal === "accounts"}
+                onClose={() => setActiveModal(null)}
+                title="Your Accounts"
+                icon="wallet-outline"
+              >
+                {categorizedDeposits.map((account, index) => (
+                  <AccountItem
+                    key={index}
+                    name={account.name}
+                    type={account.type}
+                    balance={formatCurrency(account.balances.current || 0)}
+                    icon="wallet-outline"
+                  />
+                ))}
+              </FinancialBottomSheet>
+
+              <FinancialBottomSheet
+                visible={activeModal === "investments"}
+                onClose={() => setActiveModal(null)}
+                title="Your Investments"
+                icon="trending-up"
+              >
+                {investments?.holdings?.map((holding, index) => (
+                  <AccountItem
+                    key={index}
+                    name={holding.security_id}
+                    type="Investment"
+                    balance={formatCurrency(holding.institution_value || 0)}
+                    icon="trending-up"
+                  />
+                ))}
+              </FinancialBottomSheet>
+
+              <FinancialBottomSheet
+                visible={activeModal === "liabilities"}
+                onClose={() => setActiveModal(null)}
+                title="Your Liabilities"
+                icon="card-outline"
+              >
+                {categorizedLiabilities.map((liability, index) => (
+                  <AccountItem
+                    key={index}
+                    name={liability.name}
+                    type={liability.type}
+                    balance={formatCurrency(liability.balances.current || 0)}
+                    icon="card-outline"
+                  />
+                ))}
+              </FinancialBottomSheet>
+            </ScrollView>
+          )}
+        </>
+      )}
     </SafeAreaView>
   );
 }

@@ -202,7 +202,9 @@ export default function SettingsScreen() {
             </TouchableOpacity>
             <View style={styles.profileInfo}>
               <Text style={styles.userName}>
-                {userData?.user_metadata?.full_name || userName}
+                {userData?.user_metadata?.full_name ||
+                  userName ||
+                  "Your Profile"}
               </Text>
               <Text style={styles.userEmail}>
                 {userData?.email || "Loading..."}
