@@ -10,6 +10,7 @@ interface NudgeGridProps {
 export const NudgeGrid = ({ onNudgePress }: NudgeGridProps) => {
   return (
     <View style={styles.nudgeContainer}>
+      <Text style={styles.nudgeHeaderText}>Try asking Finny</Text>
       <View style={styles.nudgeGrid}>
         {NUDGE_OPTIONS.map((nudge) => (
           <TouchableOpacity
