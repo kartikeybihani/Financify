@@ -547,20 +547,20 @@ export default function HomeScreen() {
 
               {/* Goals Progress */}
               <View style={styles.goalsSection}>
-                <View style={styles.goalsSectionHeader}>
-                  <View style={styles.goalsTitleContainer}>
-                    <Ionicons name="trophy" size={20} color="#4A90E2" />
-                    <Text style={styles.sectionTitle}>Your Focus 🎯</Text>
-                  </View>
-                  {timelineData.length > 0 && (
+                {timelineData.length > 0 && (
+                  <View style={styles.goalsSectionHeader}>
+                    <View style={styles.goalsTitleContainer}>
+                      <Ionicons name="trophy" size={20} color="#4A90E2" />
+                      <Text style={styles.sectionTitle}>Your Focus 🎯</Text>
+                    </View>
                     <TouchableOpacity
                       onPress={() => router.push("/timeline")}
                       style={styles.viewAllButton}
                     >
                       <Text style={styles.viewAllText}>View all goals</Text>
                     </TouchableOpacity>
-                  )}
-                </View>
+                  </View>
+                )}
                 {closestGoal ? (
                   <View style={styles.goalCard}>
                     <View style={styles.goalHeader}>
