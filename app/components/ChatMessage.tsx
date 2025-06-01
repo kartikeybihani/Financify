@@ -74,10 +74,10 @@ export const ChatMessageComponent = ({
     <View>
       {showSender && (
         <View style={styles.senderInfo}>
-          {/* <Image
+          <Image
             source={require("../assets/mascot1.jpg")}
             style={styles.senderAvatar}
-          /> */}
+          />
           <Text style={styles.senderName}>Finny</Text>
         </View>
       )}
@@ -90,9 +90,16 @@ export const ChatMessageComponent = ({
           ]}
         >
           <LinearGradient
-            colors={["#1A3D66", "#1A3D66", "#2E5C8F", "#4A90E2"]}
-            start={{ x: 0, y: 2 }}
-            end={{ x: 1, y: 0 }}
+            colors={[
+              "#1A3D66",
+              "#1A3D66",
+              "#1A3D66",
+              "#1A3D66",
+              "#2E5C8F",
+              "#4A90E2",
+            ]}
+            start={{ x: 0.1, y: 1.4 }}
+            end={{ x: 0.9, y: 0.6 }}
             style={[
               styles.messageContainer,
               styles.finnyMessageContainer,
@@ -172,16 +179,15 @@ const styles = StyleSheet.create({
     marginBottom: 1,
   },
   senderAvatar: {
-    width: 20,
-    height: 20,
+    width: 24,
+    height: 24,
     borderRadius: 10,
     marginRight: 4,
     transform: [{ scaleX: -1 }],
-    borderWidth: 0.5,
-    borderColor: "#4A90E2",
+    marginBottom: 4,
   },
   senderName: {
-    fontSize: 11,
+    fontSize: 12,
     color: "#888",
     fontWeight: "500",
   },

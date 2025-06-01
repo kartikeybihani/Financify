@@ -382,7 +382,6 @@ export default function ChatScreen() {
           activeOpacity={0.7}
         >
           <Ionicons name="trash-outline" size={14} color="#FF3B30" />
-          <Text style={styles.clearButtonText}>Clear</Text>
         </TouchableOpacity>
       </View>
 

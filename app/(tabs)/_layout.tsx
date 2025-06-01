@@ -53,9 +53,6 @@ const FinnyTabIcon = forwardRef(({ focused }: { focused: boolean }, ref) => {
 });
 
 export default function TabLayout() {
-  const router = useRouter();
-  const pathname = usePathname();
-
   const tabs = [
     {
       name: "index",
