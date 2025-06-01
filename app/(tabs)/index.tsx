@@ -11,6 +11,7 @@ import {
   ActivityIndicator,
   RefreshControl,
   DeviceEventEmitter,
+  Image,
 } from "react-native";
 import { Feather, Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -35,6 +36,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import FinancialBottomSheet from "../components/shared/FinancialBottomSheet";
 import FinancialCard from "../components/shared/FinancialCard";
 import AccountItem from "../components/shared/AccountItem";
+import { Goal } from "../types/finny";
 
 if (Platform.OS === "android") {
   UIManager.setLayoutAnimationEnabledExperimental?.(true);
@@ -82,6 +84,8 @@ export default function HomeScreen() {
 
   const hasLoadedOnce = useRef(false);
   const [userData, setUserData] = useState<any>(null);
+
+  const [timelineData, setTimelineData] = useState<Goal[]>([]);
 
   // Save data to AsyncStorage
   const saveDataToStorage = async (data: any) => {
@@ -270,6 +274,78 @@ export default function HomeScreen() {
     };
   }, []);
 
+  const getMonthNumber = (monthName: string): number => {
+    const months = [
+      "January",
+      "February",
+      "March",
+      "April",
+      "May",
+      "June",
+      "July",
+      "August",
+      "September",
+      "October",
+      "November",
+      "December",
+    ];
+    return months.indexOf(monthName);
+  };
+
+  const findClosestGoal = (goals: Goal[]) => {
+    if (!goals.length) return null;
+
+    const now = new Date();
+
+    return goals.reduce((closest, goal) => {
+      // Create dates for comparison
+      const goalDate = new Date(
+        Number(goal.timeline.year),
+        getMonthNumber(goal.timeline.month),
+        1
+      );
+
+      const closestDate = closest
+        ? new Date(
+            Number(closest.timeline.year),
+            getMonthNumber(closest.timeline.month),
+            1
+          )
+        : null;
+
+      // If the goal is in the past, ignore it
+      if (goalDate < now) return closest;
+
+      // If we don't have a closest yet, use this goal
+      if (!closest) return goal;
+
+      // If the current closest is in the past, use this goal
+      if (closestDate && closestDate < now) return goal;
+
+      // Compare the time difference
+      const goalDiff = Math.abs(goalDate.getTime() - now.getTime());
+      const closestDiff = Math.abs(closestDate!.getTime() - now.getTime());
+
+      return goalDiff < closestDiff ? goal : closest;
+    }, null as Goal | null);
+  };
+
+  useEffect(() => {
+    const loadGoals = async () => {
+      try {
+        const storedGoals = await AsyncStorage.getItem("goals");
+        if (storedGoals) {
+          setTimelineData(JSON.parse(storedGoals));
+        }
+      } catch (error) {
+        console.error("Error loading goals:", error);
+      }
+    };
+    loadGoals();
+  }, []);
+
+  const closestGoal = findClosestGoal(timelineData);
+
   // Helper functions
   const formatCurrency = (
     amount: number,
@@ -331,21 +407,6 @@ export default function HomeScreen() {
   );
 
   const totalBalance = accountsTotal + investmentsTotal - liabilitiesTotal;
-
-  const dummyGoals = [
-    {
-      title: "Emergency Fund",
-      progress: 0.6,
-    },
-    {
-      title: "New Car Down Payment",
-      progress: 0.45,
-    },
-    {
-      title: "Student Loan Payoff",
-      progress: 0.25,
-    },
-  ];
 
   // Render functions
   const renderHeader = () => (
@@ -480,35 +541,86 @@ export default function HomeScreen() {
                     <Ionicons name="flag" size={20} color="#4A90E2" />
                     <Text style={styles.sectionTitle}>Your Focus</Text>
                   </View>
-                  <TouchableOpacity
-                    onPress={() => router.push("/timeline")}
-                    style={styles.viewAllButton}
-                  >
-                    <Text style={styles.viewAllText}>View all goals</Text>
-                  </TouchableOpacity>
+                  {timelineData.length > 0 && (
+                    <TouchableOpacity
+                      onPress={() => router.push("/timeline")}
+                      style={styles.viewAllButton}
+                    >
+                      <Text style={styles.viewAllText}>View all goals</Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
-                {dummyGoals.slice(0, 1).map((goal, idx) => (
-                  <View key={idx} style={styles.goalCard}>
+                {closestGoal ? (
+                  <View style={styles.goalCard}>
                     <View style={styles.goalHeader}>
-                      <Text style={styles.goalTitle}>{goal.title}</Text>
-                      <Text style={styles.goalAmount}>$1,800 of $3,000</Text>
+                      <Text style={styles.goalTitle}>{closestGoal.label}</Text>
+                      <Text style={styles.goalAmount}>
+                        $
+                        {(
+                          (closestGoal.target || 0) *
+                          ((closestGoal.progress || 0) / 100)
+                        ).toFixed(2)}{" "}
+                        of ${closestGoal.target || 0}
+                      </Text>
                     </View>
                     <View style={styles.progressBarBackground}>
                       <View
                         style={[
                           styles.progressBarFill,
                           {
-                            width: `${goal.progress * 100}%`,
+                            width: `${closestGoal.progress || 0}%`,
                             backgroundColor: "#4A90E2",
                           },
                         ]}
                       />
                     </View>
                     <Text style={styles.goalPercent}>
-                      {Math.round(goal.progress * 100)}%
+                      {Math.round(closestGoal.progress || 0)}%
                     </Text>
                   </View>
-                ))}
+                ) : (
+                  <View style={styles.emptyGoalsContainer}>
+                    <View style={styles.emptyGoalsContent}>
+                      <View style={styles.emptyGoalsImageContainer}>
+                        <Image
+                          source={require("../assets/mascot1.jpg")}
+                          style={[
+                            styles.emptyGoalsImage,
+                            {
+                              transform: [{ scaleX: -1 }, { rotate: "0deg" }],
+                            },
+                          ]}
+                          resizeMode="contain"
+                        />
+                      </View>
+                      <View style={styles.emptyGoalsTextContainer}>
+                        <Text style={styles.emptyGoalsTitle}>No Goals Yet</Text>
+                        <Text style={styles.emptyGoalsDescription}>
+                          Start your financial journey by setting your first
+                          goal.
+                        </Text>
+                        <TouchableOpacity
+                          style={styles.addFirstGoalButton}
+                          onPress={() => {
+                            router.push({
+                              pathname: "/timeline",
+                              params: { openAddGoal: "true" },
+                            });
+                          }}
+                        >
+                          <Ionicons
+                            name="add-circle-outline"
+                            size={20}
+                            color="#fff"
+                          />
+                          <Text style={styles.addFirstGoalText}>
+                            Add Your First Goal
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  </View>
+                )}
               </View>
 
               {/* Add Account Button */}

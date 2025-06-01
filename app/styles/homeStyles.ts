@@ -540,6 +540,62 @@ export const styles = StyleSheet.create({
     color: "#4A90E2",
     marginTop: 4,
   },
+  emptyGoalsContainer: {
+    backgroundColor: "#1f1f1f",
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: "rgba(74, 144, 226, 0.1)",
+    marginTop: 8,
+  },
+  emptyGoalsContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 16,
+  },
+  emptyGoalsImageContainer: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    overflow: "hidden",
+    // backgroundColor: "rgba(74, 144, 226, 0.1)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  emptyGoalsImage: {
+    width: "100%",
+    height: "100%",
+  },
+  emptyGoalsTextContainer: {
+    flex: 1,
+  },
+  emptyGoalsTitle: {
+    fontSize: FONTS.base,
+    fontWeight: "600",
+    color: "#fff",
+    marginBottom: 4,
+  },
+  emptyGoalsDescription: {
+    fontSize: FONTS.sm,
+    color: "#888",
+    marginBottom: 12,
+    lineHeight: 18,
+  },
+  addFirstGoalButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#4A90E2",
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    alignSelf: "flex-start",
+    gap: 6,
+  },
+  addFirstGoalText: {
+    color: "#fff",
+    fontSize: FONTS.sm,
+    fontWeight: "600",
+  },
 });
 
 export default styles;

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -9,6 +9,8 @@ import {
   Alert,
   RefreshControl,
   ActivityIndicator,
+  Image,
+  Easing,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import GoalNotification from "./GoalNotification";
@@ -20,6 +22,8 @@ import { useGoals } from "../hooks/useGoals";
 import { Goal } from "../types/finny";
 import { GoalInput } from "../types/addGoalModalTypes";
 import { TimelineProps, TimelineState } from "../types/timelineTypes";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useRouter } from "expo-router";
 
 // Simple ID generator
 const generateId = () => {
@@ -66,6 +70,64 @@ const Timeline: React.FC<TimelineProps> = ({
 
   const { addManualGoal, refreshGoals } = useGoals(() => {});
 
+  const router = useRouter();
+
+  // Add mascot animation refs
+  const mascotRotate = useRef(new Animated.Value(0)).current;
+  const mascotBounce = useRef(new Animated.Value(0)).current;
+
+  // Add mascot animation setup
+  useEffect(() => {
+    const startMascotAnimation = () => {
+      Animated.parallel([
+        // Smooth rotation
+        Animated.sequence([
+          Animated.timing(mascotRotate, {
+            toValue: 1,
+            duration: 1200,
+            easing: Easing.bezier(0.4, 0, 0.2, 1),
+            useNativeDriver: true,
+          }),
+          Animated.timing(mascotRotate, {
+            toValue: 0,
+            duration: 1200,
+            easing: Easing.bezier(0.4, 0, 0.2, 1),
+            useNativeDriver: true,
+          }),
+        ]),
+        // Subtle bounce
+        Animated.sequence([
+          Animated.timing(mascotBounce, {
+            toValue: 1,
+            duration: 600,
+            easing: Easing.elastic(1),
+            useNativeDriver: true,
+          }),
+          Animated.timing(mascotBounce, {
+            toValue: 0,
+            duration: 600,
+            easing: Easing.elastic(1),
+            useNativeDriver: true,
+          }),
+        ]),
+      ]).start(() => {
+        setTimeout(startMascotAnimation, 4000);
+      });
+    };
+
+    startMascotAnimation();
+  }, []);
+
+  const rotate = mascotRotate.interpolate({
+    inputRange: [0, 1],
+    outputRange: ["0deg", "360deg"],
+  });
+
+  const bounce = mascotBounce.interpolate({
+    inputRange: [0, 0.5, 1],
+    outputRange: [1, 1.1, 1],
+  });
+
   useEffect(() => {
     setLocalTimelineData(timelineData);
   }, [timelineData]);
@@ -75,8 +137,7 @@ const Timeline: React.FC<TimelineProps> = ({
       const newGoal: Goal = {
         id: generateId(),
         label: goal.label,
-        target: 0,
-        description: goal.description,
+        target: goal.target,
         progress: goal.progress || 0,
         timeline: goal.timeline,
       };
@@ -120,12 +181,41 @@ const Timeline: React.FC<TimelineProps> = ({
     ]);
   };
 
-  const handleEditGoal = (goal: Goal) => {
-    setState((prev: TimelineState) => ({
-      ...prev,
-      showAddGoalModal: true,
-    }));
-    setSelectedGoal(null);
+  const handleEditGoal = async (updatedGoal: Goal) => {
+    try {
+      // Update the goal in storage
+      const storedGoals = await AsyncStorage.getItem("goals");
+      const parsedGoals = storedGoals ? JSON.parse(storedGoals) : [];
+      const updatedGoals = parsedGoals.map((g: Goal) =>
+        g.id === updatedGoal.id ? updatedGoal : g
+      );
+
+      await AsyncStorage.setItem("goals", JSON.stringify(updatedGoals));
+
+      // Update local state
+      setLocalTimelineData(updatedGoals);
+
+      // Show success notification
+      setState((prev: TimelineState) => ({
+        ...prev,
+        notification: {
+          visible: true,
+          message: "Goal updated successfully",
+        },
+      }));
+
+      // Close the modal
+      setSelectedGoal(null);
+    } catch (error) {
+      console.error("Error updating goal:", error);
+      setState((prev: TimelineState) => ({
+        ...prev,
+        notification: {
+          visible: true,
+          message: "Failed to update goal",
+        },
+      }));
+    }
   };
 
   const sortedTimelineData = React.useMemo(() => {
@@ -163,7 +253,10 @@ const Timeline: React.FC<TimelineProps> = ({
         />
       )}
       <ScrollView
-        contentContainerStyle={styles.timelineWrapper}
+        contentContainerStyle={[
+          styles.timelineWrapper,
+          !sortedTimelineData.length && styles.emptyTimelineWrapper,
+        ]}
         refreshControl={
           <RefreshControl
             refreshing={state.refreshing}
@@ -172,15 +265,60 @@ const Timeline: React.FC<TimelineProps> = ({
           />
         }
       >
-        {sortedTimelineData.map((item, index) => (
-          <TimelineItem
-            key={item.id}
-            item={item}
-            index={index}
-            animation={timelineAnimations[index]}
-            onPress={() => setSelectedGoal(item)}
-          />
-        ))}
+        {sortedTimelineData.length === 0 ? (
+          <View style={styles.emptyStateContainer}>
+            <View style={styles.mascotImageContainer}>
+              <Animated.Image
+                source={require("../assets/mascot1.jpg")}
+                style={[
+                  styles.emptyStateImage,
+                  {
+                    transform: [{ rotate }, { scale: bounce }, { scaleX: -1 }],
+                  },
+                ]}
+                resizeMode="contain"
+              />
+            </View>
+            <Text style={styles.emptyStateDescription}>
+              Let's map out your financial future together! 🎯
+            </Text>
+            <Text style={styles.emptyStateSubDescription}>
+              Whether you want to save for a dream home, plan a vacation, or
+              build an emergency fund - I'm here to help you make it happen.
+            </Text>
+            <View style={styles.emptyStateActions}>
+              <TouchableOpacity
+                style={styles.chatWithFinnyButton}
+                onPress={() => router.push("/chat")}
+              >
+                <Ionicons name="person-circle-outline" size={24} color="#fff" />
+                <Text style={styles.chatWithFinnyText}>Talk with Finny</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.addManuallyButton}
+                onPress={() =>
+                  setState((prev: TimelineState) => ({
+                    ...prev,
+                    showAddGoalModal: true,
+                  }))
+                }
+              >
+                <Ionicons name="add-circle-outline" size={20} color="#4A90E2" />
+                <Text style={styles.addManuallyText}>Add Manually</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        ) : (
+          sortedTimelineData.map((item, index) => (
+            <TimelineItem
+              key={item.id}
+              item={item}
+              index={index}
+              animation={timelineAnimations[index]}
+              onPress={() => setSelectedGoal(item)}
+            />
+          ))
+        )}
       </ScrollView>
 
       {state.refreshing && (
@@ -189,18 +327,20 @@ const Timeline: React.FC<TimelineProps> = ({
         </View>
       )}
 
-      <TouchableOpacity
-        style={styles.addGoalButton}
-        onPress={() =>
-          setState((prev: TimelineState) => ({
-            ...prev,
-            showAddGoalModal: true,
-          }))
-        }
-      >
-        <Ionicons name="add-circle" size={24} color="#4A90E2" />
-        <Text style={styles.addGoalText}>Add Goal</Text>
-      </TouchableOpacity>
+      {sortedTimelineData.length === 0 && (
+        <TouchableOpacity
+          style={styles.addGoalButton}
+          onPress={() =>
+            setState((prev: TimelineState) => ({
+              ...prev,
+              showAddGoalModal: true,
+            }))
+          }
+        >
+          <Ionicons name="add-circle" size={24} color="#4A90E2" />
+          <Text style={styles.addGoalText}>Add Goal</Text>
+        </TouchableOpacity>
+      )}
 
       <AddGoalModal
         visible={state.showAddGoalModal}

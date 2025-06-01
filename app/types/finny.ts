@@ -16,7 +16,7 @@ export interface Goal {
   id: string;
   label: string;
   target?: number;
-  description: string;
+  description?: string;
   progress?: number;
   timeline: {
     month: string;

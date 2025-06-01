@@ -2,7 +2,7 @@
 
 export interface GoalInput {
     label: string;
-    description: string;
+    target: number;
     progress?: number;
     timeline: {
         month: string;

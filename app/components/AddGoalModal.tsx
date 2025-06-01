@@ -8,15 +8,17 @@ import {
   Animated,
   StyleSheet,
   Platform,
-  Alert,
+  TouchableWithoutFeedback,
+  ScrollView,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { AddGoalModalProps, GoalInput } from "../types/addGoalModalTypes";
+import { LinearGradient } from "expo-linear-gradient";
 
 const initialGoalState = {
   label: "",
-  description: "",
+  target: 0,
   progress: 0,
 };
 
@@ -29,7 +31,6 @@ export default function AddGoalModal({
   const [goal, setGoal] = useState(initialGoalState);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
-  const [descriptionHeight, setDescriptionHeight] = useState(80);
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
   const [isReady, setIsReady] = useState(false);
 
@@ -57,23 +58,8 @@ export default function AddGoalModal({
       setGoal(initialGoalState);
       setSelectedDate(new Date());
       setErrors({});
-      setDescriptionHeight(80);
     }
   }, [visible]);
-
-  // Handlers
-  const handleClose = () => {
-    // Immediately start closing animation
-    Animated.parallel([
-      Animated.timing(modalAnimation, {
-        toValue: 0,
-        duration: 150,
-        useNativeDriver: true,
-      }),
-    ]).start(() => {
-      onClose();
-    });
-  };
 
   const validateForm = () => {
     const newErrors: { [key: string]: string } = {};
@@ -82,9 +68,9 @@ export default function AddGoalModal({
       newErrors.label = "Please enter a goal title";
     }
 
-    // if (!goal.description.trim()) {
-    //   newErrors.description = "Please enter a goal description";
-    // }
+    if (!goal.target || goal.target <= 0) {
+      newErrors.target = "Please enter a valid target amount";
+    }
 
     const currentDate = new Date();
     currentDate.setHours(0, 0, 0, 0);
@@ -105,8 +91,8 @@ export default function AddGoalModal({
       const year = selectedDate.getFullYear();
 
       onSave({
-        label: goal.label,
-        description: goal.description,
+        label: goal.label.trim(),
+        target: goal.target,
         progress: goal.progress,
         timeline: {
           month,
@@ -114,7 +100,7 @@ export default function AddGoalModal({
         },
       });
 
-      handleClose();
+      onClose();
     }
   };
 
@@ -125,79 +111,157 @@ export default function AddGoalModal({
       visible={visible}
       transparent
       animationType="none"
-      onRequestClose={handleClose}
+      onRequestClose={onClose}
       statusBarTranslucent
     >
-      <Animated.View
-        style={[
-          styles.overlay,
-          {
-            opacity: modalAnimation.interpolate({
-              inputRange: [0, 1],
-              outputRange: [0, 1],
-            }),
-          },
-        ]}
-      >
-        <Animated.View
-          style={[
-            styles.modalContent,
-            {
-              transform: [
+      <TouchableWithoutFeedback onPress={onClose}>
+        <View style={styles.overlay}>
+          <TouchableWithoutFeedback onPress={(e) => e.stopPropagation()}>
+            <Animated.View
+              style={[
+                styles.modalContent,
                 {
-                  scale: modalAnimation.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [0.95, 1],
-                  }),
+                  transform: [
+                    {
+                      scale: modalAnimation.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [0.95, 1],
+                      }),
+                    },
+                  ],
+                  opacity: modalAnimation,
                 },
-              ],
-              opacity: modalAnimation,
-            },
-          ]}
-        >
-          <TouchableOpacity
-            activeOpacity={1}
-            onPress={(e) => e.stopPropagation()}
-          >
-            <View style={styles.modalInner}>
-              <Text style={styles.title}>Create New Goal</Text>
+              ]}
+            >
+              <LinearGradient
+                colors={["rgba(31, 31, 31, 0.98)", "rgba(18, 18, 18, 0.99)"]}
+                style={styles.modalInner}
+              >
+                <View style={styles.header}>
+                  <TouchableOpacity
+                    onPress={onClose}
+                    style={styles.closeButton}
+                  >
+                    <Ionicons name="close" size={24} color="#888" />
+                  </TouchableOpacity>
+                  <View style={styles.headerTextContainer}>
+                    <Text style={styles.headerTitle}>New Goal</Text>
+                  </View>
+                  <View style={{ width: 40 }} />
+                </View>
 
-              <View style={styles.inputContainer}>
-                <Text style={styles.label}>Goal</Text>
-                <TextInput
-                  style={[styles.input, errors.label && styles.inputError]}
-                  placeholder="What do you want to achieve?"
-                  placeholderTextColor="#666"
-                  value={goal.label}
-                  onChangeText={(text) => {
-                    setGoal((prev) => ({ ...prev, label: text }));
-                    if (errors.label) {
-                      setErrors((prev) => ({ ...prev, label: "" }));
-                    }
-                  }}
-                />
-                {errors.label ? (
-                  <Text style={styles.errorText}>{errors.label}</Text>
-                ) : null}
-              </View>
-
-              <View style={styles.inputContainer}>
-                <Text style={styles.label}>Target Date</Text>
-                <TouchableOpacity
-                  style={[styles.dateButton, errors.date && styles.inputError]}
-                  onPress={() => setShowDatePicker(true)}
+                <ScrollView
+                  showsVerticalScrollIndicator={false}
+                  contentContainerStyle={styles.scrollContent}
                 >
-                  <Text style={styles.dateButtonText}>
-                    {selectedDate.toLocaleString("default", {
-                      month: "long",
-                      year: "numeric",
-                    })}
-                  </Text>
-                  <Ionicons name="calendar" size={20} color="#4A90E2" />
-                </TouchableOpacity>
-                {errors.date ? (
-                  <Text style={styles.errorText}>{errors.date}</Text>
-                ) : null}
+                  <View style={styles.formSection}>
+                    <Text style={styles.label}>Goal Name</Text>
+                    <TextInput
+                      style={[styles.input, errors.label && styles.inputError]}
+                      placeholder="What do you want to achieve?"
+                      placeholderTextColor="#666"
+                      value={goal.label}
+                      onChangeText={(text) => {
+                        setGoal((prev) => ({ ...prev, label: text }));
+                        if (errors.label) {
+                          setErrors((prev) => ({ ...prev, label: "" }));
+                        }
+                      }}
+                    />
+                    {errors.label ? (
+                      <Text style={styles.errorText}>{errors.label}</Text>
+                    ) : null}
+                  </View>
+
+                  <View style={styles.formSection}>
+                    <Text style={styles.label}>Target Amount</Text>
+                    <View
+                      style={[
+                        styles.amountContainer,
+                        errors.target && styles.inputError,
+                      ]}
+                    >
+                      <Text style={styles.currencySymbol}>$</Text>
+                      <TextInput
+                        style={styles.amountInput}
+                        placeholder="0"
+                        placeholderTextColor="#666"
+                        value={goal.target ? String(goal.target) : ""}
+                        onChangeText={(text) => {
+                          const target = parseFloat(text) || 0;
+                          setGoal((prev) => ({ ...prev, target }));
+                          if (errors.target) {
+                            setErrors((prev) => ({ ...prev, target: "" }));
+                          }
+                        }}
+                        keyboardType="numeric"
+                      />
+                    </View>
+                    {errors.target ? (
+                      <Text style={styles.errorText}>{errors.target}</Text>
+                    ) : null}
+                  </View>
+
+                  <View style={styles.formSection}>
+                    <Text style={styles.label}>Target Date</Text>
+                    <TouchableOpacity
+                      style={[
+                        styles.dateButton,
+                        errors.date && styles.inputError,
+                      ]}
+                      onPress={() => setShowDatePicker(true)}
+                    >
+                      <Text style={styles.dateButtonText}>
+                        {selectedDate.toLocaleString("default", {
+                          month: "long",
+                          year: "numeric",
+                        })}
+                      </Text>
+                      <Ionicons name="calendar" size={20} color="#4A90E2" />
+                    </TouchableOpacity>
+                    {errors.date ? (
+                      <Text style={styles.errorText}>{errors.date}</Text>
+                    ) : null}
+                  </View>
+
+                  <View style={styles.formSection}>
+                    <Text style={styles.label}>Initial Progress</Text>
+                    <View style={styles.progressContainer}>
+                      <TextInput
+                        style={styles.progressInput}
+                        placeholder="0"
+                        placeholderTextColor="#666"
+                        value={goal.progress?.toString() || ""}
+                        onChangeText={(text) => {
+                          const progress = Math.min(
+                            100,
+                            Math.max(0, parseInt(text) || 0)
+                          );
+                          setGoal((prev) => ({ ...prev, progress }));
+                        }}
+                        keyboardType="numeric"
+                      />
+                      <Text style={styles.progressSymbol}>%</Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.actionButtons}>
+                    <TouchableOpacity
+                      style={[styles.button, styles.cancelButton]}
+                      onPress={onClose}
+                    >
+                      <Text style={styles.buttonText}>Cancel</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[styles.button, styles.saveButton]}
+                      onPress={handleSave}
+                    >
+                      <Text style={styles.buttonText}>Create Goal</Text>
+                    </TouchableOpacity>
+                  </View>
+                </ScrollView>
+
                 {showDatePicker && (
                   <DateTimePicker
                     value={selectedDate}
@@ -219,77 +283,11 @@ export default function AddGoalModal({
                     }
                   />
                 )}
-              </View>
-
-              <View style={styles.inputContainer}>
-                <Text style={styles.label}>Progress</Text>
-                <View style={styles.progressInputContainer}>
-                  <TextInput
-                    style={[styles.input, styles.progressInput]}
-                    placeholder="0"
-                    placeholderTextColor="#666"
-                    value={goal.progress?.toString() || ""}
-                    onChangeText={(text) => {
-                      const progress = Math.min(
-                        100,
-                        Math.max(0, parseInt(text) || 0)
-                      );
-                      setGoal((prev) => ({ ...prev, progress }));
-                    }}
-                    keyboardType="numeric"
-                  />
-                  <Text style={styles.progressSymbol}>%</Text>
-                </View>
-              </View>
-
-              <View style={styles.inputContainer}>
-                <Text style={styles.label}>Description</Text>
-                <TextInput
-                  style={[
-                    styles.input,
-                    styles.textArea,
-                    { height: Math.max(80, descriptionHeight) },
-                    errors.description && styles.inputError,
-                  ]}
-                  placeholder="Describe your goal and what it means to you..."
-                  placeholderTextColor="#666"
-                  value={goal.description}
-                  onChangeText={(text) => {
-                    setGoal((prev) => ({ ...prev, description: text }));
-                    if (errors.description) {
-                      setErrors((prev) => ({ ...prev, description: "" }));
-                    }
-                  }}
-                  onContentSizeChange={(e) =>
-                    setDescriptionHeight(e.nativeEvent.contentSize.height)
-                  }
-                  multiline
-                  textAlignVertical="top"
-                />
-                {errors.description ? (
-                  <Text style={styles.errorText}>{errors.description}</Text>
-                ) : null}
-              </View>
-
-              <View style={styles.buttonContainer}>
-                <TouchableOpacity
-                  style={[styles.button, styles.cancelButton]}
-                  onPress={handleClose}
-                >
-                  <Text style={styles.cancelButtonText}>Cancel</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[styles.button, styles.saveButton]}
-                  onPress={handleSave}
-                >
-                  <Text style={styles.saveButtonText}>Save Goal</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </TouchableOpacity>
-        </Animated.View>
-      </Animated.View>
+              </LinearGradient>
+            </Animated.View>
+          </TouchableWithoutFeedback>
+        </View>
+      </TouchableWithoutFeedback>
     </Modal>
   );
 }
@@ -297,7 +295,7 @@ export default function AddGoalModal({
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.85)",
+    backgroundColor: "rgba(0, 0, 0, 0.75)",
     justifyContent: "center",
     alignItems: "center",
     paddingHorizontal: 20,
@@ -307,58 +305,88 @@ const styles = StyleSheet.create({
     maxWidth: 400,
   },
   modalInner: {
-    backgroundColor: "#1a1a1a",
     borderRadius: 20,
-    padding: 24,
-    borderWidth: 1,
-    borderColor: "#333",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 5,
+    overflow: "hidden",
   },
-  title: {
-    fontSize: 24,
-    fontWeight: "700",
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255,255,255,0.1)",
+  },
+  closeButton: {
+    width: 40,
+    height: 40,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  headerTextContainer: {
+    flex: 1,
+    alignItems: "center",
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: "600",
     color: "#fff",
-    marginBottom: 24,
     textAlign: "center",
   },
-  inputContainer: {
+  scrollContent: {
+    padding: 20,
+  },
+  formSection: {
     marginBottom: 20,
   },
   label: {
-    fontSize: 16,
-    color: "#fff",
+    fontSize: 14,
+    color: "#888",
     marginBottom: 8,
-    fontWeight: "600",
+    fontWeight: "500",
   },
   input: {
-    backgroundColor: "#2a2a2a",
+    backgroundColor: "rgba(255,255,255,0.05)",
     borderRadius: 12,
     paddingVertical: 12,
     paddingHorizontal: 16,
     fontSize: 16,
     color: "#fff",
     borderWidth: 1,
-    borderColor: "#333",
+    borderColor: "rgba(255,255,255,0.1)",
   },
-  textArea: {
-    minHeight: 80,
-    maxHeight: 150,
-    paddingTop: 12,
+  amountContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.05)",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.1)",
+    height: 48,
+  },
+  currencySymbol: {
+    fontSize: 16,
+    color: "#888",
+    paddingLeft: 16,
+  },
+  amountInput: {
+    flex: 1,
+    fontSize: 16,
+    color: "#fff",
+    paddingHorizontal: 8,
+    height: "100%",
   },
   dateButton: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    backgroundColor: "#2a2a2a",
+    backgroundColor: "rgba(255,255,255,0.05)",
     borderRadius: 12,
     paddingVertical: 12,
     paddingHorizontal: 16,
     borderWidth: 1,
-    borderColor: "#333",
+    borderColor: "rgba(255,255,255,0.1)",
   },
   dateButtonText: {
     fontSize: 16,
@@ -366,65 +394,61 @@ const styles = StyleSheet.create({
   },
   datePickerIOS: {
     backgroundColor: "#2a2a2a",
-    borderRadius: 12,
-    marginTop: 8,
-    height: 200,
+    borderTopLeftRadius: 12,
+    borderTopRightRadius: 12,
   },
-  buttonContainer: {
+  progressContainer: {
     flexDirection: "row",
-    justifyContent: "space-between",
-    marginTop: 24,
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.05)",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.1)",
+    height: 48,
+    paddingHorizontal: 16,
+  },
+  progressInput: {
+    flex: 1,
+    fontSize: 16,
+    color: "#fff",
+  },
+  progressSymbol: {
+    fontSize: 16,
+    color: "#888",
+    marginLeft: 4,
+  },
+  actionButtons: {
+    flexDirection: "row",
+    gap: 12,
+    marginTop: 12,
   },
   button: {
     flex: 1,
-    paddingVertical: 14,
-    borderRadius: 12,
     alignItems: "center",
-    marginHorizontal: 6,
-  },
-  cancelButton: {
-    backgroundColor: "#333",
+    justifyContent: "center",
+    padding: 14,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: "#444",
+    borderColor: "rgba(255,255,255,0.1)",
   },
   saveButton: {
     backgroundColor: "#4A90E2",
   },
-  cancelButtonText: {
-    color: "#fff",
-    fontWeight: "600",
-    fontSize: 16,
+  cancelButton: {
+    backgroundColor: "rgba(255,255,255,0.05)",
   },
-  saveButtonText: {
+  buttonText: {
     color: "#fff",
-    fontWeight: "600",
     fontSize: 16,
+    fontWeight: "600",
   },
   inputError: {
-    borderColor: "#ff4444",
+    borderColor: "#FF3B30",
   },
   errorText: {
-    color: "#ff4444",
+    color: "#FF3B30",
     fontSize: 12,
     marginTop: 4,
     marginLeft: 4,
-  },
-  progressInputContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#2a2a2a",
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#333",
-  },
-  progressInput: {
-    flex: 1,
-    marginBottom: 0,
-    borderWidth: 0,
-  },
-  progressSymbol: {
-    color: "#666",
-    fontSize: 16,
-    paddingRight: 16,
   },
 });
