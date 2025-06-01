@@ -476,7 +476,18 @@ export default function HomeScreen() {
               <View style={styles.finnyMessageContainer}>
                 <View style={styles.finnyMessage}>
                   <View style={styles.finnyIconContainer}>
-                    <Ionicons name="rocket" size={20} color="#4A90E2" />
+                    <Image
+                      source={require("../assets/mascot1.jpg")}
+                      style={{
+                        width: 45,
+                        height: 50,
+                        borderRadius: 20,
+                        // borderWidth: 0.2,
+                        // borderColor: "#4A90E2",
+                        resizeMode: "contain",
+                        transform: [{ scaleX: -1 }, { rotate: "0deg" }],
+                      }}
+                    />
                   </View>
                   <View style={styles.finnyMessageContent}>
                     <Text style={styles.finnyMessageTitle}>Daily Progress</Text>
@@ -538,8 +549,8 @@ export default function HomeScreen() {
               <View style={styles.goalsSection}>
                 <View style={styles.goalsSectionHeader}>
                   <View style={styles.goalsTitleContainer}>
-                    <Ionicons name="flag" size={20} color="#4A90E2" />
-                    <Text style={styles.sectionTitle}>Your Focus</Text>
+                    <Ionicons name="trophy" size={20} color="#4A90E2" />
+                    <Text style={styles.sectionTitle}>Your Focus 🎯</Text>
                   </View>
                   {timelineData.length > 0 && (
                     <TouchableOpacity
@@ -555,12 +566,20 @@ export default function HomeScreen() {
                     <View style={styles.goalHeader}>
                       <Text style={styles.goalTitle}>{closestGoal.label}</Text>
                       <Text style={styles.goalAmount}>
-                        $
-                        {(
+                        {new Intl.NumberFormat("en-US", {
+                          style: "currency",
+                          currency: "USD",
+                          minimumFractionDigits: 0,
+                          maximumFractionDigits: 0,
+                        }).format(
                           (closestGoal.target || 0) *
-                          ((closestGoal.progress || 0) / 100)
-                        ).toFixed(2)}{" "}
-                        of ${closestGoal.target || 0}
+                            ((closestGoal.progress || 0) / 100)
+                        )}{" "}
+                        of{" "}
+                        {formatCurrency(closestGoal.target || 0, "USD", {
+                          decimals: 0,
+                          useKM: true,
+                        })}
                       </Text>
                     </View>
                     <View style={styles.progressBarBackground}>
@@ -569,14 +588,23 @@ export default function HomeScreen() {
                           styles.progressBarFill,
                           {
                             width: `${closestGoal.progress || 0}%`,
-                            backgroundColor: "#4A90E2",
                           },
                         ]}
                       />
                     </View>
-                    <Text style={styles.goalPercent}>
-                      {Math.round(closestGoal.progress || 0)}%
-                    </Text>
+                    <View style={styles.goalPercentContainer}>
+                      <Ionicons name="trending-up" size={14} color="#4ECDC4" />
+                      <Text
+                        style={{
+                          fontWeight: "600",
+                          color: "#4ECDC4",
+                          fontSize: 12,
+                          marginLeft: 2,
+                        }}
+                      >
+                        +{Math.round(closestGoal.progress || 0)}% Progress
+                      </Text>
+                    </View>
                   </View>
                 ) : (
                   <View style={styles.emptyGoalsContainer}>
