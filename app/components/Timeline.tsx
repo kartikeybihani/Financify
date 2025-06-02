@@ -327,7 +327,7 @@ const Timeline: React.FC<TimelineProps> = ({
         </View>
       )}
 
-      {sortedTimelineData.length === 0 && (
+      {sortedTimelineData.length !== 0 && (
         <TouchableOpacity
           style={styles.addGoalButton}
           onPress={() =>
@@ -338,7 +338,7 @@ const Timeline: React.FC<TimelineProps> = ({
           }
         >
           <Ionicons name="add-circle" size={24} color="#4A90E2" />
-          <Text style={styles.addGoalText}>Add Goal</Text>
+          <Text style={styles.addGoalText}>Add New Goal</Text>
         </TouchableOpacity>
       )}
 
