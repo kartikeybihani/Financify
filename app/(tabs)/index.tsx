@@ -82,6 +82,8 @@ export default function HomeScreen() {
   const [liabilities, setLiabilities] = useState<any>(null);
   const [institution, setInstitution] = useState<any>(null);
 
+  const [hasNewAccounts, setHasNewAccounts] = useState(false);
+
   const hasLoadedOnce = useRef(false);
   const [userData, setUserData] = useState<any>(null);
 
@@ -224,7 +226,7 @@ export default function HomeScreen() {
         const {
           data: { user },
         } = await supabase.auth.getUser();
-        console.log("User in home screen:", user);
+        console.log("User in home screen:", user?.email);
         setUserData(user);
 
         const { data, error } = await supabase
@@ -233,7 +235,6 @@ export default function HomeScreen() {
           .eq("id", user?.id)
           .single();
 
-        console.log("Data in home screen:", data);
         const token = data?.access_token || null;
         console.log("✅ Loaded token from Supabase:", token);
 

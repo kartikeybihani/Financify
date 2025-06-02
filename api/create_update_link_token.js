@@ -1,3 +1,4 @@
+// /api/create_update_link_token.js
 import { client } from "../app/plaidClient.js";
 
 export default async function handler(req, res) {
@@ -16,6 +17,7 @@ export default async function handler(req, res) {
       redirect_uri: "https://financify-rose.vercel.app/oauth-complete",
       webhook: "https://financify-rose.vercel.app/api/webhook",
       access_token,
+      account_selection_enabled: true,
     });
 
     res.status(200).json({ link_token: response.data.link_token });

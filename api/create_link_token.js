@@ -1,3 +1,4 @@
+// /api/create_link_token.js
 import { client } from "../app/plaidClient.js";
 
 export default async function handler(req, res) {
