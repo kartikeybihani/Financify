@@ -242,6 +242,18 @@ export default function HomeScreen() {
           setAccessToken(token);
           const dataLoaded = await loadDataFromStorage();
           if (!dataLoaded) await fetchFreshData(token);
+
+          const { data } = await supabase
+            .from("user_tokens")
+            .select("has_new_accounts")
+            .eq("id", user?.id)
+            .single();
+
+          if (data?.has_new_accounts) {
+            const newUpdateToken = await getUpdateLinkToken(token);
+            setUpdateToken(newUpdateToken);
+            setHasNewAccounts(true);
+          }
         } else {
           setAccessToken(null);
         }
@@ -451,6 +463,26 @@ export default function HomeScreen() {
               </Text>
             </TouchableOpacity>
           )}
+          {hasNewAccounts && updateToken && (
+            <TouchableOpacity
+              style={styles.updateBanner}
+              onPress={() => {
+                openPlaidLink(updateToken);
+                setHasNewAccounts(false);
+
+                // Clear flag in Supabase after user interaction
+                supabase
+                  .from("user_tokens")
+                  .update({ has_new_accounts: false })
+                  .eq("id", userData?.id);
+              }}
+            >
+              <Text style={styles.updateBannerText}>
+                🆕 New accounts are available. Tap here to add them.
+              </Text>
+            </TouchableOpacity>
+          )}
+
           {isInitialLoad ? (
             <View style={styles.loadingOverlay}>
               <ActivityIndicator size="large" color="#4A90E2" />

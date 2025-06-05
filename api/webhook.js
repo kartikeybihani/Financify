@@ -19,7 +19,7 @@ export default async function handler(req, res) {
       .update({ has_new_accounts: true })
       .eq("id", user_id);
 
-    // return res.status(200).json({ prompt_update_mode: true });
+    return res.status(200).json({ prompt_update_mode: true });
   } else if (
     webhook_code === "PENDING_EXPIRATION" ||
     webhook_code === "ITEM_LOGIN_REQUIRED" ||

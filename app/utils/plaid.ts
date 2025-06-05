@@ -103,10 +103,34 @@ export const openPlaidLink = async (link_token: string) => {
 
 // === Disconnect ===
 export const handleDisconnect = async () => {
-  await AsyncStorage.removeItem("accessToken");
-  console.log("Disconnected from Plaid");
-  return await fetchLinkToken();
+  try {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user?.id) throw new Error("User not found");
+
+    const res = await fetch(`${BASE_URL}/api/remove_item`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ user_id: user.id }),
+    });
+
+    const { error } = await res.json();
+    if (error) throw new Error(error);
+
+    // Clear local storage and flags
+    await AsyncStorage.clear();
+
+    // Optional: reset local app state if applicable
+    return true;
+  } catch (err) {
+    console.error("Disconnect error:", err);
+    throw err;
+  }
 };
+
+
 
 // === Plaid Data Fetchers ===
 export const fetchInstitution = async (token: string) => {
