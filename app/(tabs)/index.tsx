@@ -1,4 +1,5 @@
 // Comment 1
+// Comment 2
 import React, { useState, useEffect, useRef } from "react";
 import {
   View,
