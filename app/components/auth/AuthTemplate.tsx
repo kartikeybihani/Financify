@@ -13,6 +13,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 
+const { width } = Dimensions.get("window");
+
 interface AuthTemplateProps {
   title: string;
   subtitle: string;
@@ -21,6 +23,8 @@ interface AuthTemplateProps {
   footerLinkText?: string;
   footerLinkAction?: () => void;
   footerLinkHighlight?: string;
+  backgroundColors?: [string, string, string];
+  spotlightColors?: [string, string, string];
 }
 
 export default function AuthTemplate({
@@ -31,6 +35,12 @@ export default function AuthTemplate({
   footerLinkText = "",
   footerLinkAction,
   footerLinkHighlight = "",
+  backgroundColors = ["#1A1A2E", "#16213E", "#0D1117"] as [
+    string,
+    string,
+    string
+  ],
+  spotlightColors,
 }: AuthTemplateProps) {
   const router = useRouter();
 
@@ -40,10 +50,17 @@ export default function AuthTemplate({
       style={styles.container}
     >
       <LinearGradient
-        colors={["#1A1A2E", "#16213E", "#0D1117"]}
+        colors={backgroundColors as readonly [string, string, string]}
         locations={[0, 0.5, 1]}
         style={styles.gradientBackground}
       >
+        {spotlightColors && (
+          <LinearGradient
+            colors={spotlightColors as readonly [string, string, string]}
+            style={styles.spotlightContainer}
+            locations={[0, 0.5, 1]}
+          />
+        )}
         <TouchableOpacity
           style={styles.backButton}
           onPress={() => router.back()}
@@ -94,6 +111,17 @@ const styles = StyleSheet.create({
   },
   gradientBackground: {
     flex: 1,
+    position: "relative",
+  },
+  spotlightContainer: {
+    position: "absolute",
+    top: "25%",
+    left: "50%",
+    width: width * 2,
+    height: width * 2,
+    transform: [{ translateX: -width }],
+    borderRadius: width,
+    opacity: 1,
   },
   contentContainer: {
     flex: 1,

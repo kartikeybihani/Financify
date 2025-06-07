@@ -5,6 +5,8 @@ import {
   StyleSheet,
   Animated,
   Dimensions,
+  TouchableOpacity,
+  Text,
   Easing,
 } from "react-native";
 import { useRouter } from "expo-router";
@@ -12,6 +14,7 @@ import { supabase } from "../lib/supabase/supabase";
 import AuthTemplate from "../components/auth/AuthTemplate";
 import AuthInput from "../components/auth/AuthInput";
 import AuthButton from "../components/auth/AuthButton";
+import { LinearGradient } from "expo-linear-gradient";
 
 const { width } = Dimensions.get("window");
 
@@ -41,7 +44,7 @@ export default function LoginScreen() {
         easing: Easing.out(Easing.cubic),
       }),
       Animated.timing(slideAnim, {
-        toValue: slideValue,
+        toValue: -slideValue,
         duration: 250,
         useNativeDriver: true,
         easing: Easing.out(Easing.cubic),
@@ -53,7 +56,7 @@ export default function LoginScreen() {
       }),
     ]).start(() => {
       setStep(forward ? 2 : 1);
-      slideAnim.setValue(slideValue * -1);
+      slideAnim.setValue(slideValue);
 
       Animated.parallel([
         Animated.timing(fadeAnim, {
@@ -154,6 +157,11 @@ export default function LoginScreen() {
     }
   };
 
+  const handleTransition = (forward: boolean) => {
+    setFormError(""); // Clear error when transitioning
+    animateTransition(forward);
+  };
+
   return (
     <AuthTemplate
       title={step === 1 ? "Welcome Back" : "Reset Password"}
@@ -162,10 +170,20 @@ export default function LoginScreen() {
           ? "Sign in to continue"
           : "Enter your email to reset password"
       }
-      showFooter={step === 1}
+      showFooter={false}
       footerLinkText="Don't have an account?"
       footerLinkHighlight="Sign up"
       footerLinkAction={() => router.replace("../signup")}
+      backgroundColors={[
+        "rgba(8, 11, 16, 0.99)",
+        "rgba(18, 26, 50, 0.95)",
+        "rgba(8, 11, 16, 0.99)",
+      ]}
+      spotlightColors={[
+        "rgba(255, 255, 255, 0)",
+        "rgba(255, 255, 255, 0.03)",
+        "rgba(255, 255, 255, 0)",
+      ]}
     >
       <Animated.View
         style={[
@@ -203,12 +221,6 @@ export default function LoginScreen() {
               showPassword={showPassword}
               onTogglePassword={() => setShowPassword(!showPassword)}
               error={!password && !!formError}
-            />
-
-            <AuthButton
-              title="Forgot Password?"
-              variant="text"
-              onPress={() => animateTransition(true)}
             />
           </>
         ) : (
@@ -248,15 +260,36 @@ export default function LoginScreen() {
         onPress={step === 1 ? handleLogin : handleForgotPassword}
       />
 
-      {step === 2 && (
-        <View style={{ marginTop: 10 }}>
+      <View style={{ marginTop: 10 }}>
+        {step === 1 ? (
           <AuthButton
-            title="Go Back"
+            title="Forgot Password?"
             variant="text"
-            onPress={() => animateTransition(false)}
-            icon="arrow-back"
+            onPress={() => handleTransition(true)}
+            style={styles.forgotPasswordButton}
           />
-        </View>
+        ) : (
+          <View style={{ marginTop: 10 }}>
+            <AuthButton
+              title="Go Back"
+              variant="text"
+              onPress={() => handleTransition(false)}
+              icon="arrow-back"
+            />
+          </View>
+        )}
+      </View>
+
+      {step === 1 && (
+        <TouchableOpacity
+          onPress={() => router.replace("../signup")}
+          style={styles.linkContainer}
+        >
+          <Text style={styles.linkText}>
+            Don't have an account?{" "}
+            <Text style={styles.linkTextBold}>Sign up</Text>
+          </Text>
+        </TouchableOpacity>
       )}
     </AuthTemplate>
   );
@@ -272,5 +305,23 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginBottom: 15,
     marginTop: 5,
+  },
+  forgotPasswordButton: {
+    marginTop: 15,
+  },
+  linkContainer: {
+    marginTop: 20,
+    alignItems: "center",
+  },
+  linkText: {
+    color: "rgba(255, 255, 255, 0.6)",
+    fontSize: 14,
+  },
+  linkTextBold: {
+    color: "#4A90E2",
+    fontWeight: "600",
+  },
+  goBackButton: {
+    fontSize: 20,
   },
 });

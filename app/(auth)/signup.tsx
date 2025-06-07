@@ -236,10 +236,23 @@ export default function SignupScreen() {
       style={styles.container}
     >
       <LinearGradient
-        colors={["#1A1A2E", "#16213E", "#0D1117"]}
+        colors={[
+          "rgba(8, 11, 16, 0.99)",
+          "rgba(18, 26, 50, 0.95)",
+          "rgba(8, 11, 16, 0.99)",
+        ]}
         locations={[0, 0.5, 1]}
         style={styles.gradientBackground}
       >
+        <LinearGradient
+          colors={[
+            "rgba(255, 255, 255, 0)",
+            "rgba(255, 255, 255, 0.03)",
+            "rgba(255, 255, 255, 0)",
+          ]}
+          style={styles.spotlightContainer}
+          locations={[0, 0.5, 1]}
+        />
         <TouchableOpacity
           style={styles.backButton}
           onPress={() => router.back()}
@@ -271,10 +284,7 @@ export default function SignupScreen() {
                 <>
                   <Text style={styles.label}>Name</Text>
                   <TextInput
-                    style={[
-                      styles.input,
-                      !name.trim() && formError ? styles.inputError : null,
-                    ]}
+                    style={[styles.input]}
                     placeholder="Kartik Bihani"
                     placeholderTextColor="#666"
                     onChangeText={(text) => {
@@ -286,10 +296,7 @@ export default function SignupScreen() {
 
                   <Text style={styles.label}>Email</Text>
                   <TextInput
-                    style={[
-                      styles.input,
-                      !email && formError ? styles.inputError : null,
-                    ]}
+                    style={[styles.input]}
                     placeholder="kb@gmail.com"
                     placeholderTextColor="#666"
                     onChangeText={(text) => {
@@ -304,14 +311,10 @@ export default function SignupScreen() {
 
                   <Text style={styles.label}>Password</Text>
                   <View
-                    style={[
-                      styles.passwordContainer,
-                      !password && formError ? styles.inputError : null,
-                      { marginBottom: 15 },
-                    ]}
+                    style={[styles.passwordContainer, { marginBottom: 15 }]}
                   >
                     <TextInput
-                      style={styles.passwordInput}
+                      style={[styles.passwordInput]}
                       placeholder="Create a password"
                       placeholderTextColor="#666"
                       secureTextEntry={!showPassword}
@@ -337,10 +340,7 @@ export default function SignupScreen() {
                 <>
                   <Text style={styles.label}>Age</Text>
                   <TextInput
-                    style={[
-                      styles.input,
-                      !age && formError ? styles.inputError : null,
-                    ]}
+                    style={[styles.input]}
                     placeholder="24"
                     placeholderTextColor="#666"
                     keyboardType="numeric"
@@ -354,10 +354,7 @@ export default function SignupScreen() {
 
                   <Text style={styles.label}>Phone Number</Text>
                   <TextInput
-                    style={[
-                      styles.input,
-                      !phone && formError ? styles.inputError : null,
-                    ]}
+                    style={[styles.input]}
                     placeholder="(123)-456-7890"
                     placeholderTextColor="#666"
                     keyboardType="phone-pad"
@@ -446,6 +443,17 @@ const styles = StyleSheet.create({
   },
   gradientBackground: {
     flex: 1,
+    position: "relative",
+  },
+  spotlightContainer: {
+    position: "absolute",
+    top: "25%",
+    left: "50%",
+    width: width * 2,
+    height: width * 2,
+    transform: [{ translateX: -width }],
+    borderRadius: width,
+    opacity: 1,
   },
   scrollContainer: {
     flexGrow: 1,

@@ -78,13 +78,13 @@ export default function WelcomeScreen() {
         Animated.sequence([
           Animated.timing(flipAnim, {
             toValue: 180,
-            duration: 2000,
+            duration: 1500,
             useNativeDriver: true,
             easing: Easing.inOut(Easing.ease),
           }),
           Animated.timing(flipAnim, {
             toValue: 0,
-            duration: 2000,
+            duration: 1500,
             useNativeDriver: true,
             easing: Easing.inOut(Easing.ease),
           }),
@@ -226,17 +226,25 @@ export default function WelcomeScreen() {
     <View style={styles.container}>
       <StatusBar barStyle="light-content" />
       <LinearGradient
-        colors={["#1A1A2E", "#16213E", "#0D1117"]}
+        colors={[
+          "rgba(10, 14, 20, 0.98)",
+          "rgba(22, 33, 62, 0.92)",
+          "rgba(10, 14, 20, 0.98)",
+        ]}
         locations={[0, 0.5, 1]}
         style={styles.gradientBackground}
       >
+        <LinearGradient
+          colors={[
+            "rgba(255, 255, 255, 0)",
+            "rgba(255, 255, 255, 0.04)",
+            "rgba(255, 255, 255, 0)",
+          ]}
+          style={[styles.spotlightContainer]}
+          locations={[0, 0.5, 1]}
+        />
         <View style={styles.content}>
-          <Animated.View
-            style={[
-              styles.heroSection,
-              { transform: [{ translateY: imageSlideAnim }] },
-            ]}
-          >
+          <View style={styles.heroSection}>
             <Animated.Image
               source={require("../assets/main2.png")}
               style={[styles.heroImage, animatedSparkStyle]}
@@ -272,122 +280,30 @@ export default function WelcomeScreen() {
                   end={{ x: 1, y: 0 }}
                 />
               </View>
-              <Text style={styles.title}>
-                Your guide to{"\n"}
-                <Text style={styles.titleHighlight}>
-                  Financial Clarity and Control.
+              <Text style={styles.titleHighlight}>
+                <Text style={styles.titleEmphasis}>Finally, </Text>
+                <Text style={styles.titleMain}>
+                  feel calm about your money.
                 </Text>
               </Text>
-
-              <View style={styles.cardContainer}>
-                <View style={styles.subtitleContainer}>
-                  <Animated.View
-                    style={[
-                      styles.card,
-                      { transform: [{ rotateY: frontInterpolate }] },
-                    ]}
-                  >
-                    <Text style={styles.beforeLabel}>BEFORE</Text>
-                    <Text style={styles.subtitleBefore}>
-                      Chaos • Overwhelm • Guilt
-                    </Text>
-                  </Animated.View>
-
-                  <Animated.View
-                    style={[
-                      styles.cardBack,
-                      { transform: [{ rotateY: backInterpolate }] },
-                    ]}
-                  >
-                    <Text style={styles.afterLabel}>AFTER</Text>
-                    <Text style={styles.subtitleAfter}>
-                      Calm • Goals • Clarity
-                    </Text>
-                  </Animated.View>
-                  <View style={styles.transformationContainer}>
-                    <Text style={styles.transformationText}>
-                      Your Transformation starts here
-                    </Text>
-                  </View>
-                </View>
-                {!started && (
-                  <Text style={styles.microcopy}>
-                    We use real data, smart AI, and goal-based planning to guide
-                    your money — without judgment.
-                  </Text>
-                )}
-              </View>
             </Animated.View>
-          </Animated.View>
+          </View>
 
-          <View style={styles.buttonSection}>
-            {!started ? (
-              <Animated.View
-                style={{ opacity: fadeAnim, transform: [{ scale: scaleAnim }] }}
-              >
-                <TouchableOpacity
-                  style={styles.primaryButton}
-                  onPress={handleBegin}
-                  activeOpacity={0.9}
-                >
-                  <LinearGradient
-                    colors={["#4A90E2", "#5DA0F2"]}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 0 }}
-                    style={styles.gradientButton}
-                  >
-                    <Text style={styles.primaryButtonText}>Let's Begin</Text>
-                  </LinearGradient>
-                </TouchableOpacity>
-                <Text style={styles.fluffText}>
-                  No Fluff. No dashboards. Just clarity.
-                </Text>
-              </Animated.View>
-            ) : (
-              <View style={styles.authButtons}>
+          <View style={styles.bottomSection}>
+            <Text style={styles.microcopy}>
+              Built to give you peace of mind — not overwhelm.
+            </Text>
+            <View style={styles.buttonSection}>
+              {!started ? (
                 <Animated.View
                   style={{
-                    opacity: googleButtonAnim,
-                    transform: [
-                      {
-                        translateY: googleButtonAnim.interpolate({
-                          inputRange: [0, 1],
-                          outputRange: [20, 0],
-                        }),
-                      },
-                    ],
+                    opacity: fadeAnim,
+                    transform: [{ scale: scaleAnim }],
                   }}
                 >
                   <TouchableOpacity
-                    style={styles.googleButton}
-                    activeOpacity={0.9}
-                    onPress={signInWithApple}
-                  >
-                    <View style={styles.blurContainer}>
-                      <Ionicons name="logo-apple" size={22} color="#fff" />
-                      <Text style={styles.googleButtonText}>
-                        Continue with Apple
-                      </Text>
-                    </View>
-                  </TouchableOpacity>
-                </Animated.View>
-
-                <Animated.View
-                  style={{
-                    opacity: emailButtonAnim,
-                    transform: [
-                      {
-                        translateY: emailButtonAnim.interpolate({
-                          inputRange: [0, 1],
-                          outputRange: [20, 0],
-                        }),
-                      },
-                    ],
-                  }}
-                >
-                  <TouchableOpacity
-                    style={styles.emailButton}
-                    onPress={handleEmailSignup}
+                    style={styles.primaryButton}
+                    onPress={handleBegin}
                     activeOpacity={0.9}
                   >
                     <LinearGradient
@@ -396,38 +312,96 @@ export default function WelcomeScreen() {
                       end={{ x: 1, y: 0 }}
                       style={styles.gradientButton}
                     >
-                      <Text style={styles.emailButtonText}>
-                        Continue with Email
-                      </Text>
+                      <Text style={styles.primaryButtonText}>Let's Begin</Text>
                     </LinearGradient>
                   </TouchableOpacity>
                 </Animated.View>
-
-                <Animated.View
-                  style={{
-                    opacity: loginTextAnim,
-                    transform: [
-                      {
-                        translateY: loginTextAnim.interpolate({
-                          inputRange: [0, 1],
-                          outputRange: [10, 0],
-                        }),
-                      },
-                    ],
-                  }}
-                >
-                  <TouchableOpacity
-                    style={styles.loginLink}
-                    onPress={handleLogin}
+              ) : (
+                <View style={styles.authButtons}>
+                  <Animated.View
+                    style={{
+                      opacity: googleButtonAnim,
+                      transform: [
+                        {
+                          translateY: googleButtonAnim.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: [20, 0],
+                          }),
+                        },
+                      ],
+                    }}
                   >
-                    <Text style={styles.loginText}>
-                      Already have an account?{" "}
-                      <Text style={styles.loginTextBold}>Login</Text>
-                    </Text>
-                  </TouchableOpacity>
-                </Animated.View>
-              </View>
-            )}
+                    <TouchableOpacity
+                      style={styles.googleButton}
+                      activeOpacity={0.9}
+                      onPress={signInWithApple}
+                    >
+                      <View style={styles.blurContainer}>
+                        <Ionicons name="logo-apple" size={22} color="#fff" />
+                        <Text style={styles.googleButtonText}>
+                          Continue with Apple
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  </Animated.View>
+
+                  <Animated.View
+                    style={{
+                      opacity: emailButtonAnim,
+                      transform: [
+                        {
+                          translateY: emailButtonAnim.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: [20, 0],
+                          }),
+                        },
+                      ],
+                    }}
+                  >
+                    <TouchableOpacity
+                      style={styles.emailButton}
+                      onPress={handleEmailSignup}
+                      activeOpacity={0.9}
+                    >
+                      <LinearGradient
+                        colors={["#4A90E2", "#5DA0F2"]}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 0 }}
+                        style={styles.gradientButton}
+                      >
+                        <Text style={styles.emailButtonText}>
+                          Continue with Email
+                        </Text>
+                      </LinearGradient>
+                    </TouchableOpacity>
+                  </Animated.View>
+
+                  <Animated.View
+                    style={{
+                      opacity: loginTextAnim,
+                      transform: [
+                        {
+                          translateY: loginTextAnim.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: [10, 0],
+                          }),
+                        },
+                      ],
+                    }}
+                  >
+                    <TouchableOpacity
+                      style={styles.loginLink}
+                      onPress={handleLogin}
+                    >
+                      <Text style={styles.loginText}>
+                        Already have an account?{" "}
+                        <Text style={styles.loginTextBold}>Login</Text>
+                      </Text>
+                    </TouchableOpacity>
+                  </Animated.View>
+                </View>
+              )}
+            </View>
           </View>
         </View>
       </LinearGradient>
@@ -449,10 +423,21 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     paddingTop: 60,
     paddingBottom: 40,
+    position: "relative",
+  },
+  spotlightContainer: {
+    position: "absolute",
+    top: "25%",
+    left: "50%",
+    width: width * 2,
+    height: width * 2,
+    transform: [{ translateX: -width }],
+    borderRadius: width,
+    opacity: 1,
   },
   heroSection: {
     alignItems: "center",
-    flex: 1,
+    flex: 0.8,
     justifyContent: "center",
   },
   heroImage: {
@@ -494,18 +479,27 @@ const styles = StyleSheet.create({
     borderRadius: 1.5,
     marginTop: 4,
   },
-  title: {
-    fontSize: 22,
-    fontWeight: "600",
-    color: "rgba(255, 255, 255, 0.85)",
+  titleHighlight: {
+    fontSize: 24,
     textAlign: "center",
     marginBottom: 30,
-    lineHeight: 30,
-    letterSpacing: 0.3,
+    lineHeight: 36,
+    letterSpacing: 0.5,
+    color: "rgba(255, 255, 255, 0.95)",
+    textShadowColor: "rgba(255, 255, 255, 0.1)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 1,
   },
-  titleHighlight: {
-    color: "#4A90E2",
+  titleEmphasis: {
+    color: "#5DA0F2",
     fontWeight: "700",
+    textShadowColor: "rgba(93, 160, 242, 0.2)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+  },
+  titleMain: {
+    color: "rgba(255, 255, 255, 0.9)",
+    fontWeight: "500",
   },
   cardContainer: {
     width: "100%",
@@ -705,13 +699,14 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
   microcopy: {
-    color: "rgba(255, 255, 255, 0.5)",
-    fontSize: 13,
+    color: "rgba(255, 255, 255, 0.6)",
+    fontSize: 14,
     textAlign: "center",
-    marginTop: 20,
-    marginBottom: 2,
-    lineHeight: 18,
-    paddingHorizontal: 20,
+    marginTop: 16,
+    lineHeight: 20,
+    fontWeight: "600",
+    letterSpacing: 0.2,
+    marginBottom: 10,
   },
   appleButton: {
     width: "100%",
@@ -724,5 +719,19 @@ const styles = StyleSheet.create({
     marginTop: 10,
     fontWeight: "400",
     letterSpacing: 0.2,
+  },
+  transformationMessage: {
+    backgroundColor: "rgba(255, 255, 255, 0.06)",
+    borderRadius: 20,
+    padding: 24,
+    width: "100%",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.1)",
+    marginBottom: 18,
+  },
+  bottomSection: {
+    width: "100%",
+    flex: 0.2,
+    justifyContent: "flex-end",
   },
 });

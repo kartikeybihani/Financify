@@ -1,18 +1,19 @@
 import React from "react";
 import {
-  TextInput,
   View,
   Text,
+  TextInput,
   TouchableOpacity,
   StyleSheet,
   TextInputProps,
+  ViewStyle,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
 interface AuthInputProps extends TextInputProps {
   label: string;
   error?: boolean;
-  containerStyle?: any;
+  containerStyle?: ViewStyle;
 }
 
 interface PasswordInputProps extends AuthInputProps {
@@ -20,39 +21,41 @@ interface PasswordInputProps extends AuthInputProps {
   onTogglePassword: () => void;
 }
 
-const AuthInputBase = ({
+function AuthInput({
   label,
   error,
+  style,
   containerStyle,
   ...props
-}: AuthInputProps) => {
+}: AuthInputProps) {
   return (
-    <View style={containerStyle}>
+    <View style={[styles.container, containerStyle]}>
       <Text style={styles.label}>{label}</Text>
       <TextInput
-        style={[styles.input, error && styles.inputError]}
-        placeholderTextColor="rgba(255, 255, 255, 0.4)"
+        style={[styles.input, style]}
+        placeholderTextColor="#666"
         {...props}
       />
     </View>
   );
-};
+}
 
-const PasswordInputComponent = ({
+function PasswordInput({
   label,
   error,
   showPassword,
   onTogglePassword,
+  style,
   containerStyle,
   ...props
-}: PasswordInputProps) => {
+}: PasswordInputProps) {
   return (
-    <View style={containerStyle}>
+    <View style={[styles.container, containerStyle]}>
       <Text style={styles.label}>{label}</Text>
-      <View style={[styles.passwordContainer, error && styles.inputError]}>
+      <View style={styles.passwordContainer}>
         <TextInput
-          style={styles.passwordInput}
-          placeholderTextColor="rgba(255, 255, 255, 0.4)"
+          style={[styles.passwordInput, style]}
+          placeholderTextColor="#666"
           secureTextEntry={!showPassword}
           {...props}
         />
@@ -63,24 +66,23 @@ const PasswordInputComponent = ({
           <Ionicons
             name={showPassword ? "eye" : "eye-off"}
             size={24}
-            color="rgba(255, 255, 255, 0.4)"
+            color="#666"
           />
         </TouchableOpacity>
       </View>
     </View>
   );
-};
+}
 
-const AuthInput = Object.assign(AuthInputBase, {
-  Password: PasswordInputComponent,
-});
-
-export default AuthInput;
+AuthInput.Password = PasswordInput;
 
 const styles = StyleSheet.create({
+  container: {
+    marginBottom: 15,
+  },
   label: {
     color: "#fff",
-    marginBottom: 4,
+    marginBottom: 6,
     fontSize: 14,
   },
   input: {
@@ -88,7 +90,6 @@ const styles = StyleSheet.create({
     color: "#fff",
     padding: 16,
     borderRadius: 6,
-    marginBottom: 25,
     fontSize: 16,
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.1)",
@@ -100,7 +101,6 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.1)",
-    marginBottom: 15,
   },
   passwordInput: {
     flex: 1,
@@ -111,7 +111,6 @@ const styles = StyleSheet.create({
   passwordToggle: {
     padding: 10,
   },
-  inputError: {
-    borderColor: "#ff4444",
-  },
 });
+
+export default AuthInput;
