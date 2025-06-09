@@ -17,9 +17,5 @@ const config = new Configuration({
   },
 });
 
-const client = new PlaidApi(config);
-
-// Use module.exports for better compatibility with various environments
-module.exports = {
-  client,
-};
+export const client = new PlaidApi(config);
+export default client;

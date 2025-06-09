@@ -1,8 +1,8 @@
 // /api/remove_item.js
-const { client } = require("../app/plaidClient.js");
-const { supabase } = require("../app/lib/supabase/supabase.js");
+import { client } from "../app/plaidClient.js";
+import { supabase } from "../app/lib/supabase/supabase";
 
-module.exports = async function handler(req, res) {
+export default async function handler(req, res) {
   if (req.method !== "POST")
     return res.status(405).json({ error: "Method not allowed" });
 
@@ -37,4 +37,4 @@ module.exports = async function handler(req, res) {
     );
     return res.status(500).json({ error: err.message });
   }
-};
+}

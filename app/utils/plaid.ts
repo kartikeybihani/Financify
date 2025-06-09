@@ -118,7 +118,7 @@ export const handleDisconnect = async () => {
       body: JSON.stringify({ user_id: user.id }),
     });
 
-    console.log("Response from remove_item:", JSON.stringify(res));
+    console.log("Response from remove_item:", JSON.stringify(res, null, 2));
     const { error } = await res.json();
     if (error) throw new Error(error);
 
