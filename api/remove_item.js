@@ -1,6 +1,6 @@
 // /api/remove_item.js
-import { client } from "../app/plaidClient.js";
-import { supabase } from "../app/lib/supabase/supabase.js";
+import { client } from "../app/plaidClient";
+import { supabase } from "../app/lib/supabase/supabase";
 
 export default async function handler(req, res) {
   if (req.method !== "POST")
