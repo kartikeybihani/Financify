@@ -21,4 +21,4 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
 })
 
 // Add a default export to satisfy TypeScript
-// export default supabase
+export default supabase
