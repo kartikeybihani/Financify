@@ -1,6 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { open, create } from "react-native-plaid-link-sdk";
-import supabase from "../lib/supabase/supabase";
+import {supabase} from "../lib/supabase/supabase";
 
 const BASE_URL = "https://financify-rose.vercel.app";
 
