@@ -110,12 +110,15 @@ export const handleDisconnect = async () => {
 
     if (!user?.id) throw new Error("User not found");
 
+    console.log("User ID:", user?.id);
+
     const res = await fetch(`${BASE_URL}/api/remove_item`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ user_id: user.id }),
     });
 
+    console.log("Response from remove_item:", JSON.stringify(res));
     const { error } = await res.json();
     if (error) throw new Error(error);
 
@@ -125,7 +128,7 @@ export const handleDisconnect = async () => {
     // Optional: reset local app state if applicable
     return true;
   } catch (err) {
-    console.error("Disconnect error:", err);
+    console.error("Disconnect error:", JSON.stringify(err));
     throw err;
   }
 };

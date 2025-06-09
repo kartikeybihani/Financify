@@ -9,6 +9,7 @@ import {
   Dimensions,
   Alert,
   ActivityIndicator,
+  Platform,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -20,11 +21,13 @@ import {
 } from "@expo/vector-icons";
 import { fetchLinkToken, handlePlaidConnect } from "../utils/plaid";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { BlurView } from "expo-blur";
 
 export default function AccountConnectionScreen() {
   const params = useLocalSearchParams();
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
+  const [isConnecting, setIsConnecting] = useState(false);
   const [linkToken, setLinkToken] = useState<string | null>(null);
   const [hasConnectedBank, setHasConnectedBank] = useState(false);
 
@@ -96,6 +99,8 @@ export default function AccountConnectionScreen() {
     setIsLoading(true);
     try {
       await handlePlaidConnect(linkToken, async (accessToken) => {
+        setIsLoading(false);
+        setIsConnecting(true);
         console.log("Bank account connected successfully!");
         setHasConnectedBank(true);
 
@@ -106,7 +111,10 @@ export default function AccountConnectionScreen() {
           [
             {
               text: "Continue",
-              onPress: () => updateUserAfterBankConnect(accessToken),
+              onPress: () => {
+                setIsConnecting(false);
+                updateUserAfterBankConnect(accessToken);
+              },
             },
           ]
         );
@@ -119,6 +127,7 @@ export default function AccountConnectionScreen() {
       );
     } finally {
       setIsLoading(false);
+      setIsConnecting(false);
     }
   };
 
@@ -127,17 +136,20 @@ export default function AccountConnectionScreen() {
       icon: "bulb-outline",
       title: "Smart savings",
       description: "Personalized recommendations",
+      color: "#FFD700", // Bright gold
     },
     {
       icon: "analytics-outline",
       title: "Wealth Building",
       description: "Financial Planning & Goal tracking",
+      color: "#4CAF50", // Nice green
     },
     {
       icon: "trending-up-outline",
       title: "Net worth & debt tracking",
       description:
         "See your complete financial picture in one place with real-time updates",
+      color: "#4A90E2", // Keeping the existing blue
     },
   ];
 
@@ -153,7 +165,7 @@ export default function AccountConnectionScreen() {
             <Text style={styles.title}>Let's see the full picture</Text>
             <Text style={styles.subtitle}>
               Connect at least one account so we can give you personalized
-              insights, not generic advice.
+              insights.
             </Text>
           </View>
 
@@ -165,7 +177,7 @@ export default function AccountConnectionScreen() {
                     <Ionicons
                       name={benefit.icon as any}
                       size={28}
-                      color="#fff"
+                      color={benefit.color}
                     />
                   </View>
                   <Text style={styles.benefitTitle}>{benefit.title}</Text>
@@ -180,7 +192,7 @@ export default function AccountConnectionScreen() {
                 <Ionicons
                   name={benefits[2].icon as any}
                   size={28}
-                  color="#fff"
+                  color={benefits[2].color}
                 />
               </View>
               <Text style={styles.benefitTitle}>{benefits[2].title}</Text>
@@ -225,6 +237,24 @@ export default function AccountConnectionScreen() {
             </View>
           </View>
         </ScrollView>
+
+        {(isLoading || isConnecting) && (
+          <View style={styles.loadingOverlay}>
+            <BlurView
+              intensity={95}
+              tint="dark"
+              style={StyleSheet.absoluteFill}
+            />
+            <View style={styles.loadingContent}>
+              <ActivityIndicator size="large" color="#4A90E2" />
+              <Text style={styles.loadingText}>
+                {isLoading
+                  ? "Opening Plaid..."
+                  : "Connecting with your bank..."}
+              </Text>
+            </View>
+          </View>
+        )}
       </LinearGradient>
     </SafeAreaView>
   );
@@ -284,7 +314,7 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: "rgba(255, 255, 255, 0.05)",
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
     justifyContent: "center",
     alignItems: "center",
     marginBottom: 12,
@@ -342,5 +372,26 @@ const styles = StyleSheet.create({
   },
   connectButtonDisabled: {
     opacity: 0.7,
+  },
+  loadingOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  loadingContent: {
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 16,
+    padding: 24,
+  },
+  loadingText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "600",
+    marginTop: 8,
   },
 });

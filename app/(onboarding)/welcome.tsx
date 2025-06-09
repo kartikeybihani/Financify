@@ -38,6 +38,18 @@ export default function WelcomeScreen() {
   const emailButtonAnim = useRef(new Animated.Value(0)).current;
   const loginTextAnim = useRef(new Animated.Value(0)).current;
 
+  // Dynamic styles based on state
+  const dynamicStyles = {
+    content: {
+      justifyContent: started
+        ? ("space-between" as const)
+        : ("flex-start" as const),
+    },
+    bottomSection: {
+      marginTop: started ? 0 : 140,
+    },
+  };
+
   useEffect(() => {
     Animated.parallel([
       Animated.spring(textRevealAnim, {
@@ -243,7 +255,7 @@ export default function WelcomeScreen() {
           style={[styles.spotlightContainer]}
           locations={[0, 0.5, 1]}
         />
-        <View style={styles.content}>
+        <View style={[styles.content, dynamicStyles.content]}>
           <View style={styles.heroSection}>
             <Animated.Image
               source={require("../assets/main2.png")}
@@ -289,7 +301,7 @@ export default function WelcomeScreen() {
             </Animated.View>
           </View>
 
-          <View style={styles.bottomSection}>
+          <View style={[styles.bottomSection, dynamicStyles.bottomSection]}>
             <Text style={styles.microcopy}>
               Built to give you peace of mind — not overwhelm.
             </Text>
@@ -420,9 +432,8 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     paddingHorizontal: 24,
-    justifyContent: "space-between",
-    paddingTop: 60,
-    paddingBottom: 40,
+    paddingTop: Platform.OS === "ios" ? 90 : 80,
+    paddingBottom: Platform.OS === "ios" ? 40 : 30,
     position: "relative",
   },
   spotlightContainer: {
@@ -437,13 +448,14 @@ const styles = StyleSheet.create({
   },
   heroSection: {
     alignItems: "center",
-    flex: 0.8,
-    justifyContent: "center",
+    justifyContent: "flex-start",
+    paddingTop: 60,
+    marginBottom: Platform.OS === "ios" ? 20 : 15,
   },
   heroImage: {
-    width: width * 0.4,
-    height: width * 0.4,
-    marginBottom: 20,
+    width: width * 0.35,
+    height: width * 0.35,
+    marginBottom: 30,
   },
   textContainer: {
     alignItems: "center",
@@ -451,7 +463,7 @@ const styles = StyleSheet.create({
   },
   brandContainer: {
     alignItems: "center",
-    marginBottom: 24,
+    marginBottom: 20,
   },
   brandName: {
     fontSize: 42,
@@ -482,7 +494,7 @@ const styles = StyleSheet.create({
   titleHighlight: {
     fontSize: 24,
     textAlign: "center",
-    marginBottom: 30,
+    marginBottom: 0,
     lineHeight: 36,
     letterSpacing: 0.5,
     color: "rgba(255, 255, 255, 0.95)",
@@ -591,7 +603,6 @@ const styles = StyleSheet.create({
   },
   buttonSection: {
     width: "100%",
-    marginTop: 8,
   },
   primaryButton: {
     width: "100%",
@@ -702,11 +713,10 @@ const styles = StyleSheet.create({
     color: "rgba(255, 255, 255, 0.6)",
     fontSize: 14,
     textAlign: "center",
-    marginTop: 16,
+    marginBottom: 16,
     lineHeight: 20,
-    fontWeight: "600",
+    fontWeight: "500",
     letterSpacing: 0.2,
-    marginBottom: 10,
   },
   appleButton: {
     width: "100%",
@@ -731,7 +741,6 @@ const styles = StyleSheet.create({
   },
   bottomSection: {
     width: "100%",
-    flex: 0.2,
     justifyContent: "flex-end",
   },
 });
