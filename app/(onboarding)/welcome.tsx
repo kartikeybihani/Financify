@@ -295,7 +295,7 @@ export default function WelcomeScreen() {
               <Text style={styles.titleHighlight}>
                 <Text style={styles.titleEmphasis}>Finally, </Text>
                 <Text style={styles.titleMain}>
-                  feel calm about your money.
+                  feel great about your money.
                 </Text>
               </Text>
             </Animated.View>

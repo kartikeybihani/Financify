@@ -43,7 +43,9 @@ export default function SignupScreen() {
   const scaleAnim = useState(new Animated.Value(1))[0];
 
   const animateTransition = (forward = true) => {
-    const slideValue = forward ? width : -width;
+    // For forward transition (to step 2), slide out to left (-width) and new content comes from right (width)
+    // For backward transition (to step 1), slide out to right (width) and new content comes from left (-width)
+    const slideValue = forward ? -width : width;
 
     Animated.parallel([
       Animated.timing(fadeAnim, {
@@ -65,7 +67,8 @@ export default function SignupScreen() {
       }),
     ]).start(() => {
       setStep(forward ? 2 : 1);
-      slideAnim.setValue(slideValue * -1);
+      // Set the starting position for the new content
+      slideAnim.setValue(forward ? width : -width);
 
       Animated.parallel([
         Animated.timing(fadeAnim, {

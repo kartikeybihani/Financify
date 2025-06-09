@@ -13,6 +13,7 @@ import {
   Platform,
   FlatList,
   ViewToken,
+  StatusBar,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
@@ -71,11 +72,17 @@ const finalCards: CardItem[] = [
     color: "#FFA500",
     text: "We're playing the long game. Every step counts.",
   },
+  {
+    icon: "trending-up-outline",
+    color: "#20B2AA",
+    text: "Smart investing starts with small, consistent steps.",
+  },
 ];
 
-const CARD_WIDTH = width * 0.85;
 const CARD_HEIGHT = 90;
 const CARDS_PER_SLIDE = 3;
+const SLIDE_WIDTH = width;
+const SPACING = 5;
 
 // Reorganize cards into slides
 const carouselSlides = finalCards.reduce((acc, curr, i) => {
@@ -91,23 +98,27 @@ export default function FinalScreen() {
   const router = useRouter();
   const [typedText, setTypedText] = useState("");
   const [activeSlide, setActiveSlide] = useState(0);
+  const [isButtonEnabled, setIsButtonEnabled] = useState(false);
   const index = useRef(0);
   const message = "Hey, I'm Finny. Let's build your wealth story — together.";
   const cursorVisible = useRef(true);
   const viewabilityConfig = useRef({
-    itemVisiblePercentThreshold: 50,
+    viewAreaCoveragePercentThreshold: 50,
   }).current;
 
   const textAnim = useRef(new Animated.Value(0)).current;
   const boxHeight = useRef(new Animated.Value(80)).current;
   const cardOpacity = useRef(new Animated.Value(0)).current;
   const buttonScale = useRef(new Animated.Value(1)).current;
-  const typingSpeed = 50; // ms per character
+  const typingSpeed = 30; // Reduced from 50 to 30ms per character
 
   const onViewableItemsChanged = useRef(
     ({ viewableItems }: { viewableItems: ViewToken[] }) => {
       if (viewableItems.length > 0) {
-        setActiveSlide(viewableItems[0].index || 0);
+        const newActiveSlide = viewableItems[0].index || 0;
+        setActiveSlide(newActiveSlide);
+        // Enable button only when user reaches the last slide
+        setIsButtonEnabled(newActiveSlide === carouselSlides.length - 1);
       }
     }
   ).current;
@@ -164,6 +175,8 @@ export default function FinalScreen() {
   }, []);
 
   const handleComplete = async () => {
+    if (!isButtonEnabled) return;
+
     Animated.sequence([
       Animated.timing(buttonScale, {
         toValue: 0.95,
@@ -190,7 +203,7 @@ export default function FinalScreen() {
     item: typeof finalCards;
     index: number;
   }) => (
-    <View style={styles.slide}>
+    <View style={[styles.slide, { width: SLIDE_WIDTH - SPACING * 2 }]}>
       {slideCards.map((card, cardIndex) => (
         <Animated.View
           key={cardIndex}
@@ -225,121 +238,147 @@ export default function FinalScreen() {
   );
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={styles.container}>
+      <StatusBar
+        barStyle="light-content"
+        backgroundColor="rgba(10, 14, 20, 0.98)"
+      />
       <LinearGradient
-        colors={["#0D1117", "#121212", "#1A1A2E"]}
-        style={styles.gradient}
+        colors={[
+          "rgba(10, 14, 20, 0.98)",
+          "rgba(22, 33, 62, 0.92)",
+          "rgba(22, 33, 62, 0.92)",
+          "rgba(10, 14, 20, 0.98)",
+        ]}
+        locations={[0, 0.3, 0.4, 1]}
+        style={styles.gradientContainer}
       >
-        <View style={styles.header}>
-          <Text style={styles.doneText}>That's it! You're In</Text>
-          <Text style={styles.subText}>
-            Your journey to financial freedom starts now
-          </Text>
-        </View>
-
-        <Animated.View style={[styles.finnyBox, { height: boxHeight }]}>
-          <Image
-            source={require("../assets/mascot1.jpg")}
-            resizeMode="contain"
-            style={[styles.mascot, { transform: [{ scaleX: -1 }] }]}
-          />
-          <Text style={styles.finnyText}>{typedText}</Text>
-        </Animated.View>
-
-        <Animated.View
-          style={[
-            styles.cardsContainer,
-            {
-              opacity: cardOpacity,
-              transform: [
-                {
-                  translateY: cardOpacity.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [50, 0],
-                  }),
-                },
-              ],
-            },
-          ]}
-        >
-          <Text style={styles.sectionTitle}>
-            Here's what we'll achieve together:
-          </Text>
-
-          <FlatList
-            data={carouselSlides}
-            keyExtractor={(_, index) => index.toString()}
-            horizontal
-            pagingEnabled
-            showsHorizontalScrollIndicator={false}
-            onViewableItemsChanged={onViewableItemsChanged}
-            viewabilityConfig={viewabilityConfig}
-            contentContainerStyle={styles.carouselContent}
-            renderItem={renderSlide}
-          />
-
-          <View style={styles.paginationDots}>
-            {carouselSlides.map((_, index) => (
-              <View
-                key={index}
-                style={[
-                  styles.dot,
-                  {
-                    backgroundColor:
-                      index === activeSlide
-                        ? "#4A90E2"
-                        : "rgba(255,255,255,0.3)",
-                    width: index === activeSlide ? 16 : 6,
-                  },
-                ]}
-              />
-            ))}
+        <SafeAreaView style={styles.safeAreaTop} />
+        <SafeAreaView style={styles.mainContent}>
+          <View style={styles.header}>
+            <Text style={styles.doneText}>That's it! You're In</Text>
+            <Text style={styles.subText}>
+              Your journey to financial freedom starts now
+            </Text>
           </View>
-        </Animated.View>
 
-        <View style={styles.footer}>
-          <Animated.View
-            style={[
-              styles.buttonContainer,
-              { transform: [{ scale: buttonScale }] },
-            ]}
-          >
-            <TouchableOpacity
-              style={styles.button}
-              onPress={handleComplete}
-              activeOpacity={0.9}
-            >
-              <LinearGradient
-                colors={["#4A90E2", "#5DA0F2"]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={styles.buttonGradient}
-              >
-                <Text style={styles.buttonText}>Let's Make It Happen!</Text>
-                <Ionicons
-                  name="rocket-outline"
-                  size={18}
-                  color="#fff"
-                  style={styles.buttonIcon}
-                />
-              </LinearGradient>
-            </TouchableOpacity>
+          <Animated.View style={[styles.finnyBox, { height: boxHeight }]}>
+            <Image
+              source={require("../assets/mascot1.jpg")}
+              resizeMode="contain"
+              style={[styles.mascot, { transform: [{ scaleX: -1 }] }]}
+            />
+            <Text style={styles.finnyText}>{typedText}</Text>
           </Animated.View>
-        </View>
+
+          <Animated.View
+            style={[styles.cardsContainer, { opacity: cardOpacity }]}
+          >
+            <Text style={styles.sectionTitle}>
+              Here's what we'll achieve together:
+            </Text>
+
+            <FlatList
+              data={carouselSlides}
+              keyExtractor={(_, index) => index.toString()}
+              horizontal
+              pagingEnabled
+              showsHorizontalScrollIndicator={false}
+              snapToInterval={width}
+              decelerationRate="fast"
+              onViewableItemsChanged={onViewableItemsChanged}
+              viewabilityConfig={viewabilityConfig}
+              contentContainerStyle={styles.carouselContent}
+              renderItem={renderSlide}
+            />
+
+            <View style={styles.paginationDots}>
+              {carouselSlides.map((_, index) => (
+                <View
+                  key={index}
+                  style={[
+                    styles.dot,
+                    {
+                      backgroundColor:
+                        index === activeSlide
+                          ? "#4A90E2"
+                          : "rgba(255,255,255,0.3)",
+                      width: index === activeSlide ? 16 : 6,
+                    },
+                  ]}
+                />
+              ))}
+            </View>
+          </Animated.View>
+
+          <View style={styles.footer}>
+            <Animated.View
+              style={[
+                styles.buttonContainer,
+                { transform: [{ scale: buttonScale }] },
+              ]}
+            >
+              <TouchableOpacity
+                style={[
+                  styles.button,
+                  !isButtonEnabled && styles.buttonDisabled,
+                ]}
+                onPress={handleComplete}
+                activeOpacity={0.9}
+                disabled={!isButtonEnabled}
+              >
+                <LinearGradient
+                  colors={
+                    isButtonEnabled ? ["#4A90E2", "#5DA0F2"] : ["#666", "#888"]
+                  }
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.buttonGradient}
+                >
+                  <Text
+                    style={[
+                      styles.buttonText,
+                      !isButtonEnabled && styles.buttonTextDisabled,
+                    ]}
+                  >
+                    Let's Make It Happen!
+                  </Text>
+                  <Ionicons
+                    name="rocket-outline"
+                    size={18}
+                    color={isButtonEnabled ? "#fff" : "rgba(255,255,255,0.5)"}
+                    style={styles.buttonIcon}
+                  />
+                </LinearGradient>
+              </TouchableOpacity>
+            </Animated.View>
+          </View>
+        </SafeAreaView>
       </LinearGradient>
-    </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#0D1117" },
-  gradient: {
+  container: {
     flex: 1,
-    paddingTop: Platform.OS === "ios" ? 60 : 40,
+    backgroundColor: "rgba(10, 14, 20, 0.98)",
+  },
+  gradientContainer: {
+    flex: 1,
+  },
+  safeAreaTop: {
+    flex: 0,
+    backgroundColor: "transparent",
+  },
+  mainContent: {
+    flex: 1,
+    backgroundColor: "transparent",
   },
   header: {
     alignItems: "center",
     marginBottom: 16,
+    paddingTop: Platform.OS === "ios" ? 60 : 40,
   },
   doneText: {
     fontSize: 24,
@@ -353,10 +392,10 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   finnyBox: {
-    backgroundColor: "rgba(74,144,226,0.08)",
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: "rgba(74,144,226,0.15)",
+    borderColor: "rgba(255,255,255,0.12)",
     padding: 16,
     marginHorizontal: 20,
     flexDirection: "row",
@@ -364,8 +403,8 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   mascot: {
-    width: 40,
-    height: 40,
+    width: 80,
+    height: 80,
     marginRight: 12,
     borderRadius: 20,
   },
@@ -378,37 +417,36 @@ const styles = StyleSheet.create({
   },
   cardsContainer: {
     flex: 1,
+    marginTop: 20, // Added margin top
   },
   sectionTitle: {
     fontSize: 16,
     fontWeight: "600",
     color: "#fff",
-    marginBottom: 12,
+    marginBottom: 16,
     marginLeft: 24,
   },
+  carousel: {
+    marginLeft: (width - SLIDE_WIDTH) / 2 - SPACING,
+  },
   carouselContent: {
-    paddingBottom: 10,
+    paddingHorizontal: 0,
   },
   slide: {
     width: width,
     paddingHorizontal: 20,
   },
   card: {
-    width: CARD_WIDTH,
+    width: "100%",
     height: CARD_HEIGHT,
-    backgroundColor: "rgba(31, 41, 55, 0.8)",
+    backgroundColor: "rgba(255, 255, 255, 0.06)",
     borderRadius: 14,
     marginBottom: 10,
     padding: 14,
     flexDirection: "row",
     alignItems: "center",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.1)",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 5,
+    borderColor: "rgba(255, 255, 255, 0.12)",
   },
   iconContainer: {
     width: 40,
@@ -431,7 +469,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "center",
     alignItems: "center",
-    marginTop: 16,
+    marginTop: 8, // Reduced from 16 to 8
     marginBottom: 10,
     height: 16,
   },
@@ -443,24 +481,23 @@ const styles = StyleSheet.create({
   footer: {
     paddingHorizontal: 20,
     paddingBottom: Platform.OS === "ios" ? 20 : 16,
+    backgroundColor: "transparent",
   },
   buttonContainer: {
     width: "100%",
+    backgroundColor: "transparent",
   },
   button: {
     borderRadius: 12,
     overflow: "hidden",
-    shadowColor: "#4A90E2",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
-    elevation: 5,
   },
   buttonGradient: {
     flexDirection: "row",
     justifyContent: "center",
     alignItems: "center",
     paddingVertical: 14,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.12)",
   },
   buttonText: {
     color: "#fff",
@@ -469,5 +506,11 @@ const styles = StyleSheet.create({
   },
   buttonIcon: {
     marginLeft: 8,
+  },
+  buttonDisabled: {
+    opacity: 0.7,
+  },
+  buttonTextDisabled: {
+    color: "rgba(255,255,255,0.5)",
   },
 });
