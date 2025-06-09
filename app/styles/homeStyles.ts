@@ -87,7 +87,7 @@ export const styles = StyleSheet.create({
     marginBottom: 8,
   },
   netWorthLabel: {
-    fontSize: FONTS.xs,
+    fontSize: 12,
     color: "#888",
     textTransform: "uppercase",
     letterSpacing: 1.2,
@@ -600,6 +600,67 @@ export const styles = StyleSheet.create({
     color: "#fff",
     fontSize: FONTS.sm,
     fontWeight: "600",
+  },
+  carouselSlide: {
+    paddingVertical: 0,
+    paddingHorizontal: 10,
+    alignItems: "center",
+  },
+  spendingContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    width: "100%",
+    marginTop: 8,
+  },
+  spendingColumn: {
+    flex: 1,
+    alignItems: "center",
+  },
+  spendingLabel: {
+    fontSize: 11,
+    color: "#888",
+    textTransform: "uppercase",
+    letterSpacing: 1.2,
+    marginBottom: 8,
+    textAlign: "center",
+  },
+  spendingAmount: {
+    fontSize: 24,
+    fontWeight: "700",
+    color: "#fff",
+    marginBottom: 8,
+  },
+  spendingDivider: {
+    width: 1,
+    height: 80,
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    marginHorizontal: 20,
+  },
+  spendingTrend: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(78, 205, 196, 0.1)",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 20,
+  },
+  carouselDots: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 13,
+    paddingTop: 10
+  },
+  carouselDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+  },
+  carouselDotActive: {
+    backgroundColor: "#4A90E2",
+    width: 20,
   },
 });
 

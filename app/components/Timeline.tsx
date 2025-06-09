@@ -286,7 +286,7 @@ const Timeline: React.FC<TimelineProps> = ({
               Whether you want to save for a dream home, plan a vacation, or
               build an emergency fund - I'm here to help you make it happen.
             </Text>
-            <View style={styles.emptyStateActions}>
+            <View style={{ flexDirection: "row", gap: 25, width: "100%" }}>
               <TouchableOpacity
                 style={styles.chatWithFinnyButton}
                 onPress={() => router.push("/chat")}
