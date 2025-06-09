@@ -1,6 +1,11 @@
 // /api/remove_item.js
 import { client } from "../app/plaidClient.js";
-import { supabase } from "../app/lib/supabase/supabase";
+import { createClient } from "@supabase/supabase-js";
+
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY // Using service role key for backend operations
+);
 
 export default async function handler(req, res) {
   if (req.method !== "POST")
