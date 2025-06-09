@@ -1,10 +1,8 @@
-// Comment 3
 import React, { useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
   TouchableOpacity,
-  LayoutAnimation,
   Platform,
   UIManager,
   ScrollView,
@@ -18,13 +16,7 @@ import {
 import { Feather, Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { styles } from "../styles/homeStyles";
-import {
-  fetchLinkToken,
-  fetchInitialData,
-  triggerWebhook,
-  getUpdateLinkToken,
-  openPlaidLink,
-} from "../utils/plaid";
+import { getUpdateLinkToken, openPlaidLink } from "../utils/plaid";
 import {
   Account,
   Identity,
@@ -34,7 +26,6 @@ import {
 } from "../types/plaid";
 import { useRouter } from "expo-router";
 import { supabase } from "../lib/supabase/supabase";
-import { LinearGradient } from "expo-linear-gradient";
 import FinancialBottomSheet from "../components/shared/FinancialBottomSheet";
 import FinancialCard from "../components/shared/FinancialCard";
 import AccountItem from "../components/shared/AccountItem";

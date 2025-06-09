@@ -14,6 +14,7 @@ import {
   Dimensions,
   Animated,
   Easing,
+  Linking,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -233,6 +234,28 @@ export default function SignupScreen() {
     }
   };
 
+  const handlePrivacyPolicy = async () => {
+    const url =
+      "https://www.notion.so/Privacy-Policy-for-Financify-20d42b8a2179800682afdf5dc000fcdd?pvs=4";
+    const supported = await Linking.canOpenURL(url);
+    if (supported) {
+      await Linking.openURL(url);
+    } else {
+      Alert.alert("Error", "Cannot open privacy policy link");
+    }
+  };
+
+  const handleTermsConditions = async () => {
+    const url =
+      "https://www.notion.so/Terms-Conditions-for-Financify-20d42b8a217980cea19ceda310df47c1?pvs=4";
+    const supported = await Linking.canOpenURL(url);
+    if (supported) {
+      await Linking.openURL(url);
+    } else {
+      Alert.alert("Error", "Cannot open terms & conditions link");
+    }
+  };
+
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === "ios" ? "padding" : "height"}
@@ -428,11 +451,21 @@ export default function SignupScreen() {
               </Text>
             </TouchableOpacity>
 
-            <Text style={styles.termsText}>
-              By creating an account, you agree to our{" "}
-              <Text style={styles.termsLink}>Terms of Service</Text> and{" "}
-              <Text style={styles.termsLink}>Privacy Policy</Text>
-            </Text>
+            <TouchableOpacity onPress={handlePrivacyPolicy}>
+              <Text style={styles.privacyText}>
+                By signing up, you agree to our{" "}
+                <Text
+                  style={styles.privacyLink}
+                  onPress={handleTermsConditions}
+                >
+                  Terms & Conditions
+                </Text>{" "}
+                and{" "}
+                <Text style={styles.privacyLink} onPress={handlePrivacyPolicy}>
+                  Privacy Policy
+                </Text>
+              </Text>
+            </TouchableOpacity>
           </View>
         </ScrollView>
       </LinearGradient>
@@ -622,5 +655,15 @@ const styles = StyleSheet.create({
     color: "#4A90E2",
     fontSize: 14,
     fontWeight: "600",
+  },
+  privacyText: {
+    textAlign: "center",
+    marginTop: 10,
+    color: "#666",
+    fontSize: 12,
+  },
+  privacyLink: {
+    color: "#007AFF",
+    textDecorationLine: "underline",
   },
 });
