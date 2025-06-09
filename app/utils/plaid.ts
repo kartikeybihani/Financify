@@ -12,7 +12,8 @@ export const fetchLinkToken = async () => {
       headers: { "Content-Type": "application/json" },
     });
     const data = await res.json();
-    console.log("Link token:", data.link_token);
+    console.log("Link token response:", data);
+    console.log("Link token:", data);
     return data.link_token;
   } catch (err) {
     console.error("Error fetching link token:", err);
