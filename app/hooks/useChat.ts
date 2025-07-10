@@ -3,6 +3,30 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ChatMessage, Goal } from '../types/finny';
 import finnyConstants from '../constants/finny';
 
+// Utility to split messages for chat display
+function splitIntoMessages(text: string): string[] {
+  // If there are numbered points, group them together
+  const numberedPointRegex = /\n?\d+\.\s/;
+  if (numberedPointRegex.test(text)) {
+    // Find where the first numbered point starts
+    const match = text.match(/\n?\d+\.\s/);
+    if (match) {
+      const idx = text.indexOf(match[0]);
+      const intro = text.slice(0, idx).trim();
+      const points = text.slice(idx).trim();
+      const result: string[] = [];
+      if (intro) result.push(intro);
+      if (points) result.push(points);
+      return result;
+    }
+  }
+  // Otherwise, split by paragraphs (double newlines)
+  return text
+    .split(/\n{2,}/g)
+    .map((p) => p.trim())
+    .filter(Boolean);
+}
+
 export const useChat = () => {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>(finnyConstants.INITIAL_CHAT_MESSAGES);
   const [isTyping, setIsTyping] = useState(false);
@@ -49,7 +73,7 @@ export const useChat = () => {
     try {
       await AsyncStorage.removeItem("chatMessages");
       setChatMessages(finnyConstants.INITIAL_CHAT_MESSAGES);
-      console.log("Chat cleared and storage reset");
+      // Chat cleared and storage reset
     } catch (error) {
       console.error("Error clearing chat:", error);
     }
@@ -62,6 +86,14 @@ export const useChat = () => {
       text,
       timestamp: Date.now(),
     };
+    
+    // Console logging for chat messages
+    if (sender === "user") {
+      console.log(`User: ${text}`);
+    } else if (sender === "finny") {
+      console.log(`Finny: [${text}]`);
+    }
+    
     setChatMessages((prev) => [...prev, msg]);
   };
 
@@ -160,7 +192,7 @@ export const useChat = () => {
         }
       };
 
-      console.log("Sending request to Finny API with complete context...");
+      // Sending request to Finny API with complete context...
       const res = await fetch(`${BASE_URL}/api/finny/ask`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -170,38 +202,18 @@ export const useChat = () => {
         }),
       });
 
-      console.log("Response:", res.status);
+      // Response status: ${res.status}
       const data = await res.json();
-      console.log("Finny response:", data.nudges);
+      // Finny response received
       
       const messages = data.nudges?.join("\n\n") || "Sorry, I wasn't able to generate advice just now.";
+      console.log("messages", messages);
       const splitMessages = splitIntoMessages(messages);
       await pushChatWithDelay("finny", splitMessages);
     } catch (error) {
       console.error("AI error:", error);
       pushChat("finny", "Something went wrong. Try again later.");
     }
-  };
-
-  const splitIntoMessages = (text: string): string[] => {
-    const sentences = text.split(/(?<=[.!?])\s+/);
-    const messages: string[] = [];
-    let currentMessage = "";
-
-    for (const sentence of sentences) {
-      if (currentMessage && currentMessage.length + sentence.length > 250) {
-        messages.push(currentMessage.trim());
-        currentMessage = sentence;
-      } else {
-        currentMessage = currentMessage ? `${currentMessage} ${sentence}` : sentence;
-      }
-    }
-
-    if (currentMessage) {
-      messages.push(currentMessage.trim());
-    }
-
-    return messages;
   };
 
   return {
@@ -216,4 +228,5 @@ export const useChat = () => {
 };
 
 // Export both as named and default export for compatibility
+export { splitIntoMessages };
 export default useChat; 

@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -7,8 +7,11 @@ import {
   LayoutAnimation,
   Platform,
   UIManager,
+  Animated,
+  Easing,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
+import { splitIntoMessages } from "../hooks/useChat";
 
 // Enable LayoutAnimation for Android
 if (Platform.OS === "android") {
@@ -30,7 +33,33 @@ export const ChatMessageComponent = ({
   message,
   showSender = true,
 }: ChatMessageProps) => {
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const scaleAnim = useRef(new Animated.Value(0.8)).current;
+  const slideAnim = useRef(new Animated.Value(20)).current;
+
   useEffect(() => {
+    // Smooth entrance animation
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 300,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+      Animated.timing(scaleAnim, {
+        toValue: 1,
+        duration: 300,
+        easing: Easing.elastic(0.8),
+        useNativeDriver: true,
+      }),
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 300,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+    ]).start();
+
     LayoutAnimation.configureNext(
       LayoutAnimation.create(
         300,
@@ -44,107 +73,133 @@ export const ChatMessageComponent = ({
 
   if (isUser) {
     return (
-      <View style={[styles.messageContainer, styles.userMessageContainer]}>
-        <Text style={[styles.messageText, styles.userMessageText]}>
-          {message.text}
-        </Text>
-      </View>
+      <Animated.View
+        style={[
+          styles.messageContainer,
+          styles.userMessageContainer,
+          {
+            opacity: fadeAnim,
+            transform: [{ scale: scaleAnim }, { translateY: slideAnim }],
+          },
+        ]}
+      >
+        <LinearGradient
+          colors={["rgba(74, 144, 226, 0.9)", "rgba(74, 144, 226, 0.7)"]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.userMessageGradient}
+        >
+          <Text style={[styles.messageText, styles.userMessageText]}>
+            {message.text}
+          </Text>
+        </LinearGradient>
+      </Animated.View>
     );
   }
 
-  // Split message into points based on numbered or bullet points and paragraphs
-  const points = message.text
-    .split(/\n(?=\d+\.|\•|\-)/g) // split on newlines before bullet-like lines
-    .flatMap((p) => p.split(/\n{2,}/g)) // also break on large gaps
-    .map((p) => p.trim())
-    .filter(Boolean);
-
-  // Debug logging
-  console.log("\n----- Enhanced Message Split Debug -----");
-  console.log("📝 Original Message:");
-  console.log(message.text);
-  console.log("\n📑 Split Messages:");
-  points.forEach((point, index) => {
-    console.log(`\nPoint ${index + 1}:`);
-    console.log(point.trim());
-  });
-  console.log("----------------------------\n");
+  // Use shared splitIntoMessages logic
+  const points = splitIntoMessages(message.text);
 
   return (
-    <View>
+    <Animated.View
+      style={{
+        opacity: fadeAnim,
+        transform: [{ scale: scaleAnim }, { translateY: slideAnim }],
+      }}
+    >
       {showSender && (
-        <View style={styles.senderInfo}>
-          <Image
-            source={require("../assets/mascot1.jpg")}
-            style={styles.senderAvatar}
-          />
+        <Animated.View
+          style={[
+            styles.senderInfo,
+            {
+              opacity: fadeAnim,
+              transform: [{ translateY: slideAnim }],
+            },
+          ]}
+        >
+          <View style={styles.avatarContainer}>
+            <Image
+              source={require("../assets/mascot1.jpg")}
+              style={styles.senderAvatar}
+            />
+            <View style={styles.avatarGlow} />
+          </View>
           <Text style={styles.senderName}>Finny</Text>
-        </View>
+        </Animated.View>
       )}
       {points.map((point, pointIdx) => (
-        <View
+        <Animated.View
           key={pointIdx}
           style={[
             { flexDirection: "row", alignItems: "flex-start" },
-            { opacity: 1 }, // This helps LayoutAnimation track the view
+            { opacity: 1 },
+            pointIdx > 0 && {
+              opacity: fadeAnim,
+              transform: [{ scale: scaleAnim }, { translateY: slideAnim }],
+            },
           ]}
         >
           <LinearGradient
-            colors={[
-              "#1A3D66",
-              "#1A3D66",
-              "#1A3D66",
-              "#1A3D66",
-              "#2E5C8F",
-              "#4A90E2",
-            ]}
-            start={{ x: 0.1, y: 1.4 }}
-            end={{ x: 0.9, y: 0.6 }}
+            colors={["#4A90E2", "#357ABD", "#2E6BB8"]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
             style={[
               styles.messageContainer,
               styles.finnyMessageContainer,
               pointIdx > 0 ? { marginTop: 8 } : {},
             ]}
           >
-            <Text style={[styles.messageText, styles.finnyMessageText]}>
-              {point.split("\n").map((line, lineIdx) => (
-                <React.Fragment key={lineIdx}>
-                  {lineIdx > 0 && <Text>{"\n"}</Text>}
-                  <Text>
-                    {line.split(/(\*\*[^*]+\*\*)/).map((chunk, idx) => {
-                      if (chunk.startsWith("**") && chunk.endsWith("**")) {
-                        return (
-                          <Text key={idx} style={styles.boldText}>
-                            {chunk.slice(2, -2)}
-                          </Text>
-                        );
-                      }
-                      return chunk;
-                    })}
-                  </Text>
-                </React.Fragment>
-              ))}
-            </Text>
+            <View style={styles.messageContent}>
+              <Text style={[styles.messageText, styles.finnyMessageText]}>
+                {point.split("\n").map((line, lineIdx) => (
+                  <React.Fragment key={lineIdx}>
+                    {lineIdx > 0 && <Text>{"\n"}</Text>}
+                    <Text>
+                      {line.split(/(\*\*[^*]+\*\*)/).map((chunk, idx) => {
+                        if (chunk.startsWith("**") && chunk.endsWith("**")) {
+                          return (
+                            <Text key={idx} style={styles.boldText}>
+                              {chunk.slice(2, -2)}
+                            </Text>
+                          );
+                        }
+                        return chunk;
+                      })}
+                    </Text>
+                  </React.Fragment>
+                ))}
+              </Text>
+            </View>
           </LinearGradient>
-        </View>
+        </Animated.View>
       ))}
-    </View>
+    </Animated.View>
   );
 };
 
 const styles = StyleSheet.create({
   messageContainer: {
     maxWidth: "80%",
-    padding: 10,
-    borderRadius: 14,
-    marginVertical: 3,
+    padding: 12,
+    borderRadius: 18,
+    marginVertical: 4,
   },
   userMessageContainer: {
     alignSelf: "flex-end",
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
     marginRight: 4,
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.1)",
+    marginTop: 10,
+    shadowColor: "#4A90E2",
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 6,
+  },
+  userMessageGradient: {
+    borderRadius: 16,
+    padding: 12,
   },
   finnyMessageContainer: {
     alignSelf: "flex-start",
@@ -152,44 +207,67 @@ const styles = StyleSheet.create({
     shadowColor: "#000",
     shadowOffset: {
       width: 0,
-      height: 1,
+      height: 3,
     },
-    shadowOpacity: 0.2,
-    shadowRadius: 2,
-    elevation: 3,
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 8,
     flex: 1,
   },
+  messageContent: {
+    borderRadius: 16,
+    overflow: "hidden",
+  },
   messageText: {
-    fontSize: 14,
-    lineHeight: 20,
+    fontSize: 15,
+    lineHeight: 22,
+    letterSpacing: 0.2,
   },
   userMessageText: {
     color: "#fff",
+    fontWeight: "500",
   },
   finnyMessageText: {
     color: "#fff",
+    fontWeight: "400",
   },
   boldText: {
-    fontWeight: "600",
+    fontWeight: "700",
+    color: "#fff",
   },
   senderInfo: {
     flexDirection: "row",
     alignItems: "center",
     marginLeft: 4,
-    marginBottom: 1,
+    marginBottom: 6,
+  },
+  avatarContainer: {
+    position: "relative",
+    marginRight: 8,
   },
   senderAvatar: {
-    width: 24,
-    height: 24,
-    borderRadius: 10,
-    marginRight: 4,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     transform: [{ scaleX: -1 }],
-    marginBottom: 4,
+    borderWidth: 2,
+    borderColor: "rgba(74, 144, 226, 0.3)",
+  },
+  avatarGlow: {
+    position: "absolute",
+    top: -2,
+    left: -2,
+    right: -2,
+    bottom: -2,
+    borderRadius: 16,
+    backgroundColor: "rgba(74, 144, 226, 0.2)",
+    zIndex: -1,
   },
   senderName: {
-    fontSize: 12,
-    color: "#888",
-    fontWeight: "500",
+    fontSize: 13,
+    color: "rgba(255, 255, 255, 0.7)",
+    fontWeight: "600",
+    letterSpacing: 0.3,
   },
 });
 

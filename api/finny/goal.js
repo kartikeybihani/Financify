@@ -64,7 +64,7 @@ Return only valid JSON. No explanation.`;
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: "gpt-4o-mini",
+          model: "deepseek/deepseek-chat-v3-0324:free",
           temperature: 0.3,
           messages: [
             { role: "system", content: systemPrompt },

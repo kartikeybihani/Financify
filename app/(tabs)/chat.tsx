@@ -164,7 +164,7 @@ export default function ChatScreen() {
   const handleSend = async (nudgeText?: string) => {
     const messageText = nudgeText || userInput;
     if (!messageText.trim()) return;
-    console.log("messageText", messageText);
+    // messageText logged
     pushChat("user", messageText);
     setUserInput("");
     setIsTyping(true);
@@ -338,7 +338,9 @@ export default function ChatScreen() {
 
   const scrollToBottom = () => {
     if (scrollViewRef.current) {
-      scrollViewRef.current.scrollToEnd({ animated: true });
+      scrollViewRef.current.scrollToEnd({
+        animated: true,
+      });
     }
   };
 
@@ -397,6 +399,7 @@ export default function ChatScreen() {
             onContentSizeChange={() => {
               if (shouldScrollToBottom.current) scrollToBottom();
             }}
+            contentContainerStyle={{ paddingBottom: 50 }}
           >
             {showNudges && <NudgeGrid onNudgePress={handleSend} />}
             {chatMessages.map((msg, index) => (
@@ -421,7 +424,13 @@ export default function ChatScreen() {
                     {
                       scale: scrollButtonAnimation.interpolate({
                         inputRange: [0, 1],
-                        outputRange: [0.5, 1],
+                        outputRange: [0.7, 1],
+                      }),
+                    },
+                    {
+                      translateY: scrollButtonAnimation.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [10, 0],
                       }),
                     },
                   ],
@@ -434,8 +443,17 @@ export default function ChatScreen() {
                   shouldScrollToBottom.current = true;
                   scrollToBottom();
                 }}
+                style={styles.scrollButtonTouchable}
+                activeOpacity={0.8}
               >
-                <AntDesign name="arrowdown" size={24} color="#fff" />
+                <LinearGradient
+                  colors={["#4A90E2", "#357ABD"]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.scrollButtonGradient}
+                >
+                  <AntDesign name="arrowdown" size={20} color="#fff" />
+                </LinearGradient>
               </TouchableOpacity>
             </Animated.View>
           )}

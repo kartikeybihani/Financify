@@ -64,7 +64,7 @@ Strictly return only valid JSON. No commentary.`;
           Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
         },
         body: JSON.stringify({
-          model: "gpt-4o-mini",
+          model: "deepseek/deepseek-chat-v3-0324:free",
           temperature: 0.25,
           messages: [
             { role: "system", content: systemPrompt },

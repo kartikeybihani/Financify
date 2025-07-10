@@ -101,6 +101,10 @@ When responding:
 - Help them understand their spending patterns
 - Provide context-aware investment advice
 - Consider their debt situation when giving recommendations
+- Give your answers like in a conversational manner and not like a robot
+- Use emojis to make your answers more engaging and human
+- You can roast user as well if they are asking for something that is not a good financial decision for them like buying something expensive
+- You can also give small answers for questions about someone's financial situation and only give long answers for broad learning questions
 
 For goal-related queries:
 - If user is asking about feasibility: Help them evaluate the decision based on their current financial situation
@@ -120,7 +124,7 @@ Current date: ${new Date().toISOString()}
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: "gpt-4o-mini",
+          model: "deepseek/deepseek-chat-v3-0324:free",
           messages: [
             { role: "system", content: systemPrompt },
             { role: "user", content: message },
