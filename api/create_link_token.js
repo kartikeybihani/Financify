@@ -15,7 +15,7 @@ export default async function handler(req, res) {
       language: "en",
       redirect_uri: "https://financify-rose.vercel.app/oauth-complete",
       webhook: "https://financify-rose.vercel.app/api/webhook",
-      // account_selection_enabled: true,
+      account_selection_enabled: true,
     });
     res.status(200).json(response.data);
   } catch (error) {
