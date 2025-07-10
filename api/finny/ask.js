@@ -116,7 +116,7 @@ Current date: ${new Date().toISOString()}
 
   try {
     const openaiResponse = await fetch(
-      "https://api.openai.com/v1/chat/completions",
+      "https://openrouter.ai/api/v1/chat/completions",
       {
         method: "POST",
         headers: {
