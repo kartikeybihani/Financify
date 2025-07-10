@@ -58,7 +58,13 @@ Return only a JSON like:
 }
 
 Current date: ${new Date().toISOString()}
-Strictly return only valid JSON. No commentary.`;
+
+CRITICAL: Return ONLY a valid JSON object. Do not include any markdown formatting, code blocks, or explanatory text. The response must be parseable JSON.
+
+Example response format:
+{"intent": "goal", "confidence": 0.8}
+
+Do not wrap in \`\`\`json or any other formatting.`;
 
   try {
     const openaiRes = await fetch(
@@ -85,7 +91,23 @@ Strictly return only valid JSON. No commentary.`;
     const resultText = data.choices?.[0]?.message?.content || "{}";
     console.log("📄 [CLASSIFY] Raw result text:", resultText);
 
-    const parsed = JSON.parse(resultText);
+    // Extract JSON from markdown code blocks if present
+    let jsonText = resultText;
+    if (resultText.includes("```json")) {
+      const jsonMatch = resultText.match(/```json\s*([\s\S]*?)\s*```/);
+      if (jsonMatch) {
+        jsonText = jsonMatch[1].trim();
+        console.log("🔧 [CLASSIFY] Extracted JSON from markdown:", jsonText);
+      }
+    } else if (resultText.includes("```")) {
+      const codeMatch = resultText.match(/```\s*([\s\S]*?)\s*```/);
+      if (codeMatch) {
+        jsonText = codeMatch[1].trim();
+        console.log("🔧 [CLASSIFY] Extracted JSON from code block:", jsonText);
+      }
+    }
+
+    const parsed = JSON.parse(jsonText);
     console.log("✅ [CLASSIFY] Parsed classification:", parsed);
     console.log(
       "🎯 [CLASSIFY] Intent:",

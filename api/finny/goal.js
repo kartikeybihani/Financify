@@ -58,7 +58,27 @@ Use relative time:
 - "next year" = January of next year
 
 Current date: ${new Date().toISOString()}
-Return only valid JSON. No explanation.`;
+
+CRITICAL: Return ONLY a valid JSON object. Do not include any markdown formatting, code blocks, or explanatory text. The response must be parseable JSON.
+
+Example response format:
+{
+  "label": "Vacation",
+  "target": 5000,
+  "timeline": {"month": "December", "year": 2024},
+  "confidence": 0.9,
+  "context": {
+    "isDecisionMaking": false,
+    "isFeasibilityQuestion": false,
+    "motivation": "Travel",
+    "concerns": null,
+    "hasTimelineHint": true,
+    "hasTargetHint": true,
+    "isFullyDefined": true
+  }
+}
+
+Do not wrap in \`\`\`json or any other formatting.`;
 
   try {
     const openaiRes = await fetch(
@@ -84,7 +104,24 @@ Return only valid JSON. No explanation.`;
     console.log("🤖 [GOAL] OpenAI response:", data);
     const text = data.choices?.[0]?.message?.content || "{}";
     console.log("📄 [GOAL] Raw result text:", text);
-    const parsed = JSON.parse(text);
+
+    // Extract JSON from markdown code blocks if present
+    let jsonText = text;
+    if (text.includes("```json")) {
+      const jsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/);
+      if (jsonMatch) {
+        jsonText = jsonMatch[1].trim();
+        console.log("🔧 [GOAL] Extracted JSON from markdown:", jsonText);
+      }
+    } else if (text.includes("```")) {
+      const codeMatch = text.match(/```\s*([\s\S]*?)\s*```/);
+      if (codeMatch) {
+        jsonText = codeMatch[1].trim();
+        console.log("🔧 [GOAL] Extracted JSON from code block:", jsonText);
+      }
+    }
+
+    const parsed = JSON.parse(jsonText);
     console.log("✅ [GOAL] Parsed goal extraction:", parsed);
 
     if (parsed.timeline) {
