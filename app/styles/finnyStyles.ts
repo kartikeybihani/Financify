@@ -369,5 +369,6 @@ export default StyleSheet.create({
     borderRadius: 18,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: '#2A2A2A',
   },
 }); 

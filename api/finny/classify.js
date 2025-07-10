@@ -56,20 +56,20 @@ Strictly return only valid JSON. No commentary.`;
 
   try {
     const openaiRes = await fetch(
-      "https://api.openai.com/v1/chat/completions",
+      "https://openrouter.ai/api/v1/chat/completions",
       {
         method: "POST",
         headers: {
-          "Content-Type": "application/json",
           Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({
           model: "deepseek/deepseek-chat-v3-0324:free",
-          temperature: 0.25,
           messages: [
             { role: "system", content: systemPrompt },
             { role: "user", content: message },
           ],
+          temperature: 0.7,
         }),
       }
     );

@@ -26,6 +26,7 @@ import { useGoals } from "../hooks/useGoals";
 import styles from "../styles/finnyStyles";
 import TypingIndicator from "../components/TypingIndicator";
 import ConversationStartersModal from "../components/ConversationStartersModal";
+import GoalConfirmationModal from "../components/GoalConfirmationModal";
 
 interface Suggestion {
   text: string;
@@ -39,6 +40,8 @@ export default function ChatScreen() {
   const [showScrollButton, setShowScrollButton] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
   const [showStartersModal, setShowStartersModal] = useState(false);
+  const [showGoalConfirmation, setShowGoalConfirmation] = useState(false);
+  const [pendingGoalMessage, setPendingGoalMessage] = useState("");
   const [suggestions] = useState<Suggestion[]>([
     {
       text: "Set a savings goal",
@@ -95,6 +98,91 @@ export default function ChatScreen() {
 
   const { timelineData, saveGoal, deleteGoal, refreshGoals } =
     useGoals(pushChat);
+
+  // Goal confirmation handlers
+  const handleGoalConfirm = async () => {
+    setShowGoalConfirmation(false);
+    setIsTyping(true);
+
+    try {
+      const goalRes = await fetch(
+        "https://financify-rose.vercel.app/api/finny/goal",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: pendingGoalMessage }),
+        }
+      );
+
+      const goalData = await goalRes.json();
+      setGoalMode({
+        active: true,
+        label: goalData.label,
+        target: goalData.target,
+        timeline: goalData.timeline,
+      });
+
+      if (!goalData.label) {
+        await pushChat("finny", "What would you like to call this goal?");
+        return;
+      }
+      if (!goalData.target) {
+        await pushChat(
+          "finny",
+          `And how much do you want to save for ${goalData.label}?`
+        );
+        return;
+      }
+      if (!goalData.timeline) {
+        await pushChat(
+          "finny",
+          `And by when would you like to reach your $${goalData.target} goal?`
+        );
+        return;
+      }
+
+      const goalWithProgress = {
+        ...goalData,
+        id: Date.now().toString(),
+        progress: Math.floor(Math.random() * 101),
+      };
+      await saveGoal(goalWithProgress);
+      await pushChat(
+        "finny",
+        `Got it. You're saving $${goalData.target} for "${goalData.label}" by ${goalData.timeline.month} ${goalData.timeline.year}. I've saved it! 🎯`
+      );
+      DeviceEventEmitter.emit("goalsUpdated");
+      setGoalMode({
+        active: false,
+        label: null,
+        target: null,
+        timeline: null,
+      });
+    } catch (error) {
+      console.error("❌ Goal confirmation error:", error);
+      pushChat(
+        "finny",
+        "Hmm, something went wrong with setting up your goal. Try again?"
+      );
+    } finally {
+      setIsTyping(false);
+    }
+  };
+
+  const handleGoalDecline = async () => {
+    setShowGoalConfirmation(false);
+    setIsTyping(true);
+
+    try {
+      // Treat as a regular question
+      await handleUserMessage(pendingGoalMessage);
+    } catch (error) {
+      console.error("❌ Goal decline error:", error);
+      pushChat("finny", "No worries! Let me know if you need anything else.");
+    } finally {
+      setIsTyping(false);
+    }
+  };
 
   // Remove tagline-related code
   const mascotFlip = useRef(new Animated.Value(0)).current;
@@ -240,60 +328,9 @@ export default function ChatScreen() {
       const { intent, confidence } = await classifyRes.json();
 
       if (intent === "goal" && confidence >= 0.7) {
-        pushChat("finny", "Let's set up your goal! 🎯");
-        const goalRes = await fetch(
-          "https://financify-rose.vercel.app/api/finny/goal",
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ message: messageText }),
-          }
-        );
-
-        const goalData = await goalRes.json();
-        setGoalMode({
-          active: true,
-          label: goalData.label,
-          target: goalData.target,
-          timeline: goalData.timeline,
-        });
-
-        if (!goalData.label) {
-          await pushChat("finny", "What would you like to call this goal?");
-          return;
-        }
-        if (!goalData.target) {
-          await pushChat(
-            "finny",
-            `And how much do you want to save for ${goalData.label}?`
-          );
-          return;
-        }
-        if (!goalData.timeline) {
-          await pushChat(
-            "finny",
-            `And by when would you like to reach your $${goalData.target} goal?`
-          );
-          return;
-        }
-
-        const goalWithProgress = {
-          ...goalData,
-          id: Date.now().toString(),
-          progress: Math.floor(Math.random() * 101),
-        };
-        await saveGoal(goalWithProgress);
-        await pushChat(
-          "finny",
-          `Got it. You're saving $${goalData.target} for "${goalData.label}" by ${goalData.timeline.month} ${goalData.timeline.year}. I've saved it! 🎯`
-        );
-        DeviceEventEmitter.emit("goalsUpdated");
-        setGoalMode({
-          active: false,
-          label: null,
-          target: null,
-          timeline: null,
-        });
+        // Show confirmation modal instead of directly setting up goal
+        setPendingGoalMessage(messageText);
+        setShowGoalConfirmation(true);
         return;
       }
 
@@ -446,14 +483,9 @@ export default function ChatScreen() {
                 style={styles.scrollButtonTouchable}
                 activeOpacity={0.8}
               >
-                <LinearGradient
-                  colors={["#4A90E2", "#357ABD"]}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={styles.scrollButtonGradient}
-                >
-                  <AntDesign name="arrowdown" size={20} color="#fff" />
-                </LinearGradient>
+                <View style={styles.scrollButtonGradient}>
+                  <AntDesign name="arrowdown" size={20} color="#FFFFFF" />
+                </View>
               </TouchableOpacity>
             </Animated.View>
           )}
@@ -521,6 +553,12 @@ export default function ChatScreen() {
           setUserInput(question);
           handleSend(question);
         }}
+      />
+
+      <GoalConfirmationModal
+        visible={showGoalConfirmation}
+        onConfirm={handleGoalConfirm}
+        onDecline={handleGoalDecline}
       />
     </SafeAreaView>
   );

@@ -11,6 +11,9 @@ const TypingIndicator = () => {
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.8)).current;
+  const skeletonAnim = useRef(new Animated.Value(0)).current;
+  const skeletonAnim2 = useRef(new Animated.Value(0)).current;
+  const skeletonAnim3 = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     // Entrance animation
@@ -50,6 +53,54 @@ const TypingIndicator = () => {
 
     Animated.parallel(animations).start();
 
+    // Skeleton animations with different timing
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(skeletonAnim, {
+          toValue: 1,
+          duration: 1200,
+          useNativeDriver: true,
+        }),
+        Animated.timing(skeletonAnim, {
+          toValue: 0,
+          duration: 1200,
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
+
+    Animated.loop(
+      Animated.sequence([
+        Animated.delay(400),
+        Animated.timing(skeletonAnim2, {
+          toValue: 1,
+          duration: 1000,
+          useNativeDriver: true,
+        }),
+        Animated.timing(skeletonAnim2, {
+          toValue: 0,
+          duration: 1000,
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
+
+    Animated.loop(
+      Animated.sequence([
+        Animated.delay(800),
+        Animated.timing(skeletonAnim3, {
+          toValue: 1,
+          duration: 1400,
+          useNativeDriver: true,
+        }),
+        Animated.timing(skeletonAnim3, {
+          toValue: 0,
+          duration: 1400,
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
+
     return () => {
       animations.forEach((anim) => anim.stop());
     };
@@ -73,7 +124,7 @@ const TypingIndicator = () => {
         <Text style={styles.senderName}>Finny</Text>
       </View>
       <LinearGradient
-        colors={["#4A90E2", "#357ABD", "#2E6BB8"]}
+        colors={["#1A3A5A", "#2E5A8A", "#4A90E2"]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={[styles.messageContainer, styles.finnyMessageContainer]}
@@ -106,6 +157,85 @@ const TypingIndicator = () => {
           </View>
         </View>
       </LinearGradient>
+
+      {/* Skeleton Message Bubble */}
+      <View style={styles.skeletonContainer}>
+        <LinearGradient
+          colors={["#1A3A5A", "#2E5A8A", "#4A90E2"]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={[
+            styles.messageContainer,
+            styles.finnyMessageContainer,
+            styles.skeletonBubble,
+          ]}
+        >
+          <View style={styles.messageContent}>
+            <View style={styles.skeletonContent}>
+              <Animated.View
+                style={[
+                  styles.skeletonLine,
+                  styles.skeletonLine1,
+                  {
+                    opacity: skeletonAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0.2, 0.8],
+                    }),
+                    transform: [
+                      {
+                        scaleX: skeletonAnim.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [0.95, 1.05],
+                        }),
+                      },
+                    ],
+                  },
+                ]}
+              />
+              <Animated.View
+                style={[
+                  styles.skeletonLine,
+                  styles.skeletonLine2,
+                  {
+                    opacity: skeletonAnim2.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0.3, 0.9],
+                    }),
+                    transform: [
+                      {
+                        scaleX: skeletonAnim2.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [0.9, 1.1],
+                        }),
+                      },
+                    ],
+                  },
+                ]}
+              />
+              <Animated.View
+                style={[
+                  styles.skeletonLine,
+                  styles.skeletonLine3,
+                  {
+                    opacity: skeletonAnim3.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0.25, 0.75],
+                    }),
+                    transform: [
+                      {
+                        scaleX: skeletonAnim3.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [0.85, 1.15],
+                        }),
+                      },
+                    ],
+                  },
+                ]}
+              />
+            </View>
+          </View>
+        </LinearGradient>
+      </View>
     </Animated.View>
   );
 };
@@ -195,6 +325,34 @@ const styles = StyleSheet.create({
     color: "rgba(255, 255, 255, 0.7)",
     fontWeight: "600",
     letterSpacing: 0.3,
+  },
+  skeletonContainer: {
+    marginTop: 8,
+    alignSelf: "flex-start",
+    marginLeft: 4,
+  },
+  skeletonBubble: {
+    marginTop: 2,
+    minWidth: 250,
+  },
+  skeletonContent: {
+    paddingVertical: 8,
+    paddingHorizontal: 8,
+  },
+  skeletonLine: {
+    height: 14,
+    backgroundColor: "rgba(255, 255, 255, 0.4)",
+    borderRadius: 7,
+    marginBottom: 10,
+  },
+  skeletonLine1: {
+    width: "95%",
+  },
+  skeletonLine2: {
+    width: "85%",
+  },
+  skeletonLine3: {
+    width: "65%",
   },
 });
 

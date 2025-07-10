@@ -56,7 +56,7 @@ Return only valid JSON. No explanation.`;
 
   try {
     const openaiRes = await fetch(
-      "https://api.openai.com/v1/chat/completions",
+      "https://openrouter.ai/api/v1/chat/completions",
       {
         method: "POST",
         headers: {
@@ -65,11 +65,11 @@ Return only valid JSON. No explanation.`;
         },
         body: JSON.stringify({
           model: "deepseek/deepseek-chat-v3-0324:free",
-          temperature: 0.3,
           messages: [
             { role: "system", content: systemPrompt },
             { role: "user", content: message },
           ],
+          temperature: 0.7,
         }),
       }
     );
