@@ -101,8 +101,11 @@ export default function ChatScreen() {
 
   // Goal confirmation handlers
   const handleGoalConfirm = async () => {
+    console.log("✅ [CHAT] User clicked 'Yes' on goal confirmation");
+    console.log("📝 [CHAT] Pending goal message:", pendingGoalMessage);
     setShowGoalConfirmation(false);
     setIsTyping(true);
+    console.log("⏳ [CHAT] Set typing indicator to true");
 
     try {
       const goalRes = await fetch(
@@ -170,8 +173,11 @@ export default function ChatScreen() {
   };
 
   const handleGoalDecline = async () => {
+    console.log("❌ [CHAT] User clicked 'Not Yet' on goal confirmation");
+    console.log("📝 [CHAT] Pending goal message:", pendingGoalMessage);
     setShowGoalConfirmation(false);
     setIsTyping(true);
+    console.log("⏳ [CHAT] Set typing indicator to true");
 
     try {
       // Treat as a regular question
@@ -249,16 +255,34 @@ export default function ChatScreen() {
     return () => subscription.remove();
   }, []);
 
+  // Log modal state changes
+  useEffect(() => {
+    console.log(
+      "🔘 [CHAT] GoalConfirmationModal state changed:",
+      showGoalConfirmation
+    );
+  }, [showGoalConfirmation]);
+
   const handleSend = async (nudgeText?: string) => {
     const messageText = nudgeText || userInput;
-    if (!messageText.trim()) return;
-    // messageText logged
+    console.log("🚀 [CHAT] handleSend called with message:", messageText);
+
+    if (!messageText.trim()) {
+      console.log("❌ [CHAT] Empty message, returning");
+      return;
+    }
+
+    console.log("📝 [CHAT] Pushing user message to chat");
     pushChat("user", messageText);
     setUserInput("");
     setIsTyping(true);
+    console.log("⏳ [CHAT] Set typing indicator to true");
 
     try {
+      console.log("🔍 [CHAT] Checking if goalMode is active:", goalMode.active);
+
       if (goalMode.active) {
+        console.log("🎯 [CHAT] Goal mode is active, calling goal API");
         const goalRes = await fetch(
           "https://financify-rose.vercel.app/api/finny/goal",
           {
@@ -268,7 +292,9 @@ export default function ChatScreen() {
           }
         );
 
+        console.log("📡 [CHAT] Goal API response status:", goalRes.status);
         const updated = await goalRes.json();
+        console.log("✅ [CHAT] Goal API response:", updated);
         const newGoal = {
           id: Date.now().toString(),
           label: updated.label || goalMode.label,
@@ -316,6 +342,7 @@ export default function ChatScreen() {
         return;
       }
 
+      console.log("🔍 [CHAT] Goal mode not active, calling classify API");
       const classifyRes = await fetch(
         "https://financify-rose.vercel.app/api/finny/classify",
         {
@@ -325,20 +352,43 @@ export default function ChatScreen() {
         }
       );
 
+      console.log(
+        "📡 [CHAT] Classify API response status:",
+        classifyRes.status
+      );
       const { intent, confidence } = await classifyRes.json();
+      console.log(
+        "🎯 [CHAT] Classification result - Intent:",
+        intent,
+        "Confidence:",
+        confidence
+      );
 
       if (intent === "goal" && confidence >= 0.7) {
+        console.log("🎉 [CHAT] GOAL CONFIRMATION TRIGGERED!");
+        console.log("📝 [CHAT] Setting pending goal message:", messageText);
+        console.log("🔘 [CHAT] Setting showGoalConfirmation to true");
         // Show confirmation modal instead of directly setting up goal
         setPendingGoalMessage(messageText);
         setShowGoalConfirmation(true);
+        console.log("✅ [CHAT] Goal confirmation modal should now be visible");
         return;
+      } else {
+        console.log(
+          "❌ [CHAT] No goal confirmation - Intent:",
+          intent,
+          "Confidence:",
+          confidence
+        );
       }
 
+      console.log("💬 [CHAT] Calling handleUserMessage for regular advice");
       await handleUserMessage(messageText);
     } catch (error) {
-      console.error("❌ handleSend error:", error);
+      console.error("💥 [CHAT] handleSend error:", error);
       pushChat("finny", "Hmm, something went wrong. Try again?");
     } finally {
+      console.log("⏹️ [CHAT] Setting typing indicator to false");
       setIsTyping(false);
     }
   };

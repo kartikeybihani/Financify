@@ -2,12 +2,18 @@
 import fetch from "node-fetch";
 
 export default async function handler(req, res) {
+  console.log("🎯 [GOAL] Request received:", req.method);
+
   if (req.method !== "POST") {
+    console.log("❌ [GOAL] Method not allowed:", req.method);
     return res.status(405).json({ error: "Method not allowed" });
   }
 
   const { message } = req.body;
+  console.log("📝 [GOAL] Message to extract goal from:", message);
+
   if (!message) {
+    console.log("❌ [GOAL] Missing message in request body");
     return res.status(400).json({ error: "Missing message" });
   }
 
@@ -75,8 +81,11 @@ Return only valid JSON. No explanation.`;
     );
 
     const data = await openaiRes.json();
+    console.log("🤖 [GOAL] OpenAI response:", data);
     const text = data.choices?.[0]?.message?.content || "{}";
+    console.log("📄 [GOAL] Raw result text:", text);
     const parsed = JSON.parse(text);
+    console.log("✅ [GOAL] Parsed goal extraction:", parsed);
 
     if (parsed.timeline) {
       const validMonths = [
@@ -103,9 +112,10 @@ Return only valid JSON. No explanation.`;
       }
     }
 
+    console.log("🎯 [GOAL] Final goal data being returned:", parsed);
     return res.status(200).json(parsed);
   } catch (error) {
-    console.error("Error parsing goal intent:", error);
+    console.error("💥 [GOAL] Error parsing goal intent:", error);
     return res.status(500).json({
       label: null,
       target: null,

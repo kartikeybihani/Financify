@@ -3,12 +3,18 @@
 import fetch from "node-fetch";
 
 export default async function handler(req, res) {
+  console.log("🔍 [CLASSIFY] Request received:", req.method);
+
   if (req.method !== "POST") {
+    console.log("❌ [CLASSIFY] Method not allowed:", req.method);
     return res.status(405).json({ error: "Method not allowed" });
   }
 
   const { message } = req.body;
+  console.log("📝 [CLASSIFY] Message to classify:", message);
+
   if (!message) {
+    console.log("❌ [CLASSIFY] Missing message in request body");
     return res.status(400).json({ error: "Missing message" });
   }
 
@@ -75,15 +81,39 @@ Strictly return only valid JSON. No commentary.`;
     );
 
     const data = await openaiRes.json();
-    console.log("Data:", data);
+    console.log("🤖 [CLASSIFY] OpenAI response:", data);
     const resultText = data.choices?.[0]?.message?.content || "{}";
+    console.log("📄 [CLASSIFY] Raw result text:", resultText);
 
     const parsed = JSON.parse(resultText);
-    console.log("Classified:", parsed);
-    console.log("Original message:", message);
+    console.log("✅ [CLASSIFY] Parsed classification:", parsed);
+    console.log(
+      "🎯 [CLASSIFY] Intent:",
+      parsed.intent,
+      "Confidence:",
+      parsed.confidence
+    );
+    console.log("📝 [CLASSIFY] Original message:", message);
+
+    // Check if this should trigger goal confirmation
+    if (parsed.intent === "goal" && parsed.confidence >= 0.7) {
+      console.log(
+        "🎉 [CLASSIFY] GOAL CONFIRMATION TRIGGERED! Intent: goal, Confidence:",
+        parsed.confidence
+      );
+    } else {
+      console.log(
+        "❌ [CLASSIFY] No goal confirmation - Intent:",
+        parsed.intent,
+        "Confidence:",
+        parsed.confidence
+      );
+    }
+
     return res.status(200).json(parsed);
   } catch (e) {
-    console.error("Error classifying intent:", e);
+    console.error("💥 [CLASSIFY] Error classifying intent:", e);
+    console.log("🔄 [CLASSIFY] Returning fallback response");
     return res.status(500).json({ intent: "unknown", confidence: 0 });
   }
 }

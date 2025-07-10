@@ -1,11 +1,15 @@
 // api/finny/ask.js
 export default async function handler(req, res) {
+  console.log("💬 [ASK] Request received:", req.method);
+
   if (req.method !== "POST") {
+    console.log("❌ [ASK] Method not allowed:", req.method);
     return res.status(405).json({ error: "Method not allowed" });
   }
 
   const { message, context } = req.body;
-  console.log("Received message:", message);
+  console.log("📝 [ASK] Message received:", message);
+  console.log("📊 [ASK] Context provided:", context ? "Yes" : "No");
 
   const systemPrompt = `
 You are Finny, a financial psychologist and planning expert. Your role is to:
@@ -135,13 +139,17 @@ Current date: ${new Date().toISOString()}
     );
 
     const data = await openaiResponse.json();
+    console.log("🤖 [ASK] OpenAI response:", data);
     const response =
       data.choices?.[0]?.message?.content ||
       "I'm not sure how to help with that.";
 
+    console.log("💬 [ASK] Generated response:", response);
+    console.log("✅ [ASK] Returning response to client");
     return res.status(200).json({ nudges: [response] });
   } catch (e) {
-    console.error("Error in ask endpoint:", e);
+    console.error("💥 [ASK] Error in ask endpoint:", e);
+    console.log("🔄 [ASK] Returning fallback response");
     return res.status(200).json({
       nudges: [
         "I'm having trouble processing that right now. Could you try rephrasing?",
