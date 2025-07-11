@@ -20,19 +20,17 @@ import { Ionicons } from "@expo/vector-icons";
 import { AntDesign } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { ChatMessageComponent } from "../components/ChatMessage";
+import { ChatMessage } from "../types/finny";
 import { NudgeGrid } from "../components/NudgeGrid";
 import { useChat } from "../hooks/useChat";
 import { useGoals } from "../hooks/useGoals";
 import styles from "../styles/finnyStyles";
 import TypingIndicator from "../components/TypingIndicator";
 import ConversationStartersModal from "../components/ConversationStartersModal";
-import GoalConfirmationModal from "../components/GoalConfirmationModal";
 
 interface Suggestion {
   text: string;
   icon: keyof typeof Ionicons.glyphMap;
-  color: string;
-  bgColor: string;
 }
 
 export default function ChatScreen() {
@@ -40,38 +38,27 @@ export default function ChatScreen() {
   const [showScrollButton, setShowScrollButton] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
   const [showStartersModal, setShowStartersModal] = useState(false);
-  const [showGoalConfirmation, setShowGoalConfirmation] = useState(false);
   const [pendingGoalMessage, setPendingGoalMessage] = useState("");
   const [suggestions] = useState<Suggestion[]>([
     {
       text: "Set a savings goal",
       icon: "flag",
-      color: "#4A90E2",
-      bgColor: "#4A90E2",
     },
     {
       text: "Give me a spending tip",
       icon: "bulb",
-      color: "#FFB156",
-      bgColor: "#FF9500",
     },
     {
       text: "What's my net worth?",
       icon: "wallet",
-      color: "#4CD964",
-      bgColor: "#34C759",
     },
     {
       text: "Track my expenses",
       icon: "stats-chart",
-      color: "#FF3B30",
-      bgColor: "#FF3B30",
     },
     {
       text: "Investment advice",
       icon: "trending-up",
-      color: "#9C27B0",
-      bgColor: "#9C27B0",
     },
   ]);
   const scrollButtonAnimation = useRef(new Animated.Value(0)).current;
@@ -103,7 +90,6 @@ export default function ChatScreen() {
   const handleGoalConfirm = async () => {
     console.log("✅ [CHAT] User clicked 'Yes' on goal confirmation");
     console.log("📝 [CHAT] Pending goal message:", pendingGoalMessage);
-    setShowGoalConfirmation(false);
     setIsTyping(true);
     console.log("⏳ [CHAT] Set typing indicator to true");
 
@@ -175,7 +161,6 @@ export default function ChatScreen() {
   const handleGoalDecline = async () => {
     console.log("❌ [CHAT] User clicked 'Not Yet' on goal confirmation");
     console.log("📝 [CHAT] Pending goal message:", pendingGoalMessage);
-    setShowGoalConfirmation(false);
     setIsTyping(true);
     console.log("⏳ [CHAT] Set typing indicator to true");
 
@@ -258,10 +243,10 @@ export default function ChatScreen() {
   // Log modal state changes
   useEffect(() => {
     console.log(
-      "🔘 [CHAT] GoalConfirmationModal state changed:",
-      showGoalConfirmation
+      "🔘 [CHAT] GoalConfirmationModal state changed:"
+      // showInlineGoalConfirm // This state is removed
     );
-  }, [showGoalConfirmation]);
+  }, []); // Removed showInlineGoalConfirm from dependency array
 
   const handleSend = async (nudgeText?: string) => {
     const messageText = nudgeText || userInput;
@@ -367,11 +352,18 @@ export default function ChatScreen() {
       if (intent === "goal" && confidence >= 0.7) {
         console.log("🎉 [CHAT] GOAL CONFIRMATION TRIGGERED!");
         console.log("📝 [CHAT] Setting pending goal message:", messageText);
-        console.log("🔘 [CHAT] Setting showGoalConfirmation to true");
-        // Show confirmation modal instead of directly setting up goal
         setPendingGoalMessage(messageText);
-        setShowGoalConfirmation(true);
-        console.log("✅ [CHAT] Goal confirmation modal should now be visible");
+        const actionMsg: ChatMessage = {
+          id: Date.now().toString(),
+          sender: "finny",
+          text: "Sounds like you're trying to set a goal! Do you want me to continue?",
+          type: "action",
+          actions: [
+            { label: "Yes", action: "goal_confirm", style: "primary" },
+            { label: "Not Yet", action: "goal_decline", style: "secondary" },
+          ],
+        };
+        await pushChat(actionMsg.sender, actionMsg.text, actionMsg);
         return;
       } else {
         console.log(
@@ -497,10 +489,17 @@ export default function ChatScreen() {
                   msg.sender === "finny" &&
                   (index === 0 || chatMessages[index - 1].sender !== "finny")
                 }
+                onAction={async (action) => {
+                  if (action === "goal_confirm") await handleGoalConfirm();
+                  if (action === "goal_decline") await handleGoalDecline();
+                }}
               />
             ))}
             {isTyping && <TypingIndicator />}
           </ScrollView>
+
+          {/* Inline Goal Confirmation Buttons */}
+          {/* This block is removed as per the edit hint */}
 
           {showScrollButton && (
             <Animated.View
@@ -551,10 +550,7 @@ export default function ChatScreen() {
               <TouchableOpacity
                 key={idx}
                 onPress={() => handleSend(suggestion.text)}
-                style={[
-                  styles.suggestionChip,
-                  { backgroundColor: suggestion.bgColor },
-                ]}
+                style={styles.suggestionChip}
               >
                 <Ionicons
                   name={suggestion.icon}
@@ -582,14 +578,17 @@ export default function ChatScreen() {
               onSubmitEditing={() => handleSend()}
             />
             <TouchableOpacity
-              style={styles.sendButton}
-              onPress={() => handleSend()}
-              activeOpacity={0.7}
+              style={[styles.sendButton, isTyping && { opacity: 0.5 }]}
+              onPress={() => {
+                if (!isTyping) handleSend();
+              }}
+              activeOpacity={isTyping ? 1 : 0.7}
+              disabled={isTyping}
             >
               <Ionicons
                 name="arrow-up-circle-sharp"
                 size={32}
-                color="#4A90E2"
+                color={isTyping ? "#888" : "#4A90E2"}
               />
             </TouchableOpacity>
           </View>
@@ -603,12 +602,6 @@ export default function ChatScreen() {
           setUserInput(question);
           handleSend(question);
         }}
-      />
-
-      <GoalConfirmationModal
-        visible={showGoalConfirmation}
-        onConfirm={handleGoalConfirm}
-        onDecline={handleGoalDecline}
       />
     </SafeAreaView>
   );

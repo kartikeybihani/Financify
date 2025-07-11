@@ -79,21 +79,30 @@ export const useChat = () => {
     }
   };
 
-  const pushChat = (sender: "user" | "finny", text: string) => {
-    const msg: ChatMessage = {
-      id: `${sender}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      sender,
-      text,
-      timestamp: Date.now(),
-    };
-    
-    // Console logging for chat messages
-    if (sender === "user") {
-      console.log(`User: ${text}`);
-    } else if (sender === "finny") {
-      console.log(`Finny: [${text}]`);
+  const pushChat = (
+    senderOrMsg: "user" | "finny" | ChatMessage,
+    text?: string,
+    fullMsg?: ChatMessage
+  ) => {
+    let msg: ChatMessage;
+    if (typeof senderOrMsg === "object") {
+      msg = senderOrMsg;
+    } else if (fullMsg) {
+      msg = fullMsg;
+    } else {
+      msg = {
+        id: `${senderOrMsg}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        sender: senderOrMsg,
+        text: text || "",
+        timestamp: Date.now(),
+      };
     }
-    
+    // Console logging for chat messages
+    if (msg.sender === "user") {
+      console.log(`User: ${msg.text}`);
+    } else if (msg.sender === "finny") {
+      console.log(`Finny: [${msg.text}]`);
+    }
     setChatMessages((prev) => [...prev, msg]);
   };
 

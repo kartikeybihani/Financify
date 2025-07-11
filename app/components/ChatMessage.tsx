@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -11,6 +11,7 @@ import {
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { splitIntoMessages } from "../hooks/useChat";
+import { BlurView } from "expo-blur";
 
 // Enable LayoutAnimation for Android
 if (Platform.OS === "android") {
@@ -24,13 +25,21 @@ interface ChatMessageProps {
     sender: "user" | "finny";
     text: string;
     id: string;
+    type?: "text" | "action";
+    actions?: Array<{
+      label: string;
+      action: string;
+      style?: "primary" | "secondary";
+    }>;
   };
   showSender?: boolean;
+  onAction?: (action: string) => void;
 }
 
 export const ChatMessageComponent = ({
   message,
   showSender = true,
+  onAction,
 }: ChatMessageProps) => {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.8)).current;
@@ -92,6 +101,106 @@ export const ChatMessageComponent = ({
             {message.text}
           </Text>
         </LinearGradient>
+      </Animated.View>
+    );
+  }
+
+  if (
+    message.type === "action" &&
+    message.actions &&
+    message.actions.length > 0
+  ) {
+    const [clicked, setClicked] = useState(false);
+    return (
+      <Animated.View
+        style={{
+          opacity: fadeAnim,
+          transform: [{ scale: scaleAnim }, { translateY: slideAnim }],
+        }}
+      >
+        {showSender && (
+          <Animated.View
+            style={[
+              styles.senderNameContainer,
+              {
+                opacity: fadeAnim,
+                transform: [{ translateY: slideAnim }],
+              },
+            ]}
+          >
+            <Text style={styles.senderName}>Finny</Text>
+          </Animated.View>
+        )}
+        <View style={styles.finnyMessageRow}>
+          <View style={styles.finnyMessageContainer}>
+            <LinearGradient
+              colors={["#1A3A5A", "#2E5A8A", "#4A90E2"]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.finnyMessageBubble}
+            >
+              <Text style={[styles.messageText, styles.finnyMessageText]}>
+                {message.text}
+              </Text>
+            </LinearGradient>
+          </View>
+        </View>
+        {/* Action buttons below the bubble */}
+        <View
+          style={{
+            flexDirection: "column",
+            alignItems: "flex-start",
+            marginLeft: 12,
+            marginTop: 8,
+          }}
+        >
+          {message.actions.map((btn, idx) => (
+            <View key={btn.action} style={{ marginBottom: 12, width: "60%" }}>
+              <Animated.View style={{ opacity: fadeAnim, width: "100%" }}>
+                <View
+                  style={{
+                    paddingHorizontal: 14,
+                    paddingVertical: 10,
+                    borderRadius: 11,
+                    marginRight: 8,
+                    flexDirection: "row",
+                    alignItems: "center",
+                    shadowColor: "#000",
+                    shadowOffset: { width: 0, height: 2 },
+                    shadowOpacity: 0.2,
+                    shadowRadius: 4,
+                    elevation: 4,
+                    opacity: clicked ? 0.5 : 0.95,
+                    borderWidth: 1,
+                    borderColor: "rgba(74, 144, 226, 0.25)",
+                    backgroundColor: "rgba(26, 61, 102, 0.35)",
+                    width: "100%",
+                    alignSelf: "flex-start",
+                  }}
+                >
+                  <Text
+                    onPress={() => {
+                      if (!clicked && onAction) {
+                        setClicked(true);
+                        onAction(btn.action);
+                      }
+                    }}
+                    style={{
+                      fontSize: 13,
+                      fontWeight: "600",
+                      color: "#FFFFFF",
+                      letterSpacing: 0.2,
+                      textAlign: "center",
+                      flex: 1,
+                    }}
+                  >
+                    {btn.label}
+                  </Text>
+                </View>
+              </Animated.View>
+            </View>
+          ))}
+        </View>
       </Animated.View>
     );
   }

@@ -8,6 +8,7 @@ import {
   ScrollView,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 
 const CONVERSATION_STARTERS = [
   "What's the best way to start saving for retirement?",
@@ -41,7 +42,10 @@ const ConversationStartersModal = ({
       onRequestClose={onClose}
     >
       <View style={styles.modalOverlay}>
-        <View style={styles.modalContent}>
+        <LinearGradient
+          colors={["#2A2A2A", "#1A1A1A", "#0A0A0A"]}
+          style={styles.modalContent}
+        >
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Conversation Starters</Text>
             <TouchableOpacity onPress={onClose} style={styles.closeButton}>
@@ -49,27 +53,30 @@ const ConversationStartersModal = ({
             </TouchableOpacity>
           </View>
 
-          <ScrollView style={styles.questionsList}>
-            {CONVERSATION_STARTERS.map((question, index) => (
-              <View key={index} style={styles.questionRow}>
-                <Text style={styles.questionText}>{question}</Text>
+          <View style={styles.questionsContainer}>
+            <ScrollView style={styles.questionsList}>
+              {CONVERSATION_STARTERS.map((question, index) => (
                 <TouchableOpacity
-                  style={styles.sendButton}
                   onPress={() => {
                     onSelectQuestion(question);
                     onClose();
                   }}
                 >
-                  <Ionicons
-                    name="arrow-up-circle-sharp"
-                    size={32}
-                    color="#4A90E2"
-                  />
+                  <View key={index} style={styles.questionRow}>
+                    <Text style={styles.questionText}>{question}</Text>
+                    <View style={styles.arrowContainer}>
+                      <Ionicons
+                        name="arrow-up-circle-outline"
+                        size={32}
+                        color="#ccc"
+                      />
+                    </View>
+                  </View>
                 </TouchableOpacity>
-              </View>
-            ))}
-          </ScrollView>
-        </View>
+              ))}
+            </ScrollView>
+          </View>
+        </LinearGradient>
       </View>
     </Modal>
   );
@@ -82,12 +89,11 @@ const styles = StyleSheet.create({
     justifyContent: "flex-end",
   },
   modalContent: {
-    backgroundColor: "#1f1f1f",
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     paddingTop: 20,
     paddingBottom: 40,
-    maxHeight: "80%",
+    height: "85%",
     shadowColor: "#000",
     shadowOffset: {
       width: 0,
@@ -97,14 +103,21 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 5,
   },
+  questionsContainer: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.3)",
+    marginHorizontal: 8,
+    marginTop: 12,
+    marginBottom: 20,
+    borderRadius: 12,
+    padding: 16,
+  },
   modalHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     paddingHorizontal: 20,
     paddingBottom: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: "#333",
   },
   modalTitle: {
     fontSize: 20,
@@ -115,8 +128,9 @@ const styles = StyleSheet.create({
     padding: 4,
   },
   questionsList: {
-    paddingHorizontal: 20,
-    paddingTop: 12,
+    paddingHorizontal: 0,
+    paddingTop: 0,
+    flex: 1,
   },
   questionRow: {
     flexDirection: "row",
@@ -132,12 +146,19 @@ const styles = StyleSheet.create({
     marginRight: 12,
     lineHeight: 20,
   },
-  sendButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    justifyContent: "center",
-    alignItems: "center",
+  // sendButton: {
+  //   width: 32,
+  //   height: 32,
+  //   borderRadius: 16,
+  //   justifyContent: "center",
+  //   alignItems: "center",
+  // },
+  arrowContainer: {
+    // width: 32,
+    // height: 32,
+    // // borderRadius: 16,
+    // // justifyContent: "center",
+    // // alignItems: "center",
   },
 });
 

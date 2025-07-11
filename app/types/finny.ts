@@ -29,6 +29,12 @@ export interface ChatMessage {
   sender: "user" | "finny";
   text: string;
   timestamp?: number;
+  type?: "text" | "action";
+  actions?: Array<{
+    label: string;
+    action: "goal_confirm" | "goal_decline" | string;
+    style?: "primary" | "secondary";
+  }>;
 }
 
 export type FinnyTypes = {

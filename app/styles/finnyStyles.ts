@@ -198,7 +198,7 @@ export default StyleSheet.create({
     paddingLeft: 8,
     paddingRight: 8,
     backgroundColor: "#1f1f1f",
-    borderRadius: 16,
+    borderRadius: 24,
     paddingBottom: 8,
     marginHorizontal: 10,
     marginBottom: 0,
@@ -215,6 +215,7 @@ export default StyleSheet.create({
     elevation: 4,
   },
   plusButton: {
+    
     padding: 2,
     marginRight: 4,
   },
@@ -309,6 +310,7 @@ export default StyleSheet.create({
     paddingVertical: 10,
     marginBottom: 6,
     marginTop: 2,
+    // Optionally add backdrop blur here if using a BlurView wrapper in the component
   },
   suggestionChip: {
     paddingHorizontal: 14,
@@ -327,7 +329,9 @@ export default StyleSheet.create({
     elevation: 4,
     opacity: 0.95,
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.1)",
+    borderColor: "rgba(74, 144, 226, 0.25)",
+    backgroundColor: "rgba(26, 61, 102, 0.35)", // glassy blue
+    // If BlurView is used, backgroundColor can be more transparent
   },
   suggestionIcon: {
     marginRight: 5,
