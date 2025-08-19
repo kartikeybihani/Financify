@@ -132,11 +132,11 @@ export default function HomeScreen() {
     try {
       // First check if update mode is required
       const accountsResponse = await fetch(
-        "https://financify-rose.vercel.app/api/accounts",
+        "https://financify-rose.vercel.app/api/plaid",
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ access_token: token }),
+          body: JSON.stringify({ endpoint: "accounts", access_token: token }),
         }
       );
 
@@ -157,25 +157,34 @@ export default function HomeScreen() {
         liabilitiesResponse,
         institutionResponse,
       ] = await Promise.all([
-        fetch("https://financify-rose.vercel.app/api/identity", {
+        fetch("https://financify-rose.vercel.app/api/plaid", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ access_token: token }),
+          body: JSON.stringify({ endpoint: "identity", access_token: token }),
         }),
-        fetch("https://financify-rose.vercel.app/api/investments", {
+        fetch("https://financify-rose.vercel.app/api/plaid", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ access_token: token }),
+          body: JSON.stringify({
+            endpoint: "investments",
+            access_token: token,
+          }),
         }),
-        fetch("https://financify-rose.vercel.app/api/liabilities", {
+        fetch("https://financify-rose.vercel.app/api/plaid", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ access_token: token }),
+          body: JSON.stringify({
+            endpoint: "liabilities",
+            access_token: token,
+          }),
         }),
-        fetch("https://financify-rose.vercel.app/api/institution", {
+        fetch("https://financify-rose.vercel.app/api/plaid", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ access_token: token }),
+          body: JSON.stringify({
+            endpoint: "institution",
+            access_token: token,
+          }),
         }),
       ]);
 

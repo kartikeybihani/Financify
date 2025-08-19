@@ -202,10 +202,11 @@ export const useChat = () => {
       };
 
       // Sending request to Finny API with complete context...
-      const res = await fetch(`${BASE_URL}/api/finny/ask`, {
+      const res = await fetch(`${BASE_URL}/api/finny`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          action: "ask",
           message: messageText,
           context: financialContext
         }),

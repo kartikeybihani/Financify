@@ -95,11 +95,14 @@ export default function ChatScreen() {
 
     try {
       const goalRes = await fetch(
-        "https://financify-rose.vercel.app/api/finny/goal",
+        "https://financify-rose.vercel.app/api/finny",
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message: pendingGoalMessage }),
+          body: JSON.stringify({
+            action: "goal",
+            message: pendingGoalMessage,
+          }),
         }
       );
 
@@ -269,11 +272,14 @@ export default function ChatScreen() {
       if (goalMode.active) {
         console.log("🎯 [CHAT] Goal mode is active, calling goal API");
         const goalRes = await fetch(
-          "https://financify-rose.vercel.app/api/finny/goal",
+          "https://financify-rose.vercel.app/api/finny",
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ message: messageText }),
+            body: JSON.stringify({
+              action: "goal",
+              message: messageText,
+            }),
           }
         );
 
@@ -329,11 +335,14 @@ export default function ChatScreen() {
 
       console.log("🔍 [CHAT] Goal mode not active, calling classify API");
       const classifyRes = await fetch(
-        "https://financify-rose.vercel.app/api/finny/classify",
+        "https://financify-rose.vercel.app/api/finny",
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message: messageText }),
+          body: JSON.stringify({
+            action: "classify",
+            message: messageText,
+          }),
         }
       );
 

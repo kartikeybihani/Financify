@@ -150,12 +150,12 @@ export default function InsightsScreen() {
       // const token = await AsyncStorage.getItem("accessToken");
       if (!token) return;
 
-      const res = await fetch(`${BASE_URL}/api/transactions`, {
+      const res = await fetch(`${BASE_URL}/api/plaid`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ access_token: token }),
+        body: JSON.stringify({ endpoint: "transactions", access_token: token }),
       });
 
       const transactionData = await res.json();

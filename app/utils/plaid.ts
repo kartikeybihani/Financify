@@ -7,9 +7,10 @@ const BASE_URL = "https://financify-rose.vercel.app";
 // === Create Link Token ===
 export const fetchLinkToken = async () => {
   try {
-    const res = await fetch(`${BASE_URL}/api/create_link_token`, {
+    const res = await fetch(`${BASE_URL}/api/link_tokens`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode: "create" }),
     });
     const data = await res.json();
     console.log("Link token response:", data);
@@ -65,10 +66,10 @@ export const handlePlaidConnect = async (
 // === Update Mode ===
 export const getUpdateLinkToken = async (access_token: string) => {
   try {
-    const res = await fetch(`${BASE_URL}/api/create_update_link_token`, {
+    const res = await fetch(`${BASE_URL}/api/link_tokens`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ access_token }),
+      body: JSON.stringify({ mode: "update", access_token }),
     });
 
     const data = await res.json();
@@ -139,10 +140,10 @@ export const handleDisconnect = async () => {
 // === Plaid Data Fetchers ===
 export const fetchInstitution = async (token: string) => {
   try {
-    const res = await fetch(`${BASE_URL}/api/institution`, {
+    const res = await fetch(`${BASE_URL}/api/plaid`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ access_token: token }),
+      body: JSON.stringify({ endpoint: "institution", access_token: token }),
     });
     const data = await res.json();
     return data.institution;
@@ -154,10 +155,10 @@ export const fetchInstitution = async (token: string) => {
 
 export const fetchAccounts = async (token: string) => {
   try {
-    const res = await fetch(`${BASE_URL}/api/accounts`, {
+    const res = await fetch(`${BASE_URL}/api/plaid`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ access_token: token }),
+      body: JSON.stringify({ endpoint: "accounts", access_token: token }),
     });
     const data = await res.json();
     console.log("Accounts data loaded...");
@@ -187,10 +188,10 @@ export const triggerWebhook = async (access_token: string) => {
 
 export const fetchIdentity = async (token: string) => {
   try {
-    const res = await fetch(`${BASE_URL}/api/identity`, {
+    const res = await fetch(`${BASE_URL}/api/plaid`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ access_token: token }),
+      body: JSON.stringify({ endpoint: "identity", access_token: token }),
     });
     const data = await res.json();
     return data.identity;
@@ -203,10 +204,10 @@ export const fetchIdentity = async (token: string) => {
 // ✅ NEW: Fetch Investments (Holdings + Transactions)
 export const fetchInvestments = async (token: string) => {
   try {
-    const res = await fetch(`${BASE_URL}/api/investments`, {
+    const res = await fetch(`${BASE_URL}/api/plaid`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ access_token: token }),
+      body: JSON.stringify({ endpoint: "investments", access_token: token }),
     });
     const data = await res.json();
     console.log("Investments data loaded...");
@@ -227,10 +228,10 @@ export const fetchInvestments = async (token: string) => {
 
 export const fetchLiabilities = async (token: string) => {
   try {
-    const res = await fetch(`${BASE_URL}/api/liabilities`, {
+    const res = await fetch(`${BASE_URL}/api/plaid`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ access_token: token }),
+      body: JSON.stringify({ endpoint: "liabilities", access_token: token }),
     });
     const data = await res.json();
     console.log("Liabilities data loaded...");
