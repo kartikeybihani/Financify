@@ -37,6 +37,14 @@
           <string>exp+financify</string>
         </array>
       </dict>
+      <dict>
+        <key>CFBundleURLName</key>
+        <string>plaid-oauth</string>
+        <key>CFBundleURLSchemes</key>
+        <array>
+          <string>financify-oauth</string>
+        </array>
+      </dict>
     </array>
     <key>CFBundleVersion</key>
     <string>1</string>

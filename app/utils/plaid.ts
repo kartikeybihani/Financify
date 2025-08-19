@@ -25,42 +25,54 @@ export const fetchLinkToken = async () => {
 // === Connect Flow ===
 export const handlePlaidConnect = async (
   linkToken: string,
-  onSuccess: (token: string) => void
+  onSuccess: (token: string) => void,
+  onExit?: (error?: any) => void
 ) => {
   if (!linkToken) return;
   console.log("In handlePlaidConnect");
   console.log("Doing the exchange_public_token call...");
 
-  create({ token: linkToken });
-  console.log("Created the create function");
-  open({
-    onSuccess: async ({ publicToken }) => {
-      const { data: { user }} = await supabase.auth.getUser();
-      console.log("User ID:", user?.id);
+  try {
+    create({ token: linkToken });
+    console.log("Created the create function");
+    
+    open({
+      onSuccess: async ({ publicToken }: { publicToken: string }) => {
+        const { data: { user }} = await supabase.auth.getUser();
+        console.log("User ID:", user?.id);
 
-      try {
-        console.log("In onSuccess");
-        const res = await fetch(
-          `${BASE_URL}/api/exchange_public_token`,
-          {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({  
-            public_token: publicToken,
-            user_id: user?.id,
-          }),
-      });
-        const data = await res.json();
-        const token = data.access_token;
-        console.log("Plaid token:", token);
-        // await AsyncStorage.setItem("accessToken", token);
-        onSuccess(token);
-      } catch (err) {
-        console.error("Error in onSuccess:", err);
-      }
-    },
-    onExit: () => console.log("Plaid flow exited here... oops"),
-  });
+        try {
+          console.log("In onSuccess");
+          const res = await fetch(
+            `${BASE_URL}/api/exchange_public_token`,
+            {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({  
+              public_token: publicToken,
+              user_id: user?.id,
+            }),
+        });
+          const data = await res.json();
+          const token = data.access_token;
+          console.log("Plaid token:", token);
+          // await AsyncStorage.setItem("accessToken", token);
+          onSuccess(token);
+        } catch (err) {
+          console.error("Error in onSuccess:", err);
+        }
+      },
+      onExit: (error: any) => {
+        console.log("Plaid flow exited here... oops", error);
+        if (onExit) {
+          onExit(error);
+        }
+      },
+    });
+  } catch (error) {
+    console.error("Error creating Plaid link:", error);
+    throw error;
+  }
 };
 
 // === Update Mode ===
@@ -91,7 +103,7 @@ export const openPlaidLink = async (link_token: string) => {
           console.log("✅ Update success");
           resolve(true);
         },
-        onExit: (error) => {
+        onExit: (error: any) => {
           console.log("⛔ Update exited", error);
           reject(error || new Error("Update flow exited"));
         },

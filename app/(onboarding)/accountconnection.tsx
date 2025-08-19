@@ -98,36 +98,75 @@ export default function AccountConnectionScreen() {
 
     setIsLoading(true);
     try {
-      await handlePlaidConnect(linkToken, async (accessToken) => {
-        setIsLoading(false);
-        setIsConnecting(true);
-        console.log("Bank account connected successfully!");
-        setHasConnectedBank(true);
+      handlePlaidConnect(
+        linkToken,
+        async (accessToken: string) => {
+          console.log("Bank account connected successfully!");
+          setHasConnectedBank(true);
 
-        // Show success message
-        Alert.alert(
-          "Success!",
-          "Your bank account has been connected successfully.",
-          [
-            {
-              text: "Continue",
-              onPress: () => {
-                setIsConnecting(false);
-                updateUserAfterBankConnect(accessToken);
+          setIsLoading(false);
+          setIsConnecting(true);
+
+          // Show success message
+          Alert.alert(
+            "Success!",
+            "Your bank account has been connected successfully.",
+            [
+              {
+                text: "Continue",
+                onPress: () => {
+                  setIsConnecting(false);
+                  updateUserAfterBankConnect(accessToken);
+                },
               },
-            },
-          ]
-        );
-      });
+            ]
+          );
+        },
+        (error?: any) => {
+          // Handle Plaid flow exit
+          console.log("Plaid flow exited, resetting loading state");
+          setIsLoading(false);
+          setIsConnecting(false);
+
+          // Show appropriate message based on error
+          if (error?.error?.errorCode === "INVALID_LINK_TOKEN") {
+            Alert.alert(
+              "Connection Expired",
+              "The connection link has expired. Please try connecting again.",
+              [
+                {
+                  text: "OK",
+                  onPress: () => {
+                    // Optionally refresh the link token
+                    const initializePlaid = async () => {
+                      try {
+                        const token = await fetchLinkToken();
+                        setLinkToken(token);
+                      } catch (error) {
+                        console.error("Error refreshing link token:", error);
+                      }
+                    };
+                    initializePlaid();
+                  },
+                },
+              ]
+            );
+          } else if (error) {
+            Alert.alert(
+              "Connection Cancelled",
+              "Bank connection was cancelled. You can try again anytime.",
+              [{ text: "OK" }]
+            );
+          }
+        }
+      );
     } catch (error) {
       console.error("Error connecting bank:", error);
       Alert.alert(
         "Connection Failed",
         "Unable to connect your bank account. Please try again."
       );
-    } finally {
       setIsLoading(false);
-      setIsConnecting(false);
     }
   };
 

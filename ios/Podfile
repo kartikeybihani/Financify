@@ -15,7 +15,7 @@ prepare_react_native_project!
 
 target 'financify' do
   use_expo_modules!
-  pod 'Plaid', '~> 6.1.0'
+  pod 'Plaid', '~> 6.4.0'
 
   if ENV['EXPO_USE_COMMUNITY_AUTOLINKING'] == '1'
     config_command = ['node', '-e', "process.argv=['', '', 'config'];require('@react-native-community/cli').run()"];
