@@ -42,7 +42,7 @@
         <string>plaid-oauth</string>
         <key>CFBundleURLSchemes</key>
         <array>
-          <string>financify-oauth</string>
+          <string>financify-redirect</string>
         </array>
       </dict>
     </array>
