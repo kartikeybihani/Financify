@@ -17,7 +17,7 @@ export default async function handler(req, res) {
         client_name: "Financify",
         country_codes: ["US"],
         language: "en",
-        redirect_uri: "https://financify-rose.vercel.app/oauth-complete",
+        redirect_uri: "https://financify-redirect.com/oauth-complete",
         webhook: "https://financify-rose.vercel.app/api/webhook",
         access_token,
         account_selection_enabled: true,
@@ -32,7 +32,7 @@ export default async function handler(req, res) {
         products: ["auth", "investments", "transactions", "liabilities"],
         country_codes: ["US"],
         language: "en",
-        redirect_uri: "https://financify-rose.vercel.app/oauth-complete",
+        redirect_uri: "https://financify-redirect.com/oauth-complete",
         webhook: "https://financify-rose.vercel.app/api/webhook",
         // account_selection_enabled: true,
       });
