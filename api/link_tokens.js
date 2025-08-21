@@ -29,7 +29,10 @@ export default async function handler(req, res) {
       response = await client.linkTokenCreate({
         user: { client_user_id: "user-id" },
         client_name: "Financify",
-        products: ["auth", "investments", "transactions", "liabilities"],
+        products: ["auth"],
+        required_if_supported_products: ["transactions"],
+        optional_products: ["investments", "liabilities"],
+        additional_consented_products: [],
         country_codes: ["US"],
         language: "en",
         redirect_uri: "https://financify-redirect.com/oauth-complete",
