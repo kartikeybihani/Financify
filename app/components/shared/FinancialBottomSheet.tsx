@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import {
   Modal,
   View,
@@ -14,13 +14,21 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
 
+interface CategoryData {
+  title: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  iconColor: string;
+  items: React.ReactNode[];
+}
+
 interface FinancialBottomSheetProps {
   visible: boolean;
   onClose: () => void;
   title: string;
   icon: keyof typeof Ionicons.glyphMap;
   iconColor?: string;
-  children: React.ReactNode;
+  categories?: CategoryData[];
+  children?: React.ReactNode;
 }
 
 export default function FinancialBottomSheet({
@@ -29,18 +37,24 @@ export default function FinancialBottomSheet({
   title,
   icon,
   iconColor = "#4A90E2",
+  categories,
   children,
 }: FinancialBottomSheetProps) {
   const { height } = useWindowDimensions();
-  const maxHeight = height * 0.92;
+  const maxHeight = height * 0.85;
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }).format(amount);
+  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(
+    new Set()
+  );
+
+  const toggleCategory = (categoryTitle: string) => {
+    const newExpanded = new Set(expandedCategories);
+    if (newExpanded.has(categoryTitle)) {
+      newExpanded.delete(categoryTitle);
+    } else {
+      newExpanded.add(categoryTitle);
+    }
+    setExpandedCategories(newExpanded);
   };
 
   return (
@@ -54,8 +68,8 @@ export default function FinancialBottomSheet({
     >
       <View style={styles.overlay}>
         <BlurView intensity={25} style={StyleSheet.absoluteFill} tint="dark" />
-        <View style={[styles.modalContainer, { maxHeight }]}>
-          <View style={styles.sheet}>
+        <View style={styles.modalContainer}>
+          <View style={[styles.sheet, { height: maxHeight }]}>
             <View style={styles.handleContainer}>
               <View style={styles.handle} />
             </View>
@@ -84,7 +98,73 @@ export default function FinancialBottomSheet({
               showsVerticalScrollIndicator={false}
               contentContainerStyle={styles.scrollContent}
             >
-              {children}
+              {categories
+                ? categories.map((category, index) => (
+                    <View key={index} style={styles.categoryContainer}>
+                      <TouchableOpacity
+                        style={styles.categoryHeader}
+                        onPress={() => toggleCategory(category.title)}
+                      >
+                        <View style={styles.categoryTitleContainer}>
+                          <Ionicons
+                            name={
+                              expandedCategories.has(category.title)
+                                ? "caret-down"
+                                : "caret-forward"
+                            }
+                            size={16}
+                            color="#888"
+                            style={styles.categoryCaretIcon}
+                          />
+                          <Text style={styles.categoryTitle}>
+                            {category.title}
+                          </Text>
+                        </View>
+                      </TouchableOpacity>
+                      {expandedCategories.has(category.title) && (
+                        <View style={styles.categoryContent}>
+                          {category.items.length > 0 ? (
+                            category.items.map((item, itemIndex) => (
+                              <View key={itemIndex} style={styles.categoryItem}>
+                                {item}
+                              </View>
+                            ))
+                          ) : (
+                            <View style={styles.emptyState}>
+                              {/* <Text style={styles.emptyStateText}>
+                                No {category.title.toLowerCase()} found
+                              </Text> */}
+                              <TouchableOpacity
+                                style={{ flexDirection: "row" }}
+                              >
+                                <Ionicons
+                                  name="add-circle-outline"
+                                  size={16}
+                                  color="#4A90E2"
+                                  style={{ marginRight: 4 }}
+                                />
+                                <Text
+                                  style={{
+                                    fontSize: 12,
+                                    fontWeight: "600",
+                                    color: "#4A90E2",
+                                    fontFamily:
+                                      Platform.OS === "ios"
+                                        ? "System"
+                                        : "sans-serif",
+                                    letterSpacing: 0.2,
+                                  }}
+                                >
+                                  ADD A NEW ACCOUNT
+                                </Text>
+                              </TouchableOpacity>
+                            </View>
+                          )}
+                        </View>
+                      )}
+                    </View>
+                  ))
+                : children}
             </ScrollView>
             <View style={styles.footer}>
               <TouchableOpacity style={styles.addAccountButton}>
@@ -118,7 +198,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#121212",
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
-    minHeight: 600,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: -4 },
     shadowOpacity: 0.25,
@@ -149,6 +228,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     flex: 1,
+    paddingTop: 10,
   },
   titleTextContainer: {
     flex: 1,
@@ -164,7 +244,7 @@ const styles = StyleSheet.create({
     borderColor: "rgba(255, 255, 255, 0.1)",
   },
   title: {
-    fontSize: 20,
+    fontSize: 19,
     fontWeight: "600",
     color: "#fff",
     fontFamily: Platform.OS === "ios" ? "System" : "sans-serif",
@@ -192,8 +272,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    padding: 24,
-    paddingTop: 10,
+    padding: 16,
+    paddingTop: 8,
   },
   footer: {
     padding: 24,
@@ -224,5 +304,73 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     fontFamily: Platform.OS === "ios" ? "System" : "sans-serif",
     letterSpacing: 0.2,
+  },
+  categoryContainer: {
+    marginBottom: 22,
+  },
+  categoryHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    // backgroundColor: "rgba(255, 255, 255, 0.05)",
+    borderRadius: 12,
+    borderBottomWidth: 0.7,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+  },
+  categoryTitleContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+  },
+  categoryCaretIcon: {
+    marginRight: 8,
+  },
+  categoryIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 12,
+  },
+  categoryTitle: {
+    fontSize: 13,
+    fontWeight: "500",
+    color: "#fff",
+    fontFamily: Platform.OS === "ios" ? "System" : "sans-serif",
+    flex: 1,
+    letterSpacing: 0.6,
+  },
+  categoryCount: {
+    fontSize: 14,
+    fontWeight: "500",
+    color: "#888",
+    fontFamily: Platform.OS === "ios" ? "System" : "sans-serif",
+    marginLeft: 8,
+  },
+  categoryContent: {
+    marginTop: 0,
+    paddingLeft: 6,
+  },
+  categoryItem: {
+    marginBottom: 8,
+  },
+  emptyState: {
+    padding: 15,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+    borderRadius: 8,
+    marginTop: 5,
+    borderStyle: "dashed",
+  },
+  emptyStateText: {
+    fontSize: 14,
+    color: "#888",
+    fontStyle: "italic",
+    fontFamily: Platform.OS === "ios" ? "System" : "sans-serif",
   },
 });

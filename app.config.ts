@@ -6,38 +6,67 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   slug: "financify",
   version: "1.0.0",
   orientation: "portrait",
-  icon: "./assets/icon.png",
-  userInterfaceStyle: "dark",
+  icon: "./assets/images/appicon.png",
+  scheme: "myapp",
+  userInterfaceStyle: "automatic",
+  newArchEnabled: true,
   splash: {
-    image: "./assets/splash.png",
+    image: "./assets/images/splash-icon.png",
     resizeMode: "contain",
-    backgroundColor: "#121212"
+    backgroundColor: "#ffffff"
   },
   assetBundlePatterns: [
     "**/*"
   ],
   ios: {
     ...config.ios,
-    supportsTablet: true
+    supportsTablet: true,
+    usesAppleSignIn: true,
+    bundleIdentifier: "com.kartikey08.financify",
+    infoPlist: {
+      "ITSAppUsesNonExemptEncryption": false
+    }
   },
   android: {
     ...config.android,
     adaptiveIcon: {
-      foregroundImage: "./assets/adaptive-icon.png",
-      backgroundColor: "#121212"
+      foregroundImage: "./assets/images/adaptive-icon.png",
+      backgroundColor: "#ffffff"
     }
   },
   web: {
     ...config.web,
-    favicon: "./assets/favicon.png"
+    bundler: "metro",
+    output: "static",
+    favicon: "./assets/images/favicon.png"
   },
   extra: {
     ...config.extra, // Preserve existing properties including EAS projectId
+    router: {
+      origin: false
+    },
+    eas: {
+      projectId: "1ec2fed7-76cd-4a3f-ab46-66a01f7ddb65"
+    },
     supabaseUrl: process.env.EXPO_PUBLIC_SUPABASE_URL,
     supabaseAnonKey: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY,
   },
   plugins: [
     ...config.plugins || [],
-    "expo-router"
-  ]
+    "expo-router",
+    "expo-apple-authentication",
+    [
+      "expo-splash-screen",
+      {
+        image: "./assets/images/splash-icon.png",
+        imageWidth: 200,
+        resizeMode: "contain",
+        backgroundColor: "#ffffff"
+      }
+    ]
+  ],
+  experiments: {
+    typedRoutes: true
+  },
+  owner: "kartikey08"
 }); 

@@ -64,9 +64,7 @@ export default function HomeScreen() {
   const [updateToken, setUpdateToken] = useState<string | null>(null);
 
   // Modal states
-  const [activeModal, setActiveModal] = useState<
-    "accounts" | "investments" | "liabilities" | null
-  >(null);
+  const [activeModal, setActiveModal] = useState<"accounts" | null>(null);
 
   // Financial data states
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -214,7 +212,23 @@ export default function HomeScreen() {
       setInvestments(data.investments);
       setLiabilities(data.liabilities);
       setInstitution(data.institution);
-      console.log("Fetched fresh data");
+
+      // 🔍 COMPREHENSIVE DATA LOGGING
+      console.log("🏦 ===== COMPLETE FINANCIAL DATA ANALYSIS =====");
+      console.log("🏢 INSTITUTION INFO:", data.institution);
+      console.log("💰 ACCOUNTS SAMPLE:", data.accounts?.[0]);
+      console.log("📈 INVESTMENTS SAMPLE:", {
+        holdings: data.investments?.holdings?.[0],
+        securities: data.investments?.securities?.[0],
+      });
+      console.log("💳 LIABILITIES SAMPLE:", data.liabilities?.[0]);
+      console.log("🆔 IDENTITY SAMPLE:", data.identity?.[0]);
+      console.log("🔍 INSTITUTION NAME:", data.institution?.name);
+      console.log("🌐 INSTITUTION URL:", data.institution?.url);
+      console.log("🎨 INSTITUTION LOGO:", data.institution?.logo);
+      console.log("🏦 ===============================================");
+
+      console.log("✅ Fetched fresh data");
       await saveDataToStorage(data);
       DeviceEventEmitter.emit("financialDataRefreshed", data);
     } catch (error) {
@@ -413,6 +427,16 @@ export default function HomeScreen() {
     }).format(amount);
   };
 
+  // Debug: Log all account types
+  console.log(
+    "🔍 All account types:",
+    accounts.map((acc) => ({
+      name: acc.name,
+      type: acc.type,
+      subtype: (acc as any).subtype,
+    }))
+  );
+
   const categorizedLiabilities = accounts.filter(
     (acc) => acc.type === "loan" || acc.type === "credit"
   );
@@ -420,6 +444,11 @@ export default function HomeScreen() {
   const categorizedDeposits = accounts.filter(
     (acc) => acc.type === "depository"
   );
+
+  // Debug: Log categorization results
+  console.log("💰 Categorized Deposits:", categorizedDeposits.length);
+  console.log("💳 Categorized Liabilities:", categorizedLiabilities.length);
+  console.log("📈 Investment Holdings:", investments?.holdings?.length || 0);
 
   const accountsTotal = categorizedDeposits.reduce(
     (acc, a) => acc + (a.balances.current || 0),
@@ -673,7 +702,7 @@ export default function HomeScreen() {
                     useKM: true,
                   })}
                   icon="trending-up"
-                  onPress={() => setActiveModal("investments")}
+                  onPress={() => setActiveModal("accounts")}
                   iconColor="#4ECDC4"
                 />
                 <FinancialCard
@@ -683,7 +712,7 @@ export default function HomeScreen() {
                     useKM: true,
                   })}
                   icon="card-outline"
-                  onPress={() => setActiveModal("liabilities")}
+                  onPress={() => setActiveModal("accounts")}
                   iconColor="#FF6B6B"
                 />
               </View>
@@ -805,53 +834,91 @@ export default function HomeScreen() {
               <FinancialBottomSheet
                 visible={activeModal === "accounts"}
                 onClose={() => setActiveModal(null)}
-                title="Your Accounts"
+                title="Your Financial Accounts"
                 icon="wallet-outline"
-              >
-                {categorizedDeposits.map((account, index) => (
-                  <AccountItem
-                    key={index}
-                    name={account.name}
-                    type={account.type}
-                    balance={formatCurrency(account.balances.current || 0)}
-                    icon="wallet-outline"
-                  />
-                ))}
-              </FinancialBottomSheet>
-
-              <FinancialBottomSheet
-                visible={activeModal === "investments"}
-                onClose={() => setActiveModal(null)}
-                title="Your Investments"
-                icon="trending-up"
-              >
-                {investments?.holdings?.map((holding, index) => (
-                  <AccountItem
-                    key={index}
-                    name={holding.security_id}
-                    type="Investment"
-                    balance={formatCurrency(holding.institution_value || 0)}
-                    icon="trending-up"
-                  />
-                ))}
-              </FinancialBottomSheet>
-
-              <FinancialBottomSheet
-                visible={activeModal === "liabilities"}
-                onClose={() => setActiveModal(null)}
-                title="Your Liabilities"
-                icon="card-outline"
-              >
-                {categorizedLiabilities.map((liability, index) => (
-                  <AccountItem
-                    key={index}
-                    name={liability.name}
-                    type={liability.type}
-                    balance={formatCurrency(liability.balances.current || 0)}
-                    icon="card-outline"
-                  />
-                ))}
-              </FinancialBottomSheet>
+                categories={[
+                  {
+                    title: "CHECKINGS & SAVINGS",
+                    icon: "wallet-outline" as keyof typeof Ionicons.glyphMap,
+                    iconColor: "#4A90E2",
+                    items: categorizedDeposits.map((account, index) => (
+                      <AccountItem
+                        key={index}
+                        name={account.name}
+                        type={account.type}
+                        balance={formatCurrency(account.balances.current || 0)}
+                        icon="wallet-outline"
+                        bankName={institution?.name}
+                      />
+                    )),
+                  },
+                  {
+                    title: "CREDIT CARDS",
+                    icon: "card-outline" as keyof typeof Ionicons.glyphMap,
+                    iconColor: "#FF6B6B",
+                    items: categorizedLiabilities
+                      .filter(
+                        (acc) =>
+                          acc.type === "credit" ||
+                          (acc as any).subtype === "credit card"
+                      )
+                      .map((account, index) => (
+                        <AccountItem
+                          key={index}
+                          name={account.name}
+                          type={account.type}
+                          balance={formatCurrency(
+                            account.balances.current || 0
+                          )}
+                          icon="card-outline"
+                          bankName={institution?.name}
+                        />
+                      )),
+                  },
+                  {
+                    title: "LOANS",
+                    icon: "receipt-outline" as keyof typeof Ionicons.glyphMap,
+                    iconColor: "#FF9F43",
+                    items: categorizedLiabilities
+                      .filter(
+                        (acc) =>
+                          acc.type === "loan" ||
+                          (acc as any).subtype?.includes("loan")
+                      )
+                      .map((account, index) => (
+                        <AccountItem
+                          key={index}
+                          name={account.name}
+                          type={account.type}
+                          balance={formatCurrency(
+                            account.balances.current || 0
+                          )}
+                          icon="receipt-outline"
+                          bankName={institution?.name}
+                        />
+                      )),
+                  },
+                  {
+                    title: "INVESTMENTS",
+                    icon: "trending-up" as keyof typeof Ionicons.glyphMap,
+                    iconColor: "#4ECDC4",
+                    items: (investments?.holdings || []).map(
+                      (holding, index) => (
+                        <AccountItem
+                          key={index}
+                          name={holding.security_id}
+                          type="Investment"
+                          balance={formatCurrency(
+                            holding.institution_value || 0
+                          )}
+                          icon="trending-up"
+                          bankName={institution?.name}
+                        />
+                      )
+                    ),
+                  },
+                ]}
+              />
             </ScrollView>
           )}
         </>
