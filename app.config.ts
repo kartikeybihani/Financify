@@ -17,22 +17,27 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     "**/*"
   ],
   ios: {
+    ...config.ios,
     supportsTablet: true
   },
   android: {
+    ...config.android,
     adaptiveIcon: {
       foregroundImage: "./assets/adaptive-icon.png",
       backgroundColor: "#121212"
     }
   },
   web: {
+    ...config.web,
     favicon: "./assets/favicon.png"
   },
   extra: {
+    ...config.extra, // Preserve existing properties including EAS projectId
     supabaseUrl: process.env.EXPO_PUBLIC_SUPABASE_URL,
     supabaseAnonKey: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY,
   },
   plugins: [
+    ...config.plugins || [],
     "expo-router"
   ]
 }); 
