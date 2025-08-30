@@ -2,8 +2,9 @@
 import { createClient } from "@supabase/supabase-js";
 
 const supabase = createClient(
-  process.env.EXPO_PUBLIC_SUPABASE_URL, // server-only
-  process.env.EXPO_PUBLIC_SUPABASE_SERVICE_ROLE_KEY // server-only
+  process.env.SUPABASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL, // server-side env var with fallback
+  process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.EXPO_PUBLIC_SUPABASE_SERVICE_ROLE_KEY // server-side env var with fallback
 );
 
 export default async function handler(req, res) {

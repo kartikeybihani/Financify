@@ -11,28 +11,31 @@ export default async function handler(req, res) {
   if (req.method !== "POST")
     return res.status(405).json({ error: "Method not allowed" });
 
-  const { user_id } = req.body;
+  const { item_id } = req.body;
+  if (!item_id) {
+    return res.status(400).json({ error: "Missing item_id" });
+  }
 
   const { data, error: fetchError } = await supabase
     .from("user_items")
-    .select("item_id")
-    .eq("user_id", user_id)
+    .select("access_token")
+    .eq("item_id", item_id)
     .single();
 
   console.log("data", data);
 
   if (fetchError || !data) {
-    return res.status(404).json({ error: "User token not found" });
+    return res.status(404).json({ error: "Item not found" });
   }
 
   try {
     await client.itemRemove({ access_token: data.access_token });
 
-    // Clear access token + item_id + flags
+    // Clear access token + item_id + flags for this specific item
     const { error: deleteError } = await supabase
       .from("user_items")
       .delete()
-      .eq("user_id", user_id);
+      .eq("item_id", item_id);
 
     console.log("deleteError", deleteError);
     if (deleteError) throw deleteError;
