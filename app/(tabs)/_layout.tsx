@@ -14,6 +14,7 @@ import {
   Image,
   Animated,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Tabs, useRouter, usePathname } from "expo-router";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { Easing } from "react-native";
@@ -53,6 +54,7 @@ const FinnyTabIcon = forwardRef(({ focused }: { focused: boolean }, ref) => {
 });
 
 export default function TabLayout() {
+  const insets = useSafeAreaInsets();
   const tabs = [
     {
       name: "index",
@@ -87,9 +89,10 @@ export default function TabLayout() {
         headerShown: false,
         tabBarShowLabel: true, // Set globally
         tabBarStyle: {
-          height: 70,
+          height: Platform.OS === "ios" ? 50 + insets.bottom : 70,
           paddingVertical: 5,
-          paddingBottom: Platform.OS === "ios" ? 20 : 10,
+          paddingBottom:
+            Platform.OS === "ios" ? Math.max(insets.bottom, 20) + 10 : 10,
           backgroundColor: "#121212",
           borderTopWidth: 1,
           borderTopColor: "#222",

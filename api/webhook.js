@@ -1,35 +1,77 @@
 // /api/webhook.js
-import { supabase } from "../app/lib/supabase/supabase";
+import { createClient } from "@supabase/supabase-js";
+
+const supabase = createClient(
+  process.env.EXPO_PUBLIC_SUPABASE_URL, // server-only
+  process.env.EXPO_PUBLIC_SUPABASE_SERVICE_ROLE_KEY // server-only
+);
 
 export default async function handler(req, res) {
-  if (req.method !== "POST") {
+  if (req.method !== "POST")
     return res.status(405).json({ error: "Method not allowed" });
+
+  const { webhook_type, webhook_code, item_id } = req.body || {};
+  if (!item_id) {
+    // Plaid normally sends item_id; log and 200 to avoid retries
+    console.warn("Webhook missing item_id", req.body);
+    return res.status(200).json({ ok: true });
   }
 
-  console.log("📩 Webhook received:", req.body);
+  try {
+    // --- ITEM webhooks ---
+    if (webhook_type === "ITEM") {
+      if (webhook_code === "NEW_ACCOUNTS_AVAILABLE") {
+        await supabase
+          .from("user_items")
+          .update({ has_new_accounts: true })
+          .eq("item_id", item_id);
 
-  // Optionally, handle specific webhook types/codes
-  const { webhook_type, webhook_code } = req.body;
+        // tell your app to launch UPDATE mode with account select
+        return res.status(200).json({ ok: true, prompt_update_mode: true });
+      }
 
-  if (webhook_type === "ITEM" && webhook_code === "NEW_ACCOUNTS_AVAILABLE") {
-    // Trigger item update logic if needed
-    console.log("🆕 New accounts available, prompt user to update");
-    await supabase
-      .from("user_tokens")
-      .update({ has_new_accounts: true })
-      .eq("id", user_id);
+      if (
+        webhook_code === "ITEM_LOGIN_REQUIRED" ||
+        webhook_code === "PENDING_EXPIRATION" ||
+        webhook_code === "PENDING_DISCONNECT"
+      ) {
+        await supabase
+          .from("user_items")
+          .update({ requires_update_mode: true })
+          .eq("item_id", item_id);
 
-    return res.status(200).json({ prompt_update_mode: true });
-  } else if (
-    webhook_code === "PENDING_EXPIRATION" ||
-    webhook_code === "ITEM_LOGIN_REQUIRED" ||
-    webhook_code === "PENDING_DISCONNECT"
-  ) {
-    console.log("👉 Item pending expiration, should update access.");
-    console.log("🛑 Item requires update mode:", webhook_code, webhook_type);
-    res.status(200).json({ requires_update_mode: true });
-  } else {
-    console.log("👉 Webhook received:", req.body);
+        return res.status(200).json({ ok: true, requires_update_mode: true });
+      }
+    }
+
+    // --- TRANSACTIONS webhooks ---
+    if (webhook_type === "TRANSACTIONS") {
+      const shouldSync =
+        webhook_code === "INITIAL_UPDATE" ||
+        webhook_code === "HISTORICAL_UPDATE" ||
+        webhook_code === "SYNC_UPDATES_AVAILABLE";
+
+      if (shouldSync) {
+        try {
+          fetch(`https://financify-rose.vercel.app/api/transactions_sync`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ item_id }),
+          }).catch((e) => console.error("enqueue sync failed", e));
+        } catch (e) {
+          console.error("enqueue error", e);
+        }
+      }
+
+      // Always ack quickly so Plaid doesn't retry
+      return res.status(200).json({ ok: true, trigger_sync: !!shouldSync });
+    }
+
+    // default: acknowledge
+    return res.status(200).json({ ok: true });
+  } catch (e) {
+    console.error("webhook error", e);
+    // still 200 to avoid retries; log internally
+    return res.status(200).json({ ok: true });
   }
-  // res.status(200).json({ received: true });
 }

@@ -50,6 +50,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     },
     supabaseUrl: process.env.EXPO_PUBLIC_SUPABASE_URL,
     supabaseAnonKey: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY,
+    supabaseServiceRoleKey: process.env.EXPO_PUBLIC_SUPBASE_SERVICE_ROLE_KEY,
   },
   plugins: [
     ...config.plugins || [],

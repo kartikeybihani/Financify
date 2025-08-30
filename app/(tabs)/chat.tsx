@@ -14,7 +14,10 @@ import {
   DeviceEventEmitter,
   Image,
   Easing,
+  KeyboardAvoidingView,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { StatusBar } from "expo-status-bar";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
 import { AntDesign } from "@expo/vector-icons";
@@ -34,6 +37,7 @@ interface Suggestion {
 }
 
 export default function ChatScreen() {
+  const insets = useSafeAreaInsets();
   const [userInput, setUserInput] = useState("");
   const [showScrollButton, setShowScrollButton] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
@@ -434,175 +438,194 @@ export default function ChatScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <LinearGradient
-        colors={[
-          "rgba(26, 61, 102, 0.85)",
-          "rgba(26, 61, 102, 0.1)",
-          "transparent",
-        ]}
-        style={styles.headerGradient}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 0, y: 1 }}
-      />
-      <View style={styles.headerContainer}>
-        <View style={styles.titleContainer}>
-          <View style={styles.mascotContainer}>
-            <Animated.Image
-              source={require("../assets/mascot1.jpg")}
-              style={[
-                styles.mascotImage,
-                {
-                  transform: [
-                    { rotate },
-                    { scale: bounce },
-                    { scaleX: -1 },
-                    { rotateY: rotate },
-                  ],
-                },
-              ]}
-            />
-          </View>
-          {/* <View style={styles.headerContent}>
+      <StatusBar style="light" />
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
+      >
+        <LinearGradient
+          colors={[
+            "rgba(26, 61, 102, 0.85)",
+            "rgba(26, 61, 102, 0.1)",
+            "transparent",
+          ]}
+          style={styles.headerGradient}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 0, y: 1 }}
+        />
+        <View style={styles.headerContainer}>
+          <View style={styles.titleContainer}>
+            <View style={styles.mascotContainer}>
+              <Animated.Image
+                source={require("../assets/mascot1.jpg")}
+                style={[
+                  styles.mascotImage,
+                  {
+                    transform: [
+                      { rotate },
+                      { scale: bounce },
+                      { scaleX: -1 },
+                      { rotateY: rotate },
+                    ],
+                  },
+                ]}
+              />
+            </View>
+            {/* <View style={styles.headerContent}>
             <Text style={styles.headerTitle}>Finny</Text>
           </View> */}
-        </View>
-        <TouchableOpacity
-          style={styles.clearButton}
-          onPress={clearChat}
-          activeOpacity={0.7}
-        >
-          <Ionicons name="trash-outline" size={14} color="#FF3B30" />
-        </TouchableOpacity>
-      </View>
-
-      <View style={styles.chatArea}>
-        <View style={styles.chatContainer}>
-          <ScrollView
-            ref={scrollViewRef}
-            style={styles.chatScroll}
-            onScroll={handleScroll}
-            scrollEventThrottle={16}
-            onScrollBeginDrag={() => (isScrolling.current = true)}
-            onScrollEndDrag={() => (isScrolling.current = false)}
-            onContentSizeChange={() => {
-              if (shouldScrollToBottom.current) scrollToBottom();
-            }}
-            contentContainerStyle={{ paddingBottom: 50 }}
+          </View>
+          <TouchableOpacity
+            style={styles.clearButton}
+            onPress={clearChat}
+            activeOpacity={0.7}
           >
-            {showNudges && <NudgeGrid onNudgePress={handleSend} />}
-            {chatMessages.map((msg, index) => (
-              <ChatMessageComponent
-                key={msg.id}
-                message={msg}
-                showSender={
-                  msg.sender === "finny" &&
-                  (index === 0 || chatMessages[index - 1].sender !== "finny")
-                }
-                onAction={async (action) => {
-                  if (action === "goal_confirm") await handleGoalConfirm();
-                  if (action === "goal_decline") await handleGoalDecline();
+            <Ionicons name="trash-outline" size={14} color="#FF3B30" />
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.chatArea}>
+          <View style={styles.chatContainer}>
+            <ScrollView
+              ref={scrollViewRef}
+              style={styles.chatScroll}
+              onScroll={handleScroll}
+              scrollEventThrottle={16}
+              onScrollBeginDrag={() => (isScrolling.current = true)}
+              onScrollEndDrag={() => (isScrolling.current = false)}
+              onContentSizeChange={() => {
+                if (shouldScrollToBottom.current) scrollToBottom();
+              }}
+              contentContainerStyle={{ paddingBottom: 50 }}
+            >
+              {showNudges && <NudgeGrid onNudgePress={handleSend} />}
+              {chatMessages.map((msg, index) => (
+                <ChatMessageComponent
+                  key={msg.id}
+                  message={msg}
+                  showSender={
+                    msg.sender === "finny" &&
+                    (index === 0 || chatMessages[index - 1].sender !== "finny")
+                  }
+                  onAction={async (action) => {
+                    if (action === "goal_confirm") await handleGoalConfirm();
+                    if (action === "goal_decline") await handleGoalDecline();
+                  }}
+                />
+              ))}
+              {isTyping && <TypingIndicator />}
+            </ScrollView>
+
+            {/* Inline Goal Confirmation Buttons */}
+            {/* This block is removed as per the edit hint */}
+
+            {showScrollButton && (
+              <Animated.View
+                style={[
+                  styles.scrollToBottomButton,
+                  {
+                    transform: [
+                      {
+                        scale: scrollButtonAnimation.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [0.7, 1],
+                        }),
+                      },
+                      {
+                        translateY: scrollButtonAnimation.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [10, 0],
+                        }),
+                      },
+                    ],
+                    opacity: scrollButtonAnimation,
+                  },
+                ]}
+              >
+                <TouchableOpacity
+                  onPress={() => {
+                    shouldScrollToBottom.current = true;
+                    scrollToBottom();
+                  }}
+                  style={styles.scrollButtonTouchable}
+                  activeOpacity={0.8}
+                >
+                  <View style={styles.scrollButtonGradient}>
+                    <AntDesign name="arrowdown" size={20} color="#FFFFFF" />
+                  </View>
+                </TouchableOpacity>
+              </Animated.View>
+            )}
+          </View>
+
+          <View
+            style={[
+              styles.inputBarContainer,
+              { paddingBottom: Math.max(insets.bottom, 16) },
+            ]}
+          >
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.suggestionsContainer}
+            >
+              {suggestions.map((suggestion, idx) => (
+                <TouchableOpacity
+                  key={idx}
+                  onPress={() => handleSend(suggestion.text)}
+                  style={styles.suggestionChip}
+                >
+                  <Ionicons
+                    name={suggestion.icon}
+                    size={14}
+                    color="#FFFFFF"
+                    style={styles.suggestionIcon}
+                  />
+                  <Text style={styles.suggestionText}>{suggestion.text}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+            <View style={styles.inputBar}>
+              <TouchableOpacity
+                style={styles.plusButton}
+                onPress={() => setShowStartersModal(true)}
+              >
+                <Ionicons name="add" size={24} color="#4A90E2" />
+              </TouchableOpacity>
+              <TextInput
+                placeholder="Ask Finny anything about money..."
+                placeholderTextColor="#888"
+                style={styles.input}
+                value={userInput}
+                onChangeText={setUserInput}
+                onSubmitEditing={() => handleSend()}
+                onFocus={() => {
+                  // Auto-scroll to bottom when input is focused
+                  setTimeout(() => {
+                    shouldScrollToBottom.current = true;
+                    scrollToBottom();
+                  }, 300);
                 }}
               />
-            ))}
-            {isTyping && <TypingIndicator />}
-          </ScrollView>
-
-          {/* Inline Goal Confirmation Buttons */}
-          {/* This block is removed as per the edit hint */}
-
-          {showScrollButton && (
-            <Animated.View
-              style={[
-                styles.scrollToBottomButton,
-                {
-                  transform: [
-                    {
-                      scale: scrollButtonAnimation.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: [0.7, 1],
-                      }),
-                    },
-                    {
-                      translateY: scrollButtonAnimation.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: [10, 0],
-                      }),
-                    },
-                  ],
-                  opacity: scrollButtonAnimation,
-                },
-              ]}
-            >
               <TouchableOpacity
+                style={[styles.sendButton, isTyping && { opacity: 0.5 }]}
                 onPress={() => {
-                  shouldScrollToBottom.current = true;
-                  scrollToBottom();
+                  if (!isTyping) handleSend();
                 }}
-                style={styles.scrollButtonTouchable}
-                activeOpacity={0.8}
-              >
-                <View style={styles.scrollButtonGradient}>
-                  <AntDesign name="arrowdown" size={20} color="#FFFFFF" />
-                </View>
-              </TouchableOpacity>
-            </Animated.View>
-          )}
-        </View>
-
-        <View style={styles.inputBarContainer}>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.suggestionsContainer}
-          >
-            {suggestions.map((suggestion, idx) => (
-              <TouchableOpacity
-                key={idx}
-                onPress={() => handleSend(suggestion.text)}
-                style={styles.suggestionChip}
+                activeOpacity={isTyping ? 1 : 0.7}
+                disabled={isTyping}
               >
                 <Ionicons
-                  name={suggestion.icon}
-                  size={14}
-                  color="#FFFFFF"
-                  style={styles.suggestionIcon}
+                  name="arrow-up-circle-sharp"
+                  size={32}
+                  color={isTyping ? "#888" : "#4A90E2"}
                 />
-                <Text style={styles.suggestionText}>{suggestion.text}</Text>
               </TouchableOpacity>
-            ))}
-          </ScrollView>
-          <View style={styles.inputBar}>
-            <TouchableOpacity
-              style={styles.plusButton}
-              onPress={() => setShowStartersModal(true)}
-            >
-              <Ionicons name="add" size={24} color="#4A90E2" />
-            </TouchableOpacity>
-            <TextInput
-              placeholder="Ask Finny anything about money..."
-              placeholderTextColor="#888"
-              style={styles.input}
-              value={userInput}
-              onChangeText={setUserInput}
-              onSubmitEditing={() => handleSend()}
-            />
-            <TouchableOpacity
-              style={[styles.sendButton, isTyping && { opacity: 0.5 }]}
-              onPress={() => {
-                if (!isTyping) handleSend();
-              }}
-              activeOpacity={isTyping ? 1 : 0.7}
-              disabled={isTyping}
-            >
-              <Ionicons
-                name="arrow-up-circle-sharp"
-                size={32}
-                color={isTyping ? "#888" : "#4A90E2"}
-              />
-            </TouchableOpacity>
+            </View>
           </View>
         </View>
-      </View>
+      </KeyboardAvoidingView>
 
       <ConversationStartersModal
         visible={showStartersModal}

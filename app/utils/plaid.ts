@@ -1,98 +1,94 @@
+// /app/utils/plaid.ts
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { open, create } from "react-native-plaid-link-sdk";
 import {supabase} from "../lib/supabase/supabase";
 
 const BASE_URL = "https://financify-rose.vercel.app";
 
+// === Multiple Item ID Management ===
+const ITEM_IDS_KEY = "plaid:item_ids";
+
+export async function getItemIds(): Promise<string[]> {
+  const raw = await AsyncStorage.getItem(ITEM_IDS_KEY);
+  return raw ? JSON.parse(raw) : [];
+}
+
+export async function addItemId(itemId: string) {
+  const ids = await getItemIds();
+  if (!ids.includes(itemId)) {
+    ids.push(itemId);
+    await AsyncStorage.setItem(ITEM_IDS_KEY, JSON.stringify(ids));
+  }
+}
+
+export async function removeItemId(itemId: string) {
+  const ids = await getItemIds();
+  const next = ids.filter(id => id !== itemId);
+  await AsyncStorage.setItem(ITEM_IDS_KEY, JSON.stringify(next));
+}
+
 // === Create Link Token ===
 export const fetchLinkToken = async () => {
-  try {
-    const res = await fetch(`${BASE_URL}/api/link_tokens`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mode: "create" }),
-    });
-    const data = await res.json();
-    console.log("Link token response:", data);
-    console.log("Link token:", data);
-    return data.link_token;
-  } catch (err) {
-    console.error("Error fetching link token:", err);
-    return null;
-  }
+  const { data: { user } } = await supabase.auth.getUser();
+  const res = await fetch(`${BASE_URL}/api/link_tokens`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ mode: "create", user_id: user?.id }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "Failed to get link token");
+  return data.link_token;
 };
 
 // === Connect Flow ===
 export const handlePlaidConnect = async (
   linkToken: string,
-  onSuccess: (token: string) => void,
+  onSuccess: (itemId: string) => void,
   onExit?: (error?: any) => void
 ) => {
   if (!linkToken) return;
-  console.log("In handlePlaidConnect");
-  console.log("Doing the exchange_public_token call...");
 
-  try {
-    create({ token: linkToken });
-    console.log("Created the create function");
-    
-    open({
-      onSuccess: async ({ publicToken }: { publicToken: string }) => {
-        const { data: { user }} = await supabase.auth.getUser();
-        console.log("User ID:", user?.id);
+  create({ token: linkToken }); // init RN SDK
+  open({
+    onSuccess: async ({ publicToken }: { publicToken: string }) => {
+      const { data: { user } } = await supabase.auth.getUser();
 
-        try {
-          console.log("In onSuccess");
-          const res = await fetch(
-            `${BASE_URL}/api/exchange_public_token`,
-            {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({  
-              public_token: publicToken,
-              user_id: user?.id,
-            }),
-        });
-          const data = await res.json();
-          const token = data.access_token;
-          console.log("Plaid token:", token);
-          // await AsyncStorage.setItem("accessToken", token);
-          onSuccess(token);
-        } catch (err) {
-          console.error("Error in onSuccess:", err);
-        }
-      },
-      onExit: (error: any) => {
-        console.log("Plaid flow exited here... oops", error);
-        if (onExit) {
-          onExit(error);
-        }
-      },
-    });
-  } catch (error) {
-    console.error("Error creating Plaid link:", error);
-    throw error;
-  }
+      const res = await fetch(`${BASE_URL}/api/exchange_public_token`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          public_token: publicToken,
+          user_id: user?.id,
+          // optional: include institution metadata you can capture later
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Exchange failed");
+
+      // ✅ we only get and keep item_id client-side
+      const { item_id } = data;
+      await addItemId(item_id); // add to array instead of single item
+      onSuccess(item_id);
+    },
+    onExit: (error?: any) => onExit?.(error),
+  });
 };
 
 // === Update Mode ===
-export const getUpdateLinkToken = async (access_token: string) => {
-  try {
-    const res = await fetch(`${BASE_URL}/api/link_tokens`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mode: "update", access_token }),
-    });
-
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Failed to get update token");
-    return data.link_token;
-  } catch (error) {
-    console.error("Error getting update token:", error);
-    throw error;
-  }
+export const getUpdateLinkToken = async (item_id: string) => {
+  const { data: { user } } = await supabase.auth.getUser();
+  const res = await fetch(`${BASE_URL}/api/link_tokens`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ mode: "update", item_id, user_id: user?.id }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "Failed to get update token");
+  return data.link_token;
 };
 
+// === Open Plaid Link ===
 export const openPlaidLink = async (link_token: string) => {
   try {
     console.log("Opening Plaid link for update");
@@ -116,46 +112,25 @@ export const openPlaidLink = async (link_token: string) => {
 };
 
 // === Disconnect ===
-export const handleDisconnect = async () => {
-  try {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user?.id) throw new Error("User not found");
-
-    console.log("User ID:", user?.id);
-
-    const res = await fetch(`${BASE_URL}/api/remove_item`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ user_id: user.id }),
-    });
-
-    console.log("Response from remove_item:", JSON.stringify(res, null, 2));
-    const { error } = await res.json();
-    if (error) throw new Error(error);
-
-    // Clear local storage and flags
-    await AsyncStorage.clear();
-
-    // Optional: reset local app state if applicable
-    return true;
-  } catch (err) {
-    console.error("Disconnect error:", JSON.stringify(err));
-    throw err;
-  }
+export const handleDisconnect = async (item_id: string) => {
+  const res = await fetch(`${BASE_URL}/api/remove_item`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ item_id }),
+  });
+  const payload = await res.json();
+  if (!res.ok || payload?.error) throw new Error(payload?.error || "Remove failed");
+  await removeItemId(item_id);
+  return true;
 };
 
-
-
 // === Plaid Data Fetchers ===
-export const fetchInstitution = async (token: string) => {
+export const fetchInstitution = async (item_id: string) => {
   try {
     const res = await fetch(`${BASE_URL}/api/plaid`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ endpoint: "institution", access_token: token }),
+      body: JSON.stringify({ endpoint: "institution", item_id }),
     });
     const data = await res.json();
     return data.institution;
@@ -165,45 +140,37 @@ export const fetchInstitution = async (token: string) => {
   }
 };
 
-export const fetchAccounts = async (token: string) => {
-  try {
-    const res = await fetch(`${BASE_URL}/api/plaid`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ endpoint: "accounts", access_token: token }),
-    });
-    const data = await res.json();
-    console.log("Accounts data loaded...");
-    return data.accounts;
-  } catch (err) {
-    console.error("Error fetching accounts:", err);
-    return [];
-  }
+// === Fetch Accounts ===
+export const fetchAccounts = async (item_id: string) => {
+  const res = await fetch(`${BASE_URL}/api/plaid`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ endpoint: "accounts", item_id }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "Failed to fetch accounts");
+  return data.accounts;
 };
 
-export const triggerWebhook = async (access_token: string) => {
+// === Trigger Webhook ===
+export const triggerWebhook = async (item_id: string) => {
   const res = await fetch(`${BASE_URL}/api/fire_webhook`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ access_token }),
+    body: JSON.stringify({ item_id }),
   });
-
   console.log("Webhook triggered");
-  if (!res.ok) {
-    throw new Error("Webhook trigger failed");
-  }
-  console.log("Response from webhook:", await res.json());
-
-  return await res.json();
+  if (!res.ok) throw new Error("Webhook trigger failed");
+  return res.json();
 };
 
-
-export const fetchIdentity = async (token: string) => {
+// === Fetch Identity ===
+export const fetchIdentity = async (item_id: string) => {
   try {
     const res = await fetch(`${BASE_URL}/api/plaid`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ endpoint: "identity", access_token: token }),
+      body: JSON.stringify({ endpoint: "identity", item_id }),
     });
     const data = await res.json();
     return data.identity;
@@ -213,13 +180,13 @@ export const fetchIdentity = async (token: string) => {
   }
 };
 
-// ✅ NEW: Fetch Investments (Holdings + Transactions)
-export const fetchInvestments = async (token: string) => {
+// === Fetch Investments ===
+export const fetchInvestments = async (item_id: string) => {
   try {
     const res = await fetch(`${BASE_URL}/api/plaid`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ endpoint: "investments", access_token: token }),
+      body: JSON.stringify({ endpoint: "investments", item_id }),
     });
     const data = await res.json();
     console.log("Investments data loaded...");
@@ -238,12 +205,12 @@ export const fetchInvestments = async (token: string) => {
   }
 };
 
-export const fetchLiabilities = async (token: string) => {
+export const fetchLiabilities = async (item_id: string) => {
   try {
     const res = await fetch(`${BASE_URL}/api/plaid`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ endpoint: "liabilities", access_token: token }),
+      body: JSON.stringify({ endpoint: "liabilities", item_id }),
     });
     const data = await res.json();
     console.log("Liabilities data loaded...");
@@ -255,39 +222,43 @@ export const fetchLiabilities = async (token: string) => {
 };
 
 // === Bootup Fetch ===
-export const fetchInitialData = async (token: string) => {
-  try {
-    console.log("Fetching initial data with token:", token);
-    const [institution, accounts, identity, investments, liabilities] =
-      await Promise.all([
-        fetchInstitution(token),
-        fetchAccounts(token),
-        fetchIdentity(token),
-        fetchInvestments(token),
-        fetchLiabilities(token),
-      ]);
+export const fetchInitialData = async () => {
+  const ids = await getItemIds();
+  const item_id = ids[0]; // choose active one; later, let user pick
+  if (!item_id) return { accounts: [], investments: {}, liabilities: [] };
 
-    return {
-      institution,
-      accounts,
-      identity,
-      investments,
-      liabilities,
-    };
-  } catch (err) {
-    console.error("Error fetching initial data:", err);
-    return null;
-  }
+  const [institution, accounts, identity, investments, liabilities] = await Promise.all([
+    fetchInstitution(item_id),
+    fetchAccounts(item_id),
+    fetchIdentity(item_id),
+    fetchInvestments(item_id),
+    fetchLiabilities(item_id),
+  ]);
+
+  return { institution, accounts, identity, investments, liabilities, item_id };
 };
+
+// === Sync Transactions ===
+export const syncTransactions = async (item_id: string) => {
+  const res = await fetch(`${BASE_URL}/api/transactions_sync`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ item_id }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "Sync failed");
+  return data; // { added, modified, removed }
+};
+
 
 const plaidUtils = {
   initializePlaid: fetchInitialData,
   getPlaidLinkToken: fetchLinkToken,
   exchangePublicToken: handlePlaidConnect,
-  getAccounts: fetchAccounts,
-  getTransactions: fetchInvestments,
-  getInvestments: fetchInvestments,
-  getLiabilities: fetchLiabilities,
+  getAccounts: fetchAccounts,              // now takes item_id
+  syncTransactions,                        // new
+  getInvestments: fetchInvestments,        // now takes item_id
+  getLiabilities: fetchLiabilities,        // now takes item_id
   disconnectPlaid: handleDisconnect,
 };
 

@@ -14,10 +14,12 @@ export default async function handler(req, res) {
   const { user_id } = req.body;
 
   const { data, error: fetchError } = await supabase
-    .from("user_tokens")
-    .select("access_token")
-    .eq("id", user_id)
+    .from("user_items")
+    .select("item_id")
+    .eq("user_id", user_id)
     .single();
+
+  console.log("data", data);
 
   if (fetchError || !data) {
     return res.status(404).json({ error: "User token not found" });
@@ -28,10 +30,11 @@ export default async function handler(req, res) {
 
     // Clear access token + item_id + flags
     const { error: deleteError } = await supabase
-      .from("user_tokens")
+      .from("user_items")
       .delete()
-      .eq("id", user_id);
+      .eq("user_id", user_id);
 
+    console.log("deleteError", deleteError);
     if (deleteError) throw deleteError;
 
     return res.status(200).json({ success: true });

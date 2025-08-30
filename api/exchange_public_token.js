@@ -1,36 +1,46 @@
+// /api/exchange_public_token.js
 import { client } from "../app/plaidClient.js";
 import { createClient } from "@supabase/supabase-js";
 
 const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY // 👈 only use this on the backend
+  process.env.EXPO_PUBLIC_SUPABASE_URL, // server-only
+  process.env.EXPO_PUBLIC_SUPABASE_SERVICE_ROLE_KEY // server-only
 );
 
 export default async function handler(req, res) {
-  if (req.method !== "POST") {
+  if (req.method !== "POST")
     return res.status(405).json({ error: "Method not allowed" });
+
+  const { public_token, user_id, institution_id, institution_name } = req.body;
+  if (!public_token || !user_id) {
+    return res.status(400).json({ error: "Missing public_token or user_id" });
   }
 
-  const { public_token, user_id } = req.body;
-
   try {
-    const response = await client.itemPublicTokenExchange({ public_token });
-    const access_token = response.data.access_token;
-    const item_id = response.data.item_id;
+    const { data } = await client.itemPublicTokenExchange({ public_token });
+    const { access_token, item_id } = data;
 
-    // Store in Supabase
-    const { error } = await supabase.from("user_tokens").upsert({
-      id: user_id,
-      access_token,
-      item_id,
-    });
+    // Idempotent write: upsert on unique item_id
+    const { error } = await supabase.from("user_items").upsert(
+      {
+        user_id,
+        item_id,
+        access_token,
+        institution_id: institution_id ?? null,
+        institution_name: institution_name ?? null,
+        webhook: "https://financify-rose.vercel.app/api/webhook",
+      },
+      { onConflict: "item_id" }
+    );
 
-    if (error) {
-      console.error("❌ Error inserting to Supabase:", error.message);
-    }
+    if (error) throw error;
 
-    res.status(200).json({ access_token, item_id });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
+    // Do NOT return access_token to the client
+    return res.status(200).json({ item_id });
+  } catch (e) {
+    console.error("exchange error", e.response?.data || e);
+    return res
+      .status(500)
+      .json({ error: e.response?.data?.error_message || e.message });
   }
 }

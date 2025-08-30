@@ -57,12 +57,13 @@ const ConversationStartersModal = ({
             <ScrollView style={styles.questionsList}>
               {CONVERSATION_STARTERS.map((question, index) => (
                 <TouchableOpacity
+                  key={index}
                   onPress={() => {
                     onSelectQuestion(question);
                     onClose();
                   }}
                 >
-                  <View key={index} style={styles.questionRow}>
+                  <View style={styles.questionRow}>
                     <Text style={styles.questionText}>{question}</Text>
                     <View style={styles.arrowContainer}>
                       <Ionicons

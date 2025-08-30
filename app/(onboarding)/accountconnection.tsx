@@ -48,45 +48,6 @@ export default function AccountConnectionScreen() {
     initializePlaid();
   }, []);
 
-  const updateUserAfterBankConnect = async (accessToken: string) => {
-    try {
-      const { data: userData, error: userError } =
-        await supabase.auth.getUser();
-
-      if (userError || !userData.user) {
-        throw new Error("User not found");
-      }
-
-      const { error: updateError } = await supabase.auth.updateUser({
-        data: {
-          hasConnectedBank: true,
-        },
-      });
-
-      if (updateError) {
-        throw updateError;
-      }
-
-      // await AsyncStorage.setItem("accessToken", accessToken);
-
-      const { error: updateError1 } = await supabase
-        .from("user_tokens")
-        .upsert({
-          id: userData?.user?.id,
-          access_token: accessToken,
-        });
-
-      if (updateError) {
-        throw updateError;
-      }
-      // Navigate to final screen after updating user metadata
-      router.replace("/(onboarding)/final");
-    } catch (error: any) {
-      console.error("Error updating user:", error);
-      Alert.alert("Error", error.message || "Something went wrong");
-    }
-  };
-
   const handleConnect = async () => {
     if (!linkToken) {
       Alert.alert(
@@ -95,68 +56,55 @@ export default function AccountConnectionScreen() {
       );
       return;
     }
-
     setIsLoading(true);
-    try {
-      handlePlaidConnect(
-        linkToken,
-        async (accessToken: string) => {
-          console.log("Bank account connected successfully!");
-          setHasConnectedBank(true);
 
+    try {
+      await handlePlaidConnect(
+        linkToken,
+        async (itemId: string) => {
+          setHasConnectedBank(true);
           setIsLoading(false);
           setIsConnecting(true);
 
-          // Show success message
+          // itemId is already stored via addItemId in handlePlaidConnect
+
           Alert.alert(
             "Success!",
             "Your bank account has been connected successfully.",
             [
               {
                 text: "Continue",
-                onPress: () => {
+                onPress: async () => {
                   setIsConnecting(false);
-                  updateUserAfterBankConnect(accessToken);
+                  await supabase.auth.updateUser({
+                    data: { hasConnectedBank: true },
+                  });
+                  router.replace("/(onboarding)/final");
                 },
               },
             ]
           );
         },
+        // onExit:
         (error?: any) => {
-          // Handle Plaid flow exit
-          console.log("Plaid flow exited, resetting loading state");
           setIsLoading(false);
           setIsConnecting(false);
 
-          // Show appropriate message based on error
           if (error?.error?.errorCode === "INVALID_LINK_TOKEN") {
             Alert.alert(
               "Connection Expired",
-              "The connection link has expired. Please try connecting again.",
+              "The link expired. Trying again...",
               [
                 {
                   text: "OK",
-                  onPress: () => {
-                    // Optionally refresh the link token
-                    const initializePlaid = async () => {
-                      try {
-                        const token = await fetchLinkToken();
-                        setLinkToken(token);
-                      } catch (error) {
-                        console.error("Error refreshing link token:", error);
-                      }
-                    };
-                    initializePlaid();
-                  },
+                  onPress: async () => setLinkToken(await fetchLinkToken()),
                 },
               ]
             );
           } else if (error) {
-            Alert.alert(
-              "Connection Cancelled",
-              "Bank connection was cancelled. You can try again anytime.",
-              [{ text: "OK" }]
-            );
+            Alert.alert("Connection Cancelled", "You can try again anytime.", [
+              { text: "OK" },
+            ]);
           }
         }
       );
