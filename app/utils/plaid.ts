@@ -260,22 +260,51 @@ export const fetchInitialData = async () => {
 
   console.log("🚀 Loading initial data for item_id:", item_id);
 
-  const [institution, accounts, identity, investments, liabilities] = await Promise.all([
-    fetchInstitution(item_id),
-    fetchAccountsFromDatabase(item_id), // Use local database instead of Plaid API
-    fetchIdentity(item_id),
-    fetchInvestments(item_id),
-    fetchLiabilities(item_id),
-  ]);
+  try {
+    // Get accounts from local database
+    const accounts = await fetchAccountsFromDatabase(item_id);
+    
+    // Get institution info from user_items table
+    const { data: userItem, error } = await supabase
+      .from("user_items")
+      .select("institution_name, institution_id")
+      .eq("item_id", item_id)
+      .single();
 
-  console.log("📊 Initial data loaded:", {
-    institution: institution?.name || "Unknown",
-    accounts: accounts?.length || 0,
-    investments: investments?.holdings?.length || 0,
-    liabilities: liabilities?.length || 0,
-  });
+    const institution = userItem && !error ? {
+      name: userItem.institution_name,
+      institution_id: userItem.institution_id
+    } : null;
 
-  return { institution, accounts, identity, investments, liabilities, item_id };
+    // For now, return empty data for investments, liabilities, identity
+    // These will be populated later when we add local storage for them
+    const result = {
+      institution,
+      accounts,
+      identity: [],
+      investments: { holdings: [], securities: [], investmentTransactions: [] },
+      liabilities: [],
+      item_id
+    };
+
+    console.log("📊 Initial data loaded:", {
+      institution: institution?.name || "Unknown",
+      accounts: accounts?.length || 0,
+      investments: 0,
+      liabilities: 0,
+    });
+
+    return result;
+  } catch (error) {
+    console.error("❌ Error fetching initial data:", error);
+    return { 
+      accounts: [], 
+      investments: { holdings: [], securities: [], investmentTransactions: [] }, 
+      liabilities: [],
+      identity: [],
+      institution: null
+    };
+  }
 };
 
 // === Sync Transactions ===

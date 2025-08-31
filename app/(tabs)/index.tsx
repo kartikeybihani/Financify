@@ -16,7 +16,11 @@ import {
 import { Feather, Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { styles } from "../styles/homeStyles";
-import { getUpdateLinkToken, openPlaidLink } from "../utils/plaid";
+import {
+  getUpdateLinkToken,
+  openPlaidLink,
+  fetchInitialData,
+} from "../utils/plaid";
 import {
   Account,
   Identity,
@@ -247,7 +251,36 @@ export default function HomeScreen() {
   const onRefresh = async () => {
     if (!accessToken) return;
     setRefreshing(true);
-    await fetchFreshData(accessToken);
+
+    try {
+      console.log("🔄 Refreshing financial data...");
+      const data = await fetchInitialData();
+
+      if (data.accounts && data.accounts.length > 0) {
+        setAccounts(data.accounts);
+        setIdentity(data.identity || []);
+        setInvestments(
+          data.investments && data.investments.holdings
+            ? data.investments
+            : null
+        );
+        setLiabilities(data.liabilities || []);
+        setInstitution(data.institution);
+
+        await saveDataToStorage({
+          accounts: data.accounts,
+          identity: data.identity,
+          investments: data.investments,
+          liabilities: data.liabilities,
+          institution: data.institution,
+        });
+
+        console.log("✅ Financial data refreshed successfully");
+      }
+    } catch (error) {
+      console.error("❌ Error refreshing data:", error);
+    }
+
     setRefreshing(false);
   };
 
@@ -261,37 +294,62 @@ export default function HomeScreen() {
         console.log("User in home screen:", user?.email);
         setUserData(user);
 
-        const { data, error } = await supabase
-          .from("user_tokens")
-          .select("access_token")
-          .eq("id", user?.id)
-          .single();
+        console.log(
+          "🚀 Loading financial data using new multi-bank approach..."
+        );
 
-        const token = data?.access_token || null;
-        console.log("✅ Loaded token from Supabase:", token);
+        // Use the new fetchInitialData function
+        const data = await fetchInitialData();
 
-        if (token) {
-          setAccessToken(token);
-          const dataLoaded = await loadDataFromStorage();
-          if (!dataLoaded) await fetchFreshData(token);
+        console.log("📊 Received data:", {
+          accounts: data.accounts?.length || 0,
+          institution: data.institution?.name || "None",
+          investments: data.investments?.holdings?.length || 0,
+          liabilities: data.liabilities?.length || 0,
+        });
 
-          const { data } = await supabase
-            .from("user_tokens")
-            .select("has_new_accounts")
-            .eq("id", user?.id)
-            .single();
+        if (data.accounts && data.accounts.length > 0) {
+          // We have connected banks - set all the data
+          setAccounts(data.accounts);
+          setIdentity(data.identity || []);
+          setInvestments(
+            data.investments && data.investments.holdings
+              ? data.investments
+              : null
+          );
+          setLiabilities(data.liabilities || []);
+          setInstitution(data.institution);
+          setAccessToken("connected"); // Set a flag to show we have data
 
-          if (data?.has_new_accounts) {
-            const newUpdateToken = await getUpdateLinkToken(token);
-            setUpdateToken(newUpdateToken);
-            setHasNewAccounts(true);
-          }
+          // Save data to storage for offline access
+          await saveDataToStorage({
+            accounts: data.accounts,
+            identity: data.identity,
+            investments: data.investments,
+            liabilities: data.liabilities,
+            institution: data.institution,
+          });
+
+          console.log("✅ Successfully loaded financial data");
         } else {
+          console.log("⚠️ No accounts found - user needs to connect a bank");
           setAccessToken(null);
+
+          // Try to load from storage as fallback
+          const dataLoaded = await loadDataFromStorage();
+          if (dataLoaded) {
+            console.log("📦 Loaded fallback data from storage");
+          }
         }
       } catch (err) {
         console.error("❌ Error initializing app:", err);
         setAccessToken(null);
+
+        // Try to load from storage as fallback
+        const dataLoaded = await loadDataFromStorage();
+        if (dataLoaded) {
+          console.log("📦 Loaded fallback data from storage after error");
+        }
       } finally {
         setIsInitialLoad(false);
         setIsLoading(false);
