@@ -51,25 +51,56 @@ export const handlePlaidConnect = async (
   create({ token: linkToken }); // init RN SDK
   open({
     onSuccess: async ({ publicToken }: { publicToken: string }) => {
-      const { data: { user } } = await supabase.auth.getUser();
+      try {
+        console.log("🔄 Starting token exchange...");
+        const { data: { user } } = await supabase.auth.getUser();
+        
+        if (!user?.id) {
+          throw new Error("User not authenticated");
+        }
 
-      const res = await fetch(`${BASE_URL}/api/exchange_public_token`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          public_token: publicToken,
-          user_id: user?.id,
-          // optional: include institution metadata you can capture later
-        }),
-      });
+        console.log("📡 Making API call to exchange_public_token");
+        const res = await fetch(`${BASE_URL}/api/exchange_public_token`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            public_token: publicToken,
+            user_id: user.id,
+          }),
+        });
 
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Exchange failed");
+        const data = await res.json();
+        console.log("📦 Exchange response:", { ok: res.ok, data });
+        
+        if (!res.ok) {
+          throw new Error(data.error || `Exchange failed: ${res.status}`);
+        }
 
-      // ✅ we only get and keep item_id client-side
-      const { item_id } = data;
-      await addItemId(item_id); // add to array instead of single item
-      onSuccess(item_id);
+        if (!data.item_id) {
+          throw new Error("No item_id returned from exchange");
+        }
+
+        // ✅ we only get and keep item_id client-side
+        const { item_id } = data;
+        await addItemId(item_id);
+        console.log("✅ Token exchange successful, item_id:", item_id);
+        
+        // 🏦 Immediately fetch and store accounts
+        try {
+          console.log("🔄 Fetching and storing accounts...");
+          await storeAccounts(item_id);
+          console.log("✅ Accounts stored successfully");
+        } catch (accountError) {
+          console.error("⚠️ Failed to store accounts (continuing anyway):", accountError);
+          // Don't fail the whole connection if account storage fails
+        }
+        
+        onSuccess(item_id);
+      } catch (error) {
+        console.error("❌ Token exchange failed:", error);
+        // Call onExit with error to trigger error handling
+        onExit?.(error);
+      }
     },
     onExit: (error?: any) => onExit?.(error),
   });
@@ -227,13 +258,22 @@ export const fetchInitialData = async () => {
   const item_id = ids[0]; // choose active one; later, let user pick
   if (!item_id) return { accounts: [], investments: {}, liabilities: [] };
 
+  console.log("🚀 Loading initial data for item_id:", item_id);
+
   const [institution, accounts, identity, investments, liabilities] = await Promise.all([
     fetchInstitution(item_id),
-    fetchAccounts(item_id),
+    fetchAccountsFromDatabase(item_id), // Use local database instead of Plaid API
     fetchIdentity(item_id),
     fetchInvestments(item_id),
     fetchLiabilities(item_id),
   ]);
+
+  console.log("📊 Initial data loaded:", {
+    institution: institution?.name || "Unknown",
+    accounts: accounts?.length || 0,
+    investments: investments?.holdings?.length || 0,
+    liabilities: liabilities?.length || 0,
+  });
 
   return { institution, accounts, identity, investments, liabilities, item_id };
 };
@@ -250,12 +290,45 @@ export const syncTransactions = async (item_id: string) => {
   return data; // { added, modified, removed }
 };
 
+// === Store Accounts ===
+export const storeAccounts = async (item_id: string) => {
+  console.log("🏦 Storing accounts for item_id:", item_id);
+  const res = await fetch(`${BASE_URL}/api/store_accounts`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ item_id }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "Failed to store accounts");
+  console.log("✅ Accounts stored:", data.stored);
+  return data;
+};
+
+// === Fetch Accounts from Database ===
+export const fetchAccountsFromDatabase = async (item_id: string) => {
+  try {
+    const { data: accounts, error } = await supabase
+      .from("accounts")
+      .select("*")
+      .eq("item_id", item_id);
+
+    if (error) throw error;
+    
+    console.log(`📊 Found ${accounts?.length || 0} accounts in database for item_id: ${item_id}`);
+    return accounts || [];
+  } catch (err) {
+    console.error("Error fetching accounts from database:", err);
+    return [];
+  }
+};
 
 const plaidUtils = {
   initializePlaid: fetchInitialData,
   getPlaidLinkToken: fetchLinkToken,
   exchangePublicToken: handlePlaidConnect,
-  getAccounts: fetchAccounts,              // now takes item_id
+  getAccounts: fetchAccounts,              // now takes item_id (from Plaid API)
+  getAccountsFromDB: fetchAccountsFromDatabase, // from local database
+  storeAccounts,                           // store accounts after connection
   syncTransactions,                        // new
   getInvestments: fetchInvestments,        // now takes item_id
   getLiabilities: fetchLiabilities,        // now takes item_id

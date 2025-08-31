@@ -90,6 +90,8 @@ export default function AccountConnectionScreen() {
           setIsLoading(false);
           setIsConnecting(false);
 
+          console.log("❌ Plaid connection error:", error);
+
           if (error?.error?.errorCode === "INVALID_LINK_TOKEN") {
             Alert.alert(
               "Connection Expired",
@@ -100,6 +102,13 @@ export default function AccountConnectionScreen() {
                   onPress: async () => setLinkToken(await fetchLinkToken()),
                 },
               ]
+            );
+          } else if (error?.message) {
+            // This handles our token exchange errors
+            Alert.alert(
+              "Connection Failed",
+              `Unable to connect your bank account: ${error.message}`,
+              [{ text: "Try Again" }]
             );
           } else if (error) {
             Alert.alert("Connection Cancelled", "You can try again anytime.", [
