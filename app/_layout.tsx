@@ -79,8 +79,12 @@ export default function RootLayout() {
   useEffect(() => {
     const initializeApp = async () => {
       if (loaded) {
-        // Run storage migration before anything else
-        await runStorageMigrationV2();
+        try {
+          // Run storage migration before anything else
+          await runStorageMigrationV2();
+        } catch (error) {
+          console.error("Migration error:", error);
+        }
         SplashScreen.hideAsync();
       }
     };

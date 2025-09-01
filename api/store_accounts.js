@@ -24,18 +24,27 @@ export default async function handler(req, res) {
       item_id
     );
 
-    // 1. Get access_token for this item
-    const { data: item, error: fetchErr } = await supabase
+    // 1. Get user_id for this item
+    const { data: userItem, error: fetchErr } = await supabase
       .from("user_items")
-      .select("access_token")
+      .select("user_id")
       .eq("item_id", item_id)
       .single();
 
-    if (fetchErr || !item) {
+    if (fetchErr || !userItem) {
       return res.status(404).json({ error: "Item not found" });
     }
 
-    const access_token = item.access_token;
+    // 2. Get access_token from Vault
+    const { data: access_token, error: tokenError } = await supabase.rpc(
+      "secure.get_plaid_token",
+      { p_item_id: item_id, p_user_id: userItem.user_id }
+    );
+
+    if (tokenError || !access_token) {
+      console.error("Error retrieving Plaid token from Vault:", tokenError);
+      return res.status(404).json({ error: "Access token not found" });
+    }
     let storedData = {};
 
     // 2. Fetch and store ACCOUNTS

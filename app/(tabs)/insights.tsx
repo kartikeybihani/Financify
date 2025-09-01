@@ -14,7 +14,7 @@ import {
   RefreshControl,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+
 import { styles } from "../styles/insightsStyles";
 import CategoryGrid from "../components/CategoryGrid";
 import CategoryDetailModal from "../components/CategoryDetailModal";
@@ -27,6 +27,7 @@ import {
   getUpdateLinkToken,
   openPlaidLink,
 } from "../utils/plaid";
+import { fetchRecentTransactionsAllItems } from "../utils/supabase";
 const screenWidth = Dimensions.get("window").width;
 
 // Define types
@@ -150,114 +151,86 @@ export default function InsightsScreen() {
 
   const loadData = async () => {
     try {
-      console.log("💡 Insights: Loading stored data...");
+      console.log("💡 Insights: Loading data from Supabase...");
 
-      // Try to load financial data using new approach
-      const data = await fetchInitialData();
+      const {
+        data: { user },
+        error: authError,
+      } = await supabase.auth.getUser();
 
-      if (data.accounts && data.accounts.length > 0) {
-        console.log(
-          "✅ Insights: Found account data, attempting to load transactions"
-        );
-
-        // Also try to load from AsyncStorage for transactions
-        const storedData = await AsyncStorage.getItem("financialData");
-        if (storedData) {
-          const parsedData = JSON.parse(storedData);
-          if (parsedData.transactions && parsedData.transactions.length > 0) {
-            setTransactions(parsedData.transactions);
-            processTransactionsData(parsedData.transactions);
-            hasData.current = true;
-            console.log("✅ Insights: Loaded transactions from storage");
-            return true;
-          }
-        }
+      if (authError) {
+        console.log("❌ Auth error:", authError.message);
+        return false;
       }
 
-      console.log("ℹ️ Insights: No stored transaction data found");
+      if (!user?.id) {
+        console.log("❌ No authenticated user");
+        return false;
+      }
+
+      // Fetch recent transactions directly from Supabase
+      const transactions = await fetchRecentTransactionsAllItems(user.id, 100);
+
+      if (transactions && transactions.length > 0) {
+        console.log(
+          `✅ Insights: Loaded ${transactions.length} transactions from Supabase`
+        );
+        setTransactions(transactions);
+        processTransactionsData(transactions);
+        hasData.current = true;
+        return true;
+      }
+
+      console.log("ℹ️ Insights: No transaction data found");
       return false;
     } catch (error) {
-      console.error("❌ Insights: Error loading stored data:", error);
+      console.error("❌ Insights: Error loading data:", error);
       return false;
     }
   };
 
   const fetchFreshData = async () => {
-    const BASE_URL = "https://financify-rose.vercel.app";
     try {
       setIsLoading(true);
+      console.log("💡 Insights: Fetching fresh data from Supabase...");
 
-      console.log(
-        "💡 Insights: Fetching transactions using new multi-bank approach..."
-      );
+      const {
+        data: { user },
+        error: authError,
+      } = await supabase.auth.getUser();
 
-      // Get the current item_id
-      const item_id = await getPrimaryItemId();
-
-      if (!item_id) {
-        console.log("⚠️ No item_id found - user needs to connect a bank");
+      if (authError) {
+        console.log("❌ Auth error:", authError.message);
         return;
       }
 
-      console.log("💡 Insights: Fetching transactions for item_id:", item_id);
+      if (!user?.id) {
+        console.log("❌ No authenticated user");
+        return;
+      }
 
-      // Fetch transactions using new API approach
-      const res = await fetch(`${BASE_URL}/api/transactions_sync`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ item_id }),
-      });
+      // Fetch latest transactions from Supabase
+      const transactions = await fetchRecentTransactionsAllItems(user.id, 100);
 
-      const transactionData = await res.json();
-      console.log("💡 Insights: Transaction data received:", {
-        added: transactionData.added?.length || 0,
-        modified: transactionData.modified?.length || 0,
-        removed: transactionData.removed?.length || 0,
-      });
-
-      // Use added transactions (most recent ones)
-      if (transactionData.added && transactionData.added.length > 0) {
-        setTransactions(transactionData.added);
-        processTransactionsData(transactionData.added);
+      if (transactions && transactions.length > 0) {
+        console.log(
+          `✅ Insights: Loaded ${transactions.length} fresh transactions`
+        );
+        setTransactions(transactions);
+        processTransactionsData(transactions);
         hasData.current = true;
-
-        // Update stored data
-        const storedData = await AsyncStorage.getItem("financialData");
-        if (storedData) {
-          const parsedData = JSON.parse(storedData);
-          parsedData.transactions = transactionData.added;
-          await AsyncStorage.setItem(
-            "financialData",
-            JSON.stringify(parsedData)
-          );
-        }
-
-        console.log("✅ Insights: Successfully processed transactions");
       } else {
         console.log("ℹ️ Insights: No transactions found");
       }
     } catch (error) {
-      console.error("❌ Insights: Error fetching transactions:", error);
+      console.error("❌ Insights: Error fetching fresh data:", error);
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Initial setup
+  // Listen for financial data updates
   useEffect(() => {
-    const initializeData = async () => {
-      const dataLoaded = await loadData();
-      if (!dataLoaded) {
-        await fetchFreshData();
-      }
-      setIsInitialLoad(false);
-    };
-
-    initializeData();
-
-    // Listen for financial data updates
     const subscription = DeviceEventEmitter.addListener(
       "financialDataRefreshed",
       async (data) => {

@@ -16,20 +16,31 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: "Missing item_id" });
   }
 
-  const { data, error: fetchError } = await supabase
+  const { data: userItem, error: fetchError } = await supabase
     .from("user_items")
-    .select("access_token")
+    .select("user_id")
     .eq("item_id", item_id)
     .single();
 
-  console.log("data", data);
+  console.log("userItem", userItem);
 
-  if (fetchError || !data) {
+  if (fetchError || !userItem) {
     return res.status(404).json({ error: "Item not found" });
   }
 
+  // Get access_token from Vault
+  const { data: access_token, error: tokenError } = await supabase.rpc(
+    "secure.get_plaid_token",
+    { p_item_id: item_id, p_user_id: userItem.user_id }
+  );
+
+  if (tokenError || !access_token) {
+    console.error("Error retrieving Plaid token from Vault:", tokenError);
+    return res.status(404).json({ error: "Access token not found" });
+  }
+
   try {
-    await client.itemRemove({ access_token: data.access_token });
+    await client.itemRemove({ access_token });
 
     // Clear access token + item_id + flags for this specific item
     const { error: deleteError } = await supabase
