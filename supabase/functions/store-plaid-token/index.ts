@@ -20,7 +20,7 @@ serve(async (req: Request) => {
     
     const { error } = await supabase.rpc("secure.store_plaid_token", {
       p_item_id: item_id,
-      p_user_id: user_id,
+      p_user_id: user_id as any, // Ensure UUID type casting
       p_token: access_token
     });
     
