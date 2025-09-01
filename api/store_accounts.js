@@ -139,10 +139,9 @@ export default async function handler(req, res) {
     try {
       console.log("💳 Fetching liabilities...");
       const liabilitiesResponse = await client.liabilitiesGet({ access_token });
-      storedData.liabilities = liabilitiesResponse.data.liabilities.length;
-      console.log(
-        `✅ Found ${liabilitiesResponse.data.liabilities.length} liabilities`
-      );
+      const liabilityCount = liabilitiesResponse.data.liabilities?.length || 0;
+      storedData.liabilities = liabilityCount;
+      console.log(`✅ Found ${liabilityCount} liabilities`);
     } catch (error) {
       console.log(
         "ℹ️ No liabilities found (this is normal for depository accounts)"

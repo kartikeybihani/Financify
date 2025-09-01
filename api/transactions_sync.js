@@ -15,14 +15,28 @@ export default async function handler(req, res) {
   if (!item_id) return res.status(400).json({ error: "Missing item_id" });
 
   try {
-    // 1) fetch token + cursor for this Item
+    // 1) Get user_id and cursor for this Item
     const { data: item, error: fetchErr } = await supabase
       .from("user_items")
-      .select("access_token, transactions_cursor")
+      .select("user_id, transactions_cursor")
       .eq("item_id", item_id)
       .single();
     if (fetchErr || !item)
       return res.status(404).json({ error: "Item not found" });
+
+    // 2) Get access token from Vault
+    const { data: access_token, error: tokenErr } = await supabase.rpc(
+      "secure_get_plaid_token",
+      {
+        p_item_id: item_id,
+        p_user_id: item.user_id,
+      }
+    );
+
+    if (tokenErr || !access_token) {
+      console.error("Vault token fetch failed:", tokenErr);
+      return res.status(404).json({ error: "Access token not found" });
+    }
 
     let cursor = item.transactions_cursor || null;
     let added = [],
@@ -30,10 +44,10 @@ export default async function handler(req, res) {
       removed = [];
     let hasMore = true;
 
-    // 2) pull all pages
+    // 3) pull all pages
     while (hasMore) {
       const { data } = await client.transactionsSync({
-        access_token: item.access_token,
+        access_token: access_token,
         cursor, // null for first call, then the next_cursor returned by Plaid
         count: 500, // optional; max 500
         // options: { include_original_description: true } // optional
@@ -47,14 +61,63 @@ export default async function handler(req, res) {
       cursor = data.next_cursor;
     }
 
-    // 3) save the new cursor only (no transaction storage)
+    // 4) Store transactions in database
+    if (added.length || modified.length) {
+      const rows = [...added, ...modified].map((txn) => ({
+        user_id: item.user_id,
+        account_id: txn.account_id,
+        plaid_transaction_id: txn.transaction_id,
+        date: txn.date,
+        amount: txn.amount,
+        iso_currency_code: txn.iso_currency_code || null,
+        name: txn.name || null,
+        merchant_name: txn.merchant_name || null,
+        category: txn.category?.join(", ") || null,
+        transaction_type: txn.transaction_type || null,
+        pending: txn.pending ?? false,
+      }));
+
+      const { error: upsertErr } = await supabase
+        .from("transactions")
+        .upsert(rows, { onConflict: "plaid_transaction_id" });
+
+      if (upsertErr) {
+        console.error("Transaction upsert error:", upsertErr);
+        return res.status(500).json({ error: "Failed to save transactions" });
+      }
+    }
+
+    // 5) Delete removed transactions
+    if (removed.length) {
+      await supabase
+        .from("transactions")
+        .delete()
+        .in(
+          "plaid_transaction_id",
+          removed.map((r) => r.transaction_id)
+        );
+    }
+
+    // 6) Save the new cursor and timestamp
     await supabase
       .from("user_items")
-      .update({ transactions_cursor: cursor })
+      .update({
+        transactions_cursor: cursor,
+        last_synced_at: new Date().toISOString(),
+      })
       .eq("item_id", item_id);
 
-    // 4) return just what you need to the client
-    return res.status(200).json({ added, modified, removed });
+    console.log(
+      `✅ Sync complete: ${added.length} added, ${modified.length} modified, ${removed.length} removed`
+    );
+
+    // 7) Return transaction sync summary
+    return res.status(200).json({
+      message: "Sync complete",
+      added: added.length,
+      modified: modified.length,
+      removed: removed.length,
+    });
   } catch (e) {
     console.error("transactions_sync error", e.response?.data || e);
     return res

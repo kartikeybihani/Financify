@@ -593,6 +593,43 @@ export const getSpendingByCategory = async (user_id: string, days: number = 30) 
   }
 };
 
+// === Legacy Support Functions ===
+export const clearOldPlaidData = async () => {
+  try {
+    console.log("🧹 Clearing old Plaid data and cache...");
+    
+    // Clear old AsyncStorage keys that might conflict
+    const keysToRemove = [
+      'access_token',
+      'plaid_data',
+      'cached_accounts',
+      'cached_transactions',
+      'last_sync_time'
+    ];
+    
+    await Promise.all(keysToRemove.map(key => 
+      AsyncStorage.removeItem(key).catch(err => 
+        console.log(`Could not remove ${key}:`, err)
+      )
+    ));
+    
+    console.log("✅ Old data cleared");
+  } catch (error) {
+    console.error("Error clearing old data:", error);
+  }
+};
+
+export const getItemIds = async (): Promise<string[]> => {
+  try {
+    // Get from new Supabase-based approach
+    const items = await getUserItems();
+    return items.map(item => item.item_id);
+  } catch (error) {
+    console.error("Error getting item IDs:", error);
+    return [];
+  }
+};
+
 // === Cache Invalidation Helpers ===
 export const invalidateItemCache = async (userId: string, itemId: string) => {
   const keysToRemove = [
@@ -668,6 +705,10 @@ const plaidUtils = {
   getInvestments: fetchInvestments,        // now takes item_id
   getLiabilities: fetchLiabilities,        // now takes item_id
   disconnectPlaid: handleDisconnect,
+  
+  // Legacy support functions
+  clearOldPlaidData,                       // clear old AsyncStorage data
+  getItemIds,                              // get all item IDs for this user
   
   // New item management
   getUserItems,                            // get all user items from Supabase

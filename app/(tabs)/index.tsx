@@ -131,131 +131,11 @@ export default function HomeScreen() {
     }
   };
 
-  // Fetch fresh data from Plaid
-  const fetchFreshData = async (token: string) => {
+  // Fetch fresh data using new Supabase approach
+  const fetchFreshData = async () => {
     try {
-      // First check if update mode is required
-      const accountsResponse = await fetch(
-        "https://financify-rose.vercel.app/api/plaid",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ endpoint: "accounts", access_token: token }),
-        }
-      );
+      console.log("🔄 Refreshing financial data using new approach...");
 
-      const accountsData = await accountsResponse.json();
-
-      if (accountsData.requires_update_mode) {
-        console.warn("⚠️ Update mode required");
-        const newUpdateToken = await getUpdateLinkToken(token);
-        setUpdateToken(newUpdateToken);
-        setShowUpdateBanner(true);
-        return;
-      }
-
-      // Fetch all data in parallel
-      const [
-        identityResponse,
-        investmentsResponse,
-        liabilitiesResponse,
-        institutionResponse,
-      ] = await Promise.all([
-        fetch("https://financify-rose.vercel.app/api/plaid", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ endpoint: "identity", access_token: token }),
-        }),
-        fetch("https://financify-rose.vercel.app/api/plaid", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            endpoint: "investments",
-            access_token: token,
-          }),
-        }),
-        fetch("https://financify-rose.vercel.app/api/plaid", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            endpoint: "liabilities",
-            access_token: token,
-          }),
-        }),
-        fetch("https://financify-rose.vercel.app/api/plaid", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            endpoint: "institution",
-            access_token: token,
-          }),
-        }),
-      ]);
-
-      const [identityData, investmentsData, liabilitiesData, institutionData] =
-        await Promise.all([
-          identityResponse.json(),
-          investmentsResponse.json(),
-          liabilitiesResponse.json(),
-          institutionResponse.json(),
-        ]);
-
-      const data = {
-        accounts: accountsData.accounts || [],
-        identity: identityData.identity || [],
-        investments: {
-          holdings: investmentsData.holdings || [],
-          securities: investmentsData.securities || [],
-          investmentTransactions: investmentsData.investment_transactions || [],
-        },
-        liabilities: liabilitiesData.liabilities || [],
-        institution: institutionData.institution || null,
-      };
-
-      // Update state and save data
-      setAccounts(data.accounts);
-      setIdentity(data.identity);
-      setInvestments(data.investments);
-      setLiabilities(data.liabilities);
-      setInstitution(data.institution);
-
-      // 🔍 COMPREHENSIVE DATA LOGGING
-      console.log("🏦 ===== COMPLETE FINANCIAL DATA ANALYSIS =====");
-      console.log("🏢 INSTITUTION INFO:", data.institution);
-      console.log("💰 ACCOUNTS SAMPLE:", data.accounts?.[0]);
-      console.log("📈 INVESTMENTS SAMPLE:", {
-        holdings: data.investments?.holdings?.[0],
-        securities: data.investments?.securities?.[0],
-      });
-      console.log("💳 LIABILITIES SAMPLE:", data.liabilities?.[0]);
-      console.log("🆔 IDENTITY SAMPLE:", data.identity?.[0]);
-      console.log("🔍 INSTITUTION NAME:", data.institution?.name);
-      console.log("🌐 INSTITUTION URL:", data.institution?.url);
-      console.log("🎨 INSTITUTION LOGO:", data.institution?.logo);
-      console.log("🏦 ===============================================");
-
-      console.log("✅ Fetched fresh data");
-      await saveDataToStorage(data);
-      DeviceEventEmitter.emit("financialDataRefreshed", data);
-    } catch (error) {
-      console.log("❌ Error fetching data:", error);
-    }
-  };
-
-  const handleUpdateBannerPress = () => {
-    if (updateToken) {
-      openPlaidLink(updateToken);
-      setShowUpdateBanner(false);
-    }
-  };
-
-  // Handle pull-to-refresh
-  const onRefresh = async () => {
-    if (!accessToken) return;
-    setRefreshing(true);
-
-    try {
-      console.log("🔄 Refreshing financial data...");
       const data = await fetchInitialData();
 
       if (data.accounts && data.accounts.length > 0) {
@@ -278,9 +158,31 @@ export default function HomeScreen() {
         });
 
         console.log("✅ Financial data refreshed successfully");
+        DeviceEventEmitter.emit("financialDataRefreshed", data);
+      } else {
+        console.log("⚠️ No data available after refresh");
       }
     } catch (error) {
       console.error("❌ Error refreshing data:", error);
+    }
+  };
+
+  const handleUpdateBannerPress = () => {
+    if (updateToken) {
+      openPlaidLink(updateToken);
+      setShowUpdateBanner(false);
+    }
+  };
+
+  // Handle pull-to-refresh
+  const onRefresh = async () => {
+    if (!accessToken) return;
+    setRefreshing(true);
+
+    try {
+      await fetchFreshData();
+    } catch (error) {
+      console.error("❌ Error during refresh:", error);
     }
 
     setRefreshing(false);
@@ -302,18 +204,6 @@ export default function HomeScreen() {
 
         // Clear old data first to avoid conflicts
         await clearOldPlaidData();
-
-        // Clean up old item_ids, keep only the latest
-        const ids = await getItemIds();
-        if (ids.length > 1) {
-          const latestItemId = ids[ids.length - 1];
-          console.log(`🧹 Keeping only latest item_id: ${latestItemId}`);
-          await AsyncStorage.setItem(
-            "plaid:item_ids",
-            JSON.stringify([latestItemId])
-          );
-          console.log("✅ Cleaned up old item_ids");
-        }
 
         // Use the new fetchInitialData function
         const data = await fetchInitialData();

@@ -9,7 +9,7 @@ const supabase = createClient(
 );
 
 const plaidConfig = new Configuration({
-  basePath: PlaidEnvironments.production, // set to development or production per env
+  basePath: PlaidEnvironments.production,
   baseOptions: {
     headers: {
       "PLAID-CLIENT-ID": Deno.env.get("PLAID_CLIENT_ID")!,

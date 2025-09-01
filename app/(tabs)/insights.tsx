@@ -26,8 +26,9 @@ import {
   syncAllUserTransactions,
   getUpdateLinkToken,
   openPlaidLink,
+  getRecentTransactions,
+  getSpendingByCategory,
 } from "../utils/plaid";
-import { fetchRecentTransactionsAllItems } from "../utils/supabase";
 const screenWidth = Dimensions.get("window").width;
 
 // Define types
@@ -168,8 +169,8 @@ export default function InsightsScreen() {
         return false;
       }
 
-      // Fetch recent transactions directly from Supabase
-      const transactions = await fetchRecentTransactionsAllItems(user.id, 100);
+      // Fetch recent transactions using the new plaid utils
+      const transactions = await getRecentTransactions(user.id, 100);
 
       if (transactions && transactions.length > 0) {
         console.log(
@@ -209,8 +210,8 @@ export default function InsightsScreen() {
         return;
       }
 
-      // Fetch latest transactions from Supabase
-      const transactions = await fetchRecentTransactionsAllItems(user.id, 100);
+      // Fetch latest transactions using the new plaid utils
+      const transactions = await getRecentTransactions(user.id, 100);
 
       if (transactions && transactions.length > 0) {
         console.log(
