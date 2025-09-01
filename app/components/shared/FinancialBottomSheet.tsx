@@ -10,9 +10,12 @@ import {
   useWindowDimensions,
   Dimensions,
   Animated,
+  Alert,
+  DeviceEventEmitter,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
+import { addNewBankAccount, fetchInitialData } from "../../utils/plaid";
 
 interface CategoryData {
   title: string;
@@ -29,6 +32,7 @@ interface FinancialBottomSheetProps {
   iconColor?: string;
   categories?: CategoryData[];
   children?: React.ReactNode;
+  onAccountAdded?: () => void;
 }
 
 export default function FinancialBottomSheet({
@@ -39,6 +43,7 @@ export default function FinancialBottomSheet({
   iconColor = "#4A90E2",
   categories,
   children,
+  onAccountAdded,
 }: FinancialBottomSheetProps) {
   const { height } = useWindowDimensions();
   const maxHeight = height * 0.85;
@@ -46,6 +51,8 @@ export default function FinancialBottomSheet({
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(
     new Set()
   );
+
+  const [isAddingAccount, setIsAddingAccount] = useState(false);
 
   const toggleCategory = (categoryTitle: string) => {
     const newExpanded = new Set(expandedCategories);
@@ -55,6 +62,57 @@ export default function FinancialBottomSheet({
       newExpanded.add(categoryTitle);
     }
     setExpandedCategories(newExpanded);
+  };
+
+  const handleAddNewAccount = async () => {
+    if (isAddingAccount) return;
+
+    setIsAddingAccount(true);
+
+    try {
+      console.log(
+        "🏦 User initiated add new bank account from FinancialBottomSheet"
+      );
+
+      await addNewBankAccount(
+        (itemId) => {
+          console.log("✅ Successfully added new bank account:", itemId);
+
+          // Close the bottom sheet
+          onClose();
+
+          // Trigger data refresh
+          DeviceEventEmitter.emit("financialDataRefreshed");
+
+          // Call the optional callback
+          onAccountAdded?.();
+
+          // Show success message
+          Alert.alert(
+            "Success! 🎉",
+            "Your new bank account has been connected successfully. Your financial data is now being updated.",
+            [{ text: "Great!", style: "default" }]
+          );
+        },
+        (error) => {
+          console.error("❌ Failed to add new bank account:", error);
+
+          // Show error message
+          Alert.alert(
+            "Connection Failed",
+            "We couldn't connect your bank account. Please try again or contact support if the issue persists.",
+            [{ text: "Try Again", style: "default" }]
+          );
+        }
+      );
+    } catch (error) {
+      console.error("❌ Error in handleAddNewAccount:", error);
+      Alert.alert("Error", "Something went wrong. Please try again.", [
+        { text: "OK", style: "default" },
+      ]);
+    } finally {
+      setIsAddingAccount(false);
+    }
   };
 
   return (
@@ -135,10 +193,19 @@ export default function FinancialBottomSheet({
                                 No {category.title.toLowerCase()} found
                               </Text> */}
                               <TouchableOpacity
-                                style={{ flexDirection: "row" }}
+                                style={{
+                                  flexDirection: "row",
+                                  opacity: isAddingAccount ? 0.6 : 1,
+                                }}
+                                onPress={handleAddNewAccount}
+                                disabled={isAddingAccount}
                               >
                                 <Ionicons
-                                  name="add-circle-outline"
+                                  name={
+                                    isAddingAccount
+                                      ? "hourglass-outline"
+                                      : "add-circle-outline"
+                                  }
                                   size={16}
                                   color="#4A90E2"
                                   style={{ marginRight: 4 }}
@@ -155,7 +222,9 @@ export default function FinancialBottomSheet({
                                     letterSpacing: 0.2,
                                   }}
                                 >
-                                  ADD A NEW ACCOUNT
+                                  {isAddingAccount
+                                    ? "CONNECTING..."
+                                    : "ADD A NEW ACCOUNT"}
                                 </Text>
                               </TouchableOpacity>
                             </View>
@@ -167,14 +236,25 @@ export default function FinancialBottomSheet({
                 : children}
             </ScrollView>
             <View style={styles.footer}>
-              <TouchableOpacity style={styles.addAccountButton}>
+              <TouchableOpacity
+                style={[
+                  styles.addAccountButton,
+                  { opacity: isAddingAccount ? 0.6 : 1 },
+                ]}
+                onPress={handleAddNewAccount}
+                disabled={isAddingAccount}
+              >
                 <Ionicons
-                  name="add-circle-outline"
+                  name={
+                    isAddingAccount ? "hourglass-outline" : "add-circle-outline"
+                  }
                   size={20}
                   color="#4A90E2"
                   style={styles.addIcon}
                 />
-                <Text style={styles.addAccountText}>Link a New Account</Text>
+                <Text style={styles.addAccountText}>
+                  {isAddingAccount ? "Connecting..." : "Link a New Account"}
+                </Text>
               </TouchableOpacity>
             </View>
           </View>

@@ -57,9 +57,9 @@ export default async function handler(req, res) {
       const { data: tokenData } = await client.linkTokenCreate({
         user: { client_user_id: user_id },
         client_name: "Financify",
-        products: ["auth"], // minimum default
-        required_if_supported_products: [],
-        optional_products: ["investments", "liabilities", "transactions"],
+        products: [], // minimum default
+        required_if_supported_products: ["auth", "liabilities"],
+        optional_products: ["investments", "transactions"],
         additional_consented_products: [],
         country_codes: ["US"],
         language: "en",

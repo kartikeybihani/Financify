@@ -128,6 +128,37 @@ export const handlePlaidConnect = async (
   });
 };
 
+// === Add New Bank Account (for existing users) ===
+export const addNewBankAccount = async (
+  onSuccess?: (itemId: string) => void,
+  onExit?: (error?: any) => void
+) => {
+  try {
+    console.log("🏦 Starting process to add new bank account...");
+    
+    // 1. Get a new link token for adding accounts
+    const linkToken = await fetchLinkToken();
+    console.log("🔗 Generated link token for new bank connection");
+    
+    // 2. Open Plaid Link for the user to select a new bank
+    await handlePlaidConnect(
+      linkToken,
+      (itemId) => {
+        console.log("✅ Successfully added new bank account:", itemId);
+        onSuccess?.(itemId);
+      },
+      (error) => {
+        console.error("❌ Failed to add new bank account:", error);
+        onExit?.(error);
+      }
+    );
+    
+  } catch (error) {
+    console.error("❌ Error in addNewBankAccount:", error);
+    onExit?.(error);
+  }
+};
+
 // === Update Mode ===
 export const getUpdateLinkToken = async (item_id: string) => {
   const { data: { user } } = await supabase.auth.getUser();
@@ -745,6 +776,7 @@ const plaidUtils = {
   initializePlaid: fetchInitialData,
   getPlaidLinkToken: fetchLinkToken,
   exchangePublicToken: handlePlaidConnect,
+  addNewBankAccount,                       // add additional bank accounts
   getAccounts: fetchAccounts,              // now takes item_id (from Plaid API)
   getAccountsFromDB: fetchAccountsFromDatabase, // from local database
   storeAccounts,                           // store accounts after connection

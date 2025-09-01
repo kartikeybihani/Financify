@@ -22,6 +22,7 @@ import {
   fetchInitialData,
   clearOldPlaidData,
   getItemIds,
+  addNewBankAccount,
 } from "../utils/plaid";
 import {
   Account,
@@ -789,7 +790,33 @@ export default function HomeScreen() {
               </View>
 
               {/* Add Account Button */}
-              <TouchableOpacity style={styles.addAccountButton}>
+              <TouchableOpacity
+                style={styles.addAccountButton}
+                onPress={async () => {
+                  console.log(
+                    "🏦 Add Another Account pressed from home screen"
+                  );
+                  try {
+                    await addNewBankAccount(
+                      async (itemId) => {
+                        console.log(
+                          "✅ Successfully added new bank account from home:",
+                          itemId
+                        );
+                        await fetchFreshData();
+                      },
+                      (error) => {
+                        console.error(
+                          "❌ Failed to add new bank account from home:",
+                          error
+                        );
+                      }
+                    );
+                  } catch (error) {
+                    console.error("❌ Error calling addNewBankAccount:", error);
+                  }
+                }}
+              >
                 <Text style={styles.addAccountButtonText}>
                   + Add Another Account
                 </Text>
@@ -801,6 +828,13 @@ export default function HomeScreen() {
                 onClose={() => setActiveModal(null)}
                 title="Your Financial Accounts"
                 icon="wallet-outline"
+                onAccountAdded={async () => {
+                  console.log(
+                    "🔄 New account added, refreshing financial data..."
+                  );
+                  await fetchFreshData();
+                  console.log("✅ Financial data refreshed after new account");
+                }}
                 categories={[
                   {
                     title: "CHECKINGS & SAVINGS",
