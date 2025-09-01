@@ -1,35 +1,59 @@
 /// <reference types="https://deno.land/x/supabase_functions/mod.ts" />
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { PlaidApi, Configuration, PlaidEnvironments } from "https://esm.sh/plaid@11.0.0";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
 );
 
-const plaidConfig = new Configuration({
-  basePath: PlaidEnvironments.production,
-  baseOptions: {
+// Plaid API configuration using native fetch
+const PLAID_ENV = Deno.env.get("PLAID_ENV") || "sandbox";
+const PLAID_BASE_URL = PLAID_ENV === "production" 
+  ? "https://production.plaid.com" 
+  : "https://sandbox.plaid.com";
+
+const PLAID_CLIENT_ID = Deno.env.get("PLAID_CLIENT_ID")!;
+const PLAID_SECRET = Deno.env.get("PLAID_SECRET")!;
+
+// Helper function to call Plaid API using fetch
+async function callPlaidAPI(endpoint: string, body: any) {
+  const response = await fetch(`${PLAID_BASE_URL}${endpoint}`, {
+    method: "POST",
     headers: {
-      "PLAID-CLIENT-ID": Deno.env.get("PLAID_CLIENT_ID")!,
-      "PLAID-SECRET": Deno.env.get("PLAID_SECRET")!,
+      "Content-Type": "application/json",
+      "PLAID-CLIENT-ID": PLAID_CLIENT_ID,
+      "PLAID-SECRET": PLAID_SECRET,
     },
-  },
-});
-const plaidClient = new PlaidApi(plaidConfig);
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json();
+    throw new Error(`Plaid API error: ${JSON.stringify(errorData)}`);
+  }
+
+  return response.json();
+}
 
 serve(async (req: Request) => {
   try {
+    console.log("🔄 Starting transaction sync...");
+    
     const { item_id, user_id } = (await req.json()) as {
       item_id: string;
       user_id: string;
     };
+    
+    console.log("📋 Sync request:", { item_id, user_id: user_id.substring(0, 8) + "..." });
+    
     if (!item_id || !user_id) {
+      console.error("❌ Missing required parameters");
       return new Response("Missing item_id or user_id", { status: 400 });
     }
 
-    // 1 fetch cursor from DB
+    // 1. Fetch cursor from DB
+    console.log("🔍 Fetching cursor from database...");
     const { data: ui, error: fetchErr } = await supabase
       .from("user_items")
       .select("transactions_cursor")
@@ -37,44 +61,70 @@ serve(async (req: Request) => {
       .single();
 
     if (fetchErr || !ui) {
-      console.error("Item not found:", fetchErr);
+      console.error("❌ Item not found:", fetchErr);
       return new Response("Item not found", { status: 404 });
     }
 
-    // 2 get decrypted access token from Vault via RPC
+    console.log("📍 Current cursor:", ui.transactions_cursor || "null (first sync)");
+
+    // 2. Get decrypted access token from Vault via RPC
+    console.log("🔑 Fetching access token from Vault...");
     const { data: access_token, error: tokenErr } = await supabase.rpc("secure_get_plaid_token", {
       p_item_id: item_id, 
       p_user_id: user_id
     });
 
     if (tokenErr || !access_token) {
-      console.error("Vault token fetch failed:", tokenErr);
+      console.error("❌ Vault token fetch failed:", tokenErr);
       return new Response("Token not found", { status: 404 });
     }
 
-    // 3 pull all pages with transactionsSync
+    console.log("✅ Access token retrieved from Vault");
+
+    // 3. Pull all pages with transactionsSync using fetch
     let cursor: string | null = ui.transactions_cursor || null;
     let added: any[] = [];
     let modified: any[] = [];
     let removed: any[] = [];
     let hasMore = true;
+    let pageCount = 0;
+
+    console.log("📥 Starting transaction sync with Plaid API...");
 
     while (hasMore) {
-      const resp = await plaidClient.transactionsSync({
+      pageCount++;
+      console.log(`📄 Fetching page ${pageCount}...`);
+      
+      const syncBody: any = {
         access_token,
-        cursor,
         count: 500,
+      };
+      
+      if (cursor) {
+        syncBody.cursor = cursor;
+      }
+
+      const data = await callPlaidAPI("/transactions/sync", syncBody);
+      
+      console.log(`📊 Page ${pageCount} results:`, {
+        added: data.added?.length || 0,
+        modified: data.modified?.length || 0,
+        removed: data.removed?.length || 0,
+        has_more: data.has_more
       });
-      const data = resp.data;
-      added.push(...data.added);
-      modified.push(...data.modified);
-      removed.push(...data.removed);
+      
+      added.push(...(data.added || []));
+      modified.push(...(data.modified || []));
+      removed.push(...(data.removed || []));
       hasMore = data.has_more;
       cursor = data.next_cursor;
     }
 
-    // 4 save new cursor and last_synced_at timestamp
-    await supabase
+    console.log(`✅ Sync complete! Total: ${added.length} added, ${modified.length} modified, ${removed.length} removed`);
+
+    // 4. Save new cursor and last_synced_at timestamp
+    console.log("💾 Updating cursor in database...");
+    const { error: cursorUpdateErr } = await supabase
       .from("user_items")
       .update({ 
         transactions_cursor: cursor,
@@ -82,8 +132,17 @@ serve(async (req: Request) => {
       })
       .eq("item_id", item_id);
 
-    // 5 upsert new and modified into your transactions table
+    if (cursorUpdateErr) {
+      console.error("❌ Failed to update cursor:", cursorUpdateErr);
+      return new Response("Failed to update cursor", { status: 500 });
+    }
+
+    console.log("✅ Cursor updated successfully");
+
+    // 5. Upsert new and modified transactions into database
     if (added.length || modified.length) {
+      console.log(`💽 Saving ${added.length + modified.length} transactions to database...`);
+      
       const rows = [...added, ...modified].map((txn) => ({
         user_id,
         account_id: txn.account_id, // must exist in public.accounts due to FK
@@ -103,36 +162,59 @@ serve(async (req: Request) => {
         .upsert(rows, { onConflict: "plaid_transaction_id" });
 
       if (upsertErr) {
-        console.error("Insert error:", upsertErr);
+        console.error("❌ Transaction upsert error:", upsertErr);
         return new Response("Failed to save transactions", { status: 500 });
       }
+      
+      console.log("✅ Transactions saved successfully");
+    } else {
+      console.log("ℹ️ No transactions to save");
     }
 
-    // 6 delete removed
+    // 6. Delete removed transactions
     if (removed.length) {
-      await supabase
+      console.log(`🗑️ Removing ${removed.length} deleted transactions...`);
+      
+      const { error: deleteErr } = await supabase
         .from("transactions")
         .delete()
         .in("plaid_transaction_id", removed.map((r) => r.transaction_id));
+
+      if (deleteErr) {
+        console.error("❌ Failed to delete transactions:", deleteErr);
+        // Don't fail the whole operation for delete errors
+      } else {
+        console.log("✅ Deleted transactions removed successfully");
+      }
     }
 
-    // 7 return summary
+    const summary = {
+      message: "Sync complete",
+      added: added.length,
+      modified: modified.length,
+      removed: removed.length,
+      item_id,
+    };
+
+    console.log("🎉 Transaction sync completed successfully:", summary);
+
+    // 7. Return summary
     return new Response(
-      JSON.stringify({
-        message: "Sync complete",
-        added: added.length,
-        modified: modified.length,
-        removed: removed.length,
-      }),
+      JSON.stringify(summary),
       { headers: { "Content-Type": "application/json" }, status: 200 }
     );
+
   } catch (error) {
-    console.error("Sync error:", error);
+    console.error("❌ Sync error:", error);
+    
+    const errorResponse = {
+      error: "Sync failed",
+      details: (error as Error).message,
+      item_id: (error as any)?.item_id || "unknown",
+    };
+
     return new Response(
-      JSON.stringify({
-        error: "Sync failed",
-        details: (error as Error).message,
-      }),
+      JSON.stringify(errorResponse),
       { headers: { "Content-Type": "application/json" }, status: 500 }
     );
   }

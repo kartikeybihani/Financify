@@ -72,8 +72,8 @@ export default async function handler(req, res) {
         iso_currency_code: txn.iso_currency_code || null,
         name: txn.name || null,
         merchant_name: txn.merchant_name || null,
-        category: txn.category?.join(", ") || null,
-        transaction_type: txn.transaction_type || null,
+        category: txn.personal_finance_category?.join(", ") || null,
+        transaction_type: txn.payment_channel || null,
         pending: txn.pending ?? false,
       }));
 
