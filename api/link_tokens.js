@@ -29,7 +29,7 @@ export default async function handler(req, res) {
 
       // 2. Get access_token from Vault
       const { data: access_token, error: tokenError } = await supabase.rpc(
-        "secure.get_plaid_token",
+        "secure_get_plaid_token",
         { p_item_id: item_id, p_user_id: user_id }
       );
 

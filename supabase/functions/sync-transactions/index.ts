@@ -42,10 +42,10 @@ serve(async (req: Request) => {
     }
 
     // 2 get decrypted access token from Vault via RPC
-    const { data: access_token, error: tokenErr } = await supabase.rpc(
-      "secure.get_plaid_token",
-      { p_item_id: item_id, p_user_id: user_id as any }
-    );
+    const { data: access_token, error: tokenErr } = await supabase.rpc("secure_get_plaid_token", {
+      p_item_id: item_id, 
+      p_user_id: user_id
+    });
 
     if (tokenErr || !access_token) {
       console.error("Vault token fetch failed:", tokenErr);

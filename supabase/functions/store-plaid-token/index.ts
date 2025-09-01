@@ -18,18 +18,36 @@ serve(async (req: Request) => {
   try {
     const { item_id, user_id, access_token }: RequestBody = await req.json();
     
-    const { error } = await supabase.rpc("secure.store_plaid_token", {
+    console.log("Debug: About to call store_plaid_token with:", { 
+      item_id, 
+      user_id, 
+      token_length: access_token?.length 
+    });
+    
+    const { data, error } = await supabase.rpc("secure_store_plaid_token", {
       p_item_id: item_id,
-      p_user_id: user_id as any, // Ensure UUID type casting
+      p_user_id: user_id,
       p_token: access_token
     });
     
+    console.log("Debug: RPC result:", { data, error });
+    
     if (error) {
       console.error("Error storing Plaid token:", error);
-      return new Response(error.message, { status: 500 });
+      return new Response(JSON.stringify({ 
+        error: error.message, 
+        code: error.code, 
+        details: error.details 
+      }), { 
+        status: 500,
+        headers: { "Content-Type": "application/json" }
+      });
     }
     
-    return new Response("OK");
+    console.log("✅ Token stored in Vault with secret_id:", data);
+    return new Response(JSON.stringify({ success: true, secret_id: data }), {
+      headers: { "Content-Type": "application/json" }
+    });
   } catch (error) {
     console.error("Error parsing request:", error);
     return new Response("Invalid request body", { status: 400 });
