@@ -166,21 +166,69 @@ export const openPlaidLink = async (link_token: string) => {
 
 // === Disconnect ===
 export const handleDisconnect = async (item_id: string) => {
+  console.log(`🔄 Disconnecting item: ${item_id}`);
+  
+  if (!item_id) {
+    throw new Error("Item ID is required for disconnection");
+  }
+
   const res = await fetch(`${BASE_URL}/api/remove_item`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ item_id }),
   });
+  
   const payload = await res.json();
-  if (!res.ok || payload?.error) throw new Error(payload?.error || "Remove failed");
+  console.log("📦 Remove item response:", { ok: res.ok, payload });
+  
+  if (!res.ok || payload?.error) {
+    throw new Error(payload?.error || `Remove failed with status ${res.status}`);
+  }
   
   // Clear last used if it matches the removed item
   const lastUsed = await getLastUsedItemId();
   if (lastUsed === item_id) {
     await setLastUsedItemId(''); // Clear it
+    console.log("🧹 Cleared last used item ID");
   }
   
+  console.log("✅ Successfully disconnected item");
   return true;
+};
+
+// === Disconnect All Items (for complete cleanup) ===
+export const handleDisconnectAll = async () => {
+  try {
+    const items = await getUserItems();
+    console.log(`🔄 Disconnecting all ${items.length} connected items...`);
+    
+    if (items.length === 0) {
+      console.log("ℹ️ No items to disconnect");
+      return { success: true, disconnected: 0 };
+    }
+    
+    const results = await Promise.allSettled(
+      items.map(item => handleDisconnect(item.item_id))
+    );
+    
+    const successful = results.filter(result => result.status === 'fulfilled').length;
+    const failed = results.filter(result => result.status === 'rejected').length;
+    
+    console.log(`✅ Disconnect summary: ${successful} successful, ${failed} failed`);
+    
+    // Clear last used item regardless
+    await setLastUsedItemId('');
+    
+    return { 
+      success: true, 
+      disconnected: successful,
+      failed: failed,
+      total: items.length 
+    };
+  } catch (error) {
+    console.error("❌ Error during disconnect all:", error);
+    throw error;
+  }
 };
 
 // === Plaid Data Fetchers ===
@@ -704,7 +752,8 @@ const plaidUtils = {
   syncAllUserTransactions,                 // manual sync for UI
   getInvestments: fetchInvestments,        // now takes item_id
   getLiabilities: fetchLiabilities,        // now takes item_id
-  disconnectPlaid: handleDisconnect,
+  disconnectPlaid: handleDisconnect,       // disconnect single item
+  disconnectAll: handleDisconnectAll,      // disconnect all items
   
   // Legacy support functions
   clearOldPlaidData,                       // clear old AsyncStorage data

@@ -24,7 +24,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { supabase } from "../lib/supabase/supabase";
 import FeedbackModal from "../components/FeedbackModal";
-import { handleDisconnect } from "../utils/plaid";
+import { handleDisconnect, getPrimaryItemId } from "../utils/plaid";
 
 export default function SettingsScreen() {
   const router = useRouter();
@@ -75,7 +75,21 @@ export default function SettingsScreen() {
           style: "destructive",
           onPress: async () => {
             try {
-              await handleDisconnect();
+              console.log("[SettingsIndex] Starting bank disconnection...");
+
+              // Get the primary item_id to disconnect
+              const item_id = await getPrimaryItemId();
+              console.log("[SettingsIndex] Primary item_id:", item_id);
+
+              if (!item_id) {
+                Alert.alert(
+                  "Error",
+                  "No connected bank accounts found to disconnect."
+                );
+                return;
+              }
+
+              await handleDisconnect(item_id);
               DeviceEventEmitter.emit("financialDataRefreshed", {
                 accounts: [],
                 identity: null,
@@ -83,6 +97,8 @@ export default function SettingsScreen() {
                 liabilities: null,
                 institution: null,
               });
+
+              console.log("[SettingsIndex] Bank disconnection successful");
               Alert.alert(
                 "Success",
                 "Bank accounts have been disconnected successfully"
