@@ -1,0 +1,365 @@
+Here's your **full, polished document**---ready for Cursor or your dev
+team. It's detailed yet straightforward, covering schema, sync flows,
+API calls, webhooks, update-mode, indexes, and everything else. Let me
+know if you'd like any tweaks or diagrams added.
+
+# **Multi-Bank Sync Architecture & Supabase Flow -- Full Spec**
+
+## **1. Onboarding & App Entry**
+
+-   **User signs up** using Supabase Auth.
+
+-   **Bank connection via Plaid**:
+
+    -   Generate link_token → complete Plaid Link flow.
+
+    -   On success, exchange public_token for access_token using
+        > /item/public_token/exchange.
+
+    -   Store into user_items:
+
+        -   Includes item_id, institution metadata, etc.
+
+        -   Securely stores \`access_token\` server-side (in Vault),
+            > associated with \`item_id\`.
+
+        -   Inserts \`user_items\` record with \`item_id\`, institution
+            > info (no token stored).
+
+    -   Fetches initial account list via /accounts/get and writes to
+        > \`accounts\` table (\`current_balance\`, \`balance_as_of\`).
+
+    -   Performs \`/transactions/sync\` (with \`cursor=null\`) to load
+        > initial 90 days of transactions; stores them and the new
+        > \`transactions_cursor\`.
+
+    -   Sync transaction history with /transactions/sync (cursor =
+        > null).
+
+-   **App entry**: UI reads data entirely from Supabase---no live Plaid
+    > calls.
+
+## **2. Supabase Schema**
+
+\-- user_items
+
+CREATE TABLE public.user_items (
+
+id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+
+user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+
+item_id text NOT NULL UNIQUE,
+
+institution_id text,
+
+institution_name text,
+
+webhook text,
+
+has_new_accounts boolean NOT NULL DEFAULT false,
+
+requires_update_mode boolean NOT NULL DEFAULT false,
+
+transactions_cursor text,
+
+last_synced_at timestamptz,
+
+created_at timestamptz DEFAULT now()
+
+);
+
+CREATE INDEX idx_items_user ON public.user_items(user_id);
+
+\-- accounts
+
+CREATE TABLE public.accounts (
+
+account_id text PRIMARY KEY,
+
+item_id text NOT NULL REFERENCES public.user_items(item_id) ON DELETE
+CASCADE,
+
+name text,
+
+mask text,
+
+type text,
+
+subtype text,
+
+official_name text,
+
+current_balance numeric,
+
+available_balance numeric,
+
+balance_as_of timestamptz,
+
+created_at timestamptz DEFAULT now()
+
+);
+
+CREATE INDEX idx_accounts_item ON public.accounts(item_id);
+
+### 
+
+\-- transactions
+
+CREATE TABLE public.transactions (
+
+id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+
+user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+
+account_id text NOT NULL REFERENCES public.accounts(account_id) ON
+DELETE CASCADE,
+
+plaid_transaction_id text NOT NULL UNIQUE,
+
+date date NOT NULL,
+
+amount numeric NOT NULL,
+
+iso_currency_code text,
+
+name text,
+
+merchant_name text,
+
+category text,
+
+transaction_type text,
+
+pending boolean,
+
+inserted_at timestamptz DEFAULT now()
+
+);
+
+\-- Performance
+
+CREATE INDEX idx_tx_user_date ON public.transactions(user_id, date
+DESC);
+
+CREATE INDEX idx_tx_account_date ON public.transactions(account_id, date
+DESC);
+
+## **3. Sync Mechanism: API Flows & Webhooks**
+
+### **A. Transactions Sync Flow**
+
+1.  **Initial sync**: Call /transactions/sync with cursor = null →
+    > receive full history + next_cursor; store cursor.
+
+2.  **Incremental updates (refresh or webhook)**:
+
+    -   Triggered by SYNC_UPDATES_AVAILABLE webhook.
+
+    -   Call /transactions/sync with stored cursor → retrieve adds,
+        > updates, deletions.
+
+    -   Support pagination (has_more) and loop until complete.
+
+    -   On TRANSACTIONS_SYNC_MUTATION_DURING_PAGINATION error, restart
+        > loop from original cursor.\
+        > ([[Stack
+        > Overflow]{.underline}](https://stackoverflow.com/questions/79028991/plaid-webhook-heal?utm_source=chatgpt.com),
+        > [[Plaid]{.underline}](https://plaid.com/docs/link/update-mode/?utm_source=chatgpt.com),
+        > [[Plaid]{.underline}](https://plaid.com/docs/sandbox/?utm_source=chatgpt.com),
+        > [[Plaid]{.underline}](https://plaid.com/docs/api/products/transactions/?utm_source=chatgpt.com),
+        > [[Plaid]{.underline}](https://plaid.com/docs/transactions/sync-migration/?utm_source=chatgpt.com))
+
+### **B. Webhook Triggers & Behavior**
+
+-   **Transaction Webhooks**:
+
+    -   SYNC_UPDATES_AVAILABLE: your signal to call /transactions/sync.\
+        > ([[Plaid]{.underline}](https://plaid.com/docs/transactions/sync-migration/?utm_source=chatgpt.com))
+
+-   **Account-related**:
+
+    -   NEW_ACCOUNTS_AVAILABLE: indicates more accounts under same item
+        > → use update-mode to add.\
+        > ([[Plaid]{.underline}](https://plaid.com/docs/link/update-mode/?utm_source=chatgpt.com))
+
+-   **Error states**:
+
+    -   ITEM_LOGIN_REQUIRED, PENDING_EXPIRATION, PENDING_DISCONNECT:
+        > require re-auth via update-mode.\
+        > ([[Plaid]{.underline}](https://plaid.com/docs/link/update-mode/?utm_source=chatgpt.com))
+
+-   **Self-healing**: If a webhook is missed, you can recover state
+    > using /item/get or other APIs.\
+    > ([[Stack
+    > Overflow]{.underline}](https://stackoverflow.com/questions/79028991/plaid-webhook-heal?utm_source=chatgpt.com))
+
+### **C. Update Mode**
+
+-   Needed to:
+
+    -   Fix login failures (e.g., password changes).
+
+    -   Add or remove account access (NEW_ACCOUNTS_AVAILABLE).
+
+    -   Renew expired consent---Plaid sends
+        > PENDING_EXPIRATION/PENDING_DISCONNECT before expiry.\
+        > ([[Plaid]{.underline}](https://plaid.com/docs/link/update-mode/?utm_source=chatgpt.com))
+
+-   link_token must be recreated with the same access_token and flags
+    > (update.account_selection_enabled=true) as needed.
+
+-   No new access_token or item_id---just restores consent or access.\
+    > ([[Plaid]{.underline}](https://plaid.com/docs/link/update-mode/?utm_source=chatgpt.com))
+
+### **D. Balance Refreshing**
+
+-   No dedicated webhook for balances.
+
+-   Balance changes are implied through transaction/investment updates.
+
+-   Optionally, use /accounts/balance/get to fetch current balances
+    > (paid endpoint).\
+    > ([[Stack
+    > Overflow]{.underline}](https://stackoverflow.com/questions/77135415/update-flow-account-syncing-in-plaid?utm_source=chatgpt.com))
+
+## **4. Full Data Flow Summary**
+
+  --------------------------------------------------------------------------
+  **Trigger/Event**        **Action**
+  ------------------------ -------------------------------------------------
+  App launch               UI reads all data from Supabase: accounts,
+                           balances, last 90 days of txns
+
+  New account linked       /item/public_token/exchange, /accounts/get,
+                           /transactions/sync
+
+  Refresh or webhook       /transactions/sync with cursor → update DB
+
+  NEW_ACCOUNTS_AVAILABLE   Use update-mode to fetch new accounts, then
+                           /accounts/get
+
+  Error items              Use update-mode to resolve ITEM_LOGIN_REQUIRED,
+                           etc.
+
+  Balance accuracy needed  Optionally call /accounts/balance/get
+  --------------------------------------------------------------------------
+
+## **5. UI Presentation Logic**
+
+**Per-account view**:\
+\
+SELECT \* FROM transactions WHERE account_id = \<id\> ORDER BY date
+DESC;
+
+-   
+
+**Combined view**:\
+\
+SELECT \* FROM transactions WHERE user_id = \<user_id\> ORDER BY date
+DESC;
+
+-   
+
+## **6. Suggested Indexes for Performance**
+
+To keep queries efficient as data grows, implement these indexes:
+
+\-- For quick lookups by user, account, and time range
+
+CREATE INDEX idx_transactions_user_date ON transactions(user_id, date
+DESC);
+
+CREATE INDEX idx_transactions_account_date ON transactions(account_id,
+date DESC);
+
+\-- Improve joins and lookups
+
+CREATE INDEX idx_transactions_account_id ON transactions(account_id);
+
+CREATE INDEX idx_transactions_user_id ON transactions(user_id);
+
+-   Composite indexes on (user_id, date) or (account_id, date)
+    > dramatically speed up filtered queries using those columns.\
+    > ([[Plaid]{.underline}](https://plaid.com/docs/sandbox/?utm_source=chatgpt.com),
+    > [[Plaid]{.underline}](https://plaid.com/docs/link/update-mode/?utm_source=chatgpt.com),
+    > [[Medium]{.underline}](https://medium.com/cubbit/optimizing-postgresql-queries-12-indexing-pitfalls-and-how-we-fixed-them-81c25615a84e?utm_source=chatgpt.com),
+    > [[Plaid]{.underline}](https://plaid.com/docs/api/products/transactions/?utm_source=chatgpt.com),
+    > [[Stack
+    > Overflow]{.underline}](https://stackoverflow.com/questions/77135415/update-flow-account-syncing-in-plaid?utm_source=chatgpt.com))
+
+-   Use **B-tree** indexes for equality and range conditions, like dates
+    > and IDs.\
+    > ([[devcenter.heroku.com]{.underline}](https://devcenter.heroku.com/articles/postgresql-indexes?utm_source=chatgpt.com))
+
+Consider advanced optimizations if needed:
+
+-   **BRIN indexes** for extremely large data sets with time-range
+    > queries.\
+    > ([[DEV
+    > Community]{.underline}](https://dev.to/digitalpollution/overview-of-postgresql-indexing-lpi?utm_source=chatgpt.com))
+
+-   **Partitioning** by date---e.g., monthly partitions for
+    > transactions---can improve maintenance and performance.\
+    > ([[Medium]{.underline}](https://medium.com/%40burakkocakeu/optimizing-postgresql-database-performance-908f309a4156?utm_source=chatgpt.com))
+
+## **7. Final Thoughts & Ready to Deploy**
+
+Your system is now rock-solid:
+
+-   Clean schema with user, item, account, and transaction tables.
+
+-   Efficient sync via cursors and Plaid sync.
+
+-   Robust webhook handling and self-healing.
+
+-   Clear support for re-auth and account addition via update-mode.
+
+-   UI reads fast from DB; Plaid only powers updates.
+
+-   Index strategy ensures good performance even as history grows.
+
+## 
+
+## **8. AsyncStorage & Secure Offline Caching (Final)**
+
+**What to store in AsyncStorage** (React Native's unencrypted key-value
+storage):
+
+-   **Safe, non-sensitive UI state**---like theme, flags, and
+    > preferences.\
+    > ([[Auth0]{.underline}](https://auth0.com/docs/secure/tokens/token-best-practices?utm_source=chatgpt.com))
+
+-   **Small, read-only financial snapshots**:
+
+    -   Per-account balance (with balance_as_of timestamp).
+
+    -   Net worth summary.
+
+    -   A brief preview of recent transactions.
+
+-   **Local sync metadata**: e.g., last_synced_at, but **never** store
+    > tokens or sensitive IDs.
+
+> Important: AsyncStorage is **not encrypted**. Never store grants,
+> tokens, or PII there.
+
+**Expiration & Caching practices**:
+
+-   Always implement TTL and versioning for cached data. Clear expired
+    > data on
+    > startup.([[Medium]{.underline}](https://medium.com/%40tusharkumar27864/best-practices-of-using-data-caching-redis-local-storage-in-react-native-projects-e151c76b2df0?utm_source=chatgpt.com))
+
+-   For larger or structured offline needs, consider SQLite, but keep
+    > AsyncStorage for only lightweight, read-only
+    > state.([[CodingCops]{.underline}](https://codingcops.com/react-native-asyncstorage/?utm_source=chatgpt.com))
+
+**Key Summary of Storage Layers**:
+
+-   **AsyncStorage** --- UI-only cache, fast and offline-friendly.
+
+-   **SecureStore / Encrypted Storage** --- use exclusively for secrets
+    > or highly sensitive data.
+
+-   **Supabase DB** --- authoritative source for all financial data and
+    > business logic.

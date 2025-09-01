@@ -54,13 +54,36 @@ export default async function handler(req, res) {
 
       if (shouldSync) {
         try {
-          fetch(`https://financify-rose.vercel.app/api/transactions_sync`, {
+          // Look up user_id from item_id
+          const { data: userItem, error } = await supabase
+            .from("user_items")
+            .select("user_id")
+            .eq("item_id", item_id)
+            .single();
+
+          if (error || !userItem) {
+            console.error("Could not find user for item_id:", item_id, error);
+            return res.status(200).json({ ok: true, error: "user_not_found" });
+          }
+
+          // Call Supabase sync-transactions function
+          const SUPABASE_URL =
+            process.env.SUPABASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL;
+          fetch(`${SUPABASE_URL}/functions/v1/sync-transactions`, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ item_id }),
-          }).catch((e) => console.error("enqueue sync failed", e));
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${
+                process.env.SUPABASE_SERVICE_ROLE_KEY ||
+                process.env.EXPO_PUBLIC_SUPABASE_SERVICE_ROLE_KEY
+              }`,
+            },
+            body: JSON.stringify({ item_id, user_id: userItem.user_id }),
+          }).catch((e) =>
+            console.error("sync-transactions function call failed", e)
+          );
         } catch (e) {
-          console.error("enqueue error", e);
+          console.error("webhook sync error", e);
         }
       }
 

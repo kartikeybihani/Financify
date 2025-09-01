@@ -13,7 +13,7 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  const { endpoint, item_id, ...otherParams } = req.body;
+  const { endpoint, item_id, user_id, ...otherParams } = req.body;
 
   if (!endpoint || !item_id) {
     return res.status(400).json({
@@ -22,18 +22,31 @@ export default async function handler(req, res) {
   }
 
   try {
-    // Look up access_token by item_id
-    const { data: item, error: fetchErr } = await supabase
-      .from("user_items")
-      .select("access_token")
-      .eq("item_id", item_id)
-      .single();
+    // 1. Look up user_id if not provided
+    let actualUserId = user_id;
+    if (!actualUserId) {
+      const { data: item, error: userErr } = await supabase
+        .from("user_items")
+        .select("user_id")
+        .eq("item_id", item_id)
+        .single();
 
-    if (fetchErr || !item) {
-      return res.status(404).json({ error: "Item not found" });
+      if (userErr || !item) {
+        return res.status(404).json({ error: "Item not found" });
+      }
+      actualUserId = item.user_id;
     }
 
-    const access_token = item.access_token;
+    // 2. Get access_token from Vault
+    const { data: access_token, error: tokenError } = await supabase.rpc(
+      "secure.get_plaid_token",
+      { p_item_id: item_id, p_user_id: actualUserId }
+    );
+
+    if (tokenError || !access_token) {
+      console.error("Error retrieving Plaid token from Vault:", tokenError);
+      return res.status(404).json({ error: "Access token not found" });
+    }
 
     let response;
 

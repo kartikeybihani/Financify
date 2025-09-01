@@ -16,18 +16,29 @@ export default async function handler(req, res) {
 
   try {
     if (mode === "update" && item_id) {
-      // 1. Look up the access_token for the specific Item
-      const { data, error } = await supabase
+      // 1. Check if the item exists
+      const { data: item, error } = await supabase
         .from("user_items")
-        .select("access_token")
+        .select("item_id")
         .eq("item_id", item_id)
         .single();
 
-      if (error || !data) {
+      if (error || !item) {
         return res.status(404).json({ error: "Item not found" });
       }
 
-      // 2. Create link_token in update mode, with account selection enabled
+      // 2. Get access_token from Vault
+      const { data: access_token, error: tokenError } = await supabase.rpc(
+        "secure.get_plaid_token",
+        { p_item_id: item_id, p_user_id: user_id }
+      );
+
+      if (tokenError || !access_token) {
+        console.error("Error retrieving Plaid token from Vault:", tokenError);
+        return res.status(404).json({ error: "Access token not found" });
+      }
+
+      // 3. Create link_token in update mode, with account selection enabled
       const { data: tokenData } = await client.linkTokenCreate({
         user: { client_user_id: user_id },
         client_name: "Financify",
@@ -35,7 +46,7 @@ export default async function handler(req, res) {
         language: "en",
         webhook: "https://financify-rose.vercel.app/api/webhook",
         redirect_uri,
-        access_token: data.access_token,
+        access_token: access_token,
         update: { account_selection_enabled: true },
         // Do NOT add `products` here unless you're explicitly adding restricted products like Assets, etc.
       });

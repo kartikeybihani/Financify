@@ -12,7 +12,7 @@ export default async function handler(req, res) {
   if (req.method !== "POST")
     return res.status(405).json({ error: "Method not allowed" });
 
-  const { public_token, user_id, institution_id, institution_name } = req.body;
+  const { public_token, user_id } = req.body;
   if (!public_token || !user_id) {
     return res.status(400).json({ error: "Missing public_token or user_id" });
   }
@@ -21,20 +21,73 @@ export default async function handler(req, res) {
     const { data } = await client.itemPublicTokenExchange({ public_token });
     const { access_token, item_id } = data;
 
-    // Idempotent write: upsert on unique item_id
-    const { error } = await supabase.from("user_items").upsert(
+    // Fetch institution metadata using access_token
+    let institution_id = null;
+    let institution_name = null;
+
+    try {
+      const itemResponse = await client.itemGet({ access_token });
+      const institutionId = itemResponse.data.item.institution_id;
+
+      const institutionResponse = await client.institutionsGetById({
+        institution_id: institutionId,
+        country_codes: ["US"],
+      });
+
+      institution_id = institutionId;
+      institution_name = institutionResponse.data.institution.name;
+
+      console.log("✅ Institution metadata fetched:", {
+        institution_id,
+        institution_name,
+      });
+    } catch (instError) {
+      console.error(
+        "⚠️ Failed to fetch institution metadata (continuing anyway):",
+        instError
+      );
+      // Don't fail the whole exchange if institution fetch fails
+    }
+
+    // Store item metadata in user_items (WITHOUT access_token)
+    const { error: itemError } = await supabase.from("user_items").upsert(
       {
         user_id,
         item_id,
-        access_token,
-        institution_id: institution_id ?? null,
-        institution_name: institution_name ?? null,
+        institution_id,
+        institution_name,
         webhook: "https://financify-rose.vercel.app/api/webhook",
       },
       { onConflict: "item_id" }
     );
 
-    if (error) throw error;
+    if (itemError) throw itemError;
+
+    // Store access_token securely in Vault via store-plaid-token function
+    const SUPABASE_URL =
+      process.env.SUPABASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL;
+    const storeTokenResponse = await fetch(
+      `${SUPABASE_URL}/functions/v1/store-plaid-token`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${
+            process.env.SUPABASE_SERVICE_ROLE_KEY ||
+            process.env.EXPO_PUBLIC_SUPABASE_SERVICE_ROLE_KEY
+          }`,
+        },
+        body: JSON.stringify({ item_id, user_id, access_token }),
+      }
+    );
+
+    if (!storeTokenResponse.ok) {
+      const errorText = await storeTokenResponse.text();
+      console.error("Failed to store token in Vault:", errorText);
+      throw new Error("Failed to store access token securely");
+    }
+
+    console.log("✅ Token stored in Vault for item_id:", item_id);
 
     // Do NOT return access_token to the client
     return res.status(200).json({ item_id });

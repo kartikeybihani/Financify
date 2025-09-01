@@ -7,6 +7,7 @@ import { useFonts } from "expo-font";
 import { useEffect } from "react";
 import "react-native-reanimated";
 import AuthProvider, { useAuth } from "./contexts/AuthContext";
+import { runStorageMigrationV2 } from "./utils/migrate";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -76,7 +77,15 @@ export default function RootLayout() {
   });
 
   useEffect(() => {
-    if (loaded) SplashScreen.hideAsync();
+    const initializeApp = async () => {
+      if (loaded) {
+        // Run storage migration before anything else
+        await runStorageMigrationV2();
+        SplashScreen.hideAsync();
+      }
+    };
+
+    initializeApp();
   }, [loaded]);
 
   if (!loaded) return null;

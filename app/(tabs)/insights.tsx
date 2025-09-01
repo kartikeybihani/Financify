@@ -19,7 +19,14 @@ import { styles } from "../styles/insightsStyles";
 import CategoryGrid from "../components/CategoryGrid";
 import CategoryDetailModal from "../components/CategoryDetailModal";
 import FilterModal from "../components/FilterModal";
-import supabase from "../lib/supabase/supabase";
+import { supabase } from "../lib/supabase/supabase";
+import {
+  fetchInitialData,
+  getPrimaryItemId,
+  syncAllUserTransactions,
+  getUpdateLinkToken,
+  openPlaidLink,
+} from "../utils/plaid";
 const screenWidth = Dimensions.get("window").width;
 
 // Define types
@@ -109,23 +116,68 @@ export default function InsightsScreen() {
   const [categories, setCategories] = useState<string[]>(["All Categories"]);
   const hasData = useRef(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [showUpdateModal, setShowUpdateModal] = useState(false);
+  const [updateModalInfo, setUpdateModalInfo] = useState<{
+    type: "new_accounts" | "re_auth";
+    message: string;
+    item_id: string;
+  } | null>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  // Initialize data and check for update flags on mount
+  useEffect(() => {
+    const initializeScreen = async () => {
+      setIsInitialLoad(true);
+
+      // Load stored data first
+      const hasStoredData = await loadData();
+
+      if (!hasStoredData) {
+        // If no stored data, try fetching fresh data
+        setIsLoading(true);
+        await fetchFreshData();
+        setIsLoading(false);
+      }
+
+      // Check for update flags (Option A - polling approach)
+      await checkForUpdateFlags();
+
+      setIsInitialLoad(false);
+    };
+
+    initializeScreen();
+  }, []);
 
   const loadData = async () => {
     try {
-      // Try to load data from AsyncStorage first
-      const storedData = await AsyncStorage.getItem("financialData");
-      if (storedData) {
-        const data = JSON.parse(storedData);
-        if (data.transactions && data.transactions.length > 0) {
-          setTransactions(data.transactions);
-          processTransactionsData(data.transactions);
-          hasData.current = true;
-          return true;
+      console.log("💡 Insights: Loading stored data...");
+
+      // Try to load financial data using new approach
+      const data = await fetchInitialData();
+
+      if (data.accounts && data.accounts.length > 0) {
+        console.log(
+          "✅ Insights: Found account data, attempting to load transactions"
+        );
+
+        // Also try to load from AsyncStorage for transactions
+        const storedData = await AsyncStorage.getItem("financialData");
+        if (storedData) {
+          const parsedData = JSON.parse(storedData);
+          if (parsedData.transactions && parsedData.transactions.length > 0) {
+            setTransactions(parsedData.transactions);
+            processTransactionsData(parsedData.transactions);
+            hasData.current = true;
+            console.log("✅ Insights: Loaded transactions from storage");
+            return true;
+          }
         }
       }
+
+      console.log("ℹ️ Insights: No stored transaction data found");
       return false;
     } catch (error) {
-      console.error("Error loading stored data:", error);
+      console.error("❌ Insights: Error loading stored data:", error);
       return false;
     }
   };
@@ -135,48 +187,59 @@ export default function InsightsScreen() {
     try {
       setIsLoading(true);
 
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+      console.log(
+        "💡 Insights: Fetching transactions using new multi-bank approach..."
+      );
 
-      const { data: tokenData, error } = await supabase
-        .from("user_tokens")
-        .select("access_token")
-        .eq("id", user?.id)
-        .single();
+      // Get the current item_id
+      const item_id = await getPrimaryItemId();
 
-      const token = tokenData?.access_token || null;
+      if (!item_id) {
+        console.log("⚠️ No item_id found - user needs to connect a bank");
+        return;
+      }
 
-      // const token = await AsyncStorage.getItem("accessToken");
-      if (!token) return;
+      console.log("💡 Insights: Fetching transactions for item_id:", item_id);
 
-      const res = await fetch(`${BASE_URL}/api/plaid`, {
+      // Fetch transactions using new API approach
+      const res = await fetch(`${BASE_URL}/api/transactions_sync`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ endpoint: "transactions", access_token: token }),
+        body: JSON.stringify({ item_id }),
       });
 
       const transactionData = await res.json();
-      if (transactionData.transactions) {
-        setTransactions(transactionData.transactions);
-        processTransactionsData(transactionData.transactions);
+      console.log("💡 Insights: Transaction data received:", {
+        added: transactionData.added?.length || 0,
+        modified: transactionData.modified?.length || 0,
+        removed: transactionData.removed?.length || 0,
+      });
+
+      // Use added transactions (most recent ones)
+      if (transactionData.added && transactionData.added.length > 0) {
+        setTransactions(transactionData.added);
+        processTransactionsData(transactionData.added);
         hasData.current = true;
 
         // Update stored data
         const storedData = await AsyncStorage.getItem("financialData");
         if (storedData) {
           const parsedData = JSON.parse(storedData);
-          parsedData.transactions = transactionData.transactions;
+          parsedData.transactions = transactionData.added;
           await AsyncStorage.setItem(
             "financialData",
             JSON.stringify(parsedData)
           );
         }
+
+        console.log("✅ Insights: Successfully processed transactions");
+      } else {
+        console.log("ℹ️ Insights: No transactions found");
       }
     } catch (error) {
-      console.error("Error fetching fresh data:", error);
+      console.error("❌ Insights: Error fetching transactions:", error);
     } finally {
       setIsLoading(false);
     }
@@ -344,6 +407,111 @@ export default function InsightsScreen() {
     setShowCategoryDetail(true);
   };
 
+  // Check for update mode flags
+  const checkForUpdateFlags = async () => {
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user?.id) return;
+
+      const { data: userItems, error } = await supabase
+        .from("user_items")
+        .select(
+          "item_id, has_new_accounts, requires_update_mode, institution_name"
+        )
+        .eq("user_id", user.id);
+
+      if (error) {
+        console.error("Error checking update flags:", error);
+        return;
+      }
+
+      // Check for items requiring attention
+      for (const item of userItems || []) {
+        if (item.has_new_accounts) {
+          setUpdateModalInfo({
+            type: "new_accounts",
+            message: `New accounts are available for ${
+              item.institution_name || "your bank"
+            }. Would you like to add them?`,
+            item_id: item.item_id,
+          });
+          setShowUpdateModal(true);
+          return; // Show one at a time
+        }
+
+        if (item.requires_update_mode) {
+          setUpdateModalInfo({
+            type: "re_auth",
+            message: `${
+              item.institution_name || "Your bank"
+            } requires re-authentication. Please update your connection.`,
+            item_id: item.item_id,
+          });
+          setShowUpdateModal(true);
+          return; // Show one at a time
+        }
+      }
+    } catch (error) {
+      console.error("Error checking update flags:", error);
+    }
+  };
+
+  // Handle manual refresh
+  const handleManualRefresh = async () => {
+    if (isSyncing) return;
+
+    setIsSyncing(true);
+    try {
+      console.log("🔄 Manual refresh: Syncing transactions...");
+      await syncAllUserTransactions();
+
+      // Reload data after sync
+      await fetchFreshData();
+
+      console.log("✅ Manual refresh completed");
+    } catch (error) {
+      console.error("❌ Manual refresh failed:", error);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  // Handle update mode flow
+  const handleUpdateMode = async () => {
+    if (!updateModalInfo) return;
+
+    try {
+      console.log("🔄 Starting update mode for item:", updateModalInfo.item_id);
+
+      // Get update link token
+      const linkToken = await getUpdateLinkToken(updateModalInfo.item_id);
+
+      // Open Plaid Link in update mode
+      await openPlaidLink(linkToken);
+
+      // Clear the flag after successful update
+      await supabase
+        .from("user_items")
+        .update({
+          has_new_accounts: false,
+          requires_update_mode: false,
+        })
+        .eq("item_id", updateModalInfo.item_id);
+
+      setShowUpdateModal(false);
+      setUpdateModalInfo(null);
+
+      // Refresh data after update
+      await fetchFreshData();
+
+      console.log("✅ Update mode completed");
+    } catch (error) {
+      console.error("❌ Update mode failed:", error);
+    }
+  };
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.headerContainer}>
@@ -356,6 +524,27 @@ export default function InsightsScreen() {
             <Text style={styles.headerSubtitle}>Your Financial Analytics</Text>
           </View>
         </View>
+      </View>
+
+      {/* Refresh Button */}
+      <View style={refreshButtonStyles.container}>
+        <TouchableOpacity
+          style={[
+            refreshButtonStyles.button,
+            isSyncing && refreshButtonStyles.buttonDisabled,
+          ]}
+          onPress={handleManualRefresh}
+          disabled={isSyncing}
+        >
+          <Ionicons
+            name={isSyncing ? "hourglass-outline" : "refresh-outline"}
+            size={20}
+            color="#fff"
+          />
+          <Text style={refreshButtonStyles.text}>
+            {isSyncing ? "Syncing..." : "Refresh Data"}
+          </Text>
+        </TouchableOpacity>
       </View>
 
       {isInitialLoad ? (
@@ -489,6 +678,159 @@ export default function InsightsScreen() {
           )}
         </ScrollView>
       )}
+
+      {/* Update Mode Notification Modal */}
+      <Modal
+        visible={showUpdateModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowUpdateModal(false)}
+      >
+        <View style={updateModalStyles.overlay}>
+          <View style={updateModalStyles.container}>
+            <View style={updateModalStyles.iconContainer}>
+              <Ionicons
+                name={
+                  updateModalInfo?.type === "new_accounts"
+                    ? "add-circle-outline"
+                    : "warning-outline"
+                }
+                size={32}
+                color={
+                  updateModalInfo?.type === "new_accounts"
+                    ? "#4CAF50"
+                    : "#FF9500"
+                }
+              />
+            </View>
+
+            <Text style={updateModalStyles.title}>
+              {updateModalInfo?.type === "new_accounts"
+                ? "New Accounts Available"
+                : "Authentication Required"}
+            </Text>
+
+            <Text style={updateModalStyles.message}>
+              {updateModalInfo?.message}
+            </Text>
+
+            <View style={updateModalStyles.buttonContainer}>
+              <TouchableOpacity
+                style={[
+                  updateModalStyles.button,
+                  updateModalStyles.cancelButton,
+                ]}
+                onPress={() => setShowUpdateModal(false)}
+              >
+                <Text style={updateModalStyles.cancelButtonText}>Later</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  updateModalStyles.button,
+                  updateModalStyles.updateButton,
+                ]}
+                onPress={handleUpdateMode}
+              >
+                <Text style={updateModalStyles.updateButtonText}>Update</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
+
+// Refresh Button Styles
+const refreshButtonStyles = StyleSheet.create({
+  container: {
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    backgroundColor: "#1A1A2E",
+  },
+  button: {
+    backgroundColor: "#4A90E2",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    gap: 8,
+  },
+  buttonDisabled: {
+    backgroundColor: "#666",
+    opacity: 0.7,
+  },
+  text: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+});
+
+// Update Modal Styles
+const updateModalStyles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.7)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+  container: {
+    backgroundColor: "#1A1A2E",
+    borderRadius: 16,
+    padding: 24,
+    width: "100%",
+    maxWidth: 340,
+    borderWidth: 1,
+    borderColor: "#333",
+  },
+  iconContainer: {
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  title: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: "#fff",
+    textAlign: "center",
+    marginBottom: 12,
+  },
+  message: {
+    fontSize: 16,
+    color: "#A0A0A0",
+    textAlign: "center",
+    lineHeight: 22,
+    marginBottom: 24,
+  },
+  buttonContainer: {
+    flexDirection: "row",
+    gap: 12,
+  },
+  button: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    alignItems: "center",
+  },
+  cancelButton: {
+    backgroundColor: "#333",
+  },
+  updateButton: {
+    backgroundColor: "#4A90E2",
+  },
+  cancelButtonText: {
+    color: "#A0A0A0",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  updateButtonText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+});

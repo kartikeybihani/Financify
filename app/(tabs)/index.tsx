@@ -20,6 +20,8 @@ import {
   getUpdateLinkToken,
   openPlaidLink,
   fetchInitialData,
+  clearOldPlaidData,
+  getItemIds,
 } from "../utils/plaid";
 import {
   Account,
@@ -297,6 +299,21 @@ export default function HomeScreen() {
         console.log(
           "🚀 Loading financial data using new multi-bank approach..."
         );
+
+        // Clear old data first to avoid conflicts
+        await clearOldPlaidData();
+
+        // Clean up old item_ids, keep only the latest
+        const ids = await getItemIds();
+        if (ids.length > 1) {
+          const latestItemId = ids[ids.length - 1];
+          console.log(`🧹 Keeping only latest item_id: ${latestItemId}`);
+          await AsyncStorage.setItem(
+            "plaid:item_ids",
+            JSON.stringify([latestItemId])
+          );
+          console.log("✅ Cleaned up old item_ids");
+        }
 
         // Use the new fetchInitialData function
         const data = await fetchInitialData();
