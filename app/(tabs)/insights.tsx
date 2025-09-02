@@ -19,6 +19,10 @@ import { styles } from "../styles/insightsStyles";
 import CategoryGrid from "../components/CategoryGrid";
 import CategoryDetailModal from "../components/CategoryDetailModal";
 import FilterModal from "../components/FilterModal";
+import EnhancedFilterModal, {
+  FilterOptions,
+  Account,
+} from "../components/EnhancedFilterModal";
 import { supabase } from "../lib/supabase/supabase";
 import {
   fetchInitialData,
@@ -28,18 +32,32 @@ import {
   openPlaidLink,
   getRecentTransactions,
   getSpendingByCategory,
+  getFilteredTransactions,
+  getFilteredTransactionsCount,
+  getUserAccountsForFilter,
 } from "../utils/plaid";
+import {
+  debugTransactionCategories,
+  getCurrentMonthCategoryBreakdown,
+  countNullCategories,
+  forceFullResync,
+} from "../utils/categoryFix";
 const screenWidth = Dimensions.get("window").width;
 
 // Define types
 interface Transaction {
+  id?: string;
   amount: number;
-  category?: string[];
+  category?: string; // This is the primary category from Plaid stored as string
   date: string;
   name: string;
   personal_finance_category?: {
     primary: string;
   };
+  plaid_transaction_id?: string;
+  account_name?: string;
+  institution_name?: string;
+  account_mask?: string;
 }
 
 interface CategoryBreakdown {
@@ -126,10 +144,40 @@ export default function InsightsScreen() {
   } | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
 
+  // Enhanced filtering state
+  const [showEnhancedFilterModal, setShowEnhancedFilterModal] = useState(false);
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [filterOptions, setFilterOptions] = useState<FilterOptions>({
+    accountId: null,
+    timePeriod: "30days",
+  });
+  const [filteredTransactions, setFilteredTransactions] = useState<
+    Transaction[]
+  >([]);
+  const [totalFilteredCount, setTotalFilteredCount] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMoreTransactions, setHasMoreTransactions] = useState(true);
+
+  // Simple cache for filtered results
+  const filterCache = useRef<
+    Map<
+      string,
+      {
+        transactions: Transaction[];
+        count: number;
+        timestamp: number;
+      }
+    >
+  >(new Map());
+  const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
   // Initialize data and check for update flags on mount
   useEffect(() => {
     const initializeScreen = async () => {
       setIsInitialLoad(true);
+
+      // Load accounts for filter modal
+      await loadUserAccounts();
 
       // Load stored data first
       const hasStoredData = await loadData();
@@ -141,6 +189,9 @@ export default function InsightsScreen() {
         setIsLoading(false);
       }
 
+      // Load filtered transactions with default filters
+      await loadFilteredTransactions(filterOptions, true);
+
       // Check for update flags (Option A - polling approach)
       await checkForUpdateFlags();
 
@@ -149,6 +200,13 @@ export default function InsightsScreen() {
 
     initializeScreen();
   }, []);
+
+  // Load filtered transactions when filter options change
+  useEffect(() => {
+    if (hasData.current) {
+      loadFilteredTransactions(filterOptions, true);
+    }
+  }, [filterOptions]);
 
   const loadData = async () => {
     try {
@@ -230,6 +288,144 @@ export default function InsightsScreen() {
     }
   };
 
+  // Load user accounts for filter modal
+  const loadUserAccounts = async () => {
+    try {
+      const {
+        data: { user },
+        error: authError,
+      } = await supabase.auth.getUser();
+
+      if (authError || !user?.id) {
+        console.log("❌ Auth error loading accounts:", authError?.message);
+        return;
+      }
+
+      const userAccounts = await getUserAccountsForFilter(user.id);
+      setAccounts(userAccounts);
+      console.log(
+        `📊 Loaded ${userAccounts.length} user accounts for filtering`
+      );
+    } catch (error) {
+      console.error("❌ Error loading user accounts:", error);
+    }
+  };
+
+  // Helper functions for caching
+  const getCacheKey = (filters: FilterOptions, offset: number = 0) => {
+    return `${filters.accountId || "all"}_${filters.timePeriod}_${offset}`;
+  };
+
+  const getCachedData = (cacheKey: string) => {
+    const cached = filterCache.current.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+      return cached;
+    }
+    return null;
+  };
+
+  const setCachedData = (
+    cacheKey: string,
+    transactions: Transaction[],
+    count: number
+  ) => {
+    filterCache.current.set(cacheKey, {
+      transactions,
+      count,
+      timestamp: Date.now(),
+    });
+  };
+
+  const clearCache = () => {
+    filterCache.current.clear();
+  };
+
+  // Load filtered transactions with pagination and caching
+  const loadFilteredTransactions = async (
+    filters: FilterOptions,
+    reset: boolean = false
+  ) => {
+    try {
+      const {
+        data: { user },
+        error: authError,
+      } = await supabase.auth.getUser();
+
+      if (authError || !user?.id) {
+        console.log(
+          "❌ Auth error loading filtered transactions:",
+          authError?.message
+        );
+        return;
+      }
+
+      const offset = reset ? 0 : filteredTransactions.length;
+      const cacheKey = getCacheKey(filters, offset);
+
+      // Check cache first (only for initial load, not pagination)
+      if (reset) {
+        const cached = getCachedData(getCacheKey(filters, 0));
+        if (cached) {
+          console.log(`📦 Using cached data for filters: ${cacheKey}`);
+          setFilteredTransactions(cached.transactions);
+          setTotalFilteredCount(cached.count);
+          setHasMoreTransactions(cached.transactions.length < cached.count);
+          return;
+        }
+      }
+
+      const limit = 50;
+
+      // Get filtered transactions
+      const newTransactions = await getFilteredTransactions(user.id, {
+        accountId: filters.accountId,
+        timePeriod: filters.timePeriod,
+        limit,
+        offset,
+      });
+
+      // Get total count for pagination (only on initial load)
+      let totalCount = totalFilteredCount;
+      if (reset) {
+        totalCount = await getFilteredTransactionsCount(user.id, {
+          accountId: filters.accountId,
+          timePeriod: filters.timePeriod,
+        });
+      }
+
+      const updatedTransactions = reset
+        ? newTransactions
+        : [...filteredTransactions, ...newTransactions];
+
+      if (reset) {
+        setFilteredTransactions(updatedTransactions);
+        setTotalFilteredCount(totalCount);
+
+        // Cache the initial load
+        setCachedData(getCacheKey(filters, 0), updatedTransactions, totalCount);
+      } else {
+        setFilteredTransactions(updatedTransactions);
+      }
+
+      setHasMoreTransactions(updatedTransactions.length < totalCount);
+
+      console.log(
+        `📊 Loaded ${newTransactions.length} filtered transactions (${updatedTransactions.length}/${totalCount})`
+      );
+    } catch (error) {
+      console.error("❌ Error loading filtered transactions:", error);
+    }
+  };
+
+  // Load more transactions for infinite scroll
+  const loadMoreTransactions = async () => {
+    if (loadingMore || !hasMoreTransactions) return;
+
+    setLoadingMore(true);
+    await loadFilteredTransactions(filterOptions, false);
+    setLoadingMore(false);
+  };
+
   // Listen for financial data updates
   useEffect(() => {
     const subscription = DeviceEventEmitter.addListener(
@@ -249,20 +445,37 @@ export default function InsightsScreen() {
   }, []);
 
   const processTransactionsData = (transactionsData: Transaction[]) => {
-    // console.log("Processing transactions:", transactionsData);
-    const expenses = transactionsData.filter((tx) => tx.amount > 0);
-    // console.log("Filtered expenses:", expenses);
+    console.log("🔍 Processing transactions:", transactionsData?.length || 0);
+
+    // Filter for current month expenses only
+    const now = new Date();
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
+
+    const expenses = transactionsData.filter((tx) => {
+      const txDate = new Date(tx.date);
+      const isCurrentMonth =
+        txDate.getMonth() === currentMonth &&
+        txDate.getFullYear() === currentYear;
+      const isExpense = tx.amount > 0;
+
+      return isCurrentMonth && isExpense;
+    });
+
+    console.log(
+      `🗓️ Found ${expenses.length} expenses in current month (${
+        currentMonth + 1
+      }/${currentYear})`
+    );
     const totalSpent = expenses.reduce((acc, tx) => acc + tx.amount, 0);
+    console.log(`💰 Total spent this month: $${totalSpent.toFixed(2)}`);
 
     const categoriesObj: CategoryBreakdown = {};
     for (const tx of expenses) {
-      const category = tx.personal_finance_category?.primary || "Other";
-      // console.log(
-      //   "Transaction category:",
-      //   category,
-      //   "for transaction:",
-      //   tx.name
-      // );
+      // Fix: Use the category field from database (which now stores primary category)
+      const category = tx.category || "Other";
+      console.log("🏷️ Transaction:", tx.name, "→ Category:", category);
+
       if (!categoriesObj[category]) {
         categoriesObj[category] = {
           amount: 0,
@@ -275,7 +488,7 @@ export default function InsightsScreen() {
       categoriesObj[category].amount += tx.amount;
     }
 
-    // console.log("Categories object:", categoriesObj);
+    console.log("📊 Categories breakdown:", categoriesObj);
 
     // Calculate percentages
     Object.keys(categoriesObj).forEach((category) => {
@@ -290,11 +503,10 @@ export default function InsightsScreen() {
 
     const uniqueCategories = [
       "All Categories",
-      ...new Set(
-        expenses.map((tx) => tx.personal_finance_category?.primary || "Other")
-      ),
+      ...new Set(expenses.map((tx) => tx.category || "Other")),
     ].map((cat) => (cat === "All Categories" ? cat : formatCategoryName(cat)));
-    // console.log("Unique categories:", uniqueCategories);
+
+    console.log("🏷️ Unique categories found:", uniqueCategories);
     setCategories(uniqueCategories);
 
     const topCategory = sortedCategories[0];
@@ -307,10 +519,10 @@ export default function InsightsScreen() {
           minimumFractionDigits: 2,
           maximumFractionDigits: 2,
         })} this month`,
-        description: `Top category: ${topCategory[0]}`,
-        details: `You've spent the most on ${
+        description: `Top category: ${formatCategoryName(topCategory[0])}`,
+        details: `You've spent the most on ${formatCategoryName(
           topCategory[0]
-        } — $${topCategory[1].amount.toLocaleString("en-US", {
+        )} — $${topCategory[1].amount.toLocaleString("en-US", {
           minimumFractionDigits: 2,
           maximumFractionDigits: 2,
         })}. Try setting a limit or exploring cheaper alternatives.`,
@@ -329,27 +541,36 @@ export default function InsightsScreen() {
     return new Date(dateStr).toLocaleDateString("en-US", options);
   };
 
-  // Filter transactions based on selected category
-  const filteredTransactions = transactions.filter((tx) => {
-    if (selectedCategory === "All Categories") return true;
-    const txCategory = tx.personal_finance_category?.primary || "Other";
-    const formattedTxCategory = formatCategoryName(txCategory);
-    console.log(
-      "Filtering transaction:",
-      tx.name,
-      "Category:",
-      formattedTxCategory,
-      "Selected:",
-      selectedCategory
-    );
-    return formattedTxCategory === selectedCategory;
-  });
+  // Helper function to get filter description
+  const getFilterDescription = () => {
+    const accountName = filterOptions.accountId
+      ? accounts.find((acc) => acc.account_id === filterOptions.accountId)
+          ?.institution_name || "Selected Account"
+      : "All Accounts";
+
+    const timePeriodMap: { [key: string]: string } = {
+      "30days": "30 days",
+      "3months": "3 months",
+      "6months": "6 months",
+      december2024: "Dec 2024",
+      november2024: "Nov 2024",
+      october2024: "Oct 2024",
+    };
+
+    const timePeriodName = timePeriodMap[filterOptions.timePeriod] || "30 days";
+
+    return `${accountName} • ${timePeriodName}`;
+  };
 
   const onRefresh = async () => {
     if (!hasData.current) return;
     setRefreshing(true);
     try {
+      // Clear cache when refreshing
+      clearCache();
       await fetchFreshData();
+      // Reload current filters after refresh
+      await loadFilteredTransactions(filterOptions, true);
     } finally {
       setRefreshing(false);
     }
@@ -432,21 +653,104 @@ export default function InsightsScreen() {
     }
   };
 
-  // Handle manual refresh
+  // Handle manual refresh with comprehensive debugging
   const handleManualRefresh = async () => {
     if (isSyncing) return;
 
     setIsSyncing(true);
     try {
       console.log("🔄 Manual refresh: Syncing transactions...");
+
+      const {
+        data: { user },
+        error: authError,
+      } = await supabase.auth.getUser();
+
+      if (authError || !user?.id) {
+        console.error("❌ Auth error in refresh:", authError?.message);
+        return;
+      }
+
+      // Debug existing data first
+      console.log("🔍 BEFORE SYNC - Category Analysis:");
+      await debugTransactionCategories(user.id, 10);
+      const nullCountBefore = await countNullCategories(user.id);
+      console.log(
+        `⚠️ BEFORE: ${nullCountBefore} transactions with null categories`
+      );
+
+      // Clear cache before syncing
+      clearCache();
+
       await syncAllUserTransactions();
+
+      // Debug data after sync
+      console.log("🔍 AFTER SYNC - Category Analysis:");
+      await debugTransactionCategories(user.id, 10);
+      const nullCountAfter = await countNullCategories(user.id);
+      console.log(
+        `⚠️ AFTER: ${nullCountAfter} transactions with null categories`
+      );
+
+      // Get current month breakdown
+      await getCurrentMonthCategoryBreakdown(user.id);
 
       // Reload data after sync
       await fetchFreshData();
+      await loadFilteredTransactions(filterOptions, true);
 
-      console.log("✅ Manual refresh completed");
+      console.log("✅ Manual refresh completed with detailed analysis");
     } catch (error) {
       console.error("❌ Manual refresh failed:", error);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  // Handle full resync (fixes null categories)
+  const handleFullResync = async () => {
+    if (isSyncing) return;
+
+    setIsSyncing(true);
+    try {
+      console.log("🔄 Starting FULL re-sync to fix categories...");
+
+      const {
+        data: { user },
+        error: authError,
+      } = await supabase.auth.getUser();
+
+      if (authError || !user?.id) {
+        console.error("❌ Auth error in full resync:", authError?.message);
+        return;
+      }
+
+      // Force full resync by resetting cursors
+      const success = await forceFullResync(user.id);
+
+      if (!success) {
+        console.error("❌ Failed to reset cursors for full resync");
+        return;
+      }
+
+      // Clear cache before syncing
+      clearCache();
+
+      // Now sync with reset cursors (will get ALL transactions fresh)
+      await syncAllUserTransactions();
+
+      // Debug and reload
+      console.log("🔍 AFTER FULL RESYNC - Category Analysis:");
+      await debugTransactionCategories(user.id, 10);
+      await getCurrentMonthCategoryBreakdown(user.id);
+
+      // Reload data
+      await fetchFreshData();
+      await loadFilteredTransactions(filterOptions, true);
+
+      console.log("✅ Full resync completed - categories should now be fixed!");
+    } catch (error) {
+      console.error("❌ Full resync failed:", error);
     } finally {
       setIsSyncing(false);
     }
@@ -500,25 +804,47 @@ export default function InsightsScreen() {
         </View>
       </View>
 
-      {/* Refresh Button */}
+      {/* Refresh Buttons */}
       <View style={refreshButtonStyles.container}>
-        <TouchableOpacity
-          style={[
-            refreshButtonStyles.button,
-            isSyncing && refreshButtonStyles.buttonDisabled,
-          ]}
-          onPress={handleManualRefresh}
-          disabled={isSyncing}
-        >
-          <Ionicons
-            name={isSyncing ? "hourglass-outline" : "refresh-outline"}
-            size={20}
-            color="#fff"
-          />
-          <Text style={refreshButtonStyles.text}>
-            {isSyncing ? "Syncing..." : "Refresh Data"}
-          </Text>
-        </TouchableOpacity>
+        <View style={refreshButtonStyles.buttonRow}>
+          <TouchableOpacity
+            style={[
+              refreshButtonStyles.button,
+              refreshButtonStyles.primaryButton,
+              isSyncing && refreshButtonStyles.buttonDisabled,
+            ]}
+            onPress={handleManualRefresh}
+            disabled={isSyncing}
+          >
+            <Ionicons
+              name={isSyncing ? "hourglass-outline" : "refresh-outline"}
+              size={18}
+              color="#fff"
+            />
+            <Text style={refreshButtonStyles.text}>
+              {isSyncing ? "Syncing..." : "Refresh"}
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              refreshButtonStyles.button,
+              refreshButtonStyles.secondaryButton,
+              isSyncing && refreshButtonStyles.buttonDisabled,
+            ]}
+            onPress={handleFullResync}
+            disabled={isSyncing}
+          >
+            <Ionicons
+              name={isSyncing ? "hourglass-outline" : "sync-outline"}
+              size={18}
+              color="#4A90E2"
+            />
+            <Text style={refreshButtonStyles.secondaryText}>
+              {isSyncing ? "Syncing..." : "Fix Categories"}
+            </Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {isInitialLoad ? (
@@ -595,47 +921,115 @@ export default function InsightsScreen() {
               </ScrollView>
 
               <View style={styles.sectionHeader}>
-                <Text style={styles.sectionLabel}>Recent Transactions</Text>
+                <Text style={styles.sectionLabel}>Transactions</Text>
                 <TouchableOpacity
                   style={styles.filterButton}
-                  onPress={() => setShowFilterModal(true)}
+                  onPress={() => setShowEnhancedFilterModal(true)}
                 >
+                  <Ionicons
+                    name="funnel"
+                    size={14}
+                    color="#667eea"
+                    style={{ marginRight: 6 }}
+                  />
                   <Text style={styles.filterButtonText}>
-                    {selectedCategory}
+                    {getFilterDescription()}
                   </Text>
                   <Ionicons
                     name="chevron-down"
-                    size={16}
-                    color="#4A90E2"
+                    size={14}
+                    color="#667eea"
                     style={styles.dropdownArrow}
                   />
                 </TouchableOpacity>
               </View>
 
-              {filteredTransactions.map((tx, idx) => (
-                <View key={idx} style={styles.txItem}>
-                  <View>
-                    <Text style={styles.txName}>{tx.name}</Text>
-                    <Text style={styles.txMeta}>
-                      {formatCategoryName(
-                        tx.personal_finance_category?.primary || "Other"
-                      )}{" "}
-                      • {formatDate(tx.date)}
-                    </Text>
-                  </View>
-                  <Text style={styles.txAmount}>-${tx.amount.toFixed(2)}</Text>
+              {/* Transaction Count Info */}
+              {totalFilteredCount > 0 && (
+                <View style={transactionInfoStyles.container}>
+                  <Text style={transactionInfoStyles.text}>
+                    Showing {filteredTransactions.length} of{" "}
+                    {totalFilteredCount} transactions
+                  </Text>
                 </View>
-              ))}
+              )}
+
+              {/* Filtered Transactions List */}
+              <FlatList
+                data={filteredTransactions}
+                scrollEnabled={false}
+                keyExtractor={(item, index) =>
+                  `${item.plaid_transaction_id || item.id || index}`
+                }
+                renderItem={({ item: tx }) => {
+                  // Handle transaction amount display logic
+                  const amount = Math.abs(tx.amount);
+                  const isIncome = tx.amount < 0; // Negative amounts are actually income/credits
+                  const amountColor = isIncome ? "#4CAF50" : "#ff6b6b"; // Green for income, red for expenses
+                  const amountText = isIncome
+                    ? `+$${amount.toFixed(2)}`
+                    : `-$${amount.toFixed(2)}`;
+
+                  return (
+                    <View style={styles.txItem}>
+                      <View style={styles.txInfo}>
+                        <Text style={styles.txName}>{tx.name}</Text>
+                        <Text style={styles.txMeta}>{formatDate(tx.date)}</Text>
+                        <Text style={styles.txCategory}>
+                          {formatCategoryName(tx.category || "Other")}
+                        </Text>
+                      </View>
+                      <View style={styles.txAmountContainer}>
+                        <Text style={[styles.txAmount, { color: amountColor }]}>
+                          {amountText}
+                        </Text>
+                      </View>
+                    </View>
+                  );
+                }}
+                ListFooterComponent={() => (
+                  <View style={loadMoreStyles.container}>
+                    {loadingMore && (
+                      <ActivityIndicator
+                        size="small"
+                        color="#4A90E2"
+                        style={loadMoreStyles.indicator}
+                      />
+                    )}
+                    {hasMoreTransactions && !loadingMore && (
+                      <TouchableOpacity
+                        style={loadMoreStyles.button}
+                        onPress={loadMoreTransactions}
+                      >
+                        <Text style={loadMoreStyles.buttonText}>Load More</Text>
+                        <Ionicons
+                          name="chevron-down"
+                          size={16}
+                          color="#4A90E2"
+                        />
+                      </TouchableOpacity>
+                    )}
+                    {!hasMoreTransactions &&
+                      filteredTransactions.length > 0 && (
+                        <Text style={loadMoreStyles.endText}>
+                          No more transactions to load
+                        </Text>
+                      )}
+                  </View>
+                )}
+              />
             </>
           )}
 
-          <FilterModal
-            visible={showFilterModal}
-            onClose={() => setShowFilterModal(false)}
-            categories={categories}
-            selectedCategory={selectedCategory}
-            onSelectCategory={setSelectedCategory}
-            formatCategoryName={formatCategoryName}
+          <EnhancedFilterModal
+            visible={showEnhancedFilterModal}
+            onClose={() => setShowEnhancedFilterModal(false)}
+            accounts={accounts}
+            selectedFilters={filterOptions}
+            onFiltersChange={(newFilters) => {
+              setFilterOptions(newFilters);
+              setShowEnhancedFilterModal(false);
+            }}
           />
 
           {selectedCategoryDetail && (
@@ -723,23 +1117,39 @@ const refreshButtonStyles = StyleSheet.create({
     paddingVertical: 12,
     backgroundColor: "#1A1A2E",
   },
+  buttonRow: {
+    flexDirection: "row",
+    gap: 12,
+  },
   button: {
-    backgroundColor: "#4A90E2",
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     paddingVertical: 12,
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
     borderRadius: 12,
-    gap: 8,
+    gap: 6,
+  },
+  primaryButton: {
+    backgroundColor: "#4A90E2",
+  },
+  secondaryButton: {
+    backgroundColor: "rgba(74, 144, 226, 0.1)",
+    borderWidth: 1,
+    borderColor: "rgba(74, 144, 226, 0.3)",
   },
   buttonDisabled: {
-    backgroundColor: "#666",
     opacity: 0.7,
   },
   text: {
     color: "#fff",
-    fontSize: 16,
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  secondaryText: {
+    color: "#4A90E2",
+    fontSize: 14,
     fontWeight: "600",
   },
 });
@@ -806,5 +1216,55 @@ const updateModalStyles = StyleSheet.create({
     color: "#fff",
     fontSize: 16,
     fontWeight: "600",
+  },
+});
+
+// Transaction Info Styles
+const transactionInfoStyles = StyleSheet.create({
+  container: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: "#16213E",
+    borderRadius: 8,
+    marginBottom: 16,
+  },
+  text: {
+    fontSize: 14,
+    color: "#A0A0A0",
+    textAlign: "center",
+  },
+});
+
+// Load More Button Styles
+const loadMoreStyles = StyleSheet.create({
+  container: {
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+    alignItems: "center",
+  },
+  indicator: {
+    marginVertical: 8,
+  },
+  button: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    backgroundColor: "#16213E",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#4A90E2",
+    gap: 8,
+  },
+  buttonText: {
+    color: "#4A90E2",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  endText: {
+    color: "#666",
+    fontSize: 14,
+    fontStyle: "italic",
+    marginTop: 8,
   },
 });

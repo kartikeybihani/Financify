@@ -143,19 +143,28 @@ serve(async (req: Request) => {
     if (added.length || modified.length) {
       console.log(`💽 Saving ${added.length + modified.length} transactions to database...`);
       
-      const rows = [...added, ...modified].map((txn) => ({
-        user_id,
-        account_id: txn.account_id, // must exist in public.accounts due to FK
-        plaid_transaction_id: txn.transaction_id,
-        date: txn.date,
-        amount: txn.amount,
-        iso_currency_code: txn.iso_currency_code || null,
-        name: txn.name || null,
-        merchant_name: txn.merchant_name || null,
-        category: txn.category?.join(", ") || null,
-        transaction_type: txn.transaction_type || null,
-        pending: txn.pending ?? false,
-      }));
+      const rows = [...added, ...modified].map((txn) => {
+        const category = txn.personal_finance_category?.primary || null;
+        
+        // Debug log for categories
+        if (added.length <= 5) { // Only log first few to avoid spam
+          console.log(`🏷️ Transaction: "${txn.name}" → Category: "${category}"`);
+        }
+        
+        return {
+          user_id,
+          account_id: txn.account_id, // must exist in public.accounts due to FK
+          plaid_transaction_id: txn.transaction_id,
+          date: txn.date,
+          amount: txn.amount,
+          iso_currency_code: txn.iso_currency_code || null,
+          name: txn.name || null,
+          merchant_name: txn.merchant_name || null,
+          category: category,
+          transaction_type: txn.transaction_type || null,
+          pending: txn.pending ?? false,
+        };
+      });
 
       const { error: upsertErr } = await supabase
         .from("transactions")

@@ -1,6 +1,7 @@
 // app/contexts/AuthContext.tsx
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { Session } from "@supabase/supabase-js";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { supabase } from "../lib/supabase/supabase";
 
 type AuthContextType = {
@@ -39,9 +40,17 @@ export default function AuthProvider({
     // Listen for auth changes
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
       setSession(session);
       setIsLoading(false);
+
+      // Clear cache when user signs out
+      if (event === "SIGNED_OUT" || !session) {
+        await AsyncStorage.removeItem("onboarding_complete");
+        await AsyncStorage.removeItem("user_authenticated");
+        await AsyncStorage.removeItem("userData");
+        console.log("🗑️ Cleared AsyncStorage cache on sign out");
+      }
     });
 
     return () => subscription.unsubscribe();

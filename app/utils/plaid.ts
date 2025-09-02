@@ -772,6 +772,173 @@ export const syncAllUserTransactions = async () => {
   }
 };
 
+// === Enhanced Filtering Functions for Insights ===
+
+// Helper function to get date range from time period
+export const getDateRangeFromTimePeriod = (timePeriod: string) => {
+  const now = new Date();
+  let startDate: string;
+  let endDate: string = now.toISOString().split('T')[0]; // Today
+
+  switch (timePeriod) {
+    case "30days":
+      startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+      break;
+    case "3months":
+      startDate = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+      break;
+    case "6months":
+      startDate = new Date(now.getTime() - 180 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+      break;
+    case "december2024":
+      startDate = "2024-12-01";
+      endDate = "2024-12-31";
+      break;
+    case "november2024":
+      startDate = "2024-11-01";
+      endDate = "2024-11-30";
+      break;
+    case "october2024":
+      startDate = "2024-10-01";
+      endDate = "2024-10-31";
+      break;
+    default:
+      // Default to last 30 days
+      startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+  }
+
+  return { startDate, endDate };
+};
+
+// Get filtered transactions with pagination support
+export const getFilteredTransactions = async (
+  userId: string,
+  options: {
+    accountId?: string | null; // null means all accounts
+    timePeriod?: string;
+    limit?: number;
+    offset?: number;
+  } = {}
+) => {
+  try {
+    const {
+      accountId = null,
+      timePeriod = "30days",
+      limit = 50,
+      offset = 0
+    } = options;
+
+    // Get date range
+    const { startDate, endDate } = getDateRangeFromTimePeriod(timePeriod);
+
+    // Build query
+    let query = supabase
+      .from("transactions")
+      .select(`
+        *,
+        accounts:account_id (
+          name,
+          mask,
+          type,
+          subtype,
+          item_id,
+          user_items:item_id (
+            institution_name
+          )
+        )
+      `)
+      .eq("user_id", userId)
+      .gte("date", startDate)
+      .lte("date", endDate)
+      .order("date", { ascending: false })
+      .range(offset, offset + limit - 1);
+
+    // Add account filter if specified
+    if (accountId) {
+      query = query.eq("account_id", accountId);
+    }
+
+    const { data: transactions, error } = await query;
+
+    if (error) throw error;
+
+    // Transform transactions to include institution info
+    const transformedTransactions = (transactions || []).map(tx => ({
+      ...tx,
+      institution_name: tx.accounts?.user_items?.institution_name || "Unknown Institution",
+      account_name: tx.accounts?.name || "Unknown Account",
+      account_mask: tx.accounts?.mask,
+    }));
+
+    console.log(`📊 Found ${transformedTransactions.length} filtered transactions`);
+    return transformedTransactions;
+  } catch (err) {
+    console.error("Error fetching filtered transactions:", err);
+    return [];
+  }
+};
+
+// Get total count of filtered transactions (for pagination)
+export const getFilteredTransactionsCount = async (
+  userId: string,
+  options: {
+    accountId?: string | null;
+    timePeriod?: string;
+  } = {}
+) => {
+  try {
+    const {
+      accountId = null,
+      timePeriod = "30days"
+    } = options;
+
+    // Get date range
+    const { startDate, endDate } = getDateRangeFromTimePeriod(timePeriod);
+
+    // Build count query
+    let query = supabase
+      .from("transactions")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", userId)
+      .gte("date", startDate)
+      .lte("date", endDate);
+
+    // Add account filter if specified
+    if (accountId) {
+      query = query.eq("account_id", accountId);
+    }
+
+    const { count, error } = await query;
+
+    if (error) throw error;
+
+    return count || 0;
+  } catch (err) {
+    console.error("Error getting filtered transactions count:", err);
+    return 0;
+  }
+};
+
+// Get user accounts formatted for filter modal
+export const getUserAccountsForFilter = async (userId: string) => {
+  try {
+    const accounts = await getAllUserAccounts(userId);
+    
+    // Transform for filter modal use
+    return accounts.map(account => ({
+      account_id: account.account_id,
+      name: account.name,
+      mask: account.mask,
+      institution_name: account.institution_name,
+      type: account.type,
+      subtype: account.subtype,
+    }));
+  } catch (err) {
+    console.error("Error fetching user accounts for filter:", err);
+    return [];
+  }
+};
+
 const plaidUtils = {
   initializePlaid: fetchInitialData,
   getPlaidLinkToken: fetchLinkToken,
@@ -805,6 +972,12 @@ const plaidUtils = {
   getAllUserAccounts,
   getTransactionsByDateRange,
   getSpendingByCategory,
+  
+  // Enhanced filtering functions
+  getFilteredTransactions,
+  getFilteredTransactionsCount,
+  getUserAccountsForFilter,
+  getDateRangeFromTimePeriod,
 };
 
 export default plaidUtils;

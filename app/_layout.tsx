@@ -5,6 +5,7 @@ import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import { useFonts } from "expo-font";
 import { useEffect } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import "react-native-reanimated";
 import AuthProvider, { useAuth } from "./contexts/AuthContext";
 import { runStorageMigrationV2 } from "./utils/migrate";
@@ -19,36 +20,70 @@ function RootLayoutNav() {
   useEffect(() => {
     if (isLoading) return;
 
-    const inAuth = segments[0] === "(auth)";
-    const inOnboarding = segments[0] === "(onboarding)";
-    const inTabs = segments[0] === "(tabs)";
+    const handleNavigation = async () => {
+      const inAuth = segments[0] === "(auth)";
+      const inOnboarding = segments[0] === "(onboarding)";
+      const inTabs = segments[0] === "(tabs)";
 
-    if (!session) {
-      if (!inAuth && !inOnboarding) {
-        router.replace("/(onboarding)/welcome");
+      if (!session) {
+        if (!inAuth && !inOnboarding) {
+          router.replace("/(onboarding)/welcome");
+        }
+        return;
       }
-      return;
-    }
 
-    const meta = session.user.user_metadata || {};
-    const onboardingDone = meta.onboarding_complete === true;
-    const hasIntent = !!meta.intent;
-    const hasBank = !!meta.hasConnectedBank;
+      // Check AsyncStorage first for development hot reload persistence
+      const cachedOnboardingComplete = await AsyncStorage.getItem(
+        "onboarding_complete"
+      );
+      const cachedUserAuthenticated = await AsyncStorage.getItem(
+        "user_authenticated"
+      );
 
-    if (!onboardingDone) {
-      if (!hasIntent) {
-        router.replace("/(onboarding)/intent");
-      } else if (!hasBank) {
-        router.replace("/(onboarding)/accountconnection");
-      } else {
-        router.replace("/(onboarding)/final");
+      // If we have cached completion status, trust it (helps with hot reloads)
+      if (
+        cachedOnboardingComplete === "true" &&
+        cachedUserAuthenticated === "true"
+      ) {
+        console.log("✅ Using cached onboarding completion status");
+        if (inAuth || inOnboarding) {
+          router.replace("/(tabs)");
+        }
+        return;
       }
-      return;
-    }
 
-    if (inAuth || inOnboarding) {
-      router.replace("/(tabs)");
-    }
+      const meta = session.user.user_metadata || {};
+      const onboardingDone = meta.onboarding_complete === true;
+      const hasIntent = !!meta.intent;
+      const hasBank = !!meta.hasConnectedBank;
+
+      // If onboarding is done in Supabase, update cache
+      if (onboardingDone) {
+        await AsyncStorage.setItem("onboarding_complete", "true");
+        await AsyncStorage.setItem("user_authenticated", "true");
+      }
+
+      if (!onboardingDone) {
+        // Clear cache if onboarding is not done
+        await AsyncStorage.removeItem("onboarding_complete");
+        await AsyncStorage.removeItem("user_authenticated");
+
+        if (!hasIntent) {
+          router.replace("/(onboarding)/intent");
+        } else if (!hasBank) {
+          router.replace("/(onboarding)/accountconnection");
+        } else {
+          router.replace("/(onboarding)/final");
+        }
+        return;
+      }
+
+      if (inAuth || inOnboarding) {
+        router.replace("/(tabs)");
+      }
+    };
+
+    handleNavigation();
   }, [session, segments, isLoading]);
 
   return (

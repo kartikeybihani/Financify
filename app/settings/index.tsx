@@ -129,9 +129,15 @@ export default function SettingsScreen() {
           if (userData?.email) {
             console.log("[SettingsIndex] Logging out user:", userData.email);
           }
+
+          // Clear AsyncStorage cache on logout
+          await AsyncStorage.removeItem("onboarding_complete");
+          await AsyncStorage.removeItem("user_authenticated");
+          await AsyncStorage.removeItem("userData");
+
           await supabase.auth.signOut();
           router.replace("/(onboarding)/welcome");
-          console.log("User logged out");
+          console.log("User logged out and cache cleared");
         },
       },
     ]);

@@ -63,19 +63,30 @@ export default async function handler(req, res) {
 
     // 4) Store transactions in database
     if (added.length || modified.length) {
-      const rows = [...added, ...modified].map((txn) => ({
-        user_id: item.user_id,
-        account_id: txn.account_id,
-        plaid_transaction_id: txn.transaction_id,
-        date: txn.date,
-        amount: txn.amount,
-        iso_currency_code: txn.iso_currency_code || null,
-        name: txn.name || null,
-        merchant_name: txn.merchant_name || null,
-        category: txn.personal_finance_category?.join(", ") || null,
-        transaction_type: txn.payment_channel || null,
-        pending: txn.pending ?? false,
-      }));
+      const rows = [...added, ...modified].map((txn) => {
+        const category = txn.personal_finance_category?.primary || null;
+
+        // Debug log for first few transactions
+        if (added.length <= 3 || modified.length <= 3) {
+          console.log(
+            `🏷️ Transaction: "${txn.name}" → Category: "${category}"`
+          );
+        }
+
+        return {
+          user_id: item.user_id,
+          account_id: txn.account_id,
+          plaid_transaction_id: txn.transaction_id,
+          date: txn.date,
+          amount: txn.amount,
+          iso_currency_code: txn.iso_currency_code || null,
+          name: txn.name || null,
+          merchant_name: txn.merchant_name || null,
+          category: category,
+          transaction_type: txn.payment_channel || null,
+          pending: txn.pending ?? false,
+        };
+      });
 
       const { error: upsertErr } = await supabase
         .from("transactions")

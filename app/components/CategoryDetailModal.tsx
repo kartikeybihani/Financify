@@ -13,6 +13,7 @@ interface Transaction {
   amount: number;
   date: string;
   name: string;
+  category?: string; // Primary category from Plaid stored as string
   personal_finance_category?: {
     primary: string;
   };
@@ -40,7 +41,7 @@ const CategoryDetailModal: React.FC<CategoryDetailModalProps> = ({
   formatDate,
 }) => {
   const categoryTransactions = transactions.filter(
-    (tx) => tx.personal_finance_category?.primary === category
+    (tx) => (tx.category || "Other") === category
   );
 
   const averageTransaction =

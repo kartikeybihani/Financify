@@ -15,6 +15,7 @@ import {
   ViewToken,
   StatusBar,
 } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -190,10 +191,29 @@ export default function FinalScreen() {
       }),
     ]).start();
 
-    const { error } = await supabase.auth.updateUser({
-      data: { onboarding_complete: true },
-    });
-    if (!error) router.replace("/(tabs)");
+    try {
+      // Update Supabase user metadata
+      const { error } = await supabase.auth.updateUser({
+        data: { onboarding_complete: true },
+      });
+
+      if (error) {
+        console.error("Error updating user metadata:", error);
+        return;
+      }
+
+      // Store in AsyncStorage for hot reload persistence during development
+      await AsyncStorage.setItem("onboarding_complete", "true");
+      await AsyncStorage.setItem("user_authenticated", "true");
+
+      console.log(
+        "✅ Onboarding completed - stored in both Supabase and AsyncStorage"
+      );
+
+      router.replace("/(tabs)");
+    } catch (error) {
+      console.error("Error completing onboarding:", error);
+    }
   };
 
   const renderSlide = ({

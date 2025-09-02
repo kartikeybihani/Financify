@@ -59,7 +59,7 @@ export default async function handler(req, res) {
         client_name: "Financify",
         products: ["auth", "liabilities"], // minimum default
         required_if_supported_products: [],
-        optional_products: ["investments", "transactions"],
+        optional_products: ["transactions"],
         additional_consented_products: [],
         country_codes: ["US"],
         language: "en",
