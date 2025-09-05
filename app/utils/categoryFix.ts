@@ -8,7 +8,7 @@ export const debugTransactionCategories = async (userId: string, limit: number =
   try {
     const { data: transactions, error } = await supabase
       .from("transactions")
-      .select("name, category, amount, date")
+      .select("name, category, amount, date, plaid_transaction_id")
       .eq("user_id", userId)
       .limit(limit)
       .order("date", { ascending: false });
@@ -21,13 +21,14 @@ export const debugTransactionCategories = async (userId: string, limit: number =
     console.log(`🔍 Debug: Checking ${transactions?.length || 0} recent transactions:`);
     
     const categoryCounts: { [key: string]: number } = {};
+    const currentDate = new Date();
     
     transactions?.forEach((tx, idx) => {
       const category = tx.category || "null";
       categoryCounts[category] = (categoryCounts[category] || 0) + 1;
       
       if (idx < 5) { // Show first 5 in detail
-        console.log(`${idx + 1}. "${tx.name}" → Category: "${tx.category}" (${tx.date})`);
+        console.log(`${idx + 1}. "${tx.name}" → Category: "${tx.category}" (${tx.date}) [ID: ${tx.plaid_transaction_id?.substring(0, 8)}...]`);
       }
     });
 
@@ -41,9 +42,12 @@ export const debugTransactionCategories = async (userId: string, limit: number =
     const nullCount = categoryCounts["null"] || 0;
     const totalCount = transactions?.length || 0;
     
+    console.log(`📅 Current system date: ${currentDate.toISOString()}`);
+    console.log(`📅 Current month/year: ${currentDate.getMonth() + 1}/${currentDate.getFullYear()}`);
+    
     if (nullCount > 0) {
       console.log(`⚠️ Found ${nullCount}/${totalCount} transactions with null categories`);
-      console.log("💡 Consider running a fresh sync to get proper categories");
+      console.log("💡 This suggests the Supabase function fix hasn't been deployed yet");
     } else {
       console.log("✅ All transactions have valid categories!");
     }
@@ -119,6 +123,37 @@ export const getCurrentMonthCategoryBreakdown = async (userId: string) => {
 };
 
 /**
+ * Test the enhanced category improvements
+ */
+export const testCategoryEnhancements = async (userId: string) => {
+  try {
+    console.log("🧪 Testing category enhancements...");
+    
+    const { data: recentTx, error } = await supabase
+      .from("transactions")
+      .select("name, merchant_name, category, amount")
+      .eq("user_id", userId)
+      .limit(10)
+      .order("date", { ascending: false });
+
+    if (error || !recentTx) {
+      console.error("❌ Could not fetch recent transactions:", error);
+      return;
+    }
+
+    console.log("📊 Recent transactions with current categories:");
+    recentTx.forEach((tx, idx) => {
+      const merchant = tx.merchant_name || "N/A";
+      console.log(`${idx + 1}. "${tx.name}" | Merchant: "${merchant}" | Category: "${tx.category}" | $${tx.amount}`);
+    });
+
+    console.log("\n💡 To get improved categories, run forceFullResync() next!");
+  } catch (error) {
+    console.error("❌ Error testing categories:", error);
+  }
+};
+
+/**
  * Force a complete re-sync by resetting transaction cursor
  * This will cause Plaid to re-send ALL transactions with fresh data
  */
@@ -139,6 +174,19 @@ export const forceFullResync = async (userId: string) => {
 
     console.log(`🏦 Found ${userItems.length} connected accounts to re-sync`);
 
+    // Delete existing transactions first to avoid duplicates
+    console.log("🗑️ Clearing existing transactions to avoid duplicates...");
+    const { error: deleteError } = await supabase
+      .from("transactions")
+      .delete()
+      .eq("user_id", userId);
+
+    if (deleteError) {
+      console.error("⚠️ Warning: Could not clear existing transactions:", deleteError);
+    } else {
+      console.log("✅ Existing transactions cleared");
+    }
+
     // Reset cursor for each item (forces full re-sync)
     for (const item of userItems) {
       console.log(`🔄 Resetting cursor for ${item.institution_name}...`);
@@ -158,8 +206,8 @@ export const forceFullResync = async (userId: string) => {
       }
     }
 
-    console.log("✅ All cursors reset - next sync will be a FULL re-sync");
-    console.log("💡 Now run syncAllUserTransactions() to get fresh data with categories");
+    console.log("✅ All cursors reset - next sync will get fresh data with categories");
+    console.log("💡 Now run syncAllUserTransactions() to get fresh data from Plaid");
     
     return true;
   } catch (error) {

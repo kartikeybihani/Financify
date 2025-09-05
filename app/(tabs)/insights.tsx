@@ -14,6 +14,7 @@ import {
   RefreshControl,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 
 import { styles } from "../styles/insightsStyles";
 import CategoryGrid from "../components/CategoryGrid";
@@ -23,6 +24,7 @@ import EnhancedFilterModal, {
   FilterOptions,
   Account,
 } from "../components/EnhancedFilterModal";
+import TransactionDetailModal from "../components/TransactionDetailModal";
 import { supabase } from "../lib/supabase/supabase";
 import {
   fetchInitialData,
@@ -148,7 +150,7 @@ export default function InsightsScreen() {
   const [showEnhancedFilterModal, setShowEnhancedFilterModal] = useState(false);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [filterOptions, setFilterOptions] = useState<FilterOptions>({
-    accountId: null,
+    accountIds: [],
     timePeriod: "30days",
   });
   const [filteredTransactions, setFilteredTransactions] = useState<
@@ -157,6 +159,11 @@ export default function InsightsScreen() {
   const [totalFilteredCount, setTotalFilteredCount] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMoreTransactions, setHasMoreTransactions] = useState(true);
+
+  // Transaction detail modal state
+  const [showTransactionDetail, setShowTransactionDetail] = useState(false);
+  const [selectedTransaction, setSelectedTransaction] =
+    useState<Transaction | null>(null);
 
   // Simple cache for filtered results
   const filterCache = useRef<
@@ -177,7 +184,7 @@ export default function InsightsScreen() {
       setIsInitialLoad(true);
 
       // Load accounts for filter modal
-      await loadUserAccounts();
+      await loadUserAccounts(true);
 
       // Load stored data first
       const hasStoredData = await loadData();
@@ -203,7 +210,7 @@ export default function InsightsScreen() {
 
   // Load filtered transactions when filter options change
   useEffect(() => {
-    if (hasData.current) {
+    if (hasData.current && !showEnhancedFilterModal) {
       loadFilteredTransactions(filterOptions, true);
     }
   }, [filterOptions]);
@@ -289,7 +296,7 @@ export default function InsightsScreen() {
   };
 
   // Load user accounts for filter modal
-  const loadUserAccounts = async () => {
+  const loadUserAccounts = async (debug: boolean = false) => {
     try {
       const {
         data: { user },
@@ -297,15 +304,26 @@ export default function InsightsScreen() {
       } = await supabase.auth.getUser();
 
       if (authError || !user?.id) {
-        console.log("❌ Auth error loading accounts:", authError?.message);
+        if (debug)
+          console.log("❌ Auth error loading accounts:", authError?.message);
         return;
       }
 
       const userAccounts = await getUserAccountsForFilter(user.id);
       setAccounts(userAccounts);
-      console.log(
-        `📊 Loaded ${userAccounts.length} user accounts for filtering`
-      );
+
+      if (debug) {
+        console.log(
+          `📊 Loaded ${userAccounts.length} user accounts for filtering:`
+        );
+        userAccounts.forEach((acc, idx) => {
+          console.log(
+            `  ${idx + 1}. ${acc.institution_name} - ${acc.name} (${
+              acc.subtype
+            })`
+          );
+        });
+      }
     } catch (error) {
       console.error("❌ Error loading user accounts:", error);
     }
@@ -313,7 +331,11 @@ export default function InsightsScreen() {
 
   // Helper functions for caching
   const getCacheKey = (filters: FilterOptions, offset: number = 0) => {
-    return `${filters.accountId || "all"}_${filters.timePeriod}_${offset}`;
+    const accountsKey =
+      (filters.accountIds || []).length === 0
+        ? "all"
+        : (filters.accountIds || []).sort().join(",");
+    return `${accountsKey}_${filters.timePeriod}_${offset}`;
   };
 
   const getCachedData = (cacheKey: string) => {
@@ -378,7 +400,7 @@ export default function InsightsScreen() {
 
       // Get filtered transactions
       const newTransactions = await getFilteredTransactions(user.id, {
-        accountId: filters.accountId,
+        accountIds: filters.accountIds,
         timePeriod: filters.timePeriod,
         limit,
         offset,
@@ -388,7 +410,7 @@ export default function InsightsScreen() {
       let totalCount = totalFilteredCount;
       if (reset) {
         totalCount = await getFilteredTransactionsCount(user.id, {
-          accountId: filters.accountId,
+          accountIds: filters.accountIds,
           timePeriod: filters.timePeriod,
         });
       }
@@ -431,10 +453,18 @@ export default function InsightsScreen() {
     const subscription = DeviceEventEmitter.addListener(
       "financialDataRefreshed",
       async (data) => {
+        console.log("🔄 Financial data refreshed event received");
+
         if (data.transactions) {
           setTransactions(data.transactions);
           processTransactionsData(data.transactions);
           hasData.current = true;
+        }
+
+        // Only refresh accounts if we're not in the middle of filtering
+        if (!showEnhancedFilterModal) {
+          await loadUserAccounts(true); // Debug when financial data changes
+          await loadFilteredTransactions(filterOptions, true);
         }
       }
     );
@@ -442,39 +472,50 @@ export default function InsightsScreen() {
     return () => {
       subscription.remove();
     };
-  }, []);
+  }, [showEnhancedFilterModal]);
 
   const processTransactionsData = (transactionsData: Transaction[]) => {
-    console.log("🔍 Processing transactions:", transactionsData?.length || 0);
-
     // Filter for current month expenses only
     const now = new Date();
     const currentMonth = now.getMonth();
     const currentYear = now.getFullYear();
 
-    const expenses = transactionsData.filter((tx) => {
+    const expenses = transactionsData.filter((tx) => tx.amount > 0);
+
+    // Filter for current month (with fallback to most recent month if no current month data)
+    let currentMonthExpenses = expenses.filter((tx) => {
       const txDate = new Date(tx.date);
       const isCurrentMonth =
         txDate.getMonth() === currentMonth &&
         txDate.getFullYear() === currentYear;
-      const isExpense = tx.amount > 0;
-
-      return isCurrentMonth && isExpense;
+      return isCurrentMonth;
     });
 
-    console.log(
-      `🗓️ Found ${expenses.length} expenses in current month (${
-        currentMonth + 1
-      }/${currentYear})`
+    // If no current month data, use most recent month's data
+    if (currentMonthExpenses.length === 0 && expenses.length > 0) {
+      // Find the most recent month with data
+      const mostRecentDate = new Date(expenses[0].date);
+      const mostRecentMonth = mostRecentDate.getMonth();
+      const mostRecentYear = mostRecentDate.getFullYear();
+
+      currentMonthExpenses = expenses.filter((tx) => {
+        const txDate = new Date(tx.date);
+        return (
+          txDate.getMonth() === mostRecentMonth &&
+          txDate.getFullYear() === mostRecentYear
+        );
+      });
+    }
+
+    const totalSpent = currentMonthExpenses.reduce(
+      (acc, tx) => acc + tx.amount,
+      0
     );
-    const totalSpent = expenses.reduce((acc, tx) => acc + tx.amount, 0);
-    console.log(`💰 Total spent this month: $${totalSpent.toFixed(2)}`);
 
     const categoriesObj: CategoryBreakdown = {};
-    for (const tx of expenses) {
-      // Fix: Use the category field from database (which now stores primary category)
+    for (const tx of currentMonthExpenses) {
+      // Use the category field from database
       const category = tx.category || "Other";
-      console.log("🏷️ Transaction:", tx.name, "→ Category:", category);
 
       if (!categoriesObj[category]) {
         categoriesObj[category] = {
@@ -488,12 +529,12 @@ export default function InsightsScreen() {
       categoriesObj[category].amount += tx.amount;
     }
 
-    console.log("📊 Categories breakdown:", categoriesObj);
-
     // Calculate percentages
     Object.keys(categoriesObj).forEach((category) => {
       categoriesObj[category].percentage =
-        (categoriesObj[category].amount / totalSpent) * 100;
+        totalSpent > 0
+          ? (categoriesObj[category].amount / totalSpent) * 100
+          : 0;
     });
 
     const sortedCategories = Object.entries(categoriesObj).sort(
@@ -503,29 +544,36 @@ export default function InsightsScreen() {
 
     const uniqueCategories = [
       "All Categories",
-      ...new Set(expenses.map((tx) => tx.category || "Other")),
+      ...new Set(currentMonthExpenses.map((tx) => tx.category || "Other")),
     ].map((cat) => (cat === "All Categories" ? cat : formatCategoryName(cat)));
 
-    console.log("🏷️ Unique categories found:", uniqueCategories);
     setCategories(uniqueCategories);
 
     const topCategory = sortedCategories[0];
-    if (!topCategory) return;
+    const displayTotal =
+      totalSpent > 0
+        ? totalSpent
+        : expenses.reduce((acc, tx) => acc + tx.amount, 0);
+    const displayPeriod = totalSpent > 0 ? "this month" : "recently";
 
     const newInsights: Insight[] = [
       {
         icon: "cash-outline",
-        title: `You spent $${totalSpent.toLocaleString("en-US", {
+        title: `You spent $${displayTotal.toLocaleString("en-US", {
           minimumFractionDigits: 2,
           maximumFractionDigits: 2,
-        })} this month`,
-        description: `Top category: ${formatCategoryName(topCategory[0])}`,
-        details: `You've spent the most on ${formatCategoryName(
-          topCategory[0]
-        )} — $${topCategory[1].amount.toLocaleString("en-US", {
-          minimumFractionDigits: 2,
-          maximumFractionDigits: 2,
-        })}. Try setting a limit or exploring cheaper alternatives.`,
+        })} ${displayPeriod}`,
+        description: topCategory
+          ? `Top category: ${formatCategoryName(topCategory[0])}`
+          : "Building your spending insights...",
+        details: topCategory
+          ? `You've spent the most on ${formatCategoryName(
+              topCategory[0]
+            )} — $${topCategory[1].amount.toLocaleString("en-US", {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2,
+            })}. Try setting a limit or exploring cheaper alternatives.`
+          : "We're analyzing your spending patterns. More insights will appear as you use the app.",
       },
     ];
 
@@ -543,15 +591,21 @@ export default function InsightsScreen() {
 
   // Helper function to get filter description
   const getFilterDescription = () => {
-    const accountName = filterOptions.accountId
-      ? accounts.find((acc) => acc.account_id === filterOptions.accountId)
-          ?.institution_name || "Selected Account"
-      : "All Accounts";
+    const accountIds = filterOptions.accountIds || [];
+    const accountName =
+      accountIds.length === 0
+        ? "All Accounts"
+        : accountIds.length === 1
+        ? accounts.find((acc) => acc.account_id === accountIds[0])
+            ?.institution_name || "Selected Account"
+        : `${accountIds.length} accounts`;
 
     const timePeriodMap: { [key: string]: string } = {
+      "7days": "7 days",
       "30days": "30 days",
       "3months": "3 months",
       "6months": "6 months",
+      "12months": "12 months",
       december2024: "Dec 2024",
       november2024: "Nov 2024",
       october2024: "Oct 2024",
@@ -602,6 +656,12 @@ export default function InsightsScreen() {
     setShowCategoryDetail(true);
   };
 
+  // Handle transaction click
+  const handleTransactionPress = (transaction: Transaction) => {
+    setSelectedTransaction(transaction);
+    setShowTransactionDetail(true);
+  };
+
   // Check for update mode flags
   const checkForUpdateFlags = async () => {
     try {
@@ -622,7 +682,7 @@ export default function InsightsScreen() {
         return;
       }
 
-      // Check for items requiring attention
+      // Check for items requiring
       for (const item of userItems || []) {
         if (item.has_new_accounts) {
           setUpdateModalInfo({
@@ -804,49 +864,6 @@ export default function InsightsScreen() {
         </View>
       </View>
 
-      {/* Refresh Buttons */}
-      <View style={refreshButtonStyles.container}>
-        <View style={refreshButtonStyles.buttonRow}>
-          <TouchableOpacity
-            style={[
-              refreshButtonStyles.button,
-              refreshButtonStyles.primaryButton,
-              isSyncing && refreshButtonStyles.buttonDisabled,
-            ]}
-            onPress={handleManualRefresh}
-            disabled={isSyncing}
-          >
-            <Ionicons
-              name={isSyncing ? "hourglass-outline" : "refresh-outline"}
-              size={18}
-              color="#fff"
-            />
-            <Text style={refreshButtonStyles.text}>
-              {isSyncing ? "Syncing..." : "Refresh"}
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[
-              refreshButtonStyles.button,
-              refreshButtonStyles.secondaryButton,
-              isSyncing && refreshButtonStyles.buttonDisabled,
-            ]}
-            onPress={handleFullResync}
-            disabled={isSyncing}
-          >
-            <Ionicons
-              name={isSyncing ? "hourglass-outline" : "sync-outline"}
-              size={18}
-              color="#4A90E2"
-            />
-            <Text style={refreshButtonStyles.secondaryText}>
-              {isSyncing ? "Syncing..." : "Fix Categories"}
-            </Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-
       {isInitialLoad ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#4A90E2" />
@@ -874,6 +891,86 @@ export default function InsightsScreen() {
 
           {(!isLoading || hasData.current) && (
             <>
+              {/* Compact Refresh Section */}
+              <View style={refreshContainerStyles.container}>
+                <View style={refreshContainerStyles.glassmorphismCard}>
+                  {/* Glassmorphism background */}
+                  <LinearGradient
+                    colors={
+                      [
+                        "rgba(255, 255, 255, 0.05)",
+                        "rgba(255, 255, 255, 0.02)",
+                        "rgba(74, 144, 226, 0.03)",
+                      ] as const
+                    }
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={refreshContainerStyles.gradientBackground}
+                  />
+
+                  {/* Buttons Only */}
+                  <View style={refreshContainerStyles.cardContent}>
+                    <View style={refreshContainerStyles.buttonRow}>
+                      <TouchableOpacity
+                        style={[
+                          refreshContainerStyles.button,
+                          isSyncing && refreshContainerStyles.buttonDisabled,
+                        ]}
+                        onPress={handleManualRefresh}
+                        disabled={isSyncing}
+                      >
+                        <LinearGradient
+                          colors={["#4A90E2", "#357AFF"] as const}
+                          start={{ x: 0, y: 0 }}
+                          end={{ x: 1, y: 1 }}
+                          style={refreshContainerStyles.primaryButtonGradient}
+                        >
+                          <Ionicons
+                            name={
+                              isSyncing
+                                ? "hourglass-outline"
+                                : "refresh-outline"
+                            }
+                            size={16}
+                            color="#fff"
+                          />
+                          <Text style={refreshContainerStyles.primaryText}>
+                            {isSyncing ? "Syncing..." : "Refresh"}
+                          </Text>
+                        </LinearGradient>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={[
+                          refreshContainerStyles.button,
+                          isSyncing && refreshContainerStyles.buttonDisabled,
+                        ]}
+                        onPress={handleFullResync}
+                        disabled={isSyncing}
+                      >
+                        <View
+                          style={refreshContainerStyles.secondaryButtonContent}
+                        >
+                          <Ionicons
+                            name={
+                              isSyncing ? "hourglass-outline" : "sync-outline"
+                            }
+                            size={16}
+                            color="#4A90E2"
+                          />
+                          <Text style={refreshContainerStyles.secondaryText}>
+                            {isSyncing ? "Syncing..." : "Fix Categories"}
+                          </Text>
+                        </View>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+
+                  {/* Subtle shine effect */}
+                  <View style={refreshContainerStyles.shineEffect} />
+                </View>
+              </View>
+
               <Text style={styles.sectionLabel}>Spending Overview</Text>
               <CategoryGrid
                 categoryBreakdown={categoryBreakdown}
@@ -922,26 +1019,36 @@ export default function InsightsScreen() {
 
               <View style={styles.sectionHeader}>
                 <Text style={styles.sectionLabel}>Transactions</Text>
-                <TouchableOpacity
-                  style={styles.filterButton}
-                  onPress={() => setShowEnhancedFilterModal(true)}
-                >
-                  <Ionicons
-                    name="funnel"
-                    size={14}
-                    color="#667eea"
-                    style={{ marginRight: 6 }}
-                  />
-                  <Text style={styles.filterButtonText}>
-                    {getFilterDescription()}
-                  </Text>
-                  <Ionicons
-                    name="chevron-down"
-                    size={14}
-                    color="#667eea"
-                    style={styles.dropdownArrow}
-                  />
-                </TouchableOpacity>
+                <View style={styles.headerButtonsContainer}>
+                  <TouchableOpacity
+                    style={styles.refreshAccountsButton}
+                    onPress={() => loadUserAccounts(true)}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name="reload" size={12} color="#4A90E2" />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.filterButton}
+                    onPress={() => setShowEnhancedFilterModal(true)}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons
+                      name="funnel"
+                      size={14}
+                      color="#667eea"
+                      style={{ marginRight: 6 }}
+                    />
+                    <Text style={styles.filterButtonText}>
+                      {getFilterDescription()}
+                    </Text>
+                    <Ionicons
+                      name="chevron-down"
+                      size={14}
+                      color="#667eea"
+                      style={styles.dropdownArrow}
+                    />
+                  </TouchableOpacity>
+                </View>
               </View>
 
               {/* Transaction Count Info */}
@@ -971,7 +1078,11 @@ export default function InsightsScreen() {
                     : `-$${amount.toFixed(2)}`;
 
                   return (
-                    <View style={styles.txItem}>
+                    <TouchableOpacity
+                      style={styles.txItem}
+                      onPress={() => handleTransactionPress(tx)}
+                      activeOpacity={0.7}
+                    >
                       <View style={styles.txInfo}>
                         <Text style={styles.txName}>{tx.name}</Text>
                         <Text style={styles.txMeta}>{formatDate(tx.date)}</Text>
@@ -983,8 +1094,13 @@ export default function InsightsScreen() {
                         <Text style={[styles.txAmount, { color: amountColor }]}>
                           {amountText}
                         </Text>
+                        <Ionicons
+                          name="chevron-forward"
+                          size={16}
+                          color="#666"
+                        />
                       </View>
-                    </View>
+                    </TouchableOpacity>
                   );
                 }}
                 ListFooterComponent={() => (
@@ -1028,7 +1144,6 @@ export default function InsightsScreen() {
             selectedFilters={filterOptions}
             onFiltersChange={(newFilters) => {
               setFilterOptions(newFilters);
-              setShowEnhancedFilterModal(false);
             }}
           />
 
@@ -1044,6 +1159,18 @@ export default function InsightsScreen() {
               formatDate={formatDate}
             />
           )}
+
+          {/* Transaction Detail Modal */}
+          <TransactionDetailModal
+            visible={showTransactionDetail}
+            onClose={() => {
+              setShowTransactionDetail(false);
+              setSelectedTransaction(null);
+            }}
+            transaction={selectedTransaction}
+            formatCategoryName={formatCategoryName}
+            formatDate={formatDate}
+          />
         </ScrollView>
       )}
 
@@ -1110,47 +1237,96 @@ export default function InsightsScreen() {
   );
 }
 
-// Refresh Button Styles
-const refreshButtonStyles = StyleSheet.create({
+// Compact Glassmorphism Refresh Container Styles
+const refreshContainerStyles = StyleSheet.create({
   container: {
+    marginBottom: 16,
     paddingHorizontal: 20,
-    paddingVertical: 12,
-    backgroundColor: "#1A1A2E",
+  },
+  glassmorphismCard: {
+    position: "relative",
+    borderRadius: 14,
+    overflow: "hidden",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 8,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+  },
+  gradientBackground: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderRadius: 14,
+  },
+  shineEffect: {
+    position: "absolute",
+    top: -10,
+    left: -10,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
+    transform: [{ rotate: "45deg" }],
+  },
+  cardContent: {
+    position: "relative",
+    zIndex: 2,
+    padding: 14,
   },
   buttonRow: {
     flexDirection: "row",
-    gap: 12,
+    gap: 10,
   },
   button: {
     flex: 1,
+    borderRadius: 10,
+    overflow: "hidden",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  primaryButtonGradient: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    gap: 6,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    gap: 5,
   },
-  primaryButton: {
-    backgroundColor: "#4A90E2",
-  },
-  secondaryButton: {
-    backgroundColor: "rgba(74, 144, 226, 0.1)",
+  secondaryButtonContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    gap: 5,
+    backgroundColor: "rgba(74, 144, 226, 0.08)",
     borderWidth: 1,
-    borderColor: "rgba(74, 144, 226, 0.3)",
+    borderColor: "rgba(74, 144, 226, 0.2)",
+    borderRadius: 10,
   },
   buttonDisabled: {
-    opacity: 0.7,
+    opacity: 0.6,
+    transform: [{ scale: 0.98 }],
   },
-  text: {
+  primaryText: {
     color: "#fff",
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: "600",
+    letterSpacing: 0.3,
   },
   secondaryText: {
     color: "#4A90E2",
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: "600",
+    letterSpacing: 0.3,
   },
 });
 

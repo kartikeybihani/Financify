@@ -110,8 +110,10 @@ export const styles = StyleSheet.create({
       fontWeight: "500",
     },
     txAmountContainer: {
-      alignItems: "flex-end",
-      justifyContent: "center",
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "flex-end",
+      gap: 8,
     },
     txAmount: {
       fontSize: 16,
@@ -128,6 +130,18 @@ export const styles = StyleSheet.create({
       alignItems: "center",
       marginTop: 30,
       marginBottom: 14,
+    },
+    headerButtonsContainer: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
+    },
+    refreshAccountsButton: {
+      backgroundColor: "rgba(74, 144, 226, 0.1)",
+      borderRadius: 8,
+      padding: 8,
+      borderWidth: 1,
+      borderColor: "rgba(74, 144, 226, 0.2)",
     },
     filterButton: {
       flexDirection: "row",

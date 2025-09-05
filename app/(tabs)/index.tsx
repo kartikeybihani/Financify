@@ -845,7 +845,11 @@ export default function HomeScreen() {
                         key={index}
                         name={account.name}
                         type={account.type}
-                        balance={formatCurrency(account.balances.current || 0)}
+                        balance={formatCurrency(
+                          account.balances.current || 0,
+                          "USD",
+                          { decimals: 0, useKM: false }
+                        )}
                         icon="wallet-outline"
                         bankName={institution?.name}
                       />
@@ -867,7 +871,9 @@ export default function HomeScreen() {
                           name={account.name}
                           type={account.type}
                           balance={formatCurrency(
-                            account.balances.current || 0
+                            account.balances.current || 0,
+                            "USD",
+                            { decimals: 0, useKM: false }
                           )}
                           icon="card-outline"
                           bankName={institution?.name}
@@ -890,7 +896,9 @@ export default function HomeScreen() {
                           name={account.name}
                           type={account.type}
                           balance={formatCurrency(
-                            account.balances.current || 0
+                            account.balances.current || 0,
+                            "USD",
+                            { decimals: 0, useKM: false }
                           )}
                           icon="receipt-outline"
                           bankName={institution?.name}
@@ -908,7 +916,9 @@ export default function HomeScreen() {
                           name={holding.security_id}
                           type="Investment"
                           balance={formatCurrency(
-                            holding.institution_value || 0
+                            holding.institution_value || 0,
+                            "USD",
+                            { decimals: 0, useKM: false }
                           )}
                           icon="trending-up"
                           bankName={institution?.name}

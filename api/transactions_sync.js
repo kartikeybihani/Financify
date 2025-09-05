@@ -50,7 +50,10 @@ export default async function handler(req, res) {
         access_token: access_token,
         cursor, // null for first call, then the next_cursor returned by Plaid
         count: 500, // optional; max 500
-        // options: { include_original_description: true } // optional
+        options: {
+          include_original_description: true,
+          include_personal_finance_category: true, // Ensure we get enhanced categories
+        },
       });
 
       added.push(...data.added);
@@ -64,12 +67,64 @@ export default async function handler(req, res) {
     // 4) Store transactions in database
     if (added.length || modified.length) {
       const rows = [...added, ...modified].map((txn) => {
-        const category = txn.personal_finance_category?.primary || null;
+        // Enhanced category extraction with fallbacks
+        let category = null;
 
-        // Debug log for first few transactions
+        // Try detailed category first (if available)
+        if (txn.personal_finance_category?.detailed) {
+          category = txn.personal_finance_category.detailed;
+        }
+        // Then try primary category
+        else if (txn.personal_finance_category?.primary) {
+          category = txn.personal_finance_category.primary;
+        }
+        // Fallback to legacy category array (first item)
+        else if (txn.category && txn.category.length > 0) {
+          category = txn.category[0];
+        }
+
+        // Enhanced merchant-based category detection
+        const merchantName = (
+          txn.merchant_name ||
+          txn.name ||
+          ""
+        ).toLowerCase();
+        if (!category || category === "GENERAL_MERCHANDISE") {
+          if (merchantName.includes("amazon")) category = "ONLINE_SHOPPING";
+          else if (
+            merchantName.includes("uber") ||
+            merchantName.includes("lyft")
+          )
+            category = "TRANSPORTATION";
+          else if (
+            merchantName.includes("starbucks") ||
+            merchantName.includes("coffee")
+          )
+            category = "COFFEE_SHOPS";
+          else if (
+            merchantName.includes("mcdonalds") ||
+            merchantName.includes("burger")
+          )
+            category = "FAST_FOOD";
+          else if (
+            merchantName.includes("target") ||
+            merchantName.includes("walmart")
+          )
+            category = "DISCOUNT_STORES";
+          else if (
+            merchantName.includes("shell") ||
+            merchantName.includes("exxon") ||
+            merchantName.includes("chevron")
+          )
+            category = "GAS_STATIONS";
+        }
+
+        // Debug log for first few transactions with enhanced info
         if (added.length <= 3 || modified.length <= 3) {
           console.log(
-            `🏷️ Transaction: "${txn.name}" → Category: "${category}"`
+            `🏷️ Enhanced: "${txn.name}" → Category: "${category}" (Merchant: "${
+              txn.merchant_name || "N/A"
+            }")`
           );
         }
 

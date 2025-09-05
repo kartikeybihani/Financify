@@ -54,7 +54,7 @@ function RootLayoutNav() {
 
       const meta = session.user.user_metadata || {};
       const onboardingDone = meta.onboarding_complete === true;
-      const hasIntent = !!meta.intent;
+      const hasIntent = !!meta.intent || !!meta.intents; // Support both old and new format
       const hasBank = !!meta.hasConnectedBank;
 
       // If onboarding is done in Supabase, update cache
@@ -68,11 +68,21 @@ function RootLayoutNav() {
         await AsyncStorage.removeItem("onboarding_complete");
         await AsyncStorage.removeItem("user_authenticated");
 
-        if (!hasIntent) {
+        // Only auto-navigate if user is not already in onboarding screens
+        // This prevents navigation loops when user manually navigates between screens
+        if (inOnboarding) {
+          return; // Let user navigate freely within onboarding
+        }
+
+        // Auto-navigation logic only for users coming from outside onboarding
+        if (!hasBank && !hasIntent) {
+          // No intent and no bank → start at intent screen
           router.replace("/(onboarding)/intent");
         } else if (!hasBank) {
+          // Has intent but no bank → go to account connection
           router.replace("/(onboarding)/accountconnection");
         } else {
+          // Has bank → go to final screen
           router.replace("/(onboarding)/final");
         }
         return;

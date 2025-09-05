@@ -5,8 +5,6 @@ import {
   StyleSheet,
   SafeAreaView,
   TouchableOpacity,
-  ScrollView,
-  Dimensions,
   Alert,
   ActivityIndicator,
   Platform,
@@ -14,11 +12,7 @@ import {
 import { LinearGradient } from "expo-linear-gradient";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { supabase } from "../lib/supabase/supabase";
-import {
-  FontAwesome,
-  Ionicons,
-  MaterialCommunityIcons,
-} from "@expo/vector-icons";
+import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { fetchLinkToken, handlePlaidConnect } from "../utils/plaid";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { BlurView } from "expo-blur";
@@ -156,7 +150,14 @@ export default function AccountConnectionScreen() {
         locations={[0, 0.5, 1]}
         style={styles.container}
       >
-        <ScrollView contentContainerStyle={styles.scrollContent}>
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={() => router.replace("/(onboarding)/intent")}
+        >
+          <Ionicons name="arrow-back" size={24} color="#fff" />
+        </TouchableOpacity>
+
+        <View style={styles.content}>
           <View style={styles.header}>
             <Text style={styles.title}>Let's see the full picture</Text>
             <Text style={styles.subtitle}>
@@ -172,7 +173,7 @@ export default function AccountConnectionScreen() {
                   <View style={styles.benefitIconContainer}>
                     <Ionicons
                       name={benefit.icon as any}
-                      size={28}
+                      size={20}
                       color={benefit.color}
                     />
                   </View>
@@ -183,16 +184,16 @@ export default function AccountConnectionScreen() {
                 </View>
               ))}
             </View>
-            <View style={styles.benefitCard}>
-              <View style={styles.benefitIconContainer}>
+            <View style={styles.benefitCardFull}>
+              <View style={styles.benefitIconContainerFull}>
                 <Ionicons
                   name={benefits[2].icon as any}
-                  size={28}
+                  size={24}
                   color={benefits[2].color}
                 />
               </View>
-              <Text style={styles.benefitTitle}>{benefits[2].title}</Text>
-              <Text style={styles.benefitDescription}>
+              <Text style={styles.benefitTitleFull}>{benefits[2].title}</Text>
+              <Text style={styles.benefitDescriptionFull}>
                 {benefits[2].description}
               </Text>
             </View>
@@ -214,7 +215,7 @@ export default function AccountConnectionScreen() {
                   <Text style={styles.connectButtonText}>Connect My Bank</Text>
                   <MaterialCommunityIcons
                     name="bank"
-                    size={23}
+                    size={20}
                     color="#fff"
                     style={styles.buttonIcon}
                   />
@@ -232,7 +233,7 @@ export default function AccountConnectionScreen() {
               </Text>
             </View>
           </View>
-        </ScrollView>
+        </View>
 
         {(isLoading || isConnecting) && (
           <View style={styles.loadingOverlay}>
@@ -244,9 +245,7 @@ export default function AccountConnectionScreen() {
             <View style={styles.loadingContent}>
               <ActivityIndicator size="large" color="#4A90E2" />
               <Text style={styles.loadingText}>
-                {isLoading
-                  ? "Opening Plaid..."
-                  : "Connecting with your bank..."}
+                {isLoading ? "Opening Plaid..." : "Closing Plaid..."}
               </Text>
             </View>
           </View>
@@ -260,44 +259,94 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: "#1A1A2E",
-    height: Dimensions.get("window").height,
   },
   container: {
     flex: 1,
-    top: 30,
+    paddingTop: Platform.OS === "ios" ? 40 : 20,
   },
-  scrollContent: {
-    flexGrow: 1,
+  backButton: {
+    position: "absolute",
+    top: Platform.OS === "ios" ? 40 : 20,
+    left: 24,
+    zIndex: 10,
+    width: 40,
+    height: 40,
+    justifyContent: "center",
+  },
+  content: {
+    flex: 1,
     padding: 24,
+    paddingTop: 50,
+    justifyContent: "space-between",
   },
   header: {
-    marginTop: 40,
-    marginBottom: 40,
+    marginBottom: 32,
   },
   title: {
-    fontSize: 32,
+    fontSize: 28,
     fontWeight: "700",
     color: "#fff",
-    marginBottom: 12,
+    marginBottom: 10,
+    textAlign: "left",
+    lineHeight: 34,
   },
   subtitle: {
     fontSize: 16,
-    color: "#A0A0A0",
+    color: "rgba(255, 255, 255, 0.7)",
     lineHeight: 24,
+    textAlign: "left",
   },
   benefitsContainer: {
-    marginBottom: 32,
-    gap: 12,
+    gap: 10,
   },
   benefitsRow: {
     flexDirection: "row",
-    gap: 12,
+    gap: 20,
   },
   benefitCard: {
     flex: 1,
     backgroundColor: "rgba(255, 255, 255, 0.03)",
+    borderRadius: 12,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: "rgba(74, 144, 226, 0.2)",
+    shadowColor: "#4A90E2",
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 5,
+    alignItems: "center",
+  },
+  benefitIconContainer: {
+    width: 32,
+    height: 32,
     borderRadius: 16,
-    padding: 16,
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 6,
+  },
+  benefitContent: {
+    flex: 1,
+    justifyContent: "center",
+  },
+  benefitTitle: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#fff",
+    marginBottom: 3,
+    textAlign: "center",
+  },
+  benefitDescription: {
+    fontSize: 12,
+    color: "rgba(255, 255, 255, 0.7)",
+    lineHeight: 16,
+    textAlign: "center",
+  },
+  benefitCardFull: {
+    backgroundColor: "rgba(255, 255, 255, 0.03)",
+    borderRadius: 16,
+    padding: 12,
     borderWidth: 1,
     borderColor: "rgba(74, 144, 226, 0.2)",
     shadowColor: "#4A90E2",
@@ -306,30 +355,27 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     elevation: 5,
     alignItems: "center",
+    marginTop: 10,
   },
-  benefitIconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+  benefitIconContainerFull: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: "rgba(255, 255, 255, 0.08)",
     justifyContent: "center",
     alignItems: "center",
-    marginBottom: 12,
+    marginBottom: 8,
   },
-  benefitContent: {
-    flex: 1,
-    justifyContent: "center",
-  },
-  benefitTitle: {
+  benefitTitleFull: {
     fontSize: 15,
     fontWeight: "600",
     color: "#fff",
     marginBottom: 4,
     textAlign: "center",
   },
-  benefitDescription: {
+  benefitDescriptionFull: {
     fontSize: 13,
-    color: "#A0A0A0",
+    color: "rgba(255, 255, 255, 0.7)",
     lineHeight: 18,
     textAlign: "center",
   },
@@ -340,7 +386,7 @@ const styles = StyleSheet.create({
   connectButton: {
     backgroundColor: "#4A90E2",
     borderRadius: 16,
-    padding: 18,
+    padding: 16,
     alignItems: "center",
     width: "100%",
     flexDirection: "row",

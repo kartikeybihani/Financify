@@ -425,35 +425,62 @@ export const fetchInitialData = async () => {
   }
 };
 
-// === Sync Transactions (Supabase Function) ===
+// === Sync Transactions (with fallback) ===
 export const syncTransactions = async (item_id: string) => {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user?.id) throw new Error("User not authenticated");
 
-  const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL;
-  const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
-  
-  if (!SUPABASE_URL) throw new Error("Supabase URL not configured");
-
-  const res = await fetch(`${SUPABASE_URL}/functions/v1/sync-transactions`, {
-    method: "POST",
-    headers: { 
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${SUPABASE_ANON_KEY}`
-    },
-    body: JSON.stringify({ item_id, user_id: user.id }),
-  });
-  
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || "Sync failed");
-  
-  console.log("✅ Transaction sync complete:", {
-    added: data.added,
-    modified: data.modified, 
-    removed: data.removed
-  });
-  
-  return data; // { message, added, modified, removed }
+  try {
+    // Try Supabase function first
+    const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL;
+    const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+    
+    if (SUPABASE_URL) {
+      console.log("📡 Calling Supabase function for sync...");
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/sync-transactions`, {
+        method: "POST",
+        headers: { 
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${SUPABASE_ANON_KEY}`
+        },
+        body: JSON.stringify({ item_id, user_id: user.id }),
+      });
+      
+      const data = await res.json();
+      console.log("📦 Supabase function response:", { status: res.status, data });
+      
+      if (res.ok) {
+        console.log("✅ Transaction sync complete via Supabase function:", {
+          added: data.added,
+          modified: data.modified, 
+          removed: data.removed
+        });
+        return data;
+      } else {
+        console.warn("⚠️ Supabase function failed, trying API fallback:", data);
+      }
+    }
+    
+    // Fallback to API endpoint (with fixed category storage)
+    console.log("📡 Using API endpoint fallback...");
+    const res = await fetch(`${BASE_URL}/api/transactions_sync`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ item_id }),
+    });
+    
+    const data = await res.json();
+    console.log("📦 API response:", { status: res.status, data });
+    
+    if (!res.ok) throw new Error(data.error || "API sync failed");
+    
+    console.log("✅ Transaction sync complete via API:", data);
+    return data;
+    
+  } catch (error) {
+    console.error("❌ Transaction sync failed:", error);
+    throw error;
+  }
 };
 
 // === Store Accounts ===
@@ -773,7 +800,6 @@ export const syncAllUserTransactions = async () => {
 };
 
 // === Enhanced Filtering Functions for Insights ===
-
 // Helper function to get date range from time period
 export const getDateRangeFromTimePeriod = (timePeriod: string) => {
   const now = new Date();
@@ -781,6 +807,9 @@ export const getDateRangeFromTimePeriod = (timePeriod: string) => {
   let endDate: string = now.toISOString().split('T')[0]; // Today
 
   switch (timePeriod) {
+    case "7days":
+      startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+      break;
     case "30days":
       startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
       break;
@@ -789,6 +818,9 @@ export const getDateRangeFromTimePeriod = (timePeriod: string) => {
       break;
     case "6months":
       startDate = new Date(now.getTime() - 180 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+      break;
+    case "12months":
+      startDate = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
       break;
     case "december2024":
       startDate = "2024-12-01";
@@ -814,7 +846,7 @@ export const getDateRangeFromTimePeriod = (timePeriod: string) => {
 export const getFilteredTransactions = async (
   userId: string,
   options: {
-    accountId?: string | null; // null means all accounts
+    accountIds?: string[]; // empty array means all accounts
     timePeriod?: string;
     limit?: number;
     offset?: number;
@@ -822,7 +854,7 @@ export const getFilteredTransactions = async (
 ) => {
   try {
     const {
-      accountId = null,
+      accountIds = [],
       timePeriod = "30days",
       limit = 50,
       offset = 0
@@ -853,9 +885,9 @@ export const getFilteredTransactions = async (
       .order("date", { ascending: false })
       .range(offset, offset + limit - 1);
 
-    // Add account filter if specified
-    if (accountId) {
-      query = query.eq("account_id", accountId);
+    // Add account filter if specified (multiple accounts)
+    if (accountIds.length > 0) {
+      query = query.in("account_id", accountIds);
     }
 
     const { data: transactions, error } = await query;
@@ -882,13 +914,13 @@ export const getFilteredTransactions = async (
 export const getFilteredTransactionsCount = async (
   userId: string,
   options: {
-    accountId?: string | null;
+    accountIds?: string[];
     timePeriod?: string;
   } = {}
 ) => {
   try {
     const {
-      accountId = null,
+      accountIds = [],
       timePeriod = "30days"
     } = options;
 
@@ -903,9 +935,9 @@ export const getFilteredTransactionsCount = async (
       .gte("date", startDate)
       .lte("date", endDate);
 
-    // Add account filter if specified
-    if (accountId) {
-      query = query.eq("account_id", accountId);
+    // Add account filter if specified (multiple accounts)
+    if (accountIds.length > 0) {
+      query = query.in("account_id", accountIds);
     }
 
     const { count, error } = await query;
@@ -925,7 +957,7 @@ export const getUserAccountsForFilter = async (userId: string) => {
     const accounts = await getAllUserAccounts(userId);
     
     // Transform for filter modal use
-    return accounts.map(account => ({
+    const transformed = accounts.map(account => ({
       account_id: account.account_id,
       name: account.name,
       mask: account.mask,
@@ -933,6 +965,8 @@ export const getUserAccountsForFilter = async (userId: string) => {
       type: account.type,
       subtype: account.subtype,
     }));
+    
+    return transformed;
   } catch (err) {
     console.error("Error fetching user accounts for filter:", err);
     return [];

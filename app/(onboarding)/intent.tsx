@@ -4,7 +4,6 @@ import {
   Text,
   TouchableOpacity,
   StyleSheet,
-  Dimensions,
   StatusBar,
   ScrollView,
   Animated,
@@ -17,55 +16,62 @@ import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { supabase } from "../lib/supabase/supabase";
 
-const { width } = Dimensions.get("window");
-const CARD_WIDTH = (width - 48 - 16) / 2; // 48 for padding, 16 for gap
-
 const options = [
   {
     id: "behind",
     label: "Start Growing",
     description: "Get back on track with your finances",
     icon: "trending-up-outline",
-    gradient: ["#FF512F", "#F09819"] as const,
+    color: "#FF6B35",
   },
   {
     id: "save",
     label: "Save smarter",
     description: "Build wealth with smart strategies",
-    icon: "wallet-outline",
-    gradient: ["#36D1C4", "#11998E"] as const,
+    icon: "cash-outline",
+    color: "#4CAF50",
   },
   {
     id: "overview",
     label: "See everything",
     description: "All your money in one place",
     icon: "apps-outline",
-    gradient: ["#43CEA2", "#185A9D"] as const,
+    color: "#4A90E2",
+  },
+  {
+    id: "invest",
+    label: "Learn investing",
+    description: "Start building your investment portfolio",
+    icon: "bar-chart-outline",
+    color: "yellow",
   },
   {
     id: "curious",
     label: "Just curious",
     description: "Explore financial possibilities",
-    icon: "help-circle-outline",
-    gradient: ["#8E2DE2", "#4A00E0"] as const,
+    icon: "bulb-outline",
+    color: "white",
   },
 ];
 
 export default function IntentScreen() {
-  const [selected, setSelected] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string[]>([]);
   const router = useRouter();
   const params = useLocalSearchParams();
   const scaleAnim = useState(new Animated.Value(1))[0];
 
-  // useEffect(() => {
-  //   console.log("[Intent] params: ", params);
-  // }, [params]);
-
   const handleSelect = (id: string) => {
-    setSelected(id);
+    setSelected((prev) => {
+      if (prev.includes(id)) {
+        return prev.filter((item) => item !== id);
+      } else {
+        return [...prev, id];
+      }
+    });
+
     Animated.sequence([
       Animated.timing(scaleAnim, {
-        toValue: 0.95,
+        toValue: 0.98,
         duration: 100,
         useNativeDriver: true,
       }),
@@ -78,7 +84,7 @@ export default function IntentScreen() {
   };
 
   const handleContinue = async () => {
-    if (!selected) return;
+    if (selected.length === 0) return;
 
     try {
       const {
@@ -93,16 +99,18 @@ export default function IntentScreen() {
 
       const { error: updateError } = await supabase.auth.updateUser({
         data: {
-          intent: selected,
+          intents: selected,
         },
       });
 
       if (updateError) {
-        console.log("Error - Could not save your intent in the intent screen.");
+        console.log(
+          "Error - Could not save your intents in the intent screen."
+        );
         return;
       }
 
-      // Navigate to account connection with including selected intent in user metadata
+      // Navigate to account connection with including selected intents in user metadata
       router.replace("/(onboarding)/accountconnection");
     } catch (err) {
       console.error("Intent update failed:", err);
@@ -111,32 +119,29 @@ export default function IntentScreen() {
   };
 
   const renderOption = (option: (typeof options)[0], index: number) => {
-    const isSelected = selected === option.id;
+    const isSelected = selected.includes(option.id);
 
     return (
       <TouchableOpacity
         key={option.id}
-        style={[styles.optionCard, { marginLeft: index % 2 === 1 ? 16 : 0 }]}
+        style={[styles.optionCard, isSelected && styles.selectedCard]}
         onPress={() => handleSelect(option.id)}
-        activeOpacity={0.9}
+        activeOpacity={0.8}
       >
-        <LinearGradient
-          colors={option.gradient}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={[styles.cardGradient, isSelected && styles.selectedCard]}
-        >
-          <View style={styles.iconContainer}>
-            <Ionicons name={option.icon as any} size={28} color="#fff" />
-          </View>
+        <View style={styles.iconContainer}>
+          <Ionicons name={option.icon as any} size={20} color={option.color} />
+        </View>
+        <View style={styles.cardContent}>
           <Text style={styles.cardTitle}>{option.label}</Text>
           <Text style={styles.cardDescription}>{option.description}</Text>
-          {isSelected && (
-            <View style={styles.checkmarkContainer}>
-              <Ionicons name="checkmark-circle" size={24} color="#fff" />
+        </View>
+        {isSelected && (
+          <View style={styles.checkmarkContainer}>
+            <View style={styles.checkmarkBackground}>
+              <Ionicons name="checkmark" size={16} color="blue" />
             </View>
-          )}
-        </LinearGradient>
+          </View>
+        )}
       </TouchableOpacity>
     );
   };
@@ -150,32 +155,41 @@ export default function IntentScreen() {
       >
         <StatusBar barStyle="light-content" />
 
-        <Text style={styles.title}>What brings you here today?</Text>
-        <Text style={styles.subtitle}>Choose your financial journey</Text>
-
         <ScrollView
-          contentContainerStyle={styles.optionList}
+          contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
-          <View style={styles.optionsGrid}>
+          <View style={styles.header}>
+            <Text style={styles.title}>What brings you here today?</Text>
+            <Text style={styles.subtitle}>
+              Choose one or more goals to personalize your experience
+            </Text>
+          </View>
+
+          <View style={styles.optionsContainer}>
             {options.map((option, index) => renderOption(option, index))}
           </View>
         </ScrollView>
 
-        <TouchableOpacity
-          style={[styles.button, !selected && styles.buttonDisabled]}
-          onPress={handleContinue}
-          disabled={!selected}
-        >
-          <LinearGradient
-            colors={["#4A90E2", "#5DA0F2"]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={styles.gradientButton}
+        <View style={styles.footer}>
+          <TouchableOpacity
+            style={[
+              styles.button,
+              selected.length === 0 && styles.buttonDisabled,
+            ]}
+            onPress={handleContinue}
+            disabled={selected.length === 0}
           >
-            <Text style={styles.buttonText}>Continue</Text>
-          </LinearGradient>
-        </TouchableOpacity>
+            <LinearGradient
+              colors={["#4A90E2", "#5DA0F2"]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.gradientButton}
+            >
+              <Text style={styles.buttonText}>Continue</Text>
+            </LinearGradient>
+          </TouchableOpacity>
+        </View>
       </LinearGradient>
     </SafeAreaView>
   );
@@ -188,95 +202,111 @@ const styles = StyleSheet.create({
   },
   container: {
     flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
     paddingHorizontal: 24,
-    top: 15,
+    paddingTop: Platform.OS === "ios" ? 70 : 50,
+    paddingBottom: 10,
+  },
+  header: {
+    marginBottom: 28,
   },
   title: {
-    fontSize: 32,
+    fontSize: 28,
     color: "#fff",
     fontWeight: "700",
-    textAlign: "center",
-    marginTop: 40,
-    marginBottom: 8,
+    textAlign: "left",
+    marginBottom: 12,
+    lineHeight: 34,
   },
   subtitle: {
     fontSize: 16,
-    color: "rgba(255, 255, 255, 0.6)",
-    textAlign: "center",
-    marginBottom: 40,
+    color: "rgba(255, 255, 255, 0.7)",
+    textAlign: "left",
+    lineHeight: 24,
   },
-  optionList: {
-    flexGrow: 1,
-    paddingBottom: 80,
-  },
-  optionsGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "space-between",
+  optionsContainer: {
+    gap: 15,
   },
   optionCard: {
-    width: CARD_WIDTH,
-    height: CARD_WIDTH * 1.2,
-    marginBottom: 16,
-    borderRadius: 20,
-    overflow: "hidden",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.25,
-    shadowRadius: 16,
-    elevation: 8,
-  },
-  cardGradient: {
-    flex: 1,
-    padding: 16,
-    justifyContent: "space-between",
+    backgroundColor: "rgba(255, 255, 255, 0.03)",
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: "rgba(74, 144, 226, 0.2)",
+    shadowColor: "#4A90E2",
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 5,
+    flexDirection: "row",
+    alignItems: "center",
   },
   selectedCard: {
-    borderWidth: 2,
-    borderColor: "#fff",
+    borderColor: "#4A90E2",
+    backgroundColor: "rgba(74, 144, 226, 0.08)",
+    shadowOpacity: 0.25,
+    elevation: 8,
   },
   iconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
     justifyContent: "center",
     alignItems: "center",
-    marginBottom: 12,
+    marginRight: 12,
+  },
+  cardContent: {
+    flex: 1,
   },
   cardTitle: {
-    color: "#fff",
-    fontSize: 18,
+    fontSize: 15,
     fontWeight: "600",
-    marginBottom: 4,
+    color: "#fff",
+    marginBottom: 3,
+    textAlign: "left",
   },
   cardDescription: {
-    color: "rgba(255, 255, 255, 0.8)",
     fontSize: 12,
+    color: "rgba(255, 255, 255, 0.7)",
     lineHeight: 16,
+    textAlign: "left",
   },
   checkmarkContainer: {
-    position: "absolute",
-    top: 12,
-    right: 12,
+    marginLeft: 8,
+  },
+  checkmarkBackground: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: "#fff",
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "rgba(74, 144, 226, 0.3)",
+  },
+  footer: {
+    paddingHorizontal: 24,
+    paddingBottom: Platform.OS === "ios" ? 30 : 35,
+    paddingTop: 16,
   },
   button: {
-    marginTop: 30,
     borderRadius: 16,
     overflow: "hidden",
-    marginBottom: 30,
   },
   buttonDisabled: {
-    opacity: 0.7,
+    opacity: 0.5,
   },
   gradientButton: {
     paddingVertical: 16,
-    paddingHorizontal: 48,
+    paddingHorizontal: 24,
     alignItems: "center",
   },
   buttonText: {
     color: "#fff",
     fontSize: 16,
-    fontWeight: "bold",
+    fontWeight: "600",
   },
 });
