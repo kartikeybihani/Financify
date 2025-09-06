@@ -986,6 +986,141 @@ export const getAllRecurringTransactions = async () => {
   }
 };
 
+// === Refresh Account Balances ===
+export const refreshAccountBalances = async (item_id?: string) => {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user?.id) throw new Error("User not authenticated");
+    
+    // If no specific item_id, refresh all accounts
+    const userItems = item_id 
+      ? [{ item_id, institution_name: 'Unknown' }] 
+      : await getUserItems();
+    
+    if (userItems.length === 0) {
+      console.log("No connected accounts to refresh balances");
+      return { refreshed: 0, message: "No connected accounts found" };
+    }
+    
+    console.log(`🏦 Refreshing balances for ${userItems.length} account(s)...`);
+    
+    // Refresh balances for each account
+    const balancePromises = userItems.map(async (item) => {
+      try {
+        const res = await fetch(`${BASE_URL}/api/refresh_balances`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ 
+            item_id: item.item_id,
+            user_id: user.id 
+          }),
+        });
+        
+        const data = await res.json();
+        
+        if (!res.ok) {
+          throw new Error(data.error || `Balance refresh failed for ${item.institution_name}`);
+        }
+        
+        console.log(`✅ Balances refreshed for ${item.institution_name || item.item_id}:`, data.updated);
+        return { 
+          item_id: item.item_id, 
+          institution_name: item.institution_name,
+          success: true, 
+          updated: data.updated 
+        };
+      } catch (error) {
+        console.error(`Failed to refresh balances for item ${item.item_id}:`, error);
+        return { 
+          item_id: item.item_id, 
+          institution_name: item.institution_name,
+          success: false, 
+          error: error instanceof Error ? error.message : String(error)
+        };
+      }
+    });
+    
+    const results = await Promise.all(balancePromises);
+    const successful = results.filter(result => result.success).length;
+    const totalUpdated = results
+      .filter(result => result.success)
+      .reduce((sum, result) => sum + (result.updated || 0), 0);
+    
+    console.log(`✅ Balance refresh completed: ${successful}/${userItems.length} items, ${totalUpdated} accounts updated`);
+    
+    return { 
+      refreshed: successful,
+      total: userItems.length,
+      accountsUpdated: totalUpdated,
+      results,
+      message: successful > 0 
+        ? `Updated balances for ${totalUpdated} accounts across ${successful} bank${successful > 1 ? 's' : ''}`
+        : "Failed to refresh balances for any accounts"
+    };
+  } catch (err) {
+    console.error("Error refreshing account balances:", err);
+    throw err;
+  }
+};
+
+// === Complete Post Re-Auth Data Refresh ===
+export const performCompleteDataRefresh = async (item_id?: string) => {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user?.id) throw new Error("User not authenticated");
+    
+    console.log("🔄 Starting complete data refresh...");
+    
+    const refreshResults = {
+      refreshRequested: false,
+      transactionsSynced: false,
+      balancesRefreshed: false,
+      accountsUpdated: false,
+      errors: [] as string[]
+    };
+    
+    // 1. Request fresh data from Plaid (triggers webhook)
+    try {
+      await refreshPlaidData();
+      refreshResults.refreshRequested = true;
+      console.log("✅ Fresh data requested from Plaid");
+    } catch (error) {
+      const errorMsg = `Failed to request fresh data: ${error instanceof Error ? error.message : String(error)}`;
+      refreshResults.errors.push(errorMsg);
+      console.warn("⚠️", errorMsg);
+    }
+    
+    // 2. Refresh account balances immediately
+    try {
+      const balanceResult = await refreshAccountBalances(item_id);
+      refreshResults.balancesRefreshed = balanceResult.refreshed > 0;
+      console.log("✅ Account balances refreshed:", balanceResult.message);
+    } catch (error) {
+      const errorMsg = `Failed to refresh balances: ${error instanceof Error ? error.message : String(error)}`;
+      refreshResults.errors.push(errorMsg);
+      console.warn("⚠️", errorMsg);
+    }
+    
+    // 3. Sync transactions immediately
+    try {
+      await syncAllUserTransactions();
+      refreshResults.transactionsSynced = true;
+      console.log("✅ Transactions synced");
+    } catch (error) {
+      const errorMsg = `Failed to sync transactions: ${error instanceof Error ? error.message : String(error)}`;
+      refreshResults.errors.push(errorMsg);
+      console.warn("⚠️", errorMsg);
+    }
+    
+    console.log("✅ Complete data refresh finished:", refreshResults);
+    return refreshResults;
+    
+  } catch (error) {
+    console.error("❌ Complete data refresh failed:", error);
+    throw error;
+  }
+};
+
 // === Enhanced Filtering Functions for Insights ===
 // Helper function to get date range from time period
 export const getDateRangeFromTimePeriod = (timePeriod: string) => {
@@ -1171,6 +1306,8 @@ const plaidUtils = {
   syncTransactions,                        // sync via Supabase function
   syncAllUserTransactions,                 // manual sync for UI
   refreshPlaidData,                        // refresh latest data (Plaid transactions/refresh)
+  refreshAccountBalances,                  // refresh account balances (Plaid accounts/balance/get)
+  performCompleteDataRefresh,              // complete post re-auth data refresh
   getRecurringTransactions,                // get recurring transactions for one account
   getAllRecurringTransactions,             // get recurring transactions for all accounts
   getInvestments: fetchInvestments,        // now takes item_id

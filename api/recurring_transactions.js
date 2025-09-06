@@ -46,11 +46,35 @@ export default async function handler(req, res) {
       return res.status(404).json({ error: "Access token not found" });
     }
 
-    // 3) Call Plaid's transactions/recurring/get endpoint
-    console.log("📡 Calling Plaid transactions/recurring/get...");
+    // 3) Get account IDs for this item first
+    const { data: accounts, error: accountsError } = await supabase
+      .from("accounts")
+      .select("account_id")
+      .eq("item_id", item_id);
+
+    if (accountsError) {
+      console.error("Error fetching accounts:", accountsError);
+      return res.status(500).json({ error: "Failed to fetch accounts" });
+    }
+
+    if (!accounts || accounts.length === 0) {
+      console.log("No accounts found for item:", item_id);
+      return res.status(200).json({
+        message: "No accounts found for recurring analysis",
+        summary: { subscriptions: 0, income: 0, bills: 0, other: 0, total: 0 },
+        data: { subscriptions: [], income: [], bills: [], other: [] },
+      });
+    }
+
+    const accountIds = accounts.map((acc) => acc.account_id);
+    console.log(
+      `📡 Calling Plaid transactions/recurring/get for ${accountIds.length} accounts...`
+    );
+
+    // 4) Call Plaid's transactions/recurring/get endpoint
     const recurringResponse = await client.transactionsRecurringGet({
       access_token: access_token,
-      account_ids: [], // Empty array means all accounts
+      account_ids: accountIds,
     });
 
     const recurringData = recurringResponse.data;

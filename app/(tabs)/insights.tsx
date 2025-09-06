@@ -25,12 +25,17 @@ import EnhancedFilterModal, {
   Account,
 } from "../components/EnhancedFilterModal";
 import TransactionDetailModal from "../components/TransactionDetailModal";
+import ReAuthBanner from "../components/ReAuthBanner";
+import RecurringTransactionsCard from "../components/RecurringTransactionsCard";
 import { supabase } from "../lib/supabase/supabase";
 import {
   fetchInitialData,
   getPrimaryItemId,
   syncAllUserTransactions,
   refreshPlaidData,
+  refreshAccountBalances,
+  performCompleteDataRefresh,
+  getAllRecurringTransactions,
   getUpdateLinkToken,
   openPlaidLink,
   getRecentTransactions,
@@ -39,6 +44,8 @@ import {
   getFilteredTransactionsCount,
   getUserAccountsForFilter,
 } from "../utils/plaid";
+
+const BASE_URL = "https://financify-rose.vercel.app";
 import {
   debugTransactionCategories,
   getCurrentMonthCategoryBreakdown,
@@ -147,6 +154,35 @@ export default function InsightsScreen() {
   } | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
 
+  // Re-auth banner state
+  const [reAuthItems, setReAuthItems] = useState<
+    Array<{
+      item_id: string;
+      institution_name: string;
+      dismissed: boolean;
+    }>
+  >([]);
+
+  // Recurring transactions state
+  const [recurringData, setRecurringData] = useState<{
+    subscriptions: any[];
+    income: any[];
+    bills: any[];
+    other: any[];
+    summary: {
+      subscriptions: number;
+      income: number;
+      bills: number;
+      other: number;
+      total: number;
+    };
+  } | null>(null);
+  const [recurringLoading, setRecurringLoading] = useState(false);
+  const [refreshStatus, setRefreshStatus] = useState<{
+    type: "cloud" | "manual" | "category_fix" | null;
+    message: string;
+  }>({ type: null, message: "" });
+
   // Enhanced filtering state
   const [showEnhancedFilterModal, setShowEnhancedFilterModal] = useState(false);
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -200,8 +236,11 @@ export default function InsightsScreen() {
       // Load filtered transactions with default filters
       await loadFilteredTransactions(filterOptions, true);
 
-      // Check for update flags (Option A - polling approach)
-      await checkForUpdateFlags();
+      // Check for update flags and re-auth needs
+      await checkForReAuthNeeds();
+
+      // Load recurring transactions
+      await loadRecurringTransactions();
 
       setIsInitialLoad(false);
     };
@@ -466,6 +505,8 @@ export default function InsightsScreen() {
         if (!showEnhancedFilterModal) {
           await loadUserAccounts(true); // Debug when financial data changes
           await loadFilteredTransactions(filterOptions, true);
+          // Also reload recurring transactions when data changes
+          await loadRecurringTransactions();
         }
       }
     );
@@ -663,8 +704,8 @@ export default function InsightsScreen() {
     setShowTransactionDetail(true);
   };
 
-  // Check for update mode flags
-  const checkForUpdateFlags = async () => {
+  // Check for re-auth needs (both database flags and API errors)
+  const checkForReAuthNeeds = async () => {
     try {
       const {
         data: { user },
@@ -683,9 +724,24 @@ export default function InsightsScreen() {
         return;
       }
 
-      // Check for items requiring
+      const reAuthNeeded: Array<{
+        item_id: string;
+        institution_name: string;
+        dismissed: boolean;
+      }> = [];
+
+      // Check for items requiring re-auth or new accounts
       for (const item of userItems || []) {
-        if (item.has_new_accounts) {
+        if (item.requires_update_mode) {
+          reAuthNeeded.push({
+            item_id: item.item_id,
+            institution_name: item.institution_name || "Unknown Bank",
+            dismissed: false,
+          });
+        }
+
+        // Still handle new accounts via modal (less urgent)
+        if (item.has_new_accounts && reAuthNeeded.length === 0) {
           setUpdateModalInfo({
             type: "new_accounts",
             message: `New accounts are available for ${
@@ -694,33 +750,133 @@ export default function InsightsScreen() {
             item_id: item.item_id,
           });
           setShowUpdateModal(true);
-          return; // Show one at a time
-        }
-
-        if (item.requires_update_mode) {
-          setUpdateModalInfo({
-            type: "re_auth",
-            message: `${
-              item.institution_name || "Your bank"
-            } requires re-authentication. Please update your connection.`,
-            item_id: item.item_id,
-          });
-          setShowUpdateModal(true);
-          return; // Show one at a time
         }
       }
+
+      setReAuthItems(reAuthNeeded);
     } catch (error) {
-      console.error("Error checking update flags:", error);
+      console.error("Error checking re-auth needs:", error);
     }
   };
 
-  // Handle manual refresh with comprehensive debugging
+  // Load recurring transactions
+  const loadRecurringTransactions = async () => {
+    try {
+      setRecurringLoading(true);
+      console.log("🔄 Loading recurring transactions...");
+
+      const data = await getAllRecurringTransactions();
+      setRecurringData(data);
+
+      console.log("✅ Recurring transactions loaded:", data.summary);
+    } catch (error) {
+      console.error("❌ Error loading recurring transactions:", error);
+      // Set empty data on error
+      setRecurringData({
+        subscriptions: [],
+        income: [],
+        bills: [],
+        other: [],
+        summary: { subscriptions: 0, income: 0, bills: 0, other: 0, total: 0 },
+      });
+    } finally {
+      setRecurringLoading(false);
+    }
+  };
+
+  // Handle re-auth banner actions - Complete flow: Re-auth → Sync → Update UI
+  const handleReAuth = async (item_id: string) => {
+    try {
+      console.log(
+        "🔐 RE-AUTH FLOW: Starting re-authentication for item:",
+        item_id
+      );
+
+      // Step 1: Re-authenticate with Plaid
+      const linkToken = await getUpdateLinkToken(item_id);
+      await openPlaidLink(linkToken);
+      console.log("✅ Re-authentication successful");
+
+      // Step 2: Clear re-auth flags in database
+      await supabase
+        .from("user_items")
+        .update({
+          requires_update_mode: false,
+          last_synced_at: new Date().toISOString(),
+        })
+        .eq("item_id", item_id);
+
+      // Step 3: Remove from banner list (optimistic update)
+      setReAuthItems((prev) => prev.filter((item) => item.item_id !== item_id));
+
+      console.log("🔄 POST RE-AUTH: Comprehensive data refresh...");
+
+      // Step 4: Comprehensive data refresh
+      // 4a. Request fresh data from Plaid
+      await refreshPlaidData();
+
+      // 4b. Refresh account balances (critical after re-auth)
+      await refreshAccountBalances(item_id);
+
+      // 4c. Sync all transactions
+      await syncAllUserTransactions();
+
+      // Step 5: Refresh UI from database (the single source of truth)
+      await fetchFreshData();
+      await loadFilteredTransactions(filterOptions, true);
+      await loadRecurringTransactions();
+
+      console.log(
+        "✅ RE-AUTH COMPLETE: All data synced and UI updated from database"
+      );
+    } catch (error) {
+      console.error("❌ Re-auth flow failed:", error);
+
+      // On error, try to at least refresh UI from existing database data
+      try {
+        await fetchFreshData();
+        await loadFilteredTransactions(filterOptions, true);
+      } catch (fallbackError) {
+        console.error("❌ Fallback data refresh also failed:", fallbackError);
+      }
+    }
+  };
+
+  // Dismiss re-auth banner
+  const dismissReAuthBanner = (item_id: string) => {
+    setReAuthItems((prev) =>
+      prev.map((item) =>
+        item.item_id === item_id ? { ...item, dismissed: true } : item
+      )
+    );
+  };
+
+  // Handle API errors that indicate re-auth needed
+  const handleApiReAuthError = (item_id: string, institution_name: string) => {
+    setReAuthItems((prev) => {
+      const exists = prev.find((item) => item.item_id === item_id);
+      if (exists) return prev;
+
+      return [
+        ...prev,
+        {
+          item_id,
+          institution_name: institution_name || "Unknown Bank",
+          dismissed: false,
+        },
+      ];
+    });
+  };
+
+  // 🔄 MANUAL REFRESH: Sync existing data from Supabase cursors
   const handleManualRefresh = async () => {
     if (isSyncing) return;
 
     setIsSyncing(true);
+    setRefreshStatus({ type: "manual", message: "Syncing existing data..." });
+
     try {
-      console.log("🔄 Manual refresh: Syncing transactions...");
+      console.log("🔄 MANUAL REFRESH: Syncing from stored cursors...");
 
       const {
         data: { user },
@@ -729,52 +885,58 @@ export default function InsightsScreen() {
 
       if (authError || !user?.id) {
         console.error("❌ Auth error in refresh:", authError?.message);
+        setRefreshStatus({ type: "manual", message: "Authentication error" });
         return;
       }
-
-      // Debug existing data first
-      console.log("🔍 BEFORE SYNC - Category Analysis:");
-      await debugTransactionCategories(user.id, 10);
-      const nullCountBefore = await countNullCategories(user.id);
-      console.log(
-        `⚠️ BEFORE: ${nullCountBefore} transactions with null categories`
-      );
 
       // Clear cache before syncing
       clearCache();
 
+      setRefreshStatus({
+        type: "manual",
+        message: "Syncing transactions from Plaid...",
+      });
       await syncAllUserTransactions();
 
-      // Debug data after sync
-      console.log("🔍 AFTER SYNC - Category Analysis:");
-      await debugTransactionCategories(user.id, 10);
-      const nullCountAfter = await countNullCategories(user.id);
-      console.log(
-        `⚠️ AFTER: ${nullCountAfter} transactions with null categories`
-      );
-
-      // Get current month breakdown
-      await getCurrentMonthCategoryBreakdown(user.id);
-
-      // Reload data after sync
+      setRefreshStatus({ type: "manual", message: "Updating interface..." });
+      // Reload data after sync (UI reads from Supabase)
       await fetchFreshData();
       await loadFilteredTransactions(filterOptions, true);
+      await loadRecurringTransactions();
 
-      console.log("✅ Manual refresh completed with detailed analysis");
+      setRefreshStatus({ type: "manual", message: "Sync completed!" });
+      console.log(
+        "✅ MANUAL REFRESH COMPLETE: Data synced from cursors → UI updated"
+      );
+
+      // Clear success message
+      setTimeout(() => {
+        setRefreshStatus({ type: null, message: "" });
+      }, 3000);
     } catch (error) {
       console.error("❌ Manual refresh failed:", error);
+      setRefreshStatus({ type: "manual", message: "Sync failed" });
+
+      setTimeout(() => {
+        setRefreshStatus({ type: null, message: "" });
+      }, 5000);
     } finally {
       setIsSyncing(false);
     }
   };
 
-  // Handle full resync (fixes null categories)
+  // 🔧 CATEGORY FIX: Full resync to fix category issues
   const handleFullResync = async () => {
     if (isSyncing) return;
 
     setIsSyncing(true);
+    setRefreshStatus({
+      type: "category_fix",
+      message: "Fixing transaction categories...",
+    });
+
     try {
-      console.log("🔄 Starting FULL re-sync to fix categories...");
+      console.log("🔧 CATEGORY FIX: Starting full resync...");
 
       const {
         data: { user },
@@ -783,63 +945,154 @@ export default function InsightsScreen() {
 
       if (authError || !user?.id) {
         console.error("❌ Auth error in full resync:", authError?.message);
+        setRefreshStatus({
+          type: "category_fix",
+          message: "Authentication error",
+        });
         return;
       }
 
       // Force full resync by resetting cursors
+      setRefreshStatus({
+        type: "category_fix",
+        message: "Resetting sync cursors...",
+      });
       const success = await forceFullResync(user.id);
 
       if (!success) {
         console.error("❌ Failed to reset cursors for full resync");
+        setRefreshStatus({
+          type: "category_fix",
+          message: "Failed to reset cursors",
+        });
         return;
       }
 
       // Clear cache before syncing
       clearCache();
 
+      setRefreshStatus({
+        type: "category_fix",
+        message: "Re-syncing all transactions...",
+      });
       // Now sync with reset cursors (will get ALL transactions fresh)
       await syncAllUserTransactions();
 
-      // Debug and reload
-      console.log("🔍 AFTER FULL RESYNC - Category Analysis:");
-      await debugTransactionCategories(user.id, 10);
-      await getCurrentMonthCategoryBreakdown(user.id);
-
-      // Reload data
+      setRefreshStatus({
+        type: "category_fix",
+        message: "Updating interface...",
+      });
+      // Reload data (UI reads from Supabase)
       await fetchFreshData();
       await loadFilteredTransactions(filterOptions, true);
+      await loadRecurringTransactions();
 
-      console.log("✅ Full resync completed - categories should now be fixed!");
+      setRefreshStatus({ type: "category_fix", message: "Categories fixed!" });
+      console.log(
+        "✅ CATEGORY FIX COMPLETE: All transactions re-synced → UI updated"
+      );
+
+      // Clear success message
+      setTimeout(() => {
+        setRefreshStatus({ type: null, message: "" });
+      }, 3000);
     } catch (error) {
       console.error("❌ Full resync failed:", error);
+      setRefreshStatus({
+        type: "category_fix",
+        message: "Category fix failed",
+      });
+
+      setTimeout(() => {
+        setRefreshStatus({ type: null, message: "" });
+      }, 5000);
     } finally {
       setIsSyncing(false);
     }
   };
 
-  // Handle refresh latest data from Plaid
+  // 🌟 CLOUD REFRESH: The primary data refresh flow (Plaid → Supabase → UI)
   const handleRefreshLatestData = async () => {
     if (isSyncing) return;
 
     setIsSyncing(true);
-    try {
-      console.log("🔄 Requesting latest data from Plaid...");
+    setRefreshStatus({
+      type: "cloud",
+      message: "Requesting latest data from banks...",
+    });
 
-      // Call Plaid's transactions/refresh endpoint
+    try {
+      console.log("☁️ CLOUD REFRESH: Starting comprehensive data refresh...");
+
+      // Step 1: Request fresh data from Plaid (triggers their data extraction)
+      setRefreshStatus({
+        type: "cloud",
+        message: "Requesting fresh data from Plaid...",
+      });
       const result = await refreshPlaidData();
 
-      console.log("✅ Refresh request completed:", result.message);
+      // Step 2: Check for re-auth errors and handle them
+      if (result.results) {
+        result.results.forEach((res: any) => {
+          if (!res.success && res.error?.includes("re-authentication")) {
+            handleApiReAuthError(res.item_id, res.institution_name);
+          }
+        });
+      }
 
-      // Clear cache since new data will come via webhook
-      clearCache();
+      console.log("✅ Refresh request sent to Plaid:", result.message);
 
-      // Note: The actual new data will arrive via webhook, so we don't need to
-      // immediately reload here. The webhook will trigger the financialDataRefreshed event.
-    } catch (error) {
-      console.error("❌ Refresh latest data failed:", error);
-      // Still try to reload current data on error
+      // Step 3: Refresh account balances first (they change most frequently)
+      setRefreshStatus({
+        type: "cloud",
+        message: "Updating account balances...",
+      });
+      await refreshAccountBalances();
+
+      // Step 4: Sync transactions to Supabase
+      setRefreshStatus({
+        type: "cloud",
+        message: "Syncing transactions to database...",
+      });
+      await syncAllUserTransactions();
+
+      // Step 5: Refresh UI from Supabase (single source of truth)
+      setRefreshStatus({ type: "cloud", message: "Updating interface..." });
       await fetchFreshData();
       await loadFilteredTransactions(filterOptions, true);
+      await loadRecurringTransactions();
+
+      setRefreshStatus({
+        type: "cloud",
+        message: "Data refreshed successfully!",
+      });
+      console.log("✅ CLOUD REFRESH COMPLETE: Fresh data → Supabase → UI");
+
+      // Clear success message after 3 seconds
+      setTimeout(() => {
+        setRefreshStatus({ type: null, message: "" });
+      }, 3000);
+    } catch (error) {
+      console.error("❌ Cloud refresh failed:", error);
+      setRefreshStatus({
+        type: "cloud",
+        message: "Refresh failed, loading cached data...",
+      });
+
+      // Fallback: reload current data from Supabase
+      try {
+        await fetchFreshData();
+        await loadFilteredTransactions(filterOptions, true);
+        await loadRecurringTransactions();
+      } catch (fallbackError) {
+        console.error("❌ Fallback refresh failed:", fallbackError);
+        setRefreshStatus({ type: "cloud", message: "Unable to refresh data" });
+      }
+
+      // Clear error message after 5 seconds
+      setTimeout(() => {
+        setRefreshStatus({ type: null, message: "" });
+      }, 5000);
     } finally {
       setIsSyncing(false);
     }
@@ -968,6 +1221,30 @@ export default function InsightsScreen() {
 
           {(!isLoading || hasData.current) && (
             <>
+              {/* Refresh Status Indicator */}
+              {refreshStatus.type && (
+                <View style={refreshStatusStyles.container}>
+                  <View style={refreshStatusStyles.content}>
+                    <ActivityIndicator size="small" color="#4A90E2" />
+                    <Text style={refreshStatusStyles.message}>
+                      {refreshStatus.message}
+                    </Text>
+                  </View>
+                </View>
+              )}
+
+              {/* Re-auth banners */}
+              {reAuthItems
+                .filter((item) => !item.dismissed)
+                .map((item) => (
+                  <ReAuthBanner
+                    key={item.item_id}
+                    institutionName={item.institution_name}
+                    onReAuth={() => handleReAuth(item.item_id)}
+                    onDismiss={() => dismissReAuthBanner(item.item_id)}
+                  />
+                ))}
+
               <Text style={styles.sectionLabel}>Spending Overview</Text>
               <CategoryGrid
                 categoryBreakdown={categoryBreakdown}
@@ -975,6 +1252,20 @@ export default function InsightsScreen() {
                 formatCategoryName={formatCategoryName}
                 getCategoryIcon={getCategoryIcon}
               />
+
+              {/* Recurring transactions card */}
+              <View style={{ paddingHorizontal: 20, marginTop: 16 }}>
+                <RecurringTransactionsCard
+                  subscriptions={recurringData?.subscriptions || []}
+                  bills={recurringData?.bills || []}
+                  income={recurringData?.income || []}
+                  onViewAll={() => {
+                    // TODO: Navigate to recurring transactions detail screen
+                    console.log("View all recurring transactions");
+                  }}
+                  isLoading={recurringLoading}
+                />
+              </View>
 
               <Text style={[styles.sectionLabel, { marginTop: 32 }]}>
                 Smart Insights
@@ -1253,6 +1544,30 @@ const headerRefreshStyles = StyleSheet.create({
   },
   iconButtonDisabled: {
     opacity: 0.5,
+  },
+});
+
+// Refresh Status Indicator Styles
+const refreshStatusStyles = StyleSheet.create({
+  container: {
+    marginHorizontal: 20,
+    marginBottom: 16,
+    borderRadius: 8,
+    backgroundColor: "rgba(74, 144, 226, 0.05)",
+    borderWidth: 1,
+    borderColor: "rgba(74, 144, 226, 0.1)",
+  },
+  content: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 12,
+    gap: 10,
+  },
+  message: {
+    fontSize: 13,
+    color: "#4A90E2",
+    fontWeight: "500",
+    flex: 1,
   },
 });
 
