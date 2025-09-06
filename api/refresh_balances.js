@@ -63,7 +63,6 @@ export default async function handler(req, res) {
         account_id: account.account_id,
         current_balance: account.balances.current,
         available_balance: account.balances.available,
-        balance_as_of: new Date().toISOString(),
       }));
 
       // Update each account's balance
@@ -73,7 +72,6 @@ export default async function handler(req, res) {
           .update({
             current_balance: update.current_balance,
             available_balance: update.available_balance,
-            balance_as_of: update.balance_as_of,
           })
           .eq("account_id", update.account_id);
 
