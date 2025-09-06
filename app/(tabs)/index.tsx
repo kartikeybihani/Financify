@@ -36,6 +36,7 @@ import { supabase } from "../lib/supabase/supabase";
 import FinancialBottomSheet from "../components/shared/FinancialBottomSheet";
 import FinancialCard from "../components/shared/FinancialCard";
 import AccountItem from "../components/shared/AccountItem";
+import { LoadingSkeleton } from "../components/LoadingSkeleton";
 import { Goal } from "../types/finny";
 
 if (Platform.OS === "android") {
@@ -69,6 +70,8 @@ export default function HomeScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [showUpdateBanner, setShowUpdateBanner] = useState(false);
   const [updateToken, setUpdateToken] = useState<string | null>(null);
+  const [loadingError, setLoadingError] = useState(false);
+  const [hasTriedLoading, setHasTriedLoading] = useState(false);
 
   // Modal states
   const [activeModal, setActiveModal] = useState<"accounts" | null>(null);
@@ -175,6 +178,13 @@ export default function HomeScreen() {
     }
   };
 
+  // Retry loading function
+  const retryLoading = async () => {
+    setLoadingError(false);
+    setIsLoading(true);
+    await initializeApp();
+  };
+
   // Handle pull-to-refresh
   const onRefresh = async () => {
     if (!accessToken) return;
@@ -190,80 +200,85 @@ export default function HomeScreen() {
   };
 
   // Initial setup and data loading
-  useEffect(() => {
-    const initializeApp = async () => {
-      try {
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
-        console.log("User in home screen:", user?.email);
-        setUserData(user);
+  const initializeApp = async () => {
+    try {
+      setLoadingError(false);
+      setHasTriedLoading(true);
 
-        console.log(
-          "🚀 Loading financial data using new multi-bank approach..."
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      console.log("User in home screen:", user?.email);
+      setUserData(user);
+
+      console.log("🚀 Loading financial data using new multi-bank approach...");
+
+      // Clear old data first to avoid conflicts
+      await clearOldPlaidData();
+
+      // Use the new fetchInitialData function
+      const data = await fetchInitialData();
+
+      console.log("📊 Received data:", {
+        accounts: data.accounts?.length || 0,
+        institution: data.institution?.name || "None",
+        investments: data.investments?.holdings?.length || 0,
+        liabilities: data.liabilities?.length || 0,
+      });
+
+      if (data.accounts && data.accounts.length > 0) {
+        // We have connected banks - set all the data
+        setAccounts(data.accounts);
+        setIdentity(data.identity || []);
+        setInvestments(
+          data.investments && data.investments.holdings
+            ? data.investments
+            : null
         );
+        setLiabilities(data.liabilities || []);
+        setInstitution(data.institution);
+        setAccessToken("connected"); // Set a flag to show we have data
 
-        // Clear old data first to avoid conflicts
-        await clearOldPlaidData();
-
-        // Use the new fetchInitialData function
-        const data = await fetchInitialData();
-
-        console.log("📊 Received data:", {
-          accounts: data.accounts?.length || 0,
-          institution: data.institution?.name || "None",
-          investments: data.investments?.holdings?.length || 0,
-          liabilities: data.liabilities?.length || 0,
+        // Save data to storage for offline access
+        await saveDataToStorage({
+          accounts: data.accounts,
+          identity: data.identity,
+          investments: data.investments,
+          liabilities: data.liabilities,
+          institution: data.institution,
         });
 
-        if (data.accounts && data.accounts.length > 0) {
-          // We have connected banks - set all the data
-          setAccounts(data.accounts);
-          setIdentity(data.identity || []);
-          setInvestments(
-            data.investments && data.investments.holdings
-              ? data.investments
-              : null
-          );
-          setLiabilities(data.liabilities || []);
-          setInstitution(data.institution);
-          setAccessToken("connected"); // Set a flag to show we have data
-
-          // Save data to storage for offline access
-          await saveDataToStorage({
-            accounts: data.accounts,
-            identity: data.identity,
-            investments: data.investments,
-            liabilities: data.liabilities,
-            institution: data.institution,
-          });
-
-          console.log("✅ Successfully loaded financial data");
-        } else {
-          console.log("⚠️ No accounts found - user needs to connect a bank");
-          setAccessToken(null);
-
-          // Try to load from storage as fallback
-          const dataLoaded = await loadDataFromStorage();
-          if (dataLoaded) {
-            console.log("📦 Loaded fallback data from storage");
-          }
-        }
-      } catch (err) {
-        console.error("❌ Error initializing app:", err);
+        console.log("✅ Successfully loaded financial data");
+      } else {
+        console.log("⚠️ No accounts found - user needs to connect a bank");
         setAccessToken(null);
 
         // Try to load from storage as fallback
         const dataLoaded = await loadDataFromStorage();
         if (dataLoaded) {
-          console.log("📦 Loaded fallback data from storage after error");
+          console.log("📦 Loaded fallback data from storage");
+          setAccessToken("connected"); // Show data even if from storage
         }
-      } finally {
-        setIsInitialLoad(false);
-        setIsLoading(false);
       }
-    };
+    } catch (err) {
+      console.error("❌ Error initializing app:", err);
+      setLoadingError(true);
+      setAccessToken(null);
 
+      // Try to load from storage as fallback
+      const dataLoaded = await loadDataFromStorage();
+      if (dataLoaded) {
+        console.log("📦 Loaded fallback data from storage after error");
+        setAccessToken("connected"); // Show data even if from storage
+        setLoadingError(false); // Don't show error if we have cached data
+      }
+    } finally {
+      setIsInitialLoad(false);
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
     initializeApp();
 
     // Set up event listener for financial data updates
@@ -451,487 +466,458 @@ export default function HomeScreen() {
     </View>
   );
 
+  // Show loading skeleton during initial load or when loading
+  if (isInitialLoad || isLoading) {
+    return <LoadingSkeleton showError={false} />;
+  }
+
+  // Show error state if we have an error and no cached data
+  if (loadingError && !accessToken) {
+    return <LoadingSkeleton showError={true} onRetry={retryLoading} />;
+  }
+
+  // Show error state if we've tried loading but have no access token and no cached data
+  if (hasTriedLoading && !accessToken && accounts.length === 0) {
+    return <LoadingSkeleton showError={true} onRetry={retryLoading} />;
+  }
+
   return (
     <SafeAreaView style={styles.safeArea}>
       {renderHeader()}
 
-      {!accessToken ? (
-        <View style={styles.disconnectedContainer}>
-          <Text style={styles.disconnectedTitle}>Something went wrong</Text>
-          <Text style={styles.disconnectedDescription}>
-            We couldn't find your connected bank account. Please reconnect from
-            settings.
-          </Text>
-          <ActivityIndicator size="large" color="#4A90E2" />
-        </View>
-      ) : (
-        <>
-          {showUpdateBanner && (
-            <TouchableOpacity
-              style={styles.updateBanner}
-              onPress={handleUpdateBannerPress}
-            >
-              <Text style={styles.updateBannerText}>
-                ⚠️ Your bank connection needs updating. Tap here.
-              </Text>
-            </TouchableOpacity>
-          )}
-          {hasNewAccounts && updateToken && (
-            <TouchableOpacity
-              style={styles.updateBanner}
-              onPress={() => {
-                openPlaidLink(updateToken);
-                setHasNewAccounts(false);
+      <>
+        {showUpdateBanner && (
+          <TouchableOpacity
+            style={styles.updateBanner}
+            onPress={handleUpdateBannerPress}
+          >
+            <Text style={styles.updateBannerText}>
+              ⚠️ Your bank connection needs updating. Tap here.
+            </Text>
+          </TouchableOpacity>
+        )}
+        {hasNewAccounts && updateToken && (
+          <TouchableOpacity
+            style={styles.updateBanner}
+            onPress={() => {
+              openPlaidLink(updateToken);
+              setHasNewAccounts(false);
 
-                // Clear flag in Supabase after user interaction
-                supabase
-                  .from("user_tokens")
-                  .update({ has_new_accounts: false })
-                  .eq("id", userData?.id);
-              }}
-            >
-              <Text style={styles.updateBannerText}>
-                🆕 New accounts are available. Tap here to add them.
-              </Text>
-            </TouchableOpacity>
-          )}
+              // Clear flag in Supabase after user interaction
+              supabase
+                .from("user_tokens")
+                .update({ has_new_accounts: false })
+                .eq("id", userData?.id);
+            }}
+          >
+            <Text style={styles.updateBannerText}>
+              🆕 New accounts are available. Tap here to add them.
+            </Text>
+          </TouchableOpacity>
+        )}
 
-          {isInitialLoad ? (
-            <View style={styles.loadingOverlay}>
-              <ActivityIndicator size="large" color="#4A90E2" />
-            </View>
-          ) : isLoading ? (
-            <View style={styles.loadingOverlay}>
-              <ActivityIndicator size="large" color="#4A90E2" />
-            </View>
-          ) : (
-            <ScrollView
-              style={styles.container}
-              contentContainerStyle={{ paddingBottom: 100 }}
-              refreshControl={
-                <RefreshControl
-                  refreshing={refreshing}
-                  onRefresh={onRefresh}
-                  colors={["#4A90E2"]}
-                  tintColor="#4A90E2"
-                  progressBackgroundColor="#1f1f1f"
+        <ScrollView
+          style={styles.container}
+          contentContainerStyle={{ paddingBottom: 100 }}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              colors={["#4A90E2"]}
+              tintColor="#4A90E2"
+              progressBackgroundColor="#1f1f1f"
+            />
+          }
+        >
+          {/* Finny Message */}
+          <View style={styles.finnyMessageContainer}>
+            <View style={styles.finnyMessage}>
+              <View style={styles.finnyIconContainer}>
+                <Image
+                  source={require("../assets/mascot1.jpg")}
+                  style={{
+                    width: 45,
+                    height: 50,
+                    borderRadius: 20,
+                    // borderWidth: 0.2,
+                    // borderColor: "#4A90E2",
+                    resizeMode: "contain",
+                    transform: [{ scaleX: -1 }, { rotate: "0deg" }],
+                  }}
                 />
-              }
-            >
-              {/* Finny Message */}
-              <View style={styles.finnyMessageContainer}>
-                <View style={styles.finnyMessage}>
-                  <View style={styles.finnyIconContainer}>
-                    <Image
-                      source={require("../assets/mascot1.jpg")}
-                      style={{
-                        width: 45,
-                        height: 50,
-                        borderRadius: 20,
-                        // borderWidth: 0.2,
-                        // borderColor: "#4A90E2",
-                        resizeMode: "contain",
-                        transform: [{ scaleX: -1 }, { rotate: "0deg" }],
-                      }}
-                    />
-                  </View>
-                  <View style={styles.finnyMessageContent}>
-                    <Text style={styles.finnyMessageTitle}>Daily Progress</Text>
-                    <Text style={styles.finnyMessageText}>{randomMessage}</Text>
-                  </View>
-                </View>
               </View>
+              <View style={styles.finnyMessageContent}>
+                <Text style={styles.finnyMessageTitle}>Daily Progress</Text>
+                <Text style={styles.finnyMessageText}>{randomMessage}</Text>
+              </View>
+            </View>
+          </View>
 
-              {/* Net Worth Carousel */}
-              <View style={[styles.netWorthCard, { padding: 0 }]}>
-                <ScrollView
-                  horizontal
-                  pagingEnabled
-                  showsHorizontalScrollIndicator={false}
-                  onScroll={handleScroll}
-                  scrollEventThrottle={16}
-                  style={{ width: screenWidth - 40 }} // Adjust for container padding
-                >
-                  {/* Spending Slide */}
-                  <View
-                    style={[styles.carouselSlide, { width: screenWidth - 40 }]}
-                  >
-                    <Text style={styles.netWorthLabel}>SPENDING</Text>
-                    <View style={styles.spendingContainer}>
-                      <View style={styles.spendingColumn}>
-                        <Text style={styles.spendingLabel}>
-                          LAST 3 MONTHS AVG
-                        </Text>
-                        <Text style={styles.spendingAmount}>
-                          {formatCurrency(spendingData.threeMonths, "USD", {
-                            decimals: 0,
-                            useKM: true,
-                          })}
-                        </Text>
-                        <View style={styles.spendingTrend}>
-                          <Ionicons
-                            name="trending-down"
-                            size={16}
-                            color="#FF6B6B"
-                          />
-                          <Text
-                            style={[
-                              styles.netWorthTrendText,
-                              { color: "#FF6B6B" },
-                            ]}
-                          >
-                            +12.4% vs prev
-                          </Text>
-                        </View>
-                      </View>
-                      <View style={styles.spendingDivider} />
-                      <View style={styles.spendingColumn}>
-                        <Text style={styles.spendingLabel}>LAST MONTH</Text>
-                        <Text style={styles.spendingAmount}>
-                          {formatCurrency(spendingData.lastMonth, "USD", {
-                            decimals: 0,
-                            useKM: true,
-                          })}
-                        </Text>
-                        <View style={styles.spendingTrend}>
-                          <Ionicons
-                            name="trending-up"
-                            size={16}
-                            color="#4ECDC4"
-                          />
-                          <Text
-                            style={[
-                              styles.netWorthTrendText,
-                              { color: "#4ECDC4" },
-                            ]}
-                          >
-                            -8.2% vs prev
-                          </Text>
-                        </View>
-                      </View>
-                    </View>
-                  </View>
-
-                  {/* Net Worth Slide */}
-                  <View
-                    style={[
-                      styles.carouselSlide,
-                      { width: screenWidth - 40, paddingTop: 15 },
-                    ]}
-                  >
-                    <Text style={styles.netWorthLabel}>TOTAL NET WORTH</Text>
-                    <Text style={styles.netWorthText}>
-                      {formatCurrency(totalBalance, "USD", {
-                        decimals: 2,
-                        useKM: false,
+          {/* Net Worth Carousel */}
+          <View style={[styles.netWorthCard, { padding: 0 }]}>
+            <ScrollView
+              horizontal
+              pagingEnabled
+              showsHorizontalScrollIndicator={false}
+              onScroll={handleScroll}
+              scrollEventThrottle={16}
+              style={{ width: screenWidth - 40 }} // Adjust for container padding
+            >
+              {/* Spending Slide */}
+              <View style={[styles.carouselSlide, { width: screenWidth - 40 }]}>
+                <Text style={styles.netWorthLabel}>SPENDING</Text>
+                <View style={styles.spendingContainer}>
+                  <View style={styles.spendingColumn}>
+                    <Text style={styles.spendingLabel}>LAST 3 MONTHS AVG</Text>
+                    <Text style={styles.spendingAmount}>
+                      {formatCurrency(spendingData.threeMonths, "USD", {
+                        decimals: 0,
+                        useKM: true,
                       })}
                     </Text>
-                    <View style={styles.netWorthTrend}>
-                      <Ionicons name="trending-up" size={16} color="#4ECDC4" />
-                      <Text style={styles.netWorthTrendText}>
-                        +2.4% this month
+                    <View style={styles.spendingTrend}>
+                      <Ionicons
+                        name="trending-down"
+                        size={16}
+                        color="#FF6B6B"
+                      />
+                      <Text
+                        style={[styles.netWorthTrendText, { color: "#FF6B6B" }]}
+                      >
+                        +12.4% vs prev
                       </Text>
                     </View>
                   </View>
-                </ScrollView>
-
-                {/* Carousel Dots */}
-                <View style={styles.carouselDots}>
-                  {[0, 1].map((index) => (
-                    <View
-                      key={index}
-                      style={[
-                        styles.carouselDot,
-                        activeSlide === index && styles.carouselDotActive,
-                      ]}
-                    />
-                  ))}
+                  <View style={styles.spendingDivider} />
+                  <View style={styles.spendingColumn}>
+                    <Text style={styles.spendingLabel}>LAST MONTH</Text>
+                    <Text style={styles.spendingAmount}>
+                      {formatCurrency(spendingData.lastMonth, "USD", {
+                        decimals: 0,
+                        useKM: true,
+                      })}
+                    </Text>
+                    <View style={styles.spendingTrend}>
+                      <Ionicons name="trending-up" size={16} color="#4ECDC4" />
+                      <Text
+                        style={[styles.netWorthTrendText, { color: "#4ECDC4" }]}
+                      >
+                        -8.2% vs prev
+                      </Text>
+                    </View>
+                  </View>
                 </View>
               </View>
 
-              {/* Summary Cards */}
-              <View style={styles.summaryRow}>
-                <FinancialCard
-                  title="Accounts"
-                  amount={formatCurrency(accountsTotal, "USD", {
-                    decimals: 1,
-                    useKM: true,
+              {/* Net Worth Slide */}
+              <View
+                style={[
+                  styles.carouselSlide,
+                  { width: screenWidth - 40, paddingTop: 15 },
+                ]}
+              >
+                <Text style={styles.netWorthLabel}>TOTAL NET WORTH</Text>
+                <Text style={styles.netWorthText}>
+                  {formatCurrency(totalBalance, "USD", {
+                    decimals: 2,
+                    useKM: false,
                   })}
-                  icon="wallet-outline"
-                  onPress={() => setActiveModal("accounts")}
-                  iconColor="#4A90E2"
-                />
-                <FinancialCard
-                  title="Investments"
-                  amount={formatCurrency(investmentsTotal, "USD", {
-                    decimals: 1,
-                    useKM: true,
-                  })}
-                  icon="trending-up"
-                  onPress={() => setActiveModal("accounts")}
-                  iconColor="#4ECDC4"
-                />
-                <FinancialCard
-                  title="Liabilities"
-                  amount={formatCurrency(liabilitiesTotal, "USD", {
-                    decimals: 1,
-                    useKM: true,
-                  })}
-                  icon="card-outline"
-                  onPress={() => setActiveModal("accounts")}
-                  iconColor="#FF6B6B"
-                />
+                </Text>
+                <View style={styles.netWorthTrend}>
+                  <Ionicons name="trending-up" size={16} color="#4ECDC4" />
+                  <Text style={styles.netWorthTrendText}>+2.4% this month</Text>
+                </View>
               </View>
+            </ScrollView>
 
-              {/* Goals Progress */}
-              <View style={styles.goalsSection}>
-                {timelineData.length > 0 && (
-                  <View style={styles.goalsSectionHeader}>
-                    <View style={styles.goalsTitleContainer}>
-                      <Ionicons name="trophy" size={20} color="#4A90E2" />
-                      <Text style={styles.sectionTitle}>Your Focus 🎯</Text>
-                    </View>
+            {/* Carousel Dots */}
+            <View style={styles.carouselDots}>
+              {[0, 1].map((index) => (
+                <View
+                  key={index}
+                  style={[
+                    styles.carouselDot,
+                    activeSlide === index && styles.carouselDotActive,
+                  ]}
+                />
+              ))}
+            </View>
+          </View>
+
+          {/* Summary Cards */}
+          <View style={styles.summaryRow}>
+            <FinancialCard
+              title="Accounts"
+              amount={formatCurrency(accountsTotal, "USD", {
+                decimals: 1,
+                useKM: true,
+              })}
+              icon="wallet-outline"
+              onPress={() => setActiveModal("accounts")}
+              iconColor="#4A90E2"
+            />
+            <FinancialCard
+              title="Investments"
+              amount={formatCurrency(investmentsTotal, "USD", {
+                decimals: 1,
+                useKM: true,
+              })}
+              icon="trending-up"
+              onPress={() => setActiveModal("accounts")}
+              iconColor="#4ECDC4"
+            />
+            <FinancialCard
+              title="Liabilities"
+              amount={formatCurrency(liabilitiesTotal, "USD", {
+                decimals: 1,
+                useKM: true,
+              })}
+              icon="card-outline"
+              onPress={() => setActiveModal("accounts")}
+              iconColor="#FF6B6B"
+            />
+          </View>
+
+          {/* Goals Progress */}
+          <View style={styles.goalsSection}>
+            {timelineData.length > 0 && (
+              <View style={styles.goalsSectionHeader}>
+                <View style={styles.goalsTitleContainer}>
+                  <Ionicons name="trophy" size={20} color="#4A90E2" />
+                  <Text style={styles.sectionTitle}>Your Focus 🎯</Text>
+                </View>
+                <TouchableOpacity
+                  onPress={() => router.push("/timeline")}
+                  style={styles.viewAllButton}
+                >
+                  <Text style={styles.viewAllText}>View all goals</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+            {closestGoal ? (
+              <View style={styles.goalCard}>
+                <View style={styles.goalHeader}>
+                  <Text style={styles.goalTitle}>{closestGoal.label}</Text>
+                  <Text style={styles.goalAmount}>
+                    {new Intl.NumberFormat("en-US", {
+                      style: "currency",
+                      currency: "USD",
+                      minimumFractionDigits: 0,
+                      maximumFractionDigits: 0,
+                    }).format(
+                      (closestGoal.target || 0) *
+                        ((closestGoal.progress || 0) / 100)
+                    )}{" "}
+                    of{" "}
+                    {formatCurrency(closestGoal.target || 0, "USD", {
+                      decimals: 0,
+                      useKM: true,
+                    })}
+                  </Text>
+                </View>
+                <View style={styles.progressBarBackground}>
+                  <View
+                    style={[
+                      styles.progressBarFill,
+                      {
+                        width: `${closestGoal.progress || 0}%`,
+                      },
+                    ]}
+                  />
+                </View>
+                <View style={styles.goalPercentContainer}>
+                  <Ionicons name="trending-up" size={14} color="#4ECDC4" />
+                  <Text
+                    style={{
+                      fontWeight: "600",
+                      color: "#4ECDC4",
+                      fontSize: 12,
+                      marginLeft: 2,
+                    }}
+                  >
+                    +{Math.round(closestGoal.progress || 0)}% Progress
+                  </Text>
+                </View>
+              </View>
+            ) : (
+              <View style={styles.emptyGoalsContainer}>
+                <View style={styles.emptyGoalsContent}>
+                  <View style={styles.emptyGoalsImageContainer}>
+                    <Image
+                      source={require("../assets/mascot1.jpg")}
+                      style={[
+                        styles.emptyGoalsImage,
+                        {
+                          transform: [{ scaleX: -1 }, { rotate: "0deg" }],
+                        },
+                      ]}
+                      resizeMode="contain"
+                    />
+                  </View>
+                  <View style={styles.emptyGoalsTextContainer}>
+                    <Text style={styles.emptyGoalsTitle}>No Goals Yet</Text>
+                    <Text style={styles.emptyGoalsDescription}>
+                      Start your financial journey by setting your first goal.
+                    </Text>
                     <TouchableOpacity
-                      onPress={() => router.push("/timeline")}
-                      style={styles.viewAllButton}
+                      style={styles.addFirstGoalButton}
+                      onPress={() => {
+                        router.push({
+                          pathname: "/timeline",
+                          params: { openAddGoal: "true" },
+                        });
+                      }}
                     >
-                      <Text style={styles.viewAllText}>View all goals</Text>
+                      <Ionicons
+                        name="add-circle-outline"
+                        size={20}
+                        color="#fff"
+                      />
+                      <Text style={styles.addFirstGoalText}>
+                        Add Your First Goal
+                      </Text>
                     </TouchableOpacity>
                   </View>
-                )}
-                {closestGoal ? (
-                  <View style={styles.goalCard}>
-                    <View style={styles.goalHeader}>
-                      <Text style={styles.goalTitle}>{closestGoal.label}</Text>
-                      <Text style={styles.goalAmount}>
-                        {new Intl.NumberFormat("en-US", {
-                          style: "currency",
-                          currency: "USD",
-                          minimumFractionDigits: 0,
-                          maximumFractionDigits: 0,
-                        }).format(
-                          (closestGoal.target || 0) *
-                            ((closestGoal.progress || 0) / 100)
-                        )}{" "}
-                        of{" "}
-                        {formatCurrency(closestGoal.target || 0, "USD", {
-                          decimals: 0,
-                          useKM: true,
-                        })}
-                      </Text>
-                    </View>
-                    <View style={styles.progressBarBackground}>
-                      <View
-                        style={[
-                          styles.progressBarFill,
-                          {
-                            width: `${closestGoal.progress || 0}%`,
-                          },
-                        ]}
-                      />
-                    </View>
-                    <View style={styles.goalPercentContainer}>
-                      <Ionicons name="trending-up" size={14} color="#4ECDC4" />
-                      <Text
-                        style={{
-                          fontWeight: "600",
-                          color: "#4ECDC4",
-                          fontSize: 12,
-                          marginLeft: 2,
-                        }}
-                      >
-                        +{Math.round(closestGoal.progress || 0)}% Progress
-                      </Text>
-                    </View>
-                  </View>
-                ) : (
-                  <View style={styles.emptyGoalsContainer}>
-                    <View style={styles.emptyGoalsContent}>
-                      <View style={styles.emptyGoalsImageContainer}>
-                        <Image
-                          source={require("../assets/mascot1.jpg")}
-                          style={[
-                            styles.emptyGoalsImage,
-                            {
-                              transform: [{ scaleX: -1 }, { rotate: "0deg" }],
-                            },
-                          ]}
-                          resizeMode="contain"
-                        />
-                      </View>
-                      <View style={styles.emptyGoalsTextContainer}>
-                        <Text style={styles.emptyGoalsTitle}>No Goals Yet</Text>
-                        <Text style={styles.emptyGoalsDescription}>
-                          Start your financial journey by setting your first
-                          goal.
-                        </Text>
-                        <TouchableOpacity
-                          style={styles.addFirstGoalButton}
-                          onPress={() => {
-                            router.push({
-                              pathname: "/timeline",
-                              params: { openAddGoal: "true" },
-                            });
-                          }}
-                        >
-                          <Ionicons
-                            name="add-circle-outline"
-                            size={20}
-                            color="#fff"
-                          />
-                          <Text style={styles.addFirstGoalText}>
-                            Add Your First Goal
-                          </Text>
-                        </TouchableOpacity>
-                      </View>
-                    </View>
-                  </View>
-                )}
+                </View>
               </View>
+            )}
+          </View>
 
-              {/* Add Account Button */}
-              <TouchableOpacity
-                style={styles.addAccountButton}
-                onPress={async () => {
-                  console.log(
-                    "🏦 Add Another Account pressed from home screen"
-                  );
-                  try {
-                    await addNewBankAccount(
-                      async (itemId) => {
-                        console.log(
-                          "✅ Successfully added new bank account from home:",
-                          itemId
-                        );
-                        await fetchFreshData();
-                      },
-                      (error) => {
-                        console.error(
-                          "❌ Failed to add new bank account from home:",
-                          error
-                        );
-                      }
+          {/* Add Account Button */}
+          <TouchableOpacity
+            style={styles.addAccountButton}
+            onPress={async () => {
+              console.log("🏦 Add Another Account pressed from home screen");
+              try {
+                await addNewBankAccount(
+                  async (itemId) => {
+                    console.log(
+                      "✅ Successfully added new bank account from home:",
+                      itemId
                     );
-                  } catch (error) {
-                    console.error("❌ Error calling addNewBankAccount:", error);
+                    await fetchFreshData();
+                  },
+                  (error) => {
+                    console.error(
+                      "❌ Failed to add new bank account from home:",
+                      error
+                    );
                   }
-                }}
-              >
-                <Text style={styles.addAccountButtonText}>
-                  + Add Another Account
-                </Text>
-              </TouchableOpacity>
+                );
+              } catch (error) {
+                console.error("❌ Error calling addNewBankAccount:", error);
+              }
+            }}
+          >
+            <Text style={styles.addAccountButtonText}>
+              + Add Another Account
+            </Text>
+          </TouchableOpacity>
 
-              {/* Bottom Sheets */}
-              <FinancialBottomSheet
-                visible={activeModal === "accounts"}
-                onClose={() => setActiveModal(null)}
-                title="Your Financial Accounts"
-                icon="wallet-outline"
-                onAccountAdded={async () => {
-                  console.log(
-                    "🔄 New account added, refreshing financial data..."
-                  );
-                  await fetchFreshData();
-                  console.log("✅ Financial data refreshed after new account");
-                }}
-                categories={[
-                  {
-                    title: "CHECKINGS & SAVINGS",
-                    icon: "wallet-outline" as keyof typeof Ionicons.glyphMap,
-                    iconColor: "#4A90E2",
-                    items: categorizedDeposits.map((account, index) => (
-                      <AccountItem
-                        key={index}
-                        name={account.name}
-                        type={account.type}
-                        balance={formatCurrency(
-                          account.balances.current || 0,
-                          "USD",
-                          { decimals: 0, useKM: false }
-                        )}
-                        icon="wallet-outline"
-                        bankName={institution?.name}
-                      />
-                    )),
-                  },
-                  {
-                    title: "CREDIT CARDS",
-                    icon: "card-outline" as keyof typeof Ionicons.glyphMap,
-                    iconColor: "#FF6B6B",
-                    items: categorizedLiabilities
-                      .filter(
-                        (acc) =>
-                          acc.type === "credit" ||
-                          (acc as any).subtype === "credit card"
-                      )
-                      .map((account, index) => (
-                        <AccountItem
-                          key={index}
-                          name={account.name}
-                          type={account.type}
-                          balance={formatCurrency(
-                            account.balances.current || 0,
-                            "USD",
-                            { decimals: 0, useKM: false }
-                          )}
-                          icon="card-outline"
-                          bankName={institution?.name}
-                        />
-                      )),
-                  },
-                  {
-                    title: "LOANS",
-                    icon: "receipt-outline" as keyof typeof Ionicons.glyphMap,
-                    iconColor: "#FF9F43",
-                    items: categorizedLiabilities
-                      .filter(
-                        (acc) =>
-                          acc.type === "loan" ||
-                          (acc as any).subtype?.includes("loan")
-                      )
-                      .map((account, index) => (
-                        <AccountItem
-                          key={index}
-                          name={account.name}
-                          type={account.type}
-                          balance={formatCurrency(
-                            account.balances.current || 0,
-                            "USD",
-                            { decimals: 0, useKM: false }
-                          )}
-                          icon="receipt-outline"
-                          bankName={institution?.name}
-                        />
-                      )),
-                  },
-                  {
-                    title: "INVESTMENTS",
-                    icon: "trending-up" as keyof typeof Ionicons.glyphMap,
-                    iconColor: "#4ECDC4",
-                    items: (investments?.holdings || []).map(
-                      (holding, index) => (
-                        <AccountItem
-                          key={index}
-                          name={holding.security_id}
-                          type="Investment"
-                          balance={formatCurrency(
-                            holding.institution_value || 0,
-                            "USD",
-                            { decimals: 0, useKM: false }
-                          )}
-                          icon="trending-up"
-                          bankName={institution?.name}
-                        />
-                      )
-                    ),
-                  },
-                ]}
-              />
-            </ScrollView>
-          )}
-        </>
-      )}
+          {/* Bottom Sheets */}
+          <FinancialBottomSheet
+            visible={activeModal === "accounts"}
+            onClose={() => setActiveModal(null)}
+            title="Your Financial Accounts"
+            icon="wallet-outline"
+            onAccountAdded={async () => {
+              console.log("🔄 New account added, refreshing financial data...");
+              await fetchFreshData();
+              console.log("✅ Financial data refreshed after new account");
+            }}
+            categories={[
+              {
+                title: "CHECKINGS & SAVINGS",
+                icon: "wallet-outline" as keyof typeof Ionicons.glyphMap,
+                iconColor: "#4A90E2",
+                items: categorizedDeposits.map((account, index) => (
+                  <AccountItem
+                    key={index}
+                    name={account.name}
+                    type={account.type}
+                    balance={formatCurrency(
+                      account.balances.current || 0,
+                      "USD",
+                      { decimals: 0, useKM: false }
+                    )}
+                    icon="wallet-outline"
+                    bankName={institution?.name}
+                  />
+                )),
+              },
+              {
+                title: "CREDIT CARDS",
+                icon: "card-outline" as keyof typeof Ionicons.glyphMap,
+                iconColor: "#FF6B6B",
+                items: categorizedLiabilities
+                  .filter(
+                    (acc) =>
+                      acc.type === "credit" ||
+                      (acc as any).subtype === "credit card"
+                  )
+                  .map((account, index) => (
+                    <AccountItem
+                      key={index}
+                      name={account.name}
+                      type={account.type}
+                      balance={formatCurrency(
+                        account.balances.current || 0,
+                        "USD",
+                        { decimals: 0, useKM: false }
+                      )}
+                      icon="card-outline"
+                      bankName={institution?.name}
+                    />
+                  )),
+              },
+              {
+                title: "LOANS",
+                icon: "receipt-outline" as keyof typeof Ionicons.glyphMap,
+                iconColor: "#FF9F43",
+                items: categorizedLiabilities
+                  .filter(
+                    (acc) =>
+                      acc.type === "loan" ||
+                      (acc as any).subtype?.includes("loan")
+                  )
+                  .map((account, index) => (
+                    <AccountItem
+                      key={index}
+                      name={account.name}
+                      type={account.type}
+                      balance={formatCurrency(
+                        account.balances.current || 0,
+                        "USD",
+                        { decimals: 0, useKM: false }
+                      )}
+                      icon="receipt-outline"
+                      bankName={institution?.name}
+                    />
+                  )),
+              },
+              {
+                title: "INVESTMENTS",
+                icon: "trending-up" as keyof typeof Ionicons.glyphMap,
+                iconColor: "#4ECDC4",
+                items: (investments?.holdings || []).map((holding, index) => (
+                  <AccountItem
+                    key={index}
+                    name={holding.security_id}
+                    type="Investment"
+                    balance={formatCurrency(
+                      holding.institution_value || 0,
+                      "USD",
+                      { decimals: 0, useKM: false }
+                    )}
+                    icon="trending-up"
+                    bankName={institution?.name}
+                  />
+                )),
+              },
+            ]}
+          />
+        </ScrollView>
+      </>
     </SafeAreaView>
   );
 }

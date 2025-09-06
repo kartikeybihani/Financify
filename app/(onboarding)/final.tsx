@@ -78,9 +78,14 @@ const finalCards: CardItem[] = [
     color: "#20B2AA",
     text: "Smart investing starts with small, consistent steps.",
   },
+  {
+    icon: "people-outline",
+    color: "#FFB6C1",
+    text: "You're joining thousands already on this journey.",
+  },
 ];
 
-const CARD_HEIGHT = 90;
+const CARD_HEIGHT = 75;
 const CARDS_PER_SLIDE = 3;
 const SLIDE_WIDTH = width;
 const SPACING = 5;
@@ -100,8 +105,10 @@ export default function FinalScreen() {
   const [typedText, setTypedText] = useState("");
   const [activeSlide, setActiveSlide] = useState(0);
   const [isButtonEnabled, setIsButtonEnabled] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const index = useRef(0);
-  const message = "Hey, I'm Finny. Let's build your wealth story — together.";
+  const message =
+    "Hey, I'm Finny. Respect money and it'll respect you. Let's build your wealth story — together.";
   const cursorVisible = useRef(true);
   const viewabilityConfig = useRef({
     viewAreaCoveragePercentThreshold: 50,
@@ -111,6 +118,17 @@ export default function FinalScreen() {
   const boxHeight = useRef(new Animated.Value(80)).current;
   const cardOpacity = useRef(new Animated.Value(0)).current;
   const buttonScale = useRef(new Animated.Value(1)).current;
+  const buttonPulse = useRef(new Animated.Value(1)).current;
+  const rocketAnimation = useRef(new Animated.Value(0)).current;
+  const cardFloat = useRef(new Animated.Value(0)).current;
+  const progressAnimation = useRef(new Animated.Value(0)).current;
+  const mascotBounce = useRef(new Animated.Value(0)).current;
+  const loadingDotsAnim = useRef([
+    new Animated.Value(0.3),
+    new Animated.Value(0.3),
+    new Animated.Value(0.3),
+  ]).current;
+  const gradientShift = useRef(new Animated.Value(0)).current;
   const typingSpeed = 30; // Reduced from 50 to 30ms per character
 
   const onViewableItemsChanged = useRef(
@@ -119,7 +137,55 @@ export default function FinalScreen() {
         const newActiveSlide = viewableItems[0].index || 0;
         setActiveSlide(newActiveSlide);
         // Enable button only when user reaches the last slide
-        setIsButtonEnabled(newActiveSlide === carouselSlides.length - 1);
+        const shouldEnable = newActiveSlide === carouselSlides.length - 1;
+        setIsButtonEnabled(shouldEnable);
+
+        // Animate progress line
+        Animated.timing(progressAnimation, {
+          toValue: (newActiveSlide + 1) / carouselSlides.length,
+          duration: 500,
+          useNativeDriver: false,
+        }).start();
+
+        // Gradient shift for momentum feel
+        Animated.timing(gradientShift, {
+          toValue: newActiveSlide / carouselSlides.length,
+          duration: 500,
+          useNativeDriver: false,
+        }).start();
+
+        // Pulse button when enabled + micro celebration
+        if (shouldEnable) {
+          // Mascot bounce celebration
+          Animated.sequence([
+            Animated.timing(mascotBounce, {
+              toValue: -8,
+              duration: 150,
+              useNativeDriver: true,
+            }),
+            Animated.spring(mascotBounce, {
+              toValue: 0,
+              friction: 4,
+              useNativeDriver: true,
+            }),
+          ]).start();
+
+          // Button pulse effect
+          Animated.loop(
+            Animated.sequence([
+              Animated.timing(buttonPulse, {
+                toValue: 1.05,
+                duration: 1000,
+                useNativeDriver: true,
+              }),
+              Animated.timing(buttonPulse, {
+                toValue: 1,
+                duration: 1000,
+                useNativeDriver: true,
+              }),
+            ])
+          ).start();
+        }
       }
     }
   ).current;
@@ -165,6 +231,22 @@ export default function FinalScreen() {
             useNativeDriver: true,
           }),
         ]).start();
+
+        // Start subtle card floating animation
+        Animated.loop(
+          Animated.sequence([
+            Animated.timing(cardFloat, {
+              toValue: 1,
+              duration: 3000,
+              useNativeDriver: true,
+            }),
+            Animated.timing(cardFloat, {
+              toValue: 0,
+              duration: 3000,
+              useNativeDriver: true,
+            }),
+          ])
+        ).start();
       }
     };
 
@@ -177,6 +259,13 @@ export default function FinalScreen() {
 
   const handleComplete = async () => {
     if (!isButtonEnabled) return;
+
+    // Rocket lift-off animation
+    Animated.timing(rocketAnimation, {
+      toValue: -10,
+      duration: 200,
+      useNativeDriver: true,
+    }).start();
 
     Animated.sequence([
       Animated.timing(buttonScale, {
@@ -191,6 +280,32 @@ export default function FinalScreen() {
       }),
     ]).start();
 
+    // Show Day 1 loading screen
+    setIsLoading(true);
+
+    // Start loading dots animation
+    const animateLoadingDots = () => {
+      const animations = loadingDotsAnim.map((anim, index) =>
+        Animated.sequence([
+          Animated.delay(index * 200),
+          Animated.timing(anim, {
+            toValue: 1,
+            duration: 600,
+            useNativeDriver: true,
+          }),
+          Animated.timing(anim, {
+            toValue: 0.3,
+            duration: 600,
+            useNativeDriver: true,
+          }),
+        ])
+      );
+
+      Animated.loop(Animated.parallel(animations)).start();
+    };
+
+    animateLoadingDots();
+
     try {
       // Update Supabase user metadata
       const { error } = await supabase.auth.updateUser({
@@ -199,6 +314,7 @@ export default function FinalScreen() {
 
       if (error) {
         console.error("Error updating user metadata:", error);
+        setIsLoading(false);
         return;
       }
 
@@ -210,9 +326,13 @@ export default function FinalScreen() {
         "✅ Onboarding completed - stored in both Supabase and AsyncStorage"
       );
 
-      router.replace("/(tabs)");
+      // Wait for loading animation
+      setTimeout(() => {
+        router.replace("/(tabs)");
+      }, 2000);
     } catch (error) {
       console.error("Error completing onboarding:", error);
+      setIsLoading(false);
     }
   };
 
@@ -235,6 +355,12 @@ export default function FinalScreen() {
                   translateX: cardOpacity.interpolate({
                     inputRange: [0, 1],
                     outputRange: [cardIndex % 2 === 0 ? -50 : 50, 0],
+                  }),
+                },
+                {
+                  translateY: cardFloat.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0, -3 + cardIndex * 2], // Staggered float
                   }),
                 },
               ],
@@ -273,20 +399,62 @@ export default function FinalScreen() {
         locations={[0, 0.3, 0.4, 1]}
         style={styles.gradientContainer}
       >
+        {/* Animated overlay for gradient shift effect */}
+        <Animated.View
+          style={[
+            styles.gradientOverlay,
+            {
+              opacity: gradientShift.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0, 0.3],
+              }),
+            },
+          ]}
+        />
         <SafeAreaView style={styles.safeAreaTop} />
+
+        {/* Day 1 Loading Screen */}
+        {isLoading && (
+          <Animated.View style={styles.loadingOverlay}>
+            <View style={styles.loadingContent}>
+              <Animated.Image
+                source={require("../assets/mascot1.jpg")}
+                resizeMode="contain"
+                style={[styles.loadingMascot, { transform: [{ scaleX: -1 }] }]}
+              />
+              <Text style={styles.loadingText}>Setting things up for you…</Text>
+              <View style={styles.loadingDots}>
+                {loadingDotsAnim.map((anim, index) => (
+                  <Animated.View
+                    key={index}
+                    style={[styles.loadingDot, { opacity: anim }]}
+                  />
+                ))}
+              </View>
+            </View>
+          </Animated.View>
+        )}
+
         <SafeAreaView style={styles.mainContent}>
           <View style={styles.header}>
-            <Text style={styles.doneText}>That's it! You're In</Text>
-            <Text style={styles.subText}>
-              Your journey to financial freedom starts now
+            <Text style={styles.doneText}>
+              You've already done the hardest part — showing up! 🎉
             </Text>
+            {/* <Text style={styles.subText}>
+              Your journey begins today — one step at a time.
+            </Text> */}
           </View>
 
           <Animated.View style={[styles.finnyBox, { height: boxHeight }]}>
-            <Image
+            <Animated.Image
               source={require("../assets/mascot1.jpg")}
               resizeMode="contain"
-              style={[styles.mascot, { transform: [{ scaleX: -1 }] }]}
+              style={[
+                styles.mascot,
+                {
+                  transform: [{ scaleX: -1 }, { translateY: mascotBounce }],
+                },
+              ]}
             />
             <Text style={styles.finnyText}>{typedText}</Text>
           </Animated.View>
@@ -295,7 +463,7 @@ export default function FinalScreen() {
             style={[styles.cardsContainer, { opacity: cardOpacity }]}
           >
             <Text style={styles.sectionTitle}>
-              Here's what we'll achieve together:
+              Small wins add up faster than you think.
             </Text>
 
             <FlatList
@@ -312,22 +480,23 @@ export default function FinalScreen() {
               renderItem={renderSlide}
             />
 
-            <View style={styles.paginationDots}>
-              {carouselSlides.map((_, index) => (
-                <View
-                  key={index}
+            <View style={styles.progressContainer}>
+              <View style={styles.progressTrack}>
+                <Animated.View
                   style={[
-                    styles.dot,
+                    styles.progressLine,
                     {
-                      backgroundColor:
-                        index === activeSlide
-                          ? "#4A90E2"
-                          : "rgba(255,255,255,0.3)",
-                      width: index === activeSlide ? 16 : 6,
+                      width: progressAnimation.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: ["0%", "100%"],
+                      }),
                     },
                   ]}
                 />
-              ))}
+              </View>
+              <View style={styles.progressEndpoint}>
+                <Text style={styles.day1Text}>Day 1</Text>
+              </View>
             </View>
           </Animated.View>
 
@@ -335,7 +504,9 @@ export default function FinalScreen() {
             <Animated.View
               style={[
                 styles.buttonContainer,
-                { transform: [{ scale: buttonScale }] },
+                {
+                  transform: [{ scale: buttonScale }, { scale: buttonPulse }],
+                },
               ]}
             >
               <TouchableOpacity
@@ -361,17 +532,24 @@ export default function FinalScreen() {
                       !isButtonEnabled && styles.buttonTextDisabled,
                     ]}
                   >
-                    Let's Make It Happen!
+                    Start Your Day 1
                   </Text>
-                  <Ionicons
-                    name="rocket-outline"
-                    size={18}
-                    color={isButtonEnabled ? "#fff" : "rgba(255,255,255,0.5)"}
-                    style={styles.buttonIcon}
-                  />
+                  <Animated.View
+                    style={{ transform: [{ translateY: rocketAnimation }] }}
+                  >
+                    <Ionicons
+                      name="rocket-outline"
+                      size={18}
+                      color={isButtonEnabled ? "#fff" : "rgba(255,255,255,0.5)"}
+                      style={styles.buttonIcon}
+                    />
+                  </Animated.View>
                 </LinearGradient>
               </TouchableOpacity>
             </Animated.View>
+            {/* <Text style={styles.supportiveText}>
+              Others started Day 1 this week — now it's your turn.
+            </Text> */}
           </View>
         </SafeAreaView>
       </LinearGradient>
@@ -387,6 +565,15 @@ const styles = StyleSheet.create({
   gradientContainer: {
     flex: 1,
   },
+  gradientOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "rgba(32, 43, 72, 0.4)",
+    pointerEvents: "none",
+  },
   safeAreaTop: {
     flex: 0,
     backgroundColor: "transparent",
@@ -401,10 +588,11 @@ const styles = StyleSheet.create({
     paddingTop: Platform.OS === "ios" ? 60 : 40,
   },
   doneText: {
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: "800",
     color: "#fff",
     textAlign: "center",
+    paddingHorizontal: 20,
   },
   subText: {
     fontSize: 15,
@@ -455,18 +643,19 @@ const styles = StyleSheet.create({
   slide: {
     width: width,
     paddingHorizontal: 20,
+    paddingTop: 10,
   },
   card: {
     width: "100%",
     height: CARD_HEIGHT,
     backgroundColor: "rgba(255, 255, 255, 0.06)",
     borderRadius: 14,
-    marginBottom: 10,
-    padding: 14,
+    marginBottom: 12,
     flexDirection: "row",
     alignItems: "center",
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.12)",
+    paddingHorizontal: 14,
   },
   iconContainer: {
     width: 40,
@@ -485,18 +674,45 @@ const styles = StyleSheet.create({
     fontWeight: "500",
     lineHeight: 20,
   },
-  paginationDots: {
+  progressContainer: {
     flexDirection: "row",
     justifyContent: "center",
     alignItems: "center",
-    marginTop: 8, // Reduced from 16 to 8
-    marginBottom: 10,
-    height: 16,
+    marginTop: 16,
+    marginBottom: 16,
+    paddingHorizontal: 40,
   },
-  dot: {
-    height: 6,
-    borderRadius: 3,
-    marginHorizontal: 3,
+  progressTrack: {
+    flex: 1,
+    height: 4,
+    backgroundColor: "rgba(255,255,255,0.2)",
+    borderRadius: 2,
+    overflow: "hidden",
+  },
+  progressLine: {
+    height: "100%",
+    backgroundColor: "#4A90E2",
+    borderRadius: 2,
+    shadowColor: "#4A90E2",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.8,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  progressEndpoint: {
+    marginLeft: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    backgroundColor: "rgba(74, 144, 226, 0.2)",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "rgba(74, 144, 226, 0.4)",
+  },
+  day1Text: {
+    color: "#4A90E2",
+    fontSize: 11,
+    fontWeight: "600",
+    textAlign: "center",
   },
   footer: {
     paddingHorizontal: 20,
@@ -532,5 +748,53 @@ const styles = StyleSheet.create({
   },
   buttonTextDisabled: {
     color: "rgba(255,255,255,0.5)",
+  },
+  supportiveText: {
+    color: "rgba(255,255,255,0.6)",
+    fontSize: 13,
+    fontWeight: "500",
+    textAlign: "center",
+    marginTop: 12,
+    fontStyle: "italic",
+  },
+  loadingOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "rgba(10, 14, 20, 0.95)",
+    zIndex: 1000,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  loadingContent: {
+    alignItems: "center",
+    padding: 40,
+  },
+  loadingMascot: {
+    width: 120,
+    height: 120,
+    borderRadius: 30,
+    marginBottom: 20,
+  },
+  loadingText: {
+    color: "#fff",
+    fontSize: 18,
+    fontWeight: "600",
+    textAlign: "center",
+    marginBottom: 30,
+  },
+  loadingDots: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  loadingDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#4A90E2",
+    marginHorizontal: 4,
+    opacity: 0.3,
   },
 });

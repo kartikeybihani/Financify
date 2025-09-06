@@ -30,6 +30,7 @@ import {
   fetchInitialData,
   getPrimaryItemId,
   syncAllUserTransactions,
+  refreshPlaidData,
   getUpdateLinkToken,
   openPlaidLink,
   getRecentTransactions,
@@ -816,6 +817,34 @@ export default function InsightsScreen() {
     }
   };
 
+  // Handle refresh latest data from Plaid
+  const handleRefreshLatestData = async () => {
+    if (isSyncing) return;
+
+    setIsSyncing(true);
+    try {
+      console.log("🔄 Requesting latest data from Plaid...");
+
+      // Call Plaid's transactions/refresh endpoint
+      const result = await refreshPlaidData();
+
+      console.log("✅ Refresh request completed:", result.message);
+
+      // Clear cache since new data will come via webhook
+      clearCache();
+
+      // Note: The actual new data will arrive via webhook, so we don't need to
+      // immediately reload here. The webhook will trigger the financialDataRefreshed event.
+    } catch (error) {
+      console.error("❌ Refresh latest data failed:", error);
+      // Still try to reload current data on error
+      await fetchFreshData();
+      await loadFilteredTransactions(filterOptions, true);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
   // Handle update mode flow
   const handleUpdateMode = async () => {
     if (!updateModalInfo) return;
@@ -862,6 +891,54 @@ export default function InsightsScreen() {
             <Text style={styles.headerSubtitle}>Your Financial Analytics</Text>
           </View>
         </View>
+
+        {/* Header Refresh Icons */}
+        <View style={headerRefreshStyles.container}>
+          <TouchableOpacity
+            style={[
+              headerRefreshStyles.iconButton,
+              isSyncing && headerRefreshStyles.iconButtonDisabled,
+            ]}
+            onPress={handleRefreshLatestData}
+            disabled={isSyncing}
+          >
+            <Ionicons
+              name={isSyncing ? "hourglass-outline" : "cloud-download-outline"}
+              size={18}
+              color="#4A90E2"
+            />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              headerRefreshStyles.iconButton,
+              isSyncing && headerRefreshStyles.iconButtonDisabled,
+            ]}
+            onPress={handleFullResync}
+            disabled={isSyncing}
+          >
+            <Ionicons
+              name={isSyncing ? "hourglass-outline" : "sync-outline"}
+              size={18}
+              color="#4A90E2"
+            />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              headerRefreshStyles.iconButton,
+              isSyncing && headerRefreshStyles.iconButtonDisabled,
+            ]}
+            onPress={handleManualRefresh}
+            disabled={isSyncing}
+          >
+            <Ionicons
+              name={isSyncing ? "hourglass-outline" : "refresh-outline"}
+              size={18}
+              color="#4A90E2"
+            />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {isInitialLoad ? (
@@ -891,86 +968,6 @@ export default function InsightsScreen() {
 
           {(!isLoading || hasData.current) && (
             <>
-              {/* Compact Refresh Section */}
-              <View style={refreshContainerStyles.container}>
-                <View style={refreshContainerStyles.glassmorphismCard}>
-                  {/* Glassmorphism background */}
-                  <LinearGradient
-                    colors={
-                      [
-                        "rgba(255, 255, 255, 0.05)",
-                        "rgba(255, 255, 255, 0.02)",
-                        "rgba(74, 144, 226, 0.03)",
-                      ] as const
-                    }
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    style={refreshContainerStyles.gradientBackground}
-                  />
-
-                  {/* Buttons Only */}
-                  <View style={refreshContainerStyles.cardContent}>
-                    <View style={refreshContainerStyles.buttonRow}>
-                      <TouchableOpacity
-                        style={[
-                          refreshContainerStyles.button,
-                          isSyncing && refreshContainerStyles.buttonDisabled,
-                        ]}
-                        onPress={handleManualRefresh}
-                        disabled={isSyncing}
-                      >
-                        <LinearGradient
-                          colors={["#4A90E2", "#357AFF"] as const}
-                          start={{ x: 0, y: 0 }}
-                          end={{ x: 1, y: 1 }}
-                          style={refreshContainerStyles.primaryButtonGradient}
-                        >
-                          <Ionicons
-                            name={
-                              isSyncing
-                                ? "hourglass-outline"
-                                : "refresh-outline"
-                            }
-                            size={16}
-                            color="#fff"
-                          />
-                          <Text style={refreshContainerStyles.primaryText}>
-                            {isSyncing ? "Syncing..." : "Refresh"}
-                          </Text>
-                        </LinearGradient>
-                      </TouchableOpacity>
-
-                      <TouchableOpacity
-                        style={[
-                          refreshContainerStyles.button,
-                          isSyncing && refreshContainerStyles.buttonDisabled,
-                        ]}
-                        onPress={handleFullResync}
-                        disabled={isSyncing}
-                      >
-                        <View
-                          style={refreshContainerStyles.secondaryButtonContent}
-                        >
-                          <Ionicons
-                            name={
-                              isSyncing ? "hourglass-outline" : "sync-outline"
-                            }
-                            size={16}
-                            color="#4A90E2"
-                          />
-                          <Text style={refreshContainerStyles.secondaryText}>
-                            {isSyncing ? "Syncing..." : "Fix Categories"}
-                          </Text>
-                        </View>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-
-                  {/* Subtle shine effect */}
-                  <View style={refreshContainerStyles.shineEffect} />
-                </View>
-              </View>
-
               <Text style={styles.sectionLabel}>Spending Overview</Text>
               <CategoryGrid
                 categoryBreakdown={categoryBreakdown}
@@ -1237,96 +1234,25 @@ export default function InsightsScreen() {
   );
 }
 
-// Compact Glassmorphism Refresh Container Styles
-const refreshContainerStyles = StyleSheet.create({
+// Header Refresh Icons Styles
+const headerRefreshStyles = StyleSheet.create({
   container: {
-    marginBottom: 16,
-    paddingHorizontal: 20,
-  },
-  glassmorphismCard: {
-    position: "relative",
-    borderRadius: 14,
-    overflow: "hidden",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 8,
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.08)",
-  },
-  gradientBackground: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    borderRadius: 14,
-  },
-  shineEffect: {
-    position: "absolute",
-    top: -10,
-    left: -10,
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: "rgba(255, 255, 255, 0.08)",
-    transform: [{ rotate: "45deg" }],
-  },
-  cardContent: {
-    position: "relative",
-    zIndex: 2,
-    padding: 14,
-  },
-  buttonRow: {
-    flexDirection: "row",
-    gap: 10,
-  },
-  button: {
-    flex: 1,
-    borderRadius: 10,
-    overflow: "hidden",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.15,
-    shadowRadius: 6,
-    elevation: 3,
-  },
-  primaryButtonGradient: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    gap: 5,
+    gap: 8,
   },
-  secondaryButtonContent: {
-    flexDirection: "row",
+  iconButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "rgba(74, 144, 226, 0.1)",
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    gap: 5,
-    backgroundColor: "rgba(74, 144, 226, 0.08)",
     borderWidth: 1,
     borderColor: "rgba(74, 144, 226, 0.2)",
-    borderRadius: 10,
   },
-  buttonDisabled: {
-    opacity: 0.6,
-    transform: [{ scale: 0.98 }],
-  },
-  primaryText: {
-    color: "#fff",
-    fontSize: 12,
-    fontWeight: "600",
-    letterSpacing: 0.3,
-  },
-  secondaryText: {
-    color: "#4A90E2",
-    fontSize: 12,
-    fontWeight: "600",
-    letterSpacing: 0.3,
+  iconButtonDisabled: {
+    opacity: 0.5,
   },
 });
 

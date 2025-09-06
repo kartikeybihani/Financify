@@ -799,6 +799,193 @@ export const syncAllUserTransactions = async () => {
   }
 };
 
+// === Refresh Latest Data (Plaid transactions/refresh) ===
+export const refreshPlaidData = async () => {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user?.id) throw new Error("User not authenticated");
+    
+    // Get all user items
+    const userItems = await getUserItems();
+    
+    if (userItems.length === 0) {
+      console.log("No connected accounts to refresh");
+      return { refreshed: 0, message: "No connected accounts found" };
+    }
+    
+    console.log(`🔄 Requesting fresh data for ${userItems.length} connected accounts...`);
+    
+    // Request refresh for each account
+    const refreshPromises = userItems.map(async (item) => {
+      try {
+        const res = await fetch(`${BASE_URL}/api/refresh_transactions`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ 
+            item_id: item.item_id,
+            user_id: user.id 
+          }),
+        });
+        
+        const data = await res.json();
+        
+        if (!res.ok) {
+          throw new Error(data.error || `Refresh failed for ${item.institution_name}`);
+        }
+        
+        console.log(`✅ Refresh requested for ${item.institution_name}:`, data.request_id);
+        return { 
+          item_id: item.item_id, 
+          institution_name: item.institution_name,
+          success: true, 
+          request_id: data.request_id 
+        };
+      } catch (error) {
+        console.error(`Failed to refresh item ${item.item_id}:`, error);
+        return { 
+          item_id: item.item_id, 
+          institution_name: item.institution_name,
+          success: false, 
+          error: error instanceof Error ? error.message : String(error)
+        };
+      }
+    });
+    
+    const results = await Promise.all(refreshPromises);
+    const successful = results.filter(result => result.success).length;
+    
+    console.log(`✅ Refresh requests completed: ${successful}/${userItems.length} accounts`);
+    
+    return { 
+      refreshed: successful,
+      total: userItems.length,
+      results,
+      message: successful > 0 
+        ? `Refresh initiated for ${successful} account${successful > 1 ? 's' : ''}. New data will arrive via webhook soon.`
+        : "Failed to initiate refresh for any accounts"
+    };
+  } catch (err) {
+    console.error("Error in data refresh:", err);
+    throw err;
+  }
+};
+
+// === Get Recurring Transactions (Subscriptions, Bills, etc.) ===
+export const getRecurringTransactions = async (item_id?: string) => {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user?.id) throw new Error("User not authenticated");
+    
+    // If no specific item_id, get primary item
+    const targetItemId = item_id || await getPrimaryItemId();
+    
+    if (!targetItemId) {
+      console.log("No connected accounts found for recurring analysis");
+      return { 
+        subscriptions: [], 
+        income: [], 
+        bills: [], 
+        other: [],
+        summary: { subscriptions: 0, income: 0, bills: 0, other: 0, total: 0 }
+      };
+    }
+    
+    console.log(`🔄 Fetching recurring transactions for item: ${targetItemId}`);
+    
+    const res = await fetch(`${BASE_URL}/api/recurring_transactions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ 
+        item_id: targetItemId,
+        user_id: user.id 
+      }),
+    });
+    
+    const data = await res.json();
+    
+    if (!res.ok) {
+      throw new Error(data.error || "Failed to fetch recurring transactions");
+    }
+    
+    console.log(`✅ Found recurring transactions:`, data.summary);
+    return data.data; // Return the processed streams
+  } catch (err) {
+    console.error("Error fetching recurring transactions:", err);
+    throw err;
+  }
+};
+
+// === Get All Recurring Transactions (All Connected Accounts) ===
+export const getAllRecurringTransactions = async () => {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user?.id) throw new Error("User not authenticated");
+    
+    // Get all user items
+    const userItems = await getUserItems();
+    
+    if (userItems.length === 0) {
+      console.log("No connected accounts for recurring analysis");
+      return { 
+        subscriptions: [], 
+        income: [], 
+        bills: [], 
+        other: [],
+        summary: { subscriptions: 0, income: 0, bills: 0, other: 0, total: 0 }
+      };
+    }
+    
+    console.log(`🔄 Fetching recurring transactions for ${userItems.length} connected accounts...`);
+    
+    // Fetch recurring data for each account
+    const recurringPromises = userItems.map(async (item) => {
+      try {
+        const data = await getRecurringTransactions(item.item_id);
+        return { success: true, data, institution: item.institution_name };
+      } catch (error) {
+        console.error(`Failed to get recurring data for ${item.institution_name}:`, error);
+        return { success: false, error: error instanceof Error ? error.message : String(error), institution: item.institution_name };
+      }
+    });
+    
+    const results = await Promise.all(recurringPromises);
+    const successful = results.filter(result => result.success);
+    
+    // Combine all recurring streams
+    const combined = {
+      subscriptions: [] as any[],
+      income: [] as any[],
+      bills: [] as any[],
+      other: [] as any[]
+    };
+    
+    successful.forEach(result => {
+      if (result.data) {
+        combined.subscriptions.push(...result.data.subscriptions);
+        combined.income.push(...result.data.income);
+        combined.bills.push(...result.data.bills);
+        combined.other.push(...result.data.other);
+      }
+    });
+    
+    const summary = {
+      subscriptions: combined.subscriptions.length,
+      income: combined.income.length,
+      bills: combined.bills.length,
+      other: combined.other.length,
+      total: combined.subscriptions.length + combined.income.length + 
+             combined.bills.length + combined.other.length
+    };
+    
+    console.log(`✅ Combined recurring transactions from ${successful.length} accounts:`, summary);
+    
+    return { ...combined, summary };
+  } catch (err) {
+    console.error("Error fetching all recurring transactions:", err);
+    throw err;
+  }
+};
+
 // === Enhanced Filtering Functions for Insights ===
 // Helper function to get date range from time period
 export const getDateRangeFromTimePeriod = (timePeriod: string) => {
@@ -983,6 +1170,9 @@ const plaidUtils = {
   storeAccounts,                           // store accounts after connection
   syncTransactions,                        // sync via Supabase function
   syncAllUserTransactions,                 // manual sync for UI
+  refreshPlaidData,                        // refresh latest data (Plaid transactions/refresh)
+  getRecurringTransactions,                // get recurring transactions for one account
+  getAllRecurringTransactions,             // get recurring transactions for all accounts
   getInvestments: fetchInvestments,        // now takes item_id
   getLiabilities: fetchLiabilities,        // now takes item_id
   disconnectPlaid: handleDisconnect,       // disconnect single item
