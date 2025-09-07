@@ -27,6 +27,7 @@ import EnhancedFilterModal, {
 import TransactionDetailModal from "../components/TransactionDetailModal";
 import ReAuthBanner from "../components/ReAuthBanner";
 import RecurringTransactionsCard from "../components/RecurringTransactionsCard";
+import InsightsLoadingSkeleton from "../components/InsightsLoadingSkeleton";
 import { supabase } from "../lib/supabase/supabase";
 import {
   fetchInitialData,
@@ -192,7 +193,8 @@ export default function InsightsScreen() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [filterOptions, setFilterOptions] = useState<FilterOptions>({
     accountIds: [],
-    timePeriod: "30days",
+    categoryIds: [],
+    timePeriod: "7days",
   });
   const [filteredTransactions, setFilteredTransactions] = useState<
     Transaction[]
@@ -682,7 +684,7 @@ export default function InsightsScreen() {
       october2024: "Oct 2024",
     };
 
-    const timePeriodName = timePeriodMap[filterOptions.timePeriod] || "30 days";
+    const timePeriodName = timePeriodMap[filterOptions.timePeriod] || "7 days";
 
     return `${accountName} • ${timePeriodName}`;
   };
@@ -1310,9 +1312,7 @@ export default function InsightsScreen() {
       </View>
 
       {isInitialLoad ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#4A90E2" />
-        </View>
+        <InsightsLoadingSkeleton />
       ) : (
         <ScrollView
           contentContainerStyle={styles.container}
@@ -1387,7 +1387,7 @@ export default function InsightsScreen() {
               <Text style={[styles.sectionLabel, { marginTop: 32 }]}>
                 Smart Insights
               </Text>
-              <ScrollView
+              {/* <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
                 contentContainerStyle={styles.insightsScrollContainer}
@@ -1420,7 +1420,7 @@ export default function InsightsScreen() {
                     )}
                   </TouchableOpacity>
                 ))}
-              </ScrollView>
+              </ScrollView> */}
 
               <View style={styles.sectionHeader}>
                 <Text style={styles.sectionLabel}>Transactions</Text>

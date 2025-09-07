@@ -80,7 +80,7 @@ export const getSelectedCategoriesDescription = (categoryIds: string[], categori
 // Get selected time period description
 export const getSelectedTimePeriodDescription = (timePeriod: string): string => {
   const selectedPeriod = ALL_TIME_PERIODS.find((p) => p.id === timePeriod);
-  return selectedPeriod ? selectedPeriod.label : "Last 30 days";
+  return selectedPeriod ? selectedPeriod.label : "Last 7 days";
 };
 
 // Toggle account selection
@@ -122,6 +122,6 @@ export const toggleCategorySelection = (categoryId: string, currentFilters: Filt
 // Reset filters to default
 export const getResetFilters = (): FilterOptions => ({
   accountIds: [],
-  timePeriod: "30days",
+  timePeriod: "7days",
   categoryIds: [],
 });
