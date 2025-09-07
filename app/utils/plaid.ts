@@ -290,18 +290,6 @@ export const fetchAccounts = async (item_id: string) => {
   return data.accounts;
 };
 
-// === Trigger Webhook ===
-export const triggerWebhook = async (item_id: string) => {
-  const res = await fetch(`${BASE_URL}/api/fire_webhook`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ item_id }),
-  });
-  console.log("Webhook triggered");
-  if (!res.ok) throw new Error("Webhook trigger failed");
-  return res.json();
-};
-
 // === Fetch Identity ===
 export const fetchIdentity = async (item_id: string) => {
   try {

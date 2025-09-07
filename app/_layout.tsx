@@ -40,7 +40,7 @@ function RootLayoutNav() {
         "user_authenticated"
       );
 
-      // If we have cached completion status, trust it (helps with hot reloads)
+      // If we have cached completion status, trust it (helps with hot reloads and app reloads)
       if (
         cachedOnboardingComplete === "true" &&
         cachedUserAuthenticated === "true"
@@ -57,39 +57,39 @@ function RootLayoutNav() {
       const hasIntent = !!meta.intent || !!meta.intents; // Support both old and new format
       const hasBank = !!meta.hasConnectedBank;
 
-      // If onboarding is done in Supabase, update cache
+      // If onboarding is done in Supabase, update cache and go to tabs
       if (onboardingDone) {
         await AsyncStorage.setItem("onboarding_complete", "true");
         await AsyncStorage.setItem("user_authenticated", "true");
-      }
-
-      if (!onboardingDone) {
-        // Clear cache if onboarding is not done
-        await AsyncStorage.removeItem("onboarding_complete");
-        await AsyncStorage.removeItem("user_authenticated");
-
-        // Only auto-navigate if user is not already in onboarding screens
-        // This prevents navigation loops when user manually navigates between screens
-        if (inOnboarding) {
-          return; // Let user navigate freely within onboarding
-        }
-
-        // Auto-navigation logic only for users coming from outside onboarding
-        if (!hasBank && !hasIntent) {
-          // No intent and no bank → start at intent screen
-          router.replace("/(onboarding)/intent");
-        } else if (!hasBank) {
-          // Has intent but no bank → go to account connection
-          router.replace("/(onboarding)/accountconnection");
-        } else {
-          // Has bank → go to final screen
-          router.replace("/(onboarding)/final");
+        console.log(
+          "✅ Onboarding complete in Supabase, updating cache and going to tabs"
+        );
+        if (!inTabs) {
+          router.replace("/(tabs)/insights");
         }
         return;
       }
 
-      if (inAuth || inOnboarding) {
-        router.replace("/(tabs)");
+      // Clear cache if onboarding is not done
+      await AsyncStorage.removeItem("onboarding_complete");
+      await AsyncStorage.removeItem("user_authenticated");
+
+      // Only auto-navigate if user is not already in onboarding screens
+      // This prevents navigation loops when user manually navigates between screens
+      if (inOnboarding) {
+        return; // Let user navigate freely within onboarding
+      }
+
+      // Auto-navigation logic only for users coming from outside onboarding
+      if (!hasBank && !hasIntent) {
+        // No intent and no bank → start at intent screen
+        router.replace("/(onboarding)/intent");
+      } else if (!hasBank) {
+        // Has intent but no bank → go to account connection
+        router.replace("/(onboarding)/accountconnection");
+      } else {
+        // Has bank → go to final screen
+        router.replace("/(onboarding)/final");
       }
     };
 

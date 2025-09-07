@@ -85,6 +85,7 @@ export default function TabLayout() {
 
   return (
     <Tabs
+      initialRouteName="insights"
       screenOptions={{
         headerShown: false,
         tabBarShowLabel: true, // Set globally

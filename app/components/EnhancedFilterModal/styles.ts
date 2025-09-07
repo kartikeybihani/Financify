@@ -1,0 +1,913 @@
+import { StyleSheet, Platform } from "react-native";
+
+export const styles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    justifyContent: "flex-end",
+  },
+  gradientOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  container: {
+    backgroundColor: "#121212",
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    height: "88%",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -8 },
+    shadowOpacity: 0.4,
+    shadowRadius: 24,
+    elevation: 25,
+    overflow: "hidden",
+  },
+  handleContainer: {
+    alignItems: "center",
+    paddingVertical: 12,
+  },
+  handle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: "rgba(255,255,255,0.3)",
+  },
+  headerGradient: {
+    paddingTop: Platform.OS === "ios" ? 8 : 24,
+    paddingBottom: 8,
+  },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 24,
+    paddingBottom: 16,
+  },
+  headerLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+  },
+  headerIconContainer: {
+    marginRight: 12,
+  },
+  headerIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: "center",
+    alignItems: "center",
+    shadowColor: "#4A90E2",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  title: {
+    fontSize: 19,
+    fontWeight: "700",
+    color: "#fff",
+    letterSpacing: 0.3,
+    marginBottom: 2,
+  },
+  subtitle: {
+    fontSize: 14,
+    color: "rgba(255,255,255,0.6)",
+    letterSpacing: 0.2,
+  },
+  closeButton: {
+    padding: 4,
+  },
+  closeButtonContainer: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  content: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingBottom: 24,
+  },
+  section: {
+    marginBottom: 27,
+  },
+  sectionHeader: {
+    paddingHorizontal: 24,
+    marginBottom: 6,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#fff",
+    marginBottom: 4,
+    letterSpacing: 0.2,
+  },
+  sectionSubtitle: {
+    fontSize: 13,
+    color: "rgba(255,255,255,0.5)",
+    letterSpacing: 0.1,
+  },
+
+  // Filter Status Section
+  filterStatusSection: {
+    paddingHorizontal: 24,
+    marginBottom: 20,
+    marginTop: 20,
+  },
+  filterStatusBar: {
+    backgroundColor: "rgba(255,255,255,0.03)",
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.06)",
+  },
+  filterStatusText: {
+    fontSize: 12,
+    color: "rgba(255,255,255,0.6)",
+    textAlign: "center",
+    letterSpacing: 0.2,
+  },
+
+  // Selector Base Styles
+  selectorContainer: {
+    paddingHorizontal: 24,
+  },
+  horizontalSectionsContainer: {
+    flexDirection: "row",
+    gap: 12,
+    marginBottom: 27,
+    paddingHorizontal: 16,
+  },
+  halfSection: {
+    flex: 1,
+  },
+  halfSelectorContainer: {
+    paddingHorizontal: 8,
+  },
+  halfSectionHeader: {
+    paddingHorizontal: 8,
+    marginBottom: 6,
+  },
+  selector: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "rgba(255,255,255,0.05)",
+    borderRadius: 12,
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.1)",
+  },
+  selectedContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+  },
+  selectorEmoji: {
+    fontSize: 20,
+    marginRight: 12,
+  },
+  textContainer: {
+    flex: 1,
+  },
+  selectedLabel: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#fff",
+    marginBottom: 2,
+  },
+  selectedDescription: {
+    fontSize: 12,
+    color: "rgba(255,255,255,0.6)",
+  },
+  selectorArrow: {
+    marginLeft: 12,
+  },
+
+  // Vertical Selector Styles (for Time Period and Category)
+  verticalSelector: {
+    backgroundColor: "rgba(255,255,255,0.05)",
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.1)",
+    alignItems: "center",
+    justifyContent: "center",
+    height: 100,
+    paddingBottom: 8
+  },
+  verticalSelectedContent: {
+    alignItems: "center",
+    justifyContent: "center",
+    flex: 1,
+  },
+  verticalSelectorEmoji: {
+    fontSize: 24,
+    marginBottom: 8,
+    textAlign: "center",
+  },
+  verticalTextContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  verticalSelectedLabel: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#fff",
+    marginBottom: 2,
+    textAlign: "center",
+  },
+  verticalSelectedDescription: {
+    fontSize: 11,
+    color: "rgba(255,255,255,0.6)",
+    textAlign: "center",
+    lineHeight: 14,
+  },
+
+  // Modal Overlays
+  modalOverlay: {
+    flex: 1,
+    justifyContent: "flex-end",
+  },
+  modalGradientOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+
+  // Modal Container Base
+  modalContainer: {
+    backgroundColor: "#121212",
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -8 },
+    shadowOpacity: 0.4,
+    shadowRadius: 24,
+    elevation: 25,
+    overflow: "hidden",
+  },
+  adaptiveModalContainer: {
+    maxHeight: "75%",
+    minHeight: "35%",
+  },
+  modalHeaderGradient: {
+    paddingTop: Platform.OS === "ios" ? 8 : 24,
+    paddingBottom: 8,
+  },
+  modalHandleContainer: {
+    alignItems: "center",
+    paddingVertical: 12,
+  },
+  modalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 24,
+    paddingBottom: 16,
+  },
+  modalContent: {
+    flex: 1,
+  },
+  modalScrollContent: {
+    paddingHorizontal: 8,
+    paddingBottom: 24,
+    minHeight: "100%",
+  },
+
+  // All Items Card (Accounts & Categories)
+  allItemsCard: {
+    width: "45%",
+    marginBottom: 20,
+    borderRadius: 12,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.1)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  allItemsCardSelected: {
+    borderColor: "rgba(74,144,226,0.5)",
+  },
+  allItemsCardGradient: {
+    padding: 12,
+    minHeight: 80,
+    flexDirection: "column",
+    justifyContent: "center",
+    alignItems: "center",
+    position: "relative",
+  },
+  allItemsIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.1)",
+    marginBottom: 8,
+  },
+  allItemsTextContainer: {
+    alignItems: "center",
+    flex: 1,
+    justifyContent: "center",
+  },
+  allItemsLabel: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#888",
+    textAlign: "center",
+    marginBottom: 2,
+  },
+  allItemsLabelSelected: {
+    color: "#fff",
+  },
+  allItemsDescription: {
+    fontSize: 10,
+    color: "rgba(255,255,255,0.4)",
+    textAlign: "center",
+    lineHeight: 12,
+  },
+  allItemsDescriptionSelected: {
+    color: "rgba(255,255,255,0.7)",
+  },
+  allItemsCheckmark: {
+    position: "absolute",
+    top: 6,
+    right: 6,
+  },
+
+  // Grid Base Styles
+  itemsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 16,
+  },
+  gridCard: {
+    borderRadius: 12,
+    overflow: "hidden",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.1)",
+  },
+  gridCardSelected: {
+    borderColor: "#4A90E2",
+    borderWidth: 2,
+  },
+  gridCardGradient: {
+    padding: 12,
+    position: "relative",
+  },
+  gridCardOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "rgba(255,255,255,0.05)",
+    borderRadius: 12,
+  },
+  gridCardBadge: {
+    position: "absolute",
+    top: 6,
+    right: 6,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: "#4A90E2",
+    justifyContent: "center",
+    alignItems: "center",
+    zIndex: 2,
+  },
+  gridCardContent: {
+    position: "relative",
+    zIndex: 1,
+    flex: 1,
+    justifyContent: "space-between",
+  },
+
+  // Account-specific styles
+  accountsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 20,
+    justifyContent: "space-between",
+    paddingHorizontal: 15,
+  },
+  accountGridCard: {
+    width: "47%",
+    borderRadius: 12,
+    overflow: "hidden",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.1)",
+  },
+  accountGridCardSelected: {
+    borderColor: "#4A90E2",
+    borderWidth: 2,
+  },
+  accountGridCardGradient: {
+    padding: 12,
+    minHeight: 80,
+    position: "relative",
+  },
+  accountGridCardOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "rgba(255,255,255,0.05)",
+    borderRadius: 12,
+  },
+  accountGridCardBadge: {
+    position: "absolute",
+    top: 6,
+    right: 6,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: "#fff",
+    justifyContent: "center",
+    alignItems: "center",
+    zIndex: 2,
+  },
+  accountGridCardContent: {
+    position: "relative",
+    zIndex: 1,
+    flex: 1,
+    justifyContent: "space-between",
+  },
+  accountGridCardBank: {
+    fontSize: 10,
+    fontWeight: "600",
+    color: "rgba(255,255,255,0.8)",
+    textTransform: "uppercase",
+    letterSpacing: 0.3,
+    marginBottom: 4,
+  },
+  accountGridCardName: {
+    fontSize: 10,
+    fontWeight: "500",
+    color: "#fff",
+  },
+
+  // Time Period Modal specific
+  timePeriodModalContainer: {
+    height: "85%",
+  },
+  timePeriodSection: {
+    marginBottom: 32,
+  },
+  timePeriodSectionTitle: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#fff",
+    marginBottom: 16,
+    paddingHorizontal: 24,
+    letterSpacing: 0.2,
+  },
+  quickPeriodsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    paddingHorizontal: 24,
+    gap: 12,
+  },
+  quickPeriodCard: {
+    width: "48%",
+    borderRadius: 12,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.1)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  quickPeriodCardSelected: {
+    borderColor: "rgba(74,144,226,0.6)",
+    shadowColor: "#4A90E2",
+    shadowOpacity: 0.3,
+  },
+  quickPeriodCardGradient: {
+    padding: 16,
+    minHeight: 90,
+    justifyContent: "center",
+    alignItems: "center",
+    position: "relative",
+  },
+  quickPeriodBadge: {
+    position: "absolute",
+    top: 8,
+    right: 8,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: "rgba(255,255,255,0.2)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  quickPeriodContent: {
+    alignItems: "center",
+    flex: 1,
+    justifyContent: "center",
+  },
+  quickPeriodEmoji: {
+    fontSize: 28,
+    marginBottom: 8,
+  },
+  quickPeriodLabel: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#888",
+    marginBottom: 4,
+    textAlign: "center",
+  },
+  quickPeriodLabelSelected: {
+    color: "#fff",
+  },
+  quickPeriodDescription: {
+    fontSize: 11,
+    color: "rgba(255,255,255,0.4)",
+    textAlign: "center",
+    lineHeight: 14,
+  },
+  quickPeriodDescriptionSelected: {
+    color: "rgba(255,255,255,0.7)",
+  },
+  yearSection: {
+    marginBottom: 24,
+  },
+  yearTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "rgba(255,255,255,0.8)",
+    marginBottom: 12,
+    paddingHorizontal: 24,
+    letterSpacing: 0.3,
+  },
+  monthsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    paddingHorizontal: 24,
+    gap: 8,
+  },
+  monthCard: {
+    width: "48%",
+    borderRadius: 10,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.1)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  monthCardSelected: {
+    borderColor: "rgba(74,144,226,0.6)",
+    shadowColor: "#4A90E2",
+    shadowOpacity: 0.3,
+  },
+  monthCardGradient: {
+    padding: 12,
+    minHeight: 60,
+    justifyContent: "center",
+    alignItems: "center",
+    position: "relative",
+  },
+  monthBadge: {
+    position: "absolute",
+    top: 4,
+    right: 4,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: "rgba(255,255,255,0.2)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  monthContent: {
+    alignItems: "center",
+    flex: 1,
+    justifyContent: "center",
+  },
+  monthEmoji: {
+    fontSize: 20,
+    marginBottom: 4,
+  },
+  monthLabel: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#888",
+    textAlign: "center",
+  },
+  monthLabelSelected: {
+    color: "#fff",
+  },
+
+  // Category Modal specific
+  categoryModalContainer: {
+    minHeight: "50%",
+    maxHeight: "85%",
+  },
+  // Legacy - replaced by adaptiveCategoryGrid
+  categoryGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "center",
+    gap: 12,
+    paddingHorizontal: 8,
+  },
+  categoryGridCard: {
+    width: "30%",
+    borderRadius: 12,
+    overflow: "hidden",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.1)",
+  },
+  categoryGridCardSelected: {
+    borderColor: "rgba(74,144,226,0.5)",
+    borderWidth: 2,
+  },
+  categoryGridCardGradient: {
+    padding: 12,
+    minHeight: 90,
+    position: "relative",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  categoryGridCardBadge: {
+    position: "absolute",
+    top: 6,
+    right: 6,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: "#4A90E2",
+    justifyContent: "center",
+    alignItems: "center",
+    zIndex: 2,
+  },
+  categoryGridCardContent: {
+    alignItems: "center",
+    flex: 1,
+    justifyContent: "center",
+  },
+  categoryIconContainer: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 8,
+    borderWidth: 1,
+  },
+  categoryGridCardName: {
+    fontSize: 11,
+    fontWeight: "500",
+    color: "#888",
+    textAlign: "center",
+    lineHeight: 14,
+  },
+  categoryGridCardNameSelected: {
+    color: "#fff",
+  },
+  addCategoryCard: {
+    width: "30%",
+    borderRadius: 12,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.1)",
+    borderStyle: "dashed",
+  },
+  addCategoryCardGradient: {
+    padding: 12,
+    minHeight: 90,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  addCategoryContent: {
+    alignItems: "center",
+    flex: 1,
+    justifyContent: "center",
+  },
+  addCategoryIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "rgba(255,255,255,0.05)",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  addCategoryText: {
+    fontSize: 11,
+    fontWeight: "500",
+    color: "rgba(255,255,255,0.6)",
+    textAlign: "center",
+  },
+
+  // Adaptive Category Grid System
+  adaptiveCategoryGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "center",
+    alignItems: "flex-start",
+    gap: 10,
+    paddingHorizontal: 8,
+    paddingTop: 8,
+  },
+  
+  // Adaptive Category Boxes
+  adaptiveCategoryBox: {
+    borderRadius: 14,
+    flexDirection: "row",
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    minWidth: 80,
+    maxWidth: 200,
+    shadowColor: "#000",
+    shadowOpacity: 0.08,
+    shadowRadius: 3,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
+    marginBottom: 2,
+    // This makes the box size adapt to content
+    alignSelf: "flex-start",
+    borderWidth: 1, // Default border width
+    borderColor: "rgba(0,0,0,0.1)", // Default border color
+  },
+  
+  categoryBoxSelected: {
+    shadowOpacity: 0.15,
+    shadowRadius: 5,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 4,
+    // Enhanced shadow and elevation for selected state
+  },
+  
+  categoryEmoji: {
+    fontSize: 22,
+    marginRight: 6,
+    // Ensures consistent emoji spacing
+    textAlign: "center",
+    minWidth: 20,
+  },
+  
+  adaptiveCategoryText: {
+    fontWeight: "600",
+    fontSize: 13,
+    color: "#333",
+    textAlign: "center",
+    // This allows text to determine box width
+    flexShrink: 1,
+    flexGrow: 0,
+  },
+  
+  categoryBoxTextSelected: {
+    color: "#fff",
+    fontWeight: "700",
+  },
+  
+  categoryCheckmark: {
+    marginLeft: 6,
+    opacity: 0.9,
+  },
+  
+  // Adaptive Add New Button
+  adaptiveAddNewBox: {
+    borderRadius: 14,
+    flexDirection: "row",
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    minWidth: 70,
+    maxWidth: 110,
+    backgroundColor: "rgba(255,255,255,0.08)",
+    borderWidth: 1.5,
+    borderColor: "rgba(255,255,255,0.15)",
+    borderStyle: "dashed",
+    shadowColor: "#000",
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 1,
+    alignSelf: "flex-start",
+    marginBottom: 2,
+  },
+  
+  adaptiveAddNewText: {
+    fontWeight: "600",
+    fontSize: 11,
+    color: "rgba(255,255,255,0.7)",
+    textAlign: "center",
+    flexShrink: 1,
+    flexGrow: 0,
+  },
+
+  // Legacy styles (keeping for compatibility)
+  categoryBox: {
+    borderRadius: 20,
+    width: 140,
+    flexDirection: "row",
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    justifyContent: "center",
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    marginBottom: 16,
+    alignSelf: "center",
+  },
+  categoryBoxText: {
+    fontWeight: "600",
+    fontSize: 15,
+    color: "#333",
+    flex: 1,
+  },
+
+  // Footer
+  footer: {
+    paddingHorizontal: 24,
+    paddingTop: 20,
+    paddingBottom: Platform.OS === "ios" ? 34 : 20,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255,255,255,0.06)",
+    backgroundColor: "#121212",
+  },
+  footerButtons: {
+    flexDirection: "row",
+    gap: 12,
+  },
+  resetButton: {
+    flex: 1,
+  },
+  resetButtonGradient: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 14,
+    borderRadius: 12,
+    gap: 8,
+  },
+  resetButtonText: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#888",
+  },
+  applyButton: {
+    flex: 2,
+    backgroundColor: "#4A90E2",
+    borderRadius: 12,
+    shadowColor: "#4A90E2",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  applyButtonContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 14,
+    gap: 8,
+  },
+  applyButtonText: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#fff",
+  },
+});
