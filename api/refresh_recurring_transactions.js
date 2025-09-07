@@ -1,4 +1,4 @@
-// /api/recurring_transactions.js
+// /api/refresh_recurring_transactions.js
 import { client } from "../app/plaidClient.js";
 import { createClient } from "@supabase/supabase-js";
 
@@ -15,7 +15,7 @@ export default async function handler(req, res) {
   if (!item_id) return res.status(400).json({ error: "Missing item_id" });
 
   try {
-    console.log(`🔄 Fetching recurring transactions for item_id: ${item_id}`);
+    console.log(`🔄 Refreshing recurring transactions for item_id: ${item_id}`);
 
     // 1) Look up user_id if not provided
     let actualUserId = user_id;
@@ -46,7 +46,7 @@ export default async function handler(req, res) {
       return res.status(404).json({ error: "Access token not found" });
     }
 
-    // 3) Get account IDs for this item first
+    // 3) Get account IDs for this item
     const { data: accounts, error: accountsError } = await supabase
       .from("accounts")
       .select("account_id")
@@ -58,32 +58,13 @@ export default async function handler(req, res) {
     }
 
     if (!accounts || accounts.length === 0) {
-      console.log(`⚠️  No accounts found for item: ${item_id}`);
-      console.log(
-        "📊 This explains why Plaid API call is missing - no accounts to check"
-      );
-
-      // Debug: Check if this item exists in user_items table
-      const { data: itemInfo, error: itemError } = await supabase
-        .from("user_items")
-        .select("institution_name, item_id")
-        .eq("item_id", item_id)
-        .single();
-
-      if (itemInfo) {
-        console.log(
-          `🏦 Item ${item_id} belongs to ${itemInfo.institution_name} but has no accounts in database`
-        );
-        console.log("💡 This item might need to be re-synced or re-connected");
-      }
-
+      console.log(`⚠️ No accounts found for item: ${item_id}`);
       return res.status(200).json({
         message: "No accounts found for recurring analysis",
         summary: { subscriptions: 0, income: 0, bills: 0, other: 0, total: 0 },
-        data: { subscriptions: [], income: [], bills: [], other: [] },
+        stored: 0,
         debug: {
           item_id,
-          institution_name: itemInfo?.institution_name,
           accounts_found: 0,
           reason: "No accounts in database for this item",
         },
@@ -108,7 +89,7 @@ export default async function handler(req, res) {
       } outflow recurring streams`
     );
 
-    // 4) Process and categorize recurring transactions
+    // 5) Process and categorize recurring transactions
     const processedStreams = {
       subscriptions: [],
       income: [],
@@ -132,6 +113,7 @@ export default async function handler(req, res) {
           is_active: stream.is_active,
           account_id: stream.account_id,
           transaction_ids: stream.transaction_ids || [],
+          iso_currency_code: stream.average_amount?.iso_currency_code || "USD",
         };
 
         // Categorize based on category and merchant
@@ -144,7 +126,12 @@ export default async function handler(req, res) {
           merchant.includes("spotify") ||
           merchant.includes("apple") ||
           merchant.includes("google") ||
-          merchant.includes("amazon prime")
+          merchant.includes("amazon prime") ||
+          merchant.includes("hulu") ||
+          merchant.includes("disney") ||
+          merchant.includes("youtube") ||
+          merchant.includes("adobe") ||
+          merchant.includes("microsoft")
         ) {
           processedStreams.subscriptions.push(streamData);
         } else if (
@@ -153,7 +140,11 @@ export default async function handler(req, res) {
           merchant.includes("electric") ||
           merchant.includes("gas") ||
           merchant.includes("water") ||
-          merchant.includes("rent")
+          merchant.includes("rent") ||
+          merchant.includes("mortgage") ||
+          merchant.includes("insurance") ||
+          merchant.includes("phone") ||
+          merchant.includes("internet")
         ) {
           processedStreams.bills.push(streamData);
         } else {
@@ -178,64 +169,130 @@ export default async function handler(req, res) {
           is_active: stream.is_active,
           account_id: stream.account_id,
           transaction_ids: stream.transaction_ids || [],
+          iso_currency_code: stream.average_amount?.iso_currency_code || "USD",
         });
       });
     }
 
-    // 5) Store recurring streams in database (optional - for caching)
+    // 6) Store recurring streams in database
+    let storedCount = 0;
     try {
+      // First, mark all existing streams for this item as inactive
+      await supabase
+        .from("recurring_streams")
+        .update({ is_active: false, updated_at: new Date().toISOString() })
+        .eq("item_id", item_id);
+
+      // Prepare data for database insertion
       const recurringRows = [
         ...processedStreams.subscriptions.map((s) => ({
-          ...s,
-          stream_type: "subscription",
           user_id: actualUserId,
           item_id,
+          account_id: s.account_id,
+          stream_id: s.stream_id,
+          stream_type: "subscription",
+          flow_type: "outflow",
+          description: s.description,
+          merchant_name: s.merchant_name,
+          category: s.category,
+          average_amount: s.average_amount,
+          last_amount: s.last_amount,
+          iso_currency_code: s.iso_currency_code,
+          frequency: s.frequency,
+          first_date: s.first_date,
+          last_date: s.last_date,
+          is_active: s.is_active,
+          transaction_ids: s.transaction_ids,
+          last_synced_at: new Date().toISOString(),
         })),
         ...processedStreams.income.map((s) => ({
-          ...s,
-          stream_type: "income",
           user_id: actualUserId,
           item_id,
+          account_id: s.account_id,
+          stream_id: s.stream_id,
+          stream_type: "income",
+          flow_type: "inflow",
+          description: s.description,
+          merchant_name: s.merchant_name,
+          category: s.category,
+          average_amount: s.average_amount,
+          last_amount: s.last_amount,
+          iso_currency_code: s.iso_currency_code,
+          frequency: s.frequency,
+          first_date: s.first_date,
+          last_date: s.last_date,
+          is_active: s.is_active,
+          transaction_ids: s.transaction_ids,
+          last_synced_at: new Date().toISOString(),
         })),
         ...processedStreams.bills.map((s) => ({
-          ...s,
-          stream_type: "bill",
           user_id: actualUserId,
           item_id,
+          account_id: s.account_id,
+          stream_id: s.stream_id,
+          stream_type: "bill",
+          flow_type: "outflow",
+          description: s.description,
+          merchant_name: s.merchant_name,
+          category: s.category,
+          average_amount: s.average_amount,
+          last_amount: s.last_amount,
+          iso_currency_code: s.iso_currency_code,
+          frequency: s.frequency,
+          first_date: s.first_date,
+          last_date: s.last_date,
+          is_active: s.is_active,
+          transaction_ids: s.transaction_ids,
+          last_synced_at: new Date().toISOString(),
         })),
         ...processedStreams.other.map((s) => ({
-          ...s,
-          stream_type: "other",
           user_id: actualUserId,
           item_id,
+          account_id: s.account_id,
+          stream_id: s.stream_id,
+          stream_type: "other",
+          flow_type: "outflow",
+          description: s.description,
+          merchant_name: s.merchant_name,
+          category: s.category,
+          average_amount: s.average_amount,
+          last_amount: s.last_amount,
+          iso_currency_code: s.iso_currency_code,
+          frequency: s.frequency,
+          first_date: s.first_date,
+          last_date: s.last_date,
+          is_active: s.is_active,
+          transaction_ids: s.transaction_ids,
+          last_synced_at: new Date().toISOString(),
         })),
       ];
 
       if (recurringRows.length > 0) {
-        // Check if recurring_streams table exists, if not, skip storage
-        const { error: upsertErr } = await supabase
+        // Upsert recurring streams (insert or update based on stream_id)
+        const { data: insertedData, error: upsertErr } = await supabase
           .from("recurring_streams")
-          .upsert(recurringRows, { onConflict: "stream_id" })
+          .upsert(recurringRows, {
+            onConflict: "stream_id",
+            ignoreDuplicates: false,
+          })
           .select();
 
-        if (upsertErr && !upsertErr.message.includes("does not exist")) {
-          console.warn("⚠️ Could not store recurring streams:", upsertErr);
-        } else if (!upsertErr) {
-          console.log(
-            `💾 Stored ${recurringRows.length} recurring streams in database`
-          );
+        if (upsertErr) {
+          console.error("❌ Failed to store recurring streams:", upsertErr);
+          throw new Error(`Database storage failed: ${upsertErr.message}`);
         }
+
+        storedCount = insertedData?.length || recurringRows.length;
+        console.log(`💾 Stored ${storedCount} recurring streams in database`);
       }
     } catch (storageError) {
-      console.warn(
-        "⚠️ Recurring streams storage failed (continuing anyway):",
-        storageError
-      );
+      console.error("❌ Recurring streams storage failed:", storageError);
+      throw new Error(`Storage failed: ${storageError.message}`);
     }
 
-    // 6) Return processed data
+    // 7) Return processed data
     return res.status(200).json({
-      message: "Recurring transactions fetched successfully",
+      message: "Recurring transactions refreshed and stored successfully",
       summary: {
         subscriptions: processedStreams.subscriptions.length,
         income: processedStreams.income.length,
@@ -247,10 +304,11 @@ export default async function handler(req, res) {
           processedStreams.bills.length +
           processedStreams.other.length,
       },
+      stored: storedCount,
       data: processedStreams,
     });
   } catch (error) {
-    console.error("❌ Recurring transactions fetch failed:", error);
+    console.error("❌ Recurring transactions refresh failed:", error);
 
     // Handle specific Plaid errors
     const plaidError = error.response?.data;
@@ -265,6 +323,12 @@ export default async function handler(req, res) {
       return res.status(400).json({
         error:
           "Insufficient transaction history for recurring analysis. Need at least 180 days of data.",
+      });
+    }
+
+    if (plaidError?.error_code === "RATE_LIMIT_EXCEEDED") {
+      return res.status(429).json({
+        error: "Rate limit exceeded. Please try again later.",
       });
     }
 

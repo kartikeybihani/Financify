@@ -80,7 +80,7 @@ const CategoryDetailModal: React.FC<CategoryDetailModalProps> = ({
                 {formatCategoryName(category)}
               </Text>
               <Text style={styles.categoryDetailSubtitle}>
-                {data.percentage.toFixed(0)}% of total spending
+                {data.percentage.toFixed(0)}% of this month's spending
               </Text>
             </View>
           </View>
@@ -106,21 +106,36 @@ const CategoryDetailModal: React.FC<CategoryDetailModalProps> = ({
             </View>
           </View>
 
-          <ScrollView style={styles.categoryTransactionsList}>
-            {categoryTransactions.map((tx, idx) => (
-              <View key={idx} style={styles.categoryTransactionItem}>
-                <View style={styles.categoryTransactionInfo}>
-                  <Text style={styles.categoryTransactionName}>{tx.name}</Text>
-                  <Text style={styles.categoryTransactionDate}>
-                    {formatDate(tx.date)}
-                  </Text>
-                </View>
-                <Text style={styles.categoryTransactionAmount}>
-                  -${tx.amount.toFixed(2)}
+          <View style={styles.categoryTransactionsList}>
+            <Text style={styles.categoryTransactionsHeader}>
+              Transactions this month ({categoryTransactions.length})
+            </Text>
+            {categoryTransactions.length > 0 ? (
+              <ScrollView>
+                {categoryTransactions.map((tx, idx) => (
+                  <View key={idx} style={styles.categoryTransactionItem}>
+                    <View style={styles.categoryTransactionInfo}>
+                      <Text style={styles.categoryTransactionName}>
+                        {tx.name}
+                      </Text>
+                      <Text style={styles.categoryTransactionDate}>
+                        {formatDate(tx.date)}
+                      </Text>
+                    </View>
+                    <Text style={styles.categoryTransactionAmount}>
+                      -${tx.amount.toFixed(2)}
+                    </Text>
+                  </View>
+                ))}
+              </ScrollView>
+            ) : (
+              <View style={styles.emptyTransactionsContainer}>
+                <Text style={styles.emptyTransactionsText}>
+                  No transactions in this category for the current month
                 </Text>
               </View>
-            ))}
-          </ScrollView>
+            )}
+          </View>
         </View>
       </TouchableOpacity>
     </Modal>

@@ -36,6 +36,7 @@ import {
   refreshAccountBalances,
   performCompleteDataRefresh,
   getAllRecurringTransactions,
+  refreshRecurringTransactions,
   getUpdateLinkToken,
   openPlaidLink,
   getRecentTransactions,
@@ -143,6 +144,9 @@ export default function InsightsScreen() {
     category: string;
     data: { amount: number; percentage: number; color: string };
   } | null>(null);
+  const [currentMonthTransactions, setCurrentMonthTransactions] = useState<
+    Transaction[]
+  >([]);
   const [categories, setCategories] = useState<string[]>(["All Categories"]);
   const hasData = useRef(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -239,7 +243,7 @@ export default function InsightsScreen() {
       // Check for update flags and re-auth needs
       await checkForReAuthNeeds();
 
-      // Load recurring transactions
+      // Load recurring transactions from database (no Plaid calls)
       await loadRecurringTransactions();
 
       setIsInitialLoad(false);
@@ -360,8 +364,30 @@ export default function InsightsScreen() {
           console.log(
             `  ${idx + 1}. ${acc.institution_name} - ${acc.name} (${
               acc.subtype
-            })`
+            }) [Account ID: ${acc.account_id}]`
           );
+        });
+
+        // Additional debug - check for institution name mismatches
+        const uniqueInstitutions = [
+          ...new Set(userAccounts.map((acc) => acc.institution_name)),
+        ];
+        console.log(
+          "🏛️  DEBUG: Unique institutions in filter:",
+          uniqueInstitutions
+        );
+
+        // Check which accounts belong to which institution
+        uniqueInstitutions.forEach((institution) => {
+          const accountsForInstitution = userAccounts.filter(
+            (acc) => acc.institution_name === institution
+          );
+          console.log(
+            `🔍 DEBUG: ${institution} has ${accountsForInstitution.length} accounts:`
+          );
+          accountsForInstitution.forEach((acc) => {
+            console.log(`    - ${acc.name} (${acc.subtype})`);
+          });
         });
       }
     } catch (error) {
@@ -505,7 +531,7 @@ export default function InsightsScreen() {
         if (!showEnhancedFilterModal) {
           await loadUserAccounts(true); // Debug when financial data changes
           await loadFilteredTransactions(filterOptions, true);
-          // Also reload recurring transactions when data changes
+          // Also reload recurring transactions from database when data changes
           await loadRecurringTransactions();
         }
       }
@@ -584,6 +610,9 @@ export default function InsightsScreen() {
     );
     setCategoryBreakdown(sortedCategories);
 
+    // Store current month transactions for category detail modal
+    setCurrentMonthTransactions(currentMonthExpenses);
+
     const uniqueCategories = [
       "All Categories",
       ...new Set(currentMonthExpenses.map((tx) => tx.category || "Other")),
@@ -614,7 +643,7 @@ export default function InsightsScreen() {
             )} — $${topCategory[1].amount.toLocaleString("en-US", {
               minimumFractionDigits: 2,
               maximumFractionDigits: 2,
-            })}. Try setting a limit or exploring cheaper alternatives.`
+            })} this month. Try setting a limit or exploring cheaper alternatives.`
           : "We're analyzing your spending patterns. More insights will appear as you use the app.",
       },
     ];
@@ -759,18 +788,97 @@ export default function InsightsScreen() {
     }
   };
 
-  // Load recurring transactions
+  // Debug function to diagnose database state
+  const debugDatabaseState = async () => {
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user?.id) return;
+
+      console.log("🔍 DEBUG: Checking database state...");
+
+      // 1. Check all user items
+      const { data: userItems, error: itemsError } = await supabase
+        .from("user_items")
+        .select("*")
+        .eq("user_id", user.id);
+
+      if (itemsError) {
+        console.error("❌ Error fetching user items:", itemsError);
+        return;
+      }
+
+      console.log(`🏦 DEBUG: Found ${userItems?.length || 0} user items:`);
+      userItems?.forEach((item, idx) => {
+        console.log(
+          `  ${idx + 1}. ${item.institution_name} (${
+            item.item_id
+          }) - Last synced: ${item.last_synced_at}`
+        );
+      });
+
+      // 2. Check accounts for each item
+      for (const item of userItems || []) {
+        const { data: accounts, error: accountsError } = await supabase
+          .from("accounts")
+          .select("*")
+          .eq("item_id", item.item_id);
+
+        if (accountsError) {
+          console.error(
+            `❌ Error fetching accounts for ${item.institution_name}:`,
+            accountsError
+          );
+          continue;
+        }
+
+        console.log(
+          `📊 DEBUG: ${item.institution_name} (${item.item_id}) has ${
+            accounts?.length || 0
+          } accounts:`
+        );
+        accounts?.forEach((acc, idx) => {
+          console.log(
+            `    ${idx + 1}. ${acc.name} (${acc.account_id}) - ${acc.type}/${
+              acc.subtype
+            }`
+          );
+        });
+
+        if (accounts?.length === 0) {
+          console.log(
+            `⚠️  DEBUG: ${item.institution_name} has NO ACCOUNTS - this explains missing recurring transactions`
+          );
+        }
+      }
+
+      // 3. Check if there's any item_id mismatch
+      const allItems = userItems?.map((i) => i.item_id) || [];
+      console.log("🔍 DEBUG: All item_ids:", allItems);
+    } catch (error) {
+      console.error("❌ Debug database state error:", error);
+    }
+  };
+
+  // Load recurring transactions from database (no Plaid calls)
   const loadRecurringTransactions = async () => {
     try {
       setRecurringLoading(true);
-      console.log("🔄 Loading recurring transactions...");
+      console.log("🔄 Loading recurring transactions from database...");
 
       const data = await getAllRecurringTransactions();
       setRecurringData(data);
 
-      console.log("✅ Recurring transactions loaded:", data.summary);
+      console.log(
+        "✅ Recurring transactions loaded from database:",
+        data.summary
+      );
     } catch (error) {
-      console.error("❌ Error loading recurring transactions:", error);
+      console.error(
+        "❌ Error loading recurring transactions from database:",
+        error
+      );
       // Set empty data on error
       setRecurringData({
         subscriptions: [],
@@ -1056,7 +1164,14 @@ export default function InsightsScreen() {
       });
       await syncAllUserTransactions();
 
-      // Step 5: Refresh UI from Supabase (single source of truth)
+      // Step 5: Refresh recurring transactions
+      setRefreshStatus({
+        type: "cloud",
+        message: "Analyzing recurring transactions...",
+      });
+      await refreshRecurringTransactions();
+
+      // Step 6: Refresh UI from Supabase (single source of truth)
       setRefreshStatus({ type: "cloud", message: "Updating interface..." });
       await fetchFreshData();
       await loadFilteredTransactions(filterOptions, true);
@@ -1245,7 +1360,9 @@ export default function InsightsScreen() {
                   />
                 ))}
 
-              <Text style={styles.sectionLabel}>Spending Overview</Text>
+              <Text style={styles.sectionLabel}>
+                Spending Overview - This Month
+              </Text>
               <CategoryGrid
                 categoryBreakdown={categoryBreakdown}
                 onCategoryPress={handleCategoryPress}
@@ -1441,7 +1558,7 @@ export default function InsightsScreen() {
               onClose={() => setShowCategoryDetail(false)}
               category={selectedCategoryDetail.category}
               data={selectedCategoryDetail.data}
-              transactions={transactions}
+              transactions={currentMonthTransactions}
               formatCategoryName={formatCategoryName}
               getCategoryIcon={getCategoryIcon}
               formatDate={formatDate}

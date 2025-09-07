@@ -34,6 +34,25 @@ export default function RecurringTransactionsCard({
   onViewAll,
   isLoading = false,
 }: RecurringTransactionsCardProps) {
+  // Helper function to convert frequency to monthly multiplier
+  const getMonthlyMultiplier = (frequency: string): number => {
+    switch (frequency.toLowerCase()) {
+      case "daily":
+        return 30;
+      case "weekly":
+        return 4.33;
+      case "monthly":
+        return 1;
+      case "quarterly":
+        return 0.33;
+      case "annually":
+      case "yearly":
+        return 0.083;
+      default:
+        return 1;
+    }
+  };
+
   // Get top 3 most expensive recurring items for preview
   const allRecurring = [...subscriptions, ...bills, ...income];
   const topRecurring = allRecurring
@@ -62,24 +81,6 @@ export default function RecurringTransactionsCard({
         return "calendar-number-outline";
       default:
         return "repeat-outline";
-    }
-  };
-
-  const getMonthlyMultiplier = (frequency: string): number => {
-    switch (frequency.toLowerCase()) {
-      case "daily":
-        return 30;
-      case "weekly":
-        return 4.33;
-      case "monthly":
-        return 1;
-      case "quarterly":
-        return 0.33;
-      case "annually":
-      case "yearly":
-        return 0.083;
-      default:
-        return 1;
     }
   };
 
@@ -136,7 +137,7 @@ export default function RecurringTransactionsCard({
       activeOpacity={0.95}
     >
       <LinearGradient
-        colors={["rgba(156, 39, 176, 0.05)", "rgba(156, 39, 176, 0.02)"]}
+        colors={["rgba(255, 152, 0, 0.08)", "rgba(255, 193, 7, 0.04)"]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={styles.gradient}
@@ -208,7 +209,7 @@ export default function RecurringTransactionsCard({
                   +{allRecurring.filter((item) => item.is_active).length - 3}{" "}
                   more
                 </Text>
-                <Ionicons name="chevron-forward" size={14} color="#9C27B0" />
+                <Ionicons name="chevron-forward" size={14} color="#FF9800" />
               </View>
             )}
           </View>
@@ -231,9 +232,9 @@ const styles = StyleSheet.create({
   container: {
     borderRadius: 16,
     overflow: "hidden",
-    shadowColor: "#9C27B0",
+    shadowColor: "#FF9800",
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.12,
     shadowRadius: 8,
     elevation: 4,
     marginBottom: 16,
@@ -255,7 +256,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: "rgba(156, 39, 176, 0.1)",
+    backgroundColor: "rgba(255, 152, 0, 0.12)",
     alignItems: "center",
     justifyContent: "center",
     marginRight: 12,
@@ -276,7 +277,7 @@ const styles = StyleSheet.create({
   totalAmount: {
     fontSize: 18,
     fontWeight: "700",
-    color: "#9C27B0",
+    color: "#FF9800",
     marginBottom: 2,
   },
   totalLabel: {
@@ -303,7 +304,7 @@ const styles = StyleSheet.create({
     width: 24,
     height: 24,
     borderRadius: 12,
-    backgroundColor: "rgba(156, 39, 176, 0.08)",
+    backgroundColor: "rgba(255, 152, 0, 0.1)",
     alignItems: "center",
     justifyContent: "center",
     marginRight: 8,
@@ -327,7 +328,7 @@ const styles = StyleSheet.create({
     width: 18,
     height: 18,
     borderRadius: 9,
-    backgroundColor: "rgba(156, 39, 176, 0.1)",
+    backgroundColor: "rgba(255, 152, 0, 0.12)",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -338,12 +339,12 @@ const styles = StyleSheet.create({
     paddingTop: 8,
     marginTop: 8,
     borderTopWidth: 1,
-    borderTopColor: "rgba(156, 39, 176, 0.1)",
+    borderTopColor: "rgba(255, 152, 0, 0.12)",
     gap: 4,
   },
   moreText: {
     fontSize: 12,
-    color: "#9C27B0",
+    color: "#FF9800",
     fontWeight: "500",
   },
   emptyContainer: {
@@ -367,14 +368,14 @@ const styles = StyleSheet.create({
   loadingTitle: {
     width: 80,
     height: 16,
-    backgroundColor: "rgba(156, 39, 176, 0.1)",
+    backgroundColor: "rgba(255, 152, 0, 0.12)",
     borderRadius: 8,
     marginBottom: 8,
   },
   loadingSubtitle: {
     width: 60,
     height: 12,
-    backgroundColor: "rgba(156, 39, 176, 0.05)",
+    backgroundColor: "rgba(255, 152, 0, 0.06)",
     borderRadius: 6,
     marginBottom: 16,
   },
@@ -384,7 +385,7 @@ const styles = StyleSheet.create({
   loadingItem: {
     width: "100%",
     height: 32,
-    backgroundColor: "rgba(156, 39, 176, 0.05)",
+    backgroundColor: "rgba(255, 152, 0, 0.06)",
     borderRadius: 8,
   },
 });

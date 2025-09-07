@@ -1,0 +1,120 @@
+user_items table -->
+[
+  {
+    "id": "dcf5377e-fff8-454b-9506-ff1cfa82992c",
+    "user_id": "79952f35-b607-40d6-a32e-d81386882eb7",
+    "item_id": "ndgrX3j50xcLpr9oLm18tVNd7DqKP6UAYmgDm",
+    "institution_id": "ins_127991",
+    "institution_name": "Wells Fargo",
+    "webhook": "https://financify-rose.vercel.app/api/webhook",
+    "has_new_accounts": false,
+    "requires_update_mode": false,
+    "transactions_cursor": "CAESJWtKNWpnUEFSazB1ekUwclF6QXdKc2VhSkFSOWdEcUhwdlBnakQaCwi3yurFBhDQ0+I5IgsIt8rqxQYQ0NPiOSoLCLfK6sUGENDT4jk=",
+    "created_at": "2025-09-01 09:10:33.679268+00",
+    "access_token_secret_id": "b8dd8f82-4aca-4f9e-9a97-fdd1be190137",
+    "last_synced_at": "2025-09-06 01:04:33.79+00"
+  },
+  {
+    "id": "b7589921-e806-4635-bee3-395d5f068711",
+    "user_id": "79952f35-b607-40d6-a32e-d81386882eb7",
+    "item_id": "1dYovrbqMds3BEqBeM3oszdZPR7y1nCm64Q04",
+    "institution_id": "ins_128026",
+    "institution_name": "Capital One",
+    "webhook": "https://financify-rose.vercel.app/api/webhook",
+    "has_new_accounts": false,
+    "requires_update_mode": false,
+    "transactions_cursor": "CAESJW56OGRiMExlM3ppODZCZzZKejhwSXJYNG9QZzMzRVVxbTd5eHEaDAiKiu7FBhCY2rboAiIMCIqK7sUGEJjatugCKgwIioruxQYQmNq26AI=",
+    "created_at": "2025-09-01 08:50:11.181634+00",
+    "access_token_secret_id": "a8d2cbc0-b1d8-41bb-9026-7652c457bc09",
+    "last_synced_at": "2025-09-06 01:04:34.067+00"
+  },
+  {
+    "id": "b1f9179d-7d6d-42cb-9ee0-57d056fae5fd",
+    "user_id": "79952f35-b607-40d6-a32e-d81386882eb7",
+    "item_id": "ej6aXwxOMKHLvZobJdNmsg1qEJp30YHdYqgb1",
+    "institution_id": "ins_10",
+    "institution_name": "American Express",
+    "webhook": "https://financify-rose.vercel.app/api/webhook",
+    "has_new_accounts": false,
+    "requires_update_mode": false,
+    "transactions_cursor": "CAESJXpETmQ3OFhiTG9mNVEwUHh3YVZCaEE1d2tROEV5NlVLMEFnd3caDAjDmezFBhDY2ImMAyIMCMOZ7MUGENjYiYwDKgwIw5nsxQYQ2NiJjAM=",
+    "created_at": "2025-09-02 04:02:38.177495+00",
+    "access_token_secret_id": "c50884d4-8fa4-4a60-9473-a00f8cafa7fd",
+    "last_synced_at": "2025-09-06 01:04:35.944+00"
+  }
+]
+
+accounts table -->
+[
+  {
+    "account_id": "mZb8jB0Rvrs6pyBY6X9ZHq0ZN6JeMKCEEwZdo6",
+    "item_id": "ndgrX3j50xcLpr9oLm18tVNd7DqKP6UAYmgDm",
+    "name": "BILT WORLD ELITE MASTERCARD® ...7492",
+    "mask": "7492",
+    "type": "credit",
+    "subtype": "credit card",
+    "official_name": "BILT WORLD ELITE MASTERCARD® ...7492",
+    "current_balance": "1153.01",
+    "available_balance": "1346",
+    "created_at": "2025-09-01 09:10:34.903069+00"
+  },
+  {
+    "account_id": "4d560pJXBEUZ5j1AxewdsV7ag1XrvVHQLaZLX",
+    "item_id": "ej6aXwxOMKHLvZobJdNmsg1qEJp30YHdYqgb1",
+    "name": "Blue Cash Everyday®",
+    "mask": "1008",
+    "type": "credit",
+    "subtype": "credit card",
+    "official_name": "Blue Cash Everyday®",
+    "current_balance": "19",
+    "available_balance": "2337",
+    "created_at": "2025-09-02 04:02:40.46771+00"
+  },
+  {
+    "account_id": "jN4xbKYm1NhKq3Xq1zK0sXdZDqLyj7UY0x3yV",
+    "item_id": "1dYovrbqMds3BEqBeM3oszdZPR7y1nCm64Q04",
+    "name": "360 Checking",
+    "mask": "5090",
+    "type": "depository",
+    "subtype": "checking",
+    "official_name": "360 Checking",
+    "current_balance": "854.65",
+    "available_balance": null,
+    "created_at": "2025-09-01 08:50:13.120841+00"
+  }
+]
+
+transactions table -->
+[
+  {
+    "id": "ac5f9c25-1fe1-4f1f-9213-6a6f0048cbfd",
+    "user_id": "79952f35-b607-40d6-a32e-d81386882eb7",
+    "account_id": "jN4xbKYm1NhKq3Xq1zK0sXdZDqLyj7UY0x3yV",
+    "plaid_transaction_id": "mzJZov6eBziZAD7AQzZ8UqjrZzxyA6t8PqXJQ",
+    "date": "2025-09-01",
+    "amount": "10.5",
+    "iso_currency_code": "USD",
+    "name": "UPG PAYMENTICO COM",
+    "merchant_name": "Upg Paymentico Com",
+    "category": "GENERAL_SERVICES",
+    "transaction_type": "place",
+    "pending": false,
+    "inserted_at": "2025-09-02 03:50:54.850823+00"
+  },
+  {
+    "id": "b401f4ec-6711-4313-bcf2-cc08317d24b0",
+    "user_id": "79952f35-b607-40d6-a32e-d81386882eb7",
+    "account_id": "jN4xbKYm1NhKq3Xq1zK0sXdZDqLyj7UY0x3yV",
+    "plaid_transaction_id": "dNkvR1QebNh9AxjA1w9BcEZP05VdjBHoREBVN",
+    "date": "2025-08-30",
+    "amount": "25",
+    "iso_currency_code": "USD",
+    "name": "AC WEBCONNECTING B V",
+    "merchant_name": "Ac Webconnecting B",
+    "category": "TRANSPORTATION",
+    "transaction_type": "place",
+    "pending": false,
+    "inserted_at": "2025-09-02 03:50:54.850823+00"
+  },
+  ...
+]

@@ -458,6 +458,13 @@ export const styles = StyleSheet.create({
     categoryTransactionsList: {
       marginTop: 16,
     },
+    categoryTransactionsHeader: {
+      fontSize: 16,
+      fontWeight: "600",
+      color: "#fff",
+      marginBottom: 12,
+      paddingHorizontal: 4,
+    },
     categoryTransactionItem: {
       flexDirection: "row",
       justifyContent: "space-between",
@@ -483,6 +490,17 @@ export const styles = StyleSheet.create({
       fontSize: 16,
       fontWeight: "600",
       color: "#ff6b6b",
+    },
+    emptyTransactionsContainer: {
+      padding: 20,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    emptyTransactionsText: {
+      fontSize: 14,
+      color: "#888",
+      textAlign: "center",
+      fontStyle: "italic",
     },
   });
   
