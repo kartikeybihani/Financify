@@ -16,6 +16,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
 import { addNewBankAccount, fetchInitialData } from "../../utils/plaid";
+import InstitutionSelectionModal from "../InstitutionSelectionModal";
 
 interface CategoryData {
   title: string;
@@ -53,6 +54,8 @@ export default function FinancialBottomSheet({
   );
 
   const [isAddingAccount, setIsAddingAccount] = useState(false);
+  const [showInstitutionModal, setShowInstitutionModal] = useState(false);
+  const [shouldReopenSheet, setShouldReopenSheet] = useState(false);
 
   const toggleCategory = (categoryTitle: string) => {
     const newExpanded = new Set(expandedCategories);
@@ -64,8 +67,23 @@ export default function FinancialBottomSheet({
     setExpandedCategories(newExpanded);
   };
 
-  const handleAddNewAccount = async () => {
+  const handleAddNewAccount = async (categoryTitle?: string) => {
     if (isAddingAccount) return;
+
+    // If this is for investments, show institution selection modal
+    const isInvestmentCategory =
+      categoryTitle?.toLowerCase().includes("investment") ||
+      categoryTitle?.toLowerCase().includes("invest") ||
+      categoryTitle?.toLowerCase().includes("brokerage") ||
+      categoryTitle?.toLowerCase().includes("portfolio");
+
+    if (isInvestmentCategory) {
+      setShowInstitutionModal(true);
+      setShouldReopenSheet(true);
+      // Also close the bottom sheet to avoid modal conflicts
+      onClose();
+      return;
+    }
 
     setIsAddingAccount(true);
 
@@ -115,152 +133,238 @@ export default function FinancialBottomSheet({
     }
   };
 
+  const handleInstitutionSelect = async (institutionId: string) => {
+    setShowInstitutionModal(false);
+    setShouldReopenSheet(false); // Don't reopen after selection
+
+    if (isAddingAccount) return;
+    setIsAddingAccount(true);
+
+    try {
+      console.log(
+        "🏦 User selected institution:",
+        institutionId,
+        "for investment account"
+      );
+
+      await addNewBankAccount(
+        (itemId) => {
+          console.log("✅ Successfully added new investment account:", itemId);
+
+          // Close the bottom sheet
+          onClose();
+
+          // Trigger data refresh
+          DeviceEventEmitter.emit("financialDataRefreshed");
+
+          // Call the optional callback
+          onAccountAdded?.();
+
+          // Show success message
+          Alert.alert(
+            "Success! 🎉",
+            "Your investment account has been connected successfully. Your financial data is now being updated.",
+            [{ text: "Great!", style: "default" }]
+          );
+        },
+        (error) => {
+          console.error("❌ Failed to add investment account:", error);
+
+          // Show error message
+          Alert.alert(
+            "Connection Failed",
+            "We couldn't connect your investment account. Please try again or contact support if the issue persists.",
+            [{ text: "Try Again", style: "default" }]
+          );
+        }
+      );
+    } catch (error) {
+      console.error("❌ Error in handleInstitutionSelect:", error);
+      Alert.alert("Error", "Something went wrong. Please try again.", [
+        { text: "OK", style: "default" },
+      ]);
+    } finally {
+      setIsAddingAccount(false);
+    }
+  };
+
+  const handleReopenFinancialSheet = () => {
+    if (shouldReopenSheet) {
+      setShouldReopenSheet(false);
+      // This will be handled by the parent component that manages the FinancialBottomSheet visibility
+      // For now, we'll just log it
+      console.log("🔄 Should reopen financial sheet");
+    }
+  };
+
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="slide"
-      onRequestClose={onClose}
-      statusBarTranslucent
-      presentationStyle="overFullScreen"
-    >
-      <View style={styles.overlay}>
-        <BlurView intensity={25} style={StyleSheet.absoluteFill} tint="dark" />
-        <View style={styles.modalContainer}>
-          <View style={[styles.sheet, { height: maxHeight }]}>
-            <View style={styles.handleContainer}>
-              <View style={styles.handle} />
-            </View>
-            <View style={styles.header}>
-              <View style={styles.titleContainer}>
-                <View
-                  style={[styles.iconContainer, { backgroundColor: "#1f1f1f" }]}
-                >
-                  <Ionicons name={icon} size={20} color={iconColor} />
-                </View>
-                <View style={styles.titleTextContainer}>
-                  <Text style={styles.title}>{title}</Text>
-                  <Text style={styles.subtitle}>
-                    Manage your financial accounts
-                  </Text>
-                </View>
+    <>
+      <InstitutionSelectionModal
+        visible={showInstitutionModal}
+        onClose={() => setShowInstitutionModal(false)}
+        onInstitutionSelect={handleInstitutionSelect}
+        onReopenFinancialSheet={handleReopenFinancialSheet}
+      />
+      <Modal
+        visible={visible}
+        transparent
+        animationType="slide"
+        onRequestClose={onClose}
+        statusBarTranslucent
+        presentationStyle="overFullScreen"
+      >
+        <View style={styles.overlay}>
+          <BlurView
+            intensity={25}
+            style={StyleSheet.absoluteFill}
+            tint="dark"
+          />
+          <View style={styles.modalContainer}>
+            <View style={[styles.sheet, { height: maxHeight }]}>
+              <View style={styles.handleContainer}>
+                <View style={styles.handle} />
               </View>
-              <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-                <View style={styles.closeButtonContainer}>
-                  <Ionicons name="close" size={20} color="#888" />
+              <View style={styles.header}>
+                <View style={styles.titleContainer}>
+                  <View
+                    style={[
+                      styles.iconContainer,
+                      { backgroundColor: "#1f1f1f" },
+                    ]}
+                  >
+                    <Ionicons name={icon} size={20} color={iconColor} />
+                  </View>
+                  <View style={styles.titleTextContainer}>
+                    <Text style={styles.title}>{title}</Text>
+                    <Text style={styles.subtitle}>
+                      Manage your financial accounts
+                    </Text>
+                  </View>
                 </View>
-              </TouchableOpacity>
-            </View>
-            <ScrollView
-              style={styles.content}
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={styles.scrollContent}
-            >
-              {categories
-                ? categories.map((category, index) => (
-                    <View key={index} style={styles.categoryContainer}>
-                      <TouchableOpacity
-                        style={styles.categoryHeader}
-                        onPress={() => toggleCategory(category.title)}
-                      >
-                        <View style={styles.categoryTitleContainer}>
-                          <Ionicons
-                            name={
-                              expandedCategories.has(category.title)
-                                ? "caret-down"
-                                : "caret-forward"
-                            }
-                            size={16}
-                            color="#888"
-                            style={styles.categoryCaretIcon}
-                          />
-                          <Text style={styles.categoryTitle}>
-                            {category.title}
-                          </Text>
-                        </View>
-                      </TouchableOpacity>
-                      {expandedCategories.has(category.title) && (
-                        <View style={styles.categoryContent}>
-                          {category.items.length > 0 ? (
-                            category.items.map((item, itemIndex) => (
-                              <View key={itemIndex} style={styles.categoryItem}>
-                                {item}
-                              </View>
-                            ))
-                          ) : (
-                            <View style={styles.emptyState}>
-                              {/* <Text style={styles.emptyStateText}>
+                <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+                  <View style={styles.closeButtonContainer}>
+                    <Ionicons name="close" size={20} color="#888" />
+                  </View>
+                </TouchableOpacity>
+              </View>
+              <ScrollView
+                style={styles.content}
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={styles.scrollContent}
+              >
+                {categories
+                  ? categories.map((category, index) => (
+                      <View key={index} style={styles.categoryContainer}>
+                        <TouchableOpacity
+                          style={styles.categoryHeader}
+                          onPress={() => toggleCategory(category.title)}
+                        >
+                          <View style={styles.categoryTitleContainer}>
+                            <Ionicons
+                              name={
+                                expandedCategories.has(category.title)
+                                  ? "caret-down"
+                                  : "caret-forward"
+                              }
+                              size={16}
+                              color="#888"
+                              style={styles.categoryCaretIcon}
+                            />
+                            <Text style={styles.categoryTitle}>
+                              {category.title}
+                            </Text>
+                          </View>
+                        </TouchableOpacity>
+                        {expandedCategories.has(category.title) && (
+                          <View style={styles.categoryContent}>
+                            {category.items.length > 0 ? (
+                              category.items.map((item, itemIndex) => (
+                                <View
+                                  key={itemIndex}
+                                  style={styles.categoryItem}
+                                >
+                                  {item}
+                                </View>
+                              ))
+                            ) : (
+                              <View style={styles.emptyState}>
+                                {/* <Text style={styles.emptyStateText}>
                                 No {category.title.toLowerCase()} found
                               </Text> */}
-                              <TouchableOpacity
-                                style={{
-                                  flexDirection: "row",
-                                  opacity: isAddingAccount ? 0.6 : 1,
-                                }}
-                                onPress={handleAddNewAccount}
-                                disabled={isAddingAccount}
-                              >
-                                <Ionicons
-                                  name={
-                                    isAddingAccount
-                                      ? "hourglass-outline"
-                                      : "add-circle-outline"
-                                  }
-                                  size={16}
-                                  color="#4A90E2"
-                                  style={{ marginRight: 4 }}
-                                />
-                                <Text
+                                <TouchableOpacity
                                   style={{
-                                    fontSize: 12,
-                                    fontWeight: "600",
-                                    color: "#4A90E2",
-                                    fontFamily:
-                                      Platform.OS === "ios"
-                                        ? "System"
-                                        : "sans-serif",
-                                    letterSpacing: 0.2,
+                                    flexDirection: "row",
+                                    opacity: isAddingAccount ? 0.6 : 1,
                                   }}
+                                  onPress={() =>
+                                    handleAddNewAccount(category.title)
+                                  }
+                                  disabled={isAddingAccount}
                                 >
-                                  {isAddingAccount
-                                    ? "CONNECTING..."
-                                    : "ADD A NEW ACCOUNT"}
-                                </Text>
-                              </TouchableOpacity>
-                            </View>
-                          )}
-                        </View>
-                      )}
-                    </View>
-                  ))
-                : children}
-            </ScrollView>
-            <View style={styles.footer}>
-              <TouchableOpacity
-                style={[
-                  styles.addAccountButton,
-                  { opacity: isAddingAccount ? 0.6 : 1 },
-                ]}
-                onPress={handleAddNewAccount}
-                disabled={isAddingAccount}
-              >
-                <Ionicons
-                  name={
-                    isAddingAccount ? "hourglass-outline" : "add-circle-outline"
-                  }
-                  size={20}
-                  color="#4A90E2"
-                  style={styles.addIcon}
-                />
-                <Text style={styles.addAccountText}>
-                  {isAddingAccount ? "Connecting..." : "Link a New Account"}
-                </Text>
-              </TouchableOpacity>
+                                  <Ionicons
+                                    name={
+                                      isAddingAccount
+                                        ? "hourglass-outline"
+                                        : "add-circle-outline"
+                                    }
+                                    size={16}
+                                    color="#4A90E2"
+                                    style={{ marginRight: 4 }}
+                                  />
+                                  <Text
+                                    style={{
+                                      fontSize: 12,
+                                      fontWeight: "600",
+                                      color: "#4A90E2",
+                                      fontFamily:
+                                        Platform.OS === "ios"
+                                          ? "System"
+                                          : "sans-serif",
+                                      letterSpacing: 0.2,
+                                    }}
+                                  >
+                                    {isAddingAccount
+                                      ? "CONNECTING..."
+                                      : "ADD A NEW ACCOUNT"}
+                                  </Text>
+                                </TouchableOpacity>
+                              </View>
+                            )}
+                          </View>
+                        )}
+                      </View>
+                    ))
+                  : children}
+              </ScrollView>
+              <View style={styles.footer}>
+                <TouchableOpacity
+                  style={[
+                    styles.addAccountButton,
+                    { opacity: isAddingAccount ? 0.6 : 1 },
+                  ]}
+                  onPress={() => handleAddNewAccount()}
+                  disabled={isAddingAccount}
+                >
+                  <Ionicons
+                    name={
+                      isAddingAccount
+                        ? "hourglass-outline"
+                        : "add-circle-outline"
+                    }
+                    size={20}
+                    color="#4A90E2"
+                    style={styles.addIcon}
+                  />
+                  <Text style={styles.addAccountText}>
+                    {isAddingAccount ? "Connecting..." : "Link a New Account"}
+                  </Text>
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
         </View>
-      </View>
-    </Modal>
+      </Modal>
+    </>
   );
 }
 

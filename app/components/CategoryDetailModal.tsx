@@ -107,9 +107,6 @@ const CategoryDetailModal: React.FC<CategoryDetailModalProps> = ({
           </View>
 
           <View style={styles.categoryTransactionsList}>
-            <Text style={styles.categoryTransactionsHeader}>
-              Transactions this month ({categoryTransactions.length})
-            </Text>
             {categoryTransactions.length > 0 ? (
               <ScrollView>
                 {categoryTransactions.map((tx, idx) => (

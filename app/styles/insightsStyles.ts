@@ -456,7 +456,7 @@ export const styles = StyleSheet.create({
       color: "#fff",
     },
     categoryTransactionsList: {
-      marginTop: 16,
+      marginTop: 10,
     },
     categoryTransactionsHeader: {
       fontSize: 16,

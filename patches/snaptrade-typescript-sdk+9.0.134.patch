@@ -1,0 +1,13 @@
+diff --git a/node_modules/snaptrade-typescript-sdk/dist/requestAfterHook.js b/node_modules/snaptrade-typescript-sdk/dist/requestAfterHook.js
+index 8d80d62..af938e3 100644
+--- a/node_modules/snaptrade-typescript-sdk/dist/requestAfterHook.js
++++ b/node_modules/snaptrade-typescript-sdk/dist/requestAfterHook.js
+@@ -19,7 +19,7 @@ function computeHmacSha256(message, key) {
+     return __awaiter(this, void 0, void 0, function* () {
+         if (isNodeEnvironment()) {
+             // Node.js environment
+-            const crypto = require("crypto");
++            const crypto = require("crypto-browserify");
+             const hmac = crypto.createHmac("sha256", key);
+             hmac.update(message);
+             return hmac.digest("base64"); // or return Buffer if you want raw bytes

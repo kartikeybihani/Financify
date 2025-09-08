@@ -14,7 +14,6 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { supabase } from "../lib/supabase/supabase";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { fetchLinkToken, handlePlaidConnect } from "../utils/plaid";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { BlurView } from "expo-blur";
 
 export default function AccountConnectionScreen() {

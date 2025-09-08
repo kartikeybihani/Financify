@@ -105,15 +105,15 @@ export const AccountSelector: React.FC<AccountSelectorProps> = ({
                     },
                   ]}
                 >
-                  <View style={styles.closeButtonContainer}>
+                  {/* <View style={styles.closeButtonContainer}>
                     <Ionicons
                       name="close"
                       size={18}
                       color="rgba(255,255,255,0.8)"
                     />
-                  </View>
+                  </View> */}
                 </TouchableOpacity>
-                <View style={{ height: 65 }} />
+                <View style={{ height: 20 }} />
 
                 {/* Modal Content */}
                 <ScrollView

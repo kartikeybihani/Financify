@@ -237,7 +237,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.12,
     shadowRadius: 8,
     elevation: 4,
-    marginBottom: 16,
   },
   gradient: {
     padding: 16,
@@ -264,7 +263,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 16,
     fontWeight: "700",
-    color: "#1a1a1a",
+    color: "#fff",
     marginBottom: 2,
   },
   subtitle: {

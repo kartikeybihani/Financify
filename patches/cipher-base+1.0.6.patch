@@ -1,0 +1,13 @@
+diff --git a/node_modules/cipher-base/index.js b/node_modules/cipher-base/index.js
+index 804c108..93d2a06 100644
+--- a/node_modules/cipher-base/index.js
++++ b/node_modules/cipher-base/index.js
+@@ -1,7 +1,7 @@
+ 'use strict';
+ 
+ var Buffer = require('safe-buffer').Buffer;
+-var Transform = require('stream').Transform;
++var Transform = require('readable-stream').Transform;
+ var StringDecoder = require('string_decoder').StringDecoder;
+ var inherits = require('inherits');
+ 

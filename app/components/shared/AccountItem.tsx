@@ -91,7 +91,7 @@ export default function AccountItem({
         <View style={styles.meshPattern} />
 
         {/* Bank Name - Top Left */}
-        {bankName && <Text style={styles.bankNameText}>{bankName}</Text>}
+        <Text style={styles.bankNameText}>{bankName}</Text>
 
         {/* Bank Icon - Top Right */}
         <View style={styles.bankIconContainer}>

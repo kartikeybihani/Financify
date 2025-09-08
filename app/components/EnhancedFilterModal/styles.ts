@@ -460,7 +460,7 @@ export const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   accountGridCardBank: {
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: "600",
     color: "rgba(255,255,255,0.8)",
     textTransform: "uppercase",

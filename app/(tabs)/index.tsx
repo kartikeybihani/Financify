@@ -14,12 +14,15 @@ import {
   Dimensions,
 } from "react-native";
 import { Feather, Ionicons } from "@expo/vector-icons";
+// AsyncStorage only for non-financial data (goals, preferences)
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { styles } from "../styles/homeStyles";
+import { supabase } from "../lib/supabase/supabase";
 import {
   getUpdateLinkToken,
   openPlaidLink,
-  fetchInitialData,
+  getAllUserAccounts,
+  getPrimaryItemId,
   clearOldPlaidData,
   getItemIds,
   addNewBankAccount,
@@ -32,7 +35,6 @@ import {
   Security,
 } from "../types/plaid";
 import { useRouter } from "expo-router";
-import { supabase } from "../lib/supabase/supabase";
 import FinancialBottomSheet from "../components/shared/FinancialBottomSheet";
 import FinancialCard from "../components/shared/FinancialCard";
 import AccountItem from "../components/shared/AccountItem";
@@ -106,63 +108,79 @@ export default function HomeScreen() {
     setActiveSlide(slideIndex);
   };
 
-  // Save data to AsyncStorage
-  const saveDataToStorage = async (data: any) => {
+  // Load data directly from Supabase database (secure method)
+  const loadDataFromDatabase = async () => {
     try {
-      await AsyncStorage.setItem("financialData", JSON.stringify(data));
-    } catch (error) {
-      console.error("Error saving data to storage:", error);
-    }
-  };
+      console.log("🏠 Home: Loading data from Supabase database...");
 
-  // Load data from AsyncStorage
-  const loadDataFromStorage = async () => {
-    try {
-      const storedData = await AsyncStorage.getItem("financialData");
-      if (storedData) {
-        const data = JSON.parse(storedData);
-        setAccounts(data.accounts || []);
-        setIdentity(data.identity || []);
-        setInvestments(data.investments || null);
-        setLiabilities(data.liabilities || null);
-        setInstitution(data.institution || null);
-        return true;
+      const {
+        data: { user },
+        error: authError,
+      } = await supabase.auth.getUser();
+      if (authError || !user?.id) {
+        console.log("❌ Auth error:", authError?.message);
+        return false;
       }
-      return false;
+
+      // Get accounts directly from database (same as insights)
+      const accounts = await getAllUserAccounts(user.id);
+      setAccounts(accounts || []);
+
+      // Get institution info from primary item
+      const item_id = await getPrimaryItemId();
+      let institution = null;
+
+      if (item_id) {
+        const { data: userItem, error } = await supabase
+          .from("user_items")
+          .select("institution_name, institution_id")
+          .eq("item_id", item_id)
+          .single();
+
+        institution =
+          userItem && !error
+            ? {
+                name: userItem.institution_name,
+                institution_id: userItem.institution_id,
+              }
+            : null;
+      }
+
+      setInstitution(institution);
+
+      // Set basic data for compatibility
+      setIdentity([]);
+      setInvestments({
+        holdings: [],
+        securities: [],
+        investmentTransactions: [],
+      });
+      setLiabilities([]);
+
+      console.log("✅ Home: Data loaded from database", {
+        institution: institution?.name || "Multiple/Unknown",
+        accounts: accounts?.length || 0,
+      });
+
+      return accounts && accounts.length > 0;
     } catch (error) {
-      console.error("Error loading data from storage:", error);
+      console.error("❌ Error loading data from database:", error);
       return false;
     }
   };
 
-  // Fetch fresh data using new Supabase approach
+  // Fetch fresh data using new Supabase approach (secure method)
   const fetchFreshData = async () => {
     try {
-      console.log("🔄 Refreshing financial data using new approach...");
-
-      const data = await fetchInitialData();
-
-      if (data.accounts && data.accounts.length > 0) {
-        setAccounts(data.accounts);
-        setIdentity(data.identity || []);
-        setInvestments(
-          data.investments && data.investments.holdings
-            ? data.investments
-            : null
-        );
-        setLiabilities(data.liabilities || []);
-        setInstitution(data.institution);
-
-        await saveDataToStorage({
-          accounts: data.accounts,
-          identity: data.identity,
-          investments: data.investments,
-          liabilities: data.liabilities,
-          institution: data.institution,
-        });
-
+      console.log("🔄 Refreshing financial data from database...");
+      const hasData = await loadDataFromDatabase();
+      if (hasData) {
         console.log("✅ Financial data refreshed successfully");
-        DeviceEventEmitter.emit("financialDataRefreshed", data);
+        // Emit event for other components (like insights)
+        DeviceEventEmitter.emit("financialDataRefreshed", {
+          accounts,
+          transactions: [], // Transactions loaded separately in insights
+        });
       } else {
         console.log("⚠️ No data available after refresh");
       }
@@ -211,67 +229,28 @@ export default function HomeScreen() {
       console.log("User in home screen:", user?.email);
       setUserData(user);
 
-      console.log("🚀 Loading financial data using new multi-bank approach...");
+      if (!user?.id) {
+        console.log("❌ No authenticated user found");
+        setAccessToken(null);
+        return;
+      }
 
-      // Clear old data first to avoid conflicts
-      await clearOldPlaidData();
+      console.log("🚀 Loading financial data from secure database...");
 
-      // Use the new fetchInitialData function
-      const data = await fetchInitialData();
+      // Load data directly from database (secure method)
+      const hasData = await loadDataFromDatabase();
 
-      console.log("📊 Received data:", {
-        accounts: data.accounts?.length || 0,
-        institution: data.institution?.name || "None",
-        investments: data.investments?.holdings?.length || 0,
-        liabilities: data.liabilities?.length || 0,
-      });
-
-      if (data.accounts && data.accounts.length > 0) {
-        // We have connected banks - set all the data
-        setAccounts(data.accounts);
-        setIdentity(data.identity || []);
-        setInvestments(
-          data.investments && data.investments.holdings
-            ? data.investments
-            : null
-        );
-        setLiabilities(data.liabilities || []);
-        setInstitution(data.institution);
-        setAccessToken("connected"); // Set a flag to show we have data
-
-        // Save data to storage for offline access
-        await saveDataToStorage({
-          accounts: data.accounts,
-          identity: data.identity,
-          investments: data.investments,
-          liabilities: data.liabilities,
-          institution: data.institution,
-        });
-
-        console.log("✅ Successfully loaded financial data");
+      if (hasData) {
+        setAccessToken("connected");
+        console.log("✅ Successfully loaded financial data from database");
       } else {
         console.log("⚠️ No accounts found - user needs to connect a bank");
         setAccessToken(null);
-
-        // Try to load from storage as fallback
-        const dataLoaded = await loadDataFromStorage();
-        if (dataLoaded) {
-          console.log("📦 Loaded fallback data from storage");
-          setAccessToken("connected"); // Show data even if from storage
-        }
       }
     } catch (err) {
       console.error("❌ Error initializing app:", err);
       setLoadingError(true);
       setAccessToken(null);
-
-      // Try to load from storage as fallback
-      const dataLoaded = await loadDataFromStorage();
-      if (dataLoaded) {
-        console.log("📦 Loaded fallback data from storage after error");
-        setAccessToken("connected"); // Show data even if from storage
-        setLoadingError(false); // Don't show error if we have cached data
-      }
     } finally {
       setIsInitialLoad(false);
       setIsLoading(false);
@@ -841,7 +820,7 @@ export default function HomeScreen() {
                       { decimals: 0, useKM: false }
                     )}
                     icon="wallet-outline"
-                    bankName={institution?.name}
+                    bankName={account.institution_name || "Unknown Bank"}
                   />
                 )),
               },
@@ -866,7 +845,7 @@ export default function HomeScreen() {
                         { decimals: 0, useKM: false }
                       )}
                       icon="card-outline"
-                      bankName={institution?.name}
+                      bankName={account.institution_name || "Unknown Bank"}
                     />
                   )),
               },
@@ -891,7 +870,7 @@ export default function HomeScreen() {
                         { decimals: 0, useKM: false }
                       )}
                       icon="receipt-outline"
-                      bankName={institution?.name}
+                      bankName={account.institution_name || "Unknown Bank"}
                     />
                   )),
               },
@@ -910,7 +889,7 @@ export default function HomeScreen() {
                       { decimals: 0, useKM: false }
                     )}
                     icon="trending-up"
-                    bankName={institution?.name}
+                    bankName={institution?.name || "Investment Account"}
                   />
                 )),
               },

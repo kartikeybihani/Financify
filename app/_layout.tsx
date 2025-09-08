@@ -1,10 +1,35 @@
 // app/(root)/_layout.tsx
+import "react-native-get-random-values";
+import "react-native-webview-crypto";
 import React from "react";
 import { Stack, useRouter, useSegments } from "expo-router";
+
+// Initialize Buffer polyfill first
+if (typeof global.Buffer === "undefined") {
+  global.Buffer = require("buffer").Buffer;
+}
+
+// Initialize minimal crypto polyfills (simplified for SnapTrade compatibility)
+try {
+  // Only initialize getRandomValues if not available
+  if (!global.crypto || !global.crypto.getRandomValues) {
+    const { getRandomValues } = require("react-native-get-random-values");
+    if (!global.crypto) {
+      global.crypto = {} as any;
+    }
+    global.crypto.getRandomValues = getRandomValues;
+    console.log("✅ crypto.getRandomValues initialized");
+  }
+
+  // Let SnapTrade SDK handle its own crypto operations
+  console.log("✅ Minimal crypto setup complete for SnapTrade compatibility");
+} catch (error) {
+  console.error("❌ Minimal crypto setup failed:", error);
+}
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import { useFonts } from "expo-font";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import "react-native-reanimated";
 import AuthProvider, { useAuth } from "./contexts/AuthContext";
@@ -16,9 +41,39 @@ function RootLayoutNav() {
   const { session, isLoading } = useAuth();
   const segments = useSegments();
   const router = useRouter();
+  const [navigationReady, setNavigationReady] = useState(false);
+  const [cachedOnboardingStatus, setCachedOnboardingStatus] = useState<{
+    onboardingComplete: boolean;
+    userAuthenticated: boolean;
+  } | null>(null);
+
+  // Pre-load cached onboarding status to prevent navigation flashes
+  useEffect(() => {
+    const loadCachedStatus = async () => {
+      try {
+        const [cachedOnboardingComplete, cachedUserAuthenticated] =
+          await Promise.all([
+            AsyncStorage.getItem("onboarding_complete"),
+            AsyncStorage.getItem("user_authenticated"),
+          ]);
+
+        setCachedOnboardingStatus({
+          onboardingComplete: cachedOnboardingComplete === "true",
+          userAuthenticated: cachedUserAuthenticated === "true",
+        });
+        setNavigationReady(true);
+      } catch (error) {
+        console.error("Error loading cached status:", error);
+        setNavigationReady(true); // Still allow navigation even if cache fails
+      }
+    };
+
+    loadCachedStatus();
+  }, []);
 
   useEffect(() => {
-    if (isLoading) return;
+    // Wait for both auth loading and navigation readiness
+    if (isLoading || !navigationReady || !cachedOnboardingStatus) return;
 
     const handleNavigation = async () => {
       const inAuth = segments[0] === "(auth)";
@@ -32,22 +87,14 @@ function RootLayoutNav() {
         return;
       }
 
-      // Check AsyncStorage first for development hot reload persistence
-      const cachedOnboardingComplete = await AsyncStorage.getItem(
-        "onboarding_complete"
-      );
-      const cachedUserAuthenticated = await AsyncStorage.getItem(
-        "user_authenticated"
-      );
-
-      // If we have cached completion status, trust it (helps with hot reloads and app reloads)
+      // Use pre-loaded cached status for immediate decision making
       if (
-        cachedOnboardingComplete === "true" &&
-        cachedUserAuthenticated === "true"
+        cachedOnboardingStatus.onboardingComplete &&
+        cachedOnboardingStatus.userAuthenticated
       ) {
         console.log("✅ Using cached onboarding completion status");
         if (inAuth || inOnboarding) {
-          router.replace("/(tabs)");
+          router.replace("/(tabs)/insights");
         }
         return;
       }
@@ -61,6 +108,10 @@ function RootLayoutNav() {
       if (onboardingDone) {
         await AsyncStorage.setItem("onboarding_complete", "true");
         await AsyncStorage.setItem("user_authenticated", "true");
+        setCachedOnboardingStatus({
+          onboardingComplete: true,
+          userAuthenticated: true,
+        });
         console.log(
           "✅ Onboarding complete in Supabase, updating cache and going to tabs"
         );
@@ -73,6 +124,10 @@ function RootLayoutNav() {
       // Clear cache if onboarding is not done
       await AsyncStorage.removeItem("onboarding_complete");
       await AsyncStorage.removeItem("user_authenticated");
+      setCachedOnboardingStatus({
+        onboardingComplete: false,
+        userAuthenticated: false,
+      });
 
       // Only auto-navigate if user is not already in onboarding screens
       // This prevents navigation loops when user manually navigates between screens
@@ -94,7 +149,7 @@ function RootLayoutNav() {
     };
 
     handleNavigation();
-  }, [session, segments, isLoading]);
+  }, [session, segments, isLoading, navigationReady, cachedOnboardingStatus]);
 
   return (
     <Stack screenOptions={{ headerShown: false }}>

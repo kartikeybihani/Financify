@@ -41,111 +41,178 @@ know if you'd like any tweaks or diagrams added.
 
 ## **2. Supabase Schema**
 
-\-- user_items
+### **user_items**
 
 CREATE TABLE public.user_items (
-
-id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-
-user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-
-item_id text NOT NULL UNIQUE,
-
-institution_id text,
-
-institution_name text,
-
-webhook text,
-
-has_new_accounts boolean NOT NULL DEFAULT false,
-
-requires_update_mode boolean NOT NULL DEFAULT false,
-
-transactions_cursor text,
-
-last_synced_at timestamptz,
-
-created_at timestamptz DEFAULT now()
-
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  item_id text NOT NULL UNIQUE,
+  institution_id text,
+  institution_name text,
+  webhook text,
+  has_new_accounts boolean NOT NULL DEFAULT false,
+  requires_update_mode boolean NOT NULL DEFAULT false,
+  transactions_cursor text,
+  access_token_secret_id uuid, -- Reference to encrypted access token in Vault
+  last_synced_at timestamptz,
+  created_at timestamptz DEFAULT now()
 );
 
 CREATE INDEX idx_items_user ON public.user_items(user_id);
 
-\-- accounts
+### **accounts**
 
 CREATE TABLE public.accounts (
-
-account_id text PRIMARY KEY,
-
-item_id text NOT NULL REFERENCES public.user_items(item_id) ON DELETE
-CASCADE,
-
-name text,
-
-mask text,
-
-type text,
-
-subtype text,
-
-official_name text,
-
-current_balance numeric,
-
-available_balance numeric,
-
-balance_as_of timestamptz,
-
-created_at timestamptz DEFAULT now()
-
+  account_id text PRIMARY KEY,
+  item_id text NOT NULL REFERENCES public.user_items(item_id) ON DELETE CASCADE,
+  name text,
+  mask text,
+  type text,
+  subtype text,
+  official_name text,
+  current_balance numeric,
+  available_balance numeric,
+  created_at timestamptz DEFAULT now()
 );
 
 CREATE INDEX idx_accounts_item ON public.accounts(item_id);
 
-### 
-
-\-- transactions
+### **transactions**
 
 CREATE TABLE public.transactions (
-
-id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-
-user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-
-account_id text NOT NULL REFERENCES public.accounts(account_id) ON
-DELETE CASCADE,
-
-plaid_transaction_id text NOT NULL UNIQUE,
-
-date date NOT NULL,
-
-amount numeric NOT NULL,
-
-iso_currency_code text,
-
-name text,
-
-merchant_name text,
-
-category text,
-
-transaction_type text,
-
-pending boolean,
-
-inserted_at timestamptz DEFAULT now()
-
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  account_id text NOT NULL REFERENCES public.accounts(account_id) ON DELETE CASCADE,
+  plaid_transaction_id text NOT NULL UNIQUE,
+  date date NOT NULL,
+  amount numeric NOT NULL,
+  iso_currency_code text,
+  name text,
+  merchant_name text,
+  category text,
+  transaction_type text,
+  pending boolean,
+  inserted_at timestamptz DEFAULT now()
 );
 
-\-- Performance
+-- Performance indexes
+CREATE INDEX idx_tx_user_date ON public.transactions(user_id, date DESC);
+CREATE INDEX idx_tx_account_date ON public.transactions(account_id, date DESC);
 
-CREATE INDEX idx_tx_user_date ON public.transactions(user_id, date
-DESC);
+### **recurring_streams**
 
-CREATE INDEX idx_tx_account_date ON public.transactions(account_id, date
-DESC);
+CREATE TABLE public.recurring_streams (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  item_id text NOT NULL REFERENCES public.user_items(item_id) ON DELETE CASCADE,
+  account_id text NOT NULL REFERENCES public.accounts(account_id) ON DELETE CASCADE,
+  stream_id text NOT NULL UNIQUE, -- Plaid stream identifier
+  stream_type text NOT NULL, -- 'subscription', 'income', 'bill', 'other'
+  flow_type text NOT NULL, -- 'inflow', 'outflow'
+  description text,
+  merchant_name text,
+  category text,
+  average_amount numeric NOT NULL,
+  last_amount numeric,
+  iso_currency_code text,
+  frequency text, -- 'MONTHLY', 'WEEKLY', etc.
+  first_date date,
+  last_date date,
+  is_active boolean NOT NULL DEFAULT true,
+  transaction_ids text[], -- Array of Plaid transaction IDs
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now(),
+  last_synced_at timestamptz
+);
 
-## **3. Sync Mechanism: API Flows & Webhooks**
+-- Performance indexes for recurring_streams
+CREATE INDEX idx_recurring_streams_user ON public.recurring_streams(user_id);
+CREATE INDEX idx_recurring_streams_item ON public.recurring_streams(item_id);
+CREATE INDEX idx_recurring_streams_account ON public.recurring_streams(account_id);
+CREATE INDEX idx_recurring_streams_type ON public.recurring_streams(stream_type);
+CREATE INDEX idx_recurring_streams_active ON public.recurring_streams(is_active);
+
+## **3. Row Level Security (RLS) Policies**
+
+Enable RLS and create policies to ensure users can only access their own data:
+
+```sql
+-- Enable RLS on all tables
+ALTER TABLE public.user_items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.accounts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.transactions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.recurring_streams ENABLE ROW LEVEL SECURITY;
+
+-- user_items policies
+CREATE POLICY "Users can view their own user_items" ON public.user_items
+  FOR SELECT USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can insert their own user_items" ON public.user_items
+  FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can update their own user_items" ON public.user_items
+  FOR UPDATE USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can delete their own user_items" ON public.user_items
+  FOR DELETE USING (auth.uid() = user_id);
+
+-- accounts policies (users access accounts through their items)
+CREATE POLICY "Users can view their own accounts" ON public.accounts
+  FOR SELECT USING (
+    item_id IN (
+      SELECT item_id FROM public.user_items WHERE user_id = auth.uid()
+    )
+  );
+
+CREATE POLICY "Users can insert their own accounts" ON public.accounts
+  FOR INSERT WITH CHECK (
+    item_id IN (
+      SELECT item_id FROM public.user_items WHERE user_id = auth.uid()
+    )
+  );
+
+CREATE POLICY "Users can update their own accounts" ON public.accounts
+  FOR UPDATE USING (
+    item_id IN (
+      SELECT item_id FROM public.user_items WHERE user_id = auth.uid()
+    )
+  );
+
+CREATE POLICY "Users can delete their own accounts" ON public.accounts
+  FOR DELETE USING (
+    item_id IN (
+      SELECT item_id FROM public.user_items WHERE user_id = auth.uid()
+    )
+  );
+
+-- transactions policies
+CREATE POLICY "Users can view their own transactions" ON public.transactions
+  FOR SELECT USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can insert their own transactions" ON public.transactions
+  FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can update their own transactions" ON public.transactions
+  FOR UPDATE USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can delete their own transactions" ON public.transactions
+  FOR DELETE USING (auth.uid() = user_id);
+
+-- recurring_streams policies (already exists but included for completeness)
+CREATE POLICY "Users can view their own recurring streams" ON public.recurring_streams
+  FOR SELECT USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can insert their own recurring streams" ON public.recurring_streams
+  FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can update their own recurring streams" ON public.recurring_streams
+  FOR UPDATE USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can delete their own recurring streams" ON public.recurring_streams
+  FOR DELETE USING (auth.uid() = user_id);
+```
+
+## **4. Sync Mechanism: API Flows & Webhooks**
 
 ### **A. Transactions Sync Flow**
 
@@ -223,7 +290,7 @@ DESC);
     > ([[Stack
     > Overflow]{.underline}](https://stackoverflow.com/questions/77135415/update-flow-account-syncing-in-plaid?utm_source=chatgpt.com))
 
-## **4. Full Data Flow Summary**
+## **5. Full Data Flow Summary**
 
   --------------------------------------------------------------------------
   **Trigger/Event**        **Action**
@@ -245,7 +312,7 @@ DESC);
   Balance accuracy needed  Optionally call /accounts/balance/get
   --------------------------------------------------------------------------
 
-## **5. UI Presentation Logic**
+## **6. UI Presentation Logic**
 
 **Per-account view**:\
 \
@@ -261,7 +328,7 @@ DESC;
 
 -   
 
-## **6. Suggested Indexes for Performance**
+## **7. Suggested Indexes for Performance**
 
 To keep queries efficient as data grows, implement these indexes:
 
@@ -303,11 +370,13 @@ Consider advanced optimizations if needed:
     > transactions---can improve maintenance and performance.\
     > ([[Medium]{.underline}](https://medium.com/%40burakkocakeu/optimizing-postgresql-database-performance-908f309a4156?utm_source=chatgpt.com))
 
-## **7. Final Thoughts & Ready to Deploy**
+## **8. Final Thoughts & Ready to Deploy**
 
 Your system is now rock-solid:
 
--   Clean schema with user, item, account, and transaction tables.
+-   Clean schema with user_items, accounts, transactions, and recurring_streams tables.
+
+-   Complete Row Level Security (RLS) policies ensuring data isolation per user.
 
 -   Efficient sync via cursors and Plaid sync.
 
@@ -315,13 +384,15 @@ Your system is now rock-solid:
 
 -   Clear support for re-auth and account addition via update-mode.
 
+-   Recurring transactions tracking for subscriptions, bills, and income streams.
+
 -   UI reads fast from DB; Plaid only powers updates.
 
 -   Index strategy ensures good performance even as history grows.
 
 ## 
 
-## **8. AsyncStorage & Secure Offline Caching (Final)**
+## **9. AsyncStorage & Secure Offline Caching (Final)**
 
 **What to store in AsyncStorage** (React Native's unencrypted key-value
 storage):

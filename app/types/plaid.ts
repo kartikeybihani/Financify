@@ -6,6 +6,7 @@ export interface Account {
     current: number;
   };
   type: string;
+  institution_name?: string;
 }
 
 export interface Identity {

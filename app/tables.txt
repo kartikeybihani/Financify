@@ -118,3 +118,62 @@ transactions table -->
   },
   ...
 ]
+
+recurring_streams table -->
+[
+  {
+    "id": "76b04cd7-40bf-444c-966d-90426a685e0e",
+    "user_id": "79952f35-b607-40d6-a32e-d81386882eb7",
+    "item_id": "1dYovrbqMds3BEqBeM3oszdZPR7y1nCm64Q04",
+    "account_id": "jN4xbKYm1NhKq3Xq1zK0sXdZDqLyj7UY0x3yV",
+    "stream_id": "JoKkmM3VdoTpy04yEbp7hrQXdd3e7ZUmQV49n",
+    "stream_type": "income",
+    "flow_type": "inflow",
+    "description": "Monthly Interest Paid",
+    "merchant_name": "",
+    "category": "Income",
+    "average_amount": "-0.09333333333333334",
+    "last_amount": "-0.08",
+    "iso_currency_code": "USD",
+    "frequency": "MONTHLY",
+    "first_date": "2025-06-30",
+    "last_date": "2025-08-31",
+    "is_active": true,
+    "transaction_ids": [
+      "Aj6LykdZMjs3XQEXMk3Zs0bVO8KxqLUnrLRxY",
+      "BrmDKAw5RrixKzZK59xpia0nXzd845h7PKyRL",
+      "nz8db0Le3zi86Bg6Jz8pIrX4oPg33EUqm7yxq"
+    ],
+    "created_at": "2025-09-08 04:31:36.303662+00",
+    "updated_at": "2025-09-08 04:31:36.303662+00",
+    "last_synced_at": "2025-09-08 04:31:36.248+00"
+  },
+  {
+    "id": "da444c22-8a58-4542-97b1-2b72f3c35d77",
+    "user_id": "79952f35-b607-40d6-a32e-d81386882eb7",
+    "item_id": "1dYovrbqMds3BEqBeM3oszdZPR7y1nCm64Q04",
+    "account_id": "jN4xbKYm1NhKq3Xq1zK0sXdZDqLyj7UY0x3yV",
+    "stream_id": "8qYowLEvMqsQw8LwPpQotZq688dgN1CxKrE1e",
+    "stream_type": "other",
+    "flow_type": "outflow",
+    "description": "OPENAI CHATGPT SUBSCR",
+    "merchant_name": "OpenAI",
+    "category": "Other",
+    "average_amount": "21.74",
+    "last_amount": "21.74",
+    "iso_currency_code": "USD",
+    "frequency": "MONTHLY",
+    "first_date": "2025-06-04",
+    "last_date": "2025-09-04",
+    "is_active": true,
+    "transaction_ids": [
+      "4LYOrx9yMLigKeAKn0gOsNdo5E0Q69UnPVyMm",
+      "yznKP1vexzi3pNapm63DsA80XPorq9Fge5EP7",
+      "wzX3DLkY4zi7rX9rJ476c0dymrBvXptRb9VqD",
+      "ExPqvjDgMxumQ0bQeEmyTvgaR4oyyQt5KEYAn"
+    ],
+    "created_at": "2025-09-08 04:31:36.303662+00",
+    "updated_at": "2025-09-08 04:31:36.303662+00",
+    "last_synced_at": "2025-09-08 04:31:36.248+00"
+  }
+]
