@@ -114,7 +114,18 @@ export const calculateProgressPercentage = (currentAmount: number, targetAmount:
   return Math.min(100, Math.round((currentAmount / targetAmount) * 100));
 };
 
+// Helper function to format numbers in K/M format
+export const formatCurrency = (amount: number): string => {
+  if (amount >= 1000000) {
+    return `${(amount / 1000000).toFixed(amount % 1000000 === 0 ? 0 : 1)}M`;
+  } else if (amount >= 1000) {
+    return `${(amount / 1000).toFixed(amount % 1000 === 0 ? 0 : 1)}K`;
+  } else {
+    return amount.toString();
+  }
+};
+
 // Helper function to format goal progress text
 export const formatGoalProgress = (currentAmount: number, targetAmount: number): string => {
-  return `$${currentAmount.toLocaleString()} of $${targetAmount.toLocaleString()}`;
+  return `$${formatCurrency(currentAmount)} of $${formatCurrency(targetAmount)}`;
 };
