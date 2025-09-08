@@ -8,6 +8,7 @@ import {
   getCategoryColor,
   calculateProgressPercentage,
   formatGoalProgress,
+  getProgressColor,
 } from "../utils/goalCategories";
 
 const GoalItem: React.FC<GoalItemProps> = ({
@@ -70,13 +71,12 @@ const GoalItem: React.FC<GoalItemProps> = ({
                     item.current_amount,
                     item.target_amount
                   )}%`,
-                  backgroundColor:
+                  backgroundColor: getProgressColor(
                     calculateProgressPercentage(
                       item.current_amount,
                       item.target_amount
-                    ) >= 100
-                      ? "#4CD964"
-                      : "#4A90E2",
+                    )
+                  ),
                 },
               ]}
             />

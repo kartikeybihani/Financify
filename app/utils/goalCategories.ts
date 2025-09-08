@@ -129,3 +129,50 @@ export const formatCurrency = (amount: number): string => {
 export const formatGoalProgress = (currentAmount: number, targetAmount: number): string => {
   return `$${formatCurrency(currentAmount)} of $${formatCurrency(targetAmount)}`;
 };
+
+// Helper function to get psychologically encouraging progress color
+export const getProgressColor = (percentage: number): string => {
+  // Clamp percentage between 0 and 100
+  const clampedPercentage = Math.max(0, Math.min(100, percentage));
+  
+  // Define color stops for smooth psychological progression
+  // Colors chosen to be encouraging and motivating throughout the journey
+  const colorStops = [
+    { percentage: 0, color: { r: 255, g: 107, b: 107 } },   // Warm coral - encouraging start
+    { percentage: 10, color: { r: 255, g: 138, b: 101 } },  // Soft orange - gentle motivation
+    { percentage: 25, color: { r: 255, g: 183, b: 77 } },   // Golden yellow - optimistic
+    { percentage: 40, color: { r: 255, g: 206, b: 84 } },   // Bright yellow - energetic
+    { percentage: 55, color: { r: 129, g: 236, b: 236 } },  // Aqua - refreshing progress
+    { percentage: 70, color: { r: 94, g: 231, b: 223 } },   // Mint green - growth
+    { percentage: 85, color: { r: 52, g: 211, b: 153 } },   // Emerald - strong progress
+    { percentage: 95, color: { r: 34, g: 197, b: 94 } },    // Forest green - near completion
+    { percentage: 100, color: { r: 16, g: 185, b: 129 } }   // Success green - achievement
+  ];
+  
+  // Find the two color stops to interpolate between
+  let lowerStop = colorStops[0];
+  let upperStop = colorStops[colorStops.length - 1];
+  
+  for (let i = 0; i < colorStops.length - 1; i++) {
+    if (clampedPercentage >= colorStops[i].percentage && clampedPercentage <= colorStops[i + 1].percentage) {
+      lowerStop = colorStops[i];
+      upperStop = colorStops[i + 1];
+      break;
+    }
+  }
+  
+  // If percentage is exactly at a stop, return that color
+  if (clampedPercentage === lowerStop.percentage) {
+    return `rgb(${lowerStop.color.r}, ${lowerStop.color.g}, ${lowerStop.color.b})`;
+  }
+  
+  // Interpolate between the two colors
+  const range = upperStop.percentage - lowerStop.percentage;
+  const factor = range === 0 ? 0 : (clampedPercentage - lowerStop.percentage) / range;
+  
+  const r = Math.round(lowerStop.color.r + (upperStop.color.r - lowerStop.color.r) * factor);
+  const g = Math.round(lowerStop.color.g + (upperStop.color.g - lowerStop.color.g) * factor);
+  const b = Math.round(lowerStop.color.b + (upperStop.color.b - lowerStop.color.b) * factor);
+  
+  return `rgb(${r}, ${g}, ${b})`;
+};
