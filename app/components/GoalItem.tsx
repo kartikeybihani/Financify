@@ -9,7 +9,7 @@ import {
   calculateProgressPercentage,
   formatGoalProgress,
   getProgressColor,
-} from "../utils/goalCategories";
+} from "../../src/utils/goalCategories";
 
 const GoalItem: React.FC<GoalItemProps> = ({
   item,

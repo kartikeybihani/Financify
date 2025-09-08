@@ -14,8 +14,6 @@ import {
   Dimensions,
 } from "react-native";
 import { Feather, Ionicons } from "@expo/vector-icons";
-// AsyncStorage only for non-financial data (goals, preferences)
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { styles } from "../styles/homeStyles";
 import { supabase } from "../lib/supabase/supabase";
 import {
@@ -38,8 +36,9 @@ import { useRouter } from "expo-router";
 import FinancialBottomSheet from "../components/shared/FinancialBottomSheet";
 import FinancialCard from "../components/shared/FinancialCard";
 import AccountItem from "../components/shared/AccountItem";
-import { LoadingSkeleton } from "../components/LoadingSkeleton";
+import { LoadingSkeleton } from "../../src/components/LoadingSkeleton";
 import { Goal } from "../types/finny";
+import { useGoals } from "../hooks/useGoals";
 
 if (Platform.OS === "android") {
   UIManager.setLayoutAnimationEnabledExperimental?.(true);
@@ -47,6 +46,7 @@ if (Platform.OS === "android") {
 
 export default function HomeScreen() {
   const router = useRouter();
+  const { goalsData, loading: goalsLoading, refreshGoals } = useGoals(() => {});
 
   // Add encouraging messages array
   const encouragingMessages = [
@@ -89,8 +89,6 @@ export default function HomeScreen() {
 
   const hasLoadedOnce = useRef(false);
   const [userData, setUserData] = useState<any>(null);
-
-  const [timelineData, setTimelineData] = useState<Goal[]>([]);
 
   const [activeSlide, setActiveSlide] = useState(0);
   const screenWidth = Dimensions.get("window").width;
@@ -209,7 +207,7 @@ export default function HomeScreen() {
     setRefreshing(true);
 
     try {
-      await fetchFreshData();
+      await Promise.all([fetchFreshData(), refreshGoals()]);
     } catch (error) {
       console.error("❌ Error during refresh:", error);
     }
@@ -279,44 +277,14 @@ export default function HomeScreen() {
     };
   }, []);
 
-  const getMonthNumber = (monthName: string): number => {
-    const months = [
-      "January",
-      "February",
-      "March",
-      "April",
-      "May",
-      "June",
-      "July",
-      "August",
-      "September",
-      "October",
-      "November",
-      "December",
-    ];
-    return months.indexOf(monthName);
-  };
-
   const findClosestGoal = (goals: Goal[]) => {
     if (!goals.length) return null;
 
     const now = new Date();
 
     return goals.reduce((closest, goal) => {
-      // Create dates for comparison
-      const goalDate = new Date(
-        Number(goal.timeline.year),
-        getMonthNumber(goal.timeline.month),
-        1
-      );
-
-      const closestDate = closest
-        ? new Date(
-            Number(closest.timeline.year),
-            getMonthNumber(closest.timeline.month),
-            1
-          )
-        : null;
+      const goalDate = new Date(goal.target_date);
+      const closestDate = closest ? new Date(closest.target_date) : null;
 
       // If the goal is in the past, ignore it
       if (goalDate < now) return closest;
@@ -335,21 +303,7 @@ export default function HomeScreen() {
     }, null as Goal | null);
   };
 
-  useEffect(() => {
-    const loadGoals = async () => {
-      try {
-        const storedGoals = await AsyncStorage.getItem("goals");
-        if (storedGoals) {
-          setTimelineData(JSON.parse(storedGoals));
-        }
-      } catch (error) {
-        console.error("Error loading goals:", error);
-      }
-    };
-    loadGoals();
-  }, []);
-
-  const closestGoal = findClosestGoal(timelineData);
+  const closestGoal = findClosestGoal(goalsData);
 
   // Helper functions
   const formatCurrency = (
@@ -659,14 +613,14 @@ export default function HomeScreen() {
 
           {/* Goals Progress */}
           <View style={styles.goalsSection}>
-            {timelineData.length > 0 && (
+            {goalsData.length > 0 && (
               <View style={styles.goalsSectionHeader}>
                 <View style={styles.goalsTitleContainer}>
                   <Ionicons name="trophy" size={20} color="#4A90E2" />
                   <Text style={styles.sectionTitle}>Your Focus 🎯</Text>
                 </View>
                 <TouchableOpacity
-                  onPress={() => router.push("/timeline")}
+                  onPress={() => router.push("/goals")}
                   style={styles.viewAllButton}
                 >
                   <Text style={styles.viewAllText}>View all goals</Text>
@@ -683,12 +637,9 @@ export default function HomeScreen() {
                       currency: "USD",
                       minimumFractionDigits: 0,
                       maximumFractionDigits: 0,
-                    }).format(
-                      (closestGoal.target || 0) *
-                        ((closestGoal.progress || 0) / 100)
-                    )}{" "}
+                    }).format(closestGoal.current_amount || 0)}{" "}
                     of{" "}
-                    {formatCurrency(closestGoal.target || 0, "USD", {
+                    {formatCurrency(closestGoal.target_amount || 0, "USD", {
                       decimals: 0,
                       useKM: true,
                     })}
@@ -699,7 +650,16 @@ export default function HomeScreen() {
                     style={[
                       styles.progressBarFill,
                       {
-                        width: `${closestGoal.progress || 0}%`,
+                        width: `${
+                          closestGoal.target_amount > 0
+                            ? Math.min(
+                                (closestGoal.current_amount /
+                                  closestGoal.target_amount) *
+                                  100,
+                                100
+                              )
+                            : 0
+                        }%`,
                       },
                     ]}
                   />
@@ -714,7 +674,14 @@ export default function HomeScreen() {
                       marginLeft: 2,
                     }}
                   >
-                    +{Math.round(closestGoal.progress || 0)}% Progress
+                    {closestGoal.target_amount > 0
+                      ? Math.round(
+                          (closestGoal.current_amount /
+                            closestGoal.target_amount) *
+                            100
+                        )
+                      : 0}
+                    % Progress
                   </Text>
                 </View>
               </View>
@@ -742,7 +709,7 @@ export default function HomeScreen() {
                       style={styles.addFirstGoalButton}
                       onPress={() => {
                         router.push({
-                          pathname: "/timeline",
+                          pathname: "/goals",
                           params: { openAddGoal: "true" },
                         });
                       }}

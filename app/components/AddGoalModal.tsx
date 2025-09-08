@@ -15,7 +15,10 @@ import { Ionicons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { AddGoalModalProps, GoalInput } from "../types/addGoalModalTypes";
 import { LinearGradient } from "expo-linear-gradient";
-import { getCategoryOptions, GoalCategory } from "../utils/goalCategories";
+import {
+  getCategoryOptions,
+  GoalCategory,
+} from "../../src/utils/goalCategories";
 
 const initialGoalState: Omit<GoalInput, "target_date" | "category"> = {
   label: "",

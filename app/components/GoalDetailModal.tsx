@@ -23,7 +23,7 @@ import {
   formatGoalProgress,
   GoalCategory,
   getCategoryOptions,
-} from "../utils/goalCategories";
+} from "../../src/utils/goalCategories";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -59,6 +59,10 @@ const GoalDetailModal: React.FC<GoalDetailModalProps> = ({
       setLocalProgressAmount(goal.current_amount || 0);
     }
   }, [goal]);
+
+  // Check if progress has been changed
+  const hasProgressChanged =
+    goal && localProgressAmount !== (goal.current_amount || 0);
 
   const handleClose = () => {
     // Save progress changes before closing
@@ -149,8 +153,17 @@ const GoalDetailModal: React.FC<GoalDetailModalProps> = ({
                   onPress={handleClose}
                   style={styles.closeButton}
                 >
-                  <View style={styles.closeButtonCircle}>
-                    <Ionicons name="close" size={18} color="#888" />
+                  <View
+                    style={[
+                      styles.closeButtonCircle,
+                      hasProgressChanged && styles.closeButtonCircleUpdated,
+                    ]}
+                  >
+                    <Ionicons
+                      name={hasProgressChanged ? "checkmark" : "close"}
+                      size={18}
+                      color={hasProgressChanged ? "#fff" : "#888"}
+                    />
                   </View>
                 </TouchableOpacity>
               </View>
@@ -561,6 +574,11 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255, 255, 255, 0.08)",
     alignItems: "center",
     justifyContent: "center",
+  },
+  closeButtonCircleUpdated: {
+    backgroundColor: "rgba(17, 18, 17, 0.15)",
+    borderWidth: 1,
+    borderColor: "rgba(50, 215, 75, 0.3)",
   },
   headerTextContainer: {
     flex: 1,

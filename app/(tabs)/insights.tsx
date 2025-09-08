@@ -53,7 +53,7 @@ import {
   getCurrentMonthCategoryBreakdown,
   countNullCategories,
   forceFullResync,
-} from "../utils/categoryFix";
+} from "../../src/utils/categoryFix";
 const screenWidth = Dimensions.get("window").width;
 
 // Define types

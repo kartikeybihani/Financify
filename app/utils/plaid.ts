@@ -6,15 +6,15 @@ import {supabase} from "../lib/supabase/supabase";
 const BASE_URL = "https://financify-rose.vercel.app";
 
 // === Last Used Item Management ===
-import { setLastUsedItemId, getLastUsedItemId } from "./lastUsedItem";
-import { fetchUserItems } from "./supabase";
+import { setLastUsedItemId, getLastUsedItemId } from "../../src/utils/lastUsedItem";
+import { fetchUserItems } from "../../src/utils/supabase";
 import { 
   cacheRemove, 
   txPreviewKey, 
   balancesKey, 
   institutionKey, 
   lastSyncKey 
-} from "./cache";
+} from "../../src/utils/cache";
 
 // === Get User Items from Supabase ===
 export async function getUserItems() {

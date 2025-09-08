@@ -1,31 +1,8 @@
 // app/(root)/_layout.tsx
-import "react-native-get-random-values";
-import "react-native-webview-crypto";
+
 import React from "react";
 import { Stack, useRouter, useSegments } from "expo-router";
 
-// Initialize Buffer polyfill first
-if (typeof global.Buffer === "undefined") {
-  global.Buffer = require("buffer").Buffer;
-}
-
-// Initialize minimal crypto polyfills (simplified for SnapTrade compatibility)
-try {
-  // Only initialize getRandomValues if not available
-  if (!global.crypto || !global.crypto.getRandomValues) {
-    const { getRandomValues } = require("react-native-get-random-values");
-    if (!global.crypto) {
-      global.crypto = {} as any;
-    }
-    global.crypto.getRandomValues = getRandomValues;
-    console.log("✅ crypto.getRandomValues initialized");
-  }
-
-  // Let SnapTrade SDK handle its own crypto operations
-  console.log("✅ Minimal crypto setup complete for SnapTrade compatibility");
-} catch (error) {
-  console.error("❌ Minimal crypto setup failed:", error);
-}
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import { useFonts } from "expo-font";
@@ -33,7 +10,7 @@ import { useEffect, useState } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import "react-native-reanimated";
 import AuthProvider, { useAuth } from "./contexts/AuthContext";
-import { runStorageMigrationV2 } from "./utils/migrate";
+import { runStorageMigrationV2 } from "../src/utils/migrate";
 
 SplashScreen.preventAutoHideAsync();
 

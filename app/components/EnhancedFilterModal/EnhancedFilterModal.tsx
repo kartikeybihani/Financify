@@ -3,18 +3,21 @@ import { Modal, View, Text, TouchableOpacity, ScrollView } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 
-import { EnhancedFilterModalProps, FilterOptions } from "./types";
-import { DEFAULT_CATEGORIES } from "./constants";
-import { styles } from "./styles";
+import {
+  EnhancedFilterModalProps,
+  FilterOptions,
+} from "../../../src/components/EnhancedFilterModal/types";
+import { DEFAULT_CATEGORIES } from "../../../src/components/EnhancedFilterModal/constants";
+import { styles } from "../../../src/components/EnhancedFilterModal/styles";
 import {
   getSelectedAccountsDescription,
   getSelectedCategoriesDescription,
   getSelectedTimePeriodDescription,
   getResetFilters,
-} from "./utils";
-import { AccountSelector } from "./AccountSelector";
-import { TimePeriodSelector } from "./TimePeriodSelector";
-import { CategorySelector } from "./CategorySelector";
+} from "../../../src/components/EnhancedFilterModal/utils";
+import { AccountSelector } from "../../../src/components/EnhancedFilterModal/AccountSelector";
+import { TimePeriodSelector } from "../../../src/components/EnhancedFilterModal/TimePeriodSelector";
+import { CategorySelector } from "../../../src/components/EnhancedFilterModal/CategorySelector";
 
 const EnhancedFilterModal: React.FC<EnhancedFilterModalProps> = ({
   visible,
