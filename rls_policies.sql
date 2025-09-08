@@ -6,6 +6,7 @@ ALTER TABLE public.user_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.accounts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.transactions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.recurring_streams ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.goals ENABLE ROW LEVEL SECURITY;
 
 -- user_items policies
 CREATE POLICY "Users can view their own user_items" ON public.user_items
@@ -73,4 +74,24 @@ CREATE POLICY "Users can update their own recurring streams" ON public.recurring
   FOR UPDATE USING (auth.uid() = user_id);
 
 CREATE POLICY "Users can delete their own recurring streams" ON public.recurring_streams
+  FOR DELETE USING (auth.uid() = user_id);
+
+-- goals policies
+CREATE POLICY "Users can view their own goals" ON public.goals
+  FOR SELECT USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can insert their own goals" ON public.goals
+  FOR INSERT WITH CHECK (
+    auth.uid() = user_id 
+    AND target_date > CURRENT_DATE -- Ensure target date is in the future
+  );
+
+CREATE POLICY "Users can update their own goals" ON public.goals
+  FOR UPDATE USING (auth.uid() = user_id)
+  WITH CHECK (
+    auth.uid() = user_id
+    AND (target_date > CURRENT_DATE OR status = 'completed') -- Allow past dates only for completed goals
+  );
+
+CREATE POLICY "Users can delete their own goals" ON public.goals
   FOR DELETE USING (auth.uid() = user_id);

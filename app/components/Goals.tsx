@@ -15,14 +15,13 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import GoalNotification from "./GoalNotification";
 import AddGoalModal from "./AddGoalModal";
-import TimelineItem from "./TimelineItem";
+import GoalItem from "./GoalItem";
 import GoalDetailModal from "./GoalDetailModal";
-import { styles } from "../styles/timelineSyles";
+import { styles } from "../styles/goalsStyles";
 import { useGoals } from "../hooks/useGoals";
 import { Goal } from "../types/finny";
 import { GoalInput } from "../types/addGoalModalTypes";
-import { TimelineProps, TimelineState } from "../types/timelineTypes";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { GoalsProps, GoalsState } from "../types/goalsTypes";
 import { useRouter } from "expo-router";
 
 // Simple ID generator
@@ -30,32 +29,15 @@ const generateId = () => {
   return Date.now().toString(36) + Math.random().toString(36).substr(2);
 };
 
-const getMonthNumber = (monthName: string): number => {
-  const months = [
-    "January",
-    "February",
-    "March",
-    "April",
-    "May",
-    "June",
-    "July",
-    "August",
-    "September",
-    "October",
-    "November",
-    "December",
-  ];
-  return months.indexOf(monthName);
-};
-
-const Timeline: React.FC<TimelineProps> = ({
+const Goals: React.FC<GoalsProps> = ({
   deleteGoal,
-  timelineAnimations,
-  timelineData,
+  updateGoal,
+  goalsAnimations,
+  goalsData,
   onRefreshStart,
   onRefreshEnd,
 }) => {
-  const [state, setState] = useState<TimelineState>({
+  const [state, setState] = useState<GoalsState>({
     showAddGoalModal: false,
     notification: {
       visible: false,
@@ -65,8 +47,7 @@ const Timeline: React.FC<TimelineProps> = ({
   });
 
   const [selectedGoal, setSelectedGoal] = useState<Goal | null>(null);
-  const [localTimelineData, setLocalTimelineData] =
-    useState<Goal[]>(timelineData);
+  const [localGoalsData, setLocalGoalsData] = useState<Goal[]>(goalsData);
 
   const { addManualGoal, refreshGoals } = useGoals(() => {});
 
@@ -129,24 +110,34 @@ const Timeline: React.FC<TimelineProps> = ({
   });
 
   useEffect(() => {
-    setLocalTimelineData(timelineData);
-  }, [timelineData]);
+    console.log(
+      "🔄 [GOALS COMPONENT] Goals data changed:",
+      goalsData?.length || 0,
+      "goals"
+    );
+    setLocalGoalsData(goalsData);
+  }, [goalsData]);
 
-  const handleSaveGoal = async (goal: GoalInput) => {
+  const handleSaveGoal = async (goalInput: GoalInput) => {
     try {
-      const newGoal: Goal = {
-        id: generateId(),
-        label: goal.label,
-        target: goal.target,
-        progress: goal.progress || 0,
-        timeline: goal.timeline,
-      };
-
-      await addManualGoal(newGoal);
-      setLocalTimelineData((prev: Goal[]) => [...prev, newGoal]);
-      setState((prev: TimelineState) => ({ ...prev, showAddGoalModal: false }));
+      await addManualGoal(goalInput);
+      setState((prev: GoalsState) => ({
+        ...prev,
+        showAddGoalModal: false,
+        notification: {
+          visible: true,
+          message: "Goal created successfully!",
+        },
+      }));
     } catch (err) {
       console.error("Manual goal save failed:", err);
+      setState((prev: GoalsState) => ({
+        ...prev,
+        notification: {
+          visible: true,
+          message: "Failed to create goal",
+        },
+      }));
     }
   };
 
@@ -159,7 +150,7 @@ const Timeline: React.FC<TimelineProps> = ({
         onPress: async () => {
           try {
             await deleteGoal(goalToDelete.id);
-            setState((prev: TimelineState) => ({
+            setState((prev: GoalsState) => ({
               ...prev,
               notification: {
                 visible: true,
@@ -168,7 +159,7 @@ const Timeline: React.FC<TimelineProps> = ({
             }));
           } catch (error) {
             console.error("Error deleting goal:", error);
-            setState((prev: TimelineState) => ({
+            setState((prev: GoalsState) => ({
               ...prev,
               notification: {
                 visible: true,
@@ -181,34 +172,22 @@ const Timeline: React.FC<TimelineProps> = ({
     ]);
   };
 
-  const handleEditGoal = async (updatedGoal: Goal) => {
+  const handleEditGoal = async (id: string, updates: Partial<Goal>) => {
     try {
-      // Update the goal in storage
-      const storedGoals = await AsyncStorage.getItem("goals");
-      const parsedGoals = storedGoals ? JSON.parse(storedGoals) : [];
-      const updatedGoals = parsedGoals.map((g: Goal) =>
-        g.id === updatedGoal.id ? updatedGoal : g
-      );
-
-      await AsyncStorage.setItem("goals", JSON.stringify(updatedGoals));
-
-      // Update local state
-      setLocalTimelineData(updatedGoals);
-
-      // Show success notification
-      setState((prev: TimelineState) => ({
-        ...prev,
-        notification: {
-          visible: true,
-          message: "Goal updated successfully",
-        },
-      }));
-
-      // Close the modal
+      if (updateGoal) {
+        await updateGoal(id, updates);
+        setState((prev: GoalsState) => ({
+          ...prev,
+          notification: {
+            visible: true,
+            message: "Goal updated successfully",
+          },
+        }));
+      }
       setSelectedGoal(null);
     } catch (error) {
       console.error("Error updating goal:", error);
-      setState((prev: TimelineState) => ({
+      setState((prev: GoalsState) => ({
         ...prev,
         notification: {
           visible: true,
@@ -218,34 +197,32 @@ const Timeline: React.FC<TimelineProps> = ({
     }
   };
 
-  const sortedTimelineData = React.useMemo(() => {
-    return [...localTimelineData].sort((a, b) => {
-      const dateA = a.timeline;
-      const dateB = b.timeline;
-      return dateA.year !== dateB.year
-        ? dateA.year - dateB.year
-        : getMonthNumber(dateA.month) - getMonthNumber(dateB.month);
+  const sortedGoalsData = React.useMemo(() => {
+    return [...localGoalsData].sort((a, b) => {
+      const dateA = new Date(a.target_date);
+      const dateB = new Date(b.target_date);
+      return dateA.getTime() - dateB.getTime();
     });
-  }, [localTimelineData]);
+  }, [localGoalsData]);
 
   const onRefresh = async () => {
     try {
       onRefreshStart?.();
-      setState((prev: TimelineState) => ({ ...prev, refreshing: true }));
+      setState((prev: GoalsState) => ({ ...prev, refreshing: true }));
       await refreshGoals();
     } finally {
-      setState((prev: TimelineState) => ({ ...prev, refreshing: false }));
+      setState((prev: GoalsState) => ({ ...prev, refreshing: false }));
       onRefreshEnd?.();
     }
   };
 
   return (
-    <View style={styles.timelineContainer}>
+    <View style={styles.goalsContainer}>
       {state.notification.visible && (
         <GoalNotification
           message={state.notification.message}
           onClose={() =>
-            setState((prev: TimelineState) => ({
+            setState((prev: GoalsState) => ({
               ...prev,
               notification: { visible: false, message: "" },
             }))
@@ -254,8 +231,8 @@ const Timeline: React.FC<TimelineProps> = ({
       )}
       <ScrollView
         contentContainerStyle={[
-          styles.timelineWrapper,
-          !sortedTimelineData.length && styles.emptyTimelineWrapper,
+          styles.goalsWrapper,
+          !sortedGoalsData.length && styles.emptyGoalsWrapper,
         ]}
         refreshControl={
           <RefreshControl
@@ -265,7 +242,7 @@ const Timeline: React.FC<TimelineProps> = ({
           />
         }
       >
-        {sortedTimelineData.length === 0 ? (
+        {sortedGoalsData.length === 0 ? (
           <View style={styles.emptyStateContainer}>
             <View style={styles.mascotImageContainer}>
               <Animated.Image
@@ -297,7 +274,7 @@ const Timeline: React.FC<TimelineProps> = ({
               <TouchableOpacity
                 style={styles.addManuallyButton}
                 onPress={() =>
-                  setState((prev: TimelineState) => ({
+                  setState((prev: GoalsState) => ({
                     ...prev,
                     showAddGoalModal: true,
                   }))
@@ -309,12 +286,12 @@ const Timeline: React.FC<TimelineProps> = ({
             </View>
           </View>
         ) : (
-          sortedTimelineData.map((item, index) => (
-            <TimelineItem
+          sortedGoalsData.map((item, index) => (
+            <GoalItem
               key={item.id}
               item={item}
               index={index}
-              animation={timelineAnimations[index]}
+              animation={goalsAnimations[index]}
               onPress={() => setSelectedGoal(item)}
             />
           ))
@@ -327,11 +304,11 @@ const Timeline: React.FC<TimelineProps> = ({
         </View>
       )}
 
-      {sortedTimelineData.length !== 0 && (
+      {sortedGoalsData.length !== 0 && (
         <TouchableOpacity
           style={styles.addGoalButton}
           onPress={() =>
-            setState((prev: TimelineState) => ({
+            setState((prev: GoalsState) => ({
               ...prev,
               showAddGoalModal: true,
             }))
@@ -345,7 +322,7 @@ const Timeline: React.FC<TimelineProps> = ({
       <AddGoalModal
         visible={state.showAddGoalModal}
         onClose={() =>
-          setState((prev: TimelineState) => ({
+          setState((prev: GoalsState) => ({
             ...prev,
             showAddGoalModal: false,
           }))
@@ -364,4 +341,4 @@ const Timeline: React.FC<TimelineProps> = ({
   );
 };
 
-export default Timeline;
+export default Goals;

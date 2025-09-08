@@ -132,6 +132,41 @@ CREATE INDEX idx_recurring_streams_account ON public.recurring_streams(account_i
 CREATE INDEX idx_recurring_streams_type ON public.recurring_streams(stream_type);
 CREATE INDEX idx_recurring_streams_active ON public.recurring_streams(is_active);
 
+### **goals**
+
+CREATE TABLE public.goals (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  label text NOT NULL,
+  description text,
+  note text CHECK (char_length(note) <= 350), -- ~50 words limit
+  target_amount decimal(12,1) NOT NULL CHECK (target_amount > 0),
+  current_amount decimal(12,1) DEFAULT 0.0 CHECK (current_amount >= 0),
+  target_date date NOT NULL,
+  category text NOT NULL DEFAULT 'other' CHECK (category IN (
+    'emergency_fund',
+    'vacation',
+    'car',
+    'house_down_payment',
+    'education',
+    'retirement',
+    'wedding',
+    'debt_payoff',
+    'investment',
+    'other'
+  )),
+  status text NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'paused', 'completed')),
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now()
+);
+
+-- Performance indexes for goals
+CREATE INDEX idx_goals_user_id ON public.goals(user_id);
+CREATE INDEX idx_goals_status ON public.goals(status);
+CREATE INDEX idx_goals_category ON public.goals(category);
+CREATE INDEX idx_goals_target_date ON public.goals(target_date);
+CREATE INDEX idx_goals_user_status ON public.goals(user_id, status);
+
 ## **3. Row Level Security (RLS) Policies**
 
 Enable RLS and create policies to ensure users can only access their own data:
@@ -142,6 +177,7 @@ ALTER TABLE public.user_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.accounts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.transactions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.recurring_streams ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.goals ENABLE ROW LEVEL SECURITY;
 
 -- user_items policies
 CREATE POLICY "Users can view their own user_items" ON public.user_items
@@ -209,6 +245,26 @@ CREATE POLICY "Users can update their own recurring streams" ON public.recurring
   FOR UPDATE USING (auth.uid() = user_id);
 
 CREATE POLICY "Users can delete their own recurring streams" ON public.recurring_streams
+  FOR DELETE USING (auth.uid() = user_id);
+
+-- goals policies
+CREATE POLICY "Users can view their own goals" ON public.goals
+  FOR SELECT USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can insert their own goals" ON public.goals
+  FOR INSERT WITH CHECK (
+    auth.uid() = user_id 
+    AND target_date > CURRENT_DATE -- Ensure target date is in the future
+  );
+
+CREATE POLICY "Users can update their own goals" ON public.goals
+  FOR UPDATE USING (auth.uid() = user_id)
+  WITH CHECK (
+    auth.uid() = user_id
+    AND (target_date > CURRENT_DATE OR status = 'completed') -- Allow past dates only for completed goals
+  );
+
+CREATE POLICY "Users can delete their own goals" ON public.goals
   FOR DELETE USING (auth.uid() = user_id);
 ```
 
@@ -374,7 +430,7 @@ Consider advanced optimizations if needed:
 
 Your system is now rock-solid:
 
--   Clean schema with user_items, accounts, transactions, and recurring_streams tables.
+-   Clean schema with user_items, accounts, transactions, recurring_streams, and goals tables.
 
 -   Complete Row Level Security (RLS) policies ensuring data isolation per user.
 
@@ -385,6 +441,8 @@ Your system is now rock-solid:
 -   Clear support for re-auth and account addition via update-mode.
 
 -   Recurring transactions tracking for subscriptions, bills, and income streams.
+
+-   Financial goals tracking with categories, progress monitoring, and status management.
 
 -   UI reads fast from DB; Plaid only powers updates.
 

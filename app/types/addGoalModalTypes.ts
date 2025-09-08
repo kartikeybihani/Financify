@@ -1,13 +1,13 @@
 // types/addGoalModalTypes.ts
+import { GoalCategory } from '../utils/goalCategories';
 
 export interface GoalInput {
     label: string;
-    target: number;
-    progress?: number;
-    timeline: {
-        month: string;
-        year: number;
-    };
+    note?: string;
+    target_amount: number;
+    current_amount?: number;
+    target_date: string; // ISO date string
+    category: GoalCategory;
 }
   
 export interface AddGoalModalProps {

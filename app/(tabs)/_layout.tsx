@@ -70,9 +70,9 @@ export default function TabLayout() {
       iconCategory: null,
     },
     {
-      name: "timeline",
+      name: "goals",
       label: "Goals",
-      icon: "timeline-check-outline",
+      icon: "target",
       iconCategory: "MaterialCommunityIcons",
     },
     {

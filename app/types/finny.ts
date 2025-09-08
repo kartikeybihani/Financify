@@ -14,14 +14,17 @@ export interface Timeline {
 
 export interface Goal {
   id: string;
+  user_id: string;
   label: string;
-  target?: number;
   description?: string;
-  progress?: number;
-  timeline: {
-    month: string;
-    year: number;
-  };
+  note?: string;
+  target_amount: number;
+  current_amount: number;
+  target_date: string; // ISO date string
+  category: 'emergency_fund' | 'vacation' | 'car' | 'house_down_payment' | 'education' | 'retirement' | 'wedding' | 'debt_payoff' | 'investment' | 'other';
+  status: 'active' | 'paused' | 'completed';
+  created_at: string;
+  updated_at: string;
 }
 
 export interface ChatMessage {

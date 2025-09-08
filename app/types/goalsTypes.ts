@@ -1,17 +1,18 @@
-// types/timelineTypes.ts
+// types/goalsTypes.ts
 
 import { Animated } from "react-native";
 import { Goal } from "./finny";
 
-export interface TimelineProps {
+export interface GoalsProps {
   deleteGoal: (id: string) => Promise<void>;
-  timelineAnimations: Animated.Value[];
-  timelineData: Goal[];
+  updateGoal?: (id: string, updates: Partial<Goal>) => Promise<void>;
+  goalsAnimations: Animated.Value[];
+  goalsData: Goal[];
   onRefreshStart?: () => void;
   onRefreshEnd?: () => void;
 }
 
-export interface TimelineState {
+export interface GoalsState {
   showAddGoalModal: boolean;
   notification: {
     visible: boolean;
@@ -34,7 +35,7 @@ export type IconType =
   | "watch-outline"
   | "flag-outline";
 
-export interface TimelineItemProps {
+export interface GoalItemProps {
   item: Goal;
   index: number;
   animation: Animated.Value;
@@ -42,10 +43,10 @@ export interface TimelineItemProps {
 }
 
 export const types = {
-  TimelineProps: {} as TimelineProps,
-  TimelineState: {} as TimelineState,
+  GoalsProps: {} as GoalsProps,
+  GoalsState: {} as GoalsState,
   NotificationState: {} as NotificationState,
-  TimelineItemProps: {} as TimelineItemProps,
+  GoalItemProps: {} as GoalItemProps,
 } as const;
 
 export default types; 

@@ -9,7 +9,7 @@ import {
   StyleSheet,
 } from "react-native";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
-import Timeline from "../components/Timeline";
+import Goals from "../components/Goals";
 import { useGoals } from "../hooks/useGoals";
 
 const styles = StyleSheet.create({
@@ -59,17 +59,17 @@ const styles = StyleSheet.create({
   },
 });
 
-export default function TimelineScreen() {
-  const { timelineData, deleteGoal } = useGoals(() => {});
+export default function GoalsScreen() {
+  const { goalsData, loading, deleteGoal, updateGoal } = useGoals(() => {});
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const timelineAnimations = React.useRef<Animated.Value[]>(
+  const goalsAnimations = React.useRef<Animated.Value[]>(
     Array(10)
       .fill(0)
       .map(() => new Animated.Value(0))
   ).current;
 
   React.useEffect(() => {
-    timelineAnimations.forEach((anim, index) => {
+    goalsAnimations.forEach((anim, index) => {
       Animated.timing(anim, {
         toValue: 1,
         duration: 500,
@@ -84,25 +84,22 @@ export default function TimelineScreen() {
       <View style={styles.headerContainer}>
         <View style={styles.titleContainer}>
           <View style={styles.iconContainer}>
-            <MaterialCommunityIcons
-              name="timeline-check-outline"
-              size={24}
-              color="#4A90E2"
-            />
+            <MaterialCommunityIcons name="target" size={24} color="#4A90E2" />
           </View>
-          <Text style={styles.headerTitle}>Timeline</Text>
+          <Text style={styles.headerTitle}>Goals</Text>
         </View>
       </View>
-      {isRefreshing && (
+      {(isRefreshing || loading) && (
         <View style={styles.loadingContainer}>
           <ActivityIndicator color="#4A90E2" />
         </View>
       )}
       <View style={styles.contentContainer}>
-        <Timeline
-          timelineData={timelineData}
-          timelineAnimations={timelineAnimations}
+        <Goals
+          goalsData={goalsData}
+          goalsAnimations={goalsAnimations}
           deleteGoal={deleteGoal}
+          updateGoal={updateGoal}
           onRefreshStart={() => setIsRefreshing(true)}
           onRefreshEnd={() => setIsRefreshing(false)}
         />
