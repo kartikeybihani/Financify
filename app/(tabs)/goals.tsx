@@ -60,7 +60,9 @@ const styles = StyleSheet.create({
 });
 
 export default function GoalsScreen() {
-  const { goalsData, loading, deleteGoal, updateGoal } = useGoals(() => {});
+  const { goalsData, loading, deleteGoal, updateGoal, refreshGoals } = useGoals(
+    () => {}
+  );
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [hasInitialData, setHasInitialData] = useState(false);
   const goalsAnimations = React.useRef<Animated.Value[]>(
@@ -109,6 +111,7 @@ export default function GoalsScreen() {
           updateGoal={updateGoal}
           onRefreshStart={() => setIsRefreshing(true)}
           onRefreshEnd={() => setIsRefreshing(false)}
+          onGoalAdded={refreshGoals}
         />
       </View>
     </SafeAreaView>

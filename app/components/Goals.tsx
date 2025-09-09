@@ -36,6 +36,7 @@ const Goals: React.FC<GoalsProps> = ({
   goalsData,
   onRefreshStart,
   onRefreshEnd,
+  onGoalAdded,
 }) => {
   const [state, setState] = useState<GoalsState>({
     showAddGoalModal: false,
@@ -121,6 +122,12 @@ const Goals: React.FC<GoalsProps> = ({
   const handleSaveGoal = async (goalInput: GoalInput) => {
     try {
       await addManualGoal(goalInput);
+      // Force refresh to ensure UI updates
+      await refreshGoals();
+      // Notify parent component to refresh its data
+      if (onGoalAdded) {
+        await onGoalAdded();
+      }
       setState((prev: GoalsState) => ({
         ...prev,
         showAddGoalModal: false,
@@ -172,6 +179,16 @@ const Goals: React.FC<GoalsProps> = ({
     ]);
   };
 
+  const handleOptimisticUpdate = (updatedGoal: Goal) => {
+    // Update local goals data immediately for better UX
+    setLocalGoalsData((prev) =>
+      prev.map((goal) => (goal.id === updatedGoal.id ? updatedGoal : goal))
+    );
+
+    // Update selected goal to reflect changes in modal
+    setSelectedGoal(updatedGoal);
+  };
+
   const handleEditGoal = async (id: string, updates: Partial<Goal>) => {
     try {
       if (updateGoal) {
@@ -184,7 +201,6 @@ const Goals: React.FC<GoalsProps> = ({
           },
         }));
       }
-      setSelectedGoal(null);
     } catch (error) {
       console.error("Error updating goal:", error);
       setState((prev: GoalsState) => ({
@@ -194,6 +210,9 @@ const Goals: React.FC<GoalsProps> = ({
           message: "Failed to update goal",
         },
       }));
+
+      // Revert optimistic update on error by refreshing goals
+      await refreshGoals();
     }
   };
 
@@ -336,6 +355,7 @@ const Goals: React.FC<GoalsProps> = ({
         onClose={() => setSelectedGoal(null)}
         onDelete={handleDeleteGoal}
         onEdit={handleEditGoal}
+        onOptimisticUpdate={handleOptimisticUpdate}
       />
     </View>
   );

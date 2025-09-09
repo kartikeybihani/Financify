@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import {
   Modal,
   View,
@@ -10,6 +10,8 @@ import {
   ScrollView,
   Dimensions,
   TouchableWithoutFeedback,
+  Animated,
+  Alert,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -33,6 +35,7 @@ interface GoalDetailModalProps {
   onClose: () => void;
   onDelete: (goal: Goal) => void;
   onEdit?: (id: string, updates: Partial<Goal>) => void;
+  onOptimisticUpdate?: (updatedGoal: Goal) => void;
 }
 
 const GoalDetailModal: React.FC<GoalDetailModalProps> = ({
@@ -41,6 +44,7 @@ const GoalDetailModal: React.FC<GoalDetailModalProps> = ({
   onClose,
   onDelete,
   onEdit,
+  onOptimisticUpdate,
 }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editedGoal, setEditedGoal] = useState<Goal | null>(null);
@@ -48,6 +52,11 @@ const GoalDetailModal: React.FC<GoalDetailModalProps> = ({
   const [showCategoryPicker, setShowCategoryPicker] = useState(false);
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [localProgressAmount, setLocalProgressAmount] = useState<number>(0);
+  const [showNoteField, setShowNoteField] = useState(false);
+
+  // Animation refs
+  const noteAnimation = useRef(new Animated.Value(0)).current;
+  const noteHeightAnimation = useRef(new Animated.Value(0)).current;
 
   React.useEffect(() => {
     if (goal) {
@@ -57,14 +66,66 @@ const GoalDetailModal: React.FC<GoalDetailModalProps> = ({
       setSelectedDate(date);
       // Initialize local progress amount
       setLocalProgressAmount(goal.current_amount || 0);
+      // Initialize note field visibility based on whether goal has a note
+      setShowNoteField(!!goal.note);
+      // Reset animations when goal changes
+      noteAnimation.setValue(goal.note ? 1 : 0);
+      noteHeightAnimation.setValue(goal.note ? 1 : 0);
     }
   }, [goal]);
+
+  // Animate note field when showNoteField changes
+  useEffect(() => {
+    if (showNoteField) {
+      // Animate in
+      Animated.parallel([
+        Animated.timing(noteHeightAnimation, {
+          toValue: 1,
+          duration: 300,
+          useNativeDriver: false, // Height animation can't use native driver
+        }),
+        Animated.timing(noteAnimation, {
+          toValue: 1,
+          duration: 300,
+          delay: 100, // Slight delay for smoother effect
+          useNativeDriver: true,
+        }),
+      ]).start();
+    } else {
+      // Animate out
+      Animated.parallel([
+        Animated.timing(noteAnimation, {
+          toValue: 0,
+          duration: 250,
+          useNativeDriver: true,
+        }),
+        Animated.timing(noteHeightAnimation, {
+          toValue: 0,
+          duration: 300,
+          delay: 50, // Slight delay for smoother collapse
+          useNativeDriver: false,
+        }),
+      ]).start();
+    }
+  }, [showNoteField]);
 
   // Check if progress has been changed
   const hasProgressChanged =
     goal && localProgressAmount !== (goal.current_amount || 0);
 
   const handleClose = () => {
+    // If in editing mode, first exit editing mode
+    if (isEditing) {
+      setIsEditing(false);
+      setEditedGoal(goal);
+      // Reset note field state
+      setShowNoteField(!!goal?.note);
+      noteAnimation.setValue(goal?.note ? 1 : 0);
+      noteHeightAnimation.setValue(goal?.note ? 1 : 0);
+      onClose();
+      return;
+    }
+
     // Save progress changes before closing
     if (onEdit && goal && localProgressAmount !== (goal.current_amount || 0)) {
       onEdit(goal.id, { current_amount: localProgressAmount });
@@ -74,7 +135,7 @@ const GoalDetailModal: React.FC<GoalDetailModalProps> = ({
 
   if (!goal || !editedGoal) return null;
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (onEdit && editedGoal && goal) {
       const updates: Partial<Goal> = {
         label: editedGoal.label.trim(),
@@ -93,10 +154,38 @@ const GoalDetailModal: React.FC<GoalDetailModalProps> = ({
       });
 
       if (hasChanges) {
-        onEdit(goal.id, updates);
-      }
+        // Create optimistically updated goal
+        const optimisticGoal: Goal = {
+          ...goal,
+          ...updates,
+          updated_at: new Date().toISOString(),
+        };
 
-      setIsEditing(false);
+        // Optimistic update: Update UI immediately
+        if (onOptimisticUpdate) {
+          onOptimisticUpdate(optimisticGoal);
+        }
+
+        // Exit editing mode immediately for better UX
+        setIsEditing(false);
+
+        try {
+          // Update database in background
+          await onEdit(goal.id, updates);
+        } catch (error) {
+          // If database update fails, we could revert or show error
+          // For now, the parent component handles error states
+          console.error("Failed to update goal:", error);
+
+          // Could implement revert logic here if needed
+          // if (onOptimisticUpdate) {
+          //   onOptimisticUpdate(goal); // Revert to original
+          // }
+        }
+      } else {
+        // No changes, just exit editing mode
+        setIsEditing(false);
+      }
     }
   };
 
@@ -149,6 +238,8 @@ const GoalDetailModal: React.FC<GoalDetailModalProps> = ({
                     {isEditing ? `Edit Goal` : goal.label}
                   </Text>
                 </View>
+
+                {/* Header actions */}
                 <TouchableOpacity
                   onPress={handleClose}
                   style={styles.closeButton}
@@ -160,7 +251,7 @@ const GoalDetailModal: React.FC<GoalDetailModalProps> = ({
                     ]}
                   >
                     <Ionicons
-                      name={hasProgressChanged ? "checkmark" : "close"}
+                      name={hasProgressChanged ? "checkmark-outline" : "close"}
                       size={18}
                       color={hasProgressChanged ? "#fff" : "#888"}
                     />
@@ -172,20 +263,6 @@ const GoalDetailModal: React.FC<GoalDetailModalProps> = ({
                 showsVerticalScrollIndicator={false}
                 contentContainerStyle={styles.scrollContent}
               >
-                {/* {isEditing && (
-                  <View style={styles.goalTitleSection}>
-                    <TextInput
-                      style={styles.titleInput}
-                      value={editedGoal.label}
-                      onChangeText={(text) =>
-                        setEditedGoal({ ...editedGoal, label: text })
-                      }
-                      placeholder="Goal Name"
-                      placeholderTextColor="#666"
-                    />
-                  </View>
-                )} */}
-
                 {!isEditing && (
                   <>
                     <View style={styles.infoSection}>
@@ -354,57 +431,180 @@ const GoalDetailModal: React.FC<GoalDetailModalProps> = ({
                         <Ionicons name="calendar" size={16} color="#4A90E2" />
                       </TouchableOpacity>
                     </View>
-                  </View>
-                )}
 
-                <View style={styles.actionButtons}>
-                  {isEditing ? (
-                    <>
+                    {/* Note editing section */}
+                    {!showNoteField ? (
                       <TouchableOpacity
-                        style={[styles.button, styles.cancelButton]}
-                        onPress={() => {
-                          setIsEditing(false);
-                          setEditedGoal(goal);
-                        }}
-                      >
-                        <Ionicons name="close-circle" size={20} color="#fff" />
-                        <Text style={styles.buttonText}>Cancel</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={[styles.button, styles.saveButton]}
-                        onPress={handleSave}
+                        style={styles.addNoteButton}
+                        onPress={() => setShowNoteField(true)}
+                        activeOpacity={0.7}
                       >
                         <Ionicons
-                          name="checkmark-circle"
-                          size={20}
-                          color="#fff"
+                          name="add-circle-outline"
+                          size={18}
+                          color="#4A90E2"
                         />
-                        <Text style={styles.buttonText}>Save Changes</Text>
+                        <Text style={styles.addNoteText}>Add note</Text>
                       </TouchableOpacity>
-                    </>
-                  ) : (
-                    <>
-                      <TouchableOpacity
-                        style={[styles.button, styles.editButton]}
-                        onPress={() => setIsEditing(true)}
+                    ) : (
+                      <Animated.View
+                        style={[
+                          styles.editNoteSection,
+                          {
+                            maxHeight: noteHeightAnimation.interpolate({
+                              inputRange: [0, 1],
+                              outputRange: [0, 200], // Adjust based on content height
+                            }),
+                            overflow: "hidden", // Ensure content clips during animation
+                          },
+                        ]}
                       >
-                        <Ionicons name="pencil" size={20} color="#fff" />
-                        <Text style={styles.buttonText}>Edit Goal</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={[styles.button, styles.deleteButton]}
-                        onPress={() => {
-                          onDelete(goal);
-                          handleClose();
-                        }}
-                      >
-                        <Ionicons name="trash-outline" size={20} color="#fff" />
-                        <Text style={styles.buttonText}>Delete</Text>
-                      </TouchableOpacity>
-                    </>
-                  )}
-                </View>
+                        <Animated.View
+                          style={{
+                            opacity: noteAnimation,
+                            transform: [
+                              {
+                                translateY: noteAnimation.interpolate({
+                                  inputRange: [0, 1],
+                                  outputRange: [-10, 0],
+                                }),
+                              },
+                            ],
+                          }}
+                        >
+                          <View style={styles.noteHeader}>
+                            <Text style={styles.editLabel}>
+                              Note (Optional)
+                            </Text>
+                            <TouchableOpacity
+                              onPress={() => {
+                                setShowNoteField(false);
+                                setEditedGoal((prev) =>
+                                  prev ? { ...prev, note: undefined } : null
+                                );
+                              }}
+                              style={styles.removeNoteButton}
+                            >
+                              <Ionicons
+                                name="close-circle"
+                                size={16}
+                                color="#888"
+                              />
+                            </TouchableOpacity>
+                          </View>
+                          <Animated.View
+                            style={{
+                              transform: [
+                                {
+                                  scale: noteAnimation.interpolate({
+                                    inputRange: [0, 1],
+                                    outputRange: [0.95, 1],
+                                  }),
+                                },
+                              ],
+                            }}
+                          >
+                            <TextInput
+                              style={styles.editNoteInput}
+                              value={editedGoal?.note || ""}
+                              onChangeText={(text) =>
+                                setEditedGoal((prev) =>
+                                  prev ? { ...prev, note: text } : null
+                                )
+                              }
+                              placeholder="Add a note about this goal..."
+                              placeholderTextColor="#666"
+                              multiline
+                              textAlignVertical="top"
+                              maxLength={200}
+                            />
+                          </Animated.View>
+                        </Animated.View>
+                      </Animated.View>
+                    )}
+                  </View>
+                )}
               </ScrollView>
+
+              {/* Bottom action buttons */}
+              {!isEditing ? (
+                <View style={styles.bottomButtonRow}>
+                  <TouchableOpacity
+                    style={styles.bottomEditButton}
+                    onPress={() => setIsEditing(true)}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name="pencil" size={19} color="#4A90E2" />
+                    <Text
+                      style={[styles.bottomButtonText, { color: "#4A90E2" }]}
+                    >
+                      Edit Goal
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.bottomDeleteButton}
+                    onPress={() => {
+                      Alert.alert(
+                        "Delete Goal",
+                        `Are you sure you want to delete "${goal.label}"? This action cannot be undone.`,
+                        [
+                          { text: "Cancel", style: "cancel" },
+                          {
+                            text: "Delete",
+                            style: "destructive",
+                            onPress: () => {
+                              onDelete(goal);
+                              handleClose();
+                            },
+                          },
+                        ]
+                      );
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name="trash-sharp" size={19} color="#FF3B30" />
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <View style={styles.bottomButtonRow}>
+                  <TouchableOpacity
+                    style={styles.bottomCancelButton}
+                    onPress={() => {
+                      setIsEditing(false);
+                      setEditedGoal(goal);
+                      setShowNoteField(!!goal?.note);
+                      noteAnimation.setValue(goal?.note ? 1 : 0);
+                      noteHeightAnimation.setValue(goal?.note ? 1 : 0);
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name="close-circle" size={16} color="#8E8E93" />
+                    <Text
+                      style={[styles.bottomButtonText, { color: "#8E8E93" }]}
+                    >
+                      Cancel
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.bottomSaveButton}
+                    onPress={handleSave}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons
+                      name="checkmark-circle"
+                      size={16}
+                      color="#32D74B"
+                    />
+                    <Text
+                      style={[styles.bottomButtonText, { color: "#32D74B" }]}
+                    >
+                      Save Changes
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              )}
 
               {showDatePicker && (
                 <Modal
@@ -590,6 +790,84 @@ const styles = StyleSheet.create({
     color: "#fff",
     textAlign: "center",
   },
+  headerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  headerActionButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  deleteMenuButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "rgba(255, 255, 255, 0.06)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  bottomButtonRow: {
+    flexDirection: "row",
+    marginHorizontal: 20,
+    marginBottom: 20,
+    marginTop: 5,
+    gap: 12,
+  },
+  bottomEditButton: {
+    flex: 0.83,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 16,
+    backgroundColor: "rgba(74, 144, 226, 0.08)",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(74, 144, 226, 0.2)",
+    gap: 8,
+  },
+  bottomDeleteButton: {
+    flex: 0.17,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 12,
+    backgroundColor: "rgba(255, 59, 48, 0.08)",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(255, 59, 48, 0.2)",
+  },
+  bottomCancelButton: {
+    flex: 0.4,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 16,
+    backgroundColor: "rgba(142, 142, 147, 0.08)",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(142, 142, 147, 0.2)",
+    gap: 8,
+  },
+  bottomSaveButton: {
+    flex: 0.6,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 16,
+    backgroundColor: "rgba(50, 215, 75, 0.08)",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(50, 215, 75, 0.2)",
+    gap: 8,
+  },
+  bottomButtonText: {
+    fontSize: 16,
+    fontWeight: "500",
+  },
   scrollContent: {
     padding: 20,
   },
@@ -669,7 +947,7 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255,255,255,0.05)",
     borderRadius: 16,
     padding: 16,
-    marginBottom: 24,
+    marginBottom: 5,
   },
   progressHeader: {
     flexDirection: "row",
@@ -741,7 +1019,10 @@ const styles = StyleSheet.create({
   actionButtons: {
     flexDirection: "row",
     gap: 12,
-    marginTop: 8,
+    marginTop: 24,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255,255,255,0.1)",
   },
   button: {
     flex: 1,
@@ -852,7 +1133,7 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255,255,255,0.05)",
     borderRadius: 16,
     padding: 20,
-    marginBottom: 24,
+    marginBottom: 0,
   },
   editNameRow: {
     marginBottom: 20,
@@ -925,6 +1206,50 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#fff",
     fontWeight: "500",
+  },
+  // Note editing styles
+  addNoteButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    marginTop: 12,
+    marginBottom: 8,
+    backgroundColor: "rgba(74, 144, 226, 0.1)",
+    borderRadius: 40,
+    borderWidth: 1,
+    borderColor: "rgba(74, 144, 226, 0.2)",
+    gap: 8,
+    alignSelf: "flex-start",
+  },
+  addNoteText: {
+    color: "#4A90E2",
+    fontSize: 14,
+    fontWeight: "500",
+  },
+  editNoteSection: {
+    marginTop: 12,
+  },
+  noteHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  removeNoteButton: {
+    padding: 4,
+  },
+  editNoteInput: {
+    backgroundColor: "rgba(255,255,255,0.08)",
+    borderRadius: 8,
+    padding: 12,
+    color: "#fff",
+    fontSize: 14,
+    minHeight: 80,
+    maxHeight: 120,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.1)",
+    textAlignVertical: "top",
   },
   // Category modal styles
   categoryModalOverlay: {

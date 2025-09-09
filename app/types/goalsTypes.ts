@@ -10,6 +10,7 @@ export interface GoalsProps {
   goalsData: Goal[];
   onRefreshStart?: () => void;
   onRefreshEnd?: () => void;
+  onGoalAdded?: () => Promise<void>;
 }
 
 export interface GoalsState {
