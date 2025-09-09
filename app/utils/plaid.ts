@@ -222,7 +222,7 @@ export const fetchSnaptradeHoldings = async (userId: string, userSecret: string,
     if (data.holdings && Array.isArray(data.holdings)) {
       beautifyHoldingsResponse(data.holdings);
     } else {
-      console.log("📊 Holdings data structure:", data.holdings);
+      console.log("📊 Holdings data structure:", JSON.stringify(data.holdings, null, 2));
     }
     
     return data.holdings;
