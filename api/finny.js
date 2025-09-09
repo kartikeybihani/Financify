@@ -51,6 +51,7 @@ export default async function handler(req, res) {
     }
 
     res.status(200).json(response);
+    console.log("🔍 [FINNY] Response:", response);
   } catch (error) {
     console.error("❌ [FINNY] Error:", error);
     res.status(500).json({ error: error.message });
