@@ -95,6 +95,41 @@ export default async function handler(req, res) {
     }
 
     // ------------------------------
+    // SNAPTRADE HOLDINGS MODE
+    // ------------------------------
+    if (mode === "snaptrade_holdings") {
+      const { accountId } = req.body;
+
+      if (!userId || !userSecret || !accountId) {
+        return res.status(400).json({
+          error: "Missing userId, userSecret, or accountId",
+        });
+      }
+
+      try {
+        console.log("🔄 Fetching Snaptrade holdings for account:", accountId);
+
+        const response = await snaptrade.accountInformation.getUserHoldings({
+          accountId: accountId,
+          userId: userId,
+          userSecret: userSecret,
+        });
+
+        console.log("✅ Snaptrade Holdings Response:", response.data);
+
+        return res.status(200).json({
+          holdings: response.data,
+          environment: isSandbox ? "sandbox" : "production",
+        });
+      } catch (e) {
+        console.error("Snaptrade holdings error:", e);
+        return res
+          .status(500)
+          .json({ error: e.message || "Failed to fetch Snaptrade holdings" });
+      }
+    }
+
+    // ------------------------------
     // PLAID UPDATE MODE
     // ------------------------------
     if (mode === "update" && item_id) {

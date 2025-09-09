@@ -16,7 +16,13 @@ import * as WebBrowser from "expo-web-browser";
 import {
   registerSnaptradeUser,
   fetchSnaptradeAccounts,
+  hasSnaptradeConnection,
+  fetchSnaptradeAccountsFromStorage,
+  getStoredSnaptradeCredentials,
+  fetchSnaptradeHoldingsFromStorage,
+  fetchSnaptradeHoldings,
 } from "../../utils/plaid";
+import { storeSnaptradeCredentials } from "../../utils/snaptradeStorage";
 
 interface Institution {
   id: string;
@@ -132,8 +138,67 @@ export default function InstitutionSelectionModal({
   const handleFidelityConnection = async () => {
     console.log("🔄 Starting Fidelity connection...");
     setIsConnecting(true);
+
     try {
-      console.log("🔄 Starting Snaptrade user registration for Fidelity...");
+      // First, check if user already has a valid Snaptrade connection
+      const hasExistingConnection = await hasSnaptradeConnection();
+
+      if (hasExistingConnection) {
+        console.log(
+          "✅ Found existing Snaptrade connection, fetching accounts..."
+        );
+
+        try {
+          const accounts = await fetchSnaptradeAccountsFromStorage();
+          console.log("✅ Existing Snaptrade accounts fetched:", accounts);
+
+          // Fetch holdings for the first account using stored credentials
+          if (accounts.length > 0) {
+            const firstAccount = accounts[0];
+            if (firstAccount && firstAccount.id) {
+              try {
+                console.log(
+                  "🔄 Fetching holdings for account:",
+                  firstAccount.id
+                );
+                await fetchSnaptradeHoldingsFromStorage(firstAccount.id);
+              } catch (holdingsError) {
+                console.error(
+                  "⚠️ Failed to fetch holdings (continuing anyway):",
+                  holdingsError
+                );
+                // Don't fail the whole flow if holdings fetch fails
+              }
+            }
+          }
+
+          Alert.alert(
+            "Fidelity Account Connected",
+            `You already have a Fidelity account connected with ${accounts.length} account(s). Holdings data has been fetched and logged to console.`,
+            [
+              {
+                text: "OK",
+                onPress: () => {
+                  setIsConnecting(false);
+                  onClose();
+                },
+              },
+            ]
+          );
+          return;
+        } catch (accountError) {
+          console.error(
+            "❌ Failed to fetch existing accounts, proceeding with new connection:",
+            accountError
+          );
+          // Continue with new connection flow if fetching existing accounts fails
+        }
+      }
+
+      // No existing connection or failed to fetch existing accounts - proceed with new connection
+      console.log(
+        "🔄 Starting new Snaptrade user registration for Fidelity..."
+      );
       const snaptradeData = await registerSnaptradeUser();
       console.log("✅ Snaptrade user registered successfully:", snaptradeData);
 
@@ -155,7 +220,7 @@ export default function InstitutionSelectionModal({
         console.log("🔗 WebBrowser result:", result);
 
         // After the user completes the connection, fetch their accounts
-        if (result.type === "dismiss") {
+        if (result.type === "cancel") {
           console.log("🔄 User completed connection, fetching accounts...");
           try {
             const accounts = await fetchSnaptradeAccounts(
@@ -164,9 +229,48 @@ export default function InstitutionSelectionModal({
             );
             console.log("✅ Snaptrade accounts fetched:", accounts);
 
+            // Store credentials in AsyncStorage for future use
+            try {
+              await storeSnaptradeCredentials(
+                snaptradeData.snaptrade.userId,
+                snaptradeData.snaptrade.userSecret
+              );
+              console.log("✅ Snaptrade credentials stored successfully");
+            } catch (storageError) {
+              console.error(
+                "⚠️ Failed to store credentials (continuing anyway):",
+                storageError
+              );
+              // Don't fail the whole connection if storage fails
+            }
+
+            // Fetch holdings for the first account using new credentials
+            if (accounts.length > 0) {
+              const firstAccount = accounts[0];
+              if (firstAccount && firstAccount.id) {
+                try {
+                  console.log(
+                    "🔄 Fetching holdings for new account:",
+                    firstAccount.id
+                  );
+                  await fetchSnaptradeHoldings(
+                    snaptradeData.snaptrade.userId,
+                    snaptradeData.snaptrade.userSecret,
+                    firstAccount.id
+                  );
+                } catch (holdingsError) {
+                  console.error(
+                    "⚠️ Failed to fetch holdings (continuing anyway):",
+                    holdingsError
+                  );
+                  // Don't fail the whole flow if holdings fetch fails
+                }
+              }
+            }
+
             Alert.alert(
               "Success!",
-              `Fidelity account connected successfully! Found ${accounts.length} account(s).`,
+              `Fidelity account connected successfully! Found ${accounts.length} account(s). Holdings data has been fetched and logged to console.`,
               [
                 {
                   text: "OK",
@@ -179,6 +283,20 @@ export default function InstitutionSelectionModal({
             );
           } catch (accountError) {
             console.error("❌ Failed to fetch accounts:", accountError);
+
+            // Still store credentials even if account fetch fails
+            try {
+              await storeSnaptradeCredentials(
+                snaptradeData.snaptrade.userId,
+                snaptradeData.snaptrade.userSecret
+              );
+              console.log(
+                "✅ Snaptrade credentials stored despite account fetch failure"
+              );
+            } catch (storageError) {
+              console.error("⚠️ Failed to store credentials:", storageError);
+            }
+
             Alert.alert(
               "Connection Successful",
               "Fidelity account connected, but couldn't fetch account details.",
