@@ -270,7 +270,7 @@ async function handleClassify(message, context) {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: "openai/gpt-oss-120b:free",
+      model: "deepseek/deepseek-chat-v3.1:free",
       messages: [
         {
           role: "system",
