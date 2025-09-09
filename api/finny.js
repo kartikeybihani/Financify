@@ -59,6 +59,39 @@ export default async function handler(req, res) {
 }
 
 async function handleAsk(message, context) {
+  console.log("🔍 [FINNY] Starting classification for message:", message);
+
+  // First classify the intent
+  try {
+    const classification = await handleClassify(message, context);
+    console.log("🎯 [FINNY] Classification result:", classification);
+
+    // Route to appropriate handler based on intent
+    switch (classification.intent) {
+      case "goal":
+        return await handleGoal(message, context);
+      case "ask_personalized":
+        return await handleAskPersonalized(message, context);
+      case "ask_concept_static":
+        return await handleAskConceptStatic(message, context);
+      case "ask_fact_fresh":
+        return await handleAskFactFresh(message, context);
+      case "ask_state_rule":
+        return await handleAskStateRule(message, context);
+      case "calc_projection":
+        return await handleCalcProjection(message, context);
+      default:
+        // Fallback to original ask handler
+        break;
+    }
+  } catch (error) {
+    console.error("❌ [FINNY] Classification failed, using fallback:", error);
+    // Continue to original ask handler as fallback
+  }
+
+  // Original ask handler logic as fallback
+  console.log("🔄 [FINNY] Using fallback ask handler");
+
   // Provide default values if context is undefined or incomplete
   const safeContext = {
     accounts: context?.accounts || [],
