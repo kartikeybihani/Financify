@@ -13,7 +13,10 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
 import * as WebBrowser from "expo-web-browser";
-import { registerSnaptradeUser } from "../../utils/plaid";
+import {
+  registerSnaptradeUser,
+  fetchSnaptradeAccounts,
+} from "../../utils/plaid";
 
 interface Institution {
   id: string;
@@ -127,27 +130,78 @@ export default function InstitutionSelectionModal({
   const [isConnecting, setIsConnecting] = useState(false);
 
   const handleFidelityConnection = async () => {
+    console.log("🔄 Starting Fidelity connection...");
     setIsConnecting(true);
     try {
       console.log("🔄 Starting Snaptrade user registration for Fidelity...");
       const snaptradeData = await registerSnaptradeUser();
       console.log("✅ Snaptrade user registered successfully:", snaptradeData);
 
-      Alert.alert(
-        "Success!",
-        "Fidelity account connected successfully via Snaptrade!",
-        [
+      // Open the redirect URI in a web browser
+      if (snaptradeData.redirectURI) {
+        console.log(
+          "🌐 Opening Snaptrade redirect URI:",
+          snaptradeData.redirectURI
+        );
+
+        const result = await WebBrowser.openBrowserAsync(
+          snaptradeData.redirectURI,
           {
-            text: "OK",
-            onPress: () => {
-              setIsConnecting(false);
-              onClose();
-            },
-          },
-        ]
-      );
+            presentationStyle:
+              WebBrowser.WebBrowserPresentationStyle.FORM_SHEET,
+          }
+        );
+
+        console.log("🔗 WebBrowser result:", result);
+
+        // After the user completes the connection, fetch their accounts
+        if (result.type === "dismiss") {
+          console.log("🔄 User completed connection, fetching accounts...");
+          try {
+            const accounts = await fetchSnaptradeAccounts(
+              snaptradeData.snaptrade.userId,
+              snaptradeData.snaptrade.userSecret
+            );
+            console.log("✅ Snaptrade accounts fetched:", accounts);
+
+            Alert.alert(
+              "Success!",
+              `Fidelity account connected successfully! Found ${accounts.length} account(s).`,
+              [
+                {
+                  text: "OK",
+                  onPress: () => {
+                    setIsConnecting(false);
+                    onClose();
+                  },
+                },
+              ]
+            );
+          } catch (accountError) {
+            console.error("❌ Failed to fetch accounts:", accountError);
+            Alert.alert(
+              "Connection Successful",
+              "Fidelity account connected, but couldn't fetch account details.",
+              [
+                {
+                  text: "OK",
+                  onPress: () => {
+                    setIsConnecting(false);
+                    onClose();
+                  },
+                },
+              ]
+            );
+          }
+        } else {
+          // User cancelled or there was an error
+          setIsConnecting(false);
+        }
+      } else {
+        throw new Error("No redirect URI received from Snaptrade");
+      }
     } catch (error) {
-      console.error("❌ Failed to register Snaptrade user:", error);
+      console.error("❌ Failed to connect Fidelity account:", error);
       Alert.alert(
         "Connection Failed",
         `Failed to connect Fidelity account: ${

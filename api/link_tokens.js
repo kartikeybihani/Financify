@@ -25,7 +25,7 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  const { mode, item_id, user_id } = req.body;
+  const { mode, item_id, user_id, userId, userSecret } = req.body;
   const redirect_uri = "https://financify-redirect.com/oauth-complete";
 
   try {
@@ -38,19 +38,59 @@ export default async function handler(req, res) {
       }
 
       try {
-        const response = await snaptrade.authentication.registerSnapTradeUser({
-          userId: user_id,
-        });
-        console.log("✅ Snaptrade Response: ", response);
+        // First register the user
+        const registerResponse =
+          await snaptrade.authentication.registerSnapTradeUser({
+            userId: user_id,
+          });
+        console.log("✅ Snaptrade Registration Response: ", registerResponse);
+
+        // Then login the user to get redirect URI
+        const loginResponse = await snaptrade.authentication.loginSnapTradeUser(
+          {
+            userId: registerResponse.data.userId,
+            userSecret: registerResponse.data.userSecret,
+          }
+        );
+        console.log("✅ Snaptrade Login Response: ", loginResponse);
+
         return res.status(200).json({
-          snaptrade: response.data,
+          snaptrade: registerResponse.data,
+          redirectURI: loginResponse.data.redirectURI,
+          sessionId: loginResponse.data.sessionId,
           environment: isSandbox ? "sandbox" : "production",
         });
       } catch (e) {
         console.error("Snaptrade error:", e);
         return res
           .status(500)
-          .json({ error: e.message || "Snaptrade registration failed" });
+          .json({ error: e.message || "Snaptrade registration/login failed" });
+      }
+    }
+
+    // ------------------------------
+    // SNAPTRADE ACCOUNTS MODE
+    // ------------------------------
+    if (mode === "snaptrade_accounts") {
+      if (!userId || !userSecret) {
+        return res.status(400).json({ error: "Missing userId or userSecret" });
+      }
+
+      try {
+        const response = await snaptrade.accountInformation.listUserAccounts({
+          userId: userId,
+          userSecret: userSecret,
+        });
+        console.log("✅ Snaptrade Accounts Response: ", response);
+        return res.status(200).json({
+          accounts: response.data,
+          environment: isSandbox ? "sandbox" : "production",
+        });
+      } catch (e) {
+        console.error("Snaptrade accounts error:", e);
+        return res
+          .status(500)
+          .json({ error: e.message || "Failed to fetch Snaptrade accounts" });
       }
     }
 

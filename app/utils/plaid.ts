@@ -63,7 +63,24 @@ export const registerSnaptradeUser = async () => {
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || "Failed to register Snaptrade user");
   console.log("✅ Snaptrade user registered successfully: ", data);
-  return data.snaptrade;
+  return data;
+};
+
+// === Fetch Snaptrade Accounts ===
+export const fetchSnaptradeAccounts = async (userId: string, userSecret: string) => {
+  const res = await fetch(`${BASE_URL}/api/link_tokens`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ 
+      mode: "snaptrade_accounts", 
+      userId: userId,
+      userSecret: userSecret 
+    }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "Failed to fetch Snaptrade accounts");
+  console.log("✅ Snaptrade accounts fetched successfully: ", data);
+  return data.accounts;
 };
 
 // === Connect Flow ===
