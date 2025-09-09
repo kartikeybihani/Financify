@@ -67,6 +67,7 @@
     "react-native-webview": "13.12.5",
     "react-plaid-link": "^3.6.1",
     "readable-stream": "^4.7.0",
+    "snaptrade-typescript-sdk": "^9.0.134",
     "stream-browserify": "^3.0.0",
     "text-encoding": "^0.7.0",
     "uuid": "^11.1.0"

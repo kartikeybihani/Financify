@@ -13,6 +13,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
 import * as WebBrowser from "expo-web-browser";
+import { registerSnaptradeUser } from "../../utils/plaid";
 
 interface Institution {
   id: string;
@@ -127,12 +128,39 @@ export default function InstitutionSelectionModal({
 
   const handleFidelityConnection = async () => {
     setIsConnecting(true);
-    Alert.alert("Coming Soon", "Fidelity integration will be available soon!", [
-      {
-        text: "OK",
-        onPress: () => setIsConnecting(false),
-      },
-    ]);
+    try {
+      console.log("🔄 Starting Snaptrade user registration for Fidelity...");
+      const snaptradeData = await registerSnaptradeUser();
+      console.log("✅ Snaptrade user registered successfully:", snaptradeData);
+
+      Alert.alert(
+        "Success!",
+        "Fidelity account connected successfully via Snaptrade!",
+        [
+          {
+            text: "OK",
+            onPress: () => {
+              setIsConnecting(false);
+              onClose();
+            },
+          },
+        ]
+      );
+    } catch (error) {
+      console.error("❌ Failed to register Snaptrade user:", error);
+      Alert.alert(
+        "Connection Failed",
+        `Failed to connect Fidelity account: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`,
+        [
+          {
+            text: "OK",
+            onPress: () => setIsConnecting(false),
+          },
+        ]
+      );
+    }
   };
 
   const handleInstitutionPress = (institutionId: string) => {

@@ -52,6 +52,20 @@ export const fetchLinkToken = async () => {
   return data.link_token;
 };
 
+// === Register Snaptrade User ===
+export const registerSnaptradeUser = async () => {
+  const { data: { user } } = await supabase.auth.getUser();
+  const res = await fetch(`${BASE_URL}/api/link_tokens`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ mode: "snaptrade", user_id: user?.id }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "Failed to register Snaptrade user");
+  console.log("✅ Snaptrade user registered successfully: ", data);
+  return data.snaptrade;
+};
+
 // === Connect Flow ===
 export const handlePlaidConnect = async (
   linkToken: string,
