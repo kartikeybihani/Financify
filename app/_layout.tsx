@@ -71,7 +71,7 @@ function RootLayoutNav() {
       ) {
         console.log("✅ Using cached onboarding completion status");
         if (inAuth || inOnboarding) {
-          router.replace("/(tabs)/insights");
+          router.replace("/(tabs)/chat");
         }
         return;
       }
@@ -93,7 +93,7 @@ function RootLayoutNav() {
           "✅ Onboarding complete in Supabase, updating cache and going to tabs"
         );
         if (!inTabs) {
-          router.replace("/(tabs)/insights");
+          router.replace("/(tabs)/chat");
         }
         return;
       }

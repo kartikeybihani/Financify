@@ -27,7 +27,7 @@ import { ChatMessage } from "../types/finny";
 import { NudgeGrid } from "../components/NudgeGrid";
 import { useChat } from "../hooks/useChat";
 import { useGoals } from "../hooks/useGoals";
-import styles from "../styles/finnyStyles";
+import styles from "../styles/chatStyles";
 import TypingIndicator from "../components/TypingIndicator";
 import ConversationStartersModal from "../components/ConversationStartersModal";
 
@@ -87,8 +87,7 @@ export default function ChatScreen() {
     timeline: null as { month: string; year: string } | null,
   });
 
-  const { timelineData, saveGoal, deleteGoal, refreshGoals } =
-    useGoals(pushChat);
+  const { saveGoal, deleteGoal, refreshGoals } = useGoals(pushChat);
 
   // Goal confirmation handlers
   const handleGoalConfirm = async () => {
@@ -137,12 +136,16 @@ export default function ChatScreen() {
         return;
       }
 
-      const goalWithProgress = {
-        ...goalData,
-        id: Date.now().toString(),
-        progress: Math.floor(Math.random() * 101),
+      const goalInput = {
+        label: goalData.label,
+        target_amount: parseFloat(goalData.target),
+        target_date: `${goalData.timeline.year}-${String(
+          new Date(`${goalData.timeline.month} 1, 2024`).getMonth() + 1
+        ).padStart(2, "0")}-01`,
+        category: "savings" as any, // Default category
+        current_amount: 0,
       };
-      await saveGoal(goalWithProgress);
+      await saveGoal(goalInput);
       await pushChat(
         "finny",
         `Got it. You're saving $${goalData.target} for "${goalData.label}" by ${goalData.timeline.month} ${goalData.timeline.year}. I've saved it! 🎯`
@@ -290,42 +293,49 @@ export default function ChatScreen() {
         console.log("📡 [CHAT] Goal API response status:", goalRes.status);
         const updated = await goalRes.json();
         console.log("✅ [CHAT] Goal API response:", updated);
-        const newGoal = {
-          id: Date.now().toString(),
+        const updatedGoalData = {
           label: updated.label || goalMode.label,
           target: updated.target || goalMode.target,
           timeline: updated.timeline || goalMode.timeline,
-          year: updated.timeline?.year || goalMode.timeline?.year,
-          description: `Save $${updated.target || goalMode.target} for ${
-            updated.label || goalMode.label
-          }`,
-          progress: Math.floor(Math.random() * 101),
         };
 
-        setGoalMode({ active: true, ...newGoal });
-        if (!newGoal.label) {
+        setGoalMode({
+          active: true,
+          ...updatedGoalData,
+          timeline: updatedGoalData.timeline,
+        });
+        if (!updatedGoalData.label) {
           await pushChat("finny", "What would you like to call this goal?");
           return;
         }
-        if (!newGoal.target) {
+        if (!updatedGoalData.target) {
           await pushChat(
             "finny",
-            `And how much do you want to save for ${newGoal.label}?`
+            `And how much do you want to save for ${updatedGoalData.label}?`
           );
           return;
         }
-        if (!newGoal.timeline) {
+        if (!updatedGoalData.timeline) {
           await pushChat(
             "finny",
-            `And by when would you like to reach your $${newGoal.target} goal?`
+            `And by when would you like to reach your $${updatedGoalData.target} goal?`
           );
           return;
         }
 
-        await saveGoal(newGoal);
+        const goalInput = {
+          label: updatedGoalData.label,
+          target_amount: parseFloat(updatedGoalData.target),
+          target_date: `${updatedGoalData.timeline.year}-${String(
+            new Date(`${updatedGoalData.timeline.month} 1, 2024`).getMonth() + 1
+          ).padStart(2, "0")}-01`,
+          category: "savings" as any, // Default category
+          current_amount: 0,
+        };
+        await saveGoal(goalInput);
         await pushChat(
           "finny",
-          `Awesome! I've added your goal to save $${newGoal.target} for "${newGoal.label}" by ${newGoal.timeline.month} ${newGoal.timeline.year}. 🎯`
+          `Awesome! I've added your goal to save $${updatedGoalData.target} for "${updatedGoalData.label}" by ${updatedGoalData.timeline.month} ${updatedGoalData.timeline.year}. 🎯`
         );
         DeviceEventEmitter.emit("goalsUpdated");
         setGoalMode({
@@ -437,23 +447,19 @@ export default function ChatScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <StatusBar style="light" />
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
-      >
-        <LinearGradient
-          colors={[
-            "rgba(26, 61, 102, 0.85)",
-            "rgba(26, 61, 102, 0.1)",
-            "transparent",
-          ]}
-          style={styles.headerGradient}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 0, y: 1 }}
-        />
+    <View style={styles.safeArea}>
+      <StatusBar style="light" backgroundColor="transparent" translucent />
+      <LinearGradient
+        colors={[
+          "rgba(26, 61, 102, 0.95)",
+          "rgba(26, 61, 102, 0.3)",
+          "transparent",
+        ]}
+        style={styles.headerGradient}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0, y: 1 }}
+      />
+      <SafeAreaView style={{ flex: 1 }}>
         <View style={styles.headerContainer}>
           <View style={styles.titleContainer}>
             <View style={styles.mascotContainer}>
@@ -472,169 +478,178 @@ export default function ChatScreen() {
                 ]}
               />
             </View>
-            {/* <View style={styles.headerContent}>
-            <Text style={styles.headerTitle}>Finny</Text>
-          </View> */}
+            <View style={styles.headerContent}>
+              <Text style={styles.headerTitle}>Finny</Text>
+              <Text style={styles.headerSubtitle}>
+                Your AI Financial Assistant
+              </Text>
+            </View>
           </View>
           <TouchableOpacity
             style={styles.clearButton}
             onPress={clearChat}
             activeOpacity={0.7}
           >
-            <Ionicons name="trash-outline" size={14} color="#FF3B30" />
+            <Ionicons name="trash-outline" size={16} color="#FF3B30" />
           </TouchableOpacity>
         </View>
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
+        >
+          <View style={styles.chatArea}>
+            <View style={styles.chatContainer}>
+              <ScrollView
+                ref={scrollViewRef}
+                style={styles.chatScroll}
+                onScroll={handleScroll}
+                scrollEventThrottle={16}
+                onScrollBeginDrag={() => (isScrolling.current = true)}
+                onScrollEndDrag={() => (isScrolling.current = false)}
+                onContentSizeChange={() => {
+                  if (shouldScrollToBottom.current) scrollToBottom();
+                }}
+                contentContainerStyle={{ paddingBottom: 50 }}
+              >
+                {showNudges && <NudgeGrid onNudgePress={handleSend} />}
+                {chatMessages.map((msg, index) => (
+                  <ChatMessageComponent
+                    key={msg.id}
+                    message={msg}
+                    showSender={
+                      msg.sender === "finny" &&
+                      (index === 0 ||
+                        chatMessages[index - 1].sender !== "finny")
+                    }
+                    onAction={async (action) => {
+                      if (action === "goal_confirm") await handleGoalConfirm();
+                      if (action === "goal_decline") await handleGoalDecline();
+                    }}
+                  />
+                ))}
+                {isTyping && <TypingIndicator />}
+              </ScrollView>
 
-        <View style={styles.chatArea}>
-          <View style={styles.chatContainer}>
-            <ScrollView
-              ref={scrollViewRef}
-              style={styles.chatScroll}
-              onScroll={handleScroll}
-              scrollEventThrottle={16}
-              onScrollBeginDrag={() => (isScrolling.current = true)}
-              onScrollEndDrag={() => (isScrolling.current = false)}
-              onContentSizeChange={() => {
-                if (shouldScrollToBottom.current) scrollToBottom();
-              }}
-              contentContainerStyle={{ paddingBottom: 50 }}
+              {/* Inline Goal Confirmation Buttons */}
+              {/* This block is removed as per the edit hint */}
+
+              {showScrollButton && (
+                <Animated.View
+                  style={[
+                    styles.scrollToBottomButton,
+                    {
+                      transform: [
+                        {
+                          scale: scrollButtonAnimation.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: [0.7, 1],
+                          }),
+                        },
+                        {
+                          translateY: scrollButtonAnimation.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: [10, 0],
+                          }),
+                        },
+                      ],
+                      opacity: scrollButtonAnimation,
+                    },
+                  ]}
+                >
+                  <TouchableOpacity
+                    onPress={() => {
+                      shouldScrollToBottom.current = true;
+                      scrollToBottom();
+                    }}
+                    style={styles.scrollButtonTouchable}
+                    activeOpacity={0.8}
+                  >
+                    <View style={styles.scrollButtonGradient}>
+                      <AntDesign name="arrowdown" size={20} color="#FFFFFF" />
+                    </View>
+                  </TouchableOpacity>
+                </Animated.View>
+              )}
+            </View>
+
+            <View
+              style={[
+                styles.inputBarContainer,
+                { paddingBottom: Math.max(insets.bottom, 16) },
+              ]}
             >
-              {showNudges && <NudgeGrid onNudgePress={handleSend} />}
-              {chatMessages.map((msg, index) => (
-                <ChatMessageComponent
-                  key={msg.id}
-                  message={msg}
-                  showSender={
-                    msg.sender === "finny" &&
-                    (index === 0 || chatMessages[index - 1].sender !== "finny")
-                  }
-                  onAction={async (action) => {
-                    if (action === "goal_confirm") await handleGoalConfirm();
-                    if (action === "goal_decline") await handleGoalDecline();
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.suggestionsContainer}
+              >
+                {suggestions.map((suggestion, idx) => (
+                  <TouchableOpacity
+                    key={idx}
+                    onPress={() => handleSend(suggestion.text)}
+                    style={styles.suggestionChip}
+                  >
+                    <Ionicons
+                      name={suggestion.icon}
+                      size={14}
+                      color="#FFFFFF"
+                      style={styles.suggestionIcon}
+                    />
+                    <Text style={styles.suggestionText}>{suggestion.text}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+              <View style={styles.inputBar}>
+                <TouchableOpacity
+                  style={styles.plusButton}
+                  onPress={() => setShowStartersModal(true)}
+                >
+                  <Ionicons name="add" size={24} color="#4A90E2" />
+                </TouchableOpacity>
+                <TextInput
+                  placeholder="Ask Finny anything about money..."
+                  placeholderTextColor="#888"
+                  style={styles.input}
+                  value={userInput}
+                  onChangeText={setUserInput}
+                  onSubmitEditing={() => handleSend()}
+                  onFocus={() => {
+                    // Auto-scroll to bottom when input is focused
+                    setTimeout(() => {
+                      shouldScrollToBottom.current = true;
+                      scrollToBottom();
+                    }, 300);
                   }}
                 />
-              ))}
-              {isTyping && <TypingIndicator />}
-            </ScrollView>
-
-            {/* Inline Goal Confirmation Buttons */}
-            {/* This block is removed as per the edit hint */}
-
-            {showScrollButton && (
-              <Animated.View
-                style={[
-                  styles.scrollToBottomButton,
-                  {
-                    transform: [
-                      {
-                        scale: scrollButtonAnimation.interpolate({
-                          inputRange: [0, 1],
-                          outputRange: [0.7, 1],
-                        }),
-                      },
-                      {
-                        translateY: scrollButtonAnimation.interpolate({
-                          inputRange: [0, 1],
-                          outputRange: [10, 0],
-                        }),
-                      },
-                    ],
-                    opacity: scrollButtonAnimation,
-                  },
-                ]}
-              >
                 <TouchableOpacity
+                  style={[styles.sendButton, isTyping && { opacity: 0.5 }]}
                   onPress={() => {
-                    shouldScrollToBottom.current = true;
-                    scrollToBottom();
+                    if (!isTyping) handleSend();
                   }}
-                  style={styles.scrollButtonTouchable}
-                  activeOpacity={0.8}
-                >
-                  <View style={styles.scrollButtonGradient}>
-                    <AntDesign name="arrowdown" size={20} color="#FFFFFF" />
-                  </View>
-                </TouchableOpacity>
-              </Animated.View>
-            )}
-          </View>
-
-          <View
-            style={[
-              styles.inputBarContainer,
-              { paddingBottom: Math.max(insets.bottom, 16) },
-            ]}
-          >
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.suggestionsContainer}
-            >
-              {suggestions.map((suggestion, idx) => (
-                <TouchableOpacity
-                  key={idx}
-                  onPress={() => handleSend(suggestion.text)}
-                  style={styles.suggestionChip}
+                  activeOpacity={isTyping ? 1 : 0.7}
+                  disabled={isTyping}
                 >
                   <Ionicons
-                    name={suggestion.icon}
-                    size={14}
-                    color="#FFFFFF"
-                    style={styles.suggestionIcon}
+                    name="arrow-up-circle-sharp"
+                    size={32}
+                    color={isTyping ? "#888" : "#4A90E2"}
                   />
-                  <Text style={styles.suggestionText}>{suggestion.text}</Text>
                 </TouchableOpacity>
-              ))}
-            </ScrollView>
-            <View style={styles.inputBar}>
-              <TouchableOpacity
-                style={styles.plusButton}
-                onPress={() => setShowStartersModal(true)}
-              >
-                <Ionicons name="add" size={24} color="#4A90E2" />
-              </TouchableOpacity>
-              <TextInput
-                placeholder="Ask Finny anything about money..."
-                placeholderTextColor="#888"
-                style={styles.input}
-                value={userInput}
-                onChangeText={setUserInput}
-                onSubmitEditing={() => handleSend()}
-                onFocus={() => {
-                  // Auto-scroll to bottom when input is focused
-                  setTimeout(() => {
-                    shouldScrollToBottom.current = true;
-                    scrollToBottom();
-                  }, 300);
-                }}
-              />
-              <TouchableOpacity
-                style={[styles.sendButton, isTyping && { opacity: 0.5 }]}
-                onPress={() => {
-                  if (!isTyping) handleSend();
-                }}
-                activeOpacity={isTyping ? 1 : 0.7}
-                disabled={isTyping}
-              >
-                <Ionicons
-                  name="arrow-up-circle-sharp"
-                  size={32}
-                  color={isTyping ? "#888" : "#4A90E2"}
-                />
-              </TouchableOpacity>
+              </View>
             </View>
           </View>
-        </View>
-      </KeyboardAvoidingView>
+        </KeyboardAvoidingView>
 
-      <ConversationStartersModal
-        visible={showStartersModal}
-        onClose={() => setShowStartersModal(false)}
-        onSelectQuestion={(question) => {
-          setUserInput(question);
-          handleSend(question);
-        }}
-      />
-    </SafeAreaView>
+        <ConversationStartersModal
+          visible={showStartersModal}
+          onClose={() => setShowStartersModal(false)}
+          onSelectQuestion={(question) => {
+            setUserInput(question);
+            handleSend(question);
+          }}
+        />
+      </SafeAreaView>
+    </View>
   );
 }

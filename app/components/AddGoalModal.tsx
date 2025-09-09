@@ -10,6 +10,8 @@ import {
   TouchableWithoutFeedback,
   ScrollView,
   Dimensions,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
@@ -52,6 +54,8 @@ export default function AddGoalModal({
 
   // Animation
   const modalAnimation = useRef(new Animated.Value(0)).current;
+  const noteAnimation = useRef(new Animated.Value(0)).current;
+  const noteHeightAnimation = useRef(new Animated.Value(0)).current;
 
   // Effects
   useEffect(() => {
@@ -76,8 +80,46 @@ export default function AddGoalModal({
       setSelectedCategory("other");
       setShowNoteField(false);
       setErrors({});
+      // Reset note animations
+      noteAnimation.setValue(0);
+      noteHeightAnimation.setValue(0);
     }
   }, [visible]);
+
+  // Animate note field when showNoteField changes
+  useEffect(() => {
+    if (showNoteField) {
+      // Animate in
+      Animated.parallel([
+        Animated.timing(noteHeightAnimation, {
+          toValue: 1,
+          duration: 300,
+          useNativeDriver: false, // Height animation can't use native driver
+        }),
+        Animated.timing(noteAnimation, {
+          toValue: 1,
+          duration: 300,
+          delay: 100, // Slight delay for smoother effect
+          useNativeDriver: true,
+        }),
+      ]).start();
+    } else {
+      // Animate out
+      Animated.parallel([
+        Animated.timing(noteAnimation, {
+          toValue: 0,
+          duration: 200,
+          useNativeDriver: true,
+        }),
+        Animated.timing(noteHeightAnimation, {
+          toValue: 0,
+          duration: 250,
+          delay: 50, // Slight delay for smoother collapse
+          useNativeDriver: false,
+        }),
+      ]).start();
+    }
+  }, [showNoteField]);
 
   const validateForm = () => {
     const newErrors: { [key: string]: string } = {};
@@ -130,430 +172,493 @@ export default function AddGoalModal({
     >
       <TouchableWithoutFeedback onPress={onClose}>
         <View style={styles.overlay}>
-          <TouchableWithoutFeedback onPress={(e) => e.stopPropagation()}>
-            <Animated.View
-              style={[
-                styles.modalContent,
-                {
-                  transform: [
-                    {
-                      scale: modalAnimation.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: [0.95, 1],
-                      }),
-                    },
-                  ],
-                  opacity: modalAnimation,
-                },
-              ]}
-            >
-              <LinearGradient
-                colors={["rgba(31, 31, 31, 0.98)", "rgba(18, 18, 18, 0.99)"]}
-                style={styles.modalInner}
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+            style={styles.keyboardAvoidingView}
+            keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
+          >
+            <TouchableWithoutFeedback onPress={(e) => e.stopPropagation()}>
+              <Animated.View
+                style={[
+                  styles.modalContent,
+                  {
+                    transform: [
+                      {
+                        scale: modalAnimation.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [0.95, 1],
+                        }),
+                      },
+                    ],
+                    opacity: modalAnimation,
+                  },
+                ]}
               >
-                <View style={styles.header}>
-                  <View style={styles.headerTextContainer}>
-                    <Text style={styles.headerTitle}>Set a new goal</Text>
-                  </View>
-                  <TouchableOpacity
-                    onPress={onClose}
-                    style={styles.closeButton}
-                  >
-                    <View style={styles.closeButtonCircle}>
-                      <Ionicons name="close" size={18} color="#888" />
-                    </View>
-                  </TouchableOpacity>
-                </View>
-
-                <ScrollView
-                  showsVerticalScrollIndicator={false}
-                  contentContainerStyle={styles.scrollContent}
+                <LinearGradient
+                  colors={["rgba(31, 31, 31, 0.98)", "rgba(18, 18, 18, 0.99)"]}
+                  style={styles.modalInner}
                 >
-                  <View style={[styles.formSection, styles.coreField]}>
-                    <Text style={[styles.label, styles.coreLabel]}>
-                      Goal Name
-                    </Text>
-                    <TextInput
-                      style={[
-                        styles.input,
-                        styles.coreInput,
-                        errors.label && styles.inputError,
-                      ]}
-                      placeholder="Dream vacation, Emergency fund..."
-                      placeholderTextColor="#666"
-                      value={goal.label}
-                      onChangeText={(text) => {
-                        setGoal((prev) => ({ ...prev, label: text }));
-                        if (errors.label) {
-                          setErrors((prev) => ({ ...prev, label: "" }));
-                        }
-                      }}
-                    />
-                    {errors.label ? (
-                      <Text style={styles.errorText}>{errors.label}</Text>
-                    ) : null}
+                  <View style={styles.header}>
+                    <View style={styles.headerTextContainer}>
+                      <Text style={styles.headerTitle}>Set a new goal</Text>
+                    </View>
+                    <TouchableOpacity
+                      onPress={onClose}
+                      style={styles.closeButton}
+                    >
+                      <View style={styles.closeButtonCircle}>
+                        <Ionicons name="close" size={18} color="#888" />
+                      </View>
+                    </TouchableOpacity>
                   </View>
 
-                  <View style={[styles.formSection, styles.coreField]}>
-                    <Text style={[styles.label, styles.coreLabel]}>
-                      Target Amount
-                    </Text>
-                    <View
-                      style={[
-                        styles.amountContainer,
-                        styles.coreAmountContainer,
-                        errors.target_amount && styles.inputError,
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.currencySymbol,
-                          styles.coreCurrencySymbol,
-                        ]}
-                      >
-                        $
+                  <ScrollView
+                    showsVerticalScrollIndicator={false}
+                    contentContainerStyle={styles.scrollContent}
+                    keyboardShouldPersistTaps="handled"
+                    keyboardDismissMode="interactive"
+                  >
+                    <View style={[styles.formSection, styles.coreField]}>
+                      <Text style={[styles.label, styles.coreLabel]}>
+                        Goal Name
                       </Text>
                       <TextInput
-                        style={[styles.amountInput, styles.coreAmountInput]}
-                        placeholder="How much do you need?"
+                        style={[
+                          styles.input,
+                          styles.coreInput,
+                          errors.label && styles.inputError,
+                        ]}
+                        placeholder="Dream vacation, Emergency fund..."
                         placeholderTextColor="#666"
-                        value={
-                          goal.target_amount ? String(goal.target_amount) : ""
-                        }
+                        value={goal.label}
                         onChangeText={(text) => {
-                          const target_amount = parseFloat(text) || 0;
-                          setGoal((prev) => ({ ...prev, target_amount }));
-                          if (errors.target_amount) {
-                            setErrors((prev) => ({
-                              ...prev,
-                              target_amount: "",
-                            }));
+                          setGoal((prev) => ({ ...prev, label: text }));
+                          if (errors.label) {
+                            setErrors((prev) => ({ ...prev, label: "" }));
                           }
                         }}
-                        keyboardType="numeric"
                       />
-                    </View>
-                    {errors.target_amount ? (
-                      <Text style={styles.errorText}>
-                        {errors.target_amount}
-                      </Text>
-                    ) : null}
-                  </View>
-
-                  <View style={styles.bottomRow}>
-                    <View
-                      style={[styles.bottomSection, styles.categorySection]}
-                    >
-                      <Text style={styles.label}>Category</Text>
-                      <TouchableOpacity
-                        style={[
-                          styles.categoryButton,
-                          styles.matchedHeightButton,
-                          errors.category && styles.inputError,
-                        ]}
-                        onPress={() => setShowCategoryPicker(true)}
-                      >
-                        <View style={styles.categoryContent}>
-                          <Text style={styles.categoryButtonEmoji}>
-                            {
-                              categoryOptions.find(
-                                (c) => c.value === selectedCategory
-                              )?.emoji
-                            }
-                          </Text>
-                          <Text style={styles.categoryButtonText}>
-                            {
-                              categoryOptions.find(
-                                (c) => c.value === selectedCategory
-                              )?.label
-                            }
-                          </Text>
-                        </View>
-                        <Ionicons name="chevron-down" size={16} color="#888" />
-                      </TouchableOpacity>
-                      {errors.category ? (
-                        <Text style={styles.errorText}>{errors.category}</Text>
+                      {errors.label ? (
+                        <Text style={styles.errorText}>{errors.label}</Text>
                       ) : null}
                     </View>
 
-                    <View
-                      style={[styles.bottomSection, styles.progressSection]}
-                    >
-                      <Text style={styles.label}>Current Progress</Text>
+                    <View style={[styles.formSection, styles.coreField]}>
+                      <Text style={[styles.label, styles.coreLabel]}>
+                        Target Amount
+                      </Text>
                       <View
                         style={[
-                          styles.progressContainer,
-                          styles.matchedHeightContainer,
+                          styles.amountContainer,
+                          styles.coreAmountContainer,
+                          errors.target_amount && styles.inputError,
                         ]}
                       >
-                        <Text style={styles.currencySymbol}>$</Text>
+                        <Text
+                          style={[
+                            styles.currencySymbol,
+                            styles.coreCurrencySymbol,
+                          ]}
+                        >
+                          $
+                        </Text>
                         <TextInput
-                          style={styles.progressInput}
-                          placeholder="0"
+                          style={[styles.amountInput, styles.coreAmountInput]}
+                          placeholder="How much do you need?"
                           placeholderTextColor="#666"
-                          value={goal.current_amount?.toString() || ""}
+                          value={
+                            goal.target_amount ? String(goal.target_amount) : ""
+                          }
                           onChangeText={(text) => {
-                            const current_amount = Math.max(
-                              0,
-                              parseFloat(text) || 0
-                            );
-                            setGoal((prev) => ({ ...prev, current_amount }));
+                            const target_amount = parseFloat(text) || 0;
+                            setGoal((prev) => ({ ...prev, target_amount }));
+                            if (errors.target_amount) {
+                              setErrors((prev) => ({
+                                ...prev,
+                                target_amount: "",
+                              }));
+                            }
                           }}
                           keyboardType="numeric"
                         />
                       </View>
+                      {errors.target_amount ? (
+                        <Text style={styles.errorText}>
+                          {errors.target_amount}
+                        </Text>
+                      ) : null}
                     </View>
-                  </View>
 
-                  <View style={styles.formSection}>
-                    <Text style={styles.label}>Target Date</Text>
-                    <TouchableOpacity
-                      style={[
-                        styles.dateButton,
-                        errors.date && styles.inputError,
-                      ]}
-                      onPress={() => setShowDatePicker(true)}
-                    >
-                      <Text style={styles.dateButtonText}>
-                        {selectedDate.toLocaleDateString("en-US", {
-                          weekday: "short",
-                          year: "numeric",
-                          month: "short",
-                          day: "numeric",
-                        })}
-                      </Text>
-                      <Ionicons name="calendar" size={20} color="#4A90E2" />
-                    </TouchableOpacity>
-                    {errors.date ? (
-                      <Text style={styles.errorText}>{errors.date}</Text>
-                    ) : null}
-                  </View>
-
-                  {!showNoteField ? (
-                    <TouchableOpacity
-                      style={styles.addNoteButton}
-                      onPress={() => setShowNoteField(true)}
-                    >
-                      <Ionicons
-                        name="add-circle-outline"
-                        size={18}
-                        color="#4A90E2"
-                      />
-                      <Text style={styles.addNoteText}>Add note</Text>
-                    </TouchableOpacity>
-                  ) : (
-                    <View style={styles.formSection}>
-                      <View style={styles.noteHeader}>
-                        <Text style={styles.label}>Note (Optional)</Text>
+                    <View style={styles.bottomRow}>
+                      <View
+                        style={[styles.bottomSection, styles.categorySection]}
+                      >
+                        <Text style={styles.label}>Category</Text>
                         <TouchableOpacity
-                          onPress={() => {
-                            setShowNoteField(false);
-                            setGoal((prev) => ({ ...prev, note: "" }));
-                          }}
-                          style={styles.removeNoteButton}
+                          style={[
+                            styles.categoryButton,
+                            styles.matchedHeightButton,
+                            errors.category && styles.inputError,
+                          ]}
+                          onPress={() => setShowCategoryPicker(true)}
                         >
+                          <View style={styles.categoryContent}>
+                            <Text style={styles.categoryButtonEmoji}>
+                              {
+                                categoryOptions.find(
+                                  (c) => c.value === selectedCategory
+                                )?.emoji
+                              }
+                            </Text>
+                            <Text style={styles.categoryButtonText}>
+                              {
+                                categoryOptions.find(
+                                  (c) => c.value === selectedCategory
+                                )?.label
+                              }
+                            </Text>
+                          </View>
                           <Ionicons
-                            name="close-circle"
+                            name="chevron-down"
                             size={16}
                             color="#888"
                           />
                         </TouchableOpacity>
+                        {errors.category ? (
+                          <Text style={styles.errorText}>
+                            {errors.category}
+                          </Text>
+                        ) : null}
                       </View>
-                      <TextInput
+
+                      <View
+                        style={[styles.bottomSection, styles.progressSection]}
+                      >
+                        <Text style={styles.label}>Current Progress</Text>
+                        <View
+                          style={[
+                            styles.progressContainer,
+                            styles.matchedHeightContainer,
+                          ]}
+                        >
+                          <Text style={styles.currencySymbol}>$</Text>
+                          <TextInput
+                            style={styles.progressInput}
+                            placeholder="0"
+                            placeholderTextColor="#666"
+                            value={goal.current_amount?.toString() || ""}
+                            onChangeText={(text) => {
+                              const current_amount = Math.max(
+                                0,
+                                parseFloat(text) || 0
+                              );
+                              setGoal((prev) => ({ ...prev, current_amount }));
+                            }}
+                            keyboardType="numeric"
+                          />
+                        </View>
+                      </View>
+                    </View>
+
+                    <View style={styles.formSection}>
+                      <Text style={styles.label}>Target Date</Text>
+                      <TouchableOpacity
                         style={[
-                          styles.noteInput,
-                          errors.note && styles.inputError,
+                          styles.dateButton,
+                          errors.date && styles.inputError,
                         ]}
-                        placeholder="Why is this important to you? What will achieving this mean?"
-                        placeholderTextColor="#666"
-                        value={goal.note}
-                        onChangeText={(text) => {
-                          if (text.length <= 350) {
-                            // ~50 words limit
-                            setGoal((prev) => ({ ...prev, note: text }));
-                            if (errors.note) {
-                              setErrors((prev) => ({ ...prev, note: "" }));
-                            }
-                          }
-                        }}
-                        multiline
-                        numberOfLines={3}
-                        maxLength={350}
-                        autoFocus
-                      />
-                      <Text style={styles.characterCount}>
-                        {goal.note?.length || 0}/350 characters
-                      </Text>
-                      {errors.note ? (
-                        <Text style={styles.errorText}>{errors.note}</Text>
+                        onPress={() => setShowDatePicker(true)}
+                      >
+                        <Text style={styles.dateButtonText}>
+                          {selectedDate.toLocaleDateString("en-US", {
+                            weekday: "short",
+                            year: "numeric",
+                            month: "short",
+                            day: "numeric",
+                          })}
+                        </Text>
+                        <Ionicons name="calendar" size={20} color="#4A90E2" />
+                      </TouchableOpacity>
+                      {errors.date ? (
+                        <Text style={styles.errorText}>{errors.date}</Text>
                       ) : null}
                     </View>
+
+                    {!showNoteField ? (
+                      <TouchableOpacity
+                        style={styles.addNoteButton}
+                        onPress={() => setShowNoteField(true)}
+                        activeOpacity={0.7}
+                      >
+                        <Ionicons
+                          name="add-circle-outline"
+                          size={18}
+                          color="#4A90E2"
+                        />
+                        <Text style={styles.addNoteText}>Add note</Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <Animated.View
+                        style={[
+                          styles.formSection,
+                          {
+                            maxHeight: noteHeightAnimation.interpolate({
+                              inputRange: [0, 1],
+                              outputRange: [0, 200], // Adjust based on content height
+                            }),
+                            overflow: "hidden", // Ensure content clips during animation
+                          },
+                        ]}
+                      >
+                        <Animated.View
+                          style={{
+                            opacity: noteAnimation,
+                            transform: [
+                              {
+                                translateY: noteAnimation.interpolate({
+                                  inputRange: [0, 1],
+                                  outputRange: [-10, 0],
+                                }),
+                              },
+                            ],
+                          }}
+                        >
+                          <View style={styles.noteHeader}>
+                            <Text style={styles.label}>Note (Optional)</Text>
+                            <TouchableOpacity
+                              onPress={() => {
+                                setShowNoteField(false);
+                                setGoal((prev) => ({ ...prev, note: "" }));
+                              }}
+                              style={styles.removeNoteButton}
+                            >
+                              <Ionicons
+                                name="close-circle"
+                                size={16}
+                                color="#888"
+                              />
+                            </TouchableOpacity>
+                          </View>
+                          <Animated.View
+                            style={{
+                              transform: [
+                                {
+                                  scale: noteAnimation.interpolate({
+                                    inputRange: [0, 1],
+                                    outputRange: [0.95, 1],
+                                  }),
+                                },
+                              ],
+                            }}
+                          >
+                            <TextInput
+                              style={[
+                                styles.noteInput,
+                                errors.note && styles.inputError,
+                              ]}
+                              placeholder="Why is this important to you? What will achieving this mean?"
+                              placeholderTextColor="#666"
+                              value={goal.note}
+                              onChangeText={(text) => {
+                                if (text.length <= 350) {
+                                  // ~50 words limit
+                                  setGoal((prev) => ({ ...prev, note: text }));
+                                  if (errors.note) {
+                                    setErrors((prev) => ({
+                                      ...prev,
+                                      note: "",
+                                    }));
+                                  }
+                                }
+                              }}
+                              multiline
+                              numberOfLines={3}
+                              maxLength={350}
+                              returnKeyType="done"
+                              blurOnSubmit={true}
+                            />
+                            <Text style={styles.characterCount}>
+                              {goal.note?.length || 0}/350 characters
+                            </Text>
+                            {errors.note ? (
+                              <Text style={styles.errorText}>
+                                {errors.note}
+                              </Text>
+                            ) : null}
+                          </Animated.View>
+                        </Animated.View>
+                      </Animated.View>
+                    )}
+
+                    <View style={styles.actionButtons}>
+                      <TouchableOpacity
+                        style={[styles.button, styles.cancelButton]}
+                        onPress={onClose}
+                      >
+                        <Text style={styles.buttonText}>Cancel</Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={[styles.button, styles.saveButton]}
+                        onPress={handleSave}
+                      >
+                        <Text style={styles.buttonText}>Set Goal</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </ScrollView>
+
+                  {showDatePicker && (
+                    <Modal
+                      visible={showDatePicker}
+                      transparent
+                      animationType="slide"
+                      onRequestClose={() => setShowDatePicker(false)}
+                    >
+                      <TouchableWithoutFeedback
+                        onPress={() => setShowDatePicker(false)}
+                      >
+                        <View style={styles.datePickerOverlay}>
+                          <TouchableWithoutFeedback
+                            onPress={(e) => e.stopPropagation()}
+                          >
+                            <View style={styles.datePickerModal}>
+                              <View style={styles.datePickerHeader}>
+                                <TouchableOpacity
+                                  onPress={() => setShowDatePicker(false)}
+                                >
+                                  <Text style={styles.datePickerCancel}>
+                                    Cancel
+                                  </Text>
+                                </TouchableOpacity>
+                                <Text style={styles.datePickerTitle}>
+                                  Select Date
+                                </Text>
+                                <TouchableOpacity
+                                  onPress={() => setShowDatePicker(false)}
+                                >
+                                  <Text style={styles.datePickerDone}>
+                                    Done
+                                  </Text>
+                                </TouchableOpacity>
+                              </View>
+                              <View style={styles.datePickerContent}>
+                                <DateTimePicker
+                                  value={selectedDate}
+                                  mode="date"
+                                  display="spinner"
+                                  onChange={(event, date) => {
+                                    if (date) {
+                                      setSelectedDate(date);
+                                      if (errors.date) {
+                                        setErrors((prev) => ({
+                                          ...prev,
+                                          date: "",
+                                        }));
+                                      }
+                                    }
+                                  }}
+                                  minimumDate={new Date()}
+                                  textColor="#fff"
+                                  style={styles.datePickerSpinner}
+                                />
+                              </View>
+                            </View>
+                          </TouchableWithoutFeedback>
+                        </View>
+                      </TouchableWithoutFeedback>
+                    </Modal>
                   )}
 
-                  <View style={styles.actionButtons}>
-                    <TouchableOpacity
-                      style={[styles.button, styles.cancelButton]}
-                      onPress={onClose}
+                  {showCategoryPicker && (
+                    <Modal
+                      visible={showCategoryPicker}
+                      transparent
+                      animationType="slide"
+                      onRequestClose={() => setShowCategoryPicker(false)}
                     >
-                      <Text style={styles.buttonText}>Cancel</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      style={[styles.button, styles.saveButton]}
-                      onPress={handleSave}
-                    >
-                      <Text style={styles.buttonText}>Set Goal</Text>
-                    </TouchableOpacity>
-                  </View>
-                </ScrollView>
-
-                {showDatePicker && (
-                  <Modal
-                    visible={showDatePicker}
-                    transparent
-                    animationType="slide"
-                    onRequestClose={() => setShowDatePicker(false)}
-                  >
-                    <TouchableWithoutFeedback
-                      onPress={() => setShowDatePicker(false)}
-                    >
-                      <View style={styles.datePickerOverlay}>
-                        <TouchableWithoutFeedback
-                          onPress={(e) => e.stopPropagation()}
-                        >
-                          <View style={styles.datePickerModal}>
-                            <View style={styles.datePickerHeader}>
-                              <TouchableOpacity
-                                onPress={() => setShowDatePicker(false)}
+                      <TouchableWithoutFeedback
+                        onPress={() => setShowCategoryPicker(false)}
+                      >
+                        <View style={styles.categoryModalOverlay}>
+                          <TouchableWithoutFeedback
+                            onPress={(e) => e.stopPropagation()}
+                          >
+                            <View style={styles.categoryModalContent}>
+                              <ScrollView
+                                style={styles.categoryList}
+                                showsVerticalScrollIndicator={false}
                               >
-                                <Text style={styles.datePickerCancel}>
-                                  Cancel
-                                </Text>
-                              </TouchableOpacity>
-                              <Text style={styles.datePickerTitle}>
-                                Select Date
-                              </Text>
-                              <TouchableOpacity
-                                onPress={() => setShowDatePicker(false)}
-                              >
-                                <Text style={styles.datePickerDone}>Done</Text>
-                              </TouchableOpacity>
-                            </View>
-                            <View style={styles.datePickerContent}>
-                              <DateTimePicker
-                                value={selectedDate}
-                                mode="date"
-                                display="spinner"
-                                onChange={(event, date) => {
-                                  if (date) {
-                                    setSelectedDate(date);
-                                    if (errors.date) {
-                                      setErrors((prev) => ({
-                                        ...prev,
-                                        date: "",
-                                      }));
-                                    }
-                                  }
-                                }}
-                                minimumDate={new Date()}
-                                textColor="#fff"
-                                style={styles.datePickerSpinner}
-                              />
-                            </View>
-                          </View>
-                        </TouchableWithoutFeedback>
-                      </View>
-                    </TouchableWithoutFeedback>
-                  </Modal>
-                )}
-
-                {showCategoryPicker && (
-                  <Modal
-                    visible={showCategoryPicker}
-                    transparent
-                    animationType="slide"
-                    onRequestClose={() => setShowCategoryPicker(false)}
-                  >
-                    <TouchableWithoutFeedback
-                      onPress={() => setShowCategoryPicker(false)}
-                    >
-                      <View style={styles.categoryModalOverlay}>
-                        <TouchableWithoutFeedback
-                          onPress={(e) => e.stopPropagation()}
-                        >
-                          <View style={styles.categoryModalContent}>
-                            <ScrollView
-                              style={styles.categoryList}
-                              showsVerticalScrollIndicator={false}
-                            >
-                              <View style={styles.adaptiveCategoryGrid}>
-                                {categoryOptions.map((category) => (
-                                  <TouchableOpacity
-                                    key={category.value}
-                                    style={[
-                                      styles.adaptiveCategoryBox,
-                                      selectedCategory === category.value &&
-                                        styles.categoryBoxSelected,
-                                      {
-                                        backgroundColor:
-                                          category.backgroundColor,
-                                        borderColor:
-                                          selectedCategory === category.value
-                                            ? category.color
-                                            : category.color + "40",
-                                        borderWidth:
-                                          selectedCategory === category.value
-                                            ? 2
-                                            : 1,
-                                      },
-                                    ]}
-                                    onPress={() => {
-                                      setSelectedCategory(category.value);
-                                      setShowCategoryPicker(false);
-                                    }}
-                                    activeOpacity={0.7}
-                                  >
-                                    <Text style={styles.categoryEmoji}>
-                                      {category.emoji}
-                                    </Text>
-                                    <Text
+                                <View style={styles.adaptiveCategoryGrid}>
+                                  {categoryOptions.map((category) => (
+                                    <TouchableOpacity
+                                      key={category.value}
                                       style={[
-                                        styles.adaptiveCategoryText,
+                                        styles.adaptiveCategoryBox,
+                                        selectedCategory === category.value &&
+                                          styles.categoryBoxSelected,
                                         {
-                                          color:
+                                          backgroundColor:
+                                            category.backgroundColor,
+                                          borderColor:
                                             selectedCategory === category.value
                                               ? category.color
-                                              : "#333",
-                                          fontWeight:
+                                              : category.color + "40",
+                                          borderWidth:
                                             selectedCategory === category.value
-                                              ? "700"
-                                              : "600",
+                                              ? 2
+                                              : 1,
                                         },
                                       ]}
+                                      onPress={() => {
+                                        setSelectedCategory(category.value);
+                                        setShowCategoryPicker(false);
+                                      }}
+                                      activeOpacity={0.7}
                                     >
-                                      {category.label}
-                                    </Text>
-                                    {selectedCategory === category.value && (
-                                      <Ionicons
-                                        name="checkmark-circle"
-                                        size={18}
-                                        color={category.color}
-                                        style={styles.categoryCheckmark}
-                                      />
-                                    )}
-                                  </TouchableOpacity>
-                                ))}
-                              </View>
-                            </ScrollView>
-                          </View>
-                        </TouchableWithoutFeedback>
-                      </View>
-                    </TouchableWithoutFeedback>
-                  </Modal>
-                )}
-              </LinearGradient>
-            </Animated.View>
-          </TouchableWithoutFeedback>
+                                      <Text style={styles.categoryEmoji}>
+                                        {category.emoji}
+                                      </Text>
+                                      <Text
+                                        style={[
+                                          styles.adaptiveCategoryText,
+                                          {
+                                            color:
+                                              selectedCategory ===
+                                              category.value
+                                                ? category.color
+                                                : "#333",
+                                            fontWeight:
+                                              selectedCategory ===
+                                              category.value
+                                                ? "700"
+                                                : "600",
+                                          },
+                                        ]}
+                                      >
+                                        {category.label}
+                                      </Text>
+                                      {selectedCategory === category.value && (
+                                        <Ionicons
+                                          name="checkmark-circle"
+                                          size={18}
+                                          color={category.color}
+                                          style={styles.categoryCheckmark}
+                                        />
+                                      )}
+                                    </TouchableOpacity>
+                                  ))}
+                                </View>
+                              </ScrollView>
+                            </View>
+                          </TouchableWithoutFeedback>
+                        </View>
+                      </TouchableWithoutFeedback>
+                    </Modal>
+                  )}
+                </LinearGradient>
+              </Animated.View>
+            </TouchableWithoutFeedback>
+          </KeyboardAvoidingView>
         </View>
       </TouchableWithoutFeedback>
     </Modal>
@@ -568,9 +673,16 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingHorizontal: 20,
   },
+  keyboardAvoidingView: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    width: "100%",
+  },
   modalContent: {
     width: "100%",
     maxWidth: 400,
+    maxHeight: "90%", // Prevent modal from taking full height
   },
   modalInner: {
     borderRadius: 20,
@@ -609,6 +721,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: 20,
+    flexGrow: 1,
   },
   formSection: {
     marginBottom: 20,
@@ -755,6 +868,7 @@ const styles = StyleSheet.create({
     borderColor: "rgba(255,255,255,0.1)",
     textAlignVertical: "top",
     minHeight: 80,
+    maxHeight: 120, // Prevent it from growing too large
   },
   characterCount: {
     fontSize: 12,

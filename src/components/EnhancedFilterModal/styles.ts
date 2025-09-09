@@ -748,7 +748,7 @@ export const styles = StyleSheet.create({
   
   // Adaptive Category Boxes
   adaptiveCategoryBox: {
-    borderRadius: 14,
+    borderRadius: 24,
     flexDirection: "row",
     paddingVertical: 8,
     paddingHorizontal: 12,

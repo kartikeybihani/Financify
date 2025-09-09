@@ -62,6 +62,7 @@ const styles = StyleSheet.create({
 export default function GoalsScreen() {
   const { goalsData, loading, deleteGoal, updateGoal } = useGoals(() => {});
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [hasInitialData, setHasInitialData] = useState(false);
   const goalsAnimations = React.useRef<Animated.Value[]>(
     Array(10)
       .fill(0)
@@ -79,6 +80,12 @@ export default function GoalsScreen() {
     });
   }, []);
 
+  React.useEffect(() => {
+    if (goalsData.length > 0) {
+      setHasInitialData(true);
+    }
+  }, [goalsData]);
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.headerContainer}>
@@ -89,7 +96,7 @@ export default function GoalsScreen() {
           <Text style={styles.headerTitle}>Goals</Text>
         </View>
       </View>
-      {(isRefreshing || loading) && (
+      {(isRefreshing || (loading && !hasInitialData)) && (
         <View style={styles.loadingContainer}>
           <ActivityIndicator color="#4A90E2" />
         </View>

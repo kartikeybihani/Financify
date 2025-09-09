@@ -1,7 +1,7 @@
 import React from "react";
 import { View, Text, TouchableOpacity } from "react-native";
 import { NUDGE_OPTIONS } from "../constants/finny";
-import styles from "../styles/finnyStyles";
+import styles from "../styles/chatStyles";
 
 interface NudgeGridProps {
   onNudgePress: (text: string) => void;
