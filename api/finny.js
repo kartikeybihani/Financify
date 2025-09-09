@@ -149,29 +149,213 @@ When responding:
 - Encourage healthy financial habits
 `;
 
-  // This would integrate with your AI service (OpenAI, etc.)
-  // For now, returning a placeholder response
-  return {
-    message: `Hi! I'm Finny, your financial companion. I can see your financial situation and I'm here to help with "${message}". Let me analyze your data and provide personalized advice.`,
-    type: "assistant",
-  };
+  // Call OpenRouter API for AI response
+  try {
+    const response = await fetch(
+      "https://openrouter.ai/api/v1/chat/completions",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+          "HTTP-Referer": "https://financify-rose.vercel.app",
+          "X-Title": "Financify - Personal Finance Assistant",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "openai/gpt-4o-mini",
+          messages: [
+            {
+              role: "system",
+              content: systemPrompt,
+            },
+            {
+              role: "user",
+              content: message,
+            },
+          ],
+          temperature: 0.7,
+          max_tokens: 1000,
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      console.error(
+        "❌ [FINNY] OpenRouter API error:",
+        response.status,
+        response.statusText
+      );
+      throw new Error(`OpenRouter API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    const aiMessage =
+      data.choices?.[0]?.message?.content ||
+      "I'm having trouble generating a response right now. Please try again.";
+
+    return {
+      message: aiMessage,
+      type: "assistant",
+    };
+  } catch (error) {
+    console.error("❌ [FINNY] AI integration error:", error);
+    return {
+      message:
+        "I'm having some technical difficulties right now. Please try again in a moment.",
+      type: "assistant",
+    };
+  }
 }
 
 async function handleClassify(message, context) {
-  // Classification logic would go here
-  return {
-    intent: "general_question",
-    confidence: 0.85,
-    suggested_actions: ["provide_advice", "show_relevant_data"],
-  };
+  try {
+    const response = await fetch(
+      "https://openrouter.ai/api/v1/chat/completions",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+          "HTTP-Referer": "https://financify-rose.vercel.app",
+          "X-Title": "Financify - Personal Finance Assistant",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "openai/gpt-4o-mini",
+          messages: [
+            {
+              role: "system",
+              content: `You are a financial intent classifier. Analyze the user's message and determine if they want to set a financial goal or ask a general question.
+
+Respond with ONLY a JSON object in this exact format:
+{
+  "intent": "goal" | "general_question",
+  "confidence": 0.0-1.0
+}
+
+Intent "goal" should be used when the user wants to:
+- Set a savings goal
+- Create a financial target
+- Plan for a specific purchase
+- Set aside money for something
+
+Intent "general_question" for everything else like:
+- General financial advice
+- Questions about spending
+- Investment tips
+- Account information requests`,
+            },
+            {
+              role: "user",
+              content: message,
+            },
+          ],
+          temperature: 0.1,
+          max_tokens: 100,
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      console.error("❌ [FINNY] Classification API error:", response.status);
+      throw new Error(`Classification API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    const aiResponse = data.choices?.[0]?.message?.content;
+
+    try {
+      const parsed = JSON.parse(aiResponse);
+      return {
+        intent: parsed.intent || "general_question",
+        confidence: parsed.confidence || 0.5,
+        suggested_actions: ["provide_advice", "show_relevant_data"],
+      };
+    } catch (parseError) {
+      console.error(
+        "❌ [FINNY] Failed to parse classification response:",
+        aiResponse
+      );
+      throw parseError;
+    }
+  } catch (error) {
+    console.error("❌ [FINNY] Classification error:", error);
+    // Fallback to static classification
+    return {
+      intent: "general_question",
+      confidence: 0.5,
+      suggested_actions: ["provide_advice", "show_relevant_data"],
+    };
+  }
 }
 
 async function handleGoal(message, context, params) {
-  // Goal-related logic would go here
-  return {
-    goal_type: "savings",
-    suggested_target: 5000,
-    timeline: "6 months",
-    action_items: ["Set up automatic transfers", "Review spending habits"],
-  };
+  try {
+    const response = await fetch(
+      "https://openrouter.ai/api/v1/chat/completions",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+          "HTTP-Referer": "https://financify-rose.vercel.app",
+          "X-Title": "Financify - Personal Finance Assistant",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "openai/gpt-4o-mini",
+          messages: [
+            {
+              role: "system",
+              content: `You are a financial goal extraction assistant. Extract goal information from the user's message.
+
+Respond with ONLY a JSON object in this exact format:
+{
+  "label": "string or null",
+  "target": number or null,
+  "timeline": {"month": "string", "year": "string"} or null
+}
+
+Examples:
+- "Save $5000 for vacation by December 2024" → {"label": "vacation", "target": 5000, "timeline": {"month": "December", "year": "2024"}}
+- "I want to save for a car" → {"label": "car", "target": null, "timeline": null}
+- "Set aside $200" → {"label": null, "target": 200, "timeline": null}`,
+            },
+            {
+              role: "user",
+              content: message,
+            },
+          ],
+          temperature: 0.1,
+          max_tokens: 150,
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      console.error("❌ [FINNY] Goal API error:", response.status);
+      throw new Error(`Goal API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    const aiResponse = data.choices?.[0]?.message?.content;
+
+    try {
+      const parsed = JSON.parse(aiResponse);
+      return {
+        label: parsed.label,
+        target: parsed.target,
+        timeline: parsed.timeline,
+      };
+    } catch (parseError) {
+      console.error("❌ [FINNY] Failed to parse goal response:", aiResponse);
+      throw parseError;
+    }
+  } catch (error) {
+    console.error("❌ [FINNY] Goal extraction error:", error);
+    // Fallback to basic goal structure
+    return {
+      label: null,
+      target: null,
+      timeline: null,
+    };
+  }
 }
