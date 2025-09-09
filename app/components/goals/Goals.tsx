@@ -17,11 +17,11 @@ import GoalNotification from "./GoalNotification";
 import AddGoalModal from "./AddGoalModal";
 import GoalItem from "./GoalItem";
 import GoalDetailModal from "./GoalDetailModal";
-import { styles } from "../styles/goalsStyles";
-import { useGoals } from "../hooks/useGoals";
-import { Goal } from "../types/finny";
-import { GoalInput } from "../types/addGoalModalTypes";
-import { GoalsProps, GoalsState } from "../types/goalsTypes";
+import { styles } from "../../styles/goalsStyles";
+import { useGoals } from "../../hooks/useGoals";
+import { Goal } from "../../types/finny";
+import { GoalInput } from "../../types/addGoalModalTypes";
+import { GoalsProps, GoalsState } from "../../types/goalsTypes";
 import { useRouter } from "expo-router";
 
 // Simple ID generator
@@ -265,7 +265,7 @@ const Goals: React.FC<GoalsProps> = ({
           <View style={styles.emptyStateContainer}>
             <View style={styles.mascotImageContainer}>
               <Animated.Image
-                source={require("../assets/mascot1.jpg")}
+                source={require("../../assets/mascot1.jpg")}
                 style={[
                   styles.emptyStateImage,
                   {

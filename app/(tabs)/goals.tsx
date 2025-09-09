@@ -9,7 +9,7 @@ import {
   StyleSheet,
 } from "react-native";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
-import Goals from "../components/Goals";
+import Goals from "../components/goals/Goals";
 import { useGoals } from "../hooks/useGoals";
 
 const styles = StyleSheet.create({

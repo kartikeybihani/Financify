@@ -1,179 +1,94 @@
-user_items table -->
-[
-  {
-    "id": "dcf5377e-fff8-454b-9506-ff1cfa82992c",
-    "user_id": "79952f35-b607-40d6-a32e-d81386882eb7",
-    "item_id": "ndgrX3j50xcLpr9oLm18tVNd7DqKP6UAYmgDm",
-    "institution_id": "ins_127991",
-    "institution_name": "Wells Fargo",
-    "webhook": "https://financify-rose.vercel.app/api/webhook",
-    "has_new_accounts": false,
-    "requires_update_mode": false,
-    "transactions_cursor": "CAESJWtKNWpnUEFSazB1ekUwclF6QXdKc2VhSkFSOWdEcUhwdlBnakQaCwi3yurFBhDQ0+I5IgsIt8rqxQYQ0NPiOSoLCLfK6sUGENDT4jk=",
-    "created_at": "2025-09-01 09:10:33.679268+00",
-    "access_token_secret_id": "b8dd8f82-4aca-4f9e-9a97-fdd1be190137",
-    "last_synced_at": "2025-09-06 01:04:33.79+00"
-  },
-  {
-    "id": "b7589921-e806-4635-bee3-395d5f068711",
-    "user_id": "79952f35-b607-40d6-a32e-d81386882eb7",
-    "item_id": "1dYovrbqMds3BEqBeM3oszdZPR7y1nCm64Q04",
-    "institution_id": "ins_128026",
-    "institution_name": "Capital One",
-    "webhook": "https://financify-rose.vercel.app/api/webhook",
-    "has_new_accounts": false,
-    "requires_update_mode": false,
-    "transactions_cursor": "CAESJW56OGRiMExlM3ppODZCZzZKejhwSXJYNG9QZzMzRVVxbTd5eHEaDAiKiu7FBhCY2rboAiIMCIqK7sUGEJjatugCKgwIioruxQYQmNq26AI=",
-    "created_at": "2025-09-01 08:50:11.181634+00",
-    "access_token_secret_id": "a8d2cbc0-b1d8-41bb-9026-7652c457bc09",
-    "last_synced_at": "2025-09-06 01:04:34.067+00"
-  },
-  {
-    "id": "b1f9179d-7d6d-42cb-9ee0-57d056fae5fd",
-    "user_id": "79952f35-b607-40d6-a32e-d81386882eb7",
-    "item_id": "ej6aXwxOMKHLvZobJdNmsg1qEJp30YHdYqgb1",
-    "institution_id": "ins_10",
-    "institution_name": "American Express",
-    "webhook": "https://financify-rose.vercel.app/api/webhook",
-    "has_new_accounts": false,
-    "requires_update_mode": false,
-    "transactions_cursor": "CAESJXpETmQ3OFhiTG9mNVEwUHh3YVZCaEE1d2tROEV5NlVLMEFnd3caDAjDmezFBhDY2ImMAyIMCMOZ7MUGENjYiYwDKgwIw5nsxQYQ2NiJjAM=",
-    "created_at": "2025-09-02 04:02:38.177495+00",
-    "access_token_secret_id": "c50884d4-8fa4-4a60-9473-a00f8cafa7fd",
-    "last_synced_at": "2025-09-06 01:04:35.944+00"
-  }
-]
+-- WARNING: This schema is for context only and is not meant to be run.
+-- Table order and constraints may not be valid for execution.
 
-accounts table -->
-[
-  {
-    "account_id": "mZb8jB0Rvrs6pyBY6X9ZHq0ZN6JeMKCEEwZdo6",
-    "item_id": "ndgrX3j50xcLpr9oLm18tVNd7DqKP6UAYmgDm",
-    "name": "BILT WORLD ELITE MASTERCARD® ...7492",
-    "mask": "7492",
-    "type": "credit",
-    "subtype": "credit card",
-    "official_name": "BILT WORLD ELITE MASTERCARD® ...7492",
-    "current_balance": "1153.01",
-    "available_balance": "1346",
-    "created_at": "2025-09-01 09:10:34.903069+00"
-  },
-  {
-    "account_id": "4d560pJXBEUZ5j1AxewdsV7ag1XrvVHQLaZLX",
-    "item_id": "ej6aXwxOMKHLvZobJdNmsg1qEJp30YHdYqgb1",
-    "name": "Blue Cash Everyday®",
-    "mask": "1008",
-    "type": "credit",
-    "subtype": "credit card",
-    "official_name": "Blue Cash Everyday®",
-    "current_balance": "19",
-    "available_balance": "2337",
-    "created_at": "2025-09-02 04:02:40.46771+00"
-  },
-  {
-    "account_id": "jN4xbKYm1NhKq3Xq1zK0sXdZDqLyj7UY0x3yV",
-    "item_id": "1dYovrbqMds3BEqBeM3oszdZPR7y1nCm64Q04",
-    "name": "360 Checking",
-    "mask": "5090",
-    "type": "depository",
-    "subtype": "checking",
-    "official_name": "360 Checking",
-    "current_balance": "854.65",
-    "available_balance": null,
-    "created_at": "2025-09-01 08:50:13.120841+00"
-  }
-]
-
-transactions table -->
-[
-  {
-    "id": "ac5f9c25-1fe1-4f1f-9213-6a6f0048cbfd",
-    "user_id": "79952f35-b607-40d6-a32e-d81386882eb7",
-    "account_id": "jN4xbKYm1NhKq3Xq1zK0sXdZDqLyj7UY0x3yV",
-    "plaid_transaction_id": "mzJZov6eBziZAD7AQzZ8UqjrZzxyA6t8PqXJQ",
-    "date": "2025-09-01",
-    "amount": "10.5",
-    "iso_currency_code": "USD",
-    "name": "UPG PAYMENTICO COM",
-    "merchant_name": "Upg Paymentico Com",
-    "category": "GENERAL_SERVICES",
-    "transaction_type": "place",
-    "pending": false,
-    "inserted_at": "2025-09-02 03:50:54.850823+00"
-  },
-  {
-    "id": "b401f4ec-6711-4313-bcf2-cc08317d24b0",
-    "user_id": "79952f35-b607-40d6-a32e-d81386882eb7",
-    "account_id": "jN4xbKYm1NhKq3Xq1zK0sXdZDqLyj7UY0x3yV",
-    "plaid_transaction_id": "dNkvR1QebNh9AxjA1w9BcEZP05VdjBHoREBVN",
-    "date": "2025-08-30",
-    "amount": "25",
-    "iso_currency_code": "USD",
-    "name": "AC WEBCONNECTING B V",
-    "merchant_name": "Ac Webconnecting B",
-    "category": "TRANSPORTATION",
-    "transaction_type": "place",
-    "pending": false,
-    "inserted_at": "2025-09-02 03:50:54.850823+00"
-  },
-  ...
-]
-
-recurring_streams table -->
-[
-  {
-    "id": "76b04cd7-40bf-444c-966d-90426a685e0e",
-    "user_id": "79952f35-b607-40d6-a32e-d81386882eb7",
-    "item_id": "1dYovrbqMds3BEqBeM3oszdZPR7y1nCm64Q04",
-    "account_id": "jN4xbKYm1NhKq3Xq1zK0sXdZDqLyj7UY0x3yV",
-    "stream_id": "JoKkmM3VdoTpy04yEbp7hrQXdd3e7ZUmQV49n",
-    "stream_type": "income",
-    "flow_type": "inflow",
-    "description": "Monthly Interest Paid",
-    "merchant_name": "",
-    "category": "Income",
-    "average_amount": "-0.09333333333333334",
-    "last_amount": "-0.08",
-    "iso_currency_code": "USD",
-    "frequency": "MONTHLY",
-    "first_date": "2025-06-30",
-    "last_date": "2025-08-31",
-    "is_active": true,
-    "transaction_ids": [
-      "Aj6LykdZMjs3XQEXMk3Zs0bVO8KxqLUnrLRxY",
-      "BrmDKAw5RrixKzZK59xpia0nXzd845h7PKyRL",
-      "nz8db0Le3zi86Bg6Jz8pIrX4oPg33EUqm7yxq"
-    ],
-    "created_at": "2025-09-08 04:31:36.303662+00",
-    "updated_at": "2025-09-08 04:31:36.303662+00",
-    "last_synced_at": "2025-09-08 04:31:36.248+00"
-  },
-  {
-    "id": "da444c22-8a58-4542-97b1-2b72f3c35d77",
-    "user_id": "79952f35-b607-40d6-a32e-d81386882eb7",
-    "item_id": "1dYovrbqMds3BEqBeM3oszdZPR7y1nCm64Q04",
-    "account_id": "jN4xbKYm1NhKq3Xq1zK0sXdZDqLyj7UY0x3yV",
-    "stream_id": "8qYowLEvMqsQw8LwPpQotZq688dgN1CxKrE1e",
-    "stream_type": "other",
-    "flow_type": "outflow",
-    "description": "OPENAI CHATGPT SUBSCR",
-    "merchant_name": "OpenAI",
-    "category": "Other",
-    "average_amount": "21.74",
-    "last_amount": "21.74",
-    "iso_currency_code": "USD",
-    "frequency": "MONTHLY",
-    "first_date": "2025-06-04",
-    "last_date": "2025-09-04",
-    "is_active": true,
-    "transaction_ids": [
-      "4LYOrx9yMLigKeAKn0gOsNdo5E0Q69UnPVyMm",
-      "yznKP1vexzi3pNapm63DsA80XPorq9Fge5EP7",
-      "wzX3DLkY4zi7rX9rJ476c0dymrBvXptRb9VqD",
-      "ExPqvjDgMxumQ0bQeEmyTvgaR4oyyQt5KEYAn"
-    ],
-    "created_at": "2025-09-08 04:31:36.303662+00",
-    "updated_at": "2025-09-08 04:31:36.303662+00",
-    "last_synced_at": "2025-09-08 04:31:36.248+00"
-  }
-]
+CREATE TABLE public.accounts (
+  account_id text NOT NULL,
+  item_id text NOT NULL,
+  name text,
+  mask text,
+  type text,
+  subtype text,
+  official_name text,
+  current_balance numeric,
+  available_balance numeric,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT accounts_pkey PRIMARY KEY (account_id),
+  CONSTRAINT accounts_item_id_fkey FOREIGN KEY (item_id) REFERENCES public.user_items(item_id)
+);
+CREATE TABLE public.goals (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL,
+  label text NOT NULL,
+  description text,
+  note text CHECK (char_length(note) <= 350),
+  target_amount numeric NOT NULL CHECK (target_amount > 0::numeric),
+  current_amount numeric DEFAULT 0.0 CHECK (current_amount >= 0::numeric),
+  target_date date NOT NULL,
+  category text NOT NULL DEFAULT 'other'::text CHECK (category = ANY (ARRAY['emergency_fund'::text, 'vacation'::text, 'car'::text, 'house_down_payment'::text, 'education'::text, 'retirement'::text, 'wedding'::text, 'debt_payoff'::text, 'investment'::text, 'other'::text])),
+  status text NOT NULL DEFAULT 'active'::text CHECK (status = ANY (ARRAY['active'::text, 'paused'::text, 'completed'::text])),
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT goals_pkey PRIMARY KEY (id),
+  CONSTRAINT goals_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
+);
+CREATE TABLE public.recurring_streams (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL,
+  item_id text NOT NULL,
+  account_id text NOT NULL,
+  stream_id text NOT NULL UNIQUE,
+  stream_type text NOT NULL CHECK (stream_type = ANY (ARRAY['subscription'::text, 'income'::text, 'bill'::text, 'other'::text])),
+  flow_type text NOT NULL CHECK (flow_type = ANY (ARRAY['inflow'::text, 'outflow'::text])),
+  description text,
+  merchant_name text,
+  category text,
+  average_amount numeric NOT NULL DEFAULT 0,
+  last_amount numeric NOT NULL DEFAULT 0,
+  iso_currency_code text DEFAULT 'USD'::text,
+  frequency text NOT NULL,
+  first_date date,
+  last_date date,
+  is_active boolean NOT NULL DEFAULT true,
+  transaction_ids jsonb DEFAULT '[]'::jsonb,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  last_synced_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT recurring_streams_pkey PRIMARY KEY (id),
+  CONSTRAINT recurring_streams_account_id_fkey FOREIGN KEY (account_id) REFERENCES public.accounts(account_id),
+  CONSTRAINT recurring_streams_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id),
+  CONSTRAINT recurring_streams_item_id_fkey FOREIGN KEY (item_id) REFERENCES public.user_items(item_id)
+);
+CREATE TABLE public.transactions (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL,
+  account_id text NOT NULL,
+  plaid_transaction_id text NOT NULL UNIQUE,
+  date date NOT NULL,
+  amount numeric NOT NULL,
+  iso_currency_code text,
+  name text,
+  merchant_name text,
+  category text,
+  transaction_type text,
+  pending boolean,
+  inserted_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT transactions_pkey PRIMARY KEY (id),
+  CONSTRAINT transactions_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id),
+  CONSTRAINT transactions_account_id_fkey FOREIGN KEY (account_id) REFERENCES public.accounts(account_id)
+);
+CREATE TABLE public.user_items (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL,
+  item_id text NOT NULL UNIQUE,
+  institution_id text,
+  institution_name text,
+  webhook text,
+  has_new_accounts boolean NOT NULL DEFAULT false,
+  requires_update_mode boolean NOT NULL DEFAULT false,
+  transactions_cursor text,
+  created_at timestamp with time zone DEFAULT now(),
+  access_token_secret_id uuid,
+  last_synced_at timestamp with time zone,
+  CONSTRAINT user_items_pkey PRIMARY KEY (id),
+  CONSTRAINT user_items_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
+);

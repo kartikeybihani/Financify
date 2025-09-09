@@ -23,7 +23,7 @@ import {
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { supabase } from "../lib/supabase/supabase";
-import FeedbackModal from "../components/FeedbackModal";
+import FeedbackModal from "../components/modals/FeedbackModal";
 import { handleDisconnect, getPrimaryItemId } from "../utils/plaid";
 
 export default function SettingsScreen() {

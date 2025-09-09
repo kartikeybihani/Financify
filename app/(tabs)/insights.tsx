@@ -17,17 +17,17 @@ import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 
 import { styles } from "../styles/insightsStyles";
-import CategoryGrid from "../components/CategoryGrid";
-import CategoryDetailModal from "../components/CategoryDetailModal";
-import FilterModal from "../components/FilterModal";
+import CategoryGrid from "../components/insights/CategoryGrid";
+import CategoryDetailModal from "../components/insights/CategoryDetailModal";
+import FilterModal from "../components/insights/FilterModal";
 import EnhancedFilterModal, {
   FilterOptions,
   Account,
 } from "../components/EnhancedFilterModal";
-import TransactionDetailModal from "../components/TransactionDetailModal";
-import ReAuthBanner from "../components/ReAuthBanner";
-import RecurringTransactionsCard from "../components/RecurringTransactionsCard";
-import InsightsLoadingSkeleton from "../components/InsightsLoadingSkeleton";
+import TransactionDetailModal from "../components/transactions/TransactionDetailModal";
+import ReAuthBanner from "../components/ui/ReAuthBanner";
+import RecurringTransactionsCard from "../components/insights/RecurringTransactionsCard";
+import InsightsLoadingSkeleton from "../components/insights/InsightsLoadingSkeleton";
 import { supabase } from "../lib/supabase/supabase";
 import {
   fetchInitialData,

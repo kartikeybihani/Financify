@@ -16,7 +16,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
 import { addNewBankAccount, fetchInitialData } from "../../utils/plaid";
-import InstitutionSelectionModal from "../InstitutionSelectionModal";
+import InstitutionSelectionModal from "../modals/InstitutionSelectionModal";
 
 interface CategoryData {
   title: string;

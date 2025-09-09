@@ -116,7 +116,7 @@ const TypingIndicator = () => {
       <View style={styles.senderInfo}>
         <View style={styles.avatarContainer}>
           <Image
-            source={require("../assets/mascot1.jpg")}
+            source={require("../../assets/mascot1.jpg")}
             style={styles.senderAvatar}
           />
           <View style={styles.avatarGlow} />

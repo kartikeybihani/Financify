@@ -16,7 +16,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import DateTimePicker from "@react-native-community/datetimepicker";
-import { Goal } from "../types/finny";
+import { Goal } from "../../types/finny";
 import {
   getCategoryDisplayName,
   getCategoryIcon,
@@ -25,7 +25,7 @@ import {
   formatGoalProgress,
   GoalCategory,
   getCategoryOptions,
-} from "../../src/utils/goalCategories";
+} from "../../../src/utils/goalCategories";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 

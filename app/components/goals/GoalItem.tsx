@@ -1,15 +1,15 @@
 import React from "react";
 import { View, Text, TouchableOpacity, Animated } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { styles } from "../styles/goalsStyles";
-import { GoalItemProps } from "../types/goalsTypes";
+import { styles } from "../../styles/goalsStyles";
+import { GoalItemProps } from "../../types/goalsTypes";
 import {
   getCategoryIcon,
   getCategoryColor,
   calculateProgressPercentage,
   formatGoalProgress,
   getProgressColor,
-} from "../../src/utils/goalCategories";
+} from "../../../src/utils/goalCategories";
 
 const GoalItem: React.FC<GoalItemProps> = ({
   item,
