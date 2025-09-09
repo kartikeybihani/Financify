@@ -257,6 +257,10 @@ When responding:
 }
 
 async function handleClassify(message, context) {
+  console.log(
+    "🔍 [FINNY] Starting classification in handleClassify for message:",
+    message
+  );
   const { text, user } = { text: message, user: context }; // user can include state, age if you want hints
 
   const r = await fetch("https://openrouter.ai/api/v1/chat/completions", {
@@ -352,8 +356,12 @@ Q: "Is there inheritance tax in New Jersey" -> ask_state_rule state=NJ
   });
 
   const data = await r.json();
+  console.log("🔍 [FINNY] Classification data inside handleClassify:", data);
   const content = data.choices?.[0]?.message?.content || "{}";
-  console.log("🔍 [FINNY] Classification response:", content);
+  console.log(
+    "🔍 [FINNY] Classification response inside handleClassify:",
+    content
+  );
   return JSON.parse(content);
 }
 
