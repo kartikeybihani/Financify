@@ -215,8 +215,9 @@ export const useChat = () => {
       // Response status: ${res.status}
       const data = await res.json();
       // Finny response received
+      console.log("🤖 [CHAT] API Response:", data);
       
-      const messages = data.nudges?.join("\n\n") || "Sorry, I wasn't able to generate advice just now.";
+      const messages = data.message || "Sorry, I wasn't able to generate advice just now.";
       console.log("messages", messages);
       const splitMessages = splitIntoMessages(messages);
       await pushChatWithDelay("finny", splitMessages);

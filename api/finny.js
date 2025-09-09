@@ -43,6 +43,23 @@ export default async function handler(req, res) {
 }
 
 async function handleAsk(message, context) {
+  // Provide default values if context is undefined or incomplete
+  const safeContext = {
+    accounts: context?.accounts || [],
+    investments: context?.investments || [],
+    liabilities: context?.liabilities || [],
+    transactions: context?.transactions || [],
+    goals: context?.goals || [],
+    summary: context?.summary || {
+      netWorth: 0,
+      monthlyIncome: 0,
+      monthlyExpenses: 0,
+      totalAssets: 0,
+      totalLiabilities: 0,
+      totalInvestments: 0,
+    },
+  };
+
   const systemPrompt = `
 You are Finny, a financial psychologist and planning expert. Your role is to:
 1. Understand the user's financial goals and concerns
@@ -53,7 +70,7 @@ You are Finny, a financial psychologist and planning expert. Your role is to:
 You have access to the user's complete financial context:
 
 ACCOUNTS:
-${context.accounts
+${safeContext.accounts
   .map(
     (acc) =>
       `- ${acc.name.replace(/[^\w\s]/g, "")} (${acc.type}/${acc.subtype})
@@ -64,7 +81,7 @@ ${context.accounts
   .join("\n")}
 
 INVESTMENTS:
-${context.investments
+${safeContext.investments
   .map(
     (inv) =>
       `- ${inv.name.replace(/[^\w\s]/g, "")} (${inv.type})
@@ -76,7 +93,7 @@ ${context.investments
   .join("\n")}
 
 LIABILITIES:
-${context.liabilities
+${safeContext.liabilities
   .map(
     (liab) =>
       `- ${liab.name.replace(/[^\w\s]/g, "")} (${liab.type})
@@ -87,7 +104,7 @@ ${context.liabilities
   .join("\n")}
 
 RECENT TRANSACTIONS:
-${context.transactions
+${safeContext.transactions
   .slice(0, 5)
   .map(
     (txn) =>
@@ -102,7 +119,7 @@ ${context.transactions
   .join("\n")}
 
 ACTIVE GOALS:
-${context.goals
+${safeContext.goals
   .map(
     (goal) =>
       `- ${goal.label.replace(/[^\w\s]/g, "")}
@@ -116,12 +133,12 @@ ${context.goals
   .join("\n")}
 
 FINANCIAL SUMMARY:
-- Net Worth: $${context.summary.netWorth}
-- Monthly Income: $${context.summary.monthlyIncome}
-- Monthly Expenses: $${context.summary.monthlyExpenses}
-- Total Assets: $${context.summary.totalAssets}
-- Total Liabilities: $${context.summary.totalLiabilities}
-- Total Investments: $${context.summary.totalInvestments}
+- Net Worth: $${safeContext.summary.netWorth}
+- Monthly Income: $${safeContext.summary.monthlyIncome}
+- Monthly Expenses: $${safeContext.summary.monthlyExpenses}
+- Total Assets: $${safeContext.summary.totalAssets}
+- Total Liabilities: $${safeContext.summary.totalLiabilities}
+- Total Investments: $${safeContext.summary.totalInvestments}
 
 When responding:
 - Be empathetic and understanding
