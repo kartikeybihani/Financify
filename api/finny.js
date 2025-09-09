@@ -290,7 +290,7 @@ Rules:
 - If the user asks can I afford X or will I hit FIRE by age N choose calc_projection
 - Otherwise pick the most reasonable single intent
 
-Return JSON only per schema
+CRITICAL: Respond with ONLY valid JSON matching the schema. No explanations, no text, just the JSON object.
 Examples:
 Q: "Can I hit FIRE by 35" -> calc_projection
 Q: "What is the 2025 estate tax exemption" -> ask_fact_fresh
@@ -302,56 +302,7 @@ Q: "Is there inheritance tax in New Jersey" -> ask_state_rule state=NJ
         },
         { role: "user", content: text },
       ],
-      response_format: {
-        type: "json_schema",
-        json_schema: {
-          name: "financify_intent",
-          strict: true,
-          schema: {
-            type: "object",
-            additionalProperties: false,
-            properties: {
-              intent: {
-                type: "string",
-                enum: [
-                  "goal",
-                  "ask_personalized",
-                  "ask_concept_static",
-                  "ask_fact_fresh",
-                  "ask_state_rule",
-                  "calc_projection",
-                ],
-              },
-              needs_web: {
-                type: "boolean",
-                description: "true if fresh facts or state rules are needed",
-              },
-              needs_user_data: {
-                type: "boolean",
-                description: "true if answer must query user DB",
-              },
-              needs_calc: {
-                type: "boolean",
-                description: "true if a calculator or projection is required",
-              },
-              state: {
-                type: "string",
-                nullable: true,
-                description: "two letter US state if applicable",
-              },
-              entities: { type: "array", items: { type: "string" } },
-              confidence: { type: "number", minimum: 0, maximum: 1 },
-            },
-            required: [
-              "intent",
-              "needs_web",
-              "needs_user_data",
-              "needs_calc",
-              "confidence",
-            ],
-          },
-        },
-      },
+      // Note: response_format removed as deepseek model doesn't support structured output
     }),
   });
 
@@ -362,7 +313,36 @@ Q: "Is there inheritance tax in New Jersey" -> ask_state_rule state=NJ
     "🔍 [FINNY] Classification response inside handleClassify:",
     content
   );
-  return JSON.parse(content);
+
+  try {
+    // Try to parse as JSON first
+    return JSON.parse(content);
+  } catch (error) {
+    console.log(
+      "🔍 [FINNY] JSON parsing failed, attempting to extract JSON from response"
+    );
+
+    // Try to extract JSON from the response if it's embedded in text
+    const jsonMatch = content.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      try {
+        return JSON.parse(jsonMatch[0]);
+      } catch (e) {
+        console.log("🔍 [FINNY] Failed to parse extracted JSON");
+      }
+    }
+
+    // Fallback: return a default classification for general questions
+    console.log("🔍 [FINNY] Using default classification fallback");
+    return {
+      intent: "ask_concept_static",
+      needs_web: false,
+      needs_user_data: false,
+      needs_calc: false,
+      confidence: 0.5,
+      entities: [],
+    };
+  }
 }
 
 async function handleGoal(message, context, params) {
