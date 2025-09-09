@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -39,10 +39,154 @@ export default function SignupScreen() {
   const [step, setStep] = useState(1);
   const [formError, setFormError] = useState("");
 
+  // Finny typing animation states
+  const [finnyText, setFinnyText] = useState("");
+  const [showFinnyMessage, setShowFinnyMessage] = useState(true);
+  const [isTyping, setIsTyping] = useState(false);
+  const [showSureButton, setShowSureButton] = useState(false);
+  const [autoAdvanceTimer, setAutoAdvanceTimer] =
+    useState<NodeJS.Timeout | null>(null);
+
   // Enhanced animation values
   const fadeAnim = useState(new Animated.Value(1))[0];
   const slideAnim = useState(new Animated.Value(0))[0];
   const scaleAnim = useState(new Animated.Value(1))[0];
+  const finnyFadeAnim = useState(new Animated.Value(1))[0];
+  const cursorBlinkAnim = useState(new Animated.Value(1))[0];
+  const sureButtonAnim = useState(new Animated.Value(0))[0];
+  const sureButtonPulseAnim = useState(new Animated.Value(1))[0];
+  const headerSlideAnim = useState(new Animated.Value(0))[0];
+
+  const finnyMessage =
+    "Hi! I'm Finny\nI'd love to personalize your experience – mind if I ask a few quick questions?\n";
+
+  // Finny typing animation effect
+  useEffect(() => {
+    if (step === 1 && showFinnyMessage) {
+      setIsTyping(true);
+      let currentIndex = 0;
+
+      // Start cursor blinking animation
+      const blinkCursor = () => {
+        Animated.loop(
+          Animated.sequence([
+            Animated.timing(cursorBlinkAnim, {
+              toValue: 0,
+              duration: 500,
+              useNativeDriver: true,
+            }),
+            Animated.timing(cursorBlinkAnim, {
+              toValue: 1,
+              duration: 500,
+              useNativeDriver: true,
+            }),
+          ])
+        ).start();
+      };
+
+      blinkCursor();
+
+      const typeText = () => {
+        if (currentIndex < finnyMessage.length) {
+          setFinnyText(finnyMessage.substring(0, currentIndex + 1));
+          currentIndex++;
+          setTimeout(typeText, 30); // Typing speed
+        } else {
+          setIsTyping(false);
+          // Show "Sure thing" button after typing completes
+          setTimeout(() => {
+            setShowSureButton(true);
+            Animated.timing(sureButtonAnim, {
+              toValue: 1,
+              duration: 300,
+              useNativeDriver: true,
+            }).start(() => {
+              // Start subtle pulse animation
+              const pulseAnimation = Animated.loop(
+                Animated.sequence([
+                  Animated.timing(sureButtonPulseAnim, {
+                    toValue: 1.05,
+                    duration: 1200,
+                    useNativeDriver: true,
+                    easing: Easing.inOut(Easing.ease),
+                  }),
+                  Animated.timing(sureButtonPulseAnim, {
+                    toValue: 1,
+                    duration: 1200,
+                    useNativeDriver: true,
+                    easing: Easing.inOut(Easing.ease),
+                  }),
+                ])
+              );
+              pulseAnimation.start();
+            });
+
+            // Auto-advance after 3 seconds if button not clicked
+            const timer = setTimeout(() => {
+              handleSureButtonClick();
+            }, 2000);
+            setAutoAdvanceTimer(timer);
+          }, 500);
+        }
+      };
+
+      typeText();
+    }
+  }, [step, showFinnyMessage]);
+
+  // Cleanup timer on unmount
+  useEffect(() => {
+    return () => {
+      if (autoAdvanceTimer) {
+        clearTimeout(autoAdvanceTimer);
+      }
+    };
+  }, [autoAdvanceTimer]);
+
+  const handleSureButtonClick = () => {
+    if (autoAdvanceTimer) {
+      clearTimeout(autoAdvanceTimer);
+      setAutoAdvanceTimer(null);
+    }
+
+    // Animate header slide from right to left
+    Animated.parallel([
+      Animated.timing(finnyFadeAnim, {
+        toValue: 0,
+        duration: 300,
+        useNativeDriver: true,
+      }),
+      Animated.timing(sureButtonAnim, {
+        toValue: 0,
+        duration: 300,
+        useNativeDriver: true,
+      }),
+      Animated.timing(headerSlideAnim, {
+        toValue: -width,
+        duration: 400,
+        useNativeDriver: true,
+        easing: Easing.out(Easing.cubic),
+      }),
+    ]).start(() => {
+      setShowFinnyMessage(false);
+      setShowSureButton(false);
+      // Reset header position and fade in new content
+      headerSlideAnim.setValue(width);
+      Animated.parallel([
+        Animated.timing(headerSlideAnim, {
+          toValue: 0,
+          duration: 400,
+          useNativeDriver: true,
+          easing: Easing.out(Easing.cubic),
+        }),
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 400,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    });
+  };
 
   const animateTransition = (targetStep: number) => {
     const forward = targetStep > step;
@@ -239,7 +383,7 @@ export default function SignupScreen() {
 
     if (error) {
       if (error.message.includes("already registered")) {
-        setFormError("User with this email already exists.");
+        setFormError("User with this email already exists. Please login.");
         return;
       }
       return;
@@ -310,24 +454,82 @@ export default function SignupScreen() {
 
         <ScrollView contentContainerStyle={styles.scrollContainer}>
           <View style={styles.contentContainer}>
-            <View style={styles.headerContainer}>
-              <Text style={styles.title}>
-                {step === 1 && "What's your name?"}
-                {step === 2 && "Let's learn more about you"}
-                {step === 3 && "Let's set you up!"}
-              </Text>
+            <Animated.View
+              style={[
+                styles.headerContainer,
+                {
+                  transform: [{ translateX: step === 1 ? headerSlideAnim : 0 }],
+                },
+              ]}
+            >
+              {step === 1 && showFinnyMessage ? (
+                <Animated.Text
+                  style={[styles.finnyMessage, { opacity: finnyFadeAnim }]}
+                >
+                  {finnyText}
+                  {isTyping && (
+                    <Animated.Text
+                      style={[
+                        styles.typingCursor,
+                        { opacity: cursorBlinkAnim },
+                      ]}
+                    >
+                      |
+                    </Animated.Text>
+                  )}
+                </Animated.Text>
+              ) : (
+                <Text style={styles.title}>
+                  {step === 1
+                    ? "What's your name?"
+                    : step === 2
+                    ? "Let's learn more about you"
+                    : "Let's set you up!"}
+                </Text>
+              )}
               <Text style={styles.subtitle}>
-                {step === 1 && "Just getting to know you."}
+                {step === 1 && !showFinnyMessage && "Just getting to know you."}
                 {step === 2 && "Tell us a bit about yourself"}
                 {step === 3 && "Almost there!"}
               </Text>
-            </View>
+            </Animated.View>
+
+            {step === 1 && showSureButton && (
+              <Animated.View
+                style={[
+                  styles.sureButtonContainer,
+                  {
+                    opacity: sureButtonAnim,
+                    transform: [
+                      { scale: sureButtonAnim },
+                      { scale: sureButtonPulseAnim },
+                    ],
+                  },
+                ]}
+              >
+                <TouchableOpacity
+                  style={styles.sureButton}
+                  onPress={handleSureButtonClick}
+                  activeOpacity={0.8}
+                >
+                  <LinearGradient
+                    colors={["#4A90E2", "#4A90E2"]}
+                    locations={[0, 1]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.sureButtonGradient}
+                  >
+                    <Text style={styles.sureButtonText}>Let's get started</Text>
+                  </LinearGradient>
+                </TouchableOpacity>
+              </Animated.View>
+            )}
 
             <Animated.View
               style={[
                 styles.inputContainer,
                 {
-                  opacity: fadeAnim,
+                  opacity: showFinnyMessage ? 0 : fadeAnim,
                   transform: [{ translateX: slideAnim }, { scale: scaleAnim }],
                 },
               ]}
@@ -449,7 +651,7 @@ export default function SignupScreen() {
                 style={[
                   styles.formErrorText,
                   {
-                    opacity: fadeAnim,
+                    opacity: showFinnyMessage ? 0 : fadeAnim,
                     transform: [{ translateX: slideAnim }],
                   },
                 ]}
@@ -459,9 +661,13 @@ export default function SignupScreen() {
             ) : null}
 
             <TouchableOpacity
-              style={[styles.button, loading && styles.buttonDisabled]}
+              style={[
+                styles.button,
+                loading && styles.buttonDisabled,
+                { opacity: showFinnyMessage ? 0 : 1 },
+              ]}
               onPress={step === 3 ? handleSignUp : handleContinue}
-              disabled={loading}
+              disabled={loading || showFinnyMessage}
             >
               <LinearGradient
                 colors={["#4A90E2", "#5DA0F2"]}
@@ -544,6 +750,14 @@ const styles = StyleSheet.create({
     color: "#fff",
     textAlign: "left",
     fontWeight: "bold",
+    marginBottom: 8,
+    lineHeight: 34,
+  },
+  finnyMessage: {
+    fontSize: 28,
+    color: "#fff",
+    textAlign: "left",
+    fontWeight: "600",
     marginBottom: 8,
     lineHeight: 34,
   },
@@ -734,5 +948,38 @@ const styles = StyleSheet.create({
     color: "#fff",
     padding: 16,
     fontSize: 16,
+  },
+  typingCursor: {
+    color: "#4A90E2",
+    fontSize: 23,
+    fontWeight: "bold",
+  },
+  sureButtonContainer: {
+    alignItems: "center",
+    marginVertical: 20,
+  },
+  sureButton: {
+    borderRadius: 12,
+    paddingHorizontal: 32,
+    paddingVertical: 16,
+    elevation: 2,
+    shadowColor: "#4A90E2",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    overflow: "hidden",
+  },
+  sureButtonGradient: {
+    paddingHorizontal: 32,
+    paddingVertical: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 10,
+  },
+  sureButtonText: {
+    color: "#FFFFFF",
+    fontSize: 16,
+    fontWeight: "700",
+    letterSpacing: 0.2,
   },
 });
