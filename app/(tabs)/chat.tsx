@@ -15,6 +15,7 @@ import {
   Image,
   Easing,
   KeyboardAvoidingView,
+  Keyboard,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
@@ -260,15 +261,17 @@ export default function ChatScreen() {
 
   const handleSend = async (nudgeText?: string) => {
     const messageText = nudgeText || userInput;
-    console.log("🚀 [CHAT] handleSend called with message:", messageText);
 
     if (!messageText.trim()) {
       console.log("❌ [CHAT] Empty message, returning");
       return;
     }
 
+    console.log("🚀 [CHAT] handleSend called with message:", messageText);
     console.log("📝 [CHAT] Pushing user message to chat");
+
     pushChat("user", messageText);
+    Keyboard.dismiss();
     setUserInput("");
     setIsTyping(true);
     console.log("⏳ [CHAT] Set typing indicator to true");

@@ -291,8 +291,8 @@ const styles = StyleSheet.create({
     marginTop: 16,
   },
   userMessageBubble: {
-    borderRadius: 18,
-    borderTopRightRadius: 4,
+    borderRadius: 12,
+    borderTopRightRadius: 3,
     paddingHorizontal: 12,
     paddingVertical: 8,
     shadowColor: "#000",
@@ -316,9 +316,6 @@ const styles = StyleSheet.create({
   },
   finnyMessageBubble: {
     paddingHorizontal: 12,
-    borderTopLeftRadius: 15,
-    borderTopRightRadius: 15,
-    borderBottomRightRadius: 15,
     paddingVertical: 8,
     shadowColor: "#000",
     shadowOffset: {
@@ -329,6 +326,8 @@ const styles = StyleSheet.create({
     shadowRadius: 2,
     elevation: 2,
     marginBottom: 5,
+    borderRadius: 12,
+    borderBottomLeftRadius: 1,
   },
   messageText: {
     fontSize: 16,
