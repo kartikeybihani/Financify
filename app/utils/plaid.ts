@@ -1573,6 +1573,34 @@ export const getUserAccountsForFilter = async (userId: string) => {
   }
 };
 
+// === Facts Pipeline Client Helper ===
+export const handleAskFactFresh = async (text: string, entities?: string[]) => {
+  try {
+    console.log("🔍 [FACTS] Looking up fresh fact:", text);
+    
+    const r = await fetch(`${BASE_URL}/api/finny`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ 
+        action: "ask_fact_fresh",
+        message: text,
+        context: { entities: entities || [] }
+      })
+    }).then(r => r.json());
+
+    if (r.error || !r.message) {
+      console.error("❌ [FACTS] Error response:", r);
+      return "I couldn't verify that from an official source yet. Want me to try a broader search?";
+    }
+    
+    console.log("✅ [FACTS] Success:", r.message);
+    return r.message;
+  } catch (error) {
+    console.error("❌ [FACTS] Client error:", error);
+    return "I'm having trouble looking up that information right now. Please try again later.";
+  }
+};
+
 const plaidUtils = {
   initializePlaid: fetchInitialData,
   getPlaidLinkToken: fetchLinkToken,
@@ -1605,6 +1633,9 @@ const plaidUtils = {
   getStoredSnaptradeCredentials,           // get stored credentials
   hasSnaptradeConnection,                  // check if connection exists
   clearSnaptradeConnection,                // clear stored connection
+  
+  // Facts pipeline
+  handleAskFactFresh,                      // client helper for fresh facts lookup
   
   // Legacy support functions
   clearOldPlaidData,                       // clear old AsyncStorage data

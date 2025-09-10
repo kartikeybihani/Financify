@@ -1,4 +1,73 @@
 // api/finny.js
+import { createClient } from "@supabase/supabase-js";
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+);
+
+// Facts pipeline types and constants
+const DEFAULT_TTLS = {
+  ira_limit: 15552000, // 180d
+  "401k_limit": 15552000,
+  estate_exemption: 15552000,
+  gift_exclusion: 15552000,
+  card_chase_ur_value: 2592000, // 30d
+  card_bilt_partners: 2592000,
+  generic: 1209600, // 14d
+};
+
+const ALLOWLIST = [
+  "https://www.irs.gov",
+  "https://www.chase.com",
+  "https://www.biltrewards.com",
+];
+
+// Helper functions for facts pipeline
+function inferTopic(text, entities) {
+  const t = `${text} ${(entities || []).join(" ")}`.toLowerCase();
+  const m = t.match(/(20\d{2})/);
+  const year = m ? parseInt(m[1], 10) : new Date().getFullYear();
+  if (t.includes("estate")) return { kind: "estate_exemption", year };
+  if (t.includes("gift")) return { kind: "gift_exclusion", year };
+  if (t.includes("401k") || t.includes("401(k)"))
+    return { kind: "401k_limit", year };
+  if (t.includes("ira")) return { kind: "ira_limit", year };
+  if (t.includes("ultimate rewards"))
+    return { kind: "card_chase_ur_value", year: null };
+  if (t.includes("bilt")) return { kind: "card_bilt_partners", year: null };
+  return { kind: "generic", year: m ? parseInt(m[1], 10) : null };
+}
+
+function keyFor(kind, year) {
+  return year ? `${kind}_${year}` : `${kind}`;
+}
+
+function sourceFor(kind, year) {
+  const k = keyFor(kind, year || undefined);
+  const map = {
+    ira_limit_2025: "https://www.irs.gov/retirement-plans",
+    "401k_limit_2025": "https://www.irs.gov/retirement-plans",
+    estate_exemption_2025:
+      "https://www.irs.gov/newsroom/irs-releases-tax-inflation-adjustments-for-tax-year-2025",
+    gift_exclusion_2025:
+      "https://www.irs.gov/newsroom/irs-releases-tax-inflation-adjustments-for-tax-year-2025",
+    card_chase_ur_value:
+      "https://www.chase.com/personal/credit-cards/education/basics/how-chase-ultimate-rewards-works",
+    card_bilt_partners: "https://www.biltrewards.com/rewards/travel",
+  };
+  return map[k] || null;
+}
+
+function isAllowed(url) {
+  try {
+    const u = new URL(url);
+    return ALLOWLIST.some((d) => u.origin.startsWith(d));
+  } catch {
+    return false;
+  }
+}
+
 export default async function handler(req, res) {
   console.log("🤖 [FINNY] Request received:", req.method);
 
@@ -513,12 +582,171 @@ async function handleAskConceptStatic(message, context) {
 }
 
 async function handleAskFactFresh(message, context) {
-  // Handler for current year limits, rates, and fresh financial facts
-  return {
-    message: "Looking up current financial facts and limits...",
-    type: "assistant",
-    intent: "ask_fact_fresh",
-  };
+  console.log("🔍 [FINNY] Starting facts lookup for:", message);
+
+  try {
+    const { text, entities } = {
+      text: message,
+      entities: context?.entities || [],
+    };
+    if (!text) {
+      return {
+        message: "I need a question to look up facts for you.",
+        type: "assistant",
+        intent: "ask_fact_fresh",
+      };
+    }
+
+    const { kind, year } = inferTopic(text, entities);
+    const key = keyFor(kind, year);
+    const ttl = DEFAULT_TTLS[kind];
+
+    // 1) Check cache first
+    const { data: cached } = await supabase
+      .from("facts_cache")
+      .select("*")
+      .eq("key", key)
+      .maybeSingle();
+    if (cached) {
+      const age = (Date.now() - new Date(cached.fetched_at).getTime()) / 1000;
+      if (age < cached.ttl_seconds) {
+        console.log("✅ [FINNY] Found cached fact:", key);
+        const v = cached.value_json.value;
+        const label = cached.value_json.label;
+        const src = cached.source_url;
+        return {
+          message: `${label}: ${
+            typeof v === "number" ? `$${v.toLocaleString()}` : v
+          }. Source: ${src}`,
+          type: "assistant",
+          intent: "ask_fact_fresh",
+          cached: true,
+        };
+      }
+    }
+
+    // 2) Get source URL
+    let url = sourceFor(kind, year);
+    if (!url) {
+      console.log("❌ [FINNY] No known source for:", key);
+      return {
+        message:
+          "I couldn't verify that from an official source yet. Want me to try a broader search?",
+        type: "assistant",
+        intent: "ask_fact_fresh",
+        error: "NO_KNOWN_SOURCE",
+      };
+    }
+
+    if (!isAllowed(url)) {
+      console.log("❌ [FINNY] Source not allowed:", url);
+      return {
+        message: "I can't access that source for security reasons.",
+        type: "assistant",
+        intent: "ask_fact_fresh",
+        error: "SOURCE_NOT_ALLOWED",
+      };
+    }
+
+    // 3) Fetch page content
+    console.log("🔄 [FINNY] Fetching page:", url);
+    const html = await fetch(url).then((r) => r.text());
+
+    // 4) Extract fact using structured outputs
+    console.log("🤖 [FINNY] Extracting fact with AI...");
+    const resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "openai/gpt-oss-120b:free",
+        temperature: 0.0,
+        messages: [
+          {
+            role: "system",
+            content: `You extract one fact (label + value) from a provided official web page.
+Allowed kinds: ira_limit, 401k_limit, estate_exemption, gift_exclusion, card_chase_ur_value, card_bilt_partners.
+Use only the provided page content.`,
+          },
+          {
+            role: "user",
+            content: JSON.stringify({
+              kind,
+              year,
+              page: html.slice(0, 120000),
+            }),
+          },
+        ],
+        response_format: {
+          type: "json_schema",
+          json_schema: {
+            name: "fact_extract",
+            strict: true,
+            schema: {
+              type: "object",
+              additionalProperties: false,
+              properties: {
+                label: { type: "string" },
+                value: { type: ["number", "string", "null"] },
+                unit: { type: ["string", "null"] },
+                explanation: { type: "string" },
+                confidence: { type: "number", minimum: 0, maximum: 1 },
+                source_title: { type: ["string", "null"] },
+              },
+              required: ["label", "value", "explanation", "confidence"],
+            },
+          },
+        },
+      }),
+    });
+
+    const data = await resp.json();
+    const content = data.choices?.[0]?.message?.content;
+    if (!content) {
+      console.log("❌ [FINNY] Extraction failed");
+      return {
+        message: "I couldn't extract the information from the source page.",
+        type: "assistant",
+        intent: "ask_fact_fresh",
+        error: "EXTRACTION_FAILED",
+      };
+    }
+
+    const value_json = JSON.parse(content);
+
+    // 5) Cache the result
+    await supabase.from("facts_cache").upsert({
+      key,
+      value_json,
+      source_url: url,
+      source_title: value_json.source_title || null,
+      fetched_at: new Date().toISOString(),
+      ttl_seconds: ttl,
+    });
+
+    console.log("✅ [FINNY] Fact extracted and cached:", key);
+    const v = value_json.value;
+    const label = value_json.label;
+    return {
+      message: `${label}: ${
+        typeof v === "number" ? `$${v.toLocaleString()}` : v
+      }. Source: ${url}`,
+      type: "assistant",
+      intent: "ask_fact_fresh",
+      cached: false,
+    };
+  } catch (error) {
+    console.error("❌ [FINNY] Facts lookup error:", error);
+    return {
+      message:
+        "I'm having trouble looking up that information right now. Please try again later.",
+      type: "assistant",
+      intent: "ask_fact_fresh",
+      error: error.message,
+    };
+  }
 }
 
 async function handleAskStateRule(message, context) {
