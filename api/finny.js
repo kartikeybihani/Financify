@@ -285,7 +285,7 @@ async function handleClassify(message, context) {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "openai/gpt-oss-120b:free",
+        model: "openai/gpt-4o-mini",
         temperature: 0.2,
         messages: [
           {
