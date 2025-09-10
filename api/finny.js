@@ -12,15 +12,21 @@ const DEFAULT_TTLS = {
   "401k_limit": 15552000,
   estate_exemption: 15552000,
   gift_exclusion: 15552000,
-  card_chase_ur_value: 2592000, // 30d
+  card_chase_premium: 2592000, // 30d
+  card_chase_general: 2592000,
+  card_chase_ur_value: 2592000,
   card_bilt_partners: 2592000,
+  card_amex_general: 2592000,
+  card_general: 2592000,
   generic: 1209600, // 14d
 };
 
 const ALLOWLIST = [
   "https://www.irs.gov",
   "https://www.chase.com",
+  "https://creditcards.chase.com",
   "https://www.biltrewards.com",
+  "https://www.americanexpress.com",
 ];
 
 // Helper functions for facts pipeline
@@ -28,14 +34,45 @@ function inferTopic(text, entities) {
   const t = `${text} ${(entities || []).join(" ")}`.toLowerCase();
   const m = t.match(/(20\d{2})/);
   const year = m ? parseInt(m[1], 10) : new Date().getFullYear();
+
+  // Tax and retirement limits
   if (t.includes("estate")) return { kind: "estate_exemption", year };
   if (t.includes("gift")) return { kind: "gift_exclusion", year };
   if (t.includes("401k") || t.includes("401(k)"))
     return { kind: "401k_limit", year };
   if (t.includes("ira")) return { kind: "ira_limit", year };
-  if (t.includes("ultimate rewards"))
-    return { kind: "card_chase_ur_value", year: null };
+
+  // Chase cards - much more comprehensive
+  if (
+    t.includes("chase") &&
+    (t.includes("card") ||
+      t.includes("credit") ||
+      t.includes("sapphire") ||
+      t.includes("freedom") ||
+      t.includes("ultimate") ||
+      t.includes("rewards") ||
+      t.includes("benefit"))
+  ) {
+    if (t.includes("sapphire") || t.includes("ultimate"))
+      return { kind: "card_chase_premium", year: null };
+    return { kind: "card_chase_general", year: null };
+  }
+
+  // Bilt rewards
   if (t.includes("bilt")) return { kind: "card_bilt_partners", year: null };
+
+  // Amex cards
+  if (t.includes("amex") || t.includes("american express"))
+    return { kind: "card_amex_general", year: null };
+
+  // General credit cards
+  if (
+    t.includes("credit card") ||
+    t.includes("card benefit") ||
+    t.includes("rewards")
+  )
+    return { kind: "card_general", year: null };
+
   return { kind: "generic", year: m ? parseInt(m[1], 10) : null };
 }
 
@@ -46,14 +83,25 @@ function keyFor(kind, year) {
 function sourceFor(kind, year) {
   const k = keyFor(kind, year || undefined);
   const map = {
+    // IRS tax and retirement limits
     ira_limit_2025: "https://www.irs.gov/retirement-plans",
     "401k_limit_2025": "https://www.irs.gov/retirement-plans",
     estate_exemption_2025:
       "https://www.irs.gov/newsroom/irs-releases-tax-inflation-adjustments-for-tax-year-2025",
     gift_exclusion_2025:
       "https://www.irs.gov/newsroom/irs-releases-tax-inflation-adjustments-for-tax-year-2025",
-    card_chase_ur_value: "https://creditcards.chase.com/",
+
+    // Chase cards - comprehensive coverage
+    card_chase_premium:
+      "https://creditcards.chase.com/rewards-credit-cards/sapphire/preferred",
+    card_chase_general: "https://creditcards.chase.com/",
+    card_chase_ur_value:
+      "https://creditcards.chase.com/rewards-credit-cards/sapphire/preferred",
+
+    // Other cards
     card_bilt_partners: "https://www.biltrewards.com/rewards/travel",
+    card_amex_general: "https://www.americanexpress.com/us/credit-cards/",
+    card_general: "https://creditcards.chase.com/",
   };
   return map[k] || null;
 }
@@ -612,11 +660,26 @@ async function handleAskFactFresh(message, context) {
         console.log("✅ [FINNY] Found cached fact:", key);
         const v = cached.value_json.value;
         const label = cached.value_json.label;
+        const explanation = cached.value_json.explanation;
         const src = cached.source_url;
+
+        // Create comprehensive cached response
+        let responseMessage = `${label}: ${
+          typeof v === "number" ? `$${v.toLocaleString()}` : v
+        }`;
+
+        if (
+          explanation &&
+          explanation.length > 10 &&
+          !explanation.toLowerCase().includes("not found")
+        ) {
+          responseMessage += `\n\n${explanation}`;
+        }
+
+        responseMessage += `\n\nSource: ${src}`;
+
         return {
-          message: `${label}: ${
-            typeof v === "number" ? `$${v.toLocaleString()}` : v
-          }. Source: ${src}`,
+          message: responseMessage,
           type: "assistant",
           intent: "ask_fact_fresh",
           cached: true,
@@ -624,17 +687,36 @@ async function handleAskFactFresh(message, context) {
       }
     }
 
-    // 2) Get source URL
+    // 2) Get source URL - with fallback search
     let url = sourceFor(kind, year);
     if (!url) {
-      console.log("❌ [FINNY] No known source for:", key);
-      return {
-        message:
-          "I couldn't verify that from an official source yet. Want me to try a broader search?",
-        type: "assistant",
-        intent: "ask_fact_fresh",
-        error: "NO_KNOWN_SOURCE",
-      };
+      console.log(
+        "🔍 [FINNY] No known source for:",
+        key,
+        "- attempting fallback search"
+      );
+
+      // Fallback: construct a reasonable URL based on the topic
+      if (kind.startsWith("card_chase")) {
+        url = "https://creditcards.chase.com/";
+      } else if (kind.startsWith("card_amex")) {
+        url = "https://www.americanexpress.com/us/credit-cards/";
+      } else if (kind.startsWith("card_bilt")) {
+        url = "https://www.biltrewards.com/rewards/travel";
+      } else if (kind.includes("limit") && year) {
+        url = "https://www.irs.gov/retirement-plans";
+      } else {
+        console.log("❌ [FINNY] No fallback source available for:", key);
+        return {
+          message:
+            "I couldn't verify that from an official source yet. Want me to try a broader search?",
+          type: "assistant",
+          intent: "ask_fact_fresh",
+          error: "NO_KNOWN_SOURCE",
+        };
+      }
+
+      console.log("✅ [FINNY] Using fallback source:", url);
     }
 
     if (!isAllowed(url)) {
@@ -665,8 +747,21 @@ async function handleAskFactFresh(message, context) {
         messages: [
           {
             role: "system",
-            content: `You extract one fact (label + value) from a provided official web page.
-Allowed kinds: ira_limit, 401k_limit, estate_exemption, gift_exclusion, card_chase_ur_value, card_bilt_partners.
+            content: `You extract financial facts from official web pages. 
+
+For credit cards, focus on:
+- Annual fees
+- Rewards rates (points per dollar)
+- Sign-up bonuses
+- Key benefits (airport lounge access, travel credits, etc.)
+- Point values when redeemed
+
+For tax/retirement limits, focus on:
+- Contribution limits
+- Income thresholds
+- Exemption amounts
+
+Always provide specific, quantifiable information. If comparing cards, highlight the most important differentiators.
 Use only the provided page content.`,
           },
           {
@@ -675,6 +770,7 @@ Use only the provided page content.`,
               kind,
               year,
               page: html.slice(0, 120000),
+              original_question: text,
             }),
           },
         ],
@@ -728,10 +824,26 @@ Use only the provided page content.`,
     console.log("✅ [FINNY] Fact extracted and cached:", key);
     const v = value_json.value;
     const label = value_json.label;
+    const explanation = value_json.explanation;
+
+    // Create a more comprehensive response
+    let responseMessage = `${label}: ${
+      typeof v === "number" ? `$${v.toLocaleString()}` : v
+    }`;
+
+    // Add explanation if it's informative and different from the label
+    if (
+      explanation &&
+      explanation.length > 10 &&
+      !explanation.toLowerCase().includes("not found")
+    ) {
+      responseMessage += `\n\n${explanation}`;
+    }
+
+    responseMessage += `\n\nSource: ${url}`;
+
     return {
-      message: `${label}: ${
-        typeof v === "number" ? `$${v.toLocaleString()}` : v
-      }. Source: ${url}`,
+      message: responseMessage,
       type: "assistant",
       intent: "ask_fact_fresh",
       cached: false,
