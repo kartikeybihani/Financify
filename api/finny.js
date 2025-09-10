@@ -378,6 +378,8 @@ async function handleClassify(message, context) {
                 "needs_web",
                 "needs_user_data",
                 "needs_calc",
+                "state",
+                "entities",
                 "confidence",
               ],
             },
