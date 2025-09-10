@@ -1052,7 +1052,7 @@ Extract comprehensive information to fully answer the question. Use information 
                   description: "Page title or null",
                 },
               },
-              required: ["label", "value", "explanation", "confidence", "unit"],
+              required: ["label", "value", "explanation", "confidence", "unit", "source_title"],
             },
           },
         },
@@ -1108,7 +1108,23 @@ Extract comprehensive information to fully answer the question. Use information 
 
     let value_json;
     try {
-      value_json = JSON.parse(content);
+      // Strip markdown code blocks if present
+      let cleanContent = content.trim();
+      if (cleanContent.startsWith("```json")) {
+        cleanContent = cleanContent
+          .replace(/^```json\s*/, "")
+          .replace(/\s*```$/, "");
+      } else if (cleanContent.startsWith("```")) {
+        cleanContent = cleanContent
+          .replace(/^```\s*/, "")
+          .replace(/\s*```$/, "");
+      }
+
+      console.log(
+        "🔍 [FINNY] Cleaned content for parsing:",
+        cleanContent.substring(0, 200) + "..."
+      );
+      value_json = JSON.parse(cleanContent);
       console.log("✅ [FINNY] Parsed JSON:", value_json);
 
       // Validate required fields
@@ -1300,7 +1316,10 @@ async function handleCardComparison(text, entities) {
         name: "Chase Sapphire Reserve",
         searchTerms: ["sapphire reserve", "csr"],
       });
-    } else if (lowerText.includes("chase sapphire")) {
+    } else if (
+      lowerText.includes("chase sapphire") ||
+      lowerText.includes("sapphire")
+    ) {
       cardTypes.push({
         kind: "card_chase_sapphire_general",
         name: "Chase Sapphire",
@@ -1487,7 +1506,19 @@ async function handleCardComparison(text, entities) {
         const data = await resp.json();
         const content = data.choices?.[0]?.message?.content;
         if (content) {
-          const cardInfo = JSON.parse(content);
+          // Strip markdown code blocks if present
+          let cleanContent = content.trim();
+          if (cleanContent.startsWith("```json")) {
+            cleanContent = cleanContent
+              .replace(/^```json\s*/, "")
+              .replace(/\s*```$/, "");
+          } else if (cleanContent.startsWith("```")) {
+            cleanContent = cleanContent
+              .replace(/^```\s*/, "")
+              .replace(/\s*```$/, "");
+          }
+
+          const cardInfo = JSON.parse(cleanContent);
           return {
             name: card.name,
             info: cardInfo,
@@ -1520,10 +1551,49 @@ async function handleCardComparison(text, entities) {
 
     cardInfos.forEach((card, index) => {
       comparisonMessage += `### ${card.name}\n\n`;
-      comparisonMessage += `**Annual Fee:** ${card.info.annual_fee}\n\n`;
-      comparisonMessage += `**Rewards Rates:** ${card.info.rewards_rates}\n\n`;
-      comparisonMessage += `**Sign-up Bonus:** ${card.info.signup_bonus}\n\n`;
-      comparisonMessage += `**Key Benefits:** ${card.info.key_benefits}\n\n`;
+
+      // Handle different response formats from the AI
+      if (typeof card.info === "object" && card.info.annual_fee) {
+        // New format with structured data
+        comparisonMessage += `**Annual Fee:** ${
+          card.info.annual_fee.label || "Annual Fee"
+        }: ${
+          typeof card.info.annual_fee.value === "number"
+            ? `$${card.info.annual_fee.value}`
+            : card.info.annual_fee.value
+        }\n\n`;
+        comparisonMessage += `**Rewards Rates:** ${
+          card.info.rewards_rates.label || "Rewards Rates"
+        }: ${JSON.stringify(
+          card.info.rewards_rates.value || card.info.rewards_rates
+        )}\n\n`;
+        comparisonMessage += `**Sign-up Bonus:** ${
+          card.info.sign_up_bonus?.label || "Sign-up Bonus"
+        }: ${
+          typeof card.info.sign_up_bonus?.value === "number"
+            ? `${card.info.sign_up_bonus.value.toLocaleString()} points`
+            : card.info.sign_up_bonus?.value || "See details"
+        }\n\n`;
+        comparisonMessage += `**Key Benefits:** ${
+          card.info.premium_benefits?.explanation ||
+          card.info.key_benefits ||
+          "See details"
+        }\n\n`;
+      } else {
+        // Legacy format
+        comparisonMessage += `**Annual Fee:** ${
+          card.info.annual_fee || "See details"
+        }\n\n`;
+        comparisonMessage += `**Rewards Rates:** ${
+          card.info.rewards_rates || "See details"
+        }\n\n`;
+        comparisonMessage += `**Sign-up Bonus:** ${
+          card.info.signup_bonus || "See details"
+        }\n\n`;
+        comparisonMessage += `**Key Benefits:** ${
+          card.info.key_benefits || "See details"
+        }\n\n`;
+      }
 
       if (card.info.transfer_partners) {
         comparisonMessage += `**Transfer Partners:** ${card.info.transfer_partners}\n\n`;
