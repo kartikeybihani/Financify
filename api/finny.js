@@ -261,86 +261,158 @@ async function handleClassify(message, context) {
     "🔍 [FINNY] Starting classification in handleClassify for message:",
     message
   );
-  const { text, user } = { text: message, user: context }; // user can include state, age if you want hints
 
-  const r = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: "deepseek/deepseek-chat-v3.1:free",
-      messages: [
-        {
-          role: "system",
-          content: `
-You are Financify's intent router. Classify one user utterance into exactly one intent.
-Intents:
-- goal  set or modify a savings or payoff goal
-- ask_personalized  question about their money that needs their data
-- ask_concept_static  timeless concept explainers
-- ask_fact_fresh  current year limits or numbers that change
-- ask_state_rule  state specific rules or taxes
-- calc_projection  what if or plan math
-
-Rules:
-- If the question asks for this year limits brackets phaseouts exemption latest or today then it is ask_fact_fresh
-- If a US state is mentioned or implied choose ask_state_rule and set state
-- If the user asks can I afford X or will I hit FIRE by age N choose calc_projection
-- Otherwise pick the most reasonable single intent
-
-CRITICAL: Respond with ONLY valid JSON matching the schema. No explanations, no text, just the JSON object.
-Examples:
-Q: "Can I hit FIRE by 35" -> calc_projection
-Q: "What is the 2025 estate tax exemption" -> ask_fact_fresh
-Q: "Roth vs traditional IRA difference" -> ask_concept_static
-Q: "How much did I spend on Uber last month" or "How are you" or "What's up" or "Am I normal?" -> ask_personalized
-Q: "Set a 2000 emergency fund by March" -> goal
-Q: "Is there inheritance tax in New Jersey" -> ask_state_rule state=NJ
-          `.trim(),
-        },
-        { role: "user", content: text },
-      ],
-      // Note: response_format removed as deepseek model doesn't support structured output
-    }),
-  });
-
-  const data = await r.json();
-  console.log("🔍 [FINNY] Classification data inside handleClassify:", data);
-  const content = data.choices?.[0]?.message?.content || "{}";
-  console.log(
-    "🔍 [FINNY] Classification response inside handleClassify:",
-    content
-  );
+  const { text, user } = { text: message, user: context };
+  if (!text || typeof text !== "string") {
+    console.log("❌ [FINNY] Missing or invalid text parameter");
+    return {
+      intent: "ask_personalized",
+      needs_web: false,
+      needs_user_data: true,
+      needs_calc: false,
+      state: null,
+      entities: [],
+      confidence: 0.1,
+      fallback: true,
+    };
+  }
 
   try {
-    // Try to parse as JSON first
-    return JSON.parse(content);
-  } catch (error) {
-    console.log(
-      "🔍 [FINNY] JSON parsing failed, attempting to extract JSON from response"
-    );
+    const r = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "openai/gpt-oss-120b:free",
+        temperature: 0.2,
+        messages: [
+          {
+            role: "system",
+            content: [
+              "You are Financify's intent router.",
+              "Classify one user message into exactly one intent.",
+              "Intents:",
+              "- goal  set or modify a savings or payoff goal",
+              "- ask_personalized  question about the user's money that needs their data",
+              "- ask_concept_static  timeless concept explainers",
+              "- ask_fact_fresh  current year numbers or facts that change",
+              "- ask_state_rule  state specific rules or taxes",
+              "- calc_projection  what if or plan math",
+              "",
+              "Rules:",
+              "- If message asks for this year current latest updated 2025 etc then ask_fact_fresh",
+              "- If a US state is mentioned choose ask_state_rule and set state",
+              "- If affordability or FIRE by age or projection choose calc_projection",
+              "- If it clearly sets a goal choose goal",
+              "- If it needs the user's actual data choose ask_personalized",
+              "- Otherwise choose ask_concept_static",
+              "",
+              "Sample inputs and expected intent:",
+              '"Set a 2000 emergency fund by March" → goal',
+              '"How much did I spend on Uber last month" or "How are you" or "Whats up" or "Am I normal?" → ask_personalized',
+              '"Difference between Roth and traditional IRA" → ask_concept_static',
+              '"What is the 2025 estate tax exemption" → ask_fact_fresh',
+              '"Does New Jersey have inheritance tax" → ask_state_rule with state NJ',
+              '"Can I hit FIRE by 35" → calc_projection',
+              "",
+              "Return JSON only. No extra text.",
+            ].join("\n"),
+          },
+          {
+            role: "user",
+            content: JSON.stringify({
+              text,
+              user_hint_state: user?.state || null,
+            }),
+          },
+        ],
+        response_format: {
+          type: "json_schema",
+          json_schema: {
+            name: "financify_intent",
+            strict: true,
+            schema: {
+              type: "object",
+              additionalProperties: false,
+              properties: {
+                intent: {
+                  type: "string",
+                  enum: [
+                    "goal",
+                    "ask_personalized",
+                    "ask_concept_static",
+                    "ask_fact_fresh",
+                    "ask_state_rule",
+                    "calc_projection",
+                  ],
+                  description: "Single best intent",
+                },
+                needs_web: {
+                  type: "boolean",
+                  description: "True if fresh facts or state rules are needed",
+                },
+                needs_user_data: {
+                  type: "boolean",
+                  description: "True if answer needs user DB data",
+                },
+                needs_calc: {
+                  type: "boolean",
+                  description: "True if a calculator or projection is required",
+                },
+                state: {
+                  type: ["string", "null"],
+                  description: "Two letter US state if applicable",
+                  pattern: "^[A-Z]{2}$",
+                },
+                entities: {
+                  type: "array",
+                  items: { type: "string" },
+                  description: "Key entities or topics",
+                },
+                confidence: { type: "number", minimum: 0, maximum: 1 },
+              },
+              required: [
+                "intent",
+                "needs_web",
+                "needs_user_data",
+                "needs_calc",
+                "confidence",
+              ],
+            },
+          },
+        },
+      }),
+    });
 
-    // Try to extract JSON from the response if it's embedded in text
-    const jsonMatch = content.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      try {
-        return JSON.parse(jsonMatch[0]);
-      } catch (e) {
-        console.log("🔍 [FINNY] Failed to parse extracted JSON");
-      }
+    const data = await r.json();
+    console.log("🔍 [FINNY] Classification data inside handleClassify:", data);
+    const content = data.choices?.[0]?.message?.content;
+    if (!content) {
+      console.log("❌ [FINNY] No content in response");
+      throw new Error("No content");
     }
 
-    // Fallback: return a default classification for general questions
-    console.log("🔍 [FINNY] Using default classification fallback");
+    const out = JSON.parse(content);
+    console.log("🔍 [FINNY] Parsed classification result:", out);
+
+    // Defensive post-process so your app never crashes
+    if (!out.state || typeof out.state !== "string") out.state = null;
+    if (!Array.isArray(out.entities)) out.entities = [];
+
+    return out;
+  } catch (e) {
+    console.error("❌ [FINNY] Classification error:", e?.message);
     return {
-      intent: "ask_concept_static",
+      intent: "ask_personalized",
       needs_web: false,
-      needs_user_data: false,
+      needs_user_data: true,
       needs_calc: false,
-      confidence: 0.5,
+      state: null,
       entities: [],
+      confidence: 0.1,
+      fallback: true,
     };
   }
 }
