@@ -731,7 +731,11 @@ async function handleAskFactFresh(message, context) {
 
     // 3) Fetch page content
     console.log("🔄 [FINNY] Fetching page:", url);
-    const html = await fetch(url).then((r) => r.text());
+    const response = await fetch(url);
+    console.log("🔍 [FINNY] Page fetch status:", response.status);
+    const html = await response.text();
+    console.log("🔍 [FINNY] Page content length:", html.length);
+    console.log("🔍 [FINNY] Page preview:", html.slice(0, 500) + "...");
 
     // 4) Extract fact using structured outputs
     console.log("🤖 [FINNY] Extracting fact with AI...");
@@ -742,12 +746,12 @@ async function handleAskFactFresh(message, context) {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "openai/gpt-oss-120b:free",
-        temperature: 0.0,
+        model: "openai/gpt-4o-mini",
+        temperature: 0.1,
         messages: [
           {
             role: "system",
-            content: `You extract financial facts from official web pages. 
+            content: `You extract financial facts from official web pages and return them as JSON.
 
 For credit cards, focus on:
 - Annual fees
@@ -761,55 +765,77 @@ For tax/retirement limits, focus on:
 - Income thresholds
 - Exemption amounts
 
-Always provide specific, quantifiable information. If comparing cards, highlight the most important differentiators.
-Use only the provided page content.`,
+Return ONLY a JSON object in this exact format:
+{
+  "label": "Brief descriptive label",
+  "value": "Main value or answer",
+  "unit": "Unit if applicable (e.g., 'dollars', 'percent') or null",
+  "explanation": "Detailed explanation of the fact",
+  "confidence": 0.8,
+  "source_title": "Page title if available or null"
+}
+
+Use only the provided page content. Be specific and quantifiable.`,
           },
           {
             role: "user",
-            content: JSON.stringify({
-              kind,
-              year,
-              page: html.slice(0, 120000),
-              original_question: text,
-            }),
+            content: `Question: ${text}
+
+Page content: ${html.slice(0, 100000)}
+
+Extract the most relevant financial fact to answer the question. Return only JSON.`,
           },
         ],
-        response_format: {
-          type: "json_schema",
-          json_schema: {
-            name: "fact_extract",
-            strict: true,
-            schema: {
-              type: "object",
-              additionalProperties: false,
-              properties: {
-                label: { type: "string" },
-                value: { type: ["number", "string", "null"] },
-                unit: { type: ["string", "null"] },
-                explanation: { type: "string" },
-                confidence: { type: "number", minimum: 0, maximum: 1 },
-                source_title: { type: ["string", "null"] },
-              },
-              required: ["label", "value", "explanation", "confidence"],
-            },
-          },
-        },
       }),
     });
 
     const data = await resp.json();
+    console.log("🔍 [FINNY] AI response status:", resp.status);
+    console.log("🔍 [FINNY] AI response data:", JSON.stringify(data, null, 2));
+
     const content = data.choices?.[0]?.message?.content;
     if (!content) {
-      console.log("❌ [FINNY] Extraction failed");
+      console.log("❌ [FINNY] Extraction failed - no content in response");
+      console.log("❌ [FINNY] Full response:", JSON.stringify(data, null, 2));
       return {
-        message: "I couldn't extract the information from the source page.",
+        message:
+          "I couldn't extract the information from the source page. Please try again.",
         type: "assistant",
         intent: "ask_fact_fresh",
         error: "EXTRACTION_FAILED",
       };
     }
 
-    const value_json = JSON.parse(content);
+    console.log("✅ [FINNY] AI extraction content:", content);
+
+    let value_json;
+    try {
+      value_json = JSON.parse(content);
+      console.log("✅ [FINNY] Parsed JSON:", value_json);
+
+      // Validate required fields
+      if (!value_json.label || !value_json.explanation) {
+        console.log("❌ [FINNY] Missing required fields in extracted data");
+        throw new Error("Missing required fields");
+      }
+    } catch (parseError) {
+      console.log("❌ [FINNY] JSON parse error:", parseError.message);
+      console.log("❌ [FINNY] Raw content:", content);
+
+      // Fallback: provide a basic response with the raw content and source
+      const fallbackResponse = `I found information about your question on the official source, but had trouble parsing it. Here's what I can tell you:
+
+${content.slice(0, 500)}${content.length > 500 ? "..." : ""}
+
+For complete details, please visit: ${url}`;
+
+      return {
+        message: fallbackResponse,
+        type: "assistant",
+        intent: "ask_fact_fresh",
+        error: "JSON_PARSE_FAILED",
+      };
+    }
 
     // 5) Cache the result
     await supabase.from("facts_cache").upsert({
