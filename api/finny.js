@@ -295,7 +295,7 @@ Examples:
 Q: "Can I hit FIRE by 35" -> calc_projection
 Q: "What is the 2025 estate tax exemption" -> ask_fact_fresh
 Q: "Roth vs traditional IRA difference" -> ask_concept_static
-Q: "How much did I spend on Uber last month" -> ask_personalized
+Q: "How much did I spend on Uber last month" or "How are you" or "What's up" or "Am I normal?" -> ask_personalized
 Q: "Set a 2000 emergency fund by March" -> goal
 Q: "Is there inheritance tax in New Jersey" -> ask_state_rule state=NJ
           `.trim(),
