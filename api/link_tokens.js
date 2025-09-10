@@ -50,6 +50,7 @@ export default async function handler(req, res) {
           {
             userId: registerResponse.data.userId,
             userSecret: registerResponse.data.userSecret,
+            broker: "FIDELITY",
           }
         );
         console.log("✅ Snaptrade Login Response: ", loginResponse);

@@ -172,20 +172,28 @@ export default function InstitutionSelectionModal({
             }
           }
 
-          Alert.alert(
-            "Fidelity Account Connected",
-            `You already have a Fidelity account connected with ${accounts.length} account(s). Holdings data has been fetched and logged to console.`,
-            [
-              {
-                text: "OK",
-                onPress: () => {
-                  setIsConnecting(false);
-                  onClose();
+          if (accounts.length === 0) {
+            // No accounts found - allow user to connect
+            console.log(
+              "🔄 No accounts found, proceeding with new connection..."
+            );
+            // Continue with new connection flow below
+          } else {
+            Alert.alert(
+              "Fidelity Account Connected",
+              `You already have a Fidelity account connected with ${accounts.length} account(s). Holdings data has been fetched and logged to console.`,
+              [
+                {
+                  text: "OK",
+                  onPress: () => {
+                    setIsConnecting(false);
+                    onClose();
+                  },
                 },
-              },
-            ]
-          );
-          return;
+              ]
+            );
+            return;
+          }
         } catch (accountError) {
           console.error(
             "❌ Failed to fetch existing accounts, proceeding with new connection:",
