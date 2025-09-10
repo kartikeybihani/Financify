@@ -139,22 +139,13 @@ function inferTopic(text, entities) {
   const year = m ? parseInt(m[1], 10) : new Date().getFullYear();
 
   // Credit card comparisons - check FIRST (more lenient)
+  // Only trigger comparison if explicitly asking to compare two specific cards
   if (
-    t.includes("vs") ||
-    t.includes("versus") ||
-    t.includes("compare") ||
-    (t.includes("better") &&
-      (t.includes("card") ||
-        t.includes("credit") ||
-        t.includes("chase") ||
-        t.includes("amex") ||
-        t.includes("bilt"))) ||
-    (t.includes("difference") &&
-      (t.includes("card") ||
-        t.includes("credit") ||
-        t.includes("chase") ||
-        t.includes("amex") ||
-        t.includes("bilt")))
+    ((t.includes("vs") || t.includes("versus") || t.includes("compare")) &&
+      t.includes("chase") &&
+      (t.includes("amex") || t.includes("bilt"))) ||
+    (t.includes("amex") && (t.includes("chase") || t.includes("bilt"))) ||
+    (t.includes("bilt") && (t.includes("chase") || t.includes("amex")))
   ) {
     return { kind: "card_comparison", year: null };
   }
@@ -190,8 +181,14 @@ function inferTopic(text, entities) {
     if (t.includes("freedom"))
       return { kind: "card_chase_freedom_general", year: null };
 
-    // General Chase cards
-    if (t.includes("card") || t.includes("credit") || t.includes("benefit")) {
+    // General Chase cards - more inclusive
+    if (
+      t.includes("card") ||
+      t.includes("credit") ||
+      t.includes("benefit") ||
+      t.includes("rewards") ||
+      t.includes("chase")
+    ) {
       return { kind: "card_chase_general", year: null };
     }
   }
@@ -1055,7 +1052,7 @@ Extract comprehensive information to fully answer the question. Use information 
                   description: "Page title or null",
                 },
               },
-              required: ["label", "value", "explanation", "confidence"],
+              required: ["label", "value", "explanation", "confidence", "unit"],
             },
           },
         },
@@ -1066,13 +1063,41 @@ Extract comprehensive information to fully answer the question. Use information 
     console.log("🔍 [FINNY] AI response status:", resp.status);
     console.log("🔍 [FINNY] AI response data:", JSON.stringify(data, null, 2));
 
+    if (!resp.ok) {
+      console.log("❌ [FINNY] OpenRouter API error:", data);
+      throw new Error(
+        `OpenRouter API error: ${resp.status} - ${JSON.stringify(data)}`
+      );
+    }
+
     const content = data.choices?.[0]?.message?.content;
     if (!content) {
       console.log("❌ [FINNY] Extraction failed - no content in response");
       console.log("❌ [FINNY] Full response:", JSON.stringify(data, null, 2));
+
+      // Try to provide a helpful fallback based on the query
+      let fallbackMessage =
+        "I couldn't extract the information from the source page. ";
+
+      if (text.toLowerCase().includes("chase")) {
+        fallbackMessage +=
+          "For the most up-to-date Chase credit card benefits and information, please visit https://creditcards.chase.com/ directly.";
+      } else if (
+        text.toLowerCase().includes("amex") ||
+        text.toLowerCase().includes("american express")
+      ) {
+        fallbackMessage +=
+          "For the most up-to-date American Express card benefits and information, please visit https://www.americanexpress.com/us/credit-cards/ directly.";
+      } else if (text.toLowerCase().includes("bilt")) {
+        fallbackMessage +=
+          "For the most up-to-date Bilt Rewards information, please visit https://www.biltrewards.com/ directly.";
+      } else {
+        fallbackMessage +=
+          "Please try again or visit the official source directly.";
+      }
+
       return {
-        message:
-          "I couldn't extract the information from the source page. Please try again.",
+        message: fallbackMessage,
         type: "assistant",
         intent: "ask_fact_fresh",
         error: "EXTRACTION_FAILED",
@@ -1124,19 +1149,37 @@ Extract comprehensive information to fully answer the question. Use information 
         }
       }
 
-      // Special handling for estate tax questions
-      if (text.toLowerCase().includes("estate tax")) {
+      // Special handling for different types of queries
+      if (
+        text.toLowerCase().includes("chase") &&
+        text.toLowerCase().includes("benefit")
+      ) {
+        fallbackResponse =
+          "I found Chase credit card information on the official source. Chase offers several credit cards with different benefits including travel rewards, cash back, and premium perks. ";
+        fallbackResponse +=
+          "For the most current and detailed information about Chase card benefits, please visit https://creditcards.chase.com/ directly.";
+      } else if (text.toLowerCase().includes("estate tax")) {
         fallbackResponse =
           "I found the 2025 estate tax exemption information on the official IRS source. ";
-
-        // Try to extract the specific exemption amount
         const exemptionMatch = content.match(/\$[\d,]+/);
         if (exemptionMatch) {
           fallbackResponse += `The federal estate tax exemption for 2025 is ${exemptionMatch[0]}. This means estates valued below this amount are not subject to federal estate taxes. `;
         }
-
         fallbackResponse +=
           "For complete details and any recent updates, please visit the official IRS website.";
+      } else if (
+        text.toLowerCase().includes("amex") ||
+        text.toLowerCase().includes("american express")
+      ) {
+        fallbackResponse =
+          "I found American Express card information on the official source. Amex offers premium credit cards with travel benefits, dining rewards, and exclusive perks. ";
+        fallbackResponse +=
+          "For the most current information, please visit https://www.americanexpress.com/us/credit-cards/ directly.";
+      } else if (text.toLowerCase().includes("bilt")) {
+        fallbackResponse =
+          "I found Bilt Rewards information on the official source. Bilt offers a unique credit card that allows you to earn points on rent payments. ";
+        fallbackResponse +=
+          "For the most current information, please visit https://www.biltrewards.com/ directly.";
       } else {
         fallbackResponse += `For complete and up-to-date details, please visit: ${
           pageResults[0]?.url || "the official source"
@@ -1309,6 +1352,27 @@ async function handleCardComparison(text, entities) {
     }
 
     if (cardTypes.length === 0) {
+      // If no specific cards identified, try to handle as general query
+      if (text.toLowerCase().includes("chase")) {
+        return await handleAskFactFresh(
+          "Chase credit card benefits and features",
+          entities
+        );
+      } else if (
+        text.toLowerCase().includes("amex") ||
+        text.toLowerCase().includes("american express")
+      ) {
+        return await handleAskFactFresh(
+          "American Express credit card benefits and features",
+          entities
+        );
+      } else if (text.toLowerCase().includes("bilt")) {
+        return await handleAskFactFresh(
+          "Bilt Rewards card benefits and features",
+          entities
+        );
+      }
+
       return {
         message:
           "I couldn't identify specific cards to compare. Please mention the specific card names you'd like me to compare (e.g., 'Chase Sapphire Preferred vs Amex Platinum').",
