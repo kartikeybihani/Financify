@@ -12,11 +12,30 @@ const DEFAULT_TTLS = {
   "401k_limit": 15552000,
   estate_exemption: 15552000,
   gift_exclusion: 15552000,
-  card_chase_premium: 2592000, // 30d
+
+  // Chase cards
+  card_chase_sapphire_preferred: 2592000, // 30d
+  card_chase_sapphire_reserve: 2592000,
+  card_chase_sapphire_general: 2592000,
+  card_chase_ultimate_rewards: 2592000,
+  card_chase_freedom_unlimited: 2592000,
+  card_chase_freedom_flex: 2592000,
+  card_chase_freedom_general: 2592000,
   card_chase_general: 2592000,
-  card_chase_ur_value: 2592000,
-  card_bilt_partners: 2592000,
+
+  // Amex cards
+  card_amex_platinum: 2592000,
+  card_amex_gold: 2592000,
+  card_amex_green: 2592000,
+  card_amex_blue_cash: 2592000,
+  card_amex_delta: 2592000,
+  card_amex_hilton: 2592000,
+  card_amex_marriott: 2592000,
   card_amex_general: 2592000,
+
+  // Other
+  card_bilt_partners: 2592000,
+  card_comparison: 1209600, // 14d - shorter for comparisons
   card_general: 2592000,
   generic: 1209600, // 14d
 };
@@ -35,6 +54,27 @@ function inferTopic(text, entities) {
   const m = t.match(/(20\d{2})/);
   const year = m ? parseInt(m[1], 10) : new Date().getFullYear();
 
+  // Credit card comparisons - check FIRST (more lenient)
+  if (
+    t.includes("vs") ||
+    t.includes("versus") ||
+    t.includes("compare") ||
+    (t.includes("better") &&
+      (t.includes("card") ||
+        t.includes("credit") ||
+        t.includes("chase") ||
+        t.includes("amex") ||
+        t.includes("bilt"))) ||
+    (t.includes("difference") &&
+      (t.includes("card") ||
+        t.includes("credit") ||
+        t.includes("chase") ||
+        t.includes("amex") ||
+        t.includes("bilt")))
+  ) {
+    return { kind: "card_comparison", year: null };
+  }
+
   // Tax and retirement limits
   if (t.includes("estate")) return { kind: "estate_exemption", year };
   if (t.includes("gift")) return { kind: "gift_exclusion", year };
@@ -42,28 +82,50 @@ function inferTopic(text, entities) {
     return { kind: "401k_limit", year };
   if (t.includes("ira")) return { kind: "ira_limit", year };
 
-  // Chase cards - much more comprehensive
-  if (
-    t.includes("chase") &&
-    (t.includes("card") ||
-      t.includes("credit") ||
-      t.includes("sapphire") ||
-      t.includes("freedom") ||
-      t.includes("ultimate") ||
-      t.includes("rewards") ||
-      t.includes("benefit"))
-  ) {
-    if (t.includes("sapphire") || t.includes("ultimate"))
-      return { kind: "card_chase_premium", year: null };
-    return { kind: "card_chase_general", year: null };
-  }
-
-  // Bilt rewards
+  // Bilt rewards - check before other cards
   if (t.includes("bilt")) return { kind: "card_bilt_partners", year: null };
 
-  // Amex cards
-  if (t.includes("amex") || t.includes("american express"))
+  // Chase cards - much more specific
+  if (t.includes("chase")) {
+    // Specific Chase cards first
+    if (t.includes("sapphire preferred"))
+      return { kind: "card_chase_sapphire_preferred", year: null };
+    if (t.includes("sapphire reserve"))
+      return { kind: "card_chase_sapphire_reserve", year: null };
+    if (t.includes("sapphire"))
+      return { kind: "card_chase_sapphire_general", year: null };
+    if (
+      t.includes("ultimate rewards") ||
+      (t.includes("ultimate") && t.includes("rewards"))
+    )
+      return { kind: "card_chase_ultimate_rewards", year: null };
+    if (t.includes("freedom unlimited"))
+      return { kind: "card_chase_freedom_unlimited", year: null };
+    if (t.includes("freedom flex"))
+      return { kind: "card_chase_freedom_flex", year: null };
+    if (t.includes("freedom"))
+      return { kind: "card_chase_freedom_general", year: null };
+
+    // General Chase cards
+    if (t.includes("card") || t.includes("credit") || t.includes("benefit")) {
+      return { kind: "card_chase_general", year: null };
+    }
+  }
+
+  // Amex cards - much more specific
+  if (t.includes("amex") || t.includes("american express")) {
+    if (t.includes("platinum"))
+      return { kind: "card_amex_platinum", year: null };
+    if (t.includes("gold")) return { kind: "card_amex_gold", year: null };
+    if (t.includes("green")) return { kind: "card_amex_green", year: null };
+    if (t.includes("blue cash"))
+      return { kind: "card_amex_blue_cash", year: null };
+    if (t.includes("delta")) return { kind: "card_amex_delta", year: null };
+    if (t.includes("hilton")) return { kind: "card_amex_hilton", year: null };
+    if (t.includes("marriott"))
+      return { kind: "card_amex_marriott", year: null };
     return { kind: "card_amex_general", year: null };
+  }
 
   // General credit cards
   if (
@@ -91,16 +153,43 @@ function sourceFor(kind, year) {
     gift_exclusion_2025:
       "https://www.irs.gov/newsroom/irs-releases-tax-inflation-adjustments-for-tax-year-2025",
 
-    // Chase cards - comprehensive coverage
-    card_chase_premium:
+    // Chase cards - specific mapping
+    card_chase_sapphire_preferred:
       "https://creditcards.chase.com/rewards-credit-cards/sapphire/preferred",
+    card_chase_sapphire_reserve:
+      "https://creditcards.chase.com/rewards-credit-cards/sapphire/reserve",
+    card_chase_sapphire_general:
+      "https://creditcards.chase.com/rewards-credit-cards/sapphire",
+    card_chase_ultimate_rewards:
+      "https://creditcards.chase.com/ultimate-rewards",
+    card_chase_freedom_unlimited:
+      "https://creditcards.chase.com/cash-back-credit-cards/freedom-unlimited",
+    card_chase_freedom_flex:
+      "https://creditcards.chase.com/cash-back-credit-cards/freedom-flex",
+    card_chase_freedom_general:
+      "https://creditcards.chase.com/cash-back-credit-cards/freedom",
     card_chase_general: "https://creditcards.chase.com/",
-    card_chase_ur_value:
-      "https://creditcards.chase.com/rewards-credit-cards/sapphire/preferred",
+
+    // Amex cards - specific mapping
+    card_amex_platinum:
+      "https://www.americanexpress.com/us/credit-cards/card/platinum",
+    card_amex_gold:
+      "https://www.americanexpress.com/us/credit-cards/card/gold-card",
+    card_amex_green:
+      "https://www.americanexpress.com/us/credit-cards/card/green-card",
+    card_amex_blue_cash:
+      "https://www.americanexpress.com/us/credit-cards/card/blue-cash-preferred",
+    card_amex_delta:
+      "https://www.americanexpress.com/us/credit-cards/category/delta-skymiles",
+    card_amex_hilton:
+      "https://www.americanexpress.com/us/credit-cards/category/hilton-honors",
+    card_amex_marriott:
+      "https://www.americanexpress.com/us/credit-cards/category/marriott-bonvoy",
+    card_amex_general: "https://www.americanexpress.com/us/credit-cards/",
 
     // Other cards
     card_bilt_partners: "https://www.biltrewards.com/rewards/travel",
-    card_amex_general: "https://www.americanexpress.com/us/credit-cards/",
+    card_comparison: "https://creditcards.chase.com/", // Use Chase as default for comparisons
     card_general: "https://creditcards.chase.com/",
   };
   return map[k] || null;
@@ -687,6 +776,12 @@ async function handleAskFactFresh(message, context) {
       }
     }
 
+    // 2) Handle comparisons specially
+    if (kind === "card_comparison") {
+      console.log("🔄 [FINNY] Handling card comparison request");
+      return await handleCardComparison(text, entities);
+    }
+
     // 2) Get source URL - with fallback search
     let url = sourceFor(kind, year);
     if (!url) {
@@ -751,39 +846,46 @@ async function handleAskFactFresh(message, context) {
         messages: [
           {
             role: "system",
-            content: `You extract financial facts from official web pages and return them as JSON.
+            content: `You are a comprehensive financial information extractor. Extract detailed, actionable information from official web pages and return as JSON.
 
-For credit cards, focus on:
-- Annual fees
-- Rewards rates (points per dollar)
-- Sign-up bonuses
-- Key benefits (airport lounge access, travel credits, etc.)
-- Point values when redeemed
+For credit cards, provide COMPREHENSIVE details including:
+- Annual fee (exact amount)
+- All rewards rates (categories and multipliers)
+- Sign-up bonus (points/cash and spending requirement)
+- Key premium benefits (lounge access, travel credits, insurance)
+- Point redemption values and transfer partners
+- Notable perks and protections
 
-For tax/retirement limits, focus on:
-- Contribution limits
-- Income thresholds
-- Exemption amounts
+For card comparisons, highlight key differentiators between products.
 
-Return ONLY a JSON object in this exact format:
+For tax/retirement limits:
+- Exact contribution limits and income thresholds
+- Catch-up contribution rules
+- Phase-out ranges
+- Effective dates
+
+Make your explanation detailed and practical - users want comprehensive information, not just basic facts. Include specific dollar amounts, percentages, and actionable details.
+
+Return ONLY a JSON object in this format:
 {
-  "label": "Brief descriptive label",
-  "value": "Main value or answer",
-  "unit": "Unit if applicable (e.g., 'dollars', 'percent') or null",
-  "explanation": "Detailed explanation of the fact",
-  "confidence": 0.8,
-  "source_title": "Page title if available or null"
+  "label": "Clear, specific title",
+  "value": "Primary key fact or amount",
+  "unit": "Unit if applicable or null",
+  "explanation": "COMPREHENSIVE 3-4 sentence explanation with specific details, amounts, and practical implications",
+  "confidence": 0.9,
+  "source_title": "Page title or null"
 }
 
-Use only the provided page content. Be specific and quantifiable.`,
+The explanation should be detailed enough to be genuinely helpful - include specific numbers, benefits, and practical context.`,
           },
           {
             role: "user",
             content: `Question: ${text}
+Card Type: ${kind}
 
-Page content: ${html.slice(0, 100000)}
+Page Content (first 100k chars): ${html.slice(0, 100000)}
 
-Extract the most relevant financial fact to answer the question. Return only JSON.`,
+Extract comprehensive information to fully answer the question. Focus on providing detailed, actionable information that would be genuinely helpful to someone researching this topic. Return only JSON.`,
           },
         ],
       }),
@@ -902,4 +1004,173 @@ async function handleCalcProjection(message, context) {
     type: "assistant",
     intent: "calc_projection",
   };
+}
+
+async function handleCardComparison(text, entities) {
+  console.log("🔍 [FINNY] Starting card comparison for:", text);
+
+  try {
+    // Extract card names from the query
+    const cardTypes = [];
+    const lowerText = text.toLowerCase();
+
+    // Chase cards
+    if (
+      lowerText.includes("chase sapphire preferred") ||
+      lowerText.includes("csp")
+    ) {
+      cardTypes.push({
+        kind: "card_chase_sapphire_preferred",
+        name: "Chase Sapphire Preferred",
+      });
+    } else if (
+      lowerText.includes("chase sapphire reserve") ||
+      lowerText.includes("csr")
+    ) {
+      cardTypes.push({
+        kind: "card_chase_sapphire_reserve",
+        name: "Chase Sapphire Reserve",
+      });
+    } else if (lowerText.includes("chase sapphire")) {
+      cardTypes.push({
+        kind: "card_chase_sapphire_general",
+        name: "Chase Sapphire",
+      });
+    }
+
+    if (
+      lowerText.includes("chase ultimate") ||
+      lowerText.includes("ultimate rewards")
+    ) {
+      cardTypes.push({
+        kind: "card_chase_ultimate_rewards",
+        name: "Chase Ultimate Rewards",
+      });
+    }
+
+    // Amex cards
+    if (
+      lowerText.includes("amex platinum") ||
+      lowerText.includes("platinum card")
+    ) {
+      cardTypes.push({ kind: "card_amex_platinum", name: "Amex Platinum" });
+    }
+    if (lowerText.includes("amex gold")) {
+      cardTypes.push({ kind: "card_amex_gold", name: "Amex Gold" });
+    }
+
+    // Bilt
+    if (lowerText.includes("bilt")) {
+      cardTypes.push({ kind: "card_bilt_partners", name: "Bilt Rewards" });
+    }
+
+    if (cardTypes.length === 0) {
+      return {
+        message:
+          "I couldn't identify specific cards to compare. Please mention the specific card names you'd like me to compare (e.g., 'Chase Sapphire Preferred vs Amex Platinum').",
+        type: "assistant",
+        intent: "ask_fact_fresh",
+        error: "NO_CARDS_IDENTIFIED",
+      };
+    }
+
+    if (cardTypes.length === 1) {
+      // Single card mentioned, get detailed info about it
+      const card = cardTypes[0];
+      return await handleAskFactFresh(
+        card.name + " benefits and features",
+        entities
+      );
+    }
+
+    // Multiple cards - create comparison
+    const comparisonPromises = cardTypes.slice(0, 3).map(async (card) => {
+      try {
+        const url = sourceFor(card.kind, null);
+        if (!url) return null;
+
+        const response = await fetch(url);
+        const html = await response.text();
+
+        // Extract key info for this card
+        const resp = await fetch(
+          "https://openrouter.ai/api/v1/chat/completions",
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              model: "openai/gpt-4o-mini",
+              temperature: 0.1,
+              messages: [
+                {
+                  role: "system",
+                  content: `Extract key comparison points for this credit card. Focus on: annual fee, rewards rates, sign-up bonus, key benefits. Return as JSON with label, value, explanation.`,
+                },
+                {
+                  role: "user",
+                  content: `Card: ${card.name}\n\nPage: ${html.slice(
+                    0,
+                    50000
+                  )}\n\nExtract key features for comparison.`,
+                },
+              ],
+            }),
+          }
+        );
+
+        const data = await resp.json();
+        const content = data.choices?.[0]?.message?.content;
+        if (content) {
+          const cardInfo = JSON.parse(content);
+          return { name: card.name, info: cardInfo };
+        }
+        return null;
+      } catch (error) {
+        console.error(`Failed to get info for ${card.name}:`, error);
+        return null;
+      }
+    });
+
+    const cardInfos = (await Promise.all(comparisonPromises)).filter(Boolean);
+
+    if (cardInfos.length === 0) {
+      return {
+        message:
+          "I couldn't retrieve comparison information for those cards right now. Please try asking about each card individually.",
+        type: "assistant",
+        intent: "ask_fact_fresh",
+        error: "COMPARISON_FAILED",
+      };
+    }
+
+    // Create comparison response
+    let comparisonMessage = `## Credit Card Comparison\n\n`;
+
+    cardInfos.forEach((card, index) => {
+      comparisonMessage += `**${card.name}:**\n`;
+      comparisonMessage += `${card.info.explanation}\n\n`;
+    });
+
+    comparisonMessage += `\n**Key Differences:**\n`;
+    comparisonMessage += `Based on the information above, consider your spending habits, travel frequency, and which benefits matter most to you when choosing between these cards.`;
+
+    return {
+      message: comparisonMessage,
+      type: "assistant",
+      intent: "ask_fact_fresh",
+      cached: false,
+    };
+  } catch (error) {
+    console.error("❌ [FINNY] Card comparison error:", error);
+    return {
+      message:
+        "I'm having trouble comparing those cards right now. Please try asking about each card individually for detailed information.",
+      type: "assistant",
+      intent: "ask_fact_fresh",
+      error: error.message,
+    };
+  }
 }
