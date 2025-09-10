@@ -52,8 +52,7 @@ function sourceFor(kind, year) {
       "https://www.irs.gov/newsroom/irs-releases-tax-inflation-adjustments-for-tax-year-2025",
     gift_exclusion_2025:
       "https://www.irs.gov/newsroom/irs-releases-tax-inflation-adjustments-for-tax-year-2025",
-    card_chase_ur_value:
-      "https://www.chase.com/personal/credit-cards/education/basics/how-chase-ultimate-rewards-works",
+    card_chase_ur_value: "https://creditcards.chase.com/",
     card_bilt_partners: "https://www.biltrewards.com/rewards/travel",
   };
   return map[k] || null;
