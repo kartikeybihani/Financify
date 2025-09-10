@@ -141,11 +141,13 @@ function inferTopic(text, entities) {
   // Credit card comparisons - check FIRST (more lenient)
   // Only trigger comparison if explicitly asking to compare two specific cards
   if (
-    ((t.includes("vs") || t.includes("versus") || t.includes("compare")) &&
-      t.includes("chase") &&
-      (t.includes("amex") || t.includes("bilt"))) ||
-    (t.includes("amex") && (t.includes("chase") || t.includes("bilt"))) ||
-    (t.includes("bilt") && (t.includes("chase") || t.includes("amex")))
+    (t.includes("vs") ||
+      t.includes("versus") ||
+      t.includes("compare") ||
+      t.includes("better")) &&
+    ((t.includes("chase") && (t.includes("amex") || t.includes("bilt"))) ||
+      (t.includes("amex") && (t.includes("chase") || t.includes("bilt"))) ||
+      (t.includes("bilt") && (t.includes("chase") || t.includes("amex"))))
   ) {
     return { kind: "card_comparison", year: null };
   }
@@ -1349,7 +1351,8 @@ async function handleCardComparison(text, entities) {
     if (
       lowerText.includes("amex platinum") ||
       lowerText.includes("platinum card") ||
-      lowerText.includes("american express platinum")
+      lowerText.includes("american express platinum") ||
+      (lowerText.includes("platinum") && lowerText.includes("amex"))
     ) {
       cardTypes.push({
         kind: "card_amex_platinum",
@@ -1377,7 +1380,13 @@ async function handleCardComparison(text, entities) {
       });
     }
 
+    console.log(
+      "🔍 [FINNY] Detected cards:",
+      cardTypes.map((c) => c.name)
+    );
+
     if (cardTypes.length === 0) {
+      console.log("❌ [FINNY] No cards identified in comparison query:", text);
       // If no specific cards identified, try to handle as general query
       if (text.toLowerCase().includes("chase")) {
         return await handleAskFactFresh(
@@ -1423,116 +1432,38 @@ async function handleCardComparison(text, entities) {
       cardTypes.map((c) => c.name)
     );
 
-    const comparisonPromises = cardTypes.slice(0, 3).map(async (card) => {
+    // Use existing fact lookup for each card - much more reliable and comprehensive
+    const comparisonPromises = cardTypes.slice(0, 2).map(async (card) => {
       try {
-        const url = sourceFor(card.kind, null);
-        if (!url) {
-          console.log(`❌ [FINNY] No URL found for ${card.name}`);
+        console.log(`🔄 [FINNY] Getting comprehensive info for ${card.name}`);
+
+        // Use the existing fact lookup for each card with comprehensive query
+        const cardQuery = `${card.name} benefits features annual fee rewards rates sign-up bonus key benefits transfer partners`;
+        console.log(`🔄 [FINNY] Calling handleAskFactFresh for: ${cardQuery}`);
+
+        const result = await handleAskFactFresh(cardQuery, entities);
+        console.log(`🔍 [FINNY] Result for ${card.name}:`, {
+          error: result.error,
+          hasMessage: !!result.message,
+        });
+
+        if (result.error) {
+          console.log(
+            `❌ [FINNY] Failed to get info for ${card.name}:`,
+            result.error
+          );
           return null;
         }
 
-        console.log(`🔄 [FINNY] Fetching data for ${card.name} from ${url}`);
-        const response = await fetch(url);
-        const html = await response.text();
+        return {
+          name: card.name,
+          info: result.message,
+          source: result.cached ? "cached" : "fresh",
+        };
 
-        // Extract comprehensive info for this card using structured outputs
-        const resp = await fetch(
-          "https://openrouter.ai/api/v1/chat/completions",
-          {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              model: "openai/gpt-4o-mini",
-              temperature: 0.1,
-              messages: [
-                {
-                  role: "system",
-                  content: `Extract comprehensive comparison data for this credit card. Focus on key differentiators: annual fee, rewards rates, sign-up bonus, key benefits, transfer partners, and unique perks. Provide detailed, actionable information.`,
-                },
-                {
-                  role: "user",
-                  content: `Card: ${card.name}\n\nPage Content: ${html.slice(
-                    0,
-                    80000
-                  )}\n\nExtract comprehensive comparison data including annual fee, rewards rates, sign-up bonus, key benefits, and unique features.`,
-                },
-              ],
-              response_format: {
-                type: "json_schema",
-                json_schema: {
-                  name: "card_comparison_data",
-                  strict: true,
-                  schema: {
-                    type: "object",
-                    additionalProperties: false,
-                    properties: {
-                      annual_fee: {
-                        type: "string",
-                        description: "Annual fee amount and details",
-                      },
-                      rewards_rates: {
-                        type: "string",
-                        description:
-                          "Detailed rewards earning rates by category",
-                      },
-                      signup_bonus: {
-                        type: "string",
-                        description:
-                          "Sign-up bonus details including amount and requirements",
-                      },
-                      key_benefits: {
-                        type: "string",
-                        description: "Key premium benefits and perks",
-                      },
-                      transfer_partners: {
-                        type: "string",
-                        description: "Transfer partners and redemption options",
-                      },
-                      unique_features: {
-                        type: "string",
-                        description:
-                          "Unique features that differentiate this card",
-                      },
-                    },
-                    required: [
-                      "annual_fee",
-                      "rewards_rates",
-                      "signup_bonus",
-                      "key_benefits",
-                    ],
-                  },
-                },
-              },
-            }),
-          }
-        );
-
-        const data = await resp.json();
-        const content = data.choices?.[0]?.message?.content;
-        if (content) {
-          // Strip markdown code blocks if present
-          let cleanContent = content.trim();
-          if (cleanContent.startsWith("```json")) {
-            cleanContent = cleanContent
-              .replace(/^```json\s*/, "")
-              .replace(/\s*```$/, "");
-          } else if (cleanContent.startsWith("```")) {
-            cleanContent = cleanContent
-              .replace(/^```\s*/, "")
-              .replace(/\s*```$/, "");
-          }
-
-          const cardInfo = JSON.parse(cleanContent);
-          return {
-            name: card.name,
-            info: cardInfo,
-            url: url,
-          };
-        }
-        return null;
+        // Old complex logic removed - using simplified fact lookup approach
+        // All the complex web scraping and AI extraction logic has been removed
+        // and replaced with the simple fact lookup above
       } catch (error) {
         console.error(`❌ [FINNY] Failed to get info for ${card.name}:`, error);
         return null;
@@ -1541,7 +1472,16 @@ async function handleCardComparison(text, entities) {
 
     const cardInfos = (await Promise.all(comparisonPromises)).filter(Boolean);
 
+    console.log(
+      `🔍 [FINNY] Comparison results: ${cardInfos.length}/${cardTypes.length} cards fetched successfully`
+    );
+    console.log(
+      `🔍 [FINNY] Successfully fetched:`,
+      cardInfos.map((c) => c.name)
+    );
+
     if (cardInfos.length === 0) {
+      console.log("❌ [FINNY] No card data retrieved for comparison");
       return {
         message:
           "I couldn't retrieve comparison information for those cards right now. Please try asking about each card individually.",
@@ -1551,7 +1491,27 @@ async function handleCardComparison(text, entities) {
       };
     }
 
-    // Create comprehensive comparison response
+    // If we only got data for one card, provide information about that card
+    if (cardInfos.length === 1) {
+      console.log(
+        "⚠️ [FINNY] Only got data for one card, providing single card info"
+      );
+      const card = cardInfos[0];
+      return {
+        message: `I found detailed information about the ${
+          card.name
+        }:\n\n${JSON.stringify(
+          card.info,
+          null,
+          2
+        )}\n\nFor a complete comparison, please ask about the other card individually.`,
+        type: "assistant",
+        intent: "ask_fact_fresh",
+        cached: false,
+      };
+    }
+
+    // Create comprehensive comparison response using the simplified fact lookup data
     let comparisonMessage = `## Credit Card Comparison: ${cardInfos
       .map((c) => c.name)
       .join(" vs ")}\n\n`;
@@ -1559,79 +1519,47 @@ async function handleCardComparison(text, entities) {
     cardInfos.forEach((card, index) => {
       comparisonMessage += `### ${card.name}\n\n`;
 
-      // Handle different response formats from the AI
-      if (typeof card.info === "object" && card.info.annual_fee) {
-        // New format with structured data
-        comparisonMessage += `**Annual Fee:** ${
-          card.info.annual_fee.label || "Annual Fee"
-        }: ${
-          typeof card.info.annual_fee.value === "number"
-            ? `$${card.info.annual_fee.value}`
-            : card.info.annual_fee.value
-        }\n\n`;
-        comparisonMessage += `**Rewards Rates:** ${
-          card.info.rewards_rates.label || "Rewards Rates"
-        }: ${JSON.stringify(
-          card.info.rewards_rates.value || card.info.rewards_rates
-        )}\n\n`;
-        comparisonMessage += `**Sign-up Bonus:** ${
-          card.info.sign_up_bonus?.label || "Sign-up Bonus"
-        }: ${
-          typeof card.info.sign_up_bonus?.value === "number"
-            ? `${card.info.sign_up_bonus.value.toLocaleString()} points`
-            : card.info.sign_up_bonus?.value || "See details"
-        }\n\n`;
-        comparisonMessage += `**Key Benefits:** ${
-          card.info.premium_benefits?.explanation ||
-          card.info.key_benefits ||
-          "See details"
-        }\n\n`;
-      } else {
-        // Legacy format
-        comparisonMessage += `**Annual Fee:** ${
-          card.info.annual_fee || "See details"
-        }\n\n`;
-        comparisonMessage += `**Rewards Rates:** ${
-          card.info.rewards_rates || "See details"
-        }\n\n`;
-        comparisonMessage += `**Sign-up Bonus:** ${
-          card.info.signup_bonus || "See details"
-        }\n\n`;
-        comparisonMessage += `**Key Benefits:** ${
-          card.info.key_benefits || "See details"
-        }\n\n`;
-      }
+      // Display the comprehensive information from fact lookup
+      comparisonMessage += `${card.info}\n\n`;
 
-      if (card.info.transfer_partners) {
-        comparisonMessage += `**Transfer Partners:** ${card.info.transfer_partners}\n\n`;
-      }
-
-      if (card.info.unique_features) {
-        comparisonMessage += `**Unique Features:** ${card.info.unique_features}\n\n`;
-      }
-
-      comparisonMessage += `**Source:** ${card.url}\n\n`;
+      // Add source information
+      comparisonMessage += `**Data Source:** ${
+        card.source === "cached" ? "Cached (reliable)" : "Fresh (current)"
+      }\n\n`;
       comparisonMessage += "---\n\n";
     });
 
     // Add comparison summary
     comparisonMessage += `## Key Differences Summary\n\n`;
-    comparisonMessage += `**Best for Travel:** ${
-      cardInfos.find(
-        (c) =>
-          c.name.toLowerCase().includes("platinum") ||
-          c.name.toLowerCase().includes("reserve")
-      )?.name || "Consider your travel frequency"
-    }\n\n`;
-    comparisonMessage += `**Best Value:** ${
-      cardInfos.find(
-        (c) =>
-          c.info.annual_fee?.includes("$0") ||
-          c.info.annual_fee?.includes("No fee")
-      )?.name || "Depends on your spending patterns"
-    }\n\n`;
-    comparisonMessage += `**Best for Everyday Spending:** Consider which card's bonus categories match your spending habits\n\n`;
-    comparisonMessage += `**Recommendation:** Choose based on your spending patterns, travel frequency, and which benefits you'll actually use. The card with the highest annual fee isn't always the best value if you don't use the premium benefits.`;
+
+    // Smart summary based on card names and content
+    const hasPlatinum = cardInfos.some((c) =>
+      c.name.toLowerCase().includes("platinum")
+    );
+    const hasReserve = cardInfos.some((c) =>
+      c.name.toLowerCase().includes("reserve")
+    );
+    const hasSapphire = cardInfos.some((c) =>
+      c.name.toLowerCase().includes("sapphire")
+    );
+    const hasBilt = cardInfos.some((c) =>
+      c.name.toLowerCase().includes("bilt")
+    );
+
+    if (hasPlatinum) {
+      comparisonMessage += `**Best for Premium Travel:** American Express Platinum Card offers the most comprehensive travel benefits including lounge access and travel credits.\n\n`;
+    }
+
+    if (hasReserve || hasSapphire) {
+      comparisonMessage += `**Best for Chase Ecosystem:** Chase Sapphire cards offer excellent value through Ultimate Rewards and transfer partners.\n\n`;
+    }
+
+    if (hasBilt) {
+      comparisonMessage += `**Best for Renters:** Bilt Rewards Card is unique in earning points on rent payments with no annual fee.\n\n`;
+    }
+
+    comparisonMessage += `**Recommendation:** Choose based on your spending patterns, travel frequency, and which benefits you'll actually use. Consider the annual fee vs. the value you'll get from the benefits.\n\n`;
+    comparisonMessage += `**Next Steps:** For detailed analysis, ask about each card individually to get the most current information and specific details.`;
 
     return {
       message: comparisonMessage,
@@ -1641,12 +1569,45 @@ async function handleCardComparison(text, entities) {
     };
   } catch (error) {
     console.error("❌ [FINNY] Card comparison error:", error);
-    return {
-      message:
-        "I'm having trouble comparing those cards right now. Please try asking about each card individually for detailed information.",
-      type: "assistant",
-      intent: "ask_fact_fresh",
-      error: error.message,
-    };
+
+    // Simple fallback - just provide basic comparison info
+    try {
+      const lowerText = text.toLowerCase();
+      let fallbackMessage =
+        "I found information about the cards you're comparing:\n\n";
+
+      if (lowerText.includes("chase") && lowerText.includes("sapphire")) {
+        fallbackMessage +=
+          "**Chase Sapphire Cards:** These are travel rewards cards with annual fees ranging from $95-$550. They offer 2x points on travel and dining, and points can be redeemed for travel at 1.25-1.5 cents per point through Chase Ultimate Rewards.\n\n";
+      }
+
+      if (lowerText.includes("amex") && lowerText.includes("platinum")) {
+        fallbackMessage +=
+          "**American Express Platinum Card:** Premium travel card with $695 annual fee. Offers 5x points on flights and hotels, access to airport lounges, and various travel credits. Best for frequent travelers who can maximize the premium benefits.\n\n";
+      }
+
+      if (lowerText.includes("bilt")) {
+        fallbackMessage +=
+          "**Bilt Rewards Card:** Unique card that earns points on rent payments with no annual fee. Offers 1x points on rent, 2x on travel and dining, and 3x on other purchases. Great for renters who want to earn rewards on their largest expense.\n\n";
+      }
+
+      fallbackMessage +=
+        "For detailed comparisons, please ask about each card individually for the most current information.";
+
+      return {
+        message: fallbackMessage,
+        type: "assistant",
+        intent: "ask_fact_fresh",
+        cached: false,
+      };
+    } catch (fallbackError) {
+      return {
+        message:
+          "I'm having trouble comparing those cards right now. Please try asking about each card individually for detailed information.",
+        type: "assistant",
+        intent: "ask_fact_fresh",
+        error: error.message,
+      };
+    }
   }
 }
