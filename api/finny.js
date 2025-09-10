@@ -44,9 +44,93 @@ const ALLOWLIST = [
   "https://www.irs.gov",
   "https://www.chase.com",
   "https://creditcards.chase.com",
+  "https://account.chase.com",
   "https://www.biltrewards.com",
   "https://www.americanexpress.com",
+  "https://www.americanexpress.com/us/credit-cards",
 ];
+
+// Enhanced source mapping with multiple URLs for comprehensive coverage
+const SOURCE_MAPPING = {
+  // Chase cards - multiple sources for comprehensive coverage
+  card_chase_sapphire_preferred: [
+    "https://creditcards.chase.com/rewards-credit-cards/sapphire/preferred",
+    "https://account.chase.com/sapphire/preferred/benefits",
+  ],
+  card_chase_sapphire_reserve: [
+    "https://creditcards.chase.com/rewards-credit-cards/sapphire/reserve",
+    "https://account.chase.com/sapphire/reserve/benefits",
+  ],
+  card_chase_sapphire_general: [
+    "https://creditcards.chase.com/rewards-credit-cards/sapphire",
+    "https://account.chase.com/sapphire",
+  ],
+  card_chase_ultimate_rewards: [
+    "https://creditcards.chase.com/ultimate-rewards",
+    "https://www.chase.com/personal/credit-cards/education/basics/how-chase-ultimate-rewards-works",
+  ],
+  card_chase_freedom_unlimited: [
+    "https://creditcards.chase.com/cash-back-credit-cards/freedom-unlimited",
+  ],
+  card_chase_freedom_flex: [
+    "https://creditcards.chase.com/cash-back-credit-cards/freedom-flex",
+  ],
+  card_chase_freedom_general: [
+    "https://creditcards.chase.com/cash-back-credit-cards/freedom",
+  ],
+  card_chase_general: ["https://creditcards.chase.com/"],
+
+  // Amex cards - comprehensive coverage
+  card_amex_platinum: [
+    "https://www.americanexpress.com/us/credit-cards/card/platinum",
+    "https://www.americanexpress.com/us/credit-cards/card/platinum/benefits",
+  ],
+  card_amex_gold: [
+    "https://www.americanexpress.com/us/credit-cards/card/gold-card",
+    "https://www.americanexpress.com/us/credit-cards/card/gold-card/benefits",
+  ],
+  card_amex_green: [
+    "https://www.americanexpress.com/us/credit-cards/card/green-card",
+  ],
+  card_amex_blue_cash: [
+    "https://www.americanexpress.com/us/credit-cards/card/blue-cash-preferred",
+  ],
+  card_amex_delta: [
+    "https://www.americanexpress.com/us/credit-cards/category/delta-skymiles",
+  ],
+  card_amex_hilton: [
+    "https://www.americanexpress.com/us/credit-cards/category/hilton-honors",
+  ],
+  card_amex_marriott: [
+    "https://www.americanexpress.com/us/credit-cards/category/marriott-bonvoy",
+  ],
+  card_amex_general: ["https://www.americanexpress.com/us/credit-cards/"],
+
+  // Other cards
+  card_bilt_partners: [
+    "https://www.biltrewards.com/rewards/travel",
+    "https://www.biltrewards.com/credit-card",
+  ],
+  card_comparison: [
+    "https://creditcards.chase.com/",
+    "https://www.americanexpress.com/us/credit-cards/",
+  ],
+  card_general: ["https://creditcards.chase.com/"],
+
+  // Tax and retirement limits
+  ira_limit_2025: [
+    "https://www.irs.gov/retirement-plans/plan-participant-employee/retirement-topics-ira-contribution-limits",
+  ],
+  "401k_limit_2025": [
+    "https://www.irs.gov/retirement-plans/plan-participant-employee/retirement-topics-401k-and-profit-sharing-plan-contribution-limits",
+  ],
+  estate_exemption_2025: [
+    "https://www.irs.gov/newsroom/irs-releases-tax-inflation-adjustments-for-tax-year-2025",
+  ],
+  gift_exclusion_2025: [
+    "https://www.irs.gov/newsroom/irs-releases-tax-inflation-adjustments-for-tax-year-2025",
+  ],
+};
 
 // Helper functions for facts pipeline
 function inferTopic(text, entities) {
@@ -144,55 +228,14 @@ function keyFor(kind, year) {
 
 function sourceFor(kind, year) {
   const k = keyFor(kind, year || undefined);
-  const map = {
-    // IRS tax and retirement limits
-    ira_limit_2025: "https://www.irs.gov/retirement-plans",
-    "401k_limit_2025": "https://www.irs.gov/retirement-plans",
-    estate_exemption_2025:
-      "https://www.irs.gov/newsroom/irs-releases-tax-inflation-adjustments-for-tax-year-2025",
-    gift_exclusion_2025:
-      "https://www.irs.gov/newsroom/irs-releases-tax-inflation-adjustments-for-tax-year-2025",
+  const urls = SOURCE_MAPPING[k];
+  // Return the first URL from the array, or null if not found
+  return urls ? urls[0] : null;
+}
 
-    // Chase cards - specific mapping
-    card_chase_sapphire_preferred:
-      "https://creditcards.chase.com/rewards-credit-cards/sapphire/preferred",
-    card_chase_sapphire_reserve:
-      "https://creditcards.chase.com/rewards-credit-cards/sapphire/reserve",
-    card_chase_sapphire_general:
-      "https://creditcards.chase.com/rewards-credit-cards/sapphire",
-    card_chase_ultimate_rewards:
-      "https://creditcards.chase.com/ultimate-rewards",
-    card_chase_freedom_unlimited:
-      "https://creditcards.chase.com/cash-back-credit-cards/freedom-unlimited",
-    card_chase_freedom_flex:
-      "https://creditcards.chase.com/cash-back-credit-cards/freedom-flex",
-    card_chase_freedom_general:
-      "https://creditcards.chase.com/cash-back-credit-cards/freedom",
-    card_chase_general: "https://creditcards.chase.com/",
-
-    // Amex cards - specific mapping
-    card_amex_platinum:
-      "https://www.americanexpress.com/us/credit-cards/card/platinum",
-    card_amex_gold:
-      "https://www.americanexpress.com/us/credit-cards/card/gold-card",
-    card_amex_green:
-      "https://www.americanexpress.com/us/credit-cards/card/green-card",
-    card_amex_blue_cash:
-      "https://www.americanexpress.com/us/credit-cards/card/blue-cash-preferred",
-    card_amex_delta:
-      "https://www.americanexpress.com/us/credit-cards/category/delta-skymiles",
-    card_amex_hilton:
-      "https://www.americanexpress.com/us/credit-cards/category/hilton-honors",
-    card_amex_marriott:
-      "https://www.americanexpress.com/us/credit-cards/category/marriott-bonvoy",
-    card_amex_general: "https://www.americanexpress.com/us/credit-cards/",
-
-    // Other cards
-    card_bilt_partners: "https://www.biltrewards.com/rewards/travel",
-    card_comparison: "https://creditcards.chase.com/", // Use Chase as default for comparisons
-    card_general: "https://creditcards.chase.com/",
-  };
-  return map[k] || null;
+function sourcesFor(kind, year) {
+  const k = keyFor(kind, year || undefined);
+  return SOURCE_MAPPING[k] || [];
 }
 
 function isAllowed(url) {
@@ -524,7 +567,6 @@ async function handleClassify(message, context) {
               '"Which card has better benefits Chase Rewards or Bolt?" → ask_fact_fresh',
               '"Does New Jersey have inheritance tax" → ask_state_rule with state NJ',
               '"Can I hit FIRE by 35" → calc_projection',
-              "",
               "Return JSON only. No extra text.",
             ].join("\n"),
           },
@@ -737,7 +779,7 @@ async function handleAskFactFresh(message, context) {
     const key = keyFor(kind, year);
     const ttl = DEFAULT_TTLS[kind];
 
-    // 1) Check cache first
+    // 1) Check cache first with enhanced validation
     const { data: cached } = await supabase
       .from("facts_cache")
       .select("*")
@@ -745,34 +787,59 @@ async function handleAskFactFresh(message, context) {
       .maybeSingle();
     if (cached) {
       const age = (Date.now() - new Date(cached.fetched_at).getTime()) / 1000;
-      if (age < cached.ttl_seconds) {
-        console.log("✅ [FINNY] Found cached fact:", key);
-        const v = cached.value_json.value;
-        const label = cached.value_json.label;
-        const explanation = cached.value_json.explanation;
-        const src = cached.source_url;
+      const ttl = cached.ttl_seconds || DEFAULT_TTLS[kind] || 1209600; // Default 14 days
 
-        // Create comprehensive cached response
-        let responseMessage = `${label}: ${
-          typeof v === "number" ? `$${v.toLocaleString()}` : v
-        }`;
+      if (age < ttl) {
+        console.log(
+          "✅ [FINNY] Found cached fact:",
+          key,
+          `(age: ${Math.round(age / 3600)}h, ttl: ${Math.round(ttl / 3600)}h)`
+        );
 
+        // Validate cached data structure
         if (
-          explanation &&
-          explanation.length > 10 &&
-          !explanation.toLowerCase().includes("not found")
+          cached.value_json &&
+          cached.value_json.label &&
+          cached.value_json.explanation
         ) {
-          responseMessage += `\n\n${explanation}`;
+          const v = cached.value_json.value;
+          const label = cached.value_json.label;
+          const explanation = cached.value_json.explanation;
+          const src = cached.source_url;
+
+          // Create comprehensive cached response
+          let responseMessage = `${label}: ${
+            typeof v === "number" ? `$${v.toLocaleString()}` : v
+          }`;
+
+          if (
+            explanation &&
+            explanation.length > 10 &&
+            !explanation.toLowerCase().includes("not found")
+          ) {
+            responseMessage += `\n\n${explanation}`;
+          }
+
+          responseMessage += `\n\nSource: ${src}`;
+
+          return {
+            message: responseMessage,
+            type: "assistant",
+            intent: "ask_fact_fresh",
+            cached: true,
+          };
+        } else {
+          console.log(
+            "⚠️ [FINNY] Cached data structure invalid, refreshing:",
+            key
+          );
         }
-
-        responseMessage += `\n\nSource: ${src}`;
-
-        return {
-          message: responseMessage,
-          type: "assistant",
-          intent: "ask_fact_fresh",
-          cached: true,
-        };
+      } else {
+        console.log(
+          "⏰ [FINNY] Cached fact expired:",
+          key,
+          `(age: ${Math.round(age / 3600)}h, ttl: ${Math.round(ttl / 3600)}h)`
+        );
       }
     }
 
@@ -782,26 +849,26 @@ async function handleAskFactFresh(message, context) {
       return await handleCardComparison(text, entities);
     }
 
-    // 2) Get source URL - with fallback search
-    let url = sourceFor(kind, year);
-    if (!url) {
+    // 2) Get source URLs - with comprehensive coverage
+    let urls = sourcesFor(kind, year);
+    if (urls.length === 0) {
       console.log(
-        "🔍 [FINNY] No known source for:",
+        "🔍 [FINNY] No known sources for:",
         key,
         "- attempting fallback search"
       );
 
-      // Fallback: construct a reasonable URL based on the topic
+      // Fallback: construct reasonable URLs based on the topic
       if (kind.startsWith("card_chase")) {
-        url = "https://creditcards.chase.com/";
+        urls = ["https://creditcards.chase.com/"];
       } else if (kind.startsWith("card_amex")) {
-        url = "https://www.americanexpress.com/us/credit-cards/";
+        urls = ["https://www.americanexpress.com/us/credit-cards/"];
       } else if (kind.startsWith("card_bilt")) {
-        url = "https://www.biltrewards.com/rewards/travel";
+        urls = ["https://www.biltrewards.com/rewards/travel"];
       } else if (kind.includes("limit") && year) {
-        url = "https://www.irs.gov/retirement-plans";
+        urls = ["https://www.irs.gov/retirement-plans"];
       } else {
-        console.log("❌ [FINNY] No fallback source available for:", key);
+        console.log("❌ [FINNY] No fallback sources available for:", key);
         return {
           message:
             "I couldn't verify that from an official source yet. Want me to try a broader search?",
@@ -811,26 +878,88 @@ async function handleAskFactFresh(message, context) {
         };
       }
 
-      console.log("✅ [FINNY] Using fallback source:", url);
+      console.log("✅ [FINNY] Using fallback sources:", urls);
     }
 
-    if (!isAllowed(url)) {
-      console.log("❌ [FINNY] Source not allowed:", url);
+    // Filter to only allowed URLs
+    const allowedUrls = urls.filter((url) => isAllowed(url));
+    if (allowedUrls.length === 0) {
+      console.log("❌ [FINNY] No allowed sources found for:", urls);
       return {
-        message: "I can't access that source for security reasons.",
+        message: "I can't access those sources for security reasons.",
         type: "assistant",
         intent: "ask_fact_fresh",
         error: "SOURCE_NOT_ALLOWED",
       };
     }
 
-    // 3) Fetch page content
-    console.log("🔄 [FINNY] Fetching page:", url);
-    const response = await fetch(url);
-    console.log("🔍 [FINNY] Page fetch status:", response.status);
-    const html = await response.text();
-    console.log("🔍 [FINNY] Page content length:", html.length);
-    console.log("🔍 [FINNY] Page preview:", html.slice(0, 500) + "...");
+    // 3) Fetch multiple pages for comprehensive coverage (max 3 pages)
+    console.log(
+      `🔄 [FINNY] Fetching ${Math.min(
+        allowedUrls.length,
+        3
+      )} pages for comprehensive coverage`
+    );
+    const fetchPromises = allowedUrls.slice(0, 3).map(async (url, index) => {
+      try {
+        console.log(`🔄 [FINNY] Fetching page ${index + 1}:`, url);
+        const response = await fetch(url, {
+          headers: {
+            "User-Agent": "Mozilla/5.0 (compatible; FinancifyBot/1.0)",
+            Accept:
+              "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+          },
+        });
+        console.log(
+          `🔍 [FINNY] Page ${index + 1} fetch status:`,
+          response.status
+        );
+
+        if (!response.ok) {
+          console.log(
+            `⚠️ [FINNY] Page ${index + 1} fetch failed:`,
+            response.status
+          );
+          return null;
+        }
+
+        const html = await response.text();
+        console.log(
+          `🔍 [FINNY] Page ${index + 1} content length:`,
+          html.length
+        );
+        return { url, html, index: index + 1 };
+      } catch (error) {
+        console.error(`❌ [FINNY] Failed to fetch page ${index + 1}:`, error);
+        return null;
+      }
+    });
+
+    const pageResults = (await Promise.all(fetchPromises)).filter(Boolean);
+
+    if (pageResults.length === 0) {
+      console.log("❌ [FINNY] Failed to fetch any pages");
+      return {
+        message:
+          "I couldn't retrieve the information from the official sources right now. Please try again later.",
+        type: "assistant",
+        intent: "ask_fact_fresh",
+        error: "FETCH_FAILED",
+      };
+    }
+
+    console.log(`✅ [FINNY] Successfully fetched ${pageResults.length} pages`);
+
+    // Combine all page content for comprehensive extraction
+    const combinedContent = pageResults
+      .map(
+        (page) =>
+          `=== PAGE ${page.index}: ${page.url} ===\n${page.html.slice(
+            0,
+            50000
+          )}`
+      )
+      .join("\n\n");
 
     // 4) Extract fact using structured outputs
     console.log("🤖 [FINNY] Extracting fact with AI...");
@@ -848,46 +977,88 @@ async function handleAskFactFresh(message, context) {
             role: "system",
             content: `You are a comprehensive financial information extractor. Extract detailed, actionable information from official web pages and return as JSON.
 
+CRITICAL: Provide COMPREHENSIVE, DETAILED responses. Users want thorough information, not brief summaries.
+
 For credit cards, provide COMPREHENSIVE details including:
-- Annual fee (exact amount)
-- All rewards rates (categories and multipliers)
-- Sign-up bonus (points/cash and spending requirement)
-- Key premium benefits (lounge access, travel credits, insurance)
+- Annual fee (exact amount and when charged)
+- All rewards rates (categories, multipliers, and earning caps)
+- Sign-up bonus (points/cash amount, spending requirement, time limit)
+- Key premium benefits (lounge access, travel credits, insurance coverage)
 - Point redemption values and transfer partners
 - Notable perks and protections
+- Foreign transaction fees
+- Credit score requirements
+- Authorized user benefits
 
-For card comparisons, highlight key differentiators between products.
+For card comparisons, highlight key differentiators between products with specific details.
 
 For tax/retirement limits:
 - Exact contribution limits and income thresholds
-- Catch-up contribution rules
-- Phase-out ranges
-- Effective dates
+- Catch-up contribution rules and age requirements
+- Phase-out ranges and income limits
+- Effective dates and inflation adjustments
+- Roth vs Traditional differences
 
-Make your explanation detailed and practical - users want comprehensive information, not just basic facts. Include specific dollar amounts, percentages, and actionable details.
+For estate tax questions:
+- Exact exemption amounts
+- Tax rates and brackets
+- State-specific rules if applicable
+- Effective dates and changes
 
-Return ONLY a JSON object in this format:
-{
-  "label": "Clear, specific title",
-  "value": "Primary key fact or amount",
-  "unit": "Unit if applicable or null",
-  "explanation": "COMPREHENSIVE 3-4 sentence explanation with specific details, amounts, and practical implications",
-  "confidence": 0.9,
-  "source_title": "Page title or null"
-}
-
-The explanation should be detailed enough to be genuinely helpful - include specific numbers, benefits, and practical context.`,
+Make your explanation DETAILED and PRACTICAL - users want comprehensive information with specific dollar amounts, percentages, and actionable details. Write 4-6 sentences minimum.`,
           },
           {
             role: "user",
             content: `Question: ${text}
 Card Type: ${kind}
 
-Page Content (first 100k chars): ${html.slice(0, 100000)}
+Combined Page Content from ${pageResults.length} sources:
+${combinedContent.slice(0, 150000)}
 
-Extract comprehensive information to fully answer the question. Focus on providing detailed, actionable information that would be genuinely helpful to someone researching this topic. Return only JSON.`,
+Extract comprehensive information to fully answer the question. Use information from all available sources to provide the most complete and accurate answer. Focus on providing detailed, actionable information that would be genuinely helpful to someone researching this topic.`,
           },
         ],
+        response_format: {
+          type: "json_schema",
+          json_schema: {
+            name: "financial_fact_extraction",
+            strict: true,
+            schema: {
+              type: "object",
+              additionalProperties: false,
+              properties: {
+                label: {
+                  type: "string",
+                  description: "Clear, specific title for the information",
+                },
+                value: {
+                  type: ["string", "number"],
+                  description: "Primary key fact or amount",
+                },
+                unit: {
+                  type: ["string", "null"],
+                  description: "Unit if applicable or null",
+                },
+                explanation: {
+                  type: "string",
+                  description:
+                    "COMPREHENSIVE 4-6 sentence explanation with specific details, amounts, practical implications, and context. Include specific numbers, benefits, requirements, and actionable information.",
+                },
+                confidence: {
+                  type: "number",
+                  minimum: 0,
+                  maximum: 1,
+                  description: "Confidence level in the extracted information",
+                },
+                source_title: {
+                  type: ["string", "null"],
+                  description: "Page title or null",
+                },
+              },
+              required: ["label", "value", "explanation", "confidence"],
+            },
+          },
+        },
       }),
     });
 
@@ -924,12 +1095,53 @@ Extract comprehensive information to fully answer the question. Focus on providi
       console.log("❌ [FINNY] JSON parse error:", parseError.message);
       console.log("❌ [FINNY] Raw content:", content);
 
-      // Fallback: provide a basic response with the raw content and source
-      const fallbackResponse = `I found information about your question on the official source, but had trouble parsing it. Here's what I can tell you:
+      // Try to extract useful information from the raw content
+      let fallbackResponse =
+        "I found information about your question on the official source, but had trouble formatting it properly. ";
 
-${content.slice(0, 500)}${content.length > 500 ? "..." : ""}
+      // Try to extract key information from the content
+      if (
+        content.includes("$") ||
+        content.includes("percent") ||
+        content.includes("%")
+      ) {
+        fallbackResponse += "Here are the key details I found: ";
 
-For complete details, please visit: ${url}`;
+        // Extract dollar amounts
+        const dollarMatches = content.match(/\$[\d,]+/g);
+        if (dollarMatches) {
+          fallbackResponse += `Key amounts: ${dollarMatches
+            .slice(0, 3)
+            .join(", ")}. `;
+        }
+
+        // Extract percentages
+        const percentMatches = content.match(/\d+(\.\d+)?%/g);
+        if (percentMatches) {
+          fallbackResponse += `Key rates: ${percentMatches
+            .slice(0, 3)
+            .join(", ")}. `;
+        }
+      }
+
+      // Special handling for estate tax questions
+      if (text.toLowerCase().includes("estate tax")) {
+        fallbackResponse =
+          "I found the 2025 estate tax exemption information on the official IRS source. ";
+
+        // Try to extract the specific exemption amount
+        const exemptionMatch = content.match(/\$[\d,]+/);
+        if (exemptionMatch) {
+          fallbackResponse += `The federal estate tax exemption for 2025 is ${exemptionMatch[0]}. This means estates valued below this amount are not subject to federal estate taxes. `;
+        }
+
+        fallbackResponse +=
+          "For complete details and any recent updates, please visit the official IRS website.";
+      } else {
+        fallbackResponse += `For complete and up-to-date details, please visit: ${
+          pageResults[0]?.url || "the official source"
+        }`;
+      }
 
       return {
         message: fallbackResponse,
@@ -939,14 +1151,26 @@ For complete details, please visit: ${url}`;
       };
     }
 
-    // 5) Cache the result
-    await supabase.from("facts_cache").upsert({
+    // 5) Cache the result with enhanced validation
+    const cacheData = {
       key,
       value_json,
-      source_url: url,
+      source_url: pageResults[0].url, // Use primary source URL
       source_title: value_json.source_title || null,
       fetched_at: new Date().toISOString(),
-      ttl_seconds: ttl,
+      ttl_seconds: ttl || DEFAULT_TTLS[kind] || 1209600, // Default 14 days
+      content_hash: Buffer.from(combinedContent.slice(0, 1000))
+        .toString("base64")
+        .slice(0, 50), // Content fingerprint
+      sources_count: pageResults.length, // Track how many sources were used
+    };
+
+    await supabase.from("facts_cache").upsert(cacheData);
+    console.log("✅ [FINNY] Cached result with enhanced metadata:", {
+      key,
+      ttl_hours: Math.round((cacheData.ttl_seconds || 1209600) / 3600),
+      sources_count: cacheData.sources_count,
+      content_hash: cacheData.content_hash,
     });
 
     console.log("✅ [FINNY] Fact extracted and cached:", key);
@@ -968,7 +1192,7 @@ For complete details, please visit: ${url}`;
       responseMessage += `\n\n${explanation}`;
     }
 
-    responseMessage += `\n\nSource: ${url}`;
+    responseMessage += `\n\nSource: ${pageResults[0].url}`;
 
     return {
       message: responseMessage,
@@ -1007,14 +1231,14 @@ async function handleCalcProjection(message, context) {
 }
 
 async function handleCardComparison(text, entities) {
-  console.log("🔍 [FINNY] Starting card comparison for:", text);
+  console.log("🔍 [FINNY] Starting comprehensive card comparison for:", text);
 
   try {
-    // Extract card names from the query
+    // Extract card names from the query with better detection
     const cardTypes = [];
     const lowerText = text.toLowerCase();
 
-    // Chase cards
+    // Chase cards - more comprehensive detection
     if (
       lowerText.includes("chase sapphire preferred") ||
       lowerText.includes("csp")
@@ -1022,6 +1246,7 @@ async function handleCardComparison(text, entities) {
       cardTypes.push({
         kind: "card_chase_sapphire_preferred",
         name: "Chase Sapphire Preferred",
+        searchTerms: ["sapphire preferred", "csp"],
       });
     } else if (
       lowerText.includes("chase sapphire reserve") ||
@@ -1030,11 +1255,13 @@ async function handleCardComparison(text, entities) {
       cardTypes.push({
         kind: "card_chase_sapphire_reserve",
         name: "Chase Sapphire Reserve",
+        searchTerms: ["sapphire reserve", "csr"],
       });
     } else if (lowerText.includes("chase sapphire")) {
       cardTypes.push({
         kind: "card_chase_sapphire_general",
         name: "Chase Sapphire",
+        searchTerms: ["sapphire"],
       });
     }
 
@@ -1045,23 +1272,40 @@ async function handleCardComparison(text, entities) {
       cardTypes.push({
         kind: "card_chase_ultimate_rewards",
         name: "Chase Ultimate Rewards",
+        searchTerms: ["ultimate rewards"],
       });
     }
 
-    // Amex cards
+    // Amex cards - more comprehensive detection
     if (
       lowerText.includes("amex platinum") ||
-      lowerText.includes("platinum card")
+      lowerText.includes("platinum card") ||
+      lowerText.includes("american express platinum")
     ) {
-      cardTypes.push({ kind: "card_amex_platinum", name: "Amex Platinum" });
+      cardTypes.push({
+        kind: "card_amex_platinum",
+        name: "American Express Platinum Card",
+        searchTerms: ["platinum card", "amex platinum"],
+      });
     }
-    if (lowerText.includes("amex gold")) {
-      cardTypes.push({ kind: "card_amex_gold", name: "Amex Gold" });
+    if (
+      lowerText.includes("amex gold") ||
+      lowerText.includes("american express gold")
+    ) {
+      cardTypes.push({
+        kind: "card_amex_gold",
+        name: "American Express Gold Card",
+        searchTerms: ["gold card", "amex gold"],
+      });
     }
 
-    // Bilt
-    if (lowerText.includes("bilt")) {
-      cardTypes.push({ kind: "card_bilt_partners", name: "Bilt Rewards" });
+    // Bilt - more comprehensive detection
+    if (lowerText.includes("bilt") || lowerText.includes("bilt rewards")) {
+      cardTypes.push({
+        kind: "card_bilt_partners",
+        name: "Bilt Rewards Card",
+        searchTerms: ["bilt rewards", "bilt card"],
+      });
     }
 
     if (cardTypes.length === 0) {
@@ -1083,16 +1327,25 @@ async function handleCardComparison(text, entities) {
       );
     }
 
-    // Multiple cards - create comparison
+    // Multiple cards - create comprehensive comparison
+    console.log(
+      `🔄 [FINNY] Comparing ${cardTypes.length} cards:`,
+      cardTypes.map((c) => c.name)
+    );
+
     const comparisonPromises = cardTypes.slice(0, 3).map(async (card) => {
       try {
         const url = sourceFor(card.kind, null);
-        if (!url) return null;
+        if (!url) {
+          console.log(`❌ [FINNY] No URL found for ${card.name}`);
+          return null;
+        }
 
+        console.log(`🔄 [FINNY] Fetching data for ${card.name} from ${url}`);
         const response = await fetch(url);
         const html = await response.text();
 
-        // Extract key info for this card
+        // Extract comprehensive info for this card using structured outputs
         const resp = await fetch(
           "https://openrouter.ai/api/v1/chat/completions",
           {
@@ -1107,16 +1360,62 @@ async function handleCardComparison(text, entities) {
               messages: [
                 {
                   role: "system",
-                  content: `Extract key comparison points for this credit card. Focus on: annual fee, rewards rates, sign-up bonus, key benefits. Return as JSON with label, value, explanation.`,
+                  content: `Extract comprehensive comparison data for this credit card. Focus on key differentiators: annual fee, rewards rates, sign-up bonus, key benefits, transfer partners, and unique perks. Provide detailed, actionable information.`,
                 },
                 {
                   role: "user",
-                  content: `Card: ${card.name}\n\nPage: ${html.slice(
+                  content: `Card: ${card.name}\n\nPage Content: ${html.slice(
                     0,
-                    50000
-                  )}\n\nExtract key features for comparison.`,
+                    80000
+                  )}\n\nExtract comprehensive comparison data including annual fee, rewards rates, sign-up bonus, key benefits, and unique features.`,
                 },
               ],
+              response_format: {
+                type: "json_schema",
+                json_schema: {
+                  name: "card_comparison_data",
+                  strict: true,
+                  schema: {
+                    type: "object",
+                    additionalProperties: false,
+                    properties: {
+                      annual_fee: {
+                        type: "string",
+                        description: "Annual fee amount and details",
+                      },
+                      rewards_rates: {
+                        type: "string",
+                        description:
+                          "Detailed rewards earning rates by category",
+                      },
+                      signup_bonus: {
+                        type: "string",
+                        description:
+                          "Sign-up bonus details including amount and requirements",
+                      },
+                      key_benefits: {
+                        type: "string",
+                        description: "Key premium benefits and perks",
+                      },
+                      transfer_partners: {
+                        type: "string",
+                        description: "Transfer partners and redemption options",
+                      },
+                      unique_features: {
+                        type: "string",
+                        description:
+                          "Unique features that differentiate this card",
+                      },
+                    },
+                    required: [
+                      "annual_fee",
+                      "rewards_rates",
+                      "signup_bonus",
+                      "key_benefits",
+                    ],
+                  },
+                },
+              },
             }),
           }
         );
@@ -1125,11 +1424,15 @@ async function handleCardComparison(text, entities) {
         const content = data.choices?.[0]?.message?.content;
         if (content) {
           const cardInfo = JSON.parse(content);
-          return { name: card.name, info: cardInfo };
+          return {
+            name: card.name,
+            info: cardInfo,
+            url: url,
+          };
         }
         return null;
       } catch (error) {
-        console.error(`Failed to get info for ${card.name}:`, error);
+        console.error(`❌ [FINNY] Failed to get info for ${card.name}:`, error);
         return null;
       }
     });
@@ -1146,16 +1449,48 @@ async function handleCardComparison(text, entities) {
       };
     }
 
-    // Create comparison response
-    let comparisonMessage = `## Credit Card Comparison\n\n`;
+    // Create comprehensive comparison response
+    let comparisonMessage = `## Credit Card Comparison: ${cardInfos
+      .map((c) => c.name)
+      .join(" vs ")}\n\n`;
 
     cardInfos.forEach((card, index) => {
-      comparisonMessage += `**${card.name}:**\n`;
-      comparisonMessage += `${card.info.explanation}\n\n`;
+      comparisonMessage += `### ${card.name}\n\n`;
+      comparisonMessage += `**Annual Fee:** ${card.info.annual_fee}\n\n`;
+      comparisonMessage += `**Rewards Rates:** ${card.info.rewards_rates}\n\n`;
+      comparisonMessage += `**Sign-up Bonus:** ${card.info.signup_bonus}\n\n`;
+      comparisonMessage += `**Key Benefits:** ${card.info.key_benefits}\n\n`;
+
+      if (card.info.transfer_partners) {
+        comparisonMessage += `**Transfer Partners:** ${card.info.transfer_partners}\n\n`;
+      }
+
+      if (card.info.unique_features) {
+        comparisonMessage += `**Unique Features:** ${card.info.unique_features}\n\n`;
+      }
+
+      comparisonMessage += `**Source:** ${card.url}\n\n`;
+      comparisonMessage += "---\n\n";
     });
 
-    comparisonMessage += `\n**Key Differences:**\n`;
-    comparisonMessage += `Based on the information above, consider your spending habits, travel frequency, and which benefits matter most to you when choosing between these cards.`;
+    // Add comparison summary
+    comparisonMessage += `## Key Differences Summary\n\n`;
+    comparisonMessage += `**Best for Travel:** ${
+      cardInfos.find(
+        (c) =>
+          c.name.toLowerCase().includes("platinum") ||
+          c.name.toLowerCase().includes("reserve")
+      )?.name || "Consider your travel frequency"
+    }\n\n`;
+    comparisonMessage += `**Best Value:** ${
+      cardInfos.find(
+        (c) =>
+          c.info.annual_fee?.includes("$0") ||
+          c.info.annual_fee?.includes("No fee")
+      )?.name || "Depends on your spending patterns"
+    }\n\n`;
+    comparisonMessage += `**Best for Everyday Spending:** Consider which card's bonus categories match your spending habits\n\n`;
+    comparisonMessage += `**Recommendation:** Choose based on your spending patterns, travel frequency, and which benefits you'll actually use. The card with the highest annual fee isn't always the best value if you don't use the premium benefits.`;
 
     return {
       message: comparisonMessage,
