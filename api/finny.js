@@ -1370,6 +1370,22 @@ async function handleAskFactFresh(message, context) {
       "🔍 [FINNY] Pages being analyzed:",
       pageResults.map((p) => ({ url: p.url, contentLength: p.html.length }))
     );
+
+    // Debug: Check if scraped content actually contains HDFC info
+    const contentLower = combinedContent.toLowerCase();
+    const hasHdfc =
+      contentLower.includes("hdfc") || contentLower.includes("regalia");
+    console.log(
+      "🔍 [FINNY] Does scraped content contain HDFC/Regalia?",
+      hasHdfc
+    );
+    if (hasHdfc) {
+      const hdfcMatches = combinedContent.match(/hdfc|regalia/gi);
+      console.log(
+        "🔍 [FINNY] HDFC/Regalia matches found:",
+        hdfcMatches?.length || 0
+      );
+    }
     const resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -1491,6 +1507,14 @@ Extract comprehensive information to fully answer the question. Use information 
     const data = await resp.json();
     console.log("🔍 [FINNY] AI response status:", resp.status);
     console.log("🔍 [FINNY] AI response data:", JSON.stringify(data, null, 2));
+
+    // Debug: Check if AI found actual HDFC info in Chase content
+    const aiContent = data.choices?.[0]?.message?.content;
+    if (aiContent && aiContent.toLowerCase().includes("hdfc")) {
+      console.log(
+        "🤔 [FINNY] AI found HDFC info in Chase content - this might be from training data!"
+      );
+    }
 
     if (!resp.ok) {
       console.log("❌ [FINNY] OpenRouter API error:", data);
