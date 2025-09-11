@@ -134,6 +134,16 @@ function RootLayoutNav() {
       <Stack.Screen name="(auth)" options={{ headerShown: false }} />
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen
+        name="investments"
+        options={{
+          headerShown: false,
+          presentation: "card",
+          animation: "slide_from_right",
+          gestureEnabled: true,
+          gestureDirection: "horizontal",
+        }}
+      />
+      <Stack.Screen
         name="settings"
         options={{
           headerShown: false,

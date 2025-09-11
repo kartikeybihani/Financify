@@ -13,6 +13,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
 import * as WebBrowser from "expo-web-browser";
+import { useRouter } from "expo-router";
 import {
   registerSnaptradeUser,
   handleSnapTradeRegister,
@@ -188,6 +189,7 @@ export default function InstitutionSelectionModal({
     connections: [],
   });
   const [isSyncing, setIsSyncing] = useState(false);
+  const router = useRouter();
 
   // Load investment data from database
   const loadInvestmentData = async () => {
@@ -251,6 +253,17 @@ export default function InstitutionSelectionModal({
     setIsConnecting(true);
 
     try {
+      // If there is already investment data in DB, skip API calls and navigate to investments screen
+      const existingConnectionsInDb = await getSnaptradeConnectionsFromDB();
+      if (existingConnectionsInDb && existingConnectionsInDb.length > 0) {
+        console.log(
+          "✅ Found existing Snaptrade data in DB, navigating to /investments without API calls..."
+        );
+        setIsConnecting(false);
+        router.push("/investments");
+        return;
+      }
+
       // First, check if user already has a valid Snaptrade connection
       const hasExistingConnection = await hasSnaptradeConnection();
 
@@ -305,10 +318,9 @@ export default function InstitutionSelectionModal({
             );
             // Continue with new connection flow below
           } else {
-            // Load investment data and show modal
-            await loadInvestmentData();
+            // Navigate to investments screen to display DB data
             setIsConnecting(false);
-            setShowInvestmentModal(true);
+            router.push("/investments");
             return;
           }
         } catch (accountError) {
@@ -432,10 +444,9 @@ export default function InstitutionSelectionModal({
               }
             }
 
-            // Load investment data and show modal
-            await loadInvestmentData();
+            // Navigate to investments screen to show data
             setIsConnecting(false);
-            setShowInvestmentModal(true);
+            router.push("/investments");
           } catch (accountError) {
             console.error("❌ Failed to fetch accounts:", accountError);
 
@@ -468,19 +479,7 @@ export default function InstitutionSelectionModal({
               );
             }
 
-            Alert.alert(
-              "Connection Successful",
-              "Fidelity account connected, but couldn't fetch account details.",
-              [
-                {
-                  text: "OK",
-                  onPress: () => {
-                    setIsConnecting(false);
-                    onClose();
-                  },
-                },
-              ]
-            );
+            setIsConnecting(false);
           }
         } else {
           // User cancelled or there was an error
@@ -491,18 +490,7 @@ export default function InstitutionSelectionModal({
       }
     } catch (error) {
       console.error("❌ Failed to connect Fidelity account:", error);
-      Alert.alert(
-        "Connection Failed",
-        `Failed to connect Fidelity account: ${
-          error instanceof Error ? error.message : "Unknown error"
-        }`,
-        [
-          {
-            text: "OK",
-            onPress: () => setIsConnecting(false),
-          },
-        ]
-      );
+      setIsConnecting(false);
     }
   };
 
@@ -748,6 +736,9 @@ export default function InstitutionSelectionModal({
                         <Text style={styles.connectionText}>
                           Account:{" "}
                           {connection.account_name || "Investment Account"}
+                        </Text>
+                        <Text style={styles.connectionText}>
+                          Account ID: {connection.account_id}
                         </Text>
                         <Text style={styles.connectionText}>
                           Last Synced:{" "}
