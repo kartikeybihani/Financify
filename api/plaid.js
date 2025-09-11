@@ -398,6 +398,26 @@ async function handleSnapTradeStoreCredentials(res, params) {
 
 async function handleSnapTradeSync(res, userId, accountId) {
   try {
+    console.log("🔄 Starting SnapTrade sync for:", { userId, accountId });
+
+    // Get the snaptrade_user_id from the database connection using the accountId
+    const { data: connection, error: connErr } = await supabase
+      .from("snaptrade_connections")
+      .select("user_id, snaptrade_user_id")
+      .eq("account_id", accountId)
+      .eq("is_active", true)
+      .single();
+
+    if (connErr || !connection) {
+      console.error("SnapTrade connection lookup error:", connErr);
+      throw new Error("SnapTrade connection not found");
+    }
+
+    console.log("🔄 Found SnapTrade connection:", {
+      user_id: connection.user_id,
+      snaptrade_user_id: connection.snaptrade_user_id,
+    });
+
     // Call your Supabase function to sync investments
     const response = await fetch(
       `${process.env.SUPABASE_URL}/functions/v1/sync-investments`,
@@ -408,8 +428,8 @@ async function handleSnapTradeSync(res, userId, accountId) {
           Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
         },
         body: JSON.stringify({
-          user_id: userId,
-          snaptrade_user_id: userId, // Assuming same as user_id for now
+          user_id: connection.user_id,
+          snaptrade_user_id: connection.snaptrade_user_id,
           account_id: accountId,
         }),
       }

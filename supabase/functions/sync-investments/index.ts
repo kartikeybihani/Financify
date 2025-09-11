@@ -61,20 +61,24 @@ serve(async (req: Request) => {
       return new Response("Missing user_id, snaptrade_user_id, or account_id", { status: 400 });
     }
 
-    // 1. Get decrypted user_secret from Vault via RPC
-    console.log("🔑 Fetching user_secret from Vault...");
-    const { data: user_secret, error: tokenErr } = await supabase.rpc("secure_get_snaptrade_credentials", {
-      p_user_id: user_id,
-      p_snaptrade_user_id: snaptrade_user_id,
-      p_account_id: account_id
-    });
+    // 1. Get user_secret directly from database
+    console.log("🔑 Fetching user_secret from database...");
+    const { data: connection, error: tokenErr } = await supabase
+      .from("snaptrade_connections")
+      .select("user_secret")
+      .eq("user_id", user_id)
+      .eq("snaptrade_user_id", snaptrade_user_id)
+      .eq("account_id", account_id)
+      .eq("is_active", true)
+      .single();
 
-    if (tokenErr || !user_secret) {
-      console.error("❌ Vault credential fetch failed:", tokenErr);
+    if (tokenErr || !connection?.user_secret) {
+      console.error("❌ Database credential fetch failed:", tokenErr);
       return new Response("Credentials not found", { status: 404 });
     }
 
-    console.log("✅ User secret retrieved from Vault");
+    const user_secret = connection.user_secret;
+    console.log("✅ User secret retrieved from database");
 
     // 2. Sync Account Balances
     console.log("💰 Syncing account balances...");
