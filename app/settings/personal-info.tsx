@@ -13,11 +13,11 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useLocalSearchParams } from "expo-router";
-import { supabase } from "../lib/supabase/supabase";
+import { supabase } from "../_lib/supabase/supabase";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import EditEmailModal from "../components/menu/EditEmailModal";
-import EditPhoneModal from "../components/menu/EditPhoneModal";
-import EditNameModal from "../components/menu/EditNameModal";
+import EditEmailModal from "../_components/menu/EditEmailModal";
+import EditPhoneModal from "../_components/menu/EditPhoneModal";
+import EditNameModal from "../_components/menu/EditNameModal";
 
 export default function PersonalInfoScreen() {
   const router = useRouter();

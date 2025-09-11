@@ -10,10 +10,10 @@ import {
   Easing,
 } from "react-native";
 import { useRouter } from "expo-router";
-import { supabase } from "../lib/supabase/supabase";
-import AuthTemplate from "../components/auth/AuthTemplate";
-import AuthInput from "../components/auth/AuthInput";
-import AuthButton from "../components/auth/AuthButton";
+import { supabase } from "../_lib/supabase/supabase";
+import AuthTemplate from "../_components/auth/AuthTemplate";
+import AuthInput from "../_components/auth/AuthInput";
+import AuthButton from "../_components/auth/AuthButton";
 import { LinearGradient } from "expo-linear-gradient";
 
 const { width } = Dimensions.get("window");

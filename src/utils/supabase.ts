@@ -1,10 +1,16 @@
 // app/utils/supabase.ts
 import { createClient } from "@supabase/supabase-js";
+import Constants from 'expo-constants';
 
-const supabase = createClient(
-  process.env.EXPO_PUBLIC_SUPABASE_URL!,
-  process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!
-);
+// Get the environment variables from Expo config
+const supabaseUrl = Constants.expoConfig?.extra?.supabaseUrl || process.env.EXPO_PUBLIC_SUPABASE_URL;
+const supabaseAnonKey = Constants.expoConfig?.extra?.supabaseAnonKey || process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+
+if (!supabaseUrl || !supabaseAnonKey) {
+  throw new Error('Missing Supabase environment variables. Please check your app.config.ts and .env file.');
+}
+
+const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 // Slim transaction type for cache
 export type SlimTransaction = {

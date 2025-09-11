@@ -1,22 +1,162 @@
 // /api/link_tokens.js
 import { client } from "../app/plaidClient.js";
 import { createClient } from "@supabase/supabase-js";
+import { Snaptrade } from "snaptrade-typescript-sdk";
+
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
+
+// Pick credentials based on environment
+const isSandbox = process.env.SNAPTRADE_ENVIRONMENT === "sandbox";
+
+const snaptrade = new Snaptrade({
+  clientId: isSandbox
+    ? process.env.SNAPTRADE_CLIENT_ID_DEV
+    : process.env.SNAPTRADE_CLIENT_ID,
+  consumerKey: isSandbox
+    ? process.env.SNAPTRADE_CONSUMER_KEY_DEV
+    : process.env.SNAPTRADE_CONSUMER_KEY,
+});
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  const { mode, item_id, user_id } = req.body;
+  const { mode, item_id, user_id, userId, userSecret } = req.body;
   const redirect_uri = "https://financify-redirect.com/oauth-complete";
 
   try {
+    // ------------------------------
+    // SNAPTRADE MODE (handles both register and login)
+    // ------------------------------
+    if (mode === "snaptrade") {
+      // If userId and userSecret are provided, this is a login request
+      if (userId && userSecret) {
+        try {
+          // Login the user to get redirect URI
+          const loginResponse =
+            await snaptrade.authentication.loginSnapTradeUser({
+              userId: userId,
+              userSecret: userSecret,
+              broker: "FIDELITY",
+            });
+          console.log("✅ Snaptrade Login Response: ", loginResponse);
+
+          return res.status(200).json({
+            redirectURI: loginResponse.data.redirectURI,
+            sessionId: loginResponse.data.sessionId,
+            environment: isSandbox ? "sandbox" : "production",
+          });
+        } catch (e) {
+          console.error("Snaptrade login error:", e);
+          return res
+            .status(500)
+            .json({ error: e.message || "Snaptrade login failed" });
+        }
+      }
+
+      // If only user_id is provided, this is a registration request
+      if (user_id) {
+        try {
+          // Register the user
+          const registerResponse =
+            await snaptrade.authentication.registerSnapTradeUser({
+              userId: user_id,
+            });
+          console.log(
+            "✅ Snaptrade Registration Response --->: ",
+            registerResponse
+          );
+
+          return res.status(200).json({
+            userId: registerResponse.data.userId,
+            userSecret: registerResponse.data.userSecret,
+            environment: isSandbox ? "sandbox" : "production",
+          });
+        } catch (e) {
+          console.error("Snaptrade registration error:", e);
+          return res
+            .status(500)
+            .json({ error: e.message || "Snaptrade registration failed" });
+        }
+      }
+
+      // If neither condition is met, return error
+      return res.status(400).json({
+        error:
+          "Missing required parameters. Provide either user_id for registration or userId+userSecret for login",
+      });
+    }
+
+    // ------------------------------
+    // SNAPTRADE ACCOUNTS MODE
+    // ------------------------------
+    if (mode === "snaptrade_accounts") {
+      if (!userId || !userSecret) {
+        return res.status(400).json({ error: "Missing userId or userSecret" });
+      }
+
+      try {
+        console.log("🔄 Fetching SnapTrade accounts for user:", userId);
+        const response = await snaptrade.accountInformation.listUserAccounts({
+          userId: userId,
+          userSecret: userSecret,
+        });
+        console.log("✅ Snaptrade Accounts Response: ", response);
+        return res.status(200).json({
+          accounts: response.data,
+          environment: isSandbox ? "sandbox" : "production",
+        });
+      } catch (e) {
+        console.error("Snaptrade accounts error:", e);
+        return res
+          .status(500)
+          .json({ error: e.message || "Failed to fetch Snaptrade accounts" });
+      }
+    }
+
+    // ------------------------------
+    // SNAPTRADE HOLDINGS MODE
+    // ------------------------------
+    if (mode === "snaptrade_holdings") {
+      const { accountId } = req.body;
+
+      if (!userId || !userSecret || !accountId) {
+        return res.status(400).json({
+          error: "Missing userId, userSecret, or accountId",
+        });
+      }
+
+      try {
+        console.log("🔄 Fetching Snaptrade holdings for account:", accountId);
+
+        const response = await snaptrade.accountInformation.getUserHoldings({
+          accountId: accountId,
+          userId: userId,
+          userSecret: userSecret,
+        });
+
+        console.log("✅ Snaptrade Holdings Response:", response.data);
+
+        return res.status(200).json({
+          holdings: response.data,
+          environment: isSandbox ? "sandbox" : "production",
+        });
+      } catch (e) {
+        console.error("Snaptrade holdings error:", e);
+        return res
+          .status(500)
+          .json({ error: e.message || "Failed to fetch Snaptrade holdings" });
+      }
+    }
+
+    // ------------------------------
+    // PLAID UPDATE MODE
+    // ------------------------------
     if (mode === "update" && item_id) {
-      // 1. Check if the item exists
       const { data: item, error } = await supabase
         .from("user_items")
         .select("item_id")
@@ -27,7 +167,6 @@ export default async function handler(req, res) {
         return res.status(404).json({ error: "Item not found" });
       }
 
-      // 2. Get access_token from Vault
       const { data: access_token, error: tokenError } = await supabase.rpc(
         "secure_get_plaid_token",
         { p_item_id: item_id, p_user_id: user_id }
@@ -38,7 +177,6 @@ export default async function handler(req, res) {
         return res.status(404).json({ error: "Access token not found" });
       }
 
-      // 3. Create link_token in update mode, with account selection enabled
       const { data: tokenData } = await client.linkTokenCreate({
         user: { client_user_id: user_id },
         client_name: "Financify",
@@ -48,27 +186,28 @@ export default async function handler(req, res) {
         redirect_uri,
         access_token: access_token,
         update: { account_selection_enabled: true },
-        // Do NOT add `products` here unless you're explicitly adding restricted products like Assets, etc.
-      });
-
-      return res.status(200).json({ link_token: tokenData.link_token });
-    } else {
-      // CREATE MODE for adding a new bank (Item)
-      const { data: tokenData } = await client.linkTokenCreate({
-        user: { client_user_id: user_id },
-        client_name: "Financify",
-        products: ["auth"], // minimum default
-        required_if_supported_products: ["transactions", "liabilities"],
-        optional_products: [],
-        additional_consented_products: [],
-        country_codes: ["US"],
-        language: "en",
-        webhook: "https://financify-rose.vercel.app/api/webhook",
-        redirect_uri,
       });
 
       return res.status(200).json({ link_token: tokenData.link_token });
     }
+
+    // ------------------------------
+    // PLAID CREATE MODE
+    // ------------------------------
+    const { data: tokenData } = await client.linkTokenCreate({
+      user: { client_user_id: user_id },
+      client_name: "Financify",
+      products: ["auth"],
+      required_if_supported_products: ["transactions", "liabilities"],
+      optional_products: [],
+      additional_consented_products: [],
+      country_codes: ["US"],
+      language: "en",
+      webhook: "https://financify-rose.vercel.app/api/webhook",
+      redirect_uri,
+    });
+
+    return res.status(200).json({ link_token: tokenData.link_token });
   } catch (e) {
     const plaidError = e.response?.data;
     console.error("Link Token Creation Error:", plaidError || e.message);

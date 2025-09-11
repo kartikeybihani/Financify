@@ -279,7 +279,6 @@ PODS:
   - hermes-engine (0.76.9):
     - hermes-engine/Pre-built (= 0.76.9)
   - hermes-engine/Pre-built (0.76.9)
-  - OpenSSL-Universal (3.3.3001)
   - Plaid (6.4.0)
   - RCT-Folly (2024.10.14.00):
     - boost
@@ -1583,31 +1582,6 @@ PODS:
     - ReactCommon/turbomodule/bridging
     - ReactCommon/turbomodule/core
     - Yoga
-  - react-native-quick-crypto (0.7.17):
-    - DoubleConversion
-    - glog
-    - hermes-engine
-    - OpenSSL-Universal
-    - RCT-Folly (= 2024.10.14.00)
-    - RCTRequired
-    - RCTTypeSafety
-    - React
-    - React-Core
-    - React-debug
-    - React-Fabric
-    - React-featureflags
-    - React-graphics
-    - React-ImageManager
-    - React-NativeModulesApple
-    - React-RCTFabric
-    - React-rendererdebug
-    - React-utils
-    - ReactCodegen
-    - ReactCommon/turbomodule/bridging
-    - ReactCommon/turbomodule/core
-    - Yoga
-  - react-native-randombytes (3.6.2):
-    - React-Core
   - react-native-safe-area-context (4.12.0):
     - DoubleConversion
     - glog
@@ -2254,8 +2228,6 @@ DEPENDENCIES:
   - React-microtasksnativemodule (from `../node_modules/react-native/ReactCommon/react/nativemodule/microtasks`)
   - react-native-get-random-values (from `../node_modules/react-native-get-random-values`)
   - react-native-plaid-link-sdk (from `../node_modules/react-native-plaid-link-sdk`)
-  - react-native-quick-crypto (from `../node_modules/react-native-quick-crypto`)
-  - react-native-randombytes (from `../node_modules/react-native-randombytes`)
   - react-native-safe-area-context (from `../node_modules/react-native-safe-area-context`)
   - react-native-webview (from `../node_modules/react-native-webview`)
   - React-nativeconfig (from `../node_modules/react-native/ReactCommon`)
@@ -2295,7 +2267,6 @@ DEPENDENCIES:
 
 SPEC REPOS:
   trunk:
-    - OpenSSL-Universal
     - Plaid
     - SocketRocket
 
@@ -2429,10 +2400,6 @@ EXTERNAL SOURCES:
     :path: "../node_modules/react-native-get-random-values"
   react-native-plaid-link-sdk:
     :path: "../node_modules/react-native-plaid-link-sdk"
-  react-native-quick-crypto:
-    :path: "../node_modules/react-native-quick-crypto"
-  react-native-randombytes:
-    :path: "../node_modules/react-native-randombytes"
   react-native-safe-area-context:
     :path: "../node_modules/react-native-safe-area-context"
   react-native-webview:
@@ -2540,7 +2507,6 @@ SPEC CHECKSUMS:
   fmt: 01b82d4ca6470831d1cc0852a1af644be019e8f6
   glog: 08b301085f15bcbb6ff8632a8ebaf239aae04e6a
   hermes-engine: 9e868dc7be781364296d6ee2f56d0c1a9ef0bb11
-  OpenSSL-Universal: 6082b0bf950e5636fe0d78def171184e2b3899c2
   Plaid: 252a1910d0ad030f27043925236be14a852c9bb2
   RCT-Folly: 7b4f73a92ad9571b9dbdb05bb30fad927fa971e1
   RCTDeprecation: ebe712bb05077934b16c6bf25228bdec34b64f83
@@ -2573,8 +2539,6 @@ SPEC CHECKSUMS:
   React-microtasksnativemodule: a645237a841d733861c70b69908ab4a1707b52ad
   react-native-get-random-values: 21325b2244dfa6b58878f51f9aa42821e7ba3d06
   react-native-plaid-link-sdk: f6158e007691886dc4ffa8b2d8b98cb8b6d0c9e0
-  react-native-quick-crypto: a4977e0adf6275193b5146cd5a90da6d3201b89c
-  react-native-randombytes: ddf6edfd3fb9091af8c6ed1b35e57c308b5f5f2c
   react-native-safe-area-context: 0dfbd139206a79364916959bc8b1a6bea3caba97
   react-native-webview: b8f9b1f9bdb081c239e46d9bf030881d2678f25d
   React-nativeconfig: 8efdb1ef1e9158c77098a93085438f7e7b463678

@@ -9,7 +9,7 @@ import { useFonts } from "expo-font";
 import { useEffect, useState } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import "react-native-reanimated";
-import AuthProvider, { useAuth } from "./contexts/AuthContext";
+import AuthProvider, { useAuth } from "./_contexts/AuthContext";
 import { runStorageMigrationV2 } from "../src/utils/migrate";
 
 SplashScreen.preventAutoHideAsync();
@@ -133,6 +133,16 @@ function RootLayoutNav() {
       <Stack.Screen name="(onboarding)" options={{ headerShown: false }} />
       <Stack.Screen name="(auth)" options={{ headerShown: false }} />
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+      <Stack.Screen
+        name="investments"
+        options={{
+          headerShown: false,
+          presentation: "card",
+          animation: "slide_from_right",
+          gestureEnabled: true,
+          gestureDirection: "horizontal",
+        }}
+      />
       <Stack.Screen
         name="settings"
         options={{

@@ -22,9 +22,9 @@ import {
 } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter, useLocalSearchParams } from "expo-router";
-import { supabase } from "../lib/supabase/supabase";
-import FeedbackModal from "../components/modals/FeedbackModal";
-import { handleDisconnect, getPrimaryItemId } from "../utils/plaid";
+import { supabase } from "../_lib/supabase/supabase";
+import FeedbackModal from "../_components/modals/FeedbackModal";
+import { handleDisconnect, getPrimaryItemId } from "../_utils/plaid";
 
 export default function SettingsScreen() {
   const router = useRouter();
