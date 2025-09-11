@@ -33,6 +33,23 @@ const DEFAULT_TTLS = {
   card_amex_marriott: 2592000,
   card_amex_general: 2592000,
 
+  // Wells Fargo cards
+  card_wells_fargo_active_cash: 2592000,
+  card_wells_fargo_propel: 2592000,
+  card_wells_fargo_autograph: 2592000,
+  card_wells_fargo_general: 2592000,
+
+  // Other major banks
+  card_citi_double_cash: 2592000,
+  card_citi_premier: 2592000,
+  card_citi_general: 2592000,
+  card_capital_one_venture: 2592000,
+  card_capital_one_quicksilver: 2592000,
+  card_capital_one_general: 2592000,
+  card_bank_of_america_general: 2592000,
+  card_discover_general: 2592000,
+  card_us_bank_general: 2592000,
+
   // Other
   card_bilt_partners: 2592000,
   card_comparison: 1209600, // 14d - shorter for comparisons
@@ -48,6 +65,18 @@ const ALLOWLIST = [
   "https://www.biltrewards.com",
   "https://www.americanexpress.com",
   "https://www.americanexpress.com/us/credit-cards",
+  "https://www.wellsfargo.com",
+  "https://creditcards.wellsfargo.com",
+  "https://www.citi.com",
+  "https://www.citi.com/credit-cards",
+  "https://www.capitalone.com",
+  "https://www.capitalone.com/credit-cards",
+  "https://www.bankofamerica.com",
+  "https://www.bankofamerica.com/credit-cards",
+  "https://www.discover.com",
+  "https://www.discover.com/credit-cards",
+  "https://www.usbank.com",
+  "https://www.usbank.com/credit-cards",
 ];
 
 // Enhanced source mapping with multiple URLs for comprehensive coverage
@@ -105,6 +134,39 @@ const SOURCE_MAPPING = {
     "https://www.americanexpress.com/us/credit-cards/category/marriott-bonvoy",
   ],
   card_amex_general: ["https://www.americanexpress.com/us/credit-cards/"],
+
+  // Wells Fargo cards - comprehensive coverage
+  card_wells_fargo_active_cash: [
+    "https://creditcards.wellsfargo.com/active-cash-credit-card",
+    "https://www.wellsfargo.com/credit-cards/active-cash",
+  ],
+  card_wells_fargo_propel: [
+    "https://creditcards.wellsfargo.com/propel-american-express-card",
+    "https://www.wellsfargo.com/credit-cards/propel",
+  ],
+  card_wells_fargo_autograph: [
+    "https://creditcards.wellsfargo.com/autograph-credit-card",
+    "https://www.wellsfargo.com/credit-cards/autograph",
+  ],
+  card_wells_fargo_general: [
+    "https://creditcards.wellsfargo.com/",
+    "https://www.wellsfargo.com/credit-cards/",
+  ],
+
+  // Other major banks
+  card_citi_double_cash: [
+    "https://www.citi.com/credit-cards/citi-double-cash-credit-card",
+  ],
+  card_citi_premier: ["https://www.citi.com/credit-cards/citi-premier-card"],
+  card_citi_general: ["https://www.citi.com/credit-cards/"],
+  card_capital_one_venture: ["https://www.capitalone.com/credit-cards/venture"],
+  card_capital_one_quicksilver: [
+    "https://www.capitalone.com/credit-cards/quicksilver",
+  ],
+  card_capital_one_general: ["https://www.capitalone.com/credit-cards/"],
+  card_bank_of_america_general: ["https://www.bankofamerica.com/credit-cards/"],
+  card_discover_general: ["https://www.discover.com/credit-cards/"],
+  card_us_bank_general: ["https://www.usbank.com/credit-cards/"],
 
   // Other cards
   card_bilt_partners: [
@@ -862,6 +924,18 @@ async function handleAskFactFresh(message, context) {
         urls = ["https://creditcards.chase.com/"];
       } else if (kind.startsWith("card_amex")) {
         urls = ["https://www.americanexpress.com/us/credit-cards/"];
+      } else if (kind.startsWith("card_wells_fargo")) {
+        urls = ["https://creditcards.wellsfargo.com/"];
+      } else if (kind.startsWith("card_citi")) {
+        urls = ["https://www.citi.com/credit-cards/"];
+      } else if (kind.startsWith("card_capital_one")) {
+        urls = ["https://www.capitalone.com/credit-cards/"];
+      } else if (kind.startsWith("card_bank_of_america")) {
+        urls = ["https://www.bankofamerica.com/credit-cards/"];
+      } else if (kind.startsWith("card_discover")) {
+        urls = ["https://www.discover.com/credit-cards/"];
+      } else if (kind.startsWith("card_us_bank")) {
+        urls = ["https://www.usbank.com/credit-cards/"];
       } else if (kind.startsWith("card_bilt")) {
         urls = ["https://www.biltrewards.com/rewards/travel"];
       } else if (kind.includes("limit") && year) {
@@ -1371,6 +1445,110 @@ async function handleCardComparison(text, entities) {
       });
     }
 
+    // Wells Fargo cards - comprehensive detection
+    if (
+      lowerText.includes("wells fargo active cash") ||
+      lowerText.includes("active cash")
+    ) {
+      cardTypes.push({
+        kind: "card_wells_fargo_active_cash",
+        name: "Wells Fargo Active Cash Card",
+        searchTerms: ["active cash", "wells fargo active cash"],
+      });
+    } else if (
+      lowerText.includes("wells fargo propel") ||
+      lowerText.includes("propel card")
+    ) {
+      cardTypes.push({
+        kind: "card_wells_fargo_propel",
+        name: "Wells Fargo Propel Card",
+        searchTerms: ["propel", "wells fargo propel"],
+      });
+    } else if (
+      lowerText.includes("wells fargo autograph") ||
+      lowerText.includes("autograph card")
+    ) {
+      cardTypes.push({
+        kind: "card_wells_fargo_autograph",
+        name: "Wells Fargo Autograph Card",
+        searchTerms: ["autograph", "wells fargo autograph"],
+      });
+    } else if (
+      lowerText.includes("wells fargo") ||
+      lowerText.includes("wells")
+    ) {
+      cardTypes.push({
+        kind: "card_wells_fargo_general",
+        name: "Wells Fargo Credit Cards",
+        searchTerms: ["wells fargo", "wells fargo credit cards"],
+      });
+    }
+
+    // Other major banks - basic detection
+    if (lowerText.includes("citi double cash")) {
+      cardTypes.push({
+        kind: "card_citi_double_cash",
+        name: "Citi Double Cash Card",
+        searchTerms: ["citi double cash", "double cash"],
+      });
+    } else if (lowerText.includes("citi premier")) {
+      cardTypes.push({
+        kind: "card_citi_premier",
+        name: "Citi Premier Card",
+        searchTerms: ["citi premier", "premier card"],
+      });
+    } else if (lowerText.includes("citi")) {
+      cardTypes.push({
+        kind: "card_citi_general",
+        name: "Citi Credit Cards",
+        searchTerms: ["citi", "citi credit cards"],
+      });
+    }
+
+    if (lowerText.includes("capital one venture")) {
+      cardTypes.push({
+        kind: "card_capital_one_venture",
+        name: "Capital One Venture Card",
+        searchTerms: ["capital one venture", "venture card"],
+      });
+    } else if (lowerText.includes("capital one quicksilver")) {
+      cardTypes.push({
+        kind: "card_capital_one_quicksilver",
+        name: "Capital One Quicksilver Card",
+        searchTerms: ["capital one quicksilver", "quicksilver card"],
+      });
+    } else if (lowerText.includes("capital one")) {
+      cardTypes.push({
+        kind: "card_capital_one_general",
+        name: "Capital One Credit Cards",
+        searchTerms: ["capital one", "capital one credit cards"],
+      });
+    }
+
+    if (lowerText.includes("bank of america")) {
+      cardTypes.push({
+        kind: "card_bank_of_america_general",
+        name: "Bank of America Credit Cards",
+        searchTerms: ["bank of america", "bofa credit cards"],
+      });
+    }
+
+    if (lowerText.includes("discover")) {
+      cardTypes.push({
+        kind: "card_discover_general",
+        name: "Discover Credit Cards",
+        searchTerms: ["discover", "discover credit cards"],
+      });
+    }
+
+    if (lowerText.includes("us bank")) {
+      cardTypes.push({
+        kind: "card_us_bank_general",
+        name: "U.S. Bank Credit Cards",
+        searchTerms: ["us bank", "u.s. bank credit cards"],
+      });
+    }
+
     // Bilt - more comprehensive detection
     if (lowerText.includes("bilt") || lowerText.includes("bilt rewards")) {
       cardTypes.push({
@@ -1399,6 +1577,39 @@ async function handleCardComparison(text, entities) {
       ) {
         return await handleAskFactFresh(
           "American Express credit card benefits and features",
+          entities
+        );
+      } else if (
+        text.toLowerCase().includes("wells fargo") ||
+        text.toLowerCase().includes("wells")
+      ) {
+        return await handleAskFactFresh(
+          "Wells Fargo credit card benefits and features",
+          entities
+        );
+      } else if (text.toLowerCase().includes("citi")) {
+        return await handleAskFactFresh(
+          "Citi credit card benefits and features",
+          entities
+        );
+      } else if (text.toLowerCase().includes("capital one")) {
+        return await handleAskFactFresh(
+          "Capital One credit card benefits and features",
+          entities
+        );
+      } else if (text.toLowerCase().includes("bank of america")) {
+        return await handleAskFactFresh(
+          "Bank of America credit card benefits and features",
+          entities
+        );
+      } else if (text.toLowerCase().includes("discover")) {
+        return await handleAskFactFresh(
+          "Discover credit card benefits and features",
+          entities
+        );
+      } else if (text.toLowerCase().includes("us bank")) {
+        return await handleAskFactFresh(
+          "U.S. Bank credit card benefits and features",
           entities
         );
       } else if (text.toLowerCase().includes("bilt")) {
