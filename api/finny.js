@@ -1371,19 +1371,39 @@ async function handleAskFactFresh(message, context) {
       pageResults.map((p) => ({ url: p.url, contentLength: p.html.length }))
     );
 
-    // Debug: Check if scraped content actually contains HDFC info
-    const contentLower = combinedContent.toLowerCase();
-    const hasHdfc =
-      contentLower.includes("hdfc") || contentLower.includes("regalia");
-    console.log(
-      "🔍 [FINNY] Does scraped content contain HDFC/Regalia?",
-      hasHdfc
+    // Debug: Check if scraped content actually contains relevant information
+    const contentLowerDebug = combinedContent.toLowerCase();
+    const queryTermsDebug = text
+      .toLowerCase()
+      .split(" ")
+      .filter(
+        (term) =>
+          term.length > 2 &&
+          ![
+            "the",
+            "and",
+            "or",
+            "but",
+            "for",
+            "with",
+            "about",
+            "tell",
+            "me",
+            "credit",
+            "card",
+          ].includes(term)
+      );
+    const hasRelevantContentDebug = queryTermsDebug.some((term) =>
+      contentLowerDebug.includes(term)
     );
-    if (hasHdfc) {
-      const hdfcMatches = combinedContent.match(/hdfc|regalia/gi);
+    console.log("🔍 [FINNY] Query terms:", queryTermsDebug);
+    console.log(
+      "🔍 [FINNY] Does scraped content contain relevant terms?",
+      hasRelevantContentDebug
+    );
+    if (!hasRelevantContentDebug) {
       console.log(
-        "🔍 [FINNY] HDFC/Regalia matches found:",
-        hdfcMatches?.length || 0
+        "⚠️ [FINNY] Scraped content doesn't contain query terms - likely international/unsupported card"
       );
     }
     const resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
@@ -1711,7 +1731,45 @@ Extract comprehensive information to fully answer the question. Use information 
       responseMessage += `\n\n${explanation}`;
     }
 
-    responseMessage += `\n\nSource: ${pageResults[0].url}`;
+    // Check if scraped content actually contains relevant information
+    const queryTerms = text
+      .toLowerCase()
+      .split(" ")
+      .filter(
+        (term) =>
+          term.length > 2 &&
+          ![
+            "the",
+            "and",
+            "or",
+            "but",
+            "for",
+            "with",
+            "about",
+            "tell",
+            "me",
+          ].includes(term)
+      );
+
+    const contentLower = combinedContent.toLowerCase();
+    const hasRelevantContent = queryTerms.some((term) =>
+      contentLower.includes(term)
+    );
+
+    console.log("🔍 [FINNY] Query terms:", queryTerms);
+    console.log(
+      "🔍 [FINNY] Does scraped content contain relevant terms?",
+      hasRelevantContent
+    );
+
+    if (hasRelevantContent) {
+      responseMessage += `\n\nSource: ${pageResults[0].url}`;
+    } else {
+      console.log(
+        "⚠️ [FINNY] Scraped content doesn't contain relevant information - not attributing source"
+      );
+      responseMessage += `\n\nNote: Information based on general knowledge`;
+    }
 
     return {
       message: responseMessage,
