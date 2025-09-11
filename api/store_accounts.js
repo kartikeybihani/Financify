@@ -290,37 +290,40 @@ async function handleInvestmentAccountPopulation(req, res, user_id) {
             populatedCount++;
           }
         } else {
-          // First, create the user_items entry
-          const { data: existingItem, error: itemCheckError } = await supabase
-            .from("user_items")
-            .select("item_id")
-            .eq("item_id", investmentItemId)
-            .single();
+          // Ensure a matching user_items row exists for the synthetic SnapTrade item_id
+          const brokerageSlug = (
+            connection.brokerage_name || "Investment Broker"
+          )
+            .toLowerCase()
+            .replace(/\s+/g, "-");
 
-          if (!existingItem && !itemCheckError) {
-            const { error: itemInsertError } = await supabase
-              .from("user_items")
-              .insert({
+          const { error: upsertItemError } = await supabase
+            .from("user_items")
+            .upsert(
+              {
                 user_id: user_id,
                 item_id: investmentItemId,
                 institution_name:
                   connection.brokerage_name || "Investment Broker",
-                institution_id: `snaptrade-${connection.brokerage_name?.toLowerCase()}`,
+                institution_id: `snaptrade-${brokerageSlug}`,
                 has_new_accounts: false,
                 requires_update_mode: false,
                 last_synced_at:
                   connection.last_synced_at || new Date().toISOString(),
-              });
+              },
+              { onConflict: "item_id" }
+            );
 
-            if (itemInsertError) {
-              console.error(
-                `❌ Failed to create user_items entry for investment account:`,
-                itemInsertError
-              );
-              continue; // Skip creating the account if user_items creation fails
-            } else {
-              console.log(`✅ Created user_items entry for investment account`);
-            }
+          if (upsertItemError) {
+            console.error(
+              `❌ Failed to ensure user_items entry for investment account:`,
+              upsertItemError
+            );
+            continue; // Skip creating the account if user_items upsert fails
+          } else {
+            console.log(
+              `✅ Ensured user_items entry exists for investment account item_id ${investmentItemId}`
+            );
           }
 
           // Now create the investment account entry
