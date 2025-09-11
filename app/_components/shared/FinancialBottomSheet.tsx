@@ -15,7 +15,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
-import { addNewBankAccount, fetchInitialData } from "../../utils/plaid";
+import { addNewBankAccount, fetchInitialData } from "../../_utils/plaid";
 import InstitutionSelectionModal from "../modals/InstitutionSelectionModal";
 
 interface CategoryData {

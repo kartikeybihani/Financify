@@ -9,8 +9,8 @@ import {
   StyleSheet,
 } from "react-native";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
-import Goals from "../components/goals/Goals";
-import { useGoals } from "../hooks/useGoals";
+import Goals from "../_components/goals/Goals";
+import { useGoals } from "../_hooks/useGoals";
 
 const styles = StyleSheet.create({
   safeArea: {

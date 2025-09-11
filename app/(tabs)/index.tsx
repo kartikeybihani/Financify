@@ -14,8 +14,8 @@ import {
   Dimensions,
 } from "react-native";
 import { Feather, Ionicons } from "@expo/vector-icons";
-import { styles } from "../styles/homeStyles";
-import { supabase } from "../lib/supabase/supabase";
+import { styles } from "../_styles/homeStyles";
+import { supabase } from "../_lib/supabase/supabase";
 import {
   getUpdateLinkToken,
   openPlaidLink,
@@ -24,21 +24,21 @@ import {
   clearOldPlaidData,
   getItemIds,
   addNewBankAccount,
-} from "../utils/plaid";
+} from "../_utils/plaid";
 import {
   Account,
   Identity,
   Investment,
   Holding,
   Security,
-} from "../types/plaid";
+} from "../_types/plaid";
 import { useRouter } from "expo-router";
-import FinancialBottomSheet from "../components/shared/FinancialBottomSheet";
-import FinancialCard from "../components/shared/FinancialCard";
-import AccountItem from "../components/shared/AccountItem";
+import FinancialBottomSheet from "../_components/shared/FinancialBottomSheet";
+import FinancialCard from "../_components/shared/FinancialCard";
+import AccountItem from "../_components/shared/AccountItem";
 import { LoadingSkeleton } from "../../src/components/LoadingSkeleton";
-import { Goal } from "../types/finny";
-import { useGoals } from "../hooks/useGoals";
+import { Goal } from "../_types/finny";
+import { useGoals } from "../_hooks/useGoals";
 
 if (Platform.OS === "android") {
   UIManager.setLayoutAnimationEnabledExperimental?.(true);

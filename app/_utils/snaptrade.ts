@@ -1,11 +1,6 @@
 // app/utils/snaptrade.ts
-import { createClient } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-
-const supabase = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_ANON_KEY!
-);
+import { supabase } from '../_lib/supabase/supabase';
 
 const BASE_URL = "https://financify-rose.vercel.app";
 
@@ -26,10 +21,19 @@ const getSnaptradeCredentials = async () => {
 
 const setSnaptradeCredentials = async (credentials: any) => {
   try {
-    await AsyncStorage.setItem(SNAPTRADE_CREDENTIALS_KEY, JSON.stringify(credentials));
+    // Store only non-sensitive metadata in AsyncStorage
+    const safeCredentials = {
+      userId: credentials.userId,
+      accountId: credentials.accountId,
+      // DO NOT store userSecret in AsyncStorage - it's stored securely in Vault
+    };
+    
+    await AsyncStorage.setItem(SNAPTRADE_CREDENTIALS_KEY, JSON.stringify(safeCredentials));
     // Set validity timestamp (24 hours from now)
     const validityTimestamp = Date.now() + (24 * 60 * 60 * 1000);
     await AsyncStorage.setItem(SNAPTRADE_CREDENTIALS_VALIDITY_KEY, validityTimestamp.toString());
+    
+    console.log("🔄 Storing SnapTrade credentials (userSecret excluded for security):", safeCredentials);
   } catch (error) {
     console.error('Error setting SnapTrade credentials:', error);
   }
@@ -75,6 +79,64 @@ const areSnaptradeCredentialsValid = async (): Promise<boolean> => {
   }
 };
 
+// === Call SnapTrade API ===
+export const callSnapTradeAPI = async (mode: string, params: any = {}) => {
+  try {
+    console.log(`🔄 Calling SnapTrade API with mode: ${mode}`, params);
+    
+    const res = await fetch(`${BASE_URL}/api/link_tokens`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ 
+        mode: mode,
+        ...params
+      }),
+    });
+    
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || `Failed to call SnapTrade API with mode: ${mode}`);
+    
+    console.log(`✅ SnapTrade API call successful for mode: ${mode}`, data);
+    return data;
+  } catch (error) {
+    console.error(`❌ SnapTrade API call failed for mode: ${mode}:`, error);
+    throw error;
+  }
+};
+
+// === Handle SnapTrade Register ===
+export const handleSnapTradeRegister = async (userId: string) => {
+  try {
+    console.log("🔄 Registering SnapTrade user:", userId);
+    
+    const response = await callSnapTradeAPI("snaptrade", { user_id: userId });
+    
+    console.log("✅ SnapTrade user registered successfully:", response);
+    return response;
+  } catch (error) {
+    console.error("❌ Failed to register SnapTrade user:", error);
+    throw error;
+  }
+};
+
+// === Handle SnapTrade Login ===
+export const handleSnapTradeLogin = async (userId: string, userSecret: string) => {
+  try {
+    console.log("🔄 Logging in SnapTrade user:", userId);
+    
+    const response = await callSnapTradeAPI("snaptrade", { 
+      userId: userId, 
+      userSecret: userSecret 
+    });
+    
+    console.log("✅ SnapTrade user logged in successfully:", response);
+    return response;
+  } catch (error) {
+    console.error("❌ Failed to login SnapTrade user:", error);
+    throw error;
+  }
+};
+
 // === Register SnapTrade User ===
 export const registerSnaptradeUser = async () => {
   const { data: { user } } = await supabase.auth.getUser();
@@ -86,19 +148,7 @@ export const registerSnaptradeUser = async () => {
   
   console.log("🆔 Generated new SnapTrade user ID:", snaptradeUserId);
   
-  const res = await fetch(`${BASE_URL}/api/plaid`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ 
-      mode: "snaptrade_register", 
-      userId: snaptradeUserId
-    }),
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || "Failed to register SnapTrade user");
-  
-  console.log("✅ SnapTrade user registered successfully: ", data);
-  return data;
+  return await handleSnapTradeRegister(snaptradeUserId);
 };
 
 // === Fetch SnapTrade Accounts ===
@@ -144,6 +194,33 @@ export const getStoredSnaptradeCredentials = async () => {
   }
 };
 
+// === Get SnapTrade UserSecret from Vault ===
+export const getSnaptradeUserSecretFromVault = async (userId: string, snaptradeUserId: string, accountId: string) => {
+  try {
+    console.log("🔑 Retrieving userSecret from secure vault...");
+    
+    const { data: userSecret, error: vaultError } = await supabase.rpc(
+      "secure_get_snaptrade_credentials",
+      { 
+        p_user_id: userId,
+        p_snaptrade_user_id: snaptradeUserId,
+        p_account_id: accountId
+      }
+    );
+    
+    if (vaultError || !userSecret) {
+      console.error("Error retrieving SnapTrade userSecret from Vault:", vaultError);
+      throw new Error(vaultError?.message || "UserSecret not found in vault");
+    }
+    
+    console.log("✅ UserSecret retrieved from vault successfully");
+    return userSecret;
+  } catch (error) {
+    console.error("❌ Failed to retrieve userSecret from vault:", error);
+    throw error;
+  }
+};
+
 // === Fetch SnapTrade Accounts Using Stored Credentials ===
 export const fetchSnaptradeAccountsFromStorage = async () => {
   try {
@@ -152,8 +229,15 @@ export const fetchSnaptradeAccountsFromStorage = async () => {
       throw new Error("No valid SnapTrade credentials found in storage");
     }
     
+    // Get the actual authenticated user ID
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error("User not authenticated");
+    
+    // Retrieve userSecret from vault
+    const userSecret = await getSnaptradeUserSecretFromVault(user.id, credentials.userId, credentials.accountId);
+    
     console.log("🔄 Fetching SnapTrade accounts using stored credentials...");
-    const accounts = await fetchSnaptradeAccounts(credentials.userId, credentials.userSecret);
+    const accounts = await fetchSnaptradeAccounts(credentials.userId, userSecret);
     console.log("✅ SnapTrade accounts fetched using stored credentials:", accounts.length);
     return accounts;
   } catch (error) {
@@ -256,8 +340,15 @@ export const fetchSnaptradeHoldingsFromStorage = async (accountId: string) => {
       throw new Error("No valid SnapTrade credentials found in storage");
     }
     
+    // Get the actual authenticated user ID
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error("User not authenticated");
+    
+    // Retrieve userSecret from vault
+    const userSecret = await getSnaptradeUserSecretFromVault(user.id, credentials.userId, credentials.accountId);
+    
     console.log("🔄 Fetching SnapTrade holdings using stored credentials...");
-    const holdings = await fetchSnaptradeHoldings(credentials.userId, credentials.userSecret, accountId);
+    const holdings = await fetchSnaptradeHoldings(credentials.userId, userSecret, accountId);
     console.log("✅ SnapTrade holdings fetched using stored credentials:", holdings.length);
     return holdings;
   } catch (error) {
@@ -300,8 +391,15 @@ export const fetchSnaptradeOptionsFromStorage = async (accountId: string) => {
       throw new Error("No valid SnapTrade credentials found in storage");
     }
     
+    // Get the actual authenticated user ID
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error("User not authenticated");
+    
+    // Retrieve userSecret from vault
+    const userSecret = await getSnaptradeUserSecretFromVault(user.id, credentials.userId, credentials.accountId);
+    
     console.log("🔄 Fetching SnapTrade options using stored credentials...");
-    const options = await fetchSnaptradeOptions(credentials.userId, credentials.userSecret, accountId);
+    const options = await fetchSnaptradeOptions(credentials.userId, userSecret, accountId);
     console.log("✅ SnapTrade options fetched using stored credentials:", options.length);
     return options;
   } catch (error) {
@@ -485,12 +583,18 @@ export const getSnaptradeConnectionsFromDB = async () => {
 
 // Export all functions
 const snaptradeUtils = {
+  // Core API functions
+  callSnapTradeAPI,
+  handleSnapTradeRegister,
+  handleSnapTradeLogin,
+  
   // Registration and connection management
   registerSnaptradeUser,
   storeSnaptradeCredentials,
   hasSnaptradeConnection,
   clearSnaptradeConnection,
   getStoredSnaptradeCredentials,
+  getSnaptradeUserSecretFromVault,
   
   // Account operations
   fetchSnaptradeAccounts,

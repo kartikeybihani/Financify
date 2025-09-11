@@ -1,6 +1,6 @@
 import { Platform } from "react-native";
 import * as AppleAuthentication from "expo-apple-authentication";
-import { supabase } from "../lib/supabase/supabase";
+import { supabase } from "../_lib/supabase/supabase";
 
 const Auth = {
   AppleSignIn: () => {

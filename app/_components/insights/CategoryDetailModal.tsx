@@ -1,7 +1,7 @@
 import React from "react";
 import { Modal, View, Text, TouchableOpacity, ScrollView } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { styles } from "../../styles/insightsStyles";
+import { styles } from "../../_styles/insightsStyles";
 
 interface CategoryData {
   amount: number;

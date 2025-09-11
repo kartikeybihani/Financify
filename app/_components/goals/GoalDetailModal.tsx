@@ -16,7 +16,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import DateTimePicker from "@react-native-community/datetimepicker";
-import { Goal } from "../../types/finny";
+import { Goal } from "../../_types/finny";
 import {
   getCategoryDisplayName,
   getCategoryIcon,

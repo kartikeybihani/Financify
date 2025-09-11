@@ -30,43 +30,62 @@ export default async function handler(req, res) {
 
   try {
     // ------------------------------
-    // SNAPTRADE MODE
+    // SNAPTRADE MODE (handles both register and login)
     // ------------------------------
     if (mode === "snaptrade") {
-      if (!user_id) {
-        return res.status(400).json({ error: "Missing user_id" });
+      // If userId and userSecret are provided, this is a login request
+      if (userId && userSecret) {
+        try {
+          // Login the user to get redirect URI
+          const loginResponse =
+            await snaptrade.authentication.loginSnapTradeUser({
+              userId: userId,
+              userSecret: userSecret,
+              broker: "FIDELITY",
+            });
+          console.log("✅ Snaptrade Login Response: ", loginResponse);
+
+          return res.status(200).json({
+            redirectURI: loginResponse.data.redirectURI,
+            sessionId: loginResponse.data.sessionId,
+            environment: isSandbox ? "sandbox" : "production",
+          });
+        } catch (e) {
+          console.error("Snaptrade login error:", e);
+          return res
+            .status(500)
+            .json({ error: e.message || "Snaptrade login failed" });
+        }
       }
 
-      try {
-        // First register the user
-        const registerResponse =
-          await snaptrade.authentication.registerSnapTradeUser({
-            userId: user_id,
-          });
-        console.log("✅ Snaptrade Registration Response: ", registerResponse);
+      // If only user_id is provided, this is a registration request
+      if (user_id) {
+        try {
+          // Register the user
+          const registerResponse =
+            await snaptrade.authentication.registerSnapTradeUser({
+              userId: user_id,
+            });
+          console.log("✅ Snaptrade Registration Response: ", registerResponse);
 
-        // Then login the user to get redirect URI
-        const loginResponse = await snaptrade.authentication.loginSnapTradeUser(
-          {
+          return res.status(200).json({
             userId: registerResponse.data.userId,
             userSecret: registerResponse.data.userSecret,
-            broker: "FIDELITY",
-          }
-        );
-        console.log("✅ Snaptrade Login Response: ", loginResponse);
-
-        return res.status(200).json({
-          snaptrade: registerResponse.data,
-          redirectURI: loginResponse.data.redirectURI,
-          sessionId: loginResponse.data.sessionId,
-          environment: isSandbox ? "sandbox" : "production",
-        });
-      } catch (e) {
-        console.error("Snaptrade error:", e);
-        return res
-          .status(500)
-          .json({ error: e.message || "Snaptrade registration/login failed" });
+            environment: isSandbox ? "sandbox" : "production",
+          });
+        } catch (e) {
+          console.error("Snaptrade registration error:", e);
+          return res
+            .status(500)
+            .json({ error: e.message || "Snaptrade registration failed" });
+        }
       }
+
+      // If neither condition is met, return error
+      return res.status(400).json({
+        error:
+          "Missing required parameters. Provide either user_id for registration or userId+userSecret for login",
+      });
     }
 
     // ------------------------------

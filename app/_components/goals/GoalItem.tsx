@@ -1,8 +1,8 @@
 import React from "react";
 import { View, Text, TouchableOpacity, Animated } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { styles } from "../../styles/goalsStyles";
-import { GoalItemProps } from "../../types/goalsTypes";
+import { styles } from "../../_styles/goalsStyles";
+import { GoalItemProps } from "../../_types/goalsTypes";
 import {
   getCategoryIcon,
   getCategoryColor,

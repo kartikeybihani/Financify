@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { ChatMessage, Goal } from '../types/finny';
-import finnyConstants from '../constants/finny';
+import { ChatMessage, Goal } from '../_types/finny';
+import finnyConstants from '../_constants/finny';
 
 // Utility to split messages for chat display
 function splitIntoMessages(text: string): string[] {

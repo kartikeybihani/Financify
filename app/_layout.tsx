@@ -9,7 +9,7 @@ import { useFonts } from "expo-font";
 import { useEffect, useState } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import "react-native-reanimated";
-import AuthProvider, { useAuth } from "./contexts/AuthContext";
+import AuthProvider, { useAuth } from "./_contexts/AuthContext";
 import { runStorageMigrationV2 } from "../src/utils/migrate";
 
 SplashScreen.preventAutoHideAsync();

@@ -14,7 +14,7 @@ import {
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import { supabase } from "../lib/supabase/supabase";
+import { supabase } from "../_lib/supabase/supabase";
 
 const options = [
   {

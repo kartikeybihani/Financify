@@ -23,14 +23,14 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
 import { AntDesign } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import { ChatMessageComponent } from "../components/chat/ChatMessage";
-import { ChatMessage } from "../types/finny";
-import { NudgeGrid } from "../components/chat/NudgeGrid";
-import { useChat } from "../hooks/useChat";
-import { useGoals } from "../hooks/useGoals";
-import styles from "../styles/chatStyles";
-import TypingIndicator from "../components/chat/TypingIndicator";
-import ConversationStartersModal from "../components/chat/ConversationStartersModal";
+import { ChatMessageComponent } from "../_components/chat/ChatMessage";
+import { ChatMessage } from "../_types/finny";
+import { NudgeGrid } from "../_components/chat/NudgeGrid";
+import { useChat } from "../_hooks/useChat";
+import { useGoals } from "../_hooks/useGoals";
+import styles from "../_styles/chatStyles";
+import TypingIndicator from "../_components/chat/TypingIndicator";
+import ConversationStartersModal from "../_components/chat/ConversationStartersModal";
 
 interface Suggestion {
   text: string;

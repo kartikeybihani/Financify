@@ -15,7 +15,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
-import { AddGoalModalProps, GoalInput } from "../../types/addGoalModalTypes";
+import { AddGoalModalProps, GoalInput } from "../../_types/addGoalModalTypes";
 import { LinearGradient } from "expo-linear-gradient";
 import {
   getCategoryOptions,

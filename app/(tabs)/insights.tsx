@@ -16,19 +16,19 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 
-import { styles } from "../styles/insightsStyles";
-import CategoryGrid from "../components/insights/CategoryGrid";
-import CategoryDetailModal from "../components/insights/CategoryDetailModal";
-import FilterModal from "../components/insights/FilterModal";
+import { styles } from "../_styles/insightsStyles";
+import CategoryGrid from "../_components/insights/CategoryGrid";
+import CategoryDetailModal from "../_components/insights/CategoryDetailModal";
+import FilterModal from "../_components/insights/FilterModal";
 import EnhancedFilterModal, {
   FilterOptions,
   Account,
-} from "../components/EnhancedFilterModal";
-import TransactionDetailModal from "../components/transactions/TransactionDetailModal";
-import ReAuthBanner from "../components/ui/ReAuthBanner";
-import RecurringTransactionsCard from "../components/insights/RecurringTransactionsCard";
-import InsightsLoadingSkeleton from "../components/insights/InsightsLoadingSkeleton";
-import { supabase } from "../lib/supabase/supabase";
+} from "../_components/EnhancedFilterModal";
+import TransactionDetailModal from "../_components/transactions/TransactionDetailModal";
+import ReAuthBanner from "../_components/ui/ReAuthBanner";
+import RecurringTransactionsCard from "../_components/insights/RecurringTransactionsCard";
+import InsightsLoadingSkeleton from "../_components/insights/InsightsLoadingSkeleton";
+import { supabase } from "../_lib/supabase/supabase";
 import {
   fetchInitialData,
   getPrimaryItemId,
@@ -45,7 +45,7 @@ import {
   getFilteredTransactions,
   getFilteredTransactionsCount,
   getUserAccountsForFilter,
-} from "../utils/plaid";
+} from "../_utils/plaid";
 
 const BASE_URL = "https://financify-rose.vercel.app";
 import {

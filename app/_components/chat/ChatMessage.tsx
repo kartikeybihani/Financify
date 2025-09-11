@@ -10,7 +10,7 @@ import {
   Easing,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
-import { splitIntoMessages } from "../../hooks/useChat";
+import { splitIntoMessages } from "../../_hooks/useChat";
 import { BlurView } from "expo-blur";
 
 // Enable LayoutAnimation for Android

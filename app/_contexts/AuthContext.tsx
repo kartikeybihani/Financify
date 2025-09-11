@@ -2,7 +2,7 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { Session } from "@supabase/supabase-js";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { supabase } from "../lib/supabase/supabase";
+import { supabase } from "../_lib/supabase/supabase";
 
 type AuthContextType = {
   session: Session | null;

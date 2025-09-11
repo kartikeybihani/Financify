@@ -17,11 +17,11 @@ import GoalNotification from "./GoalNotification";
 import AddGoalModal from "./AddGoalModal";
 import GoalItem from "./GoalItem";
 import GoalDetailModal from "./GoalDetailModal";
-import { styles } from "../../styles/goalsStyles";
-import { useGoals } from "../../hooks/useGoals";
-import { Goal } from "../../types/finny";
-import { GoalInput } from "../../types/addGoalModalTypes";
-import { GoalsProps, GoalsState } from "../../types/goalsTypes";
+import { styles } from "../../_styles/goalsStyles";
+import { useGoals } from "../../_hooks/useGoals";
+import { Goal } from "../../_types/finny";
+import { GoalInput } from "../../_types/addGoalModalTypes";
+import { GoalsProps, GoalsState } from "../../_types/goalsTypes";
 import { useRouter } from "expo-router";
 
 // Simple ID generator
