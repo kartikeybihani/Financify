@@ -8,52 +8,53 @@ const supabase = createClient(
 
 // Facts pipeline types and constants
 const DEFAULT_TTLS = {
+  // Annual limits - long TTL (180d) as they change once per year
   ira_limit: 15552000, // 180d
-  "401k_limit": 15552000,
-  estate_exemption: 15552000,
-  gift_exclusion: 15552000,
+  "401k_limit": 15552000, // 180d
+  estate_exemption: 15552000, // 180d
+  gift_exclusion: 15552000, // 180d
 
-  // Chase cards
-  card_chase_sapphire_preferred: 2592000, // 30d
-  card_chase_sapphire_reserve: 2592000,
-  card_chase_sapphire_general: 2592000,
-  card_chase_ultimate_rewards: 2592000,
-  card_chase_freedom_unlimited: 2592000,
-  card_chase_freedom_flex: 2592000,
-  card_chase_freedom_general: 2592000,
-  card_chase_general: 2592000,
+  // Chase cards - shorter TTL (15d) as issuers tweak benefits frequently
+  card_chase_sapphire_preferred: 1296000, // 15d
+  card_chase_sapphire_reserve: 1296000, // 15d
+  card_chase_sapphire_general: 1296000, // 15d
+  card_chase_ultimate_rewards: 1296000, // 15d
+  card_chase_freedom_unlimited: 1296000, // 15d
+  card_chase_freedom_flex: 1296000, // 15d
+  card_chase_freedom_general: 1296000, // 15d
+  card_chase_general: 1296000, // 15d
 
-  // Amex cards
-  card_amex_platinum: 2592000,
-  card_amex_gold: 2592000,
-  card_amex_green: 2592000,
-  card_amex_blue_cash: 2592000,
-  card_amex_delta: 2592000,
-  card_amex_hilton: 2592000,
-  card_amex_marriott: 2592000,
-  card_amex_general: 2592000,
+  // Amex cards - shorter TTL (15d)
+  card_amex_platinum: 1296000, // 15d
+  card_amex_gold: 1296000, // 15d
+  card_amex_green: 1296000, // 15d
+  card_amex_blue_cash: 1296000, // 15d
+  card_amex_delta: 1296000, // 15d
+  card_amex_hilton: 1296000, // 15d
+  card_amex_marriott: 1296000, // 15d
+  card_amex_general: 1296000, // 15d
 
-  // Wells Fargo cards
-  card_wells_fargo_active_cash: 2592000,
-  card_wells_fargo_propel: 2592000,
-  card_wells_fargo_autograph: 2592000,
-  card_wells_fargo_general: 2592000,
+  // Wells Fargo cards - shorter TTL (15d)
+  card_wells_fargo_active_cash: 1296000, // 15d
+  card_wells_fargo_propel: 1296000, // 15d
+  card_wells_fargo_autograph: 1296000, // 15d
+  card_wells_fargo_general: 1296000, // 15d
 
-  // Other major banks
-  card_citi_double_cash: 2592000,
-  card_citi_premier: 2592000,
-  card_citi_general: 2592000,
-  card_capital_one_venture: 2592000,
-  card_capital_one_quicksilver: 2592000,
-  card_capital_one_general: 2592000,
-  card_bank_of_america_general: 2592000,
-  card_discover_general: 2592000,
-  card_us_bank_general: 2592000,
+  // Other major banks - shorter TTL (15d)
+  card_citi_double_cash: 1296000, // 15d
+  card_citi_premier: 1296000, // 15d
+  card_citi_general: 1296000, // 15d
+  card_capital_one_venture: 1296000, // 15d
+  card_capital_one_quicksilver: 1296000, // 15d
+  card_capital_one_general: 1296000, // 15d
+  card_bank_of_america_general: 1296000, // 15d
+  card_discover_general: 1296000, // 15d
+  card_us_bank_general: 1296000, // 15d
 
   // Other
-  card_bilt_partners: 2592000,
-  card_comparison: 1209600, // 14d - shorter for comparisons
-  card_general: 2592000,
+  card_bilt_partners: 1296000, // 15d
+  card_comparison: 604800, // 7d - shorter for comparisons
+  card_general: 1296000, // 15d
   generic: 1209600, // 14d
 };
 
@@ -95,8 +96,8 @@ const SOURCE_MAPPING = {
     "https://account.chase.com/sapphire",
   ],
   card_chase_ultimate_rewards: [
-    "https://creditcards.chase.com/ultimate-rewards",
     "https://www.chase.com/personal/credit-cards/education/basics/how-chase-ultimate-rewards-works",
+    "https://creditcards.chase.com/ultimate-rewards",
   ],
   card_chase_freedom_unlimited: [
     "https://creditcards.chase.com/cash-back-credit-cards/freedom-unlimited",
@@ -139,6 +140,7 @@ const SOURCE_MAPPING = {
   card_wells_fargo_active_cash: [
     "https://creditcards.wellsfargo.com/active-cash-credit-card",
     "https://www.wellsfargo.com/credit-cards/active-cash",
+    "https://www.wellsfargo.com/credit-cards/active-cash/guide-to-benefits",
   ],
   card_wells_fargo_propel: [
     "https://creditcards.wellsfargo.com/propel-american-express-card",
@@ -179,12 +181,26 @@ const SOURCE_MAPPING = {
   ],
   card_general: ["https://creditcards.chase.com/"],
 
-  // Tax and retirement limits
+  // Tax and retirement limits - 2024 (year-specific newsroom pages)
+  ira_limit_2024: [
+    "https://www.irs.gov/newsroom/401k-limit-increases-to-23000-for-2024-ira-limit-rises-to-7000",
+  ],
+  "401k_limit_2024": [
+    "https://www.irs.gov/newsroom/401k-limit-increases-to-23000-for-2024-ira-limit-rises-to-7000",
+  ],
+  estate_exemption_2024: [
+    "https://www.irs.gov/newsroom/irs-releases-tax-inflation-adjustments-for-tax-year-2024",
+  ],
+  gift_exclusion_2024: [
+    "https://www.irs.gov/newsroom/irs-releases-tax-inflation-adjustments-for-tax-year-2024",
+  ],
+
+  // Tax and retirement limits - 2025 (year-specific newsroom pages)
   ira_limit_2025: [
-    "https://www.irs.gov/retirement-plans/plan-participant-employee/retirement-topics-ira-contribution-limits",
+    "https://www.irs.gov/newsroom/401k-limit-increases-to-23500-for-2025-ira-limit-remains-7000",
   ],
   "401k_limit_2025": [
-    "https://www.irs.gov/retirement-plans/plan-participant-employee/retirement-topics-401k-and-profit-sharing-plan-contribution-limits",
+    "https://www.irs.gov/newsroom/401k-limit-increases-to-23500-for-2025-ira-limit-remains-7000",
   ],
   estate_exemption_2025: [
     "https://www.irs.gov/newsroom/irs-releases-tax-inflation-adjustments-for-tax-year-2025",
@@ -195,6 +211,245 @@ const SOURCE_MAPPING = {
 };
 
 // Helper functions for facts pipeline
+function cleanHtmlContent(html) {
+  if (!html || typeof html !== "string") return "";
+
+  // Remove script and style tags completely
+  let cleaned = html.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "");
+  cleaned = cleaned.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "");
+
+  // Remove HTML tags but preserve text content
+  cleaned = cleaned.replace(/<[^>]*>/g, " ");
+
+  // Decode HTML entities
+  cleaned = cleaned.replace(/&nbsp;/g, " ");
+  cleaned = cleaned.replace(/&amp;/g, "&");
+  cleaned = cleaned.replace(/&lt;/g, "<");
+  cleaned = cleaned.replace(/&gt;/g, ">");
+  cleaned = cleaned.replace(/&quot;/g, '"');
+  cleaned = cleaned.replace(/&#39;/g, "'");
+
+  // Clean up whitespace
+  cleaned = cleaned.replace(/\s+/g, " ").trim();
+
+  // Limit length to prevent token overflow
+  return cleaned.slice(0, 100000);
+}
+
+async function performConstrainedSearch(query, brand) {
+  console.log(
+    `🔍 [FINNY] Performing constrained search for: ${query} on ${brand}`
+  );
+
+  // Map brands to their official domains
+  const brandDomains = {
+    chase: "chase.com",
+    "wells fargo": "wellsfargo.com",
+    wells: "wellsfargo.com",
+    amex: "americanexpress.com",
+    "american express": "americanexpress.com",
+    citi: "citi.com",
+    "capital one": "capitalone.com",
+    "bank of america": "bankofamerica.com",
+    bofa: "bankofamerica.com",
+    discover: "discover.com",
+    "us bank": "usbank.com",
+  };
+
+  const domain = brandDomains[brand.toLowerCase()];
+  if (!domain) {
+    console.log(`❌ [FINNY] No domain mapping for brand: ${brand}`);
+    return null;
+  }
+
+  // Construct search query
+  const searchQuery = `site:${domain} "${query}" benefits`;
+  console.log(`🔍 [FINNY] Search query: ${searchQuery}`);
+
+  // For now, return a constructed URL based on the brand and query
+  // In a real implementation, you'd use a search API like Google Custom Search
+  let fallbackUrl = null;
+
+  if (brand.toLowerCase().includes("chase")) {
+    fallbackUrl = `https://creditcards.chase.com/`;
+  } else if (brand.toLowerCase().includes("wells")) {
+    fallbackUrl = `https://creditcards.wellsfargo.com/`;
+  } else if (
+    brand.toLowerCase().includes("amex") ||
+    brand.toLowerCase().includes("american express")
+  ) {
+    fallbackUrl = `https://www.americanexpress.com/us/credit-cards/`;
+  } else if (brand.toLowerCase().includes("citi")) {
+    fallbackUrl = `https://www.citi.com/credit-cards/`;
+  } else if (brand.toLowerCase().includes("capital one")) {
+    fallbackUrl = `https://www.capitalone.com/credit-cards/`;
+  } else if (
+    brand.toLowerCase().includes("bank of america") ||
+    brand.toLowerCase().includes("bofa")
+  ) {
+    fallbackUrl = `https://www.bankofamerica.com/credit-cards/`;
+  } else if (brand.toLowerCase().includes("discover")) {
+    fallbackUrl = `https://www.discover.com/credit-cards/`;
+  } else if (brand.toLowerCase().includes("us bank")) {
+    fallbackUrl = `https://www.usbank.com/credit-cards/`;
+  }
+
+  if (fallbackUrl) {
+    console.log(`✅ [FINNY] Using fallback URL: ${fallbackUrl}`);
+    return fallbackUrl;
+  }
+
+  return null;
+}
+
+function isComparisonQuery(text) {
+  const t = text.toLowerCase();
+  return (
+    t.includes("difference") ||
+    t.includes("compare") ||
+    t.includes("vs") ||
+    t.includes("versus") ||
+    t.includes("between") ||
+    (t.includes("2024") && t.includes("2025")) ||
+    (t.includes("2025") && t.includes("2024"))
+  );
+}
+
+function extractYearsFromQuery(text) {
+  const years = [];
+  const matches = text.match(/(20\d{2})/g);
+  if (matches) {
+    years.push(...matches.map((y) => parseInt(y, 10)));
+  }
+  return [...new Set(years)].sort(); // Remove duplicates and sort
+}
+
+async function handleComparisonQuery(text, entities) {
+  console.log("🔍 [FINNY] Handling comparison query:", text);
+
+  const years = extractYearsFromQuery(text);
+  if (years.length < 2) {
+    console.log("❌ [FINNY] Comparison query but less than 2 years found");
+    return null;
+  }
+
+  const lowerText = text.toLowerCase();
+  let limitType = null;
+
+  if (lowerText.includes("ira")) {
+    limitType = "ira_limit";
+  } else if (lowerText.includes("401k") || lowerText.includes("401(k)")) {
+    limitType = "401k_limit";
+  } else if (lowerText.includes("estate")) {
+    limitType = "estate_exemption";
+  } else if (lowerText.includes("gift")) {
+    limitType = "gift_exclusion";
+  }
+
+  if (!limitType) {
+    console.log("❌ [FINNY] Comparison query but no limit type identified");
+    return null;
+  }
+
+  console.log(`🔄 [FINNY] Comparing ${limitType} for years:`, years);
+
+  // Fetch data for both years
+  const yearData = {};
+  for (const year of years) {
+    try {
+      const key = keyFor(limitType, year);
+      const { data: cached } = await supabase
+        .from("facts_cache")
+        .select("*")
+        .eq("key", key)
+        .maybeSingle();
+
+      if (cached && cached.value_json && cached.value_json.value) {
+        yearData[year] = {
+          value: cached.value_json.value,
+          source: cached.source_url,
+          label: cached.value_json.label,
+        };
+        console.log(
+          `✅ [FINNY] Found cached data for ${year}:`,
+          yearData[year].value
+        );
+      } else {
+        // Fetch fresh data if not cached
+        console.log(`🔄 [FINNY] Fetching fresh data for ${year}`);
+        const result = await handleAskFactFresh(
+          `${limitType.replace("_", " ")} ${year}`,
+          entities
+        );
+        if (result && !result.error) {
+          // Try to extract value from the result
+          const valueMatch = result.message.match(/\$([\d,]+)/);
+          if (valueMatch) {
+            yearData[year] = {
+              value: parseInt(valueMatch[1].replace(/,/g, ""), 10),
+              source: result.message.includes("Source:")
+                ? result.message.split("Source:")[1].trim()
+                : "Unknown",
+              label: result.message.split(":")[0] || `${limitType} ${year}`,
+            };
+            console.log(
+              `✅ [FINNY] Extracted fresh data for ${year}:`,
+              yearData[year].value
+            );
+          }
+        }
+      }
+    } catch (error) {
+      console.error(`❌ [FINNY] Error fetching data for ${year}:`, error);
+    }
+  }
+
+  if (Object.keys(yearData).length < 2) {
+    console.log("❌ [FINNY] Could not fetch data for comparison");
+    return null;
+  }
+
+  // Compute the difference
+  const year1 = years[0];
+  const year2 = years[1];
+  const value1 = yearData[year1]?.value;
+  const value2 = yearData[year2]?.value;
+
+  if (typeof value1 !== "number" || typeof value2 !== "number") {
+    console.log("❌ [FINNY] Non-numeric values for comparison");
+    return null;
+  }
+
+  const difference = value2 - value1;
+  const differenceText =
+    difference === 0
+      ? "$0"
+      : difference > 0
+      ? `+$${difference.toLocaleString()}`
+      : `-$${Math.abs(difference).toLocaleString()}`;
+
+  const comparisonMessage = `${limitType
+    .replace("_", " ")
+    .toUpperCase()}: $${value1.toLocaleString()} in ${year1} and $${value2.toLocaleString()} in ${year2} → difference ${differenceText}.`;
+
+  // Add sources
+  const sources = [];
+  if (yearData[year1]?.source)
+    sources.push(`[${year1} source](${yearData[year1].source})`);
+  if (yearData[year2]?.source)
+    sources.push(`[${year2} source](${yearData[year2].source})`);
+
+  return {
+    message:
+      comparisonMessage +
+      (sources.length > 0 ? `\n\nSources: ${sources.join(", ")}` : ""),
+    type: "assistant",
+    intent: "ask_fact_fresh",
+    cached: false,
+    comparison: true,
+  };
+}
+
 function inferTopic(text, entities) {
   const t = `${text} ${(entities || []).join(" ")}`.toLowerCase();
   const m = t.match(/(20\d{2})/);
@@ -270,6 +525,49 @@ function inferTopic(text, entities) {
     if (t.includes("marriott"))
       return { kind: "card_amex_marriott", year: null };
     return { kind: "card_amex_general", year: null };
+  }
+
+  // Wells Fargo cards - comprehensive detection
+  if (t.includes("wells fargo") || t.includes("wells")) {
+    if (t.includes("active cash"))
+      return { kind: "card_wells_fargo_active_cash", year: null };
+    if (t.includes("propel"))
+      return { kind: "card_wells_fargo_propel", year: null };
+    if (t.includes("autograph"))
+      return { kind: "card_wells_fargo_autograph", year: null };
+    return { kind: "card_wells_fargo_general", year: null };
+  }
+
+  // Citi cards - comprehensive detection
+  if (t.includes("citi")) {
+    if (t.includes("double cash"))
+      return { kind: "card_citi_double_cash", year: null };
+    if (t.includes("premier")) return { kind: "card_citi_premier", year: null };
+    return { kind: "card_citi_general", year: null };
+  }
+
+  // Capital One cards - comprehensive detection
+  if (t.includes("capital one")) {
+    if (t.includes("venture"))
+      return { kind: "card_capital_one_venture", year: null };
+    if (t.includes("quicksilver"))
+      return { kind: "card_capital_one_quicksilver", year: null };
+    return { kind: "card_capital_one_general", year: null };
+  }
+
+  // Bank of America cards
+  if (t.includes("bank of america") || t.includes("bofa")) {
+    return { kind: "card_bank_of_america_general", year: null };
+  }
+
+  // Discover cards
+  if (t.includes("discover")) {
+    return { kind: "card_discover_general", year: null };
+  }
+
+  // US Bank cards
+  if (t.includes("us bank") || t.includes("u.s. bank")) {
+    return { kind: "card_us_bank_general", year: null };
   }
 
   // General credit cards
@@ -836,6 +1134,18 @@ async function handleAskFactFresh(message, context) {
       };
     }
 
+    // Check if this is a comparison query and handle it specially
+    if (isComparisonQuery(text)) {
+      console.log(
+        "🔄 [FINNY] Detected comparison query, handling with math logic"
+      );
+      const comparisonResult = await handleComparisonQuery(text, entities);
+      if (comparisonResult) {
+        return comparisonResult;
+      }
+      // If comparison handling failed, fall through to regular fact lookup
+    }
+
     const { kind, year } = inferTopic(text, entities);
     const key = keyFor(kind, year);
     const ttl = DEFAULT_TTLS[kind];
@@ -869,9 +1179,16 @@ async function handleAskFactFresh(message, context) {
           const src = cached.source_url;
 
           // Create comprehensive cached response
-          let responseMessage = `${label}: ${
-            typeof v === "number" ? `$${v.toLocaleString()}` : v
-          }`;
+          let responseMessage = `${label}`;
+
+          // Only add value if it's not null and meaningful
+          if (v !== null && v !== undefined) {
+            if (typeof v === "number") {
+              responseMessage += `: $${v.toLocaleString()}`;
+            } else if (typeof v === "string" && v.trim()) {
+              responseMessage += `: ${v}`;
+            }
+          }
 
           if (
             explanation &&
@@ -916,42 +1233,53 @@ async function handleAskFactFresh(message, context) {
       console.log(
         "🔍 [FINNY] No known sources for:",
         key,
-        "- attempting fallback search"
+        "- attempting constrained search fallback"
       );
 
-      // Fallback: construct reasonable URLs based on the topic
-      if (kind.startsWith("card_chase")) {
-        urls = ["https://creditcards.chase.com/"];
-      } else if (kind.startsWith("card_amex")) {
-        urls = ["https://www.americanexpress.com/us/credit-cards/"];
-      } else if (kind.startsWith("card_wells_fargo")) {
-        urls = ["https://creditcards.wellsfargo.com/"];
-      } else if (kind.startsWith("card_citi")) {
-        urls = ["https://www.citi.com/credit-cards/"];
-      } else if (kind.startsWith("card_capital_one")) {
-        urls = ["https://www.capitalone.com/credit-cards/"];
-      } else if (kind.startsWith("card_bank_of_america")) {
-        urls = ["https://www.bankofamerica.com/credit-cards/"];
-      } else if (kind.startsWith("card_discover")) {
-        urls = ["https://www.discover.com/credit-cards/"];
-      } else if (kind.startsWith("card_us_bank")) {
-        urls = ["https://www.usbank.com/credit-cards/"];
-      } else if (kind.startsWith("card_bilt")) {
-        urls = ["https://www.biltrewards.com/rewards/travel"];
-      } else if (kind.includes("limit") && year) {
-        urls = ["https://www.irs.gov/retirement-plans"];
-      } else {
-        console.log("❌ [FINNY] No fallback sources available for:", key);
-        return {
-          message:
-            "I couldn't verify that from an official source yet. Want me to try a broader search?",
-          type: "assistant",
-          intent: "ask_fact_fresh",
-          error: "NO_KNOWN_SOURCE",
-        };
+      // Try constrained search fallback for card queries
+      if (kind.startsWith("card_")) {
+        const brand = kind.replace("card_", "").replace(/_/g, " ");
+        const fallbackUrl = await performConstrainedSearch(text, brand);
+        if (fallbackUrl) {
+          urls = [fallbackUrl];
+          console.log("✅ [FINNY] Using constrained search fallback:", urls);
+        }
       }
 
-      console.log("✅ [FINNY] Using fallback sources:", urls);
+      // If still no URLs, use generic fallbacks
+      if (urls.length === 0) {
+        if (kind.startsWith("card_chase")) {
+          urls = ["https://creditcards.chase.com/"];
+        } else if (kind.startsWith("card_amex")) {
+          urls = ["https://www.americanexpress.com/us/credit-cards/"];
+        } else if (kind.startsWith("card_wells_fargo")) {
+          urls = ["https://creditcards.wellsfargo.com/"];
+        } else if (kind.startsWith("card_citi")) {
+          urls = ["https://www.citi.com/credit-cards/"];
+        } else if (kind.startsWith("card_capital_one")) {
+          urls = ["https://www.capitalone.com/credit-cards/"];
+        } else if (kind.startsWith("card_bank_of_america")) {
+          urls = ["https://www.bankofamerica.com/credit-cards/"];
+        } else if (kind.startsWith("card_discover")) {
+          urls = ["https://www.discover.com/credit-cards/"];
+        } else if (kind.startsWith("card_us_bank")) {
+          urls = ["https://www.usbank.com/credit-cards/"];
+        } else if (kind.startsWith("card_bilt")) {
+          urls = ["https://www.biltrewards.com/rewards/travel"];
+        } else if (kind.includes("limit") && year) {
+          urls = ["https://www.irs.gov/retirement-plans"];
+        } else {
+          console.log("❌ [FINNY] No fallback sources available for:", key);
+          return {
+            message:
+              "I couldn't verify that from an official source yet. Want me to try a broader search?",
+            type: "assistant",
+            intent: "ask_fact_fresh",
+            error: "NO_KNOWN_SOURCE",
+          };
+        }
+        console.log("✅ [FINNY] Using generic fallback sources:", urls);
+      }
     }
 
     // Filter to only allowed URLs
@@ -1023,13 +1351,12 @@ async function handleAskFactFresh(message, context) {
 
     console.log(`✅ [FINNY] Successfully fetched ${pageResults.length} pages`);
 
-    // Combine all page content for comprehensive extraction
+    // Combine all page content for comprehensive extraction with HTML cleaning
     const combinedContent = pageResults
       .map(
         (page) =>
-          `=== PAGE ${page.index}: ${page.url} ===\n${page.html.slice(
-            0,
-            50000
+          `=== PAGE ${page.index}: ${page.url} ===\n${cleanHtmlContent(
+            page.html
           )}`
       )
       .join("\n\n");
@@ -1078,7 +1405,18 @@ For estate tax questions:
 - State-specific rules if applicable
 - Effective dates and changes
 
-Make your explanation DETAILED and PRACTICAL - users want comprehensive information with specific dollar amounts, percentages, and actionable details. Write 4-6 sentences minimum.`,
+IMPORTANT: For the "value" field:
+- Use a NUMBER for specific dollar amounts (limits, fees, credits)
+- Use NULL for program benefits, general information, or when there's no single key number
+- Use a STRING for non-numeric values like "1.25x" or "Varies"
+
+RESPONSE FORMAT:
+- Provide a CONCISE one-line answer with the key fact
+- Keep detailed explanations brief and focused
+- For finance facts, one clean line + source builds trust without clutter
+- Only expand with details when specifically requested
+
+Make your explanation PRACTICAL and CONCISE - users want accurate information quickly. Write 1-2 sentences for the main answer, with additional details only if essential.`,
           },
           {
             role: "user",
@@ -1105,8 +1443,9 @@ Extract comprehensive information to fully answer the question. Use information 
                   description: "Clear, specific title for the information",
                 },
                 value: {
-                  type: ["string", "number"],
-                  description: "Primary key fact or amount",
+                  type: ["string", "number", "null"],
+                  description:
+                    "Primary key fact or amount, or null if not applicable",
                 },
                 unit: {
                   type: ["string", "null"],
@@ -1321,9 +1660,16 @@ Extract comprehensive information to fully answer the question. Use information 
     const explanation = value_json.explanation;
 
     // Create a more comprehensive response
-    let responseMessage = `${label}: ${
-      typeof v === "number" ? `$${v.toLocaleString()}` : v
-    }`;
+    let responseMessage = `${label}`;
+
+    // Only add value if it's not null and meaningful
+    if (v !== null && v !== undefined) {
+      if (typeof v === "number") {
+        responseMessage += `: $${v.toLocaleString()}`;
+      } else if (typeof v === "string" && v.trim()) {
+        responseMessage += `: ${v}`;
+      }
+    }
 
     // Add explanation if it's informative and different from the label
     if (
