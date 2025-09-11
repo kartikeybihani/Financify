@@ -1229,6 +1229,7 @@ async function handleAskFactFresh(message, context) {
 
     // 2) Get source URLs - with comprehensive coverage
     let urls = sourcesFor(kind, year);
+    console.log("🔍 [FINNY] Initial URLs for", key, ":", urls);
     if (urls.length === 0) {
       console.log(
         "🔍 [FINNY] No known sources for:",
@@ -1243,6 +1244,8 @@ async function handleAskFactFresh(message, context) {
         if (fallbackUrl) {
           urls = [fallbackUrl];
           console.log("✅ [FINNY] Using constrained search fallback:", urls);
+        } else {
+          console.log("❌ [FINNY] Constrained search failed for brand:", brand);
         }
       }
 
@@ -1363,6 +1366,10 @@ async function handleAskFactFresh(message, context) {
 
     // 4) Extract fact using structured outputs
     console.log("🤖 [FINNY] Extracting fact with AI...");
+    console.log(
+      "🔍 [FINNY] Pages being analyzed:",
+      pageResults.map((p) => ({ url: p.url, contentLength: p.html.length }))
+    );
     const resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
       headers: {
