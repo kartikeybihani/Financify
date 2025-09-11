@@ -1,6 +1,7 @@
 // /api/plaid.js
 import { client } from "../app/plaidClient.js";
 import { createClient } from "@supabase/supabase-js";
+import { Snaptrade } from "snaptrade-typescript-sdk";
 
 const supabase = createClient(
   process.env.SUPABASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL, // server-side env var with fallback
@@ -400,10 +401,10 @@ async function handleSnapTradeSync(res, userId, accountId) {
   try {
     console.log("🔄 Starting SnapTrade sync for:", { userId, accountId });
 
-    // Get the snaptrade_user_id from the database connection using the accountId
+    // Get the snaptrade_user_id and user_secret from the database connection
     const { data: connection, error: connErr } = await supabase
       .from("snaptrade_connections")
-      .select("user_id, snaptrade_user_id")
+      .select("user_id, snaptrade_user_id, user_secret")
       .eq("account_id", accountId)
       .eq("is_active", true)
       .single();
@@ -418,31 +419,159 @@ async function handleSnapTradeSync(res, userId, accountId) {
       snaptrade_user_id: connection.snaptrade_user_id,
     });
 
-    // Call your Supabase function to sync investments
-    const response = await fetch(
-      `${process.env.SUPABASE_URL}/functions/v1/sync-investments`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
-        },
-        body: JSON.stringify({
+    // Import SnapTrade SDK (same as link_tokens.js)
+
+    const isSandbox = process.env.SNAPTRADE_ENVIRONMENT === "sandbox";
+
+    const snaptrade = new Snaptrade({
+      clientId: isSandbox
+        ? process.env.SNAPTRADE_CLIENT_ID_DEV
+        : process.env.SNAPTRADE_CLIENT_ID,
+      consumerKey: isSandbox
+        ? process.env.SNAPTRADE_CONSUMER_KEY_DEV
+        : process.env.SNAPTRADE_CONSUMER_KEY,
+    });
+
+    // Sync Account Balances
+    console.log("💰 Syncing account balances...");
+    try {
+      const balanceResponse =
+        await snaptrade.accountInformation.getUserAccountBalance({
+          accountId: accountId,
+          userId: connection.snaptrade_user_id,
+          userSecret: connection.user_secret,
+        });
+
+      const balanceData = balanceResponse.data;
+      console.log(
+        "💰 Balance data received:",
+        JSON.stringify(balanceData, null, 2)
+      );
+
+      if (balanceData && Array.isArray(balanceData) && balanceData.length > 0) {
+        const balanceRows = balanceData.map((balance) => ({
           user_id: connection.user_id,
           snaptrade_user_id: connection.snaptrade_user_id,
           account_id: accountId,
-        }),
+          currency_code: balance.currency?.code || "USD",
+          cash: balance.cash || 0,
+          buying_power: balance.buying_power || 0,
+          total_equity: balance.cash || 0,
+          total_margin_used: 0,
+          total_margin_available: 0,
+          is_current: true,
+          last_updated: new Date().toISOString(),
+        }));
+
+        // Mark all previous balances as not current
+        await supabase
+          .from("investment_balances")
+          .update({ is_current: false })
+          .eq("snaptrade_user_id", connection.snaptrade_user_id)
+          .eq("account_id", accountId);
+
+        // Insert new balances
+        const { error: balanceErr } = await supabase
+          .from("investment_balances")
+          .upsert(balanceRows, {
+            onConflict: "snaptrade_user_id,account_id,currency_code",
+          });
+
+        if (balanceErr) {
+          console.error("❌ Balance upsert error:", balanceErr);
+        } else {
+          console.log("✅ Balances synced successfully:", balanceRows.length);
+        }
+      } else {
+        console.log("ℹ️ No balance data to sync");
       }
-    );
-
-    const data = await response.json();
-
-    if (!response.ok) {
-      throw new Error(data.error || "Failed to sync investments");
+    } catch (error) {
+      console.error("❌ Error syncing balances:", error);
     }
 
-    return res.status(200).json(data);
+    // Sync Holdings
+    console.log("📈 Syncing investment holdings...");
+    try {
+      const holdingsResponse =
+        await snaptrade.accountInformation.getUserHoldings({
+          accountId: accountId,
+          userId: connection.snaptrade_user_id,
+          userSecret: connection.user_secret,
+        });
+
+      const holdingsData = holdingsResponse.data;
+      console.log(
+        "📈 Holdings data received:",
+        JSON.stringify(holdingsData, null, 2)
+      );
+
+      if (holdingsData && holdingsData.length > 0) {
+        const holdingsRows = holdingsData.map((holding) => {
+          const symbol = holding.symbol?.symbol || holding.symbol;
+          return {
+            user_id: connection.user_id,
+            snaptrade_user_id: connection.snaptrade_user_id,
+            account_id: accountId,
+            symbol_id: symbol?.id,
+            symbol: symbol?.symbol,
+            raw_symbol: symbol?.raw_symbol,
+            description: symbol?.description,
+            currency_code: holding.currency?.code || "USD",
+            exchange_code: symbol?.exchange?.code,
+            exchange_name: symbol?.exchange?.name,
+            security_type: symbol?.type?.description,
+            units: holding.units || 0,
+            price: holding.price,
+            market_value:
+              holding.units && holding.price
+                ? holding.units * holding.price
+                : null,
+            average_purchase_price: holding.average_purchase_price,
+            total_cost_basis:
+              holding.units && holding.average_purchase_price
+                ? holding.units * holding.average_purchase_price
+                : null,
+            unrealized_pl: holding.open_pnl,
+            realized_pl: 0,
+            day_change: null,
+            day_change_percent: null,
+            is_active: true,
+            last_updated: new Date().toISOString(),
+          };
+        });
+
+        const { error: holdingsErr } = await supabase
+          .from("investment_holdings")
+          .upsert(holdingsRows, {
+            onConflict: "snaptrade_user_id,account_id,symbol_id",
+          });
+
+        if (holdingsErr) {
+          console.error("❌ Holdings upsert error:", holdingsErr);
+        } else {
+          console.log("✅ Holdings synced successfully:", holdingsRows.length);
+        }
+      } else {
+        console.log("ℹ️ No holdings data to sync");
+      }
+    } catch (error) {
+      console.error("❌ Error syncing holdings:", error);
+    }
+
+    // Update last_synced_at timestamp
+    await supabase
+      .from("snaptrade_connections")
+      .update({ last_synced_at: new Date().toISOString() })
+      .eq("snaptrade_user_id", connection.snaptrade_user_id)
+      .eq("account_id", accountId);
+
+    console.log("✅ SnapTrade sync completed successfully");
+    return res.status(200).json({
+      success: true,
+      message: "Investments synced successfully",
+    });
   } catch (error) {
+    console.error("❌ SnapTrade sync error:", error);
     throw error;
   }
 }

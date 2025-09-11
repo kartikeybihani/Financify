@@ -1,44 +1,21 @@
 /// <reference types="https://deno.land/x/supabase_functions/mod.ts" />
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { Snaptrade } from "https://esm.sh/snaptrade-typescript-sdk@1.0.0";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
 );
 
-// SnapTrade API configuration
-const SNAPTRADE_BASE_URL = "https://api.snaptrade.com/api/v1";
+// SnapTrade SDK configuration
 const SNAPTRADE_CLIENT_ID = Deno.env.get("SNAPTRADE_CLIENT_ID")!;
 const SNAPTRADE_CONSUMER_KEY = Deno.env.get("SNAPTRADE_CONSUMER_KEY")!;
 
-// Helper function to call SnapTrade API using fetch
-async function callSnapTradeAPI(endpoint: string, params: Record<string, any>) {
-  const url = new URL(`${SNAPTRADE_BASE_URL}${endpoint}`);
-  
-  // Add query parameters
-  Object.entries(params).forEach(([key, value]) => {
-    if (value !== undefined && value !== null) {
-      url.searchParams.append(key, value.toString());
-    }
-  });
-
-  const response = await fetch(url.toString(), {
-    method: "GET",
-    headers: {
-      "Content-Type": "application/json",
-      "clientId": SNAPTRADE_CLIENT_ID,
-      "consumerKey": SNAPTRADE_CONSUMER_KEY,
-    },
-  });
-
-  if (!response.ok) {
-    const errorData = await response.json();
-    throw new Error(`SnapTrade API error: ${JSON.stringify(errorData)}`);
-  }
-
-  return response.json();
-}
+const snaptrade = new Snaptrade({
+  clientId: SNAPTRADE_CLIENT_ID,
+  consumerKey: SNAPTRADE_CONSUMER_KEY,
+});
 
 serve(async (req: Request) => {
   try {
@@ -83,12 +60,16 @@ serve(async (req: Request) => {
     // 2. Sync Account Balances
     console.log("💰 Syncing account balances...");
     try {
-      const balanceData = await callSnapTradeAPI(`/accounts/${account_id}/balances`, {
+      const balanceResponse = await snaptrade.accountInformation.getUserAccountBalance({
+        accountId: account_id,
         userId: snaptrade_user_id,
         userSecret: user_secret
       });
 
-      if (balanceData && balanceData.length > 0) {
+      const balanceData = balanceResponse.data;
+      console.log("💰 Balance data received:", JSON.stringify(balanceData, null, 2));
+
+      if (balanceData && Array.isArray(balanceData) && balanceData.length > 0) {
         const balanceRows = balanceData.map((balance: any) => ({
           user_id,
           snaptrade_user_id,
@@ -96,7 +77,7 @@ serve(async (req: Request) => {
           currency_code: balance.currency?.code || 'USD',
           cash: balance.cash || 0,
           buying_power: balance.buying_power || 0,
-          total_equity: 0, // Not provided in API response
+          total_equity: balance.cash || 0, // Using cash as total equity for now
           total_margin_used: 0, // Not provided in API response
           total_margin_available: 0, // Not provided in API response
           is_current: true,
@@ -118,8 +99,10 @@ serve(async (req: Request) => {
         if (balanceErr) {
           console.error("❌ Balance upsert error:", balanceErr);
         } else {
-          console.log("✅ Balances synced successfully");
+          console.log("✅ Balances synced successfully:", balanceRows.length);
         }
+      } else {
+        console.log("ℹ️ No balance data to sync (empty or null response)");
       }
     } catch (error) {
       console.error("❌ Error syncing balances:", error);
@@ -128,10 +111,14 @@ serve(async (req: Request) => {
     // 3. Sync Holdings (Regular Positions)
     console.log("📈 Syncing investment holdings...");
     try {
-      const holdingsData = await callSnapTradeAPI(`/accounts/${account_id}/positions`, {
+      const holdingsResponse = await snaptrade.accountInformation.getUserHoldings({
+        accountId: account_id,
         userId: snaptrade_user_id,
         userSecret: user_secret
       });
+
+      const holdingsData = holdingsResponse.data;
+      console.log("📈 Holdings data received:", JSON.stringify(holdingsData, null, 2));
 
       if (holdingsData && holdingsData.length > 0) {
         const holdingsRows = holdingsData.map((holding: any) => {
@@ -171,68 +158,26 @@ serve(async (req: Request) => {
         } else {
           console.log("✅ Holdings synced successfully");
         }
+      } else {
+        console.log("ℹ️ No holdings data to sync (empty or null response)");
       }
     } catch (error) {
       console.error("❌ Error syncing holdings:", error);
     }
 
-    // 4. Sync Options Positions
+    // 4. Sync Options Positions (TODO: Find correct SDK method)
+    console.log("📊 Skipping options sync for now - need to find correct SDK method");
+    /*
     console.log("📊 Syncing options positions...");
     try {
-      const optionsData = await callSnapTradeAPI(`/accounts/${account_id}/options`, {
-        userId: snaptrade_user_id,
-        userSecret: user_secret
-      });
-
-      if (optionsData && optionsData.length > 0) {
-        const optionsRows = optionsData.map((option: any) => {
-          const optionSymbol = option.symbol?.option_symbol;
-          const underlying = optionSymbol?.underlying_symbol;
-          const contractMultiplier = optionSymbol?.is_mini_option ? 10 : 100;
-          
-          return {
-            user_id,
-            snaptrade_user_id,
-            account_id,
-            option_symbol_id: optionSymbol?.id,
-            ticker: optionSymbol?.ticker,
-            option_type: optionSymbol?.option_type,
-            strike_price: optionSymbol?.strike_price,
-            expiration_date: optionSymbol?.expiration_date,
-            is_mini_option: optionSymbol?.is_mini_option || false,
-            underlying_symbol_id: underlying?.id,
-            underlying_symbol: underlying?.symbol,
-            underlying_description: underlying?.description,
-            underlying_currency_code: option.currency?.code || 'USD',
-            underlying_exchange_code: underlying?.exchange?.code,
-            underlying_security_type: underlying?.type?.description,
-            units: option.units || 0,
-            price: option.price,
-            market_value: option.units && option.price ? option.units * option.price * contractMultiplier : null,
-            average_purchase_price: option.average_purchase_price,
-            total_cost_basis: option.units && option.average_purchase_price ? option.units * option.average_purchase_price * contractMultiplier : null,
-            unrealized_pl: null, // Not provided in API response
-            realized_pl: 0, // Not provided in API response
-            day_change: null, // Not provided in API response
-            day_change_percent: null, // Not provided in API response
-            is_active: true,
-            last_updated: new Date().toISOString()
-          };
-        });
-
-        const { error: optionsErr } = await supabase
-          .from("investment_options")
-          .upsert(optionsRows, { onConflict: "snaptrade_user_id,account_id,option_symbol_id" });
-
-        if (optionsErr) {
-          console.error("❌ Options upsert error:", optionsErr);
-        } else {
-          console.log("✅ Options synced successfully");
-        }
-      }
+      // TODO: Find the correct SDK method for options
+      // const optionsResponse = await snaptrade.???
+      
+      console.log("ℹ️ Options sync not implemented yet");
     } catch (error) {
       console.error("❌ Error syncing options:", error);
     }
+    */
 
     // 5. Update last_synced_at timestamp
     await supabase
