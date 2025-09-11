@@ -259,9 +259,10 @@ async function callSnapTradeAPI(endpoint, params) {
   const response = await fetch(url.toString(), {
     method: "GET",
     headers: {
+      Accept: "application/json",
       "Content-Type": "application/json",
-      clientId: SNAPTRADE_CLIENT_ID,
-      consumerKey: SNAPTRADE_CONSUMER_KEY,
+      "Client-Id": SNAPTRADE_CLIENT_ID,
+      "Consumer-Key": SNAPTRADE_CONSUMER_KEY,
     },
   });
 
