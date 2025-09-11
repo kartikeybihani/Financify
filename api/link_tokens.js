@@ -100,6 +100,7 @@ export default async function handler(req, res) {
       }
 
       try {
+        console.log("🔄 Fetching SnapTrade accounts for user:", userId);
         const response = await snaptrade.accountInformation.listUserAccounts({
           userId: userId,
           userSecret: userSecret,

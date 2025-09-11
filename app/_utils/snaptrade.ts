@@ -153,7 +153,7 @@ export const registerSnaptradeUser = async () => {
 
 // === Fetch SnapTrade Accounts ===
 export const fetchSnaptradeAccounts = async (userId: string, userSecret: string) => {
-  const res = await fetch(`${BASE_URL}/api/plaid`, {
+  const res = await fetch(`${BASE_URL}/api/link_tokens`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ 
