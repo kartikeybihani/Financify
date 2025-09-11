@@ -66,7 +66,10 @@ export default async function handler(req, res) {
             await snaptrade.authentication.registerSnapTradeUser({
               userId: user_id,
             });
-          console.log("✅ Snaptrade Registration Response: ", registerResponse);
+          console.log(
+            "✅ Snaptrade Registration Response --->: ",
+            registerResponse
+          );
 
           return res.status(200).json({
             userId: registerResponse.data.userId,

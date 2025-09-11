@@ -330,6 +330,12 @@ export default function InstitutionSelectionModal({
         registerResponse
       );
 
+      console.log("registerResponse --->: ", registerResponse);
+      console.log("registerResponse.userId --->: ", registerResponse.userId);
+      console.log(
+        "registerResponse.userSecret --->: ",
+        registerResponse.userSecret
+      );
       // Now login to get the redirect URI
       const loginResponse = await handleSnapTradeLogin(
         registerResponse.userId,
