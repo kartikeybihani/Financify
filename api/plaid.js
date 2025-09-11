@@ -470,12 +470,10 @@ async function handleSnapTradeSync(res, userId, accountId) {
           .eq("snaptrade_user_id", connection.snaptrade_user_id)
           .eq("account_id", accountId);
 
-        // Insert new balances
+        // Insert new balances (using insert instead of upsert since we marked old ones as inactive)
         const { error: balanceErr } = await supabase
           .from("investment_balances")
-          .upsert(balanceRows, {
-            onConflict: "snaptrade_user_id,account_id,currency_code",
-          });
+          .insert(balanceRows);
 
         if (balanceErr) {
           console.error("❌ Balance upsert error:", balanceErr);
@@ -505,8 +503,10 @@ async function handleSnapTradeSync(res, userId, accountId) {
         JSON.stringify(holdingsData, null, 2)
       );
 
-      if (holdingsData && holdingsData.length > 0) {
-        const holdingsRows = holdingsData.map((holding) => {
+      // Holdings are in the positions array
+      const positions = holdingsData.positions || [];
+      if (positions && positions.length > 0) {
+        const holdingsRows = positions.map((holding) => {
           const symbol = holding.symbol?.symbol || holding.symbol;
           return {
             user_id: connection.user_id,
@@ -540,11 +540,17 @@ async function handleSnapTradeSync(res, userId, accountId) {
           };
         });
 
+        // First, mark existing holdings as inactive
+        await supabase
+          .from("investment_holdings")
+          .update({ is_active: false })
+          .eq("snaptrade_user_id", connection.snaptrade_user_id)
+          .eq("account_id", accountId);
+
+        // Then insert new holdings
         const { error: holdingsErr } = await supabase
           .from("investment_holdings")
-          .upsert(holdingsRows, {
-            onConflict: "snaptrade_user_id,account_id,symbol_id",
-          });
+          .insert(holdingsRows);
 
         if (holdingsErr) {
           console.error("❌ Holdings upsert error:", holdingsErr);
