@@ -198,7 +198,11 @@ export default async function handler(req, res) {
       user: { client_user_id: user_id },
       client_name: "Financify",
       products: ["auth"],
-      required_if_supported_products: ["transactions", "liabilities"],
+      required_if_supported_products: [
+        "transactions",
+        "liabilities",
+        "investments",
+      ],
       optional_products: [],
       additional_consented_products: [],
       country_codes: ["US"],
