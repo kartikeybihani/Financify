@@ -352,33 +352,46 @@ async function handleSnapTradeStoreCredentials(res, params) {
     const { userId, snaptradeUserId, accountId, userSecret, ...metadata } =
       params;
 
-    // Call your Supabase function to store credentials
-    const response = await fetch(
-      `${process.env.SUPABASE_URL}/functions/v1/store-snaptrade-credentials`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
-        },
-        body: JSON.stringify({
+    console.log("🔄 Storing SnapTrade credentials directly in database...");
+
+    // Store directly in Supabase database
+    const { data: connection, error } = await supabase
+      .from("snaptrade_connections")
+      .upsert(
+        {
           user_id: userId,
           snaptrade_user_id: snaptradeUserId,
           account_id: accountId,
           user_secret: userSecret,
-          ...metadata,
-        }),
-      }
-    );
+          brokerage_name: metadata.brokerage_name || "Unknown",
+          account_name: metadata.account_name || "Investment Account",
+          account_type: metadata.account_type || "investment",
+          is_active: true,
+          last_synced_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        },
+        {
+          onConflict: "user_id,snaptrade_user_id,account_id",
+        }
+      )
+      .select()
+      .single();
 
-    const data = await response.json();
-
-    if (!response.ok) {
-      throw new Error(data.error || "Failed to store credentials");
+    if (error) {
+      console.error("Database error storing SnapTrade credentials:", error);
+      throw new Error(
+        error.message || "Failed to store SnapTrade credentials in database"
+      );
     }
 
-    return res.status(200).json(data);
+    console.log("✅ SnapTrade credentials stored directly in database");
+    return res.status(200).json({
+      success: true,
+      connection,
+      message: "Credentials stored successfully",
+    });
   } catch (error) {
+    console.error("❌ Failed to store SnapTrade credentials:", error);
     throw error;
   }
 }

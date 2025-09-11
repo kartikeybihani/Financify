@@ -194,29 +194,29 @@ export const getStoredSnaptradeCredentials = async () => {
   }
 };
 
-// === Get SnapTrade UserSecret from Vault ===
-export const getSnaptradeUserSecretFromVault = async (userId: string, snaptradeUserId: string, accountId: string) => {
+// === Get SnapTrade UserSecret from Database ===
+export const getSnaptradeUserSecretFromDB = async (userId: string, snaptradeUserId: string, accountId: string) => {
   try {
-    console.log("🔑 Retrieving userSecret from secure vault...");
+    console.log("🔑 Retrieving userSecret from database...");
     
-    const { data: userSecret, error: vaultError } = await supabase.rpc(
-      "secure_get_snaptrade_credentials",
-      { 
-        p_user_id: userId,
-        p_snaptrade_user_id: snaptradeUserId,
-        p_account_id: accountId
-      }
-    );
+    const { data: connection, error } = await supabase
+      .from("snaptrade_connections")
+      .select("user_secret")
+      .eq("user_id", userId)
+      .eq("snaptrade_user_id", snaptradeUserId)
+      .eq("account_id", accountId)
+      .eq("is_active", true)
+      .single();
     
-    if (vaultError || !userSecret) {
-      console.error("Error retrieving SnapTrade userSecret from Vault:", vaultError);
-      throw new Error(vaultError?.message || "UserSecret not found in vault");
+    if (error || !connection?.user_secret) {
+      console.error("Error retrieving SnapTrade userSecret from database:", error);
+      throw new Error(error?.message || "UserSecret not found in database");
     }
     
-    console.log("✅ UserSecret retrieved from vault successfully");
-    return userSecret;
+    console.log("✅ UserSecret retrieved from database successfully");
+    return connection.user_secret;
   } catch (error) {
-    console.error("❌ Failed to retrieve userSecret from vault:", error);
+    console.error("❌ Failed to retrieve userSecret from database:", error);
     throw error;
   }
 };
@@ -233,8 +233,8 @@ export const fetchSnaptradeAccountsFromStorage = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error("User not authenticated");
     
-    // Retrieve userSecret from vault
-    const userSecret = await getSnaptradeUserSecretFromVault(user.id, credentials.userId, credentials.accountId);
+    // Retrieve userSecret from database
+    const userSecret = await getSnaptradeUserSecretFromDB(user.id, credentials.userId, credentials.accountId);
     
     console.log("🔄 Fetching SnapTrade accounts using stored credentials...");
     const accounts = await fetchSnaptradeAccounts(credentials.userId, userSecret);
@@ -344,8 +344,8 @@ export const fetchSnaptradeHoldingsFromStorage = async (accountId: string) => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error("User not authenticated");
     
-    // Retrieve userSecret from vault
-    const userSecret = await getSnaptradeUserSecretFromVault(user.id, credentials.userId, credentials.accountId);
+    // Retrieve userSecret from database
+    const userSecret = await getSnaptradeUserSecretFromDB(user.id, credentials.userId, credentials.accountId);
     
     console.log("🔄 Fetching SnapTrade holdings using stored credentials...");
     const holdings = await fetchSnaptradeHoldings(credentials.userId, userSecret, accountId);
@@ -395,8 +395,8 @@ export const fetchSnaptradeOptionsFromStorage = async (accountId: string) => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error("User not authenticated");
     
-    // Retrieve userSecret from vault
-    const userSecret = await getSnaptradeUserSecretFromVault(user.id, credentials.userId, credentials.accountId);
+    // Retrieve userSecret from database
+    const userSecret = await getSnaptradeUserSecretFromDB(user.id, credentials.userId, credentials.accountId);
     
     console.log("🔄 Fetching SnapTrade options using stored credentials...");
     const options = await fetchSnaptradeOptions(credentials.userId, userSecret, accountId);
@@ -434,7 +434,7 @@ export const fetchSnaptradeBalances = async (userId: string, userSecret: string,
   }
 };
 
-// === Store SnapTrade Credentials Securely ===
+// === Store SnapTrade Credentials Directly in Database ===
 export const storeSnaptradeCredentials = async (
   userId: string,
   snaptradeUserId: string,
@@ -443,32 +443,42 @@ export const storeSnaptradeCredentials = async (
   metadata?: any
 ) => {
   try {
-    console.log("🔄 Storing SnapTrade credentials securely...");
+    console.log("🔄 Storing SnapTrade credentials directly in database...");
     
-    const res = await fetch(`${BASE_URL}/api/plaid`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ 
-        mode: "snaptrade_store_credentials", 
-        userId: userId,
-        snaptradeUserId: snaptradeUserId,
-        accountId: accountId,
-        userSecret: userSecret,
-        ...metadata
-      }),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Failed to store SnapTrade credentials");
+    // Store directly in Supabase database
+    const { data: connection, error } = await supabase
+      .from("snaptrade_connections")
+      .upsert({
+        user_id: userId,
+        snaptrade_user_id: snaptradeUserId,
+        account_id: accountId,
+        user_secret: userSecret,
+        brokerage_name: metadata?.brokerage_name || "Unknown",
+        account_name: metadata?.account_name || "Investment Account",
+        account_type: metadata?.account_type || "investment",
+        is_active: true,
+        last_synced_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      }, {
+        onConflict: "user_id,snaptrade_user_id,account_id"
+      })
+      .select()
+      .single();
     
-    // Also store locally for quick access
+    if (error) {
+      console.error("Database error storing SnapTrade credentials:", error);
+      throw new Error(error.message || "Failed to store SnapTrade credentials in database");
+    }
+    
+    // Also store locally for quick access (without userSecret for security)
     await setSnaptradeCredentials({
       userId: snaptradeUserId,
-      userSecret: userSecret,
       accountId: accountId
+      // Note: userSecret excluded from local storage for security
     });
     
-    console.log("✅ SnapTrade credentials stored securely");
-    return data;
+    console.log("✅ SnapTrade credentials stored directly in database");
+    return { success: true, connection };
   } catch (error) {
     console.error("❌ Failed to store SnapTrade credentials:", error);
     throw error;
@@ -594,7 +604,7 @@ const snaptradeUtils = {
   hasSnaptradeConnection,
   clearSnaptradeConnection,
   getStoredSnaptradeCredentials,
-  getSnaptradeUserSecretFromVault,
+  getSnaptradeUserSecretFromDB,
   
   // Account operations
   fetchSnaptradeAccounts,
