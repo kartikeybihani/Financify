@@ -8,7 +8,7 @@ import {
   ScrollView,
   Platform,
   useWindowDimensions,
-  Alert,
+  Image,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
@@ -16,20 +16,13 @@ import * as WebBrowser from "expo-web-browser";
 import { useRouter } from "expo-router";
 import {
   registerSnaptradeUser,
-  handleSnapTradeRegister,
   handleSnapTradeLogin,
-  callSnapTradeAPI,
   fetchSnaptradeAccounts,
   hasSnaptradeConnection,
   fetchSnaptradeAccountsFromStorage,
   getStoredSnaptradeCredentials,
-  fetchSnaptradeHoldingsFromStorage,
-  fetchSnaptradeHoldings,
   storeSnaptradeCredentials,
   syncSnaptradeInvestments,
-  getSnaptradeHoldingsFromDB,
-  getSnaptradeOptionsFromDB,
-  getSnaptradeBalancesFromDB,
   getSnaptradeConnectionsFromDB,
 } from "../../_utils/snaptrade";
 import { supabase } from "../../_lib/supabase/supabase";
@@ -191,62 +184,31 @@ export default function InstitutionSelectionModal({
   const [isSyncing, setIsSyncing] = useState(false);
   const router = useRouter();
 
-  // Load investment data from database
-  const loadInvestmentData = async () => {
-    try {
-      console.log("🔄 Loading investment data from database...");
-      const [holdings, options, balances, connections] = await Promise.all([
-        getSnaptradeHoldingsFromDB(),
-        getSnaptradeOptionsFromDB(),
-        getSnaptradeBalancesFromDB(),
-        getSnaptradeConnectionsFromDB(),
-      ]);
-
-      setInvestmentData({
-        holdings: holdings || [],
-        options: options || [],
-        balances: balances || [],
-        connections: connections || [],
-      });
-
-      console.log("✅ Investment data loaded:", {
-        holdings: holdings?.length || 0,
-        options: options?.length || 0,
-        balances: balances?.length || 0,
-        connections: connections?.length || 0,
-      });
-    } catch (error) {
-      console.error("❌ Failed to load investment data:", error);
-    }
+  // Map institution ids to local logo assets
+  const institutionLogoMap: Record<string, any> = {
+    american_express: require("../../../assets/invest_logo/amex.png"),
+    capital_one: require("../../../assets/invest_logo/capitalone.png"),
+    chase: require("../../../assets/invest_logo/chase.png"),
+    wells_fargo: require("../../../assets/invest_logo/wellsfargo.png"),
+    alpaca: require("../../../assets/invest_logo/alpaca.png"),
+    charles_schwab: require("../../../assets/invest_logo/charles.png"),
+    coinbase: require("../../../assets/invest_logo/coinbase.png"),
+    etrade: require("../../../assets/invest_logo/etrade.png"),
+    public: require("../../../assets/invest_logo/public.png"),
+    robinhood: require("../../../assets/invest_logo/robinhood.png"),
+    wealthfront: require("../../../assets/invest_logo/wealthfront.png"),
+    webull: require("../../../assets/invest_logo/webull.png"),
+    fidelity: require("../../../assets/invest_logo/fidelity.png"),
+    interactive_brokers: require("../../../assets/invest_logo/ib.png"),
   };
 
-  // Sync investment data
-  const handleSyncInvestments = async () => {
-    setIsSyncing(true);
-    try {
-      const credentials = await getStoredSnaptradeCredentials();
-      if (credentials && investmentData.connections.length > 0) {
-        const connection = investmentData.connections[0];
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
-        if (user) {
-          await syncSnaptradeInvestments(user.id, connection.account_id);
-          // Reload data after sync
-          await loadInvestmentData();
-          Alert.alert("Success", "Investment data synced successfully!");
-        }
-      }
-    } catch (error) {
-      console.error("❌ Failed to sync investments:", error);
-      Alert.alert(
-        "Sync Failed",
-        "Failed to sync investment data. Please try again."
-      );
-    } finally {
-      setIsSyncing(false);
-    }
-  };
+  // Logos that use dark text/mark; use lighter bg for contrast
+  const lightBgLogoIds = new Set<string>([
+    "public",
+    "capital_one",
+    "etrade",
+    "alpaca",
+  ]);
 
   const handleFidelityConnection = async () => {
     console.log("🔄 Starting Fidelity connection...");
@@ -261,6 +223,7 @@ export default function InstitutionSelectionModal({
         );
         setIsConnecting(false);
         router.push("/investments");
+        onClose();
         return;
       }
 
@@ -517,255 +480,10 @@ export default function InstitutionSelectionModal({
     }, 300);
   };
 
-  // Investment Data Modal Component
-  const renderInvestmentModal = () => {
-    if (!showInvestmentModal) return null;
-
-    const totalHoldingsValue = investmentData.holdings.reduce(
-      (sum, holding) => sum + (holding.market_value || 0),
-      0
-    );
-    const totalOptionsValue = investmentData.options.reduce(
-      (sum, option) => sum + (option.market_value || 0),
-      0
-    );
-
-    return (
-      <Modal
-        visible={showInvestmentModal}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setShowInvestmentModal(false)}
-        statusBarTranslucent
-        presentationStyle="overFullScreen"
-      >
-        <View style={styles.overlay}>
-          <BlurView
-            intensity={50}
-            style={StyleSheet.absoluteFill}
-            tint="dark"
-          />
-          <View style={styles.modalContainer}>
-            <View style={[styles.sheet, { height: maxHeight }]}>
-              <View style={styles.handleContainer}>
-                <View style={styles.handle} />
-              </View>
-
-              <View style={styles.header}>
-                <View style={styles.titleContainer}>
-                  <Text style={styles.title}>
-                    Fidelity Investment Portfolio
-                  </Text>
-                </View>
-                <TouchableOpacity
-                  onPress={() => setShowInvestmentModal(false)}
-                  style={styles.closeButton}
-                >
-                  <View style={styles.closeButtonContainer}>
-                    <Ionicons name="close" size={20} color="#888" />
-                  </View>
-                </TouchableOpacity>
-              </View>
-
-              <ScrollView
-                style={styles.content}
-                showsVerticalScrollIndicator={false}
-                contentContainerStyle={styles.scrollContent}
-              >
-                {/* Sync Button */}
-                <TouchableOpacity
-                  style={[
-                    styles.syncButton,
-                    isSyncing && styles.syncButtonDisabled,
-                  ]}
-                  onPress={handleSyncInvestments}
-                  disabled={isSyncing}
-                >
-                  <Ionicons
-                    name={isSyncing ? "hourglass" : "refresh"}
-                    size={20}
-                    color="#fff"
-                  />
-                  <Text style={styles.syncButtonText}>
-                    {isSyncing ? "Syncing..." : "Sync Data"}
-                  </Text>
-                </TouchableOpacity>
-
-                {/* Account Balances */}
-                <View style={styles.section}>
-                  <Text style={styles.sectionTitle}>💰 Account Balances</Text>
-                  {investmentData.balances.length > 0 ? (
-                    investmentData.balances.map((balance, index) => (
-                      <View key={index} style={styles.balanceCard}>
-                        <Text style={styles.balanceLabel}>Cash</Text>
-                        <Text style={styles.balanceValue}>
-                          ${balance.cash?.toFixed(2) || "0.00"}
-                        </Text>
-                        <Text style={styles.balanceLabel}>Buying Power</Text>
-                        <Text style={styles.balanceValue}>
-                          ${balance.buying_power?.toFixed(2) || "0.00"}
-                        </Text>
-                        <Text style={styles.balanceCurrency}>
-                          {balance.currency_code || "USD"}
-                        </Text>
-                      </View>
-                    ))
-                  ) : (
-                    <Text style={styles.noDataText}>
-                      No balance data available
-                    </Text>
-                  )}
-                </View>
-
-                {/* Holdings */}
-                <View style={styles.section}>
-                  <Text style={styles.sectionTitle}>
-                    📈 Holdings ({investmentData.holdings.length})
-                  </Text>
-                  <Text style={styles.totalValue}>
-                    Total Value: ${totalHoldingsValue.toFixed(2)}
-                  </Text>
-                  {investmentData.holdings.length > 0 ? (
-                    investmentData.holdings
-                      .slice(0, 5)
-                      .map((holding, index) => (
-                        <View key={index} style={styles.holdingCard}>
-                          <View style={styles.holdingHeader}>
-                            <Text style={styles.holdingSymbol}>
-                              {holding.symbol}
-                            </Text>
-                            <Text style={styles.holdingValue}>
-                              ${holding.market_value?.toFixed(2) || "0.00"}
-                            </Text>
-                          </View>
-                          <Text style={styles.holdingDescription}>
-                            {holding.description}
-                          </Text>
-                          <View style={styles.holdingDetails}>
-                            <Text style={styles.holdingDetail}>
-                              Units: {holding.units}
-                            </Text>
-                            <Text style={styles.holdingDetail}>
-                              Price: ${holding.price?.toFixed(2) || "0.00"}
-                            </Text>
-                            {holding.unrealized_pl !== null && (
-                              <Text
-                                style={[
-                                  styles.holdingDetail,
-                                  {
-                                    color:
-                                      holding.unrealized_pl >= 0
-                                        ? "#4CAF50"
-                                        : "#F44336",
-                                  },
-                                ]}
-                              >
-                                P&L: $
-                                {holding.unrealized_pl?.toFixed(2) || "0.00"}
-                              </Text>
-                            )}
-                          </View>
-                        </View>
-                      ))
-                  ) : (
-                    <Text style={styles.noDataText}>
-                      No holdings data available
-                    </Text>
-                  )}
-                  {investmentData.holdings.length > 5 && (
-                    <Text style={styles.moreText}>
-                      +{investmentData.holdings.length - 5} more holdings
-                    </Text>
-                  )}
-                </View>
-
-                {/* Options */}
-                <View style={styles.section}>
-                  <Text style={styles.sectionTitle}>
-                    📊 Options ({investmentData.options.length})
-                  </Text>
-                  <Text style={styles.totalValue}>
-                    Total Value: ${totalOptionsValue.toFixed(2)}
-                  </Text>
-                  {investmentData.options.length > 0 ? (
-                    investmentData.options.slice(0, 3).map((option, index) => (
-                      <View key={index} style={styles.optionCard}>
-                        <View style={styles.optionHeader}>
-                          <Text style={styles.optionSymbol}>
-                            {option.underlying_symbol} {option.option_type}
-                          </Text>
-                          <Text style={styles.optionValue}>
-                            ${option.market_value?.toFixed(2) || "0.00"}
-                          </Text>
-                        </View>
-                        <Text style={styles.optionDescription}>
-                          Strike: ${option.strike_price} | Exp:{" "}
-                          {option.expiration_date}
-                        </Text>
-                        <View style={styles.optionDetails}>
-                          <Text style={styles.optionDetail}>
-                            Contracts: {option.units}
-                          </Text>
-                          <Text style={styles.optionDetail}>
-                            Price: ${option.price?.toFixed(2) || "0.00"}
-                          </Text>
-                        </View>
-                      </View>
-                    ))
-                  ) : (
-                    <Text style={styles.noDataText}>
-                      No options data available
-                    </Text>
-                  )}
-                  {investmentData.options.length > 3 && (
-                    <Text style={styles.moreText}>
-                      +{investmentData.options.length - 3} more options
-                    </Text>
-                  )}
-                </View>
-
-                {/* Connection Info */}
-                <View style={styles.section}>
-                  <Text style={styles.sectionTitle}>🔗 Connection Info</Text>
-                  {investmentData.connections.length > 0 ? (
-                    investmentData.connections.map((connection, index) => (
-                      <View key={index} style={styles.connectionCard}>
-                        <Text style={styles.connectionText}>
-                          Brokerage: {connection.brokerage_name || "Fidelity"}
-                        </Text>
-                        <Text style={styles.connectionText}>
-                          Account:{" "}
-                          {connection.account_name || "Investment Account"}
-                        </Text>
-                        <Text style={styles.connectionText}>
-                          Account ID: {connection.account_id}
-                        </Text>
-                        <Text style={styles.connectionText}>
-                          Last Synced:{" "}
-                          {connection.last_synced_at
-                            ? new Date(
-                                connection.last_synced_at
-                              ).toLocaleDateString()
-                            : "Never"}
-                        </Text>
-                      </View>
-                    ))
-                  ) : (
-                    <Text style={styles.noDataText}>
-                      No connection data available
-                    </Text>
-                  )}
-                </View>
-              </ScrollView>
-            </View>
-          </View>
-        </View>
-      </Modal>
-    );
-  };
-
   const renderInstitutionCard = (institution: Institution) => {
     const isLoadingFidelity = isConnecting && institution.id === "fidelity";
+    const logoSource = (institutionLogoMap as any)[institution.id];
+    const useLightBg = lightBgLogoIds.has(institution.id);
 
     return (
       <TouchableOpacity
@@ -780,22 +498,26 @@ export default function InstitutionSelectionModal({
       >
         <View style={styles.institutionContent}>
           <View style={styles.logoContainer}>
-            <View
-              style={[
-                styles.logoPlaceholder,
-                { backgroundColor: institution.color },
-              ]}
-            >
-              {isLoadingFidelity ? (
-                <Ionicons name="hourglass" size={20} color="#fff" />
-              ) : (
+            {isLoadingFidelity ? (
+              <Ionicons name="hourglass" size={32} color="#000" />
+            ) : logoSource ? (
+              <Image
+                source={logoSource}
+                style={styles.logoImage}
+                resizeMode="contain"
+                accessibilityLabel={`${institution.name} logo`}
+              />
+            ) : (
+              <View
+                style={[
+                  styles.logoPlaceholder,
+                  { backgroundColor: institution.color },
+                ]}
+              >
                 <Text style={styles.logoText}>{institution.initials}</Text>
-              )}
-            </View>
+              </View>
+            )}
           </View>
-          <Text style={styles.institutionName}>
-            {isLoadingFidelity ? "Connecting..." : institution.name}
-          </Text>
         </View>
       </TouchableOpacity>
     );
@@ -805,7 +527,6 @@ export default function InstitutionSelectionModal({
 
   return (
     <>
-      {renderInvestmentModal()}
       <Modal
         visible={visible}
         transparent
@@ -960,19 +681,19 @@ const styles = StyleSheet.create({
   },
   institutionCard: {
     width: "47%",
-    backgroundColor: "rgba(255, 255, 255, 0.05)",
-    borderRadius: 16,
-    padding: 20,
+    backgroundColor: "#ffffff",
+    borderRadius: 12,
+    padding: 8,
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.08)",
-    minHeight: 120,
+    borderColor: "rgba(0, 0, 0, 0.08)",
+    minHeight: 80,
   },
   institutionCardLoading: {
     opacity: 0.6,
-    backgroundColor: "rgba(0, 166, 81, 0.1)",
+    backgroundColor: "#f0f0f0",
     borderColor: "rgba(0, 166, 81, 0.3)",
   },
   otherInstitutionsCard: {
@@ -985,22 +706,24 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   logoContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
+    width: 64,
+    height: 64,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 12,
   },
   logoPlaceholder: {
-    width: 44,
-    height: 44,
-    borderRadius: 10,
+    width: 48,
+    height: 48,
+    borderRadius: 8,
     alignItems: "center",
     justifyContent: "center",
   },
+  logoImage: {
+    width: 124,
+    height: 114,
+  },
   logoText: {
-    color: "#fff",
+    color: "#000",
     fontSize: 14,
     fontWeight: "bold",
     fontFamily: Platform.OS === "ios" ? "System" : "sans-serif",
@@ -1022,165 +745,5 @@ const styles = StyleSheet.create({
     fontFamily: Platform.OS === "ios" ? "System" : "sans-serif",
     letterSpacing: 0.2,
     lineHeight: 18,
-  },
-
-  // Investment Modal Styles
-  syncButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#4CAF50",
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 12,
-    marginBottom: 20,
-    gap: 8,
-  },
-  syncButtonDisabled: {
-    backgroundColor: "#666",
-    opacity: 0.6,
-  },
-  syncButtonText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  section: {
-    marginBottom: 24,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: "#fff",
-    marginBottom: 12,
-  },
-  totalValue: {
-    fontSize: 16,
-    fontWeight: "500",
-    color: "#4CAF50",
-    marginBottom: 12,
-  },
-  balanceCard: {
-    backgroundColor: "rgba(255, 255, 255, 0.05)",
-    borderRadius: 12,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.08)",
-  },
-  balanceLabel: {
-    fontSize: 14,
-    color: "#888",
-    marginBottom: 4,
-  },
-  balanceValue: {
-    fontSize: 20,
-    fontWeight: "600",
-    color: "#fff",
-    marginBottom: 12,
-  },
-  balanceCurrency: {
-    fontSize: 12,
-    color: "#888",
-    textAlign: "right",
-  },
-  holdingCard: {
-    backgroundColor: "rgba(255, 255, 255, 0.05)",
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.08)",
-  },
-  holdingHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 8,
-  },
-  holdingSymbol: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#fff",
-  },
-  holdingValue: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#4CAF50",
-  },
-  holdingDescription: {
-    fontSize: 14,
-    color: "#888",
-    marginBottom: 8,
-  },
-  holdingDetails: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
-  holdingDetail: {
-    fontSize: 12,
-    color: "#ccc",
-  },
-  optionCard: {
-    backgroundColor: "rgba(255, 255, 255, 0.05)",
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.08)",
-  },
-  optionHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 8,
-  },
-  optionSymbol: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#fff",
-  },
-  optionValue: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#FF9800",
-  },
-  optionDescription: {
-    fontSize: 14,
-    color: "#888",
-    marginBottom: 8,
-  },
-  optionDetails: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
-  optionDetail: {
-    fontSize: 12,
-    color: "#ccc",
-  },
-  connectionCard: {
-    backgroundColor: "rgba(255, 255, 255, 0.05)",
-    borderRadius: 12,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.08)",
-  },
-  connectionText: {
-    fontSize: 14,
-    color: "#ccc",
-    marginBottom: 4,
-  },
-  noDataText: {
-    fontSize: 14,
-    color: "#888",
-    fontStyle: "italic",
-    textAlign: "center",
-    padding: 20,
-  },
-  moreText: {
-    fontSize: 14,
-    color: "#4CAF50",
-    textAlign: "center",
-    marginTop: 8,
-    fontStyle: "italic",
   },
 });

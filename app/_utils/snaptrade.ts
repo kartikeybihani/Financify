@@ -478,6 +478,16 @@ export const storeSnaptradeCredentials = async (
     });
     
     console.log("✅ SnapTrade credentials stored directly in database");
+    
+    // Automatically populate investment account in main accounts table
+    try {
+      await populateInvestmentAccountsInDB();
+      console.log("✅ Investment account automatically populated in main accounts table");
+    } catch (populateError) {
+      console.error("⚠️ Failed to automatically populate investment account (continuing anyway):", populateError);
+      // Don't fail the whole operation if population fails
+    }
+    
     return { success: true, connection };
   } catch (error) {
     console.error("❌ Failed to store SnapTrade credentials:", error);
@@ -591,6 +601,38 @@ export const getSnaptradeConnectionsFromDB = async () => {
   }
 };
 
+// === Populate Investment Accounts in Main Accounts Table ===
+export const populateInvestmentAccountsInDB = async () => {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error("User not authenticated");
+
+    console.log("🔄 Populating investment accounts via API endpoint...");
+
+    // Call the server-side API endpoint to handle RLS policies
+    const res = await fetch(`${BASE_URL}/api/store_accounts`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ 
+        mode: "populate_investment_accounts",
+        user_id: user.id 
+      }),
+    });
+
+    const data = await res.json();
+    
+    if (!res.ok) {
+      throw new Error(data.error || "Failed to populate investment accounts");
+    }
+
+    console.log(`✅ Investment accounts population completed: ${data.populated} accounts processed`);
+    return { success: true, populated: data.populated };
+  } catch (error) {
+    console.error("❌ Failed to populate investment accounts:", error);
+    throw error;
+  }
+};
+
 // Export all functions
 const snaptradeUtils = {
   // Core API functions
@@ -630,6 +672,7 @@ const snaptradeUtils = {
   getSnaptradeOptionsFromDB,
   getSnaptradeBalancesFromDB,
   getSnaptradeConnectionsFromDB,
+  populateInvestmentAccountsInDB,
 };
 
 export default snaptradeUtils;

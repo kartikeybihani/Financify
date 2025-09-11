@@ -13,7 +13,14 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  const { item_id } = req.body;
+  const { item_id, mode, user_id } = req.body;
+
+  // Handle SnapTrade investment account population
+  if (mode === "populate_investment_accounts") {
+    return handleInvestmentAccountPopulation(req, res, user_id);
+  }
+
+  // Handle regular Plaid account storage
   if (!item_id) {
     return res.status(400).json({ error: "Missing item_id" });
   }
@@ -176,6 +183,200 @@ export default async function handler(req, res) {
     return res.status(500).json({
       error: plaidError?.error_message || error.message,
       details: plaidError || error,
+    });
+  }
+}
+
+// === SnapTrade Investment Account Population Handler ===
+async function handleInvestmentAccountPopulation(req, res, user_id) {
+  if (!user_id) {
+    return res.status(400).json({ error: "Missing user_id" });
+  }
+
+  try {
+    console.log("🔄 Populating investment accounts for user:", user_id);
+
+    // Get all SnapTrade connections for this user
+    const { data: connections, error: connError } = await supabase
+      .from("snaptrade_connections")
+      .select("*")
+      .eq("user_id", user_id)
+      .eq("is_active", true);
+
+    if (connError) throw connError;
+
+    if (!connections || connections.length === 0) {
+      return res.status(200).json({
+        success: true,
+        populated: 0,
+        message: "No SnapTrade connections found",
+      });
+    }
+
+    // Get current holdings and balances
+    const { data: holdings, error: holdingsError } = await supabase
+      .from("investment_holdings")
+      .select("*")
+      .eq("user_id", user_id)
+      .eq("is_active", true);
+
+    if (holdingsError) throw holdingsError;
+
+    const { data: balances, error: balancesError } = await supabase
+      .from("investment_balances")
+      .select("*")
+      .eq("user_id", user_id)
+      .eq("is_current", true);
+
+    if (balancesError) throw balancesError;
+
+    let populatedCount = 0;
+
+    for (const connection of connections) {
+      try {
+        // Calculate total portfolio value from holdings
+        const accountHoldings = holdings.filter(
+          (h) => h.account_id === connection.account_id
+        );
+        const totalHoldingsValue = accountHoldings.reduce(
+          (sum, holding) => sum + (holding.market_value || 0),
+          0
+        );
+
+        // Get cash balance
+        const cashBalance = balances.find(
+          (b) => b.account_id === connection.account_id
+        );
+        const cashAmount = cashBalance?.cash || 0;
+
+        // Total investment value = holdings + cash
+        const totalValue = totalHoldingsValue + cashAmount;
+
+        // Create a unique item_id for SnapTrade accounts
+        const investmentItemId = `snaptrade-${connection.account_id}`;
+
+        // First, check if this investment account already exists
+        const { data: existingAccount, error: checkError } = await supabase
+          .from("accounts")
+          .select("account_id")
+          .eq("account_id", connection.account_id)
+          .single();
+
+        if (existingAccount) {
+          console.log(
+            `ℹ️ Investment account ${connection.account_id} already exists, updating balance...`
+          );
+
+          // Update the existing account with new balance
+          const { error: updateError } = await supabase
+            .from("accounts")
+            .update({
+              current_balance: totalValue,
+              available_balance: cashAmount,
+            })
+            .eq("account_id", connection.account_id);
+
+          if (updateError) {
+            console.error(
+              `❌ Failed to update investment account ${connection.account_id}:`,
+              updateError
+            );
+          } else {
+            console.log(
+              `✅ Updated investment account ${
+                connection.account_id
+              } with balance: $${totalValue.toFixed(2)}`
+            );
+            populatedCount++;
+          }
+        } else {
+          // First, create the user_items entry
+          const { data: existingItem, error: itemCheckError } = await supabase
+            .from("user_items")
+            .select("item_id")
+            .eq("item_id", investmentItemId)
+            .single();
+
+          if (!existingItem && !itemCheckError) {
+            const { error: itemInsertError } = await supabase
+              .from("user_items")
+              .insert({
+                user_id: user_id,
+                item_id: investmentItemId,
+                institution_name:
+                  connection.brokerage_name || "Investment Broker",
+                institution_id: `snaptrade-${connection.brokerage_name?.toLowerCase()}`,
+                has_new_accounts: false,
+                requires_update_mode: false,
+                last_synced_at:
+                  connection.last_synced_at || new Date().toISOString(),
+              });
+
+            if (itemInsertError) {
+              console.error(
+                `❌ Failed to create user_items entry for investment account:`,
+                itemInsertError
+              );
+              continue; // Skip creating the account if user_items creation fails
+            } else {
+              console.log(`✅ Created user_items entry for investment account`);
+            }
+          }
+
+          // Now create the investment account entry
+          const investmentAccount = {
+            account_id: connection.account_id,
+            item_id: investmentItemId,
+            name: connection.account_name || "Investment Account",
+            mask: null,
+            type: "investment",
+            subtype: "investment",
+            official_name: `${
+              connection.brokerage_name || "Investment"
+            } Account`,
+            current_balance: totalValue,
+            available_balance: cashAmount,
+          };
+
+          const { error: insertError } = await supabase
+            .from("accounts")
+            .insert(investmentAccount);
+
+          if (insertError) {
+            console.error(
+              `❌ Failed to insert investment account ${connection.account_id}:`,
+              insertError
+            );
+          } else {
+            console.log(
+              `✅ Created investment account ${
+                connection.account_id
+              } with balance: $${totalValue.toFixed(2)}`
+            );
+            populatedCount++;
+          }
+        }
+      } catch (accountError) {
+        console.error(
+          `❌ Error processing investment account ${connection.account_id}:`,
+          accountError
+        );
+      }
+    }
+
+    console.log(
+      `✅ Investment accounts population completed: ${populatedCount} accounts processed`
+    );
+    return res.status(200).json({
+      success: true,
+      populated: populatedCount,
+      message: `Successfully populated ${populatedCount} investment accounts`,
+    });
+  } catch (error) {
+    console.error("❌ Failed to populate investment accounts:", error);
+    return res.status(500).json({
+      error: "Failed to populate investment accounts",
+      details: error.message,
     });
   }
 }

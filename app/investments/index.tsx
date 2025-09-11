@@ -17,6 +17,7 @@ import {
   getSnaptradeConnectionsFromDB,
   getStoredSnaptradeCredentials,
   syncSnaptradeInvestments,
+  populateInvestmentAccountsInDB,
 } from "../_utils/snaptrade";
 
 interface Holding {
@@ -78,6 +79,10 @@ export default function InvestmentsScreen() {
 
   useEffect(() => {
     loadFromDb();
+    // Populate investment accounts in main accounts table
+    populateInvestmentAccountsInDB().catch((err) =>
+      console.error("Failed to populate investment accounts:", err)
+    );
   }, []);
 
   const handleSync = async () => {
@@ -92,6 +97,8 @@ export default function InvestmentsScreen() {
         if (user) {
           await syncSnaptradeInvestments(user.id, first.account_id);
           await loadFromDb();
+          // Also update the investment accounts in the main accounts table
+          await populateInvestmentAccountsInDB();
         }
       }
     } catch (err) {

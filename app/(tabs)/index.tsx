@@ -25,6 +25,7 @@ import {
   getItemIds,
   addNewBankAccount,
 } from "../_utils/plaid";
+import { populateInvestmentAccountsInDB } from "../_utils/snaptrade";
 import {
   Account,
   Identity,
@@ -123,6 +124,19 @@ export default function HomeScreen() {
       // Get accounts directly from database (same as insights)
       const accounts = await getAllUserAccounts(user.id);
       setAccounts(accounts || []);
+
+      // Populate investment accounts in main accounts table if SnapTrade data exists
+      try {
+        await populateInvestmentAccountsInDB();
+        // Reload accounts to include any newly populated investment accounts
+        const updatedAccounts = await getAllUserAccounts(user.id);
+        setAccounts(updatedAccounts || []);
+      } catch (error) {
+        console.error(
+          "⚠️ Failed to populate investment accounts (continuing anyway):",
+          error
+        );
+      }
 
       // Get institution info from primary item
       const item_id = await getPrimaryItemId();
@@ -359,21 +373,25 @@ export default function HomeScreen() {
     (acc) => acc.type === "depository"
   );
 
+  const categorizedInvestments = accounts.filter(
+    (acc) => acc.type === "investment"
+  );
+
   // Debug: Log categorization results
   console.log("💰 Categorized Deposits:", categorizedDeposits.length);
   console.log("💳 Categorized Liabilities:", categorizedLiabilities.length);
   console.log("📈 Investment Holdings:", investments?.holdings?.length || 0);
+  console.log("📊 Investment Accounts:", categorizedInvestments.length);
 
   const accountsTotal = categorizedDeposits.reduce(
     (acc, a) => acc + (a.balances.current || 0),
     0
   );
 
-  const investmentsTotal =
-    investments?.holdings?.reduce(
-      (acc, h) => acc + (h.institution_value || 0),
-      0
-    ) || 0;
+  const investmentsTotal = categorizedInvestments.reduce(
+    (acc, a) => acc + (a.balances.current || 0),
+    0
+  );
 
   const liabilitiesTotal = categorizedLiabilities.reduce(
     (acc, a) => acc + (a.balances.current || 0),
@@ -845,18 +863,18 @@ export default function HomeScreen() {
                 title: "INVESTMENTS",
                 icon: "trending-up" as keyof typeof Ionicons.glyphMap,
                 iconColor: "#4ECDC4",
-                items: (investments?.holdings || []).map((holding, index) => (
+                items: categorizedInvestments.map((account, index) => (
                   <AccountItem
                     key={index}
-                    name={holding.security_id}
-                    type="Investment"
+                    name={account.name}
+                    type={account.type}
                     balance={formatCurrency(
-                      holding.institution_value || 0,
+                      account.balances.current || 0,
                       "USD",
                       { decimals: 0, useKM: false }
                     )}
                     icon="trending-up"
-                    bankName={institution?.name || "Investment Account"}
+                    bankName={account.institution_name || "Investment Broker"}
                   />
                 )),
               },
