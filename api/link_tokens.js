@@ -13,11 +13,11 @@ const isSandbox = process.env.SNAPTRADE_ENVIRONMENT === "sandbox";
 
 const snaptrade = new Snaptrade({
   clientId: isSandbox
-    ? process.env.SNAPTRADE_CLIENT_ID
-    : process.env.SNAPTRADE_CLIENT_ID_PROD,
+    ? process.env.SNAPTRADE_CLIENT_ID_DEV
+    : process.env.SNAPTRADE_CLIENT_ID,
   consumerKey: isSandbox
-    ? process.env.SNAPTRADE_CONSUMER_KEY
-    : process.env.SNAPTRADE_CONSUMER_KEY_PROD,
+    ? process.env.SNAPTRADE_CONSUMER_KEY_DEV
+    : process.env.SNAPTRADE_CONSUMER_KEY,
 });
 
 export default async function handler(req, res) {

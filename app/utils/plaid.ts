@@ -2,12 +2,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { open, create } from "react-native-plaid-link-sdk";
 import {supabase} from "../lib/supabase/supabase";
-import { 
-  getSnaptradeCredentials, 
-  hasSnaptradeCredentials, 
-  areSnaptradeCredentialsValid,
-  clearSnaptradeCredentials 
-} from "./snaptradeStorage";
 
 const BASE_URL = "https://financify-rose.vercel.app";
 
@@ -58,197 +52,7 @@ export const fetchLinkToken = async () => {
   return data.link_token;
 };
 
-// === Register Snaptrade User ===
-export const registerSnaptradeUser = async () => {
-  const { data: { user } } = await supabase.auth.getUser();
-  
-  // Generate a new unique user ID for each Snaptrade registration
-  const timestamp = Date.now();
-  const randomSuffix = Math.random().toString(36).substring(2, 8);
-  const snaptradeUserId = `financify-${user?.id}-${timestamp}-${randomSuffix}`;
-  
-  console.log("🆔 Generated new Snaptrade user ID:", snaptradeUserId);
-  
-  const res = await fetch(`${BASE_URL}/api/link_tokens`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ mode: "snaptrade", user_id: snaptradeUserId }),
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || "Failed to register Snaptrade user");
-  console.log("✅ Snaptrade user registered successfully: ", data);
-  return data;
-};
-
-// === Fetch Snaptrade Accounts ===
-export const fetchSnaptradeAccounts = async (userId: string, userSecret: string) => {
-  const res = await fetch(`${BASE_URL}/api/link_tokens`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ 
-      mode: "snaptrade_accounts", 
-      userId: userId,
-      userSecret: userSecret 
-    }),
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || "Failed to fetch Snaptrade accounts");
-  console.log("✅ Snaptrade accounts fetched successfully: ", data);
-  return data.accounts;
-};
-
-// === Get Stored Snaptrade Credentials ===
-export const getStoredSnaptradeCredentials = async () => {
-  try {
-    const credentials = await getSnaptradeCredentials();
-    if (!credentials) {
-      console.log("ℹ️ No stored Snaptrade credentials found");
-      return null;
-    }
-    
-    // Check if credentials are still valid
-    const isValid = await areSnaptradeCredentialsValid();
-    if (!isValid) {
-      console.log("⚠️ Stored Snaptrade credentials are expired, clearing them");
-      await clearSnaptradeCredentials();
-      return null;
-    }
-    
-    console.log("✅ Retrieved valid Snaptrade credentials from storage");
-    return credentials;
-  } catch (error) {
-    console.error("❌ Failed to get stored Snaptrade credentials:", error);
-    return null;
-  }
-};
-
-// === Fetch Snaptrade Accounts Using Stored Credentials ===
-export const fetchSnaptradeAccountsFromStorage = async () => {
-  try {
-    const credentials = await getStoredSnaptradeCredentials();
-    if (!credentials) {
-      throw new Error("No valid Snaptrade credentials found in storage");
-    }
-    
-    console.log("🔄 Fetching Snaptrade accounts using stored credentials...");
-    const accounts = await fetchSnaptradeAccounts(credentials.userId, credentials.userSecret);
-    console.log("✅ Snaptrade accounts fetched using stored credentials:", accounts.length);
-    return accounts;
-  } catch (error) {
-    console.error("❌ Failed to fetch Snaptrade accounts from storage:", error);
-    throw error;
-  }
-};
-
-// === Check if Snaptrade Connection Exists ===
-export const hasSnaptradeConnection = async (): Promise<boolean> => {
-  try {
-    const hasCredentials = await hasSnaptradeCredentials();
-    if (!hasCredentials) return false;
-    
-    const isValid = await areSnaptradeCredentialsValid();
-    return isValid;
-  } catch (error) {
-    console.error("❌ Failed to check Snaptrade connection:", error);
-    return false;
-  }
-};
-
-// === Clear Snaptrade Connection ===
-export const clearSnaptradeConnection = async (): Promise<void> => {
-  try {
-    await clearSnaptradeCredentials();
-    console.log("✅ Snaptrade connection cleared");
-  } catch (error) {
-    console.error("❌ Failed to clear Snaptrade connection:", error);
-    throw error;
-  }
-};
-
-// === Beautify Holdings Response ===
-export const beautifyHoldingsResponse = (holdings: any) => {
-  console.log("📊 === SNAPTRADE HOLDINGS RESPONSE ===");
-  console.log("📈 Total Holdings:", holdings.length);
-  console.log("");
-
-  holdings.forEach((holding: any, index: number) => {
-    console.log(`🏦 Holding #${index + 1}:`);
-    console.log(`   📋 Symbol: ${holding.symbol || "N/A"}`);
-    console.log(`   📝 Description: ${holding.description || "N/A"}`);
-    console.log(`   💰 Quantity: ${holding.quantity || "N/A"}`);
-    console.log(`   💵 Market Value: $${holding.marketValue || "N/A"}`);
-    console.log(`   📊 Average Price: $${holding.averagePrice || "N/A"}`);
-    console.log(`   🏢 Account: ${holding.account?.name || "N/A"}`);
-    console.log(`   🆔 Account ID: ${holding.account?.id || "N/A"}`);
-    console.log(`   📅 Last Updated: ${holding.updatedAt || "N/A"}`);
-    console.log("   " + "─".repeat(50));
-  });
-
-  // Summary
-  const totalValue = holdings.reduce(
-    (sum: number, holding: any) =>
-      sum + (parseFloat(holding.marketValue) || 0),
-    0
-  );
-  console.log("");
-  console.log("💰 === SUMMARY ===");
-  console.log(`📊 Total Portfolio Value: $${totalValue.toFixed(2)}`);
-  console.log(`📈 Number of Holdings: ${holdings.length}`);
-  console.log("=".repeat(60));
-};
-
-// === Fetch Snaptrade Holdings via API ===
-export const fetchSnaptradeHoldings = async (userId: string, userSecret: string, accountId: string) => {
-  try {
-    console.log("🔄 Fetching Snaptrade holdings via API...");
-    
-    const res = await fetch(`${BASE_URL}/api/link_tokens`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ 
-        mode: "snaptrade_holdings", 
-        userId: userId,
-        userSecret: userSecret,
-        accountId: accountId
-      }),
-    });
-    
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Failed to fetch Snaptrade holdings");
-    
-    console.log("✅ Snaptrade holdings fetched successfully via API");
-    
-    // Beautify the response on frontend
-    if (data.holdings && Array.isArray(data.holdings)) {
-      beautifyHoldingsResponse(data.holdings);
-    } else {
-      console.log("📊 Holdings data structure:", JSON.stringify(data.holdings, null, 2));
-    }
-    
-    return data.holdings;
-  } catch (error) {
-    console.error("❌ Failed to fetch Snaptrade holdings via API:", error);
-    throw error;
-  }
-};
-
-// === Fetch Snaptrade Holdings Using Stored Credentials ===
-export const fetchSnaptradeHoldingsFromStorage = async (accountId: string) => {
-  try {
-    const credentials = await getStoredSnaptradeCredentials();
-    if (!credentials) {
-      throw new Error("No valid Snaptrade credentials found in storage");
-    }
-    
-    console.log("🔄 Fetching Snaptrade holdings using stored credentials...");
-    const holdings = await fetchSnaptradeHoldings(credentials.userId, credentials.userSecret, accountId);
-    console.log("✅ Snaptrade holdings fetched using stored credentials:", holdings.length);
-    return holdings;
-  } catch (error) {
-    console.error("❌ Failed to fetch Snaptrade holdings from storage:", error);
-    throw error;
-  }
-};
+// SnapTrade functions moved to app/utils/snaptrade.ts
 
 // === Connect Flow ===
 export const handlePlaidConnect = async (
@@ -1623,16 +1427,7 @@ const plaidUtils = {
   disconnectPlaid: handleDisconnect,       // disconnect single item
   disconnectAll: handleDisconnectAll,      // disconnect all items
   
-  // Snaptrade functions
-  registerSnaptradeUser,                   // register new Snaptrade user
-  fetchSnaptradeAccounts,                  // fetch accounts with credentials
-  fetchSnaptradeAccountsFromStorage,       // fetch accounts using stored credentials
-  fetchSnaptradeHoldings,                  // fetch holdings with credentials
-  fetchSnaptradeHoldingsFromStorage,       // fetch holdings using stored credentials
-  beautifyHoldingsResponse,                // beautify holdings response for console
-  getStoredSnaptradeCredentials,           // get stored credentials
-  hasSnaptradeConnection,                  // check if connection exists
-  clearSnaptradeConnection,                // clear stored connection
+  // SnapTrade functions moved to app/utils/snaptrade.ts
   
   // Facts pipeline
   handleAskFactFresh,                      // client helper for fresh facts lookup

@@ -15,6 +15,15 @@ CREATE TABLE public.accounts (
   CONSTRAINT accounts_pkey PRIMARY KEY (account_id),
   CONSTRAINT accounts_item_id_fkey FOREIGN KEY (item_id) REFERENCES public.user_items(item_id)
 );
+CREATE TABLE public.facts_cache (
+  key text NOT NULL,
+  value_json jsonb NOT NULL,
+  source_url text NOT NULL,
+  source_title text,
+  fetched_at timestamp with time zone NOT NULL DEFAULT now(),
+  ttl_seconds integer NOT NULL DEFAULT 15552000,
+  CONSTRAINT facts_cache_pkey PRIMARY KEY (key)
+);
 CREATE TABLE public.goals (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL,
@@ -55,8 +64,8 @@ CREATE TABLE public.recurring_streams (
   last_synced_at timestamp with time zone DEFAULT now(),
   CONSTRAINT recurring_streams_pkey PRIMARY KEY (id),
   CONSTRAINT recurring_streams_account_id_fkey FOREIGN KEY (account_id) REFERENCES public.accounts(account_id),
-  CONSTRAINT recurring_streams_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id),
-  CONSTRAINT recurring_streams_item_id_fkey FOREIGN KEY (item_id) REFERENCES public.user_items(item_id)
+  CONSTRAINT recurring_streams_item_id_fkey FOREIGN KEY (item_id) REFERENCES public.user_items(item_id),
+  CONSTRAINT recurring_streams_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
 );
 CREATE TABLE public.transactions (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -73,8 +82,8 @@ CREATE TABLE public.transactions (
   pending boolean,
   inserted_at timestamp with time zone DEFAULT now(),
   CONSTRAINT transactions_pkey PRIMARY KEY (id),
-  CONSTRAINT transactions_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id),
-  CONSTRAINT transactions_account_id_fkey FOREIGN KEY (account_id) REFERENCES public.accounts(account_id)
+  CONSTRAINT transactions_account_id_fkey FOREIGN KEY (account_id) REFERENCES public.accounts(account_id),
+  CONSTRAINT transactions_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
 );
 CREATE TABLE public.user_items (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
