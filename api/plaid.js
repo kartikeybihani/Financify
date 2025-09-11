@@ -247,6 +247,13 @@ async function callSnapTradeAPI(endpoint, params) {
   const SNAPTRADE_CLIENT_ID = process.env.SNAPTRADE_CLIENT_ID;
   const SNAPTRADE_CONSUMER_KEY = process.env.SNAPTRADE_CONSUMER_KEY;
 
+  // Fail fast if credentials are not configured
+  if (!SNAPTRADE_CLIENT_ID || !SNAPTRADE_CONSUMER_KEY) {
+    throw new Error(
+      "SnapTrade credentials missing: ensure SNAPTRADE_CLIENT_ID and SNAPTRADE_CONSUMER_KEY are set"
+    );
+  }
+
   const url = new URL(`${SNAPTRADE_BASE_URL}${endpoint}`);
 
   // Add query parameters
@@ -261,8 +268,9 @@ async function callSnapTradeAPI(endpoint, params) {
     headers: {
       Accept: "application/json",
       "Content-Type": "application/json",
-      "Client-Id": SNAPTRADE_CLIENT_ID,
-      "Consumer-Key": SNAPTRADE_CONSUMER_KEY,
+      // Header names must match SnapTrade expectations
+      clientId: SNAPTRADE_CLIENT_ID,
+      consumerKey: SNAPTRADE_CONSUMER_KEY,
     },
   });
 
