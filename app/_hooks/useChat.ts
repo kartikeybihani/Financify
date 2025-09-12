@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ChatMessage, Goal } from '../_types/finny';
 import finnyConstants from '../_constants/finny';
@@ -31,6 +31,7 @@ export const useChat = () => {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>(finnyConstants.INITIAL_CHAT_MESSAGES);
   const [isTyping, setIsTyping] = useState(false);
   const [showNudges, setShowNudges] = useState(true);
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     loadChatMessages();
@@ -38,7 +39,19 @@ export const useChat = () => {
 
   useEffect(() => {
     setShowNudges(chatMessages.length <= 1);
-    saveChatMessages();
+
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+    saveTimeoutRef.current = setTimeout(() => {
+      saveChatMessages();
+    }, 300);
+
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+    };
   }, [chatMessages]);
 
   const loadChatMessages = async () => {
@@ -111,7 +124,7 @@ export const useChat = () => {
       for (let i = 0; i < messages.length; i++) {
         if (sender === "finny") {
           setIsTyping(true);
-          await new Promise((resolve) => setTimeout(resolve, 1000 + Math.random() * 1000));
+          await new Promise<void>((resolve) => setTimeout(resolve, 1000 + Math.random() * 1000));
         }
 
         pushChat(sender, messages[i]);
@@ -240,4 +253,4 @@ export const useChat = () => {
 
 // Export both as named and default export for compatibility
 export { splitIntoMessages };
-export default useChat; 
+export default useChat;  
