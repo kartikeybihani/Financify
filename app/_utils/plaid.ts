@@ -2,6 +2,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { open, create } from "react-native-plaid-link-sdk";
 import {supabase} from "../_lib/supabase/supabase";
+import logger from "./logger";
 
 const BASE_URL = "https://financify-rose.vercel.app";
 
@@ -66,14 +67,14 @@ export const handlePlaidConnect = async (
   open({
     onSuccess: async ({ publicToken }: { publicToken: string }) => {
       try {
-        console.log("🔄 Starting token exchange...");
+        logger.info("🔄 Starting token exchange...");
         const { data: { user } } = await supabase.auth.getUser();
         
         if (!user?.id) {
           throw new Error("User not authenticated");
         }
 
-        console.log("📡 Making API call to exchange_public_token");
+        logger.info("📡 Making API call to exchange_public_token");
         const res = await fetch(`${BASE_URL}/api/exchange_public_token`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -84,7 +85,7 @@ export const handlePlaidConnect = async (
         });
 
         const data = await res.json();
-        console.log("📦 Exchange response:", { ok: res.ok, data });
+        logger.info("📦 Exchange response:", { ok: res.ok, data });
         
         if (!res.ok) {
           throw new Error(data.error || `Exchange failed: ${res.status}`);
@@ -97,31 +98,31 @@ export const handlePlaidConnect = async (
         // ✅ we only get and keep item_id client-side
         const { item_id } = data;
         await setLastUsedItemId(item_id);
-        console.log("✅ Token exchange successful, item_id:", item_id);
+        logger.info("✅ Token exchange successful, item_id:", item_id);
         
         // 🏦 Immediately fetch and store accounts
         try {
-          console.log("🔄 Fetching and storing accounts...");
+          logger.info("🔄 Fetching and storing accounts...");
           await storeAccounts(item_id);
-          console.log("✅ Accounts stored successfully");
+          logger.info("✅ Accounts stored successfully");
         } catch (accountError) {
-          console.error("⚠️ Failed to store accounts (continuing anyway):", accountError);
+          logger.error("⚠️ Failed to store accounts (continuing anyway):", accountError);
           // Don't fail the whole connection if account storage fails
         }
         
         // 💸 Trigger initial transaction sync
         try {
-          console.log("🔄 Syncing initial transactions...");
+          logger.info("🔄 Syncing initial transactions...");
           await syncTransactions(item_id);
-          console.log("✅ Initial transaction sync completed");
+          logger.info("✅ Initial transaction sync completed");
         } catch (syncError) {
-          console.error("⚠️ Failed to sync initial transactions (continuing anyway):", syncError);
+          logger.error("⚠️ Failed to sync initial transactions (continuing anyway):", syncError);
           // Don't fail the whole connection if initial sync fails
         }
         
         onSuccess(item_id);
       } catch (error) {
-        console.error("❌ Token exchange failed:", error);
+        logger.error("❌ Token exchange failed:", error);
         // Call onExit with error to trigger error handling
         onExit?.(error);
       }
@@ -136,27 +137,27 @@ export const addNewBankAccount = async (
   onExit?: (error?: any) => void
 ) => {
   try {
-    console.log("🏦 Starting process to add new bank account...");
+    logger.info("🏦 Starting process to add new bank account...");
     
     // 1. Get a new link token for adding accounts
     const linkToken = await fetchLinkToken();
-    console.log("🔗 Generated link token for new bank connection");
+    logger.info("🔗 Generated link token for new bank connection");
     
     // 2. Open Plaid Link for the user to select a new bank
     await handlePlaidConnect(
       linkToken,
       (itemId) => {
-        console.log("✅ Successfully added new bank account:", itemId);
+        logger.info("✅ Successfully added new bank account:", itemId);
         onSuccess?.(itemId);
       },
       (error) => {
-        console.error("❌ Failed to add new bank account:", error);
+        logger.error("❌ Failed to add new bank account:", error);
         onExit?.(error);
       }
     );
     
   } catch (error) {
-    console.error("❌ Error in addNewBankAccount:", error);
+    logger.error("❌ Error in addNewBankAccount:", error);
     onExit?.(error);
   }
 };
@@ -177,29 +178,29 @@ export const getUpdateLinkToken = async (item_id: string) => {
 // === Open Plaid Link ===
 export const openPlaidLink = async (link_token: string) => {
   try {
-    console.log("Opening Plaid link for update");
+    logger.info("Opening Plaid link for update");
     create({ token: link_token });
     return new Promise((resolve, reject) => {
       open({
         onSuccess: () => {
-          console.log("✅ Update success");
+          logger.info("✅ Update success");
           resolve(true);
         },
         onExit: (error: any) => {
-          console.log("⛔ Update exited", error);
+          logger.info("⛔ Update exited", error);
           reject(error || new Error("Update flow exited"));
         },
       });
     });
   } catch (error) {
-    console.error("Error opening Plaid link:", error);
+    logger.error("Error opening Plaid link:", error);
     throw error;
   }
 };
 
 // === Disconnect ===
 export const handleDisconnect = async (item_id: string) => {
-  console.log(`🔄 Disconnecting item: ${item_id}`);
+  logger.info(`🔄 Disconnecting item: ${item_id}`);
   
   if (!item_id) {
     throw new Error("Item ID is required for disconnection");
@@ -212,7 +213,7 @@ export const handleDisconnect = async (item_id: string) => {
   });
   
   const payload = await res.json();
-  console.log("📦 Remove item response:", { ok: res.ok, payload });
+  logger.info("📦 Remove item response:", { ok: res.ok, payload });
   
   if (!res.ok || payload?.error) {
     throw new Error(payload?.error || `Remove failed with status ${res.status}`);
@@ -222,10 +223,10 @@ export const handleDisconnect = async (item_id: string) => {
   const lastUsed = await getLastUsedItemId();
   if (lastUsed === item_id) {
     await setLastUsedItemId(''); // Clear it
-    console.log("🧹 Cleared last used item ID");
+    logger.info("🧹 Cleared last used item ID");
   }
   
-  console.log("✅ Successfully disconnected item");
+  logger.info("✅ Successfully disconnected item");
   return true;
 };
 
@@ -233,10 +234,10 @@ export const handleDisconnect = async (item_id: string) => {
 export const handleDisconnectAll = async () => {
   try {
     const items = await getUserItems();
-    console.log(`🔄 Disconnecting all ${items.length} connected items...`);
+    logger.info(`🔄 Disconnecting all ${items.length} connected items...`);
     
     if (items.length === 0) {
-      console.log("ℹ️ No items to disconnect");
+      logger.info("ℹ️ No items to disconnect");
       return { success: true, disconnected: 0 };
     }
     
@@ -247,7 +248,7 @@ export const handleDisconnectAll = async () => {
     const successful = results.filter(result => result.status === 'fulfilled').length;
     const failed = results.filter(result => result.status === 'rejected').length;
     
-    console.log(`✅ Disconnect summary: ${successful} successful, ${failed} failed`);
+    logger.info(`✅ Disconnect summary: ${successful} successful, ${failed} failed`);
     
     // Clear last used item regardless
     await setLastUsedItemId('');
@@ -259,7 +260,7 @@ export const handleDisconnectAll = async () => {
       total: items.length 
     };
   } catch (error) {
-    console.error("❌ Error during disconnect all:", error);
+    logger.error("❌ Error during disconnect all:", error);
     throw error;
   }
 };
@@ -275,7 +276,7 @@ export const fetchInstitution = async (item_id: string) => {
     const data = await res.json();
     return data.institution;
   } catch (err) {
-    console.error("Error fetching institution:", err);
+    logger.error("Error fetching institution:", err);
     return null;
   }
 };
@@ -303,7 +304,7 @@ export const fetchIdentity = async (item_id: string) => {
     const data = await res.json();
     return data.identity;
   } catch (err) {
-    console.error("Error fetching identity:", err);
+    logger.error("Error fetching identity:", err);
     return [];
   }
 };
@@ -317,14 +318,14 @@ export const fetchInvestments = async (item_id: string) => {
       body: JSON.stringify({ endpoint: "investments", item_id }),
     });
     const data = await res.json();
-    console.log("Investments data loaded...");
+    logger.info("Investments data loaded...");
     return {
       holdings: data.holdings || [],
       securities: data.securities || [],
       investmentTransactions: data.investment_transactions || [],
     };
   } catch (err) {
-    console.error("Error fetching investments:", err);
+    logger.error("Error fetching investments:", err);
     return {
       holdings: [],
       securities: [],
@@ -341,10 +342,10 @@ export const fetchLiabilities = async (item_id: string) => {
       body: JSON.stringify({ endpoint: "liabilities", item_id }),
     });
     const data = await res.json();
-    console.log("Liabilities data loaded...");
+    logger.info("Liabilities data loaded...");
     return data.liabilities || [];
   } catch (err) {
-    console.error("Error fetching liabilities:", err);
+    logger.error("Error fetching liabilities:", err);
     return [];
   }
 };
@@ -354,11 +355,11 @@ export const fetchInitialData = async () => {
   try {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user?.id) {
-      console.log("❌ No authenticated user found");
+      logger.info("❌ No authenticated user found");
       return { accounts: [], transactions: [], investments: {}, liabilities: [] };
     }
 
-    console.log("🚀 Loading initial data for user:", user.id);
+    logger.info("🚀 Loading initial data for user:", user.id);
 
     // Get all accounts for user (from all connected institutions)
     const accounts = await getAllUserAccounts(user.id);
@@ -393,7 +394,7 @@ export const fetchInitialData = async () => {
       item_id // Most recent item_id for compatibility
     };
 
-    console.log("📊 Initial data loaded:", {
+    logger.info("📊 Initial data loaded:", {
       institution: institution?.name || "Multiple/Unknown",
       accounts: accounts?.length || 0,
       transactions: transactions?.length || 0,
@@ -403,7 +404,7 @@ export const fetchInitialData = async () => {
 
     return result;
   } catch (error) {
-    console.error("❌ Error fetching initial data:", error);
+    logger.error("❌ Error fetching initial data:", error);
     return { 
       accounts: [], 
       transactions: [],
@@ -426,7 +427,7 @@ export const syncTransactions = async (item_id: string) => {
     const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
     
     if (SUPABASE_URL) {
-      console.log("📡 Calling Supabase function for sync...");
+      logger.info("📡 Calling Supabase function for sync...");
       const res = await fetch(`${SUPABASE_URL}/functions/v1/sync-transactions`, {
         method: "POST",
         headers: { 
@@ -437,22 +438,22 @@ export const syncTransactions = async (item_id: string) => {
       });
       
       const data = await res.json();
-      console.log("📦 Supabase function response:", { status: res.status, data });
+      logger.info("📦 Supabase function response:", { status: res.status, data });
       
       if (res.ok) {
-        console.log("✅ Transaction sync complete via Supabase function:", {
+        logger.info("✅ Transaction sync complete via Supabase function:", {
           added: data.added,
           modified: data.modified, 
           removed: data.removed
         });
         return data;
       } else {
-        console.warn("⚠️ Supabase function failed, trying API fallback:", data);
+        logger.warn("⚠️ Supabase function failed, trying API fallback:", data);
       }
     }
     
     // Fallback to API endpoint (with fixed category storage)
-    console.log("📡 Using API endpoint fallback...");
+    logger.info("📡 Using API endpoint fallback...");
     const res = await fetch(`${BASE_URL}/api/transactions_sync`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -460,22 +461,22 @@ export const syncTransactions = async (item_id: string) => {
     });
     
     const data = await res.json();
-    console.log("📦 API response:", { status: res.status, data });
+    logger.info("📦 API response:", { status: res.status, data });
     
     if (!res.ok) throw new Error(data.error || "API sync failed");
     
-    console.log("✅ Transaction sync complete via API:", data);
+    logger.info("✅ Transaction sync complete via API:", data);
     return data;
     
   } catch (error) {
-    console.error("❌ Transaction sync failed:", error);
+    logger.error("❌ Transaction sync failed:", error);
     throw error;
   }
 };
 
 // === Store Accounts ===
 export const storeAccounts = async (item_id: string) => {
-  console.log("🏦 Storing accounts for item_id:", item_id);
+  logger.info("🏦 Storing accounts for item_id:", item_id);
   const res = await fetch(`${BASE_URL}/api/store_accounts`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -483,7 +484,7 @@ export const storeAccounts = async (item_id: string) => {
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || "Failed to store accounts");
-  console.log("✅ Accounts stored:", data.stored);
+  logger.info("✅ Accounts stored:", data.stored);
   return data;
 };
 
@@ -497,7 +498,7 @@ export const fetchAccountsFromDatabase = async (item_id: string) => {
 
     if (error) throw error;
     
-    console.log(`📊 Found ${accounts?.length || 0} accounts in database for item_id: ${item_id}`);
+    logger.info(`📊 Found ${accounts?.length || 0} accounts in database for item_id: ${item_id}`);
     
     // Transform database format to UI-compatible format
     const transformedAccounts = (accounts || []).map(account => ({
@@ -516,9 +517,9 @@ export const fetchAccountsFromDatabase = async (item_id: string) => {
         official_name: account.official_name,
     }));
     
-    console.log("🔄 Transformed accounts for UI compatibility:", transformedAccounts.length);
+    logger.info("🔄 Transformed accounts for UI compatibility:", transformedAccounts.length);
     if (transformedAccounts.length > 0) {
-      console.log("📊 Sample transformed account:", {
+      logger.info("📊 Sample transformed account:", {
         name: transformedAccounts[0].name,
         type: transformedAccounts[0].type,
         balances: transformedAccounts[0].balances,
@@ -527,7 +528,7 @@ export const fetchAccountsFromDatabase = async (item_id: string) => {
     
     return transformedAccounts;
   } catch (err) {
-    console.error("Error fetching accounts from database:", err);
+    logger.error("Error fetching accounts from database:", err);
     return [];
   }
 };
@@ -549,10 +550,10 @@ export const getRecentTransactions = async (user_id: string, limit: number = 50)
     
     if (error) throw error;
     
-    console.log(`📊 Found ${data?.length || 0} recent transactions for user`);
+    logger.info(`📊 Found ${data?.length || 0} recent transactions for user`);
     return data || [];
   } catch (err) {
-    console.error("Error fetching recent transactions:", err);
+    logger.error("Error fetching recent transactions:", err);
     return [];
   }
 };
@@ -572,10 +573,10 @@ export const getAccountTransactions = async (account_id: string, limit: number =
     
     if (error) throw error;
     
-    console.log(`📊 Found ${data?.length || 0} transactions for account ${account_id}`);
+    logger.info(`📊 Found ${data?.length || 0} transactions for account ${account_id}`);
     return data || [];
   } catch (err) {
-    console.error("Error fetching account transactions:", err);
+    logger.error("Error fetching account transactions:", err);
     return [];
   }
 };
@@ -616,10 +617,10 @@ export const getAllUserAccounts = async (user_id: string) => {
       };
     });
     
-    console.log(`📊 Found ${transformedAccounts.length} total accounts for user across ${userItems.length} institutions`);
+    logger.info(`📊 Found ${transformedAccounts.length} total accounts for user across ${userItems.length} institutions`);
     return transformedAccounts;
   } catch (err) {
-    console.error("Error fetching all user accounts:", err);
+    logger.error("Error fetching all user accounts:", err);
     return [];
   }
 };
@@ -646,10 +647,10 @@ export const getTransactionsByDateRange = async (
     
     if (error) throw error;
     
-    console.log(`📊 Found ${data?.length || 0} transactions between ${startDate} and ${endDate}`);
+    logger.info(`📊 Found ${data?.length || 0} transactions between ${startDate} and ${endDate}`);
     return data || [];
   } catch (err) {
-    console.error("Error fetching transactions by date range:", err);
+    logger.error("Error fetching transactions by date range:", err);
     return [];
   }
 };
@@ -681,10 +682,10 @@ export const getSpendingByCategory = async (user_id: string, days: number = 30) 
       .map(([category, amount]) => ({ category, amount }))
       .sort((a, b) => b.amount - a.amount);
     
-    console.log(`📊 Found spending across ${sortedCategories.length} categories in last ${days} days`);
+    logger.info(`📊 Found spending across ${sortedCategories.length} categories in last ${days} days`);
     return sortedCategories;
   } catch (err) {
-    console.error("Error fetching spending by category:", err);
+    logger.error("Error fetching spending by category:", err);
     return [];
   }
 };
@@ -692,7 +693,7 @@ export const getSpendingByCategory = async (user_id: string, days: number = 30) 
 // === Legacy Support Functions ===
 export const clearOldPlaidData = async () => {
   try {
-    console.log("🧹 Clearing old Plaid data and cache...");
+    logger.info("🧹 Clearing old Plaid data and cache...");
     
     // Clear old AsyncStorage keys that might conflict
     const keysToRemove = [
@@ -705,13 +706,13 @@ export const clearOldPlaidData = async () => {
     
     await Promise.all(keysToRemove.map(key => 
       AsyncStorage.removeItem(key).catch(err => 
-        console.log(`Could not remove ${key}:`, err)
+        logger.info(`Could not remove ${key}:`, err)
       )
     ));
     
-    console.log("✅ Old data cleared");
+    logger.info("✅ Old data cleared");
   } catch (error) {
-    console.error("Error clearing old data:", error);
+    logger.error("Error clearing old data:", error);
   }
 };
 
@@ -721,7 +722,7 @@ export const getItemIds = async (): Promise<string[]> => {
     const items = await getUserItems();
     return items.map(item => item.item_id);
   } catch (error) {
-    console.error("Error getting item IDs:", error);
+    logger.error("Error getting item IDs:", error);
     return [];
   }
 };
@@ -735,7 +736,7 @@ export const invalidateItemCache = async (userId: string, itemId: string) => {
   ];
   
   await Promise.all(keysToRemove.map(key => cacheRemove(key)));
-  console.log(`🧹 Invalidated cache for item ${itemId}`);
+  logger.info(`🧹 Invalidated cache for item ${itemId}`);
 };
 
 export const invalidateAllUserCache = async (userId: string) => {
@@ -743,7 +744,7 @@ export const invalidateAllUserCache = async (userId: string) => {
   await Promise.all(
     items.map(item => invalidateItemCache(userId, item.item_id))
   );
-  console.log(`🧹 Invalidated cache for all ${items.length} user items`);
+  logger.info(`🧹 Invalidated cache for all ${items.length} user items`);
 };
 
 // Manual sync for UI - syncs all connected accounts for the current user
@@ -759,16 +760,16 @@ export const syncAllUserTransactions = async () => {
     const userItems = await getUserItems();
     
     if (userItems.length === 0) {
-      console.log("No connected accounts to sync");
+      logger.info("No connected accounts to sync");
       return { synced: 0 };
     }
     
-    console.log(`🔄 Syncing transactions for ${userItems.length} connected accounts...`);
+    logger.info(`🔄 Syncing transactions for ${userItems.length} connected accounts...`);
     
     // Sync each account
     const syncPromises = userItems.map(item => 
       syncTransactions(item.item_id).catch(error => {
-        console.error(`Failed to sync item ${item.item_id}:`, error);
+        logger.error(`Failed to sync item ${item.item_id}:`, error);
         return { error: error.message };
       })
     );
@@ -776,7 +777,7 @@ export const syncAllUserTransactions = async () => {
     const results = await Promise.all(syncPromises);
     const successful = results.filter(result => !result.error).length;
     
-    console.log(`✅ Sync completed: ${successful}/${userItems.length} accounts synced successfully`);
+    logger.info(`✅ Sync completed: ${successful}/${userItems.length} accounts synced successfully`);
     
     return { 
       synced: successful,
@@ -784,7 +785,7 @@ export const syncAllUserTransactions = async () => {
       results 
     };
   } catch (err) {
-    console.error("Error in manual sync:", err);
+    logger.error("Error in manual sync:", err);
     throw err;
   }
 };
@@ -799,11 +800,11 @@ export const refreshPlaidData = async () => {
     const userItems = await getUserItems();
     
     if (userItems.length === 0) {
-      console.log("No connected accounts to refresh");
+      logger.info("No connected accounts to refresh");
       return { refreshed: 0, message: "No connected accounts found" };
     }
     
-    console.log(`🔄 Requesting fresh data for ${userItems.length} connected accounts...`);
+    logger.info(`🔄 Requesting fresh data for ${userItems.length} connected accounts...`);
     
     // Request refresh for each account
     const refreshPromises = userItems.map(async (item) => {
@@ -823,7 +824,7 @@ export const refreshPlaidData = async () => {
           throw new Error(data.error || `Refresh failed for ${item.institution_name}`);
         }
         
-        console.log(`✅ Refresh requested for ${item.institution_name}:`, data.request_id);
+        logger.info(`✅ Refresh requested for ${item.institution_name}:`, data.request_id);
         return { 
           item_id: item.item_id, 
           institution_name: item.institution_name,
@@ -831,7 +832,7 @@ export const refreshPlaidData = async () => {
           request_id: data.request_id 
         };
       } catch (error) {
-        console.error(`Failed to refresh item ${item.item_id}:`, error);
+        logger.error(`Failed to refresh item ${item.item_id}:`, error);
         return { 
           item_id: item.item_id, 
           institution_name: item.institution_name,
@@ -844,7 +845,7 @@ export const refreshPlaidData = async () => {
     const results = await Promise.all(refreshPromises);
     const successful = results.filter(result => result.success).length;
     
-    console.log(`✅ Refresh requests completed: ${successful}/${userItems.length} accounts`);
+    logger.info(`✅ Refresh requests completed: ${successful}/${userItems.length} accounts`);
     
     return { 
       refreshed: successful,
@@ -855,7 +856,7 @@ export const refreshPlaidData = async () => {
         : "Failed to initiate refresh for any accounts"
     };
   } catch (err) {
-    console.error("Error in data refresh:", err);
+    logger.error("Error in data refresh:", err);
     throw err;
   }
 };
@@ -933,10 +934,10 @@ export const getRecurringTransactionsFromDatabase = async (item_id?: string) => 
              groupedStreams.bills.length + groupedStreams.other.length
     };
     
-    console.log(`📊 Found ${summary.total} recurring streams from database:`, summary);
+    logger.info(`📊 Found ${summary.total} recurring streams from database:`, summary);
     return { ...groupedStreams, summary };
   } catch (err) {
-    console.error("Error fetching recurring transactions from database:", err);
+    logger.error("Error fetching recurring transactions from database:", err);
     return { 
       subscriptions: [], 
       income: [], 
@@ -959,11 +960,11 @@ export const refreshRecurringTransactions = async (item_id?: string) => {
       : await getUserItems();
     
     if (userItems.length === 0) {
-      console.log("No connected accounts to refresh recurring transactions");
+      logger.info("No connected accounts to refresh recurring transactions");
       return { refreshed: 0, message: "No connected accounts found" };
     }
     
-    console.log(`🔄 Refreshing recurring transactions for ${userItems.length} account(s)...`);
+    logger.info(`🔄 Refreshing recurring transactions for ${userItems.length} account(s)...`);
     
     // Refresh recurring transactions for each account
     const recurringPromises = userItems.map(async (item) => {
@@ -983,7 +984,7 @@ export const refreshRecurringTransactions = async (item_id?: string) => {
           throw new Error(data.error || `Recurring refresh failed for ${item.institution_name}`);
         }
         
-        console.log(`✅ Recurring transactions refreshed for ${item.institution_name || item.item_id}:`, data.summary);
+        logger.info(`✅ Recurring transactions refreshed for ${item.institution_name || item.item_id}:`, data.summary);
         return { 
           item_id: item.item_id, 
           institution_name: item.institution_name,
@@ -992,7 +993,7 @@ export const refreshRecurringTransactions = async (item_id?: string) => {
           stored: data.stored
         };
       } catch (error) {
-        console.error(`Failed to refresh recurring transactions for item ${item.item_id}:`, error);
+        logger.error(`Failed to refresh recurring transactions for item ${item.item_id}:`, error);
         return { 
           item_id: item.item_id, 
           institution_name: item.institution_name,
@@ -1008,7 +1009,7 @@ export const refreshRecurringTransactions = async (item_id?: string) => {
       .filter(result => result.success)
       .reduce((sum, result) => sum + (result.stored || 0), 0);
     
-    console.log(`✅ Recurring transactions refresh completed: ${successful}/${userItems.length} items, ${totalStored} streams stored`);
+    logger.info(`✅ Recurring transactions refresh completed: ${successful}/${userItems.length} items, ${totalStored} streams stored`);
     
     return { 
       refreshed: successful,
@@ -1020,14 +1021,14 @@ export const refreshRecurringTransactions = async (item_id?: string) => {
         : "Failed to refresh recurring transactions for any accounts"
     };
   } catch (err) {
-    console.error("Error refreshing recurring transactions:", err);
+    logger.error("Error refreshing recurring transactions:", err);
     throw err;
   }
 };
 
 // === Legacy function for backward compatibility ===
 export const getRecurringTransactions = async (item_id?: string) => {
-  console.log("⚠️ Using legacy getRecurringTransactions - consider using getRecurringTransactionsFromDatabase");
+  logger.info("⚠️ Using legacy getRecurringTransactions - consider using getRecurringTransactionsFromDatabase");
   return getRecurringTransactionsFromDatabase(item_id);
 };
 
@@ -1037,15 +1038,15 @@ export const getAllRecurringTransactions = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user?.id) throw new Error("User not authenticated");
     
-    console.log("🔄 Fetching recurring transactions from database...");
+    logger.info("🔄 Fetching recurring transactions from database...");
     
     // Fetch all recurring streams from database for this user
     const data = await getRecurringTransactionsFromDatabase();
     
-    console.log(`✅ Retrieved recurring transactions from database:`, data.summary);
+    logger.info(`✅ Retrieved recurring transactions from database:`, data.summary);
     return data;
   } catch (err) {
-    console.error("Error fetching all recurring transactions from database:", err);
+    logger.error("Error fetching all recurring transactions from database:", err);
     return { 
       subscriptions: [], 
       income: [], 
@@ -1068,11 +1069,11 @@ export const refreshAccountBalances = async (item_id?: string) => {
       : await getUserItems();
     
     if (userItems.length === 0) {
-      console.log("No connected accounts to refresh balances");
+      logger.info("No connected accounts to refresh balances");
       return { refreshed: 0, message: "No connected accounts found" };
     }
     
-    console.log(`🏦 Refreshing balances for ${userItems.length} account(s)...`);
+    logger.info(`🏦 Refreshing balances for ${userItems.length} account(s)...`);
     
     // Refresh balances for each account
     const balancePromises = userItems.map(async (item) => {
@@ -1092,7 +1093,7 @@ export const refreshAccountBalances = async (item_id?: string) => {
           throw new Error(data.error || `Balance refresh failed for ${item.institution_name}`);
         }
         
-        console.log(`✅ Balances refreshed for ${item.institution_name || item.item_id}:`, data.updated);
+        logger.info(`✅ Balances refreshed for ${item.institution_name || item.item_id}:`, data.updated);
         return { 
           item_id: item.item_id, 
           institution_name: item.institution_name,
@@ -1100,7 +1101,7 @@ export const refreshAccountBalances = async (item_id?: string) => {
           updated: data.updated 
         };
       } catch (error) {
-        console.error(`Failed to refresh balances for item ${item.item_id}:`, error);
+        logger.error(`Failed to refresh balances for item ${item.item_id}:`, error);
         return { 
           item_id: item.item_id, 
           institution_name: item.institution_name,
@@ -1116,7 +1117,7 @@ export const refreshAccountBalances = async (item_id?: string) => {
       .filter(result => result.success)
       .reduce((sum, result) => sum + (result.updated || 0), 0);
     
-    console.log(`✅ Balance refresh completed: ${successful}/${userItems.length} items, ${totalUpdated} accounts updated`);
+    logger.info(`✅ Balance refresh completed: ${successful}/${userItems.length} items, ${totalUpdated} accounts updated`);
     
     return { 
       refreshed: successful,
@@ -1128,7 +1129,7 @@ export const refreshAccountBalances = async (item_id?: string) => {
         : "Failed to refresh balances for any accounts"
     };
   } catch (err) {
-    console.error("Error refreshing account balances:", err);
+    logger.error("Error refreshing account balances:", err);
     throw err;
   }
 };
@@ -1139,7 +1140,7 @@ export const performCompleteDataRefresh = async (item_id?: string) => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user?.id) throw new Error("User not authenticated");
     
-    console.log("🔄 Starting complete data refresh...");
+    logger.info("🔄 Starting complete data refresh...");
     
     const refreshResults = {
       refreshRequested: false,
@@ -1154,51 +1155,51 @@ export const performCompleteDataRefresh = async (item_id?: string) => {
     try {
       await refreshPlaidData();
       refreshResults.refreshRequested = true;
-      console.log("✅ Fresh data requested from Plaid");
+      logger.info("✅ Fresh data requested from Plaid");
     } catch (error) {
       const errorMsg = `Failed to request fresh data: ${error instanceof Error ? error.message : String(error)}`;
       refreshResults.errors.push(errorMsg);
-      console.warn("⚠️", errorMsg);
+      logger.warn("⚠️", errorMsg);
     }
     
     // 2. Refresh account balances immediately
     try {
       const balanceResult = await refreshAccountBalances(item_id);
       refreshResults.balancesRefreshed = balanceResult.refreshed > 0;
-      console.log("✅ Account balances refreshed:", balanceResult.message);
+      logger.info("✅ Account balances refreshed:", balanceResult.message);
     } catch (error) {
       const errorMsg = `Failed to refresh balances: ${error instanceof Error ? error.message : String(error)}`;
       refreshResults.errors.push(errorMsg);
-      console.warn("⚠️", errorMsg);
+      logger.warn("⚠️", errorMsg);
     }
     
     // 3. Sync transactions immediately
     try {
       await syncAllUserTransactions();
       refreshResults.transactionsSynced = true;
-      console.log("✅ Transactions synced");
+      logger.info("✅ Transactions synced");
     } catch (error) {
       const errorMsg = `Failed to sync transactions: ${error instanceof Error ? error.message : String(error)}`;
       refreshResults.errors.push(errorMsg);
-      console.warn("⚠️", errorMsg);
+      logger.warn("⚠️", errorMsg);
     }
     
     // 4. Refresh recurring transactions
     try {
       const recurringResult = await refreshRecurringTransactions(item_id);
       refreshResults.recurringTransactionsRefreshed = recurringResult.refreshed > 0;
-      console.log("✅ Recurring transactions refreshed:", recurringResult.message);
+      logger.info("✅ Recurring transactions refreshed:", recurringResult.message);
     } catch (error) {
       const errorMsg = `Failed to refresh recurring transactions: ${error instanceof Error ? error.message : String(error)}`;
       refreshResults.errors.push(errorMsg);
-      console.warn("⚠️", errorMsg);
+      logger.warn("⚠️", errorMsg);
     }
     
-    console.log("✅ Complete data refresh finished:", refreshResults);
+    logger.info("✅ Complete data refresh finished:", refreshResults);
     return refreshResults;
     
   } catch (error) {
-    console.error("❌ Complete data refresh failed:", error);
+    logger.error("❌ Complete data refresh failed:", error);
     throw error;
   }
 };
@@ -1306,10 +1307,10 @@ export const getFilteredTransactions = async (
       account_mask: tx.accounts?.mask,
     }));
 
-    console.log(`📊 Found ${transformedTransactions.length} filtered transactions`);
+    logger.info(`📊 Found ${transformedTransactions.length} filtered transactions`);
     return transformedTransactions;
   } catch (err) {
-    console.error("Error fetching filtered transactions:", err);
+    logger.error("Error fetching filtered transactions:", err);
     return [];
   }
 };
@@ -1350,7 +1351,7 @@ export const getFilteredTransactionsCount = async (
 
     return count || 0;
   } catch (err) {
-    console.error("Error getting filtered transactions count:", err);
+    logger.error("Error getting filtered transactions count:", err);
     return 0;
   }
 };
@@ -1372,7 +1373,7 @@ export const getUserAccountsForFilter = async (userId: string) => {
     
     return transformed;
   } catch (err) {
-    console.error("Error fetching user accounts for filter:", err);
+    logger.error("Error fetching user accounts for filter:", err);
     return [];
   }
 };
@@ -1380,7 +1381,7 @@ export const getUserAccountsForFilter = async (userId: string) => {
 // === Facts Pipeline Client Helper ===
 export const handleAskFactFresh = async (text: string, entities?: string[]) => {
   try {
-    console.log("🔍 [FACTS] Looking up fresh fact:", text);
+    logger.info("🔍 [FACTS] Looking up fresh fact:", text);
     
     const r = await fetch(`${BASE_URL}/api/finny`, {
       method: "POST",
@@ -1393,14 +1394,14 @@ export const handleAskFactFresh = async (text: string, entities?: string[]) => {
     }).then(r => r.json());
 
     if (r.error || !r.message) {
-      console.error("❌ [FACTS] Error response:", r);
+      logger.error("❌ [FACTS] Error response:", r);
       return "I couldn't verify that from an official source yet. Want me to try a broader search?";
     }
     
-    console.log("✅ [FACTS] Success:", r.message);
+    logger.info("✅ [FACTS] Success:", r.message);
     return r.message;
   } catch (error) {
-    console.error("❌ [FACTS] Client error:", error);
+    logger.error("❌ [FACTS] Client error:", error);
     return "I'm having trouble looking up that information right now. Please try again later.";
   }
 };

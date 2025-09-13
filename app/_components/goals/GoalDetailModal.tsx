@@ -17,6 +17,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { Goal } from "../../_types/finny";
+import logger from "../../_utils/logger";
 import {
   getCategoryDisplayName,
   getCategoryIcon,
@@ -175,7 +176,7 @@ const GoalDetailModal: React.FC<GoalDetailModalProps> = ({
         } catch (error) {
           // If database update fails, we could revert or show error
           // For now, the parent component handles error states
-          console.error("Failed to update goal:", error);
+          logger.error("Failed to update goal:", error);
 
           // Could implement revert logic here if needed
           // if (onOptimisticUpdate) {

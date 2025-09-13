@@ -18,6 +18,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import EditEmailModal from "../_components/menu/EditEmailModal";
 import EditPhoneModal from "../_components/menu/EditPhoneModal";
 import EditNameModal from "../_components/menu/EditNameModal";
+import logger from "../_utils/logger";
 
 export default function PersonalInfoScreen() {
   const router = useRouter();
@@ -44,10 +45,10 @@ export default function PersonalInfoScreen() {
         if (user) {
           setUserData(user);
           await AsyncStorage.setItem("userData", JSON.stringify(user));
-          console.log("[PersonalInfo] Current user email:", user.email);
+          logger.info("[PersonalInfo] Current user email:", user.email);
         }
       } catch (error) {
-        console.error("Error fetching user data:", error);
+        logger.error("Error fetching user data:", error);
       }
     };
     fetchAndSetUserData();

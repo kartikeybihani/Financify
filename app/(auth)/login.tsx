@@ -11,6 +11,7 @@ import {
 } from "react-native";
 import { useRouter } from "expo-router";
 import { supabase } from "../_lib/supabase/supabase";
+import logger from "../_utils/logger";
 import AuthTemplate from "../_components/auth/AuthTemplate";
 import AuthInput from "../_components/auth/AuthInput";
 import AuthButton from "../_components/auth/AuthButton";
@@ -127,7 +128,7 @@ export default function LoginScreen() {
         data: { user },
       } = await supabase.auth.getUser();
       if (user) {
-        console.log("User logged in:", user.email);
+        logger.info("User logged in:", user.email);
       }
     }
   };

@@ -10,6 +10,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { supabase } from "../_lib/supabase/supabase";
+import logger from "../_utils/logger";
 import {
   getSnaptradeHoldingsFromDB,
   getSnaptradeOptionsFromDB,
@@ -73,7 +74,7 @@ export default function InvestmentsScreen() {
       setBalances(b || []);
       setConnections(c || []);
     } catch (err) {
-      console.error("Failed to load investments from DB", err);
+      logger.error("Failed to load investments from DB", err);
     }
   };
 
@@ -81,7 +82,7 @@ export default function InvestmentsScreen() {
     loadFromDb();
     // Populate investment accounts in main accounts table
     populateInvestmentAccountsInDB().catch((err) =>
-      console.error("Failed to populate investment accounts:", err)
+      logger.error("Failed to populate investment accounts:", err)
     );
   }, []);
 
@@ -102,7 +103,7 @@ export default function InvestmentsScreen() {
         }
       }
     } catch (err) {
-      console.error("Failed to sync investments", err);
+      logger.error("Failed to sync investments", err);
     } finally {
       setIsSyncing(false);
     }

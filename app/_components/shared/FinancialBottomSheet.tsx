@@ -13,10 +13,11 @@ import {
   Alert,
   DeviceEventEmitter,
 } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons, AntDesign } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
 import { addNewBankAccount, fetchInitialData } from "../../_utils/plaid";
 import InstitutionSelectionModal from "../modals/InstitutionSelectionModal";
+import logger from "../../_utils/logger";
 
 interface CategoryData {
   title: string;
@@ -88,13 +89,13 @@ export default function FinancialBottomSheet({
     setIsAddingAccount(true);
 
     try {
-      console.log(
+      logger.info(
         "🏦 User initiated add new bank account from FinancialBottomSheet"
       );
 
       await addNewBankAccount(
         (itemId) => {
-          console.log("✅ Successfully added new bank account:", itemId);
+          logger.info("✅ Successfully added new bank account:", itemId);
 
           // Close the bottom sheet
           onClose();
@@ -113,7 +114,7 @@ export default function FinancialBottomSheet({
           );
         },
         (error) => {
-          console.error("❌ Failed to add new bank account:", error);
+          logger.error("❌ Failed to add new bank account:", error);
 
           // Show error message
           Alert.alert(
@@ -124,7 +125,7 @@ export default function FinancialBottomSheet({
         }
       );
     } catch (error) {
-      console.error("❌ Error in handleAddNewAccount:", error);
+      logger.error("❌ Error in handleAddNewAccount:", error);
       Alert.alert("Error", "Something went wrong. Please try again.", [
         { text: "OK", style: "default" },
       ]);
@@ -141,7 +142,7 @@ export default function FinancialBottomSheet({
     setIsAddingAccount(true);
 
     try {
-      console.log(
+      logger.info(
         "🏦 User selected institution:",
         institutionId,
         "for investment account"
@@ -149,7 +150,7 @@ export default function FinancialBottomSheet({
 
       await addNewBankAccount(
         (itemId) => {
-          console.log("✅ Successfully added new investment account:", itemId);
+          logger.info("✅ Successfully added new investment account:", itemId);
 
           // Close the bottom sheet
           onClose();
@@ -168,7 +169,7 @@ export default function FinancialBottomSheet({
           );
         },
         (error) => {
-          console.error("❌ Failed to add investment account:", error);
+          logger.error("❌ Failed to add investment account:", error);
 
           // Show error message
           Alert.alert(
@@ -179,7 +180,7 @@ export default function FinancialBottomSheet({
         }
       );
     } catch (error) {
-      console.error("❌ Error in handleInstitutionSelect:", error);
+      logger.error("❌ Error in handleInstitutionSelect:", error);
       Alert.alert("Error", "Something went wrong. Please try again.", [
         { text: "OK", style: "default" },
       ]);
@@ -193,7 +194,7 @@ export default function FinancialBottomSheet({
       setShouldReopenSheet(false);
       // This will be handled by the parent component that manages the FinancialBottomSheet visibility
       // For now, we'll just log it
-      console.log("🔄 Should reopen financial sheet");
+      logger.info("🔄 Should reopen financial sheet");
     }
   };
 
@@ -255,11 +256,11 @@ export default function FinancialBottomSheet({
                 {categories
                   ? categories.map((category, index) => (
                       <View key={index} style={styles.categoryContainer}>
-                        <TouchableOpacity
-                          style={styles.categoryHeader}
-                          onPress={() => toggleCategory(category.title)}
-                        >
-                          <View style={styles.categoryTitleContainer}>
+                        <View style={styles.categoryHeader}>
+                          <TouchableOpacity
+                            onPress={() => toggleCategory(category.title)}
+                            style={styles.categoryTitleContainer}
+                          >
                             <Ionicons
                               name={
                                 expandedCategories.has(category.title)
@@ -273,8 +274,25 @@ export default function FinancialBottomSheet({
                             <Text style={styles.categoryTitle}>
                               {category.title}
                             </Text>
-                          </View>
-                        </TouchableOpacity>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            onPress={() => handleAddNewAccount(category.title)}
+                            disabled={isAddingAccount}
+                            style={{
+                              flexDirection: "row",
+                              alignItems: "center",
+                              opacity: isAddingAccount ? 0.6 : 1,
+                            }}
+                          >
+                            <Text style={styles.addActionText}>Add</Text>
+                            <AntDesign
+                              name="right"
+                              size={13}
+                              color="#4A90E2"
+                              style={{ marginLeft: 6 }}
+                            />
+                          </TouchableOpacity>
+                        </View>
                         {expandedCategories.has(category.title) && (
                           <View style={styles.categoryContent}>
                             {category.items.length > 0 ? (
@@ -485,6 +503,13 @@ const styles = StyleSheet.create({
   addAccountText: {
     color: "#4A90E2",
     fontSize: 15,
+    fontWeight: "600",
+    fontFamily: Platform.OS === "ios" ? "System" : "sans-serif",
+    letterSpacing: 0.2,
+  },
+  addActionText: {
+    color: "#4A90E2",
+    fontSize: 12,
     fontWeight: "600",
     fontFamily: Platform.OS === "ios" ? "System" : "sans-serif",
     letterSpacing: 0.2,

@@ -3,6 +3,7 @@ import React, { createContext, useContext, useEffect, useState } from "react";
 import { Session } from "@supabase/supabase-js";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { supabase } from "../_lib/supabase/supabase";
+import logger from "../_utils/logger";
 
 type AuthContextType = {
   session: Session | null;
@@ -49,7 +50,7 @@ export default function AuthProvider({
         await AsyncStorage.removeItem("onboarding_complete");
         await AsyncStorage.removeItem("user_authenticated");
         await AsyncStorage.removeItem("userData");
-        console.log("🗑️ Cleared AsyncStorage cache on sign out");
+        logger.info("🗑️ Cleared AsyncStorage cache on sign out");
       }
     });
 

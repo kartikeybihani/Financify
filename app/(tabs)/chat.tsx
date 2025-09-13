@@ -1,10 +1,10 @@
-import React, { useRef, useEffect, useState } from "react";
+import React, { useRef, useEffect, useState, useCallback } from "react";
 import {
   View,
   Text,
   StyleSheet,
   SafeAreaView,
-  ScrollView,
+  FlatList,
   TouchableOpacity,
   TextInput,
   LayoutAnimation,
@@ -16,6 +16,7 @@ import {
   Easing,
   KeyboardAvoidingView,
   Keyboard,
+  ListRenderItem,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
@@ -29,6 +30,7 @@ import { NudgeGrid } from "../_components/chat/NudgeGrid";
 import { useChat } from "../_hooks/useChat";
 import { useGoals } from "../_hooks/useGoals";
 import styles from "../_styles/chatStyles";
+import logger from "../_utils/logger";
 import TypingIndicator from "../_components/chat/TypingIndicator";
 import ConversationStartersModal from "../_components/chat/ConversationStartersModal";
 
@@ -68,7 +70,7 @@ export default function ChatScreen() {
   ]);
   const scrollButtonAnimation = useRef(new Animated.Value(0)).current;
 
-  const scrollViewRef = useRef<ScrollView>(null);
+  const flatListRef = useRef<FlatList>(null);
   const lastContentOffset = useRef({ y: 0 }).current;
   const isScrolling = useRef(false);
   const shouldScrollToBottom = useRef(true);
@@ -90,12 +92,64 @@ export default function ChatScreen() {
 
   const { saveGoal, deleteGoal, refreshGoals } = useGoals(pushChat);
 
+  // Prepare FlatList data with nudges and messages
+  const flatListData = React.useMemo(() => {
+    const data = [];
+
+    // Add nudges if they should be shown
+    if (showNudges) {
+      data.push({ type: "nudges", id: "nudges" });
+    }
+
+    // Add chat messages
+    chatMessages.forEach((msg, index) => {
+      data.push({
+        type: "message",
+        id: msg.id,
+        message: msg,
+        index,
+      });
+    });
+
+    // Add typing indicator if needed
+    if (isTyping) {
+      data.push({ type: "typing", id: "typing" });
+    }
+
+    return data;
+  }, [chatMessages, showNudges, isTyping]);
+
+  // FlatList key extractor
+  const keyExtractor = useCallback((item: any) => item.id, []);
+
+  // Estimated item size for better performance
+  const getItemLayout = useCallback((data: any, index: number) => {
+    const item = data?.[index];
+    let estimatedHeight = 60; // Default message height
+
+    if (item?.type === "nudges") {
+      estimatedHeight = 120; // Nudge grid height
+    } else if (item?.type === "typing") {
+      estimatedHeight = 40; // Typing indicator height
+    } else if (item?.type === "message") {
+      // Estimate based on message text length
+      const textLength = item.message?.text?.length || 0;
+      estimatedHeight = Math.max(60, Math.min(200, textLength * 0.5 + 60));
+    }
+
+    return {
+      length: estimatedHeight,
+      offset: estimatedHeight * index,
+      index,
+    };
+  }, []);
+
   // Goal confirmation handlers
   const handleGoalConfirm = async () => {
-    console.log("✅ [CHAT] User clicked 'Yes' on goal confirmation");
-    console.log("📝 [CHAT] Pending goal message:", pendingGoalMessage);
+    logger.info("✅ [CHAT] User clicked 'Yes' on goal confirmation");
+    logger.info("📝 [CHAT] Pending goal message:", pendingGoalMessage);
     setIsTyping(true);
-    console.log("⏳ [CHAT] Set typing indicator to true");
+    logger.info("⏳ [CHAT] Set typing indicator to true");
 
     try {
       const goalRes = await fetch(
@@ -159,7 +213,7 @@ export default function ChatScreen() {
         timeline: null,
       });
     } catch (error) {
-      console.error("❌ Goal confirmation error:", error);
+      logger.error("❌ Goal confirmation error:", error);
       pushChat(
         "finny",
         "Hmm, something went wrong with setting up your goal. Try again?"
@@ -170,16 +224,16 @@ export default function ChatScreen() {
   };
 
   const handleGoalDecline = async () => {
-    console.log("❌ [CHAT] User clicked 'Not Yet' on goal confirmation");
-    console.log("📝 [CHAT] Pending goal message:", pendingGoalMessage);
+    logger.info("❌ [CHAT] User clicked 'Not Yet' on goal confirmation");
+    logger.info("📝 [CHAT] Pending goal message:", pendingGoalMessage);
     setIsTyping(true);
-    console.log("⏳ [CHAT] Set typing indicator to true");
+    logger.info("⏳ [CHAT] Set typing indicator to true");
 
     try {
       // Treat as a regular question
       await handleUserMessage(pendingGoalMessage);
     } catch (error) {
-      console.error("❌ Goal decline error:", error);
+      logger.error("❌ Goal decline error:", error);
       pushChat("finny", "No worries! Let me know if you need anything else.");
     } finally {
       setIsTyping(false);
@@ -253,7 +307,7 @@ export default function ChatScreen() {
 
   // Log modal state changes
   useEffect(() => {
-    console.log(
+    logger.info(
       "🔘 [CHAT] GoalConfirmationModal state changed:"
       // showInlineGoalConfirm // This state is removed
     );
@@ -263,24 +317,24 @@ export default function ChatScreen() {
     const messageText = nudgeText || userInput;
 
     if (!messageText.trim()) {
-      console.log("❌ [CHAT] Empty message, returning");
+      logger.info("❌ [CHAT] Empty message, returning");
       return;
     }
 
-    console.log("🚀 [CHAT] handleSend called with message:", messageText);
-    console.log("📝 [CHAT] Pushing user message to chat");
+    logger.info("🚀 [CHAT] handleSend called with message:", messageText);
+    logger.info("📝 [CHAT] Pushing user message to chat");
 
     pushChat("user", messageText);
     Keyboard.dismiss();
     setUserInput("");
     setIsTyping(true);
-    console.log("⏳ [CHAT] Set typing indicator to true");
+    logger.info("⏳ [CHAT] Set typing indicator to true");
 
     try {
-      console.log("🔍 [CHAT] Checking if goalMode is active:", goalMode.active);
+      logger.info("🔍 [CHAT] Checking if goalMode is active:", goalMode.active);
 
       if (goalMode.active) {
-        console.log("🎯 [CHAT] Goal mode is active, calling goal API");
+        logger.info("🎯 [CHAT] Goal mode is active, calling goal API");
         const goalRes = await fetch(
           "https://financify-rose.vercel.app/api/finny",
           {
@@ -293,9 +347,9 @@ export default function ChatScreen() {
           }
         );
 
-        console.log("📡 [CHAT] Goal API response status:", goalRes.status);
+        logger.info("📡 [CHAT] Goal API response status:", goalRes.status);
         const updated = await goalRes.json();
-        console.log("✅ [CHAT] Goal API response:", updated);
+        logger.info("✅ [CHAT] Goal API response:", updated);
         const updatedGoalData = {
           label: updated.label || goalMode.label,
           target: updated.target || goalMode.target,
@@ -350,7 +404,7 @@ export default function ChatScreen() {
         return;
       }
 
-      console.log("🔍 [CHAT] Goal mode not active, calling classify API");
+      logger.info("🔍 [CHAT] Goal mode not active, calling classify API");
       const classifyRes = await fetch(
         "https://financify-rose.vercel.app/api/finny",
         {
@@ -363,12 +417,12 @@ export default function ChatScreen() {
         }
       );
 
-      console.log(
+      logger.info(
         "📡 [CHAT] Classify API response status:",
         classifyRes.status
       );
       const { intent, confidence } = await classifyRes.json();
-      console.log(
+      logger.info(
         "🎯 [CHAT] Classification result - Intent:",
         intent,
         "Confidence:",
@@ -376,8 +430,8 @@ export default function ChatScreen() {
       );
 
       if (intent === "goal" && confidence >= 0.7) {
-        console.log("🎉 [CHAT] GOAL CONFIRMATION TRIGGERED!");
-        console.log("📝 [CHAT] Setting pending goal message:", messageText);
+        logger.info("🎉 [CHAT] GOAL CONFIRMATION TRIGGERED!");
+        logger.info("📝 [CHAT] Setting pending goal message:", messageText);
         setPendingGoalMessage(messageText);
         const actionMsg: ChatMessage = {
           id: Date.now().toString(),
@@ -392,7 +446,7 @@ export default function ChatScreen() {
         await pushChat(actionMsg.sender, actionMsg.text, actionMsg);
         return;
       } else {
-        console.log(
+        logger.info(
           "❌ [CHAT] No goal confirmation - Intent:",
           intent,
           "Confidence:",
@@ -400,54 +454,112 @@ export default function ChatScreen() {
         );
       }
 
-      console.log("💬 [CHAT] Calling handleUserMessage for regular advice");
+      logger.info("💬 [CHAT] Calling handleUserMessage for regular advice");
       await handleUserMessage(messageText);
     } catch (error) {
-      console.error("💥 [CHAT] handleSend error:", error);
+      logger.error("💥 [CHAT] handleSend error:", error);
       pushChat("finny", "Hmm, something went wrong. Try again?");
     } finally {
-      console.log("⏹️ [CHAT] Setting typing indicator to false");
+      logger.info("⏹️ [CHAT] Setting typing indicator to false");
       setIsTyping(false);
     }
   };
 
-  const handleScroll = (event: any) => {
-    const currentOffset = event.nativeEvent.contentOffset.y;
-    const contentHeight = event.nativeEvent.contentSize.height;
-    const scrollViewHeight = event.nativeEvent.layoutMeasurement.height;
+  const handleScroll = useCallback(
+    (event: any) => {
+      const currentOffset = event.nativeEvent.contentOffset.y;
+      const contentHeight = event.nativeEvent.contentSize.height;
+      const scrollViewHeight = event.nativeEvent.layoutMeasurement.height;
 
-    const shouldShow =
-      currentOffset < contentHeight - scrollViewHeight - 100 &&
-      contentHeight > scrollViewHeight;
+      const shouldShow =
+        currentOffset < contentHeight - scrollViewHeight - 100 &&
+        contentHeight > scrollViewHeight;
 
-    if (shouldShow !== showScrollButton) {
-      setShowScrollButton(shouldShow);
-      Animated.spring(scrollButtonAnimation, {
-        toValue: shouldShow ? 1 : 0,
-        useNativeDriver: true,
-        tension: 80,
-        friction: 9,
-      }).start();
+      if (shouldShow !== showScrollButton) {
+        setShowScrollButton(shouldShow);
+        Animated.spring(scrollButtonAnimation, {
+          toValue: shouldShow ? 1 : 0,
+          useNativeDriver: true,
+          tension: 80,
+          friction: 9,
+        }).start();
+      }
+
+      lastContentOffset.y = currentOffset;
+
+      if (currentOffset < lastContentOffset.y) {
+        shouldScrollToBottom.current = false;
+      }
+
+      if (currentOffset >= contentHeight - scrollViewHeight - 10) {
+        shouldScrollToBottom.current = true;
+      }
+    },
+    [showScrollButton, scrollButtonAnimation]
+  );
+
+  const scrollToBottom = useCallback(() => {
+    if (flatListRef.current && flatListData.length > 0) {
+      // Force scroll to the absolute bottom by using a large offset
+      setTimeout(() => {
+        flatListRef.current?.scrollToEnd({
+          animated: true,
+        });
+        // Additional scroll to ensure we're at the very bottom
+        setTimeout(() => {
+          flatListRef.current?.scrollToEnd({
+            animated: false,
+          });
+        }, 300);
+      }, 50);
     }
+  }, [flatListData.length]);
 
-    lastContentOffset.y = currentOffset;
-
-    if (currentOffset < lastContentOffset.y) {
-      shouldScrollToBottom.current = false;
+  // Auto-scroll to bottom when new messages arrive
+  useEffect(() => {
+    if (shouldScrollToBottom.current && flatListData.length > 0) {
+      setTimeout(() => {
+        if (flatListRef.current) {
+          flatListRef.current.scrollToEnd({
+            animated: true,
+          });
+        }
+      }, 100);
     }
+  }, [flatListData.length]);
 
-    if (currentOffset >= contentHeight - scrollViewHeight - 10) {
-      shouldScrollToBottom.current = true;
-    }
-  };
+  // FlatList render item function
+  const renderItem: ListRenderItem<any> = useCallback(
+    ({ item }) => {
+      if (item.type === "nudges") {
+        return <NudgeGrid onNudgePress={handleSend} />;
+      }
 
-  const scrollToBottom = () => {
-    if (scrollViewRef.current) {
-      scrollViewRef.current.scrollToEnd({
-        animated: true,
-      });
-    }
-  };
+      if (item.type === "typing") {
+        return <TypingIndicator />;
+      }
+
+      if (item.type === "message") {
+        const { message, index } = item;
+        return (
+          <ChatMessageComponent
+            message={message}
+            showSender={
+              message.sender === "finny" &&
+              (index === 0 || chatMessages[index - 1].sender !== "finny")
+            }
+            onAction={async (action) => {
+              if (action === "goal_confirm") await handleGoalConfirm();
+              if (action === "goal_decline") await handleGoalDecline();
+            }}
+          />
+        );
+      }
+
+      return null;
+    },
+    [handleSend, handleGoalConfirm, handleGoalDecline, chatMessages]
+  );
 
   return (
     <View style={styles.safeArea}>
@@ -503,36 +615,35 @@ export default function ChatScreen() {
         >
           <View style={styles.chatArea}>
             <View style={styles.chatContainer}>
-              <ScrollView
-                ref={scrollViewRef}
+              <FlatList
+                ref={flatListRef}
+                data={flatListData}
+                renderItem={renderItem}
+                keyExtractor={keyExtractor}
+                getItemLayout={getItemLayout}
                 style={styles.chatScroll}
                 onScroll={handleScroll}
                 scrollEventThrottle={16}
                 onScrollBeginDrag={() => (isScrolling.current = true)}
                 onScrollEndDrag={() => (isScrolling.current = false)}
-                onContentSizeChange={() => {
-                  if (shouldScrollToBottom.current) scrollToBottom();
+                contentContainerStyle={{ paddingBottom: 80 }}
+                removeClippedSubviews={true}
+                maxToRenderPerBatch={10}
+                windowSize={10}
+                initialNumToRender={20}
+                updateCellsBatchingPeriod={50}
+                maintainVisibleContentPosition={{
+                  minIndexForVisible: 0,
+                  autoscrollToTopThreshold: 10,
                 }}
-                contentContainerStyle={{ paddingBottom: 50 }}
-              >
-                {showNudges && <NudgeGrid onNudgePress={handleSend} />}
-                {chatMessages.map((msg, index) => (
-                  <ChatMessageComponent
-                    key={msg.id}
-                    message={msg}
-                    showSender={
-                      msg.sender === "finny" &&
-                      (index === 0 ||
-                        chatMessages[index - 1].sender !== "finny")
-                    }
-                    onAction={async (action) => {
-                      if (action === "goal_confirm") await handleGoalConfirm();
-                      if (action === "goal_decline") await handleGoalDecline();
-                    }}
-                  />
-                ))}
-                {isTyping && <TypingIndicator />}
-              </ScrollView>
+                // Additional performance optimizations
+                legacyImplementation={false}
+                disableVirtualization={false}
+                disableIntervalMomentum={true}
+                decelerationRate="fast"
+                keyboardShouldPersistTaps="handled"
+                keyboardDismissMode="interactive"
+              />
 
               {/* Inline Goal Confirmation Buttons */}
               {/* This block is removed as per the edit hint */}
@@ -582,27 +693,27 @@ export default function ChatScreen() {
                 { paddingBottom: Math.max(insets.bottom, 16) },
               ]}
             >
-              <ScrollView
+              <FlatList
                 horizontal
                 showsHorizontalScrollIndicator={false}
                 contentContainerStyle={styles.suggestionsContainer}
-              >
-                {suggestions.map((suggestion, idx) => (
+                data={suggestions}
+                renderItem={({ item }) => (
                   <TouchableOpacity
-                    key={idx}
-                    onPress={() => handleSend(suggestion.text)}
+                    onPress={() => handleSend(item.text)}
                     style={styles.suggestionChip}
                   >
                     <Ionicons
-                      name={suggestion.icon}
+                      name={item.icon}
                       size={14}
                       color="#FFFFFF"
                       style={styles.suggestionIcon}
                     />
-                    <Text style={styles.suggestionText}>{suggestion.text}</Text>
+                    <Text style={styles.suggestionText}>{item.text}</Text>
                   </TouchableOpacity>
-                ))}
-              </ScrollView>
+                )}
+                keyExtractor={(item, index) => index.toString()}
+              />
               <View style={styles.inputBar}>
                 <TouchableOpacity
                   style={styles.plusButton}
@@ -621,7 +732,11 @@ export default function ChatScreen() {
                     // Auto-scroll to bottom when input is focused
                     setTimeout(() => {
                       shouldScrollToBottom.current = true;
-                      scrollToBottom();
+                      if (flatListRef.current && flatListData.length > 0) {
+                        flatListRef.current.scrollToEnd({
+                          animated: true,
+                        });
+                      }
                     }, 300);
                   }}
                 />

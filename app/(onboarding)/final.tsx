@@ -21,6 +21,7 @@ import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { supabase } from "../_lib/supabase/supabase";
 import type { ComponentProps } from "react";
+import logger from "../_utils/logger";
 
 const { width, height } = Dimensions.get("window");
 
@@ -313,7 +314,7 @@ export default function FinalScreen() {
       });
 
       if (error) {
-        console.error("Error updating user metadata:", error);
+        logger.error("Error updating user metadata:", error);
         setIsLoading(false);
         return;
       }
@@ -322,7 +323,7 @@ export default function FinalScreen() {
       await AsyncStorage.setItem("onboarding_complete", "true");
       await AsyncStorage.setItem("user_authenticated", "true");
 
-      console.log(
+      logger.info(
         "✅ Onboarding completed - stored in both Supabase and AsyncStorage"
       );
 
@@ -331,7 +332,7 @@ export default function FinalScreen() {
         router.replace("/(tabs)");
       }, 2000);
     } catch (error) {
-      console.error("Error completing onboarding:", error);
+      logger.error("Error completing onboarding:", error);
       setIsLoading(false);
     }
   };

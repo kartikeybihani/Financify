@@ -23,6 +23,7 @@ import { Goal } from "../../_types/finny";
 import { GoalInput } from "../../_types/addGoalModalTypes";
 import { GoalsProps, GoalsState } from "../../_types/goalsTypes";
 import { useRouter } from "expo-router";
+import logger from "../../_utils/logger";
 
 // Simple ID generator
 const generateId = () => {
@@ -111,7 +112,7 @@ const Goals: React.FC<GoalsProps> = ({
   });
 
   useEffect(() => {
-    console.log(
+    logger.info(
       "🔄 [GOALS COMPONENT] Goals data changed:",
       goalsData?.length || 0,
       "goals"
@@ -137,7 +138,7 @@ const Goals: React.FC<GoalsProps> = ({
         },
       }));
     } catch (err) {
-      console.error("Manual goal save failed:", err);
+      logger.error("Manual goal save failed:", err);
       setState((prev: GoalsState) => ({
         ...prev,
         notification: {
@@ -165,7 +166,7 @@ const Goals: React.FC<GoalsProps> = ({
               },
             }));
           } catch (error) {
-            console.error("Error deleting goal:", error);
+            logger.error("Error deleting goal:", error);
             setState((prev: GoalsState) => ({
               ...prev,
               notification: {
@@ -202,7 +203,7 @@ const Goals: React.FC<GoalsProps> = ({
         }));
       }
     } catch (error) {
-      console.error("Error updating goal:", error);
+      logger.error("Error updating goal:", error);
       setState((prev: GoalsState) => ({
         ...prev,
         notification: {

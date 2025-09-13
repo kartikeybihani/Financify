@@ -1,4 +1,10 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, {
+  useState,
+  useEffect,
+  useRef,
+  useMemo,
+  useCallback,
+} from "react";
 import {
   View,
   Text,
@@ -54,6 +60,7 @@ import {
   countNullCategories,
   forceFullResync,
 } from "../../src/utils/categoryFix";
+import logger from "../_utils/logger";
 const screenWidth = Dimensions.get("window").width;
 
 // Define types
@@ -221,38 +228,70 @@ export default function InsightsScreen() {
   >(new Map());
   const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
+  // Cache for auth user to avoid repeated calls
+  const authUserCache = useRef<{
+    user: any;
+    timestamp: number;
+  } | null>(null);
+  const AUTH_CACHE_DURATION = 30 * 1000; // 30 seconds
+
+  // Cached auth user helper
+  const getCachedAuthUser = useCallback(async () => {
+    const now = Date.now();
+    if (
+      authUserCache.current &&
+      now - authUserCache.current.timestamp < AUTH_CACHE_DURATION
+    ) {
+      return authUserCache.current.user;
+    }
+
+    const {
+      data: { user },
+      error,
+    } = await supabase.auth.getUser();
+    if (error) {
+      logger.error("Auth error:", error.message);
+      return null;
+    }
+
+    authUserCache.current = { user, timestamp: now };
+    return user;
+  }, []);
+
   // Initialize data and check for update flags on mount
   useEffect(() => {
     const initializeScreen = async () => {
       setIsInitialLoad(true);
 
-      // Load accounts for filter modal
-      await loadUserAccounts(true);
+      try {
+        // Parallelize independent API calls for faster loading
+        const [hasStoredData] = await Promise.all([
+          loadData(), // Load stored data first
+          loadUserAccounts(true), // Load accounts for filter modal
+        ]);
 
-      // Load stored data first
-      const hasStoredData = await loadData();
+        // If no stored data, fetch fresh data (sequential dependency)
+        if (!hasStoredData) {
+          setIsLoading(true);
+          await fetchFreshData();
+          setIsLoading(false);
+        }
 
-      if (!hasStoredData) {
-        // If no stored data, try fetching fresh data
-        setIsLoading(true);
-        await fetchFreshData();
-        setIsLoading(false);
+        // Parallelize remaining independent operations
+        await Promise.all([
+          loadFilteredTransactions(filterOptions, true), // Load filtered transactions
+          checkForReAuthNeeds(), // Check for update flags and re-auth needs
+          loadRecurringTransactions(), // Load recurring transactions from database
+        ]);
+      } catch (error) {
+        logger.error("Error during initialization:", error);
+      } finally {
+        setIsInitialLoad(false);
       }
-
-      // Load filtered transactions with default filters
-      await loadFilteredTransactions(filterOptions, true);
-
-      // Check for update flags and re-auth needs
-      await checkForReAuthNeeds();
-
-      // Load recurring transactions from database (no Plaid calls)
-      await loadRecurringTransactions();
-
-      setIsInitialLoad(false);
     };
 
     initializeScreen();
-  }, []);
+  }, [getCachedAuthUser]);
 
   // Load filtered transactions when filter options change
   useEffect(() => {
@@ -263,20 +302,11 @@ export default function InsightsScreen() {
 
   const loadData = async () => {
     try {
-      console.log("💡 Insights: Loading data from Supabase...");
+      logger.info("Insights: Loading data from Supabase...");
 
-      const {
-        data: { user },
-        error: authError,
-      } = await supabase.auth.getUser();
-
-      if (authError) {
-        console.log("❌ Auth error:", authError.message);
-        return false;
-      }
-
+      const user = await getCachedAuthUser();
       if (!user?.id) {
-        console.log("❌ No authenticated user");
+        logger.error("No authenticated user");
         return false;
       }
 
@@ -284,8 +314,8 @@ export default function InsightsScreen() {
       const transactions = await getRecentTransactions(user.id, 100);
 
       if (transactions && transactions.length > 0) {
-        console.log(
-          `✅ Insights: Loaded ${transactions.length} transactions from Supabase`
+        logger.info(
+          `Insights: Loaded ${transactions.length} transactions from Supabase`
         );
         setTransactions(transactions);
         processTransactionsData(transactions);
@@ -293,10 +323,10 @@ export default function InsightsScreen() {
         return true;
       }
 
-      console.log("ℹ️ Insights: No transaction data found");
+      logger.info("Insights: No transaction data found");
       return false;
     } catch (error) {
-      console.error("❌ Insights: Error loading data:", error);
+      logger.error("Insights: Error loading data:", error);
       return false;
     }
   };
@@ -304,20 +334,11 @@ export default function InsightsScreen() {
   const fetchFreshData = async () => {
     try {
       setIsLoading(true);
-      console.log("💡 Insights: Fetching fresh data from Supabase...");
+      logger.info("Insights: Fetching fresh data from Supabase...");
 
-      const {
-        data: { user },
-        error: authError,
-      } = await supabase.auth.getUser();
-
-      if (authError) {
-        console.log("❌ Auth error:", authError.message);
-        return;
-      }
-
+      const user = await getCachedAuthUser();
       if (!user?.id) {
-        console.log("❌ No authenticated user");
+        logger.error("No authenticated user");
         return;
       }
 
@@ -325,17 +346,17 @@ export default function InsightsScreen() {
       const transactions = await getRecentTransactions(user.id, 100);
 
       if (transactions && transactions.length > 0) {
-        console.log(
-          `✅ Insights: Loaded ${transactions.length} fresh transactions`
+        logger.info(
+          `Insights: Loaded ${transactions.length} fresh transactions`
         );
         setTransactions(transactions);
         processTransactionsData(transactions);
         hasData.current = true;
       } else {
-        console.log("ℹ️ Insights: No transactions found");
+        logger.info("Insights: No transactions found");
       }
     } catch (error) {
-      console.error("❌ Insights: Error fetching fresh data:", error);
+      logger.error("Insights: Error fetching fresh data:", error);
     } finally {
       setIsLoading(false);
     }
@@ -344,14 +365,9 @@ export default function InsightsScreen() {
   // Load user accounts for filter modal
   const loadUserAccounts = async (debug: boolean = false) => {
     try {
-      const {
-        data: { user },
-        error: authError,
-      } = await supabase.auth.getUser();
-
-      if (authError || !user?.id) {
-        if (debug)
-          console.log("❌ Auth error loading accounts:", authError?.message);
+      const user = await getCachedAuthUser();
+      if (!user?.id) {
+        if (debug) logger.error("No authenticated user loading accounts");
         return;
       }
 
@@ -359,11 +375,11 @@ export default function InsightsScreen() {
       setAccounts(userAccounts);
 
       if (debug) {
-        console.log(
-          `📊 Loaded ${userAccounts.length} user accounts for filtering:`
+        logger.debug(
+          `Loaded ${userAccounts.length} user accounts for filtering:`
         );
         userAccounts.forEach((acc, idx) => {
-          console.log(
+          logger.debug(
             `  ${idx + 1}. ${acc.institution_name} - ${acc.name} (${
               acc.subtype
             }) [Account ID: ${acc.account_id}]`
@@ -374,8 +390,8 @@ export default function InsightsScreen() {
         const uniqueInstitutions = [
           ...new Set(userAccounts.map((acc) => acc.institution_name)),
         ];
-        console.log(
-          "🏛️  DEBUG: Unique institutions in filter:",
+        logger.debug(
+          "DEBUG: Unique institutions in filter:",
           uniqueInstitutions
         );
 
@@ -384,16 +400,16 @@ export default function InsightsScreen() {
           const accountsForInstitution = userAccounts.filter(
             (acc) => acc.institution_name === institution
           );
-          console.log(
-            `🔍 DEBUG: ${institution} has ${accountsForInstitution.length} accounts:`
+          logger.debug(
+            `DEBUG: ${institution} has ${accountsForInstitution.length} accounts:`
           );
           accountsForInstitution.forEach((acc) => {
-            console.log(`    - ${acc.name} (${acc.subtype})`);
+            logger.debug(`    - ${acc.name} (${acc.subtype})`);
           });
         });
       }
     } catch (error) {
-      console.error("❌ Error loading user accounts:", error);
+      logger.error("Error loading user accounts:", error);
     }
   };
 
@@ -436,16 +452,9 @@ export default function InsightsScreen() {
     reset: boolean = false
   ) => {
     try {
-      const {
-        data: { user },
-        error: authError,
-      } = await supabase.auth.getUser();
-
-      if (authError || !user?.id) {
-        console.log(
-          "❌ Auth error loading filtered transactions:",
-          authError?.message
-        );
+      const user = await getCachedAuthUser();
+      if (!user?.id) {
+        logger.info("❌ No authenticated user loading filtered transactions");
         return;
       }
 
@@ -456,7 +465,7 @@ export default function InsightsScreen() {
       if (reset) {
         const cached = getCachedData(getCacheKey(filters, 0));
         if (cached) {
-          console.log(`📦 Using cached data for filters: ${cacheKey}`);
+          logger.info(`📦 Using cached data for filters: ${cacheKey}`);
           setFilteredTransactions(cached.transactions);
           setTotalFilteredCount(cached.count);
           setHasMoreTransactions(cached.transactions.length < cached.count);
@@ -499,11 +508,11 @@ export default function InsightsScreen() {
 
       setHasMoreTransactions(updatedTransactions.length < totalCount);
 
-      console.log(
+      logger.info(
         `📊 Loaded ${newTransactions.length} filtered transactions (${updatedTransactions.length}/${totalCount})`
       );
     } catch (error) {
-      console.error("❌ Error loading filtered transactions:", error);
+      logger.error("❌ Error loading filtered transactions:", error);
     }
   };
 
@@ -521,7 +530,7 @@ export default function InsightsScreen() {
     const subscription = DeviceEventEmitter.addListener(
       "financialDataRefreshed",
       async (data) => {
-        console.log("🔄 Financial data refreshed event received");
+        logger.info("🔄 Financial data refreshed event received");
 
         if (data.transactions) {
           setTransactions(data.transactions);
@@ -544,114 +553,128 @@ export default function InsightsScreen() {
     };
   }, [showEnhancedFilterModal]);
 
-  const processTransactionsData = (transactionsData: Transaction[]) => {
-    // Filter for current month expenses only
+  // Memoized date calculations to avoid repeated Date object creation
+  const currentDateInfo = useMemo(() => {
     const now = new Date();
-    const currentMonth = now.getMonth();
-    const currentYear = now.getFullYear();
+    return {
+      now,
+      currentMonth: now.getMonth(),
+      currentYear: now.getFullYear(),
+    };
+  }, []);
 
-    const expenses = transactionsData.filter((tx) => tx.amount > 0);
+  // Memoized transaction processing to prevent expensive recomputations
+  const processTransactionsData = useCallback(
+    (transactionsData: Transaction[]) => {
+      // Filter for current month expenses only
+      const { now, currentMonth, currentYear } = currentDateInfo;
 
-    // Filter for current month (with fallback to most recent month if no current month data)
-    let currentMonthExpenses = expenses.filter((tx) => {
-      const txDate = new Date(tx.date);
-      const isCurrentMonth =
-        txDate.getMonth() === currentMonth &&
-        txDate.getFullYear() === currentYear;
-      return isCurrentMonth;
-    });
+      const expenses = transactionsData.filter((tx) => tx.amount > 0);
 
-    // If no current month data, use most recent month's data
-    if (currentMonthExpenses.length === 0 && expenses.length > 0) {
-      // Find the most recent month with data
-      const mostRecentDate = new Date(expenses[0].date);
-      const mostRecentMonth = mostRecentDate.getMonth();
-      const mostRecentYear = mostRecentDate.getFullYear();
-
-      currentMonthExpenses = expenses.filter((tx) => {
+      // Filter for current month (with fallback to most recent month if no current month data)
+      let currentMonthExpenses = expenses.filter((tx) => {
         const txDate = new Date(tx.date);
-        return (
-          txDate.getMonth() === mostRecentMonth &&
-          txDate.getFullYear() === mostRecentYear
-        );
+        const isCurrentMonth =
+          txDate.getMonth() === currentMonth &&
+          txDate.getFullYear() === currentYear;
+        return isCurrentMonth;
       });
-    }
 
-    const totalSpent = currentMonthExpenses.reduce(
-      (acc, tx) => acc + tx.amount,
-      0
-    );
+      // If no current month data, use most recent month's data
+      if (currentMonthExpenses.length === 0 && expenses.length > 0) {
+        // Find the most recent month with data
+        const mostRecentDate = new Date(expenses[0].date);
+        const mostRecentMonth = mostRecentDate.getMonth();
+        const mostRecentYear = mostRecentDate.getFullYear();
 
-    const categoriesObj: CategoryBreakdown = {};
-    for (const tx of currentMonthExpenses) {
-      // Use the category field from database
-      const category = tx.category || "Other";
-
-      if (!categoriesObj[category]) {
-        categoriesObj[category] = {
-          amount: 0,
-          percentage: 0,
-          color:
-            categoryColors[category as keyof typeof categoryColors] ||
-            "#4A90E2",
-        };
+        currentMonthExpenses = expenses.filter((tx) => {
+          const txDate = new Date(tx.date);
+          return (
+            txDate.getMonth() === mostRecentMonth &&
+            txDate.getFullYear() === mostRecentYear
+          );
+        });
       }
-      categoriesObj[category].amount += tx.amount;
-    }
 
-    // Calculate percentages
-    Object.keys(categoriesObj).forEach((category) => {
-      categoriesObj[category].percentage =
+      const totalSpent = currentMonthExpenses.reduce(
+        (acc, tx) => acc + tx.amount,
+        0
+      );
+
+      const categoriesObj: CategoryBreakdown = {};
+      for (const tx of currentMonthExpenses) {
+        // Use the category field from database
+        const category = tx.category || "Other";
+
+        if (!categoriesObj[category]) {
+          categoriesObj[category] = {
+            amount: 0,
+            percentage: 0,
+            color:
+              categoryColors[category as keyof typeof categoryColors] ||
+              "#4A90E2",
+          };
+        }
+        categoriesObj[category].amount += tx.amount;
+      }
+
+      // Calculate percentages
+      Object.keys(categoriesObj).forEach((category) => {
+        categoriesObj[category].percentage =
+          totalSpent > 0
+            ? (categoriesObj[category].amount / totalSpent) * 100
+            : 0;
+      });
+
+      const sortedCategories = Object.entries(categoriesObj).sort(
+        (a, b) => b[1].amount - a[1].amount
+      );
+      setCategoryBreakdown(sortedCategories);
+
+      // Store current month transactions for category detail modal
+      setCurrentMonthTransactions(currentMonthExpenses);
+
+      const uniqueCategories = [
+        "All Categories",
+        ...new Set(currentMonthExpenses.map((tx) => tx.category || "Other")),
+      ].map((cat) =>
+        cat === "All Categories" ? cat : formatCategoryName(cat)
+      );
+
+      setCategories(uniqueCategories);
+
+      const topCategory = sortedCategories[0];
+      const displayTotal =
         totalSpent > 0
-          ? (categoriesObj[category].amount / totalSpent) * 100
-          : 0;
-    });
+          ? totalSpent
+          : expenses.reduce((acc, tx) => acc + tx.amount, 0);
+      const displayPeriod = totalSpent > 0 ? "this month" : "recently";
 
-    const sortedCategories = Object.entries(categoriesObj).sort(
-      (a, b) => b[1].amount - a[1].amount
-    );
-    setCategoryBreakdown(sortedCategories);
+      const newInsights: Insight[] = [
+        {
+          icon: "cash-outline",
+          title: `You spent $${displayTotal.toLocaleString("en-US", {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          })} ${displayPeriod}`,
+          description: topCategory
+            ? `Top category: ${formatCategoryName(topCategory[0])}`
+            : "Building your spending insights...",
+          details: topCategory
+            ? `You've spent the most on ${formatCategoryName(
+                topCategory[0]
+              )} — $${topCategory[1].amount.toLocaleString("en-US", {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+              })} this month. Try setting a limit or exploring cheaper alternatives.`
+            : "We're analyzing your spending patterns. More insights will appear as you use the app.",
+        },
+      ];
 
-    // Store current month transactions for category detail modal
-    setCurrentMonthTransactions(currentMonthExpenses);
-
-    const uniqueCategories = [
-      "All Categories",
-      ...new Set(currentMonthExpenses.map((tx) => tx.category || "Other")),
-    ].map((cat) => (cat === "All Categories" ? cat : formatCategoryName(cat)));
-
-    setCategories(uniqueCategories);
-
-    const topCategory = sortedCategories[0];
-    const displayTotal =
-      totalSpent > 0
-        ? totalSpent
-        : expenses.reduce((acc, tx) => acc + tx.amount, 0);
-    const displayPeriod = totalSpent > 0 ? "this month" : "recently";
-
-    const newInsights: Insight[] = [
-      {
-        icon: "cash-outline",
-        title: `You spent $${displayTotal.toLocaleString("en-US", {
-          minimumFractionDigits: 2,
-          maximumFractionDigits: 2,
-        })} ${displayPeriod}`,
-        description: topCategory
-          ? `Top category: ${formatCategoryName(topCategory[0])}`
-          : "Building your spending insights...",
-        details: topCategory
-          ? `You've spent the most on ${formatCategoryName(
-              topCategory[0]
-            )} — $${topCategory[1].amount.toLocaleString("en-US", {
-              minimumFractionDigits: 2,
-              maximumFractionDigits: 2,
-            })} this month. Try setting a limit or exploring cheaper alternatives.`
-          : "We're analyzing your spending patterns. More insights will appear as you use the app.",
-      },
-    ];
-
-    setRealInsights(newInsights);
-  };
+      setRealInsights(newInsights);
+    },
+    [currentDateInfo]
+  );
 
   const formatDate = (dateStr: string) => {
     const options: Intl.DateTimeFormatOptions = {
@@ -738,9 +761,7 @@ export default function InsightsScreen() {
   // Check for re-auth needs (both database flags and API errors)
   const checkForReAuthNeeds = async () => {
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+      const user = await getCachedAuthUser();
       if (!user?.id) return;
 
       const { data: userItems, error } = await supabase
@@ -751,7 +772,7 @@ export default function InsightsScreen() {
         .eq("user_id", user.id);
 
       if (error) {
-        console.error("Error checking update flags:", error);
+        logger.error("Error checking update flags:", error);
         return;
       }
 
@@ -786,19 +807,17 @@ export default function InsightsScreen() {
 
       setReAuthItems(reAuthNeeded);
     } catch (error) {
-      console.error("Error checking re-auth needs:", error);
+      logger.error("Error checking re-auth needs:", error);
     }
   };
 
   // Debug function to diagnose database state
   const debugDatabaseState = async () => {
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+      const user = await getCachedAuthUser();
       if (!user?.id) return;
 
-      console.log("🔍 DEBUG: Checking database state...");
+      logger.info("🔍 DEBUG: Checking database state...");
 
       // 1. Check all user items
       const { data: userItems, error: itemsError } = await supabase
@@ -807,13 +826,13 @@ export default function InsightsScreen() {
         .eq("user_id", user.id);
 
       if (itemsError) {
-        console.error("❌ Error fetching user items:", itemsError);
+        logger.error("❌ Error fetching user items:", itemsError);
         return;
       }
 
-      console.log(`🏦 DEBUG: Found ${userItems?.length || 0} user items:`);
+      logger.info(`🏦 DEBUG: Found ${userItems?.length || 0} user items:`);
       userItems?.forEach((item, idx) => {
-        console.log(
+        logger.info(
           `  ${idx + 1}. ${item.institution_name} (${
             item.item_id
           }) - Last synced: ${item.last_synced_at}`
@@ -828,20 +847,20 @@ export default function InsightsScreen() {
           .eq("item_id", item.item_id);
 
         if (accountsError) {
-          console.error(
+          logger.error(
             `❌ Error fetching accounts for ${item.institution_name}:`,
             accountsError
           );
           continue;
         }
 
-        console.log(
+        logger.info(
           `📊 DEBUG: ${item.institution_name} (${item.item_id}) has ${
             accounts?.length || 0
           } accounts:`
         );
         accounts?.forEach((acc, idx) => {
-          console.log(
+          logger.info(
             `    ${idx + 1}. ${acc.name} (${acc.account_id}) - ${acc.type}/${
               acc.subtype
             }`
@@ -849,7 +868,7 @@ export default function InsightsScreen() {
         });
 
         if (accounts?.length === 0) {
-          console.log(
+          logger.info(
             `⚠️  DEBUG: ${item.institution_name} has NO ACCOUNTS - this explains missing recurring transactions`
           );
         }
@@ -857,9 +876,9 @@ export default function InsightsScreen() {
 
       // 3. Check if there's any item_id mismatch
       const allItems = userItems?.map((i) => i.item_id) || [];
-      console.log("🔍 DEBUG: All item_ids:", allItems);
+      logger.info("🔍 DEBUG: All item_ids:", allItems);
     } catch (error) {
-      console.error("❌ Debug database state error:", error);
+      logger.error("❌ Debug database state error:", error);
     }
   };
 
@@ -867,17 +886,17 @@ export default function InsightsScreen() {
   const loadRecurringTransactions = async () => {
     try {
       setRecurringLoading(true);
-      console.log("🔄 Loading recurring transactions from database...");
+      logger.info("🔄 Loading recurring transactions from database...");
 
       const data = await getAllRecurringTransactions();
       setRecurringData(data);
 
-      console.log(
+      logger.info(
         "✅ Recurring transactions loaded from database:",
         data.summary
       );
     } catch (error) {
-      console.error(
+      logger.error(
         "❌ Error loading recurring transactions from database:",
         error
       );
@@ -897,7 +916,7 @@ export default function InsightsScreen() {
   // Handle re-auth banner actions - Complete flow: Re-auth → Sync → Update UI
   const handleReAuth = async (item_id: string) => {
     try {
-      console.log(
+      logger.info(
         "🔐 RE-AUTH FLOW: Starting re-authentication for item:",
         item_id
       );
@@ -905,7 +924,7 @@ export default function InsightsScreen() {
       // Step 1: Re-authenticate with Plaid
       const linkToken = await getUpdateLinkToken(item_id);
       await openPlaidLink(linkToken);
-      console.log("✅ Re-authentication successful");
+      logger.info("✅ Re-authentication successful");
 
       // Step 2: Clear re-auth flags in database
       await supabase
@@ -919,7 +938,7 @@ export default function InsightsScreen() {
       // Step 3: Remove from banner list (optimistic update)
       setReAuthItems((prev) => prev.filter((item) => item.item_id !== item_id));
 
-      console.log("🔄 POST RE-AUTH: Comprehensive data refresh...");
+      logger.info("🔄 POST RE-AUTH: Comprehensive data refresh...");
 
       // Step 4: Comprehensive data refresh
       // 4a. Request fresh data from Plaid
@@ -936,18 +955,18 @@ export default function InsightsScreen() {
       await loadFilteredTransactions(filterOptions, true);
       await loadRecurringTransactions();
 
-      console.log(
+      logger.info(
         "✅ RE-AUTH COMPLETE: All data synced and UI updated from database"
       );
     } catch (error) {
-      console.error("❌ Re-auth flow failed:", error);
+      logger.error("❌ Re-auth flow failed:", error);
 
       // On error, try to at least refresh UI from existing database data
       try {
         await fetchFreshData();
         await loadFilteredTransactions(filterOptions, true);
       } catch (fallbackError) {
-        console.error("❌ Fallback data refresh also failed:", fallbackError);
+        logger.error("❌ Fallback data refresh also failed:", fallbackError);
       }
     }
   };
@@ -986,15 +1005,11 @@ export default function InsightsScreen() {
     setRefreshStatus({ type: "manual", message: "Syncing existing data..." });
 
     try {
-      console.log("🔄 MANUAL REFRESH: Syncing from stored cursors...");
+      logger.info("🔄 MANUAL REFRESH: Syncing from stored cursors...");
 
-      const {
-        data: { user },
-        error: authError,
-      } = await supabase.auth.getUser();
-
-      if (authError || !user?.id) {
-        console.error("❌ Auth error in refresh:", authError?.message);
+      const user = await getCachedAuthUser();
+      if (!user?.id) {
+        logger.error("❌ No authenticated user in refresh");
         setRefreshStatus({ type: "manual", message: "Authentication error" });
         return;
       }
@@ -1015,7 +1030,7 @@ export default function InsightsScreen() {
       await loadRecurringTransactions();
 
       setRefreshStatus({ type: "manual", message: "Sync completed!" });
-      console.log(
+      logger.info(
         "✅ MANUAL REFRESH COMPLETE: Data synced from cursors → UI updated"
       );
 
@@ -1024,7 +1039,7 @@ export default function InsightsScreen() {
         setRefreshStatus({ type: null, message: "" });
       }, 3000);
     } catch (error) {
-      console.error("❌ Manual refresh failed:", error);
+      logger.error("❌ Manual refresh failed:", error);
       setRefreshStatus({ type: "manual", message: "Sync failed" });
 
       setTimeout(() => {
@@ -1046,15 +1061,11 @@ export default function InsightsScreen() {
     });
 
     try {
-      console.log("🔧 CATEGORY FIX: Starting full resync...");
+      logger.info("🔧 CATEGORY FIX: Starting full resync...");
 
-      const {
-        data: { user },
-        error: authError,
-      } = await supabase.auth.getUser();
-
-      if (authError || !user?.id) {
-        console.error("❌ Auth error in full resync:", authError?.message);
+      const user = await getCachedAuthUser();
+      if (!user?.id) {
+        logger.error("❌ No authenticated user in full resync");
         setRefreshStatus({
           type: "category_fix",
           message: "Authentication error",
@@ -1070,7 +1081,7 @@ export default function InsightsScreen() {
       const success = await forceFullResync(user.id);
 
       if (!success) {
-        console.error("❌ Failed to reset cursors for full resync");
+        logger.error("❌ Failed to reset cursors for full resync");
         setRefreshStatus({
           type: "category_fix",
           message: "Failed to reset cursors",
@@ -1098,7 +1109,7 @@ export default function InsightsScreen() {
       await loadRecurringTransactions();
 
       setRefreshStatus({ type: "category_fix", message: "Categories fixed!" });
-      console.log(
+      logger.info(
         "✅ CATEGORY FIX COMPLETE: All transactions re-synced → UI updated"
       );
 
@@ -1107,7 +1118,7 @@ export default function InsightsScreen() {
         setRefreshStatus({ type: null, message: "" });
       }, 3000);
     } catch (error) {
-      console.error("❌ Full resync failed:", error);
+      logger.error("❌ Full resync failed:", error);
       setRefreshStatus({
         type: "category_fix",
         message: "Category fix failed",
@@ -1132,7 +1143,7 @@ export default function InsightsScreen() {
     });
 
     try {
-      console.log("☁️ CLOUD REFRESH: Starting comprehensive data refresh...");
+      logger.info("☁️ CLOUD REFRESH: Starting comprehensive data refresh...");
 
       // Step 1: Request fresh data from Plaid (triggers their data extraction)
       setRefreshStatus({
@@ -1150,7 +1161,7 @@ export default function InsightsScreen() {
         });
       }
 
-      console.log("✅ Refresh request sent to Plaid:", result.message);
+      logger.info("✅ Refresh request sent to Plaid:", result.message);
 
       // Step 3: Refresh account balances first (they change most frequently)
       setRefreshStatus({
@@ -1183,14 +1194,14 @@ export default function InsightsScreen() {
         type: "cloud",
         message: "Data refreshed successfully!",
       });
-      console.log("✅ CLOUD REFRESH COMPLETE: Fresh data → Supabase → UI");
+      logger.info("✅ CLOUD REFRESH COMPLETE: Fresh data → Supabase → UI");
 
       // Clear success message after 3 seconds
       setTimeout(() => {
         setRefreshStatus({ type: null, message: "" });
       }, 3000);
     } catch (error) {
-      console.error("❌ Cloud refresh failed:", error);
+      logger.error("❌ Cloud refresh failed:", error);
       setRefreshStatus({
         type: "cloud",
         message: "Refresh failed, loading cached data...",
@@ -1202,7 +1213,7 @@ export default function InsightsScreen() {
         await loadFilteredTransactions(filterOptions, true);
         await loadRecurringTransactions();
       } catch (fallbackError) {
-        console.error("❌ Fallback refresh failed:", fallbackError);
+        logger.error("❌ Fallback refresh failed:", fallbackError);
         setRefreshStatus({ type: "cloud", message: "Unable to refresh data" });
       }
 
@@ -1220,7 +1231,7 @@ export default function InsightsScreen() {
     if (!updateModalInfo) return;
 
     try {
-      console.log("🔄 Starting update mode for item:", updateModalInfo.item_id);
+      logger.info("🔄 Starting update mode for item:", updateModalInfo.item_id);
 
       // Get update link token
       const linkToken = await getUpdateLinkToken(updateModalInfo.item_id);
@@ -1243,9 +1254,9 @@ export default function InsightsScreen() {
       // Refresh data after update
       await fetchFreshData();
 
-      console.log("✅ Update mode completed");
+      logger.info("✅ Update mode completed");
     } catch (error) {
-      console.error("❌ Update mode failed:", error);
+      logger.error("❌ Update mode failed:", error);
     }
   };
 
@@ -1378,7 +1389,7 @@ export default function InsightsScreen() {
                   income={recurringData?.income || []}
                   onViewAll={() => {
                     // TODO: Navigate to recurring transactions detail screen
-                    console.log("View all recurring transactions");
+                    logger.info("View all recurring transactions");
                   }}
                   isLoading={recurringLoading}
                 />

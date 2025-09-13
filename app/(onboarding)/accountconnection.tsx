@@ -15,6 +15,7 @@ import { supabase } from "../_lib/supabase/supabase";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { fetchLinkToken, handlePlaidConnect } from "../_utils/plaid";
 import { BlurView } from "expo-blur";
+import logger from "../_utils/logger";
 
 export default function AccountConnectionScreen() {
   const params = useLocalSearchParams();
@@ -30,7 +31,7 @@ export default function AccountConnectionScreen() {
         const token = await fetchLinkToken();
         setLinkToken(token);
       } catch (error) {
-        console.error("Error fetching link token:", error);
+        logger.error("Error fetching link token:", error);
         Alert.alert(
           "Connection Error",
           "Unable to initialize bank connection. Please try again."
@@ -83,7 +84,7 @@ export default function AccountConnectionScreen() {
           setIsLoading(false);
           setIsConnecting(false);
 
-          console.log("❌ Plaid connection error:", error);
+          logger.info("❌ Plaid connection error:", error);
 
           if (error?.error?.errorCode === "INVALID_LINK_TOKEN") {
             Alert.alert(
@@ -111,7 +112,7 @@ export default function AccountConnectionScreen() {
         }
       );
     } catch (error) {
-      console.error("Error connecting bank:", error);
+      logger.error("Error connecting bank:", error);
       Alert.alert(
         "Connection Failed",
         "Unable to connect your bank account. Please try again."

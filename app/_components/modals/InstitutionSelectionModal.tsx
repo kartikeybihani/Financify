@@ -26,6 +26,7 @@ import {
   getSnaptradeConnectionsFromDB,
 } from "../../_utils/snaptrade";
 import { supabase } from "../../_lib/supabase/supabase";
+import logger from "../../_utils/logger";
 
 interface Institution {
   id: string;
@@ -211,14 +212,14 @@ export default function InstitutionSelectionModal({
   ]);
 
   const handleFidelityConnection = async () => {
-    console.log("🔄 Starting Fidelity connection...");
+    logger.info("🔄 Starting Fidelity connection...");
     setIsConnecting(true);
 
     try {
       // If there is already investment data in DB, skip API calls and navigate to investments screen
       const existingConnectionsInDb = await getSnaptradeConnectionsFromDB();
       if (existingConnectionsInDb && existingConnectionsInDb.length > 0) {
-        console.log(
+        logger.info(
           "✅ Found existing Snaptrade data in DB, navigating to /investments without API calls..."
         );
         setIsConnecting(false);
@@ -231,20 +232,20 @@ export default function InstitutionSelectionModal({
       const hasExistingConnection = await hasSnaptradeConnection();
 
       if (hasExistingConnection) {
-        console.log(
+        logger.info(
           "✅ Found existing Snaptrade connection, fetching accounts..."
         );
 
         try {
           const accounts = await fetchSnaptradeAccountsFromStorage();
-          console.log("✅ Existing Snaptrade accounts fetched:", accounts);
+          logger.info("✅ Existing Snaptrade accounts fetched:", accounts);
 
           // Sync investments data to database for existing connection
           if (accounts.length > 0) {
             const firstAccount = accounts[0];
             if (firstAccount && firstAccount.id) {
               try {
-                console.log(
+                logger.info(
                   "🔄 Syncing existing investments data to database for account:",
                   firstAccount.id
                 );
@@ -259,13 +260,13 @@ export default function InstitutionSelectionModal({
                       user.id, // Actual authenticated user ID
                       firstAccount.id
                     );
-                    console.log(
+                    logger.info(
                       "✅ Existing investments data synced to database successfully"
                     );
                   }
                 }
               } catch (syncError) {
-                console.error(
+                logger.error(
                   "⚠️ Failed to sync existing investments to database (continuing anyway):",
                   syncError
                 );
@@ -276,7 +277,7 @@ export default function InstitutionSelectionModal({
 
           if (accounts.length === 0) {
             // No accounts found - allow user to connect
-            console.log(
+            logger.info(
               "🔄 No accounts found, proceeding with new connection..."
             );
             // Continue with new connection flow below
@@ -287,7 +288,7 @@ export default function InstitutionSelectionModal({
             return;
           }
         } catch (accountError) {
-          console.error(
+          logger.error(
             "❌ Failed to fetch existing accounts, proceeding with new connection:",
             accountError
           );
@@ -296,18 +297,18 @@ export default function InstitutionSelectionModal({
       }
 
       // No existing connection or failed to fetch existing accounts - proceed with new connection
-      console.log(
+      logger.info(
         "🔄 Starting new Snaptrade user registration for Fidelity..."
       );
       const registerResponse = await registerSnaptradeUser();
-      console.log(
+      logger.info(
         "✅ Snaptrade user registered successfully:",
         registerResponse
       );
 
-      console.log("registerResponse --->: ", registerResponse);
-      console.log("registerResponse.userId --->: ", registerResponse.userId);
-      console.log(
+      logger.info("registerResponse --->: ", registerResponse);
+      logger.info("registerResponse.userId --->: ", registerResponse.userId);
+      logger.info(
         "registerResponse.userSecret --->: ",
         registerResponse.userSecret
       );
@@ -316,11 +317,11 @@ export default function InstitutionSelectionModal({
         registerResponse.userId,
         registerResponse.userSecret
       );
-      console.log("✅ Snaptrade user logged in successfully:", loginResponse);
+      logger.info("✅ Snaptrade user logged in successfully:", loginResponse);
 
       // Open the redirect URI in a web browser
       if (loginResponse.redirectURI) {
-        console.log(
+        logger.info(
           "🌐 Opening Snaptrade redirect URI:",
           loginResponse.redirectURI
         );
@@ -333,17 +334,17 @@ export default function InstitutionSelectionModal({
           }
         );
 
-        console.log("🔗 WebBrowser result:", result);
+        logger.info("🔗 WebBrowser result:", result);
 
         // After the user completes the connection, fetch their accounts
         if (result.type === "cancel") {
-          console.log("🔄 User completed connection, fetching accounts...");
+          logger.info("🔄 User completed connection, fetching accounts...");
           try {
             const accounts = await fetchSnaptradeAccounts(
               registerResponse.userId,
               registerResponse.userSecret
             );
-            console.log("✅ Snaptrade accounts fetched:", accounts);
+            logger.info("✅ Snaptrade accounts fetched:", accounts);
 
             // Store credentials securely in database
             try {
@@ -363,12 +364,12 @@ export default function InstitutionSelectionModal({
                     account_type: "investment",
                   }
                 );
-                console.log(
+                logger.info(
                   "✅ SnapTrade credentials stored securely in database"
                 );
               }
             } catch (storageError) {
-              console.error(
+              logger.error(
                 "⚠️ Failed to store credentials in database (continuing anyway):",
                 storageError
               );
@@ -380,7 +381,7 @@ export default function InstitutionSelectionModal({
               const firstAccount = accounts[0];
               if (firstAccount && firstAccount.id) {
                 try {
-                  console.log(
+                  logger.info(
                     "🔄 Syncing investments data to database for account:",
                     firstAccount.id
                   );
@@ -394,11 +395,11 @@ export default function InstitutionSelectionModal({
                       firstAccount.id
                     );
                   }
-                  console.log(
+                  logger.info(
                     "✅ Investments data synced to database successfully"
                   );
                 } catch (syncError) {
-                  console.error(
+                  logger.error(
                     "⚠️ Failed to sync investments to database (continuing anyway):",
                     syncError
                   );
@@ -411,7 +412,7 @@ export default function InstitutionSelectionModal({
             setIsConnecting(false);
             router.push("/investments");
           } catch (accountError) {
-            console.error("❌ Failed to fetch accounts:", accountError);
+            logger.error("❌ Failed to fetch accounts:", accountError);
 
             // Still store credentials in database even if account fetch fails
             try {
@@ -431,12 +432,12 @@ export default function InstitutionSelectionModal({
                     account_type: "investment",
                   }
                 );
-                console.log(
+                logger.info(
                   "✅ SnapTrade credentials stored in database despite account fetch failure"
                 );
               }
             } catch (storageError) {
-              console.error(
+              logger.error(
                 "⚠️ Failed to store credentials in database:",
                 storageError
               );
@@ -452,7 +453,7 @@ export default function InstitutionSelectionModal({
         throw new Error("No redirect URI received from Snaptrade");
       }
     } catch (error) {
-      console.error("❌ Failed to connect Fidelity account:", error);
+      logger.error("❌ Failed to connect Fidelity account:", error);
       setIsConnecting(false);
     }
   };

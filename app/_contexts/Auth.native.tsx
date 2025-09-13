@@ -1,6 +1,7 @@
 import { Platform } from "react-native";
 import * as AppleAuthentication from "expo-apple-authentication";
 import { supabase } from "../_lib/supabase/supabase";
+import logger from "../_utils/logger";
 
 const Auth = {
   AppleSignIn: () => {
@@ -28,7 +29,7 @@ const Auth = {
                   provider: "apple",
                   token: credential.identityToken,
                 });
-                console.log(JSON.stringify({ error, user }, null, 2));
+                logger.info(JSON.stringify({ error, user }, null, 2));
                 if (!error) {
                   // User is signed in.
                 }

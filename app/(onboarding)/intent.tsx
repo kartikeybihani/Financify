@@ -15,6 +15,7 @@ import { useRouter, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { supabase } from "../_lib/supabase/supabase";
+import logger from "../_utils/logger";
 
 const options = [
   {
@@ -93,7 +94,7 @@ export default function IntentScreen() {
       } = await supabase.auth.getUser();
 
       if (error || !user) {
-        console.log("Error - Could not get user in the intent screen.");
+        logger.info("Error - Could not get user in the intent screen.");
         return;
       }
 
@@ -104,7 +105,7 @@ export default function IntentScreen() {
       });
 
       if (updateError) {
-        console.log(
+        logger.info(
           "Error - Could not save your intents in the intent screen."
         );
         return;
@@ -113,7 +114,7 @@ export default function IntentScreen() {
       // Navigate to account connection with including selected intents in user metadata
       router.replace("/(onboarding)/accountconnection");
     } catch (err) {
-      console.error("Intent update failed:", err);
+      logger.error("Intent update failed:", err);
       Alert.alert("Something went wrong. Try again.");
     }
   };

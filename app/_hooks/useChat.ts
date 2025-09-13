@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ChatMessage, Goal } from '../_types/finny';
 import finnyConstants from '../_constants/finny';
+import logger from '../_utils/logger';
 
 // Utility to split messages for chat display
 function splitIntoMessages(text: string): string[] {
@@ -55,7 +56,7 @@ export const useChat = () => {
         }
       }
     } catch (error) {
-      console.error("Error loading chat messages:", error);
+      logger.error("Error loading chat messages:", error);
       setChatMessages(finnyConstants.INITIAL_CHAT_MESSAGES);
       setShowNudges(true);
     }
@@ -65,7 +66,7 @@ export const useChat = () => {
     try {
       await AsyncStorage.setItem("chatMessages", JSON.stringify(chatMessages));
     } catch (error) {
-      console.error("Error saving chat messages:", error);
+      logger.error("Error saving chat messages:", error);
     }
   };
 
@@ -75,7 +76,7 @@ export const useChat = () => {
       setChatMessages(finnyConstants.INITIAL_CHAT_MESSAGES);
       // Chat cleared and storage reset
     } catch (error) {
-      console.error("Error clearing chat:", error);
+      logger.error("Error clearing chat:", error);
     }
   };
 
@@ -99,9 +100,9 @@ export const useChat = () => {
     }
     // Console logging for chat messages
     if (msg.sender === "user") {
-      console.log(`User: ${msg.text}`);
+      logger.info(`User: ${msg.text}`);
     } else if (msg.sender === "finny") {
-      console.log(`Finny: [${msg.text}]`);
+      logger.info(`Finny: [${msg.text}]`);
     }
     setChatMessages((prev) => [...prev, msg]);
   };
@@ -215,14 +216,14 @@ export const useChat = () => {
       // Response status: ${res.status}
       const data = await res.json();
       // Finny response received
-      console.log("🤖 [CHAT] API Response:", data);
+      logger.info("🤖 [CHAT] API Response:", data);
       
       const messages = data.message || "Sorry, I wasn't able to generate advice just now.";
-      console.log("messages", messages);
+      logger.info("messages", messages);
       const splitMessages = splitIntoMessages(messages);
       await pushChatWithDelay("finny", splitMessages);
     } catch (error) {
-      console.error("AI error:", error);
+      logger.error("AI error:", error);
       pushChat("finny", "Something went wrong. Try again later.");
     }
   };

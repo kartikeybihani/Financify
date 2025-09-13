@@ -10,6 +10,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { SafeAreaView } from "react-native-safe-area-context";
+import logger from "../../_utils/logger";
 
 interface Transaction {
   id?: string;
@@ -189,7 +190,7 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
                     activeOpacity={0.7}
                     onPress={() => {
                       // Optional: Add haptic feedback or category filter action
-                      console.log("Category pressed:", category);
+                      logger.info("Category pressed:", category);
                     }}
                   >
                     <Ionicons

@@ -21,6 +21,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { supabase } from "../_lib/supabase/supabase";
 import { useRouter } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import logger from "../_utils/logger";
 const { width } = Dimensions.get("window");
 
 const MINIMUM_AGE = 18;
@@ -377,7 +378,7 @@ export default function SignupScreen() {
       },
     });
 
-    console.log("Signup data: ", data);
+    logger.info("Signup data: ", data);
 
     setLoading(false);
 

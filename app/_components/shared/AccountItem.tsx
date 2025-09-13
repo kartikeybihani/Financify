@@ -1,5 +1,11 @@
 import React from "react";
-import { View, Text, StyleSheet, Platform } from "react-native";
+import {
+  View,
+  Text,
+  StyleSheet,
+  Platform,
+  TouchableOpacity,
+} from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { FontAwesome } from "@expo/vector-icons";
@@ -22,6 +28,7 @@ interface AccountItemProps {
   icon: keyof typeof Ionicons.glyphMap;
   iconColor?: string;
   bankName?: string;
+  onPress?: () => void;
 }
 
 // Card gradient schemes based on account type
@@ -30,7 +37,7 @@ const getCardGradient = (type: string) => {
 
   if (normalizedType.includes("credit")) {
     return {
-      colors: ["#4a5fc1", "#5d3e7a"] as const,
+      colors: ["#151f59", "#343d70"] as const,
       start: { x: 0, y: 0 },
       end: { x: 1, y: 1 },
     };
@@ -46,7 +53,7 @@ const getCardGradient = (type: string) => {
 
   if (normalizedType.includes("investment")) {
     return {
-      colors: ["#c878d8", "#d14356"] as const,
+      colors: ["#04780d", "#02ab10"] as const,
       start: { x: 0, y: 0 },
       end: { x: 1, y: 1 },
     };
@@ -75,56 +82,63 @@ export default function AccountItem({
   icon,
   iconColor = "#4A90E2",
   bankName,
+  onPress,
 }: AccountItemProps) {
   const gradient = getCardGradient(type);
 
   return (
     <View style={styles.cardWrapper}>
-      <LinearGradient
-        colors={gradient.colors}
-        start={gradient.start}
-        end={gradient.end}
-        style={styles.card}
+      <TouchableOpacity
+        activeOpacity={0.8}
+        onPress={onPress}
+        disabled={!onPress}
       >
-        {/* Enhanced pattern overlay with mesh effect */}
-        <View style={styles.patternOverlay} />
-        <View style={styles.meshPattern} />
+        <LinearGradient
+          colors={gradient.colors}
+          start={gradient.start}
+          end={gradient.end}
+          style={styles.card}
+        >
+          {/* Enhanced pattern overlay with mesh effect */}
+          <View style={styles.patternOverlay} />
+          <View style={styles.meshPattern} />
 
-        {/* Bank Name - Top Left */}
-        <Text style={styles.bankNameText}>{bankName}</Text>
+          {/* Bank Name - Top Left */}
+          <Text style={styles.bankNameText}>{bankName}</Text>
 
-        {/* Bank Icon - Top Right */}
-        <View style={styles.bankIconContainer}>
-          <FontAwesome
-            name={"bank"}
-            size={17}
-            color="rgba(255, 255, 255, 0.9)"
-          />
-        </View>
-
-        {/* Card Footer */}
-        <View style={styles.cardFooter}>
-          <View style={styles.accountInfo}>
-            <Text style={styles.accountType}>{type.toUpperCase()}</Text>
-            <Text style={styles.accountName} numberOfLines={1}>
-              {name}
-            </Text>
+          {/* Bank Icon - Top Right */}
+          <View style={styles.bankIconContainer}>
+            <FontAwesome
+              name={"bank"}
+              size={17}
+              color="rgba(255, 255, 255, 0.9)"
+            />
           </View>
-          <View style={styles.balanceContainer}>
-            <Text style={styles.balanceLabel}>BALANCE</Text>
-            <Text style={styles.balance}>{balance}</Text>
+
+          {/* Card Footer */}
+          <View style={styles.cardFooter}>
+            <View style={styles.accountInfo}>
+              <Text style={styles.accountType}>{type.toUpperCase()}</Text>
+              <Text style={styles.accountName} numberOfLines={1}>
+                {name}
+              </Text>
+            </View>
+            <View style={styles.balanceContainer}>
+              <Text style={styles.balanceLabel}>BALANCE</Text>
+              <Text style={styles.balance}>{balance}</Text>
+            </View>
           </View>
-        </View>
 
-        {/* Enhanced visual effects */}
-        <View style={styles.shineEffect} />
-        <View style={styles.glowEffect1} />
-        <View style={styles.glowEffect2} />
-        <View style={styles.holographicEffect} />
+          {/* Enhanced visual effects */}
+          {/* <View style={styles.shineEffect} /> */}
+          {/* <View style={styles.glowEffect1} /> */}
+          {/* <View style={styles.glowEffect2} /> */}
+          {/* <View style={styles.holographicEffect} /> */}
 
-        {/* Glass morphism border */}
-        <View style={styles.glassBorder} />
-      </LinearGradient>
+          {/* Glass morphism border */}
+          <View style={styles.glassBorder} />
+        </LinearGradient>
+      </TouchableOpacity>
     </View>
   );
 }

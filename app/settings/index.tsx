@@ -25,6 +25,7 @@ import { useRouter, useLocalSearchParams } from "expo-router";
 import { supabase } from "../_lib/supabase/supabase";
 import FeedbackModal from "../_components/modals/FeedbackModal";
 import { handleDisconnect, getPrimaryItemId } from "../_utils/plaid";
+import logger from "../_utils/logger";
 
 export default function SettingsScreen() {
   const router = useRouter();
@@ -49,13 +50,13 @@ export default function SettingsScreen() {
         if (user) {
           setUserData(user);
           await AsyncStorage.setItem("userData", JSON.stringify(user));
-          console.log(
+          logger.info(
             "[SettingsIndex] Current user email:",
             user.user_metadata.full_name + " - " + user.email
           );
         }
       } catch (error) {
-        console.error("Error fetching user data:", error);
+        logger.error("Error fetching user data:", error);
       }
     };
     fetchAndSetUserData();
@@ -75,11 +76,11 @@ export default function SettingsScreen() {
           style: "destructive",
           onPress: async () => {
             try {
-              console.log("[SettingsIndex] Starting bank disconnection...");
+              logger.info("[SettingsIndex] Starting bank disconnection...");
 
               // Get the primary item_id to disconnect
               const item_id = await getPrimaryItemId();
-              console.log("[SettingsIndex] Primary item_id:", item_id);
+              logger.info("[SettingsIndex] Primary item_id:", item_id);
 
               if (!item_id) {
                 Alert.alert(
@@ -98,13 +99,13 @@ export default function SettingsScreen() {
                 institution: null,
               });
 
-              console.log("[SettingsIndex] Bank disconnection successful");
+              logger.info("[SettingsIndex] Bank disconnection successful");
               Alert.alert(
                 "Success",
                 "Bank accounts have been disconnected successfully"
               );
             } catch (error) {
-              console.error("Error disconnecting bank:", error);
+              logger.error("Error disconnecting bank:", error);
               Alert.alert(
                 "Error",
                 "Failed to disconnect bank accounts. Please try again."
@@ -127,7 +128,7 @@ export default function SettingsScreen() {
         style: "destructive",
         onPress: async () => {
           if (userData?.email) {
-            console.log("[SettingsIndex] Logging out user:", userData.email);
+            logger.info("[SettingsIndex] Logging out user:", userData.email);
           }
 
           // Clear AsyncStorage cache on logout
@@ -137,7 +138,7 @@ export default function SettingsScreen() {
 
           await supabase.auth.signOut();
           router.replace("/(onboarding)/welcome");
-          console.log("User logged out and cache cleared");
+          logger.info("User logged out and cache cleared");
         },
       },
     ]);
@@ -153,7 +154,7 @@ export default function SettingsScreen() {
         message: "Check out Financify - Your personal finance companion!",
       });
     } catch (error) {
-      console.error(error);
+      logger.error(error);
     }
   };
 

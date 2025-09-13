@@ -18,6 +18,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import * as AppleAuthentication from "expo-apple-authentication";
 import { supabase } from "../_lib/supabase/supabase";
+import logger from "../_utils/logger";
 
 const { width } = Dimensions.get("window");
 
@@ -183,7 +184,7 @@ export default function WelcomeScreen() {
   };
 
   const signInWithApple = async () => {
-    console.log("Signing in with Apple...");
+    logger.info("Signing in with Apple...");
 
     try {
       const credential = await AppleAuthentication.signInAsync({
@@ -192,10 +193,10 @@ export default function WelcomeScreen() {
           AppleAuthentication.AppleAuthenticationScope.EMAIL,
         ],
       });
-      console.log("Apple sign in successful: ", credential);
+      logger.info("Apple sign in successful: ", credential);
 
       if (credential.identityToken) {
-        console.log("Authenticating with Supabase...");
+        logger.info("Authenticating with Supabase...");
 
         const {
           data: { user },
@@ -205,15 +206,15 @@ export default function WelcomeScreen() {
           token: credential.identityToken,
         });
 
-        console.log("User: ", user);
+        logger.info("User: ", user);
 
         if (error) {
-          console.error("Supabase auth error:", error);
+          logger.error("Supabase auth error:", error);
           throw error;
         }
 
         if (user) {
-          console.log("Successfully authenticated with Supabase");
+          logger.info("Successfully authenticated with Supabase");
           router.replace("/(tabs)");
         }
       } else {
@@ -222,14 +223,14 @@ export default function WelcomeScreen() {
     } catch (error) {
       if (error instanceof Error) {
         if (error.message === "ERR_REQUEST_CANCELED") {
-          console.log("User canceled Apple sign in");
+          logger.info("User canceled Apple sign in");
         } else if (error.message === "ERR_REQUEST_FAILED") {
-          console.error("Apple sign in request failed:", error);
+          logger.error("Apple sign in request failed:", error);
         } else {
-          console.error("Error signing in with Apple:", error);
+          logger.error("Error signing in with Apple:", error);
         }
       } else {
-        console.error("Unknown error during Apple sign in:", error);
+        logger.error("Unknown error during Apple sign in:", error);
       }
     }
   };

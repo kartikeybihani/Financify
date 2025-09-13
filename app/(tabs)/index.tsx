@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import {
   View,
   Text,
@@ -40,6 +40,7 @@ import AccountItem from "../_components/shared/AccountItem";
 import { LoadingSkeleton } from "../../src/components/LoadingSkeleton";
 import { Goal } from "../_types/finny";
 import { useGoals } from "../_hooks/useGoals";
+import logger from "../_utils/logger";
 
 if (Platform.OS === "android") {
   UIManager.setLayoutAnimationEnabledExperimental?.(true);
@@ -110,14 +111,14 @@ export default function HomeScreen() {
   // Load data directly from Supabase database (secure method)
   const loadDataFromDatabase = async () => {
     try {
-      console.log("🏠 Home: Loading data from Supabase database...");
+      logger.info("Home: Loading data from Supabase database...");
 
       const {
         data: { user },
         error: authError,
       } = await supabase.auth.getUser();
       if (authError || !user?.id) {
-        console.log("❌ Auth error:", authError?.message);
+        logger.error("Auth error:", authError?.message);
         return false;
       }
 
@@ -132,8 +133,8 @@ export default function HomeScreen() {
         const updatedAccounts = await getAllUserAccounts(user.id);
         setAccounts(updatedAccounts || []);
       } catch (error) {
-        console.error(
-          "⚠️ Failed to populate investment accounts (continuing anyway):",
+        logger.warn(
+          "Failed to populate investment accounts (continuing anyway):",
           error
         );
       }
@@ -169,14 +170,14 @@ export default function HomeScreen() {
       });
       setLiabilities([]);
 
-      console.log("✅ Home: Data loaded from database", {
+      logger.info("Home: Data loaded from database", {
         institution: institution?.name || "Multiple/Unknown",
         accounts: accounts?.length || 0,
       });
 
       return accounts && accounts.length > 0;
     } catch (error) {
-      console.error("❌ Error loading data from database:", error);
+      logger.error("Error loading data from database:", error);
       return false;
     }
   };
@@ -184,20 +185,20 @@ export default function HomeScreen() {
   // Fetch fresh data using new Supabase approach (secure method)
   const fetchFreshData = async () => {
     try {
-      console.log("🔄 Refreshing financial data from database...");
+      logger.info("Refreshing financial data from database...");
       const hasData = await loadDataFromDatabase();
       if (hasData) {
-        console.log("✅ Financial data refreshed successfully");
+        logger.info("Financial data refreshed successfully");
         // Emit event for other components (like insights)
         DeviceEventEmitter.emit("financialDataRefreshed", {
           accounts,
           transactions: [], // Transactions loaded separately in insights
         });
       } else {
-        console.log("⚠️ No data available after refresh");
+        logger.warn("No data available after refresh");
       }
     } catch (error) {
-      console.error("❌ Error refreshing data:", error);
+      logger.error("Error refreshing data:", error);
     }
   };
 
@@ -223,7 +224,7 @@ export default function HomeScreen() {
     try {
       await Promise.all([fetchFreshData(), refreshGoals()]);
     } catch (error) {
-      console.error("❌ Error during refresh:", error);
+      logger.error("Error during refresh:", error);
     }
 
     setRefreshing(false);
@@ -238,29 +239,29 @@ export default function HomeScreen() {
       const {
         data: { user },
       } = await supabase.auth.getUser();
-      console.log("User in home screen:", user?.email);
+      logger.info("User in home screen:", user?.email);
       setUserData(user);
 
       if (!user?.id) {
-        console.log("❌ No authenticated user found");
+        logger.error("No authenticated user found");
         setAccessToken(null);
         return;
       }
 
-      console.log("🚀 Loading financial data from secure database...");
+      logger.info("Loading financial data from secure database...");
 
       // Load data directly from database (secure method)
       const hasData = await loadDataFromDatabase();
 
       if (hasData) {
         setAccessToken("connected");
-        console.log("✅ Successfully loaded financial data from database");
+        logger.info("Successfully loaded financial data from database");
       } else {
-        console.log("⚠️ No accounts found - user needs to connect a bank");
+        logger.warn("No accounts found - user needs to connect a bank");
         setAccessToken(null);
       }
     } catch (err) {
-      console.error("❌ Error initializing app:", err);
+      logger.error("Error initializing app:", err);
       setLoadingError(true);
       setAccessToken(null);
     } finally {
@@ -317,7 +318,11 @@ export default function HomeScreen() {
     }, null as Goal | null);
   };
 
-  const closestGoal = findClosestGoal(goalsData);
+  // Memoized closest goal calculation
+  const closestGoal = useMemo(() => findClosestGoal(goalsData), [goalsData]);
+
+  // Currency formatter cache
+  const formatterCache = useRef(new Map<string, Intl.NumberFormat>());
 
   // Helper functions
   const formatCurrency = (
@@ -325,39 +330,34 @@ export default function HomeScreen() {
     currency = "USD",
     options = { decimals: 1, useKM: true }
   ) => {
+    const cacheKey = `${currency}-${options.decimals}-${options.useKM}`;
+
+    // Get or create formatter from cache
+    let formatter = formatterCache.current.get(cacheKey);
+    if (!formatter) {
+      formatter = new Intl.NumberFormat("en-US", {
+        style: "currency",
+        currency,
+        minimumFractionDigits: options.decimals,
+        maximumFractionDigits: options.decimals,
+      });
+      formatterCache.current.set(cacheKey, formatter);
+    }
+
     if (options.useKM) {
       if (Math.abs(amount) >= 1000000) {
-        return (
-          new Intl.NumberFormat("en-US", {
-            style: "currency",
-            currency,
-            minimumFractionDigits: options.decimals,
-            maximumFractionDigits: options.decimals,
-          }).format(amount / 1000000) + "M"
-        );
+        return formatter.format(amount / 1000000) + "M";
       }
       if (Math.abs(amount) >= 1000) {
-        return (
-          new Intl.NumberFormat("en-US", {
-            style: "currency",
-            currency,
-            minimumFractionDigits: options.decimals,
-            maximumFractionDigits: options.decimals,
-          }).format(amount / 1000) + "K"
-        );
+        return formatter.format(amount / 1000) + "K";
       }
     }
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency,
-      minimumFractionDigits: options.decimals,
-      maximumFractionDigits: options.decimals,
-    }).format(amount);
+    return formatter.format(amount);
   };
 
   // Debug: Log all account types
-  console.log(
-    "🔍 All account types:",
+  logger.debug(
+    "All account types:",
     accounts.map((acc) => ({
       name: acc.name,
       type: acc.type,
@@ -365,40 +365,61 @@ export default function HomeScreen() {
     }))
   );
 
-  const categorizedLiabilities = accounts.filter(
-    (acc) => acc.type === "loan" || acc.type === "credit"
+  // Memoized categorized account arrays
+  const categorizedLiabilities = useMemo(
+    () =>
+      accounts.filter((acc) => acc.type === "loan" || acc.type === "credit"),
+    [accounts]
   );
 
-  const categorizedDeposits = accounts.filter(
-    (acc) => acc.type === "depository"
+  const categorizedDeposits = useMemo(
+    () => accounts.filter((acc) => acc.type === "depository"),
+    [accounts]
   );
 
-  const categorizedInvestments = accounts.filter(
-    (acc) => acc.type === "investment"
+  const categorizedInvestments = useMemo(
+    () => accounts.filter((acc) => acc.type === "investment"),
+    [accounts]
   );
 
   // Debug: Log categorization results
-  console.log("💰 Categorized Deposits:", categorizedDeposits.length);
-  console.log("💳 Categorized Liabilities:", categorizedLiabilities.length);
-  console.log("📈 Investment Holdings:", investments?.holdings?.length || 0);
-  console.log("📊 Investment Accounts:", categorizedInvestments.length);
+  logger.debug("Categorized Deposits:", categorizedDeposits.length);
+  logger.debug("Categorized Liabilities:", categorizedLiabilities.length);
+  logger.debug("Investment Holdings:", investments?.holdings?.length || 0);
+  logger.debug("Investment Accounts:", categorizedInvestments.length);
 
-  const accountsTotal = categorizedDeposits.reduce(
-    (acc, a) => acc + (a.balances.current || 0),
-    0
+  // Memoized financial totals
+  const accountsTotal = useMemo(
+    () =>
+      categorizedDeposits.reduce(
+        (acc, a) => acc + (a.balances.current || 0),
+        0
+      ),
+    [categorizedDeposits]
   );
 
-  const investmentsTotal = categorizedInvestments.reduce(
-    (acc, a) => acc + (a.balances.current || 0),
-    0
+  const investmentsTotal = useMemo(
+    () =>
+      categorizedInvestments.reduce(
+        (acc, a) => acc + (a.balances.current || 0),
+        0
+      ),
+    [categorizedInvestments]
   );
 
-  const liabilitiesTotal = categorizedLiabilities.reduce(
-    (acc, a) => acc + (a.balances.current || 0),
-    0
+  const liabilitiesTotal = useMemo(
+    () =>
+      categorizedLiabilities.reduce(
+        (acc, a) => acc + (a.balances.current || 0),
+        0
+      ),
+    [categorizedLiabilities]
   );
 
-  const totalBalance = accountsTotal + investmentsTotal - liabilitiesTotal;
+  const totalBalance = useMemo(
+    () => accountsTotal + investmentsTotal - liabilitiesTotal,
+    [accountsTotal, investmentsTotal, liabilitiesTotal]
+  );
 
   // Render functions
   const renderHeader = () => (
@@ -751,25 +772,25 @@ export default function HomeScreen() {
           <TouchableOpacity
             style={styles.addAccountButton}
             onPress={async () => {
-              console.log("🏦 Add Another Account pressed from home screen");
+              logger.info("Add Another Account pressed from home screen");
               try {
                 await addNewBankAccount(
                   async (itemId) => {
-                    console.log(
-                      "✅ Successfully added new bank account from home:",
+                    logger.info(
+                      "Successfully added new bank account from home:",
                       itemId
                     );
                     await fetchFreshData();
                   },
                   (error) => {
-                    console.error(
-                      "❌ Failed to add new bank account from home:",
+                    logger.error(
+                      "Failed to add new bank account from home:",
                       error
                     );
                   }
                 );
               } catch (error) {
-                console.error("❌ Error calling addNewBankAccount:", error);
+                logger.error("Error calling addNewBankAccount:", error);
               }
             }}
           >
@@ -785,9 +806,9 @@ export default function HomeScreen() {
             title="Your Financial Accounts"
             icon="wallet-outline"
             onAccountAdded={async () => {
-              console.log("🔄 New account added, refreshing financial data...");
+              logger.info("New account added, refreshing financial data...");
               await fetchFreshData();
-              console.log("✅ Financial data refreshed after new account");
+              logger.info("Financial data refreshed after new account");
             }}
             categories={[
               {
@@ -806,6 +827,31 @@ export default function HomeScreen() {
                     )}
                     icon="wallet-outline"
                     bankName={account.institution_name || "Unknown Bank"}
+                  />
+                )),
+              },
+              {
+                title: "INVESTMENTS",
+                icon: "trending-up" as keyof typeof Ionicons.glyphMap,
+                iconColor: "#4ECDC4",
+                items: categorizedInvestments.map((account, index) => (
+                  <AccountItem
+                    key={index}
+                    name={account.name}
+                    type={account.type}
+                    balance={formatCurrency(
+                      account.balances.current || 0,
+                      "USD",
+                      { decimals: 0, useKM: false }
+                    )}
+                    icon="trending-up"
+                    bankName={account.institution_name || "Investment Broker"}
+                    onPress={() => {
+                      setActiveModal(null);
+                      setTimeout(() => {
+                        router.push("/investments");
+                      }, 150);
+                    }}
                   />
                 )),
               },
@@ -860,23 +906,10 @@ export default function HomeScreen() {
                   )),
               },
               {
-                title: "INVESTMENTS",
-                icon: "trending-up" as keyof typeof Ionicons.glyphMap,
-                iconColor: "#4ECDC4",
-                items: categorizedInvestments.map((account, index) => (
-                  <AccountItem
-                    key={index}
-                    name={account.name}
-                    type={account.type}
-                    balance={formatCurrency(
-                      account.balances.current || 0,
-                      "USD",
-                      { decimals: 0, useKM: false }
-                    )}
-                    icon="trending-up"
-                    bankName={account.institution_name || "Investment Broker"}
-                  />
-                )),
+                title: "REAL ESTATE",
+                icon: "home-outline" as keyof typeof Ionicons.glyphMap,
+                iconColor: "#8E8AFF",
+                items: [],
               },
             ]}
           />

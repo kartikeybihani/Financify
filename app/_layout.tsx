@@ -11,6 +11,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import "react-native-reanimated";
 import AuthProvider, { useAuth } from "./_contexts/AuthContext";
 import { runStorageMigrationV2 } from "../src/utils/migrate";
+import logger from "./_utils/logger";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -40,7 +41,7 @@ function RootLayoutNav() {
         });
         setNavigationReady(true);
       } catch (error) {
-        console.error("Error loading cached status:", error);
+        logger.error("Error loading cached status:", error);
         setNavigationReady(true); // Still allow navigation even if cache fails
       }
     };
@@ -69,7 +70,7 @@ function RootLayoutNav() {
         cachedOnboardingStatus.onboardingComplete &&
         cachedOnboardingStatus.userAuthenticated
       ) {
-        console.log("✅ Using cached onboarding completion status");
+        logger.info("✅ Using cached onboarding completion status");
         if (inAuth || inOnboarding) {
           router.replace("/(tabs)/chat");
         }
@@ -89,7 +90,7 @@ function RootLayoutNav() {
           onboardingComplete: true,
           userAuthenticated: true,
         });
-        console.log(
+        logger.info(
           "✅ Onboarding complete in Supabase, updating cache and going to tabs"
         );
         if (!inTabs) {
@@ -170,7 +171,7 @@ export default function RootLayout() {
           // Run storage migration before anything else
           await runStorageMigrationV2();
         } catch (error) {
-          console.error("Migration error:", error);
+          logger.error("Migration error:", error);
         }
         SplashScreen.hideAsync();
       }
