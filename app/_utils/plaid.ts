@@ -20,9 +20,21 @@ import {
 // === Get User Items from Supabase ===
 export async function getUserItems() {
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user?.id) return [];
+  if (!user?.id) {
+    logger.info("❌ No authenticated user in getUserItems");
+    return [];
+  }
   
-  return fetchUserItems(user.id);
+  logger.info(`🔄 Getting user items for user: ${user.id}`);
+  const items = await fetchUserItems(user.id);
+  logger.info(`📦 Found ${items.length} user items:`, items.map(item => ({
+    item_id: item.item_id,
+    institution_name: item.institution_name,
+    has_new_accounts: item.has_new_accounts,
+    requires_update_mode: item.requires_update_mode
+  })));
+  
+  return items;
 }
 
 // === Get Primary Item ID (for compatibility) ===
@@ -422,42 +434,12 @@ export const syncTransactions = async (item_id: string) => {
   if (!user?.id) throw new Error("User not authenticated");
 
   try {
-    // Try Supabase function first
-    const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL;
-    const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
-    
-    if (SUPABASE_URL) {
-      logger.info("📡 Calling Supabase function for sync...");
-      const res = await fetch(`${SUPABASE_URL}/functions/v1/sync-transactions`, {
-        method: "POST",
-        headers: { 
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${SUPABASE_ANON_KEY}`
-        },
-        body: JSON.stringify({ item_id, user_id: user.id }),
-      });
-      
-      const data = await res.json();
-      logger.info("📦 Supabase function response:", { status: res.status, data });
-      
-      if (res.ok) {
-        logger.info("✅ Transaction sync complete via Supabase function:", {
-          added: data.added,
-          modified: data.modified, 
-          removed: data.removed
-        });
-        return data;
-      } else {
-        logger.warn("⚠️ Supabase function failed, trying API fallback:", data);
-      }
-    }
-    
-    // Fallback to API endpoint (with fixed category storage)
-    logger.info("📡 Using API endpoint fallback...");
+    // Use API endpoint directly (more reliable than Supabase function)
+    logger.info("📡 Calling transactions_sync API endpoint...");
     const res = await fetch(`${BASE_URL}/api/transactions_sync`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ item_id }),
+      body: JSON.stringify({ item_id, user_id: user.id }),
     });
     
     const data = await res.json();
@@ -465,7 +447,11 @@ export const syncTransactions = async (item_id: string) => {
     
     if (!res.ok) throw new Error(data.error || "API sync failed");
     
-    logger.info("✅ Transaction sync complete via API:", data);
+    logger.info("✅ Transaction sync complete via API:", {
+      added: data.added,
+      modified: data.modified, 
+      removed: data.removed
+    });
     return data;
     
   } catch (error) {

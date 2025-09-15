@@ -1021,7 +1021,12 @@ export default function InsightsScreen() {
         type: "manual",
         message: "Syncing transactions from Plaid...",
       });
-      await syncAllUserTransactions();
+      logger.info("🔄 MANUAL REFRESH: Calling syncAllUserTransactions()...");
+      const syncResult = await syncAllUserTransactions();
+      logger.info(
+        "📦 MANUAL REFRESH syncAllUserTransactions result:",
+        syncResult
+      );
 
       setRefreshStatus({ type: "manual", message: "Updating interface..." });
       // Reload data after sync (UI reads from Supabase)
@@ -1150,7 +1155,9 @@ export default function InsightsScreen() {
         type: "cloud",
         message: "Requesting fresh data from Plaid...",
       });
+      logger.info("🔄 Step 1: Calling refreshPlaidData()...");
       const result = await refreshPlaidData();
+      logger.info("📦 refreshPlaidData result:", result);
 
       // Step 2: Check for re-auth errors and handle them
       if (result.results) {
@@ -1168,21 +1175,27 @@ export default function InsightsScreen() {
         type: "cloud",
         message: "Updating account balances...",
       });
-      await refreshAccountBalances();
+      logger.info("🔄 Step 3: Calling refreshAccountBalances()...");
+      const balanceResult = await refreshAccountBalances();
+      logger.info("📦 refreshAccountBalances result:", balanceResult);
 
       // Step 4: Sync transactions to Supabase
       setRefreshStatus({
         type: "cloud",
         message: "Syncing transactions to database...",
       });
-      await syncAllUserTransactions();
+      logger.info("🔄 Step 4: Calling syncAllUserTransactions()...");
+      const syncResult = await syncAllUserTransactions();
+      logger.info("📦 syncAllUserTransactions result:", syncResult);
 
       // Step 5: Refresh recurring transactions
       setRefreshStatus({
         type: "cloud",
         message: "Analyzing recurring transactions...",
       });
-      await refreshRecurringTransactions();
+      logger.info("🔄 Step 5: Calling refreshRecurringTransactions()...");
+      const recurringResult = await refreshRecurringTransactions();
+      logger.info("📦 refreshRecurringTransactions result:", recurringResult);
 
       // Step 6: Refresh UI from Supabase (single source of truth)
       setRefreshStatus({ type: "cloud", message: "Updating interface..." });
