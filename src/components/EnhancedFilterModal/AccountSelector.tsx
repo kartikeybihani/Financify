@@ -32,6 +32,11 @@ export const AccountSelector: React.FC<AccountSelectorProps> = ({
 }) => {
   const [showModal, setShowModal] = useState(false);
 
+  // Filter out investment accounts (same logic as home screen)
+  const filteredAccounts = accounts.filter(
+    (account) => account.type !== "investment"
+  );
+
   const handleToggleAccountSelection = (accountId: string) => {
     setLocalFilters((prev) => toggleAccountSelection(accountId, prev));
   };
@@ -55,7 +60,7 @@ export const AccountSelector: React.FC<AccountSelectorProps> = ({
             <Text style={styles.selectedLabel}>
               {getSelectedAccountsDescription(
                 localFilters.accountIds || [],
-                accounts
+                filteredAccounts
               )}
             </Text>
             <Text style={styles.selectedDescription}>
@@ -122,9 +127,9 @@ export const AccountSelector: React.FC<AccountSelectorProps> = ({
                   contentContainerStyle={styles.modalScrollContent}
                 >
                   {/* All Accounts and Individual Account Cards */}
-                  {accounts.length > 0 && (
+                  {filteredAccounts.length > 0 && (
                     <View style={styles.accountsGrid}>
-                      {accounts.map((account) => {
+                      {filteredAccounts.map((account) => {
                         const isSelected = (
                           localFilters.accountIds || []
                         ).includes(account.account_id);

@@ -8,7 +8,7 @@ export const QUICK_TIME_PERIODS: TimePeriod[] = [
     description: "Recent 7 days",
   },
   {
-    id: "30days",
+    id: "7days",
     label: "Last Month",
     emoji: "🗓️",
     description: "Past 30 days",

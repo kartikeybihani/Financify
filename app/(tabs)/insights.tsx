@@ -476,12 +476,24 @@ export default function InsightsScreen() {
       const limit = 50;
 
       // Get filtered transactions
+      logger.info(`🔍 Loading filtered transactions with:`, {
+        accountIds: filters.accountIds,
+        timePeriod: filters.timePeriod,
+        limit,
+        offset,
+        accountIdsLength: filters.accountIds?.length || 0,
+      });
+
       const newTransactions = await getFilteredTransactions(user.id, {
         accountIds: filters.accountIds,
         timePeriod: filters.timePeriod,
         limit,
         offset,
       });
+
+      logger.info(
+        `📊 getFilteredTransactions returned ${newTransactions.length} transactions`
+      );
 
       // Get total count for pagination (only on initial load)
       let totalCount = totalFilteredCount;

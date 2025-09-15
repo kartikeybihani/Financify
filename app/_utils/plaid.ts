@@ -26,15 +26,46 @@ export async function getUserItems() {
   }
   
   logger.info(`🔄 Getting user items for user: ${user.id}`);
-  const items = await fetchUserItems(user.id);
-  logger.info(`📦 Found ${items.length} user items:`, items.map(item => ({
+  
+  // Debug: Check what's actually in the user_items table
+  const { data: debugItems, error: debugError } = await supabase
+    .from("user_items")
+    .select("*")
+    .eq("user_id", user.id);
+  
+  if (debugError) {
+    logger.error("❌ Debug query error:", debugError);
+  } else {
+    logger.info(`🔍 Debug: Found ${debugItems?.length || 0} items in user_items table for user ${user.id}`);
+    if (debugItems && debugItems.length > 0) {
+      logger.info("🔍 Debug: Sample item:", {
+        item_id: debugItems[0].item_id,
+        institution_name: debugItems[0].institution_name,
+        user_id: debugItems[0].user_id
+      });
+    }
+  }
+  
+  // Try direct query first to bypass fetchUserItems
+  const { data: directItems, error: directError } = await supabase
+    .from("user_items")
+    .select("item_id, institution_id, institution_name, has_new_accounts, requires_update_mode, last_synced_at")
+    .eq("user_id", user.id)
+    .order("created_at", { ascending: false });
+  
+  if (directError) {
+    logger.error("❌ Direct query error:", directError);
+    return [];
+  }
+  
+  logger.info(`📦 Direct query found ${directItems?.length || 0} user items:`, directItems?.map(item => ({
     item_id: item.item_id,
     institution_name: item.institution_name,
     has_new_accounts: item.has_new_accounts,
     requires_update_mode: item.requires_update_mode
   })));
   
-  return items;
+  return directItems || [];
 }
 
 // === Get Primary Item ID (for compatibility) ===
@@ -1246,7 +1277,7 @@ export const getFilteredTransactions = async (
   try {
     const {
       accountIds = [],
-      timePeriod = "30days",
+      timePeriod = "7days",
       limit = 50,
       offset = 0
     } = options;
@@ -1278,8 +1309,20 @@ export const getFilteredTransactions = async (
 
     // Add account filter if specified (multiple accounts)
     if (accountIds.length > 0) {
+      logger.info(`🔍 Filtering by ${accountIds.length} specific accounts:`, accountIds);
       query = query.in("account_id", accountIds);
+    } else {
+      logger.info(`🔍 No account filter - showing transactions from ALL accounts`);
     }
+
+    logger.info(`🔍 Query parameters:`, {
+      userId,
+      startDate,
+      endDate,
+      accountIdsLength: accountIds.length,
+      limit,
+      offset
+    });
 
     const { data: transactions, error } = await query;
 
@@ -1312,7 +1355,7 @@ export const getFilteredTransactionsCount = async (
   try {
     const {
       accountIds = [],
-      timePeriod = "30days"
+      timePeriod = "7days"
     } = options;
 
     // Get date range
