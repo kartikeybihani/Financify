@@ -195,6 +195,89 @@ export const getStoredSnaptradeCredentials = async () => {
   }
 };
 
+// === Get SnapTrade Credentials with Database Fallback ===
+export const getSnaptradeCredentialsWithFallback = async () => {
+  try {
+    logger.info("🔄 Getting SnapTrade credentials with fallback...");
+    
+    // Step 1: Try to get from AsyncStorage first
+    logger.info("📱 Step 1: Checking AsyncStorage for credentials...");
+    let credentials = await getStoredSnaptradeCredentials();
+    
+    if (credentials) {
+      logger.info("✅ Step 1 SUCCESS: Using credentials from AsyncStorage");
+      return credentials;
+    }
+    
+    logger.info("❌ Step 1 FAILED: No valid credentials in AsyncStorage");
+    
+    // Step 2: Fallback to database
+    logger.info("🗄️ Step 2: Checking Supabase database for credentials...");
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      logger.error("❌ Step 2 FAILED: User not authenticated");
+      return null;
+    }
+    
+    const { data: connections, error } = await supabase
+      .from("snaptrade_connections")
+      .select("snaptrade_user_id, account_id")
+      .eq("user_id", user.id)
+      .eq("is_active", true)
+      .order("last_synced_at", { ascending: false })
+      .limit(1);
+    
+    if (error) {
+      logger.error("❌ Step 2 FAILED: Error fetching credentials from database:", error);
+      return null;
+    }
+    
+    if (connections && connections.length > 0) {
+      const connection = connections[0];
+      credentials = {
+        userId: connection.snaptrade_user_id,
+        accountId: connection.account_id
+      };
+      
+      // Store in AsyncStorage for future use (without userSecret for security)
+      logger.info("💾 Caching credentials from database to AsyncStorage...");
+      await setSnaptradeCredentials(credentials);
+      logger.info("✅ Step 2 SUCCESS: Retrieved and cached credentials from database");
+      return credentials;
+    }
+    
+    logger.info("❌ Step 2 FAILED: No active SnapTrade connections found in database");
+    return null;
+  } catch (error) {
+    logger.error("❌ CRITICAL ERROR: Failed to get SnapTrade credentials with fallback:", error);
+    return null;
+  }
+};
+
+// === Refresh Expired Credentials ===
+export const refreshExpiredCredentials = async () => {
+  try {
+    logger.info("🔄 Refreshing expired credentials...");
+    
+    // Clear expired credentials from storage
+    await clearSnaptradeCredentials();
+    
+    // Get fresh credentials from database
+    const credentials = await getSnaptradeCredentialsWithFallback();
+    
+    if (credentials) {
+      logger.info("✅ Successfully refreshed credentials from database");
+      return credentials;
+    } else {
+      logger.warn("⚠️ No valid credentials found in database after refresh");
+      return null;
+    }
+  } catch (error) {
+    logger.error("❌ Failed to refresh expired credentials:", error);
+    return null;
+  }
+};
+
 // === Get SnapTrade UserSecret from Database ===
 export const getSnaptradeUserSecretFromDB = async (userId: string, snaptradeUserId: string, accountId: string) => {
   try {
@@ -501,6 +584,22 @@ export const syncSnaptradeInvestments = async (userId: string, accountId: string
   try {
     logger.info("🔄 Syncing SnapTrade investments...");
     
+    // First try to get credentials with fallback
+    let credentials = await getSnaptradeCredentialsWithFallback();
+    if (!credentials) {
+      logger.warn("⚠️ No valid credentials found, attempting to refresh...");
+      // Try to refresh expired credentials
+      credentials = await refreshExpiredCredentials();
+      if (!credentials) {
+        throw new Error("No valid SnapTrade credentials found and refresh failed");
+      }
+    }
+    
+    logger.info("🔑 Using credentials for sync:", { 
+      userId: credentials.userId, 
+      accountId: credentials.accountId 
+    });
+    
     const res = await fetch(`${BASE_URL}/api/plaid`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -647,6 +746,8 @@ const snaptradeUtils = {
   hasSnaptradeConnection,
   clearSnaptradeConnection,
   getStoredSnaptradeCredentials,
+  getSnaptradeCredentialsWithFallback,
+  refreshExpiredCredentials,
   getSnaptradeUserSecretFromDB,
   
   // Account operations

@@ -17,6 +17,7 @@ import {
   getSnaptradeBalancesFromDB,
   getSnaptradeConnectionsFromDB,
   getStoredSnaptradeCredentials,
+  getSnaptradeCredentialsWithFallback,
   syncSnaptradeInvestments,
   populateInvestmentAccountsInDB,
 } from "../_utils/snaptrade";
@@ -56,6 +57,7 @@ interface ConnectionRow {
 export default function InvestmentsScreen() {
   const router = useRouter();
   const [isSyncing, setIsSyncing] = useState(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
   const [holdings, setHoldings] = useState<Holding[]>([]);
   const [options, setOptions] = useState<OptionPosition[]>([]);
   const [balances, setBalances] = useState<BalanceRow[]>([]);
@@ -88,22 +90,54 @@ export default function InvestmentsScreen() {
 
   const handleSync = async () => {
     setIsSyncing(true);
+    setSyncError(null);
+
     try {
-      const creds = await getStoredSnaptradeCredentials();
-      if (creds && connections.length > 0) {
-        const first = connections[0];
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
-        if (user) {
-          await syncSnaptradeInvestments(user.id, first.account_id);
-          await loadFromDb();
-          // Also update the investment accounts in the main accounts table
-          await populateInvestmentAccountsInDB();
-        }
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) {
+        const errorMsg = "User not authenticated";
+        logger.error(errorMsg);
+        setSyncError(errorMsg);
+        return;
       }
+
+      // Get credentials with fallback to database
+      const creds = await getSnaptradeCredentialsWithFallback();
+
+      if (!creds) {
+        const errorMsg =
+          "No valid SnapTrade credentials found. Please reconnect your investment account.";
+        logger.warn(errorMsg);
+        setSyncError(errorMsg);
+        return;
+      }
+
+      if (connections.length === 0) {
+        const errorMsg =
+          "No investment connections found. Please reconnect your investment account.";
+        logger.warn(errorMsg);
+        setSyncError(errorMsg);
+        return;
+      }
+
+      const first = connections[0];
+      logger.info("🔄 Starting investment sync...");
+      await syncSnaptradeInvestments(user.id, first.account_id);
+
+      logger.info("🔄 Reloading data from database...");
+      await loadFromDb();
+
+      logger.info("🔄 Updating investment accounts in main table...");
+      await populateInvestmentAccountsInDB();
+
+      logger.info("✅ Investment sync completed successfully");
     } catch (err) {
+      const errorMsg =
+        err instanceof Error ? err.message : "Failed to sync investments";
       logger.error("Failed to sync investments", err);
+      setSyncError(errorMsg);
     } finally {
       setIsSyncing(false);
     }
@@ -143,6 +177,13 @@ export default function InvestmentsScreen() {
             {isSyncing ? "Syncing..." : "Sync Data"}
           </Text>
         </TouchableOpacity>
+
+        {syncError && (
+          <View style={styles.errorContainer}>
+            <Ionicons name="warning" size={16} color="#F44336" />
+            <Text style={styles.errorText}>{syncError}</Text>
+          </View>
+        )}
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>💰 Account Balances</Text>
@@ -384,5 +425,21 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: "#ccc",
   },
-  // removed empty; using subtle instead for empty states
+  errorContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(244, 67, 54, 0.1)",
+    borderColor: "#F44336",
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 16,
+    gap: 8,
+  },
+  errorText: {
+    flex: 1,
+    fontSize: 14,
+    color: "#F44336",
+    fontWeight: "500",
+  },
 });

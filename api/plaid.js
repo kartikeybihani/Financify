@@ -540,22 +540,52 @@ async function handleSnapTradeSync(res, userId, accountId) {
           };
         });
 
-        // First, mark existing holdings as inactive
-        await supabase
-          .from("investment_holdings")
-          .update({ is_active: false })
-          .eq("snaptrade_user_id", connection.snaptrade_user_id)
-          .eq("account_id", accountId);
+        // Use upsert to handle existing holdings properly
+        try {
+          const { error: holdingsErr } = await supabase
+            .from("investment_holdings")
+            .upsert(holdingsRows, {
+              onConflict: "snaptrade_user_id,account_id,symbol_id",
+              ignoreDuplicates: false,
+            });
 
-        // Then insert new holdings
-        const { error: holdingsErr } = await supabase
-          .from("investment_holdings")
-          .insert(holdingsRows);
-
-        if (holdingsErr) {
-          console.error("❌ Holdings upsert error:", holdingsErr);
-        } else {
-          console.log("✅ Holdings synced successfully:", holdingsRows.length);
+          if (holdingsErr) {
+            console.error("❌ Holdings upsert error:", holdingsErr);
+            // If upsert fails due to constraint, try individual inserts with error handling
+            console.log("🔄 Attempting individual holdings inserts...");
+            for (const holding of holdingsRows) {
+              try {
+                const { error: insertErr } = await supabase
+                  .from("investment_holdings")
+                  .upsert(holding, {
+                    onConflict: "snaptrade_user_id,account_id,symbol_id",
+                    ignoreDuplicates: false,
+                  });
+                if (insertErr) {
+                  console.error(
+                    `❌ Failed to upsert holding ${holding.symbol}:`,
+                    insertErr
+                  );
+                }
+              } catch (individualErr) {
+                console.error(
+                  `❌ Individual holding upsert failed for ${holding.symbol}:`,
+                  individualErr
+                );
+              }
+            }
+          } else {
+            console.log(
+              "✅ Holdings synced successfully:",
+              holdingsRows.length
+            );
+          }
+        } catch (upsertError) {
+          console.error(
+            "❌ Critical error during holdings upsert:",
+            upsertError
+          );
+          // Continue with sync even if holdings fail
         }
       } else {
         console.log("ℹ️ No holdings data to sync");
