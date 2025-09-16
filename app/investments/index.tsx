@@ -2,10 +2,10 @@ import React, { useEffect, useState } from "react";
 import {
   View,
   Text,
-  StyleSheet,
   ScrollView,
   TouchableOpacity,
   Platform,
+  SafeAreaView,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
@@ -21,6 +21,7 @@ import {
   syncSnaptradeInvestments,
   populateInvestmentAccountsInDB,
 } from "../_utils/snaptrade";
+import { styles } from "../_styles/investmentsStyles";
 
 interface Holding {
   symbol: string;
@@ -151,295 +152,235 @@ export default function InvestmentsScreen() {
     (sum, o) => sum + (o.market_value || 0),
     0
   );
+  const totalPortfolioValue = totalHoldingsValue + totalOptionsValue;
+  const totalCash = balances.reduce((sum, b) => sum + (b.cash || 0), 0);
 
-  return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-          <Ionicons name="chevron-back" size={22} color="#888" />
-        </TouchableOpacity>
-        <Text style={styles.title}>Fidelity Investment Portfolio</Text>
-        <View style={{ width: 34 }} />
-      </View>
+  // Calculate total unrealized P&L for gamification
+  const totalUnrealizedPL = holdings.reduce(
+    (sum, h) => sum + (h.unrealized_pl || 0),
+    0
+  );
 
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.content}>
-        <TouchableOpacity
-          style={[styles.syncButton, isSyncing && styles.syncButtonDisabled]}
-          onPress={handleSync}
-          disabled={isSyncing}
-        >
-          <Ionicons
-            name={isSyncing ? "hourglass" : "refresh"}
-            size={20}
-            color="#fff"
-          />
-          <Text style={styles.syncButtonText}>
-            {isSyncing ? "Syncing..." : "Sync Data"}
-          </Text>
-        </TouchableOpacity>
+  const renderPortfolioHero = () => {
+    const lastConnection = connections.length > 0 ? connections[0] : null;
+    const lastSyncDate = lastConnection?.last_synced_at
+      ? new Date(lastConnection.last_synced_at).toLocaleDateString()
+      : "Never";
+    const brokerageName =
+      lastConnection?.brokerage_name || "Investment Account";
 
-        {syncError && (
-          <View style={styles.errorContainer}>
-            <Ionicons name="warning" size={16} color="#F44336" />
-            <Text style={styles.errorText}>{syncError}</Text>
+    return (
+      <View style={styles.portfolioHero}>
+        <View style={styles.portfolioContent}>
+          <View style={styles.portfolioLeft}>
+            <Text style={styles.portfolioValueLabel}>Total Portfolio</Text>
+            <Text style={styles.portfolioValue}>
+              $
+              {totalPortfolioValue.toLocaleString("en-US", {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+              })}
+            </Text>
+            {totalUnrealizedPL !== 0 && (
+              <View style={styles.portfolioChange}>
+                <Ionicons
+                  name={
+                    totalUnrealizedPL >= 0 ? "trending-up" : "trending-down"
+                  }
+                  size={14}
+                  color="#4ECDC4"
+                />
+                <Text style={styles.portfolioChangeText}>
+                  {totalUnrealizedPL >= 0 ? "+" : ""}$
+                  {totalUnrealizedPL.toFixed(2)}
+                  {totalUnrealizedPL >= 0 ? " 🚀" : " 📉"}
+                </Text>
+              </View>
+            )}
           </View>
-        )}
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>💰 Account Balances</Text>
-          {balances.length > 0 ? (
-            balances.map((b, idx) => (
-              <View key={idx} style={styles.card}>
-                <Text style={styles.label}>Cash</Text>
-                <Text style={styles.value}>
-                  ${b.cash?.toFixed(2) || "0.00"}
-                </Text>
-                <Text style={styles.label}>Buying Power</Text>
-                <Text style={styles.value}>
-                  ${b.buying_power?.toFixed(2) || "0.00"}
-                </Text>
-                <Text style={styles.subtle}>{b.currency_code || "USD"}</Text>
-              </View>
-            ))
-          ) : (
-            <Text style={styles.subtle}>No balance data available</Text>
-          )}
+          <View style={styles.portfolioRight}>
+            <Text style={styles.accountNameSmall}>{brokerageName}</Text>
+            <Text style={styles.lastSyncSmall}>
+              Last synced: {lastSyncDate}
+            </Text>
+          </View>
         </View>
+      </View>
+    );
+  };
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>
-            📈 Holdings ({holdings.length})
+  const renderHoldings = () => (
+    <View style={styles.section}>
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>
+          📈 Your Holdings ({holdings.length})
+        </Text>
+      </View>
+      <View style={styles.cashInfo}>
+        <Text style={styles.cashLabel}>Available Cash</Text>
+        <Text style={styles.cashValue}>
+          $
+          {totalCash.toLocaleString("en-US", {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          })}
+        </Text>
+      </View>
+      {holdings.length > 0 ? (
+        <View style={styles.holdingsGrid}>
+          {holdings.slice(0, 8).map((h, idx) => (
+            <View key={idx} style={styles.holdingCard}>
+              <View style={styles.holdingHeader}>
+                <Text style={styles.holdingSymbol}>{h.symbol}</Text>
+                <Text style={styles.holdingValue}>
+                  $
+                  {h.market_value?.toLocaleString("en-US", {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  }) || "0.00"}
+                </Text>
+              </View>
+              <Text style={styles.holdingDescription}>{h.description}</Text>
+              <View style={styles.holdingDetails}>
+                <View style={styles.holdingDetail}>
+                  <Text style={styles.holdingDetailLabel}>Shares</Text>
+                  <Text style={styles.holdingDetailValue}>{h.units}</Text>
+                </View>
+                <View style={styles.holdingDetail}>
+                  <Text style={styles.holdingDetailLabel}>Price</Text>
+                  <Text style={styles.holdingDetailValue}>
+                    ${h.price?.toFixed(2) || "0.00"}
+                  </Text>
+                </View>
+                {h.unrealized_pl !== null && (
+                  <Text
+                    style={[
+                      styles.holdingPnL,
+                      (h.unrealized_pl || 0) >= 0
+                        ? styles.holdingPnLPositive
+                        : styles.holdingPnLNegative,
+                    ]}
+                  >
+                    {h.unrealized_pl >= 0 ? "↗" : "↘"} $
+                    {Math.abs(h.unrealized_pl).toFixed(2)}
+                  </Text>
+                )}
+              </View>
+            </View>
+          ))}
+        </View>
+      ) : (
+        <View style={styles.emptyState}>
+          <View style={styles.emptyStateIcon}>
+            <Ionicons name="trending-up" size={24} color="#4A90E2" />
+          </View>
+          <Text style={styles.emptyStateText}>
+            No holdings data available. Sync your account to see your
+            investments!
           </Text>
-          <Text style={styles.sectionKpi}>
-            Total Value: ${totalHoldingsValue.toFixed(2)}
-          </Text>
-          {holdings.length > 0 ? (
-            holdings.slice(0, 12).map((h, idx) => (
-              <View key={idx} style={styles.card}>
-                <View style={styles.rowBetween}>
-                  <Text style={styles.symbol}>{h.symbol}</Text>
-                  <Text style={styles.valueGreen}>
-                    ${h.market_value?.toFixed(2) || "0.00"}
-                  </Text>
-                </View>
-                <Text style={styles.subtle}>{h.description}</Text>
-                <View style={styles.rowBetween}>
-                  <Text style={styles.meta}>Units: {h.units}</Text>
-                  <Text style={styles.meta}>
-                    Price: ${h.price?.toFixed(2) || "0.00"}
-                  </Text>
-                  {h.unrealized_pl !== null && (
-                    <Text
-                      style={[
-                        styles.meta,
-                        {
-                          color:
-                            (h.unrealized_pl || 0) >= 0 ? "#4CAF50" : "#F44336",
-                        },
-                      ]}
-                    >
-                      P&L: ${h.unrealized_pl?.toFixed(2) || "0.00"}
-                    </Text>
-                  )}
-                </View>
-              </View>
-            ))
-          ) : (
-            <Text style={styles.subtle}>No holdings data available</Text>
-          )}
         </View>
-
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>📊 Options ({options.length})</Text>
-          <Text style={styles.sectionKpi}>
-            Total Value: ${totalOptionsValue.toFixed(2)}
-          </Text>
-          {options.length > 0 ? (
-            options.slice(0, 12).map((o, idx) => (
-              <View key={idx} style={styles.card}>
-                <View style={styles.rowBetween}>
-                  <Text style={styles.symbol}>
-                    {o.underlying_symbol} {o.option_type}
-                  </Text>
-                  <Text style={styles.valueOrange}>
-                    ${o.market_value?.toFixed(2) || "0.00"}
-                  </Text>
-                </View>
-                <Text style={styles.subtle}>
-                  Strike: ${o.strike_price} | Exp: {o.expiration_date}
-                </Text>
-                <View style={styles.rowBetween}>
-                  <Text style={styles.meta}>Contracts: {o.units}</Text>
-                  <Text style={styles.meta}>
-                    Price: ${o.price?.toFixed(2) || "0.00"}
-                  </Text>
-                </View>
-              </View>
-            ))
-          ) : (
-            <Text style={styles.subtle}>No options data available</Text>
-          )}
-        </View>
-
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>🔗 Connection Info</Text>
-          {connections.length > 0 ? (
-            connections.map((c, idx) => (
-              <View key={idx} style={styles.card}>
-                <Text style={styles.meta}>
-                  Brokerage: {c.brokerage_name || "Fidelity"}
-                </Text>
-                <Text style={styles.meta}>
-                  Account: {c.account_name || "Investment Account"}
-                </Text>
-                <Text style={styles.meta}>Account ID: {c.account_id}</Text>
-                <Text style={styles.meta}>
-                  Last Synced:{" "}
-                  {c.last_synced_at
-                    ? new Date(c.last_synced_at).toLocaleDateString()
-                    : "Never"}
-                </Text>
-              </View>
-            ))
-          ) : (
-            <Text style={styles.subtle}>No connection data available</Text>
-          )}
-        </View>
-      </ScrollView>
+      )}
     </View>
   );
-}
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#121212",
-  },
-  header: {
-    paddingTop: 54,
-    paddingBottom: 12,
-    paddingHorizontal: 16,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  backBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: "rgba(255,255,255,0.06)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  title: {
-    flex: 1,
-    textAlign: "center",
-    fontSize: 20,
-    fontWeight: "600",
-    color: "#fff",
-    fontFamily: Platform.OS === "ios" ? "System" : "sans-serif",
-  },
-  content: {
-    padding: 16,
-  },
-  syncButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#4CAF50",
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 12,
-    marginBottom: 20,
-    gap: 8,
-  },
-  syncButtonDisabled: {
-    backgroundColor: "#666",
-    opacity: 0.6,
-  },
-  syncButtonText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  section: {
-    marginBottom: 24,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: "#fff",
-    marginBottom: 12,
-  },
-  sectionKpi: {
-    fontSize: 16,
-    fontWeight: "500",
-    color: "#4CAF50",
-    marginBottom: 12,
-  },
-  card: {
-    backgroundColor: "rgba(255,255,255,0.05)",
-    borderRadius: 12,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
-    marginBottom: 12,
-  },
-  label: {
-    fontSize: 14,
-    color: "#888",
-    marginBottom: 4,
-  },
-  value: {
-    fontSize: 20,
-    fontWeight: "600",
-    color: "#fff",
-    marginBottom: 12,
-  },
-  valueGreen: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#4CAF50",
-  },
-  valueOrange: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#FF9800",
-  },
-  subtle: {
-    fontSize: 12,
-    color: "#888",
-  },
-  rowBetween: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 8,
-  },
-  symbol: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#fff",
-  },
-  meta: {
-    fontSize: 12,
-    color: "#ccc",
-  },
-  errorContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "rgba(244, 67, 54, 0.1)",
-    borderColor: "#F44336",
-    borderWidth: 1,
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 16,
-    gap: 8,
-  },
-  errorText: {
-    flex: 1,
-    fontSize: 14,
-    color: "#F44336",
-    fontWeight: "500",
-  },
-});
+  const renderOptions = () => (
+    <View style={styles.section}>
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>📊 Options ({options.length})</Text>
+      </View>
+      {options.length > 0 ? (
+        <View style={styles.holdingsGrid}>
+          {options.slice(0, 6).map((o, idx) => (
+            <View key={idx} style={styles.optionCard}>
+              <View style={styles.optionHeader}>
+                <Text style={styles.optionSymbol}>
+                  {o.underlying_symbol} {o.option_type}
+                </Text>
+                <Text style={styles.optionValue}>
+                  $
+                  {o.market_value?.toLocaleString("en-US", {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  }) || "0.00"}
+                </Text>
+              </View>
+              <Text style={styles.holdingDescription}>
+                Strike: ${o.strike_price} | Exp: {o.expiration_date}
+              </Text>
+              <View style={styles.optionDetails}>
+                <View style={styles.optionDetail}>
+                  <Text style={styles.optionDetailLabel}>Contracts</Text>
+                  <Text style={styles.optionDetailValue}>{o.units}</Text>
+                </View>
+                <View style={styles.optionDetail}>
+                  <Text style={styles.optionDetailLabel}>Price</Text>
+                  <Text style={styles.optionDetailValue}>
+                    ${o.price?.toFixed(2) || "0.00"}
+                  </Text>
+                </View>
+              </View>
+            </View>
+          ))}
+        </View>
+      ) : (
+        <View style={styles.emptyState}>
+          <View style={styles.emptyStateIcon}>
+            <Ionicons name="bar-chart" size={24} color="#FF9800" />
+          </View>
+          <Text style={styles.emptyStateText}>
+            No options data available. Start trading options to see them here!
+          </Text>
+        </View>
+      )}
+    </View>
+  );
+
+  return (
+    <SafeAreaView style={styles.safeArea}>
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity
+            style={styles.backBtn}
+            onPress={() => router.back()}
+          >
+            <Ionicons name="chevron-back" size={22} color="#4A90E2" />
+          </TouchableOpacity>
+          <View style={styles.headerTextContainer}>
+            <Text style={styles.greetingText}>Investment Portfolio</Text>
+            <Text style={styles.subGreeting}>Track your wealth</Text>
+          </View>
+          <TouchableOpacity
+            style={[styles.syncButton, isSyncing && styles.syncButtonDisabled]}
+            onPress={handleSync}
+            disabled={isSyncing}
+          >
+            <Ionicons
+              name={isSyncing ? "hourglass" : "refresh"}
+              size={18}
+              color="#4A90E2"
+            />
+          </TouchableOpacity>
+        </View>
+
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={styles.content}
+          showsVerticalScrollIndicator={false}
+        >
+          {renderPortfolioHero()}
+
+          {syncError && (
+            <View style={styles.errorContainer}>
+              <Ionicons name="warning" size={16} color="#F44336" />
+              <Text style={styles.errorText}>{syncError}</Text>
+            </View>
+          )}
+
+          {renderHoldings()}
+          {renderOptions()}
+        </ScrollView>
+      </View>
+    </SafeAreaView>
+  );
+}
