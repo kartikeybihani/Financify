@@ -360,194 +360,48 @@ const Goals: React.FC<GoalsProps> = ({
       >
         {sortedGoalsData.length === 0 ? (
           <View style={styles.emptyStateContainer}>
-            {/* Header Section with Fresh Start Timing */}
-            <Text style={styles.emptyStateTitle}>
-              {(() => {
-                const now = new Date();
-                const hour = now.getHours();
-                const day = now.getDay();
-
-                // Fresh start moments
-                if (hour >= 9 && hour <= 11 && day === 1) {
-                  return "New week, new goal";
-                } else if (hour >= 6 && hour <= 9) {
-                  return "Good morning, let's plan";
-                } else if (hour >= 17 && hour <= 19) {
-                  return "Evening planning time";
-                } else {
-                  return "Plan your next money move";
-                }
-              })()}
-            </Text>
-            <Text style={styles.emptyStateSubtitle}>
-              Pick a goal. I will do the math.
-            </Text>
-
-            {/* Progress Ring for Behavioral Nudge */}
-            <View style={styles.progressRingContainer}>
-              <View style={styles.progressRingBackground}>
-                <Animated.View
-                  style={[
-                    styles.progressRingFill,
-                    {
-                      transform: [
-                        {
-                          rotate: progressRing.interpolate({
-                            inputRange: [0, 1],
-                            outputRange: ["0deg", "360deg"],
-                          }),
-                        },
-                      ],
-                    },
-                  ]}
-                />
-              </View>
-              <Text style={styles.progressRingText}>2%</Text>
-            </View>
-            <Text style={styles.progressRingMessage}>
-              You are already on your way
-            </Text>
-
-            {/* Finny with subtle glow and purposeful animations */}
-            <View style={styles.mascotContainer}>
-              <View style={styles.mascotGlow} />
-              <Animated.Image
+            <View style={(styles as any).emptyMascotWrap}>
+              <Image
                 source={require("../../assets/mascot1.jpg")}
-                style={[
-                  styles.emptyStateImage,
-                  {
-                    transform: [
-                      { scale: idleTransform },
-                      { translateX: nudgeTransform },
-                      { scaleX: -1 },
-                    ],
-                  },
-                ]}
-                resizeMode="contain"
+                style={(styles as any).emptyMascotImage}
+                resizeMode="cover"
               />
             </View>
-
-            {/* Action Cards Row */}
-            <View style={styles.actionCardsRow}>
-              <TouchableOpacity
-                style={styles.primaryActionCard}
-                onPress={() => router.push("/chat")}
-              >
-                <View style={styles.primaryActionCardGlow} />
-                <View style={styles.actionCardContent}>
-                  <Ionicons name="chatbubble-ellipses" size={24} color="#fff" />
-                  <Text style={styles.primaryActionText}>
-                    Create a goal with Finny
-                  </Text>
-                  <Text style={styles.actionSubtext}>Takes 30 seconds</Text>
-                </View>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.secondaryActionCard}
-                onPress={() =>
-                  setState((prev: GoalsState) => ({
-                    ...prev,
-                    showAddGoalModal: true,
-                  }))
-                }
-              >
-                <View style={styles.actionCardContent}>
-                  <Ionicons name="library" size={24} color="#4A90E2" />
-                  <Text style={styles.secondaryActionText}>Use a template</Text>
-                  <View style={styles.templateChips}>
-                    {hasConnectedAccounts ? (
-                      <>
-                        <Text style={styles.templateChip}>
-                          Emergency Fund $
-                          {Math.round(accountBalance * 0.1).toLocaleString()}
-                        </Text>
-                        <Text style={styles.templateChip}>
-                          Trip $
-                          {Math.round(accountBalance * 0.2).toLocaleString()}
-                        </Text>
-                        <Text style={styles.templateChip}>
-                          New Phone $
-                          {Math.round(accountBalance * 0.05).toLocaleString()}
-                        </Text>
-                      </>
-                    ) : (
-                      <>
-                        <Text style={styles.templateChip}>Emergency Fund</Text>
-                        <Text style={styles.templateChip}>Trip</Text>
-                        <Text style={styles.templateChip}>New Phone</Text>
-                      </>
-                    )}
-                  </View>
-                  {hasConnectedAccounts && (
-                    <Text style={styles.templateSuggestion}>
-                      Suggested by Finny
-                    </Text>
-                  )}
-                </View>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.tertiaryActionCard}
-                onPress={() =>
-                  setState((prev: GoalsState) => ({
-                    ...prev,
-                    showAddGoalModal: true,
-                  }))
-                }
-              >
-                <View style={styles.actionCardContent}>
-                  <Ionicons
-                    name="add-circle-outline"
-                    size={24}
-                    color="#20B2AA"
-                  />
-                  <Text style={styles.tertiaryActionText}>Add my own</Text>
-                </View>
-              </TouchableOpacity>
+            <View style={styles.emptyIconCircle}>
+              <Ionicons name="flag-outline" size={28} color="#4A90E2" />
             </View>
+            <Text style={styles.emptyStateTitle}>No goals yet</Text>
+            <Text style={styles.emptyStateSubtitle}>
+              Start with one small goal. We'll help you stay on track.
+            </Text>
 
-            {/* Sample Goals Preview */}
-            <View style={styles.sampleGoalsContainer}>
-              <Text style={styles.sampleGoalsTitle}>
-                Your goals will show up here
-              </Text>
-              <View style={styles.sampleGoalCard}>
-                <View style={styles.sampleGoalCardShine} />
-                <View style={styles.sampleGoalHeader}>
-                  <View style={styles.sampleGoalIcon} />
-                  <View style={styles.sampleGoalInfo}>
-                    <View style={styles.sampleGoalTitlePlaceholder} />
-                    <View style={styles.sampleGoalAmountPlaceholder} />
-                  </View>
-                </View>
-                <View style={styles.sampleProgressBar}>
-                  <View style={styles.sampleProgressFill} />
-                </View>
-                <View style={styles.sampleGoalDate} />
-              </View>
-              <View style={styles.sampleGoalCard}>
-                <View style={styles.sampleGoalCardShine} />
-                <View style={styles.sampleGoalHeader}>
-                  <View style={styles.sampleGoalIcon} />
-                  <View style={styles.sampleGoalInfo}>
-                    <View style={styles.sampleGoalTitlePlaceholder} />
-                    <View style={styles.sampleGoalAmountPlaceholder} />
-                  </View>
-                </View>
-                <View style={styles.sampleProgressBar}>
-                  <View style={styles.sampleProgressFill} />
-                </View>
-                <View style={styles.sampleGoalDate} />
-              </View>
-            </View>
-
-            {/* Growth Hook */}
-            <TouchableOpacity style={styles.growthHook}>
-              <Text style={styles.growthHookText}>
-                Invite a friend and both of you get a custom goal plan
+            <TouchableOpacity
+              style={styles.emptyPrimaryButton}
+              activeOpacity={0.9}
+              onPress={() =>
+                setState((prev: GoalsState) => ({
+                  ...prev,
+                  showAddGoalModal: true,
+                }))
+              }
+            >
+              <Ionicons name="add-circle" size={18} color="#fff" />
+              <Text style={styles.emptyPrimaryButtonText}>
+                Create your first goal
               </Text>
             </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.emptySecondaryLink}
+              onPress={() => router.push("/chat")}
+            >
+              <Ionicons name="sparkles" size={16} color="#4A90E2" />
+              <Text style={styles.emptySecondaryLinkText}>
+                Or ask Finny to set one up
+              </Text>
+            </TouchableOpacity>
+
+            <Text style={styles.emptyHint}>You can edit or delete anytime</Text>
           </View>
         ) : (
           sortedGoalsData.map((item, index) => (

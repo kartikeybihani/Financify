@@ -275,6 +275,7 @@ export default function FinancialBottomSheet({
                               {category.title}
                             </Text>
                           </TouchableOpacity>
+                          <Text>{/* Total amount */}</Text>
                           <TouchableOpacity
                             onPress={() => handleAddNewAccount(category.title)}
                             disabled={isAddingAccount}

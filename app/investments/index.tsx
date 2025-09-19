@@ -344,7 +344,7 @@ export default function InvestmentsScreen() {
             style={styles.backBtn}
             onPress={() => router.back()}
           >
-            <Ionicons name="chevron-back" size={22} color="#4A90E2" />
+            <Ionicons name="chevron-back" size={24} color="#4A90E2" />
           </TouchableOpacity>
           <View style={styles.headerTextContainer}>
             <Text style={styles.greetingText}>Investment Portfolio</Text>
