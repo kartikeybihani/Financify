@@ -19,6 +19,7 @@ import { Tabs, useRouter, usePathname } from "expo-router";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { Easing } from "react-native";
 import { BlurView } from "expo-blur";
+import { NativeTabs } from "expo-router/unstable-native-tabs";
 
 const FinnyTabIcon = forwardRef(({ focused }: { focused: boolean }, ref) => {
   const rotation = useRef(new Animated.Value(0)).current;
@@ -56,7 +57,17 @@ const FinnyTabIcon = forwardRef(({ focused }: { focused: boolean }, ref) => {
 
 export default function TabLayout() {
   const insets = useSafeAreaInsets();
-  const tabs = [
+  // Try to load NativeTabs at runtime to support iOS 26 glass when available
+  let NativeTabsModule: any = null;
+  let NativeTabsComp: any = null;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    NativeTabsModule = require("expo-router/unstable-native-tabs");
+    NativeTabsComp = NativeTabsModule?.NativeTabs || null;
+  } catch (e) {
+    NativeTabsComp = null;
+  }
+  const tabs: TabMeta[] = [
     {
       name: "index",
       label: "Home",
@@ -66,9 +77,8 @@ export default function TabLayout() {
     {
       name: "chat",
       label: "Finny",
-      iconType: "image",
-      icon: require("../assets/icon.png"),
-      iconCategory: null,
+      icon: "home-outline",
+      iconCategory: "Ionicons",
     },
     {
       name: "goals",
@@ -84,6 +94,52 @@ export default function TabLayout() {
     },
   ];
 
+  if (NativeTabsComp) {
+    const NativeTabs = NativeTabsComp;
+    return (
+      <NativeTabs
+        initialRouteName="chat"
+        screenOptions={{
+          headerShown: false,
+          tabBarBlurEffect: "systemUltraThinMaterial",
+          tabBarActiveTintColor: "#4A90E2",
+          tabBarLabelStyle: { fontSize: 13 },
+        }}
+      >
+        {tabs.map((tab) => (
+          <NativeTabs.Screen
+            key={tab.name}
+            name={tab.name}
+            options={{
+              title: tab.label,
+              tabBarIcon: ({
+                focused,
+                color,
+              }: {
+                focused: boolean;
+                color: string;
+              }) => {
+                // Image icon path removed since all tabs now use vector icons
+                const IconComponent =
+                  tab.iconCategory === "Ionicons"
+                    ? Ionicons
+                    : MaterialCommunityIcons;
+                return (
+                  <IconComponent
+                    name={tab.icon as any}
+                    size={22}
+                    color={focused ? "#4A90E2" : "#C7C7CC"}
+                  />
+                );
+              },
+            }}
+          />
+        ))}
+      </NativeTabs>
+    );
+  }
+
+  // Fallback to custom glass tab bar when NativeTabs is unavailable
   return (
     <Tabs
       initialRouteName="chat"
@@ -105,20 +161,7 @@ export default function TabLayout() {
               );
             },
             tabBarIcon: ({ focused }) => {
-              if (tab.iconType === "image") {
-                return (
-                  <View>
-                    <Image
-                      source={tab.icon}
-                      style={{
-                        width: 26,
-                        height: 26,
-                        tintColor: focused ? "#4A90E2" : "#ccc",
-                      }}
-                    />
-                  </View>
-                );
-              }
+              // Image icon path removed since all tabs now use vector icons
               const IconComponent =
                 tab.iconCategory === "Ionicons"
                   ? Ionicons

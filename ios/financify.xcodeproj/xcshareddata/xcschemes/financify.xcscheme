@@ -15,9 +15,9 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "13B07F861A680F5B00A75B9A"
-               BuildableName = "financify.app"
-               BlueprintName = "financify"
-               ReferencedContainer = "container:financify.xcodeproj">
+               BuildableName = "Financify.app"
+               BlueprintName = "Financify"
+               ReferencedContainer = "container:Financify.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -33,9 +33,9 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "00E356ED1AD99517003FC87E"
-               BuildableName = "financifyTests.xctest"
-               BlueprintName = "financifyTests"
-               ReferencedContainer = "container:financify.xcodeproj">
+               BuildableName = "FinancifyTests.xctest"
+               BlueprintName = "FinancifyTests"
+               ReferencedContainer = "container:Financify.xcodeproj">
             </BuildableReference>
          </TestableReference>
       </Testables>
@@ -55,9 +55,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "13B07F861A680F5B00A75B9A"
-            BuildableName = "financify.app"
-            BlueprintName = "financify"
-            ReferencedContainer = "container:financify.xcodeproj">
+            BuildableName = "Financify.app"
+            BlueprintName = "Financify"
+            ReferencedContainer = "container:Financify.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </LaunchAction>
@@ -72,9 +72,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "13B07F861A680F5B00A75B9A"
-            BuildableName = "financify.app"
-            BlueprintName = "financify"
-            ReferencedContainer = "container:financify.xcodeproj">
+            BuildableName = "Financify.app"
+            BlueprintName = "Financify"
+            ReferencedContainer = "container:Financify.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </ProfileAction>
