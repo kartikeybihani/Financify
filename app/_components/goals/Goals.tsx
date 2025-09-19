@@ -12,6 +12,7 @@ import {
   Image,
   Easing,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import GoalNotification from "./GoalNotification";
 import AddGoalModal from "./AddGoalModal";
@@ -40,6 +41,7 @@ const Goals: React.FC<GoalsProps> = ({
   onRefreshEnd,
   onGoalAdded,
 }) => {
+  const insets = useSafeAreaInsets();
   const [state, setState] = useState<GoalsState>({
     showAddGoalModal: false,
     notification: {
@@ -349,6 +351,7 @@ const Goals: React.FC<GoalsProps> = ({
         contentContainerStyle={[
           styles.goalsWrapper,
           !sortedGoalsData.length && styles.emptyGoalsWrapper,
+          { paddingBottom: Math.max(insets.bottom, 16) + 120 },
         ]}
         refreshControl={
           <RefreshControl
@@ -424,7 +427,10 @@ const Goals: React.FC<GoalsProps> = ({
 
       {sortedGoalsData.length !== 0 && (
         <TouchableOpacity
-          style={styles.addGoalButton}
+          style={[
+            styles.addGoalButton,
+            { bottom: Math.max(insets.bottom, 16) + 72 },
+          ]}
           onPress={() =>
             setState((prev: GoalsState) => ({
               ...prev,

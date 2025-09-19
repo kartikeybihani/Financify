@@ -9,7 +9,10 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import { SafeAreaView } from "react-native-safe-area-context";
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 import logger from "../../_utils/logger";
 
 interface Transaction {
@@ -91,6 +94,8 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
 }) => {
   if (!transaction) return null;
 
+  const insets = useSafeAreaInsets();
+
   const amount = Math.abs(transaction.amount);
   const isIncome = transaction.amount < 0; // Negative amounts are income/credits
   const amountColor = isIncome ? "#27AE60" : "#E74C3C";
@@ -120,7 +125,10 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
           <TouchableOpacity
             activeOpacity={1}
             onPress={() => {}} // Prevent closing when tapping on modal content
-            style={styles.modalContainer}
+            style={[
+              styles.modalContainer,
+              { paddingBottom: Math.max(insets.bottom, 16) + 64 },
+            ]}
           >
             {/* Handle */}
             <View style={styles.handleContainer}>

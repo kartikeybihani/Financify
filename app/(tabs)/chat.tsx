@@ -626,7 +626,9 @@ export default function ChatScreen() {
                 scrollEventThrottle={16}
                 onScrollBeginDrag={() => (isScrolling.current = true)}
                 onScrollEndDrag={() => (isScrolling.current = false)}
-                contentContainerStyle={{ paddingBottom: 80 }}
+                contentContainerStyle={{
+                  paddingBottom: Math.max(insets.bottom, 16) + 100,
+                }}
                 removeClippedSubviews={true}
                 maxToRenderPerBatch={10}
                 windowSize={10}
@@ -690,7 +692,7 @@ export default function ChatScreen() {
             <View
               style={[
                 styles.inputBarContainer,
-                { paddingBottom: Math.max(insets.bottom, 16) },
+                { paddingBottom: Math.max(insets.bottom, 16) + 16 },
               ]}
             >
               <FlatList
