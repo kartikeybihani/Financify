@@ -442,8 +442,13 @@ async function handleComparisonQuery(text, entities) {
     label: `${limitType.replace("_", " ").toUpperCase()} Comparison`,
     value: difference,
     unit: "USD",
-    explanation: `${limitType.replace("_", " ").toUpperCase()} was $${value1.toLocaleString()} in ${year1} and $${value2.toLocaleString()} in ${year2}. The difference is ${differenceText}.`,
-    source_url: yearData[year1]?.source || yearData[year2]?.source || "Multiple official sources",
+    explanation: `${limitType
+      .replace("_", " ")
+      .toUpperCase()} was $${value1.toLocaleString()} in ${year1} and $${value2.toLocaleString()} in ${year2}. The difference is ${differenceText}.`,
+    source_url:
+      yearData[year1]?.source ||
+      yearData[year2]?.source ||
+      "Multiple official sources",
     source_title: null,
     last_verified: new Date().toISOString(),
     confidence: 0.9, // High confidence for mathematical comparisons
@@ -1693,9 +1698,13 @@ Extract comprehensive information to fully answer the question. Use information 
     });
 
     console.log("✅ [FINNY] Fact extracted and cached:", key);
-    
+
     // Validate all required fields for Fact object
-    if (!value_json.label || !value_json.explanation || value_json.confidence === undefined) {
+    if (
+      !value_json.label ||
+      !value_json.explanation ||
+      value_json.confidence === undefined
+    ) {
       console.log("❌ [FINNY] Missing required fields in extracted data");
       return {
         intent: "ask_fact_fresh",
@@ -1717,7 +1726,12 @@ Extract comprehensive information to fully answer the question. Use information 
       ttl_seconds: ttl || DEFAULT_TTLS[kind] || 1209600,
     };
 
-    console.log("✅ [FINNY] Returning structured fact:", fact.label, "confidence:", fact.confidence);
+    console.log(
+      "✅ [FINNY] Returning structured fact:",
+      fact.label,
+      "confidence:",
+      fact.confidence
+    );
     return {
       intent: "ask_fact_fresh",
       fact: fact,
