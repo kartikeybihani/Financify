@@ -381,16 +381,14 @@ async function handleComparisonQuery(text, entities) {
           `${limitType.replace("_", " ")} ${year}`,
           entities
         );
-        if (result && !result.error) {
-          // Try to extract value from the result
-          const valueMatch = result.message.match(/\$([\d,]+)/);
-          if (valueMatch) {
+        if (result && result.fact && !result.error) {
+          // Extract value from the Fact object
+          const fact = result.fact;
+          if (typeof fact.value === "number") {
             yearData[year] = {
-              value: parseInt(valueMatch[1].replace(/,/g, ""), 10),
-              source: result.message.includes("Source:")
-                ? result.message.split("Source:")[1].trim()
-                : "Unknown",
-              label: result.message.split(":")[0] || `${limitType} ${year}`,
+              value: fact.value,
+              source: fact.source_url,
+              label: fact.label,
             };
             console.log(
               `✅ [FINNY] Extracted fresh data for ${year}:`,
@@ -439,12 +437,22 @@ async function handleComparisonQuery(text, entities) {
   if (yearData[year2]?.source)
     sources.push(`[${year2} source](${yearData[year2].source})`);
 
+  // Build Fact object for comparison
+  const fact = {
+    label: `${limitType.replace("_", " ").toUpperCase()} Comparison`,
+    value: difference,
+    unit: "USD",
+    explanation: `${limitType.replace("_", " ").toUpperCase()} was $${value1.toLocaleString()} in ${year1} and $${value2.toLocaleString()} in ${year2}. The difference is ${differenceText}.`,
+    source_url: yearData[year1]?.source || yearData[year2]?.source || "Multiple official sources",
+    source_title: null,
+    last_verified: new Date().toISOString(),
+    confidence: 0.9, // High confidence for mathematical comparisons
+    ttl_seconds: DEFAULT_TTLS[limitType] || 1209600,
+  };
+
   return {
-    message:
-      comparisonMessage +
-      (sources.length > 0 ? `\n\nSources: ${sources.join(", ")}` : ""),
-    type: "assistant",
     intent: "ask_fact_fresh",
+    fact: fact,
     cached: false,
     comparison: true,
   };
@@ -1128,9 +1136,9 @@ async function handleAskFactFresh(message, context) {
     };
     if (!text) {
       return {
-        message: "I need a question to look up facts for you.",
-        type: "assistant",
         intent: "ask_fact_fresh",
+        fact: null,
+        error: "NO_QUESTION_PROVIDED",
       };
     }
 
@@ -1167,43 +1175,29 @@ async function handleAskFactFresh(message, context) {
           `(age: ${Math.round(age / 3600)}h, ttl: ${Math.round(ttl / 3600)}h)`
         );
 
-        // Validate cached data structure
+        // Validate cached data structure and build Fact object
         if (
           cached.value_json &&
           cached.value_json.label &&
-          cached.value_json.explanation
+          cached.value_json.explanation &&
+          cached.value_json.confidence !== undefined
         ) {
-          const v = cached.value_json.value;
-          const label = cached.value_json.label;
-          const explanation = cached.value_json.explanation;
-          const src = cached.source_url;
+          const fact = {
+            label: cached.value_json.label,
+            value: cached.value_json.value,
+            unit: cached.value_json.unit || null,
+            explanation: cached.value_json.explanation,
+            source_url: cached.source_url,
+            source_title: cached.value_json.source_title || null,
+            last_verified: cached.fetched_at,
+            confidence: cached.value_json.confidence,
+            ttl_seconds: cached.ttl_seconds || DEFAULT_TTLS[kind] || 1209600,
+          };
 
-          // Create comprehensive cached response
-          let responseMessage = `${label}`;
-
-          // Only add value if it's not null and meaningful
-          if (v !== null && v !== undefined) {
-            if (typeof v === "number") {
-              responseMessage += `: $${v.toLocaleString()}`;
-            } else if (typeof v === "string" && v.trim()) {
-              responseMessage += `: ${v}`;
-            }
-          }
-
-          if (
-            explanation &&
-            explanation.length > 10 &&
-            !explanation.toLowerCase().includes("not found")
-          ) {
-            responseMessage += `\n\n${explanation}`;
-          }
-
-          responseMessage += `\n\nSource: ${src}`;
-
+          console.log("✅ [FINNY] Returning cached fact:", fact.label);
           return {
-            message: responseMessage,
-            type: "assistant",
             intent: "ask_fact_fresh",
+            fact: fact,
             cached: true,
           };
         } else {
@@ -1274,10 +1268,8 @@ async function handleAskFactFresh(message, context) {
         } else {
           console.log("❌ [FINNY] No fallback sources available for:", key);
           return {
-            message:
-              "I couldn't verify that from an official source yet. Want me to try a broader search?",
-            type: "assistant",
             intent: "ask_fact_fresh",
+            fact: null,
             error: "NO_KNOWN_SOURCE",
           };
         }
@@ -1290,9 +1282,8 @@ async function handleAskFactFresh(message, context) {
     if (allowedUrls.length === 0) {
       console.log("❌ [FINNY] No allowed sources found for:", urls);
       return {
-        message: "I can't access those sources for security reasons.",
-        type: "assistant",
         intent: "ask_fact_fresh",
+        fact: null,
         error: "SOURCE_NOT_ALLOWED",
       };
     }
@@ -1344,10 +1335,8 @@ async function handleAskFactFresh(message, context) {
     if (pageResults.length === 0) {
       console.log("❌ [FINNY] Failed to fetch any pages");
       return {
-        message:
-          "I couldn't retrieve the information from the official sources right now. Please try again later.",
-        type: "assistant",
         intent: "ask_fact_fresh",
+        fact: null,
         error: "FETCH_FAILED",
       };
     }
@@ -1570,9 +1559,8 @@ Extract comprehensive information to fully answer the question. Use information 
       }
 
       return {
-        message: fallbackMessage,
-        type: "assistant",
         intent: "ask_fact_fresh",
+        fact: null,
         error: "EXTRACTION_FAILED",
       };
     }
@@ -1676,9 +1664,8 @@ Extract comprehensive information to fully answer the question. Use information 
       }
 
       return {
-        message: fallbackResponse,
-        type: "assistant",
         intent: "ask_fact_fresh",
+        fact: null,
         error: "JSON_PARSE_FAILED",
       };
     }
@@ -1706,84 +1693,41 @@ Extract comprehensive information to fully answer the question. Use information 
     });
 
     console.log("✅ [FINNY] Fact extracted and cached:", key);
-    const v = value_json.value;
-    const label = value_json.label;
-    const explanation = value_json.explanation;
-
-    // Create a more comprehensive response
-    let responseMessage = `${label}`;
-
-    // Only add value if it's not null and meaningful
-    if (v !== null && v !== undefined) {
-      if (typeof v === "number") {
-        responseMessage += `: $${v.toLocaleString()}`;
-      } else if (typeof v === "string" && v.trim()) {
-        responseMessage += `: ${v}`;
-      }
+    
+    // Validate all required fields for Fact object
+    if (!value_json.label || !value_json.explanation || value_json.confidence === undefined) {
+      console.log("❌ [FINNY] Missing required fields in extracted data");
+      return {
+        intent: "ask_fact_fresh",
+        fact: null,
+        error: "MISSING_REQUIRED_FIELDS",
+      };
     }
 
-    // Add explanation if it's informative and different from the label
-    if (
-      explanation &&
-      explanation.length > 10 &&
-      !explanation.toLowerCase().includes("not found")
-    ) {
-      responseMessage += `\n\n${explanation}`;
-    }
+    // Build Fact object with all required fields
+    const fact = {
+      label: value_json.label,
+      value: value_json.value,
+      unit: value_json.unit || null,
+      explanation: value_json.explanation,
+      source_url: pageResults[0].url, // Always use official source
+      source_title: value_json.source_title || null,
+      last_verified: new Date().toISOString(),
+      confidence: value_json.confidence,
+      ttl_seconds: ttl || DEFAULT_TTLS[kind] || 1209600,
+    };
 
-    // Check if scraped content actually contains relevant information
-    const queryTerms = text
-      .toLowerCase()
-      .split(" ")
-      .filter(
-        (term) =>
-          term.length > 2 &&
-          ![
-            "the",
-            "and",
-            "or",
-            "but",
-            "for",
-            "with",
-            "about",
-            "tell",
-            "me",
-          ].includes(term)
-      );
-
-    const contentLower = combinedContent.toLowerCase();
-    const hasRelevantContent = queryTerms.some((term) =>
-      contentLower.includes(term)
-    );
-
-    console.log("🔍 [FINNY] Query terms:", queryTerms);
-    console.log(
-      "🔍 [FINNY] Does scraped content contain relevant terms?",
-      hasRelevantContent
-    );
-
-    if (hasRelevantContent) {
-      responseMessage += `\n\nSource: ${pageResults[0].url}`;
-    } else {
-      console.log(
-        "⚠️ [FINNY] Scraped content doesn't contain relevant information - not attributing source"
-      );
-      responseMessage += `\n\nNote: Information based on general knowledge`;
-    }
-
+    console.log("✅ [FINNY] Returning structured fact:", fact.label, "confidence:", fact.confidence);
     return {
-      message: responseMessage,
-      type: "assistant",
       intent: "ask_fact_fresh",
+      fact: fact,
       cached: false,
     };
   } catch (error) {
     console.error("❌ [FINNY] Facts lookup error:", error);
     return {
-      message:
-        "I'm having trouble looking up that information right now. Please try again later.",
-      type: "assistant",
       intent: "ask_fact_fresh",
+      fact: null,
       error: error.message,
     };
   }
