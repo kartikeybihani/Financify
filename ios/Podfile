@@ -30,6 +30,9 @@ target 'Financify' do
 
   config = use_native_modules!(config_command)
 
+  # Workaround: Skip Reanimated worklets version validation during pods install
+  ENV['REANIMATED_SKIP_WORKLET_VERSION_CHECK'] = '1'
+
   use_frameworks! :linkage => podfile_properties['ios.useFrameworks'].to_sym if podfile_properties['ios.useFrameworks']
   use_frameworks! :linkage => ENV['USE_FRAMEWORKS'].to_sym if ENV['USE_FRAMEWORKS']
 

@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import {
   View,
   Text,
@@ -8,21 +8,29 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
+import RecurringTransactionsModal from "./RecurringTransactionsModal";
 
 interface RecurringStream {
   stream_id: string;
   description: string;
   merchant_name?: string;
+  category: string;
   frequency: string;
   average_amount: number;
   last_amount: number;
+  last_date: string;
+  first_date: string;
   is_active: boolean;
+  account_id: string;
+  transaction_ids: string[];
+  iso_currency_code: string;
 }
 
 interface RecurringTransactionsCardProps {
   subscriptions: RecurringStream[];
   bills: RecurringStream[];
   income: RecurringStream[];
+  other: RecurringStream[];
   onViewAll: () => void;
   isLoading?: boolean;
 }
@@ -31,9 +39,11 @@ export default function RecurringTransactionsCard({
   subscriptions,
   bills,
   income,
+  other,
   onViewAll,
   isLoading = false,
 }: RecurringTransactionsCardProps) {
+  const [showModal, setShowModal] = useState(false);
   // Helper function to convert frequency to monthly multiplier
   const getMonthlyMultiplier = (frequency: string): number => {
     switch (frequency.toLowerCase()) {
@@ -53,12 +63,8 @@ export default function RecurringTransactionsCard({
     }
   };
 
-  // Get top 3 most expensive recurring items for preview
-  const allRecurring = [...subscriptions, ...bills, ...income];
-  const topRecurring = allRecurring
-    .filter((item) => item.is_active)
-    .sort((a, b) => Math.abs(b.average_amount) - Math.abs(a.average_amount))
-    .slice(0, 3);
+  // Get all recurring items for count
+  const allRecurring = [...subscriptions, ...bills, ...income, ...other];
 
   const totalMonthlyAmount = allRecurring
     .filter((item) => item.is_active)
@@ -67,52 +73,6 @@ export default function RecurringTransactionsCard({
       const monthlyMultiplier = getMonthlyMultiplier(item.frequency);
       return sum + Math.abs(item.average_amount) * monthlyMultiplier;
     }, 0);
-
-  const getFrequencyIcon = (frequency: string) => {
-    switch (frequency.toLowerCase()) {
-      case "monthly":
-        return "calendar-outline";
-      case "weekly":
-        return "time-outline";
-      case "daily":
-        return "today-outline";
-      case "annually":
-      case "yearly":
-        return "calendar-number-outline";
-      default:
-        return "repeat-outline";
-    }
-  };
-
-  const getRecurringTypeIcon = (item: RecurringStream) => {
-    const merchant = (
-      item.merchant_name ||
-      item.description ||
-      ""
-    ).toLowerCase();
-
-    if (
-      merchant.includes("netflix") ||
-      merchant.includes("spotify") ||
-      merchant.includes("apple") ||
-      merchant.includes("google")
-    ) {
-      return "play-outline";
-    }
-    if (
-      merchant.includes("electric") ||
-      merchant.includes("gas") ||
-      merchant.includes("water") ||
-      merchant.includes("rent")
-    ) {
-      return "home-outline";
-    }
-    if (item.average_amount < 0) {
-      // Income
-      return "arrow-down-outline";
-    }
-    return "repeat-outline";
-  };
 
   if (isLoading) {
     return (
@@ -131,100 +91,61 @@ export default function RecurringTransactionsCard({
   }
 
   return (
-    <TouchableOpacity
-      style={styles.container}
-      onPress={onViewAll}
-      activeOpacity={0.95}
-    >
-      <LinearGradient
-        colors={["rgba(255, 152, 0, 0.08)", "rgba(255, 193, 7, 0.04)"]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.gradient}
+    <>
+      <TouchableOpacity
+        style={styles.container}
+        onPress={() => setShowModal(true)}
+        activeOpacity={0.95}
       >
-        <View style={styles.header}>
-          <View style={styles.headerLeft}>
-            <View style={styles.iconContainer}>
-              <Ionicons
-                name="refresh-circle-outline"
-                size={24}
-                color="#9C27B0"
-              />
-            </View>
-            <View>
-              <Text style={styles.title}>Recurring</Text>
-              <Text style={styles.subtitle}>
-                {allRecurring.filter((item) => item.is_active).length} active
-              </Text>
-            </View>
-          </View>
-
-          <View style={styles.headerRight}>
-            <Text style={styles.totalAmount}>
-              ~$
-              {totalMonthlyAmount.toLocaleString("en-US", {
-                minimumFractionDigits: 0,
-                maximumFractionDigits: 0,
-              })}
-            </Text>
-            <Text style={styles.totalLabel}>monthly</Text>
-          </View>
-        </View>
-
-        {topRecurring.length > 0 ? (
-          <View style={styles.previewContainer}>
-            {topRecurring.map((item, index) => (
-              <View key={item.stream_id} style={styles.previewItem}>
-                <View style={styles.previewLeft}>
-                  <View style={styles.previewIcon}>
-                    <Ionicons
-                      name={getRecurringTypeIcon(item)}
-                      size={14}
-                      color="#9C27B0"
-                    />
-                  </View>
-                  <Text style={styles.previewName} numberOfLines={1}>
-                    {item.merchant_name || item.description}
-                  </Text>
-                </View>
-
-                <View style={styles.previewRight}>
-                  <Text style={styles.previewAmount}>
-                    ${Math.abs(item.average_amount).toFixed(0)}
-                  </Text>
-                  <View style={styles.frequencyBadge}>
-                    <Ionicons
-                      name={getFrequencyIcon(item.frequency)}
-                      size={10}
-                      color="#9C27B0"
-                    />
-                  </View>
-                </View>
+        <LinearGradient
+          colors={["rgba(74, 144, 226, 0.08)", "rgba(74, 144, 226, 0.04)"]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.gradient}
+        >
+          <View style={styles.header}>
+            <View style={styles.headerLeft}>
+              <View style={styles.iconContainer}>
+                <Ionicons name="repeat" size={24} color="#4A90E2" />
               </View>
-            ))}
-
-            {allRecurring.filter((item) => item.is_active).length > 3 && (
-              <View style={styles.moreIndicator}>
-                <Text style={styles.moreText}>
-                  +{allRecurring.filter((item) => item.is_active).length - 3}{" "}
-                  more
+              <View>
+                <Text style={styles.title}>Recurring</Text>
+                <Text style={styles.subtitle}>
+                  {allRecurring.filter((item) => item.is_active).length} active
                 </Text>
-                <Ionicons name="chevron-forward" size={14} color="#FF9800" />
               </View>
-            )}
+            </View>
+
+            <View style={styles.headerRight}>
+              <Text style={styles.totalAmount}>
+                ~$
+                {totalMonthlyAmount.toLocaleString("en-US", {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                })}
+              </Text>
+              <Text style={styles.totalLabel}>monthly</Text>
+            </View>
           </View>
-        ) : (
-          <View style={styles.emptyContainer}>
-            <Text style={styles.emptyText}>
-              No recurring transactions found
+
+          <View style={styles.tapToViewContainer}>
+            <Text style={styles.tapToViewText}>
+              Tap to view all recurring transactions
             </Text>
-            <Text style={styles.emptySubtext}>
-              Connect more accounts to see patterns
-            </Text>
+            <Ionicons name="chevron-forward" size={16} color="#4A90E2" />
           </View>
-        )}
-      </LinearGradient>
-    </TouchableOpacity>
+        </LinearGradient>
+      </TouchableOpacity>
+
+      <RecurringTransactionsModal
+        visible={showModal}
+        onClose={() => setShowModal(false)}
+        subscriptions={subscriptions}
+        bills={bills}
+        income={income}
+        other={other}
+      />
+    </>
   );
 }
 
@@ -232,7 +153,7 @@ const styles = StyleSheet.create({
   container: {
     borderRadius: 16,
     overflow: "hidden",
-    shadowColor: "#FF9800",
+    shadowColor: "#4A90E2",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.12,
     shadowRadius: 8,
@@ -255,7 +176,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: "rgba(255, 152, 0, 0.12)",
+    backgroundColor: "rgba(74, 144, 226, 0.12)",
     alignItems: "center",
     justifyContent: "center",
     marginRight: 12,
@@ -276,7 +197,7 @@ const styles = StyleSheet.create({
   totalAmount: {
     fontSize: 18,
     fontWeight: "700",
-    color: "#FF9800",
+    color: "#4A90E2",
     marginBottom: 2,
   },
   totalLabel: {
@@ -285,80 +206,22 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },
-  previewContainer: {
-    gap: 8,
-  },
-  previewItem: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingVertical: 4,
-  },
-  previewLeft: {
+  // Tap to view styles
+  tapToViewContainer: {
     flexDirection: "row",
     alignItems: "center",
-    flex: 1,
-  },
-  previewIcon: {
-    width: 24,
-    height: 24,
+    justifyContent: "center",
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: "rgba(74, 144, 226, 0.05)",
     borderRadius: 12,
-    backgroundColor: "rgba(255, 152, 0, 0.1)",
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 8,
-  },
-  previewName: {
-    fontSize: 13,
-    color: "#333",
-    flex: 1,
-  },
-  previewRight: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-  previewAmount: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: "#333",
-  },
-  frequencyBadge: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    backgroundColor: "rgba(255, 152, 0, 0.12)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  moreIndicator: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingTop: 8,
     marginTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: "rgba(255, 152, 0, 0.12)",
-    gap: 4,
   },
-  moreText: {
-    fontSize: 12,
-    color: "#FF9800",
-    fontWeight: "500",
-  },
-  emptyContainer: {
-    alignItems: "center",
-    paddingVertical: 16,
-  },
-  emptyText: {
+  tapToViewText: {
     fontSize: 13,
-    color: "#666",
+    color: "#4A90E2",
     fontWeight: "500",
-    marginBottom: 4,
-  },
-  emptySubtext: {
-    fontSize: 11,
-    color: "#999",
+    marginRight: 8,
   },
   // Loading states
   loadingContainer: {
@@ -367,14 +230,14 @@ const styles = StyleSheet.create({
   loadingTitle: {
     width: 80,
     height: 16,
-    backgroundColor: "rgba(255, 152, 0, 0.12)",
+    backgroundColor: "rgba(74, 144, 226, 0.12)",
     borderRadius: 8,
     marginBottom: 8,
   },
   loadingSubtitle: {
     width: 60,
     height: 12,
-    backgroundColor: "rgba(255, 152, 0, 0.06)",
+    backgroundColor: "rgba(74, 144, 226, 0.06)",
     borderRadius: 6,
     marginBottom: 16,
   },
@@ -384,7 +247,7 @@ const styles = StyleSheet.create({
   loadingItem: {
     width: "100%",
     height: 32,
-    backgroundColor: "rgba(255, 152, 0, 0.06)",
+    backgroundColor: "rgba(74, 144, 226, 0.06)",
     borderRadius: 8,
   },
 });

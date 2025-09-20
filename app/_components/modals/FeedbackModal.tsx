@@ -11,7 +11,6 @@ import {
   ActivityIndicator,
   Alert,
 } from "react-native";
-import { BlurView } from "expo-blur";
 import { AntDesign } from "@expo/vector-icons";
 
 interface FeedbackModalProps {
@@ -68,20 +67,19 @@ export default function FeedbackModal({
     <Modal
       visible={visible}
       transparent
-      animationType="fade"
+      animationType="slide"
       statusBarTranslucent
     >
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         style={styles.container}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
       >
-        <BlurView intensity={20} style={StyleSheet.absoluteFill} tint="dark" />
-
         <View style={styles.modalContent}>
           <View style={styles.header}>
             <Text style={styles.title}>Send Feedback</Text>
             <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-              <AntDesign name="close" size={24} color="#666" />
+              <AntDesign name="close" size={19} color="#B4B4B4" />
             </TouchableOpacity>
           </View>
 
@@ -146,19 +144,22 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     padding: 20,
+    backgroundColor: "rgba(10,16,30,0.85)",
   },
   modalContent: {
-    backgroundColor: "#1A1A1A",
-    borderRadius: 16,
-    padding: 20,
+    backgroundColor: "rgba(24, 28, 36, 0.95)",
+    borderRadius: 28,
+    padding: 32,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.1)",
     shadowColor: "#000",
     shadowOffset: {
       width: 0,
-      height: 2,
+      height: 8,
     },
     shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
+    shadowRadius: 24,
+    elevation: 12,
   },
   header: {
     flexDirection: "row",
@@ -172,7 +173,11 @@ const styles = StyleSheet.create({
     color: "#fff",
   },
   closeButton: {
-    padding: 4,
+    padding: 7,
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.2)",
   },
   form: {
     gap: 20,
@@ -187,28 +192,58 @@ const styles = StyleSheet.create({
     marginLeft: 4,
   },
   nameInput: {
-    backgroundColor: "#2A2A2A",
+    backgroundColor: "rgba(35, 40, 58, 0.8)",
     borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.1)",
     padding: 16,
     color: "#fff",
     fontSize: 16,
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 2,
   },
   feedbackInput: {
-    backgroundColor: "#2A2A2A",
+    backgroundColor: "rgba(35, 40, 58, 0.8)",
     borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.1)",
     padding: 16,
     color: "#fff",
     fontSize: 16,
     minHeight: 160,
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 2,
   },
   submitButton: {
-    backgroundColor: "#4A90E2",
-    borderRadius: 12,
+    backgroundColor: "rgba(74, 144, 226, 0.9)",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.2)",
     padding: 16,
     alignItems: "center",
     flexDirection: "row",
     justifyContent: "center",
     marginTop: 10,
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
   },
   submitButtonDisabled: {
     opacity: 0.7,

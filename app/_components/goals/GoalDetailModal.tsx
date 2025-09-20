@@ -12,6 +12,7 @@ import {
   TouchableWithoutFeedback,
   Animated,
   Alert,
+  KeyboardAvoidingView,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -20,15 +21,10 @@ import { Goal } from "../../_types/finny";
 import logger from "../../_utils/logger";
 import {
   getCategoryDisplayName,
-  getCategoryIcon,
-  getCategoryColor,
-  calculateProgressPercentage,
-  formatGoalProgress,
-  GoalCategory,
   getCategoryOptions,
 } from "../../../src/utils/goalCategories";
 
-const { width: SCREEN_WIDTH } = Dimensions.get("window");
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 
 interface GoalDetailModalProps {
   goal: Goal | null;
@@ -54,6 +50,7 @@ const GoalDetailModal: React.FC<GoalDetailModalProps> = ({
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [localProgressAmount, setLocalProgressAmount] = useState<number>(0);
   const [showNoteField, setShowNoteField] = useState(false);
+  const [isInputFocused, setIsInputFocused] = useState(false);
 
   // Animation refs
   const noteAnimation = useRef(new Animated.Value(0)).current;
@@ -210,6 +207,8 @@ const GoalDetailModal: React.FC<GoalDetailModalProps> = ({
               const newAmount = Math.max(0, parseFloat(text) || 0);
               setLocalProgressAmount(newAmount);
             }}
+            onFocus={() => setIsInputFocused(true)}
+            onBlur={() => setIsInputFocused(false)}
             keyboardType="numeric"
             placeholder="0"
             placeholderTextColor="#666"
@@ -245,18 +244,28 @@ const GoalDetailModal: React.FC<GoalDetailModalProps> = ({
                   onPress={handleClose}
                   style={styles.closeButton}
                 >
-                  <View
+                  <LinearGradient
+                    colors={
+                      hasProgressChanged
+                        ? ["rgba(50, 215, 75, 0.15)", "rgba(50, 215, 75, 0.05)"]
+                        : [
+                            "rgba(255, 255, 255, 0.15)",
+                            "rgba(255, 255, 255, 0.05)",
+                          ]
+                    }
                     style={[
                       styles.closeButtonCircle,
                       hasProgressChanged && styles.closeButtonCircleUpdated,
                     ]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
                   >
                     <Ionicons
                       name={hasProgressChanged ? "checkmark-outline" : "close"}
                       size={18}
-                      color={hasProgressChanged ? "#fff" : "#888"}
+                      color={hasProgressChanged ? "#fff" : "#fff"}
                     />
-                  </View>
+                  </LinearGradient>
                 </TouchableOpacity>
               </View>
 
@@ -348,182 +357,210 @@ const GoalDetailModal: React.FC<GoalDetailModalProps> = ({
                       )}
                     </View>
 
-                    {renderProgressSection()}
+                    <KeyboardAvoidingView
+                      behavior={Platform.OS === "ios" ? "padding" : "height"}
+                      style={styles.keyboardAvoidingView}
+                      enabled={isInputFocused}
+                    >
+                      {renderProgressSection()}
+                    </KeyboardAvoidingView>
                   </>
                 )}
 
                 {isEditing && (
-                  <View style={styles.editSection}>
-                    <View style={styles.editNameRow}>
-                      <Text style={styles.editLabel}>Goal Name</Text>
-                      <TextInput
-                        style={styles.editNameInput}
-                        value={editedGoal.label}
-                        onChangeText={(text) =>
-                          setEditedGoal({
-                            ...editedGoal,
-                            label: text,
-                          })
-                        }
-                        placeholder="Goal name"
-                        placeholderTextColor="#666"
-                      />
-                    </View>
+                  <KeyboardAvoidingView
+                    behavior={Platform.OS === "ios" ? "padding" : "height"}
+                    style={styles.keyboardAvoidingView}
+                    enabled={isInputFocused}
+                  >
+                    <View style={styles.editSection}>
+                      <View style={styles.editNameRow}>
+                        <Text style={styles.editLabel}>Goal Name</Text>
+                        <TextInput
+                          style={styles.editNameInput}
+                          value={editedGoal.label}
+                          onChangeText={(text) =>
+                            setEditedGoal({
+                              ...editedGoal,
+                              label: text,
+                            })
+                          }
+                          onFocus={() => setIsInputFocused(true)}
+                          onBlur={() => setIsInputFocused(false)}
+                          placeholder="Goal name"
+                          placeholderTextColor="#666"
+                        />
+                      </View>
 
-                    <View style={styles.editRow}>
-                      <View style={styles.editField}>
-                        <Text style={styles.editLabel}>Target Amount</Text>
-                        <View style={styles.editAmountContainer}>
-                          <Text style={styles.currencySymbol}>$</Text>
-                          <TextInput
-                            style={styles.amountInput}
-                            value={String(editedGoal.target_amount || 0)}
-                            onChangeText={(text) =>
-                              setEditedGoal({
-                                ...editedGoal,
-                                target_amount: parseFloat(text) || 0,
-                              })
-                            }
-                            keyboardType="numeric"
-                            placeholder="0"
-                            placeholderTextColor="#666"
-                          />
+                      <View style={styles.editRow}>
+                        <View style={styles.editField}>
+                          <Text style={styles.editLabel}>Target Amount</Text>
+                          <View style={styles.editAmountContainer}>
+                            <Text style={styles.currencySymbol}>$</Text>
+                            <TextInput
+                              style={styles.amountInput}
+                              value={String(editedGoal.target_amount || 0)}
+                              onChangeText={(text) =>
+                                setEditedGoal({
+                                  ...editedGoal,
+                                  target_amount: parseFloat(text) || 0,
+                                })
+                              }
+                              onFocus={() => setIsInputFocused(true)}
+                              onBlur={() => setIsInputFocused(false)}
+                              keyboardType="numeric"
+                              placeholder="0"
+                              placeholderTextColor="#666"
+                            />
+                          </View>
+                        </View>
+
+                        <View style={styles.editField}>
+                          <Text style={styles.editLabel}>Category</Text>
+                          <TouchableOpacity
+                            style={styles.editCategoryButton}
+                            onPress={() => setShowCategoryPicker(true)}
+                          >
+                            <View style={styles.editCategoryContent}>
+                              <Text style={styles.editCategoryEmoji}>
+                                {getCategoryOptions().find(
+                                  (c) => c.value === editedGoal.category
+                                )?.emoji || "🎯"}
+                              </Text>
+                              <Text style={styles.editCategoryText}>
+                                {getCategoryDisplayName(editedGoal.category)}
+                              </Text>
+                            </View>
+                            <Ionicons
+                              name="chevron-down"
+                              size={16}
+                              color="#888"
+                            />
+                          </TouchableOpacity>
                         </View>
                       </View>
 
-                      <View style={styles.editField}>
-                        <Text style={styles.editLabel}>Category</Text>
+                      <View style={styles.editDateRow}>
+                        <Text style={styles.editLabel}>Target Date</Text>
                         <TouchableOpacity
-                          style={styles.editCategoryButton}
-                          onPress={() => setShowCategoryPicker(true)}
+                          style={styles.editDateButton}
+                          onPress={() => setShowDatePicker(true)}
                         >
-                          <View style={styles.editCategoryContent}>
-                            <Text style={styles.editCategoryEmoji}>
-                              {getCategoryOptions().find(
-                                (c) => c.value === editedGoal.category
-                              )?.emoji || "🎯"}
-                            </Text>
-                            <Text style={styles.editCategoryText}>
-                              {getCategoryDisplayName(editedGoal.category)}
-                            </Text>
-                          </View>
-                          <Ionicons
-                            name="chevron-down"
-                            size={16}
-                            color="#888"
-                          />
+                          <Text style={styles.editDateText}>
+                            {selectedDate.toLocaleDateString("en-US", {
+                              month: "short",
+                              day: "numeric",
+                              year: "numeric",
+                            })}
+                          </Text>
+                          <Ionicons name="calendar" size={16} color="#4A90E2" />
                         </TouchableOpacity>
                       </View>
-                    </View>
 
-                    <View style={styles.editDateRow}>
-                      <Text style={styles.editLabel}>Target Date</Text>
-                      <TouchableOpacity
-                        style={styles.editDateButton}
-                        onPress={() => setShowDatePicker(true)}
-                      >
-                        <Text style={styles.editDateText}>
-                          {selectedDate.toLocaleDateString("en-US", {
-                            month: "short",
-                            day: "numeric",
-                            year: "numeric",
-                          })}
-                        </Text>
-                        <Ionicons name="calendar" size={16} color="#4A90E2" />
-                      </TouchableOpacity>
-                    </View>
-
-                    {/* Note editing section */}
-                    {!showNoteField ? (
-                      <TouchableOpacity
-                        style={styles.addNoteButton}
-                        onPress={() => setShowNoteField(true)}
-                        activeOpacity={0.7}
-                      >
-                        <Ionicons
-                          name="add-circle-outline"
-                          size={18}
-                          color="#4A90E2"
-                        />
-                        <Text style={styles.addNoteText}>Add note</Text>
-                      </TouchableOpacity>
-                    ) : (
-                      <Animated.View
-                        style={[
-                          styles.editNoteSection,
-                          {
-                            maxHeight: noteHeightAnimation.interpolate({
-                              inputRange: [0, 1],
-                              outputRange: [0, 200], // Adjust based on content height
-                            }),
-                            overflow: "hidden", // Ensure content clips during animation
-                          },
-                        ]}
-                      >
-                        <Animated.View
-                          style={{
-                            opacity: noteAnimation,
-                            transform: [
-                              {
-                                translateY: noteAnimation.interpolate({
-                                  inputRange: [0, 1],
-                                  outputRange: [-10, 0],
-                                }),
-                              },
-                            ],
-                          }}
+                      {/* Note editing section */}
+                      {!showNoteField ? (
+                        <TouchableOpacity
+                          style={styles.addNoteButtonContainer}
+                          onPress={() => setShowNoteField(true)}
+                          activeOpacity={0.7}
                         >
-                          <View style={styles.noteHeader}>
-                            <Text style={styles.editLabel}>
-                              Note (Optional)
-                            </Text>
-                            <TouchableOpacity
-                              onPress={() => {
-                                setShowNoteField(false);
-                                setEditedGoal((prev) =>
-                                  prev ? { ...prev, note: undefined } : null
-                                );
-                              }}
-                              style={styles.removeNoteButton}
-                            >
-                              <Ionicons
-                                name="close-circle"
-                                size={16}
-                                color="#888"
-                              />
-                            </TouchableOpacity>
-                          </View>
+                          <LinearGradient
+                            colors={[
+                              "rgba(74, 144, 226, 0.15)",
+                              "rgba(74, 144, 226, 0.05)",
+                            ]}
+                            style={styles.addNoteButton}
+                            start={{ x: 0, y: 0 }}
+                            end={{ x: 1, y: 1 }}
+                          >
+                            <Ionicons
+                              name="add-circle-outline"
+                              size={18}
+                              color="#4A90E2"
+                            />
+                            <Text style={styles.addNoteText}>Add note</Text>
+                          </LinearGradient>
+                        </TouchableOpacity>
+                      ) : (
+                        <Animated.View
+                          style={[
+                            styles.editNoteSection,
+                            {
+                              maxHeight: noteHeightAnimation.interpolate({
+                                inputRange: [0, 1],
+                                outputRange: [0, 200], // Adjust based on content height
+                              }),
+                              overflow: "hidden", // Ensure content clips during animation
+                            },
+                          ]}
+                        >
                           <Animated.View
                             style={{
+                              opacity: noteAnimation,
                               transform: [
                                 {
-                                  scale: noteAnimation.interpolate({
+                                  translateY: noteAnimation.interpolate({
                                     inputRange: [0, 1],
-                                    outputRange: [0.95, 1],
+                                    outputRange: [-10, 0],
                                   }),
                                 },
                               ],
                             }}
                           >
-                            <TextInput
-                              style={styles.editNoteInput}
-                              value={editedGoal?.note || ""}
-                              onChangeText={(text) =>
-                                setEditedGoal((prev) =>
-                                  prev ? { ...prev, note: text } : null
-                                )
-                              }
-                              placeholder="Add a note about this goal..."
-                              placeholderTextColor="#666"
-                              multiline
-                              textAlignVertical="top"
-                              maxLength={200}
-                            />
+                            <View style={styles.noteHeader}>
+                              <Text style={styles.editLabel}>
+                                Note (Optional)
+                              </Text>
+                              <TouchableOpacity
+                                onPress={() => {
+                                  setShowNoteField(false);
+                                  setEditedGoal((prev) =>
+                                    prev ? { ...prev, note: undefined } : null
+                                  );
+                                }}
+                                style={styles.removeNoteButton}
+                              >
+                                <Ionicons
+                                  name="close-circle"
+                                  size={16}
+                                  color="#888"
+                                />
+                              </TouchableOpacity>
+                            </View>
+                            <Animated.View
+                              style={{
+                                transform: [
+                                  {
+                                    scale: noteAnimation.interpolate({
+                                      inputRange: [0, 1],
+                                      outputRange: [0.95, 1],
+                                    }),
+                                  },
+                                ],
+                              }}
+                            >
+                              <TextInput
+                                style={styles.editNoteInput}
+                                value={editedGoal?.note || ""}
+                                onChangeText={(text) =>
+                                  setEditedGoal((prev) =>
+                                    prev ? { ...prev, note: text } : null
+                                  )
+                                }
+                                onFocus={() => setIsInputFocused(true)}
+                                onBlur={() => setIsInputFocused(false)}
+                                placeholder="Add a note about this goal..."
+                                placeholderTextColor="#666"
+                                multiline
+                                textAlignVertical="top"
+                                maxLength={200}
+                              />
+                            </Animated.View>
                           </Animated.View>
                         </Animated.View>
-                      </Animated.View>
-                    )}
-                  </View>
+                      )}
+                    </View>
+                  </KeyboardAvoidingView>
                 )}
               </ScrollView>
 
@@ -531,20 +568,36 @@ const GoalDetailModal: React.FC<GoalDetailModalProps> = ({
               {!isEditing ? (
                 <View style={styles.bottomButtonRow}>
                   <TouchableOpacity
-                    style={styles.bottomEditButton}
+                    style={[
+                      styles.bottomButtonContainer,
+                      styles.bottomEditButtonContainer,
+                    ]}
                     onPress={() => setIsEditing(true)}
                     activeOpacity={0.7}
                   >
-                    <Ionicons name="pencil" size={19} color="#4A90E2" />
-                    <Text
-                      style={[styles.bottomButtonText, { color: "#4A90E2" }]}
+                    <LinearGradient
+                      colors={[
+                        "rgba(74, 144, 226, 0.15)",
+                        "rgba(74, 144, 226, 0.05)",
+                      ]}
+                      style={styles.bottomEditButton}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
                     >
-                      Edit Goal
-                    </Text>
+                      <Ionicons name="pencil" size={19} color="#4A90E2" />
+                      <Text
+                        style={[styles.bottomButtonText, { color: "#4A90E2" }]}
+                      >
+                        Edit Goal
+                      </Text>
+                    </LinearGradient>
                   </TouchableOpacity>
 
                   <TouchableOpacity
-                    style={styles.bottomDeleteButton}
+                    style={[
+                      styles.bottomButtonContainer,
+                      styles.bottomDeleteButtonContainer,
+                    ]}
                     onPress={() => {
                       Alert.alert(
                         "Delete Goal",
@@ -564,13 +617,26 @@ const GoalDetailModal: React.FC<GoalDetailModalProps> = ({
                     }}
                     activeOpacity={0.7}
                   >
-                    <Ionicons name="trash-sharp" size={19} color="#FF3B30" />
+                    <LinearGradient
+                      colors={[
+                        "rgba(255, 59, 48, 0.15)",
+                        "rgba(255, 59, 48, 0.05)",
+                      ]}
+                      style={styles.bottomDeleteButton}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                    >
+                      <Ionicons name="trash-sharp" size={19} color="#FF3B30" />
+                    </LinearGradient>
                   </TouchableOpacity>
                 </View>
               ) : (
                 <View style={styles.bottomButtonRow}>
                   <TouchableOpacity
-                    style={styles.bottomCancelButton}
+                    style={[
+                      styles.bottomButtonContainer,
+                      styles.bottomCancelButtonContainer,
+                    ]}
                     onPress={() => {
                       setIsEditing(false);
                       setEditedGoal(goal);
@@ -580,29 +646,52 @@ const GoalDetailModal: React.FC<GoalDetailModalProps> = ({
                     }}
                     activeOpacity={0.7}
                   >
-                    <Ionicons name="close-circle" size={16} color="#8E8E93" />
-                    <Text
-                      style={[styles.bottomButtonText, { color: "#8E8E93" }]}
+                    <LinearGradient
+                      colors={[
+                        "rgba(142, 142, 147, 0.15)",
+                        "rgba(142, 142, 147, 0.05)",
+                      ]}
+                      style={styles.bottomCancelButton}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
                     >
-                      Cancel
-                    </Text>
+                      <Ionicons name="close-circle" size={16} color="#fff" />
+                      <Text
+                        style={[styles.bottomButtonText, { color: "#fff" }]}
+                      >
+                        Cancel
+                      </Text>
+                    </LinearGradient>
                   </TouchableOpacity>
 
                   <TouchableOpacity
-                    style={styles.bottomSaveButton}
+                    style={[
+                      styles.bottomButtonContainer,
+                      styles.bottomSaveButtonContainer,
+                    ]}
                     onPress={handleSave}
                     activeOpacity={0.7}
                   >
-                    <Ionicons
-                      name="checkmark-circle"
-                      size={16}
-                      color="#32D74B"
-                    />
-                    <Text
-                      style={[styles.bottomButtonText, { color: "#32D74B" }]}
+                    <LinearGradient
+                      colors={[
+                        "rgba(50, 215, 75, 0.15)",
+                        "rgba(50, 215, 75, 0.05)",
+                      ]}
+                      style={styles.bottomSaveButton}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
                     >
-                      Save Changes
-                    </Text>
+                      <Ionicons
+                        name="checkmark-circle"
+                        size={16}
+                        color="#fff"
+                      />
+                      <Text
+                        style={[styles.bottomButtonText, { color: "#fff" }]}
+                      >
+                        Save Changes
+                      </Text>
+                    </LinearGradient>
                   </TouchableOpacity>
                 </View>
               )}
@@ -626,9 +715,19 @@ const GoalDetailModal: React.FC<GoalDetailModalProps> = ({
                             <TouchableOpacity
                               onPress={() => setShowDatePicker(false)}
                             >
-                              <Text style={styles.datePickerCancel}>
-                                Cancel
-                              </Text>
+                              <LinearGradient
+                                colors={[
+                                  "rgba(255, 255, 255, 0.12)",
+                                  "rgba(255, 255, 255, 0.03)",
+                                ]}
+                                style={styles.datePickerButton}
+                                start={{ x: 0, y: 0 }}
+                                end={{ x: 1, y: 1 }}
+                              >
+                                <Text style={styles.datePickerCancel}>
+                                  Cancel
+                                </Text>
+                              </LinearGradient>
                             </TouchableOpacity>
                             <Text style={styles.datePickerTitle}>
                               Select Date
@@ -636,7 +735,17 @@ const GoalDetailModal: React.FC<GoalDetailModalProps> = ({
                             <TouchableOpacity
                               onPress={() => setShowDatePicker(false)}
                             >
-                              <Text style={styles.datePickerDone}>Done</Text>
+                              <LinearGradient
+                                colors={[
+                                  "rgba(74, 144, 226, 0.8)",
+                                  "rgba(74, 144, 226, 0.6)",
+                                ]}
+                                style={styles.datePickerButton}
+                                start={{ x: 0, y: 0 }}
+                                end={{ x: 1, y: 1 }}
+                              >
+                                <Text style={styles.datePickerDone}>Done</Text>
+                              </LinearGradient>
                             </TouchableOpacity>
                           </View>
                           <View style={styles.datePickerContent}>
@@ -752,14 +861,15 @@ const styles = StyleSheet.create({
   content: {
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    minHeight: "50%",
-    maxHeight: "75%",
+    minHeight: SCREEN_HEIGHT * 0.5,
+    maxHeight: SCREEN_HEIGHT * 0.85,
+    width: SCREEN_WIDTH,
   },
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 20,
+    paddingHorizontal: Math.max(20, SCREEN_WIDTH * 0.05),
     paddingTop: 16,
     paddingBottom: 8,
     borderBottomWidth: 1,
@@ -772,12 +882,12 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: "rgba(255, 255, 255, 0.08)",
     alignItems: "center",
     justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.2)",
   },
   closeButtonCircleUpdated: {
-    backgroundColor: "rgba(17, 18, 17, 0.15)",
     borderWidth: 1,
     borderColor: "rgba(50, 215, 75, 0.3)",
   },
@@ -786,7 +896,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   headerTitle: {
-    fontSize: 20,
+    fontSize: Math.max(18, SCREEN_WIDTH * 0.05),
     fontWeight: "600",
     color: "#fff",
     textAlign: "center",
@@ -814,55 +924,63 @@ const styles = StyleSheet.create({
   },
   bottomButtonRow: {
     flexDirection: "row",
-    marginHorizontal: 20,
-    marginBottom: 20,
+    marginHorizontal: Math.max(20, SCREEN_WIDTH * 0.05),
+    marginBottom: Math.max(20, SCREEN_HEIGHT * 0.025),
     marginTop: 5,
     gap: 12,
   },
-  bottomEditButton: {
+  bottomButtonContainer: {
+    borderRadius: 12,
+    overflow: "hidden",
+  },
+  bottomEditButtonContainer: {
     flex: 0.83,
+  },
+  bottomDeleteButtonContainer: {
+    flex: 0.17,
+  },
+  bottomCancelButtonContainer: {
+    flex: 0.4,
+  },
+  bottomSaveButtonContainer: {
+    flex: 0.6,
+  },
+  bottomEditButton: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     paddingVertical: 16,
-    backgroundColor: "rgba(74, 144, 226, 0.08)",
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: "rgba(74, 144, 226, 0.2)",
+    borderColor: "rgba(74, 144, 226, 0.3)",
     gap: 8,
   },
   bottomDeleteButton: {
-    flex: 0.17,
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 12,
-    backgroundColor: "rgba(255, 59, 48, 0.08)",
+    paddingVertical: 16,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: "rgba(255, 59, 48, 0.2)",
+    borderColor: "rgba(255, 59, 48, 0.3)",
   },
   bottomCancelButton: {
-    flex: 0.4,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     paddingVertical: 16,
-    backgroundColor: "rgba(142, 142, 147, 0.08)",
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: "rgba(142, 142, 147, 0.2)",
+    borderColor: "rgba(142, 142, 147, 0.3)",
     gap: 8,
   },
   bottomSaveButton: {
-    flex: 0.6,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     paddingVertical: 16,
-    backgroundColor: "rgba(50, 215, 75, 0.08)",
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: "rgba(50, 215, 75, 0.2)",
+    borderColor: "rgba(50, 215, 75, 0.3)",
     gap: 8,
   },
   bottomButtonText: {
@@ -870,7 +988,10 @@ const styles = StyleSheet.create({
     fontWeight: "500",
   },
   scrollContent: {
-    padding: 20,
+    padding: Math.max(20, SCREEN_WIDTH * 0.05),
+  },
+  keyboardAvoidingView: {
+    flex: 0,
   },
   goalTitleSection: {
     marginBottom: 24,
@@ -1092,7 +1213,7 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   targetAmountMain: {
-    fontSize: 24,
+    fontSize: Math.max(20, SCREEN_WIDTH * 0.06),
     color: "#fff",
     fontWeight: "700",
   },
@@ -1133,7 +1254,7 @@ const styles = StyleSheet.create({
   editSection: {
     backgroundColor: "rgba(255,255,255,0.05)",
     borderRadius: 16,
-    padding: 20,
+    padding: Math.max(20, SCREEN_WIDTH * 0.05),
     marginBottom: 0,
   },
   editNameRow: {
@@ -1150,7 +1271,7 @@ const styles = StyleSheet.create({
     borderColor: "rgba(255,255,255,0.1)",
   },
   editRow: {
-    flexDirection: "row",
+    flexDirection: SCREEN_WIDTH < 400 ? "column" : "row",
     gap: 16,
     marginBottom: 20,
   },
@@ -1209,19 +1330,22 @@ const styles = StyleSheet.create({
     fontWeight: "500",
   },
   // Note editing styles
+  addNoteButtonContainer: {
+    marginTop: 12,
+    marginBottom: 8,
+    borderRadius: 40,
+    overflow: "hidden",
+    alignSelf: "flex-start",
+  },
   addNoteButton: {
     flexDirection: "row",
     alignItems: "center",
     paddingVertical: 8,
     paddingHorizontal: 16,
-    marginTop: 12,
-    marginBottom: 8,
-    backgroundColor: "rgba(74, 144, 226, 0.1)",
     borderRadius: 40,
     borderWidth: 1,
-    borderColor: "rgba(74, 144, 226, 0.2)",
+    borderColor: "rgba(74, 144, 226, 0.3)",
     gap: 8,
-    alignSelf: "flex-start",
   },
   addNoteText: {
     color: "#4A90E2",
@@ -1270,8 +1394,8 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     justifyContent: "center",
     alignItems: "flex-start",
-    gap: 10,
-    paddingHorizontal: 20,
+    gap: Math.max(8, SCREEN_WIDTH * 0.02),
+    paddingHorizontal: Math.max(20, SCREEN_WIDTH * 0.05),
   },
   categoryGridItem: {
     borderRadius: 14,
@@ -1280,8 +1404,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     alignItems: "center",
     justifyContent: "center",
-    minWidth: 80,
-    maxWidth: 200,
+    minWidth: Math.max(80, SCREEN_WIDTH * 0.2),
+    maxWidth: Math.max(200, SCREEN_WIDTH * 0.45),
     shadowColor: "#000",
     shadowOpacity: 0.08,
     shadowRadius: 3,
@@ -1342,18 +1466,22 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: "#fff",
   },
+  datePickerButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.2)",
+  },
   datePickerCancel: {
     fontSize: 16,
-    color: "#888",
-    paddingVertical: 4,
-    paddingHorizontal: 8,
+    color: "#fff",
+    fontWeight: "500",
   },
   datePickerDone: {
     fontSize: 16,
-    color: "#4A90E2",
+    color: "#fff",
     fontWeight: "600",
-    paddingVertical: 4,
-    paddingHorizontal: 8,
   },
   datePickerSpinner: {
     width: "100%",

@@ -206,9 +206,17 @@ export default function AddGoalModal({
                       onPress={onClose}
                       style={styles.closeButton}
                     >
-                      <View style={styles.closeButtonCircle}>
-                        <Ionicons name="close" size={18} color="#888" />
-                      </View>
+                      <LinearGradient
+                        colors={[
+                          "rgba(255, 255, 255, 0.15)",
+                          "rgba(255, 255, 255, 0.05)",
+                        ]}
+                        style={styles.closeButtonCircle}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                      >
+                        <Ionicons name="close" size={18} color="#fff" />
+                      </LinearGradient>
                     </TouchableOpacity>
                   </View>
 
@@ -390,12 +398,22 @@ export default function AddGoalModal({
                         onPress={() => setShowNoteField(true)}
                         activeOpacity={0.7}
                       >
-                        <Ionicons
-                          name="add-circle-outline"
-                          size={18}
-                          color="#4A90E2"
-                        />
-                        <Text style={styles.addNoteText}>Add note</Text>
+                        <LinearGradient
+                          colors={[
+                            "rgba(74, 144, 226, 0.15)",
+                            "rgba(74, 144, 226, 0.05)",
+                          ]}
+                          style={styles.addNoteButtonGradient}
+                          start={{ x: 0, y: 0 }}
+                          end={{ x: 1, y: 1 }}
+                        >
+                          <Ionicons
+                            name="add-circle-outline"
+                            size={18}
+                            color="#4A90E2"
+                          />
+                          <Text style={styles.addNoteText}>Add note</Text>
+                        </LinearGradient>
                       </TouchableOpacity>
                     ) : (
                       <Animated.View
@@ -491,18 +509,35 @@ export default function AddGoalModal({
                     )}
 
                     <View style={styles.actionButtons}>
-                      <TouchableOpacity
-                        style={[styles.button, styles.cancelButton]}
-                        onPress={onClose}
-                      >
-                        <Text style={styles.buttonText}>Cancel</Text>
+                      <TouchableOpacity style={styles.button} onPress={onClose}>
+                        <LinearGradient
+                          colors={[
+                            "rgba(255, 255, 255, 0.12)",
+                            "rgba(255, 255, 255, 0.03)",
+                          ]}
+                          style={styles.glassButton}
+                          start={{ x: 0, y: 0 }}
+                          end={{ x: 1, y: 1 }}
+                        >
+                          <Text style={styles.buttonText}>Cancel</Text>
+                        </LinearGradient>
                       </TouchableOpacity>
 
                       <TouchableOpacity
-                        style={[styles.button, styles.saveButton]}
+                        style={styles.button}
                         onPress={handleSave}
                       >
-                        <Text style={styles.buttonText}>Set Goal</Text>
+                        <LinearGradient
+                          colors={[
+                            "rgba(74, 144, 226, 0.8)",
+                            "rgba(74, 144, 226, 0.6)",
+                          ]}
+                          style={styles.glassButton}
+                          start={{ x: 0, y: 0 }}
+                          end={{ x: 1, y: 1 }}
+                        >
+                          <Text style={styles.buttonText}>Set Goal</Text>
+                        </LinearGradient>
                       </TouchableOpacity>
                     </View>
                   </ScrollView>
@@ -526,9 +561,19 @@ export default function AddGoalModal({
                                 <TouchableOpacity
                                   onPress={() => setShowDatePicker(false)}
                                 >
-                                  <Text style={styles.datePickerCancel}>
-                                    Cancel
-                                  </Text>
+                                  <LinearGradient
+                                    colors={[
+                                      "rgba(255, 255, 255, 0.12)",
+                                      "rgba(255, 255, 255, 0.03)",
+                                    ]}
+                                    style={styles.datePickerButton}
+                                    start={{ x: 0, y: 0 }}
+                                    end={{ x: 1, y: 1 }}
+                                  >
+                                    <Text style={styles.datePickerCancel}>
+                                      Cancel
+                                    </Text>
+                                  </LinearGradient>
                                 </TouchableOpacity>
                                 <Text style={styles.datePickerTitle}>
                                   Select Date
@@ -536,9 +581,19 @@ export default function AddGoalModal({
                                 <TouchableOpacity
                                   onPress={() => setShowDatePicker(false)}
                                 >
-                                  <Text style={styles.datePickerDone}>
-                                    Done
-                                  </Text>
+                                  <LinearGradient
+                                    colors={[
+                                      "rgba(74, 144, 226, 0.8)",
+                                      "rgba(74, 144, 226, 0.6)",
+                                    ]}
+                                    style={styles.datePickerButton}
+                                    start={{ x: 0, y: 0 }}
+                                    end={{ x: 1, y: 1 }}
+                                  >
+                                    <Text style={styles.datePickerDone}>
+                                      Done
+                                    </Text>
+                                  </LinearGradient>
                                 </TouchableOpacity>
                               </View>
                               <View style={styles.datePickerContent}>
@@ -705,9 +760,10 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: "rgba(255, 255, 255, 0.08)",
     alignItems: "center",
     justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.2)",
   },
   headerTextContainer: {
     flex: 1,
@@ -810,18 +866,16 @@ const styles = StyleSheet.create({
   },
   button: {
     flex: 1,
+    borderRadius: 12,
+    overflow: "hidden",
+  },
+  glassButton: {
     alignItems: "center",
     justifyContent: "center",
     padding: 14,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.1)",
-  },
-  saveButton: {
-    backgroundColor: "#4A90E2",
-  },
-  cancelButton: {
-    backgroundColor: "rgba(255,255,255,0.05)",
+    borderColor: "rgba(255,255,255,0.2)",
   },
   buttonText: {
     color: "#fff",
@@ -949,17 +1003,20 @@ const styles = StyleSheet.create({
   },
   // Note expander styles
   addNoteButton: {
+    marginBottom: 20,
+    borderRadius: 40,
+    overflow: "hidden",
+    width: Dimensions.get("window").width * 0.3,
+  },
+  addNoteButtonGradient: {
     flexDirection: "row",
     alignItems: "center",
     paddingVertical: 6,
     paddingHorizontal: 16,
-    marginBottom: 20,
-    backgroundColor: "rgba(74, 144, 226, 0.1)",
     borderRadius: 40,
     borderWidth: 1,
-    borderColor: "rgba(74, 144, 226, 0.2)",
+    borderColor: "rgba(74, 144, 226, 0.3)",
     gap: 8,
-    width: Dimensions.get("window").width * 0.3,
   },
   addNoteText: {
     fontSize: 14,
@@ -1090,18 +1147,22 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: "#fff",
   },
+  datePickerButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.2)",
+  },
   datePickerCancel: {
     fontSize: 16,
-    color: "#888",
-    paddingVertical: 4,
-    paddingHorizontal: 8,
+    color: "#fff",
+    fontWeight: "500",
   },
   datePickerDone: {
     fontSize: 16,
-    color: "#4A90E2",
+    color: "#fff",
     fontWeight: "600",
-    paddingVertical: 4,
-    paddingHorizontal: 8,
   },
   datePickerSpinner: {
     width: "100%",

@@ -5,8 +5,9 @@ import {
   ScrollView,
   TouchableOpacity,
   Platform,
-  SafeAreaView,
+  Image,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { supabase } from "../_lib/supabase/supabase";
@@ -54,6 +55,12 @@ interface ConnectionRow {
   account_name: string;
   last_synced_at: string | null;
 }
+
+// Helper function to get company logo URL
+const getCompanyLogoUrl = (symbol: string): string => {
+  // Using img.logo.dev API for reliable company logos
+  return `https://img.logo.dev/ticker/${symbol.toUpperCase()}?token=pk_VDL82EqXQlGEUFN2v4q7Vg&retina=true`;
+};
 
 export default function InvestmentsScreen() {
   const router = useRouter();
@@ -232,7 +239,19 @@ export default function InvestmentsScreen() {
           {holdings.slice(0, 8).map((h, idx) => (
             <View key={idx} style={styles.holdingCard}>
               <View style={styles.holdingHeader}>
-                <Text style={styles.holdingSymbol}>{h.symbol}</Text>
+                <View style={styles.holdingSymbolContainer}>
+                  <Image
+                    source={{ uri: getCompanyLogoUrl(h.symbol) }}
+                    style={styles.companyLogo}
+                    defaultSource={require("../assets/icon.png")}
+                  />
+                  <View style={styles.holdingSymbolInfo}>
+                    <Text style={styles.holdingSymbol}>{h.symbol}</Text>
+                    <Text style={styles.holdingDescription}>
+                      {h.description}
+                    </Text>
+                  </View>
+                </View>
                 <Text style={styles.holdingValue}>
                   $
                   {h.market_value?.toLocaleString("en-US", {
@@ -241,7 +260,6 @@ export default function InvestmentsScreen() {
                   }) || "0.00"}
                 </Text>
               </View>
-              <Text style={styles.holdingDescription}>{h.description}</Text>
               <View style={styles.holdingDetails}>
                 <View style={styles.holdingDetail}>
                   <Text style={styles.holdingDetailLabel}>Shares</Text>

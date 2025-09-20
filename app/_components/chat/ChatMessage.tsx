@@ -8,6 +8,7 @@ import {
   UIManager,
   Animated,
   Easing,
+  Dimensions,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { splitIntoMessages } from "../../_hooks/useChat";
@@ -19,6 +20,25 @@ if (Platform.OS === "android") {
     UIManager.setLayoutAnimationEnabledExperimental(true);
   }
 }
+
+// Responsive calculations
+const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
+const isSmallScreen = screenWidth < 375;
+const isMediumScreen = screenWidth >= 375 && screenWidth < 414;
+const isLargeScreen = screenWidth >= 414;
+
+const responsiveWidth = (percentage: number) =>
+  screenWidth * (percentage / 100);
+const responsiveFontSize = (baseSize: number) => {
+  if (isSmallScreen) return baseSize * 0.9;
+  if (isLargeScreen) return baseSize * 1.1;
+  return baseSize;
+};
+const responsivePadding = (basePadding: number) => {
+  if (isSmallScreen) return basePadding * 0.8;
+  if (isLargeScreen) return basePadding * 1.2;
+  return basePadding;
+};
 
 interface ChatMessageProps {
   message: {
@@ -155,14 +175,20 @@ export const ChatMessageComponent = ({
           }}
         >
           {message.actions.map((btn, idx) => (
-            <View key={btn.action} style={{ marginBottom: 12, width: "60%" }}>
+            <View
+              key={btn.action}
+              style={{
+                marginBottom: responsivePadding(12),
+                width: isSmallScreen ? "65%" : "60%",
+              }}
+            >
               <Animated.View style={{ opacity: fadeAnim, width: "100%" }}>
                 <View
                   style={{
-                    paddingHorizontal: 14,
-                    paddingVertical: 10,
+                    paddingHorizontal: responsivePadding(14),
+                    paddingVertical: responsivePadding(10),
                     borderRadius: 11,
-                    marginRight: 8,
+                    marginRight: responsivePadding(8),
                     flexDirection: "row",
                     alignItems: "center",
                     shadowColor: "#000",
@@ -186,7 +212,7 @@ export const ChatMessageComponent = ({
                       }
                     }}
                     style={{
-                      fontSize: 13,
+                      fontSize: responsiveFontSize(13),
                       fontWeight: "600",
                       color: "#FFFFFF",
                       letterSpacing: 0.2,
@@ -281,20 +307,20 @@ export const ChatMessageComponent = ({
 
 const styles = StyleSheet.create({
   messageContainer: {
-    maxWidth: "90%",
-    marginVertical: 2,
+    maxWidth: isSmallScreen ? "95%" : "90%",
+    marginVertical: responsivePadding(2),
   },
   userMessageContainer: {
     alignSelf: "flex-end",
-    marginRight: 16,
-    marginLeft: 60,
-    marginTop: 16,
+    marginRight: responsivePadding(16),
+    marginLeft: responsiveWidth(15),
+    marginTop: responsivePadding(16),
   },
   userMessageBubble: {
     borderRadius: 12,
     borderTopRightRadius: 3,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingHorizontal: responsivePadding(12),
+    paddingVertical: responsivePadding(8),
     shadowColor: "#000",
     shadowOffset: {
       width: 0,
@@ -307,16 +333,16 @@ const styles = StyleSheet.create({
   finnyMessageRow: {
     flexDirection: "row",
     alignItems: "flex-start",
-    marginBottom: 2,
+    marginBottom: responsivePadding(2),
   },
   finnyMessageContainer: {
     flex: 1,
-    marginLeft: 12,
-    marginRight: 60,
+    marginLeft: responsivePadding(12),
+    marginRight: responsiveWidth(15),
   },
   finnyMessageBubble: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingHorizontal: responsivePadding(12),
+    paddingVertical: responsivePadding(8),
     shadowColor: "#000",
     shadowOffset: {
       width: 0,
@@ -325,13 +351,13 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 2,
     elevation: 2,
-    marginBottom: 5,
+    marginBottom: responsivePadding(5),
     borderRadius: 12,
     borderBottomLeftRadius: 1,
   },
   messageText: {
-    fontSize: 16,
-    lineHeight: 20,
+    fontSize: responsiveFontSize(16),
+    lineHeight: responsiveFontSize(20),
     letterSpacing: -0.2,
     fontFamily: Platform.OS === "ios" ? "SF Pro Text" : "System",
   },
@@ -348,11 +374,11 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
   },
   senderNameContainer: {
-    marginLeft: 16,
-    marginBottom: 4,
+    marginLeft: responsivePadding(16),
+    marginBottom: responsivePadding(4),
   },
   senderName: {
-    fontSize: 13,
+    fontSize: responsiveFontSize(13),
     color: "#8E8E93",
     fontWeight: "500",
     letterSpacing: -0.1,

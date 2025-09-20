@@ -20,6 +20,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     paddingTop: 100,
+    backgroundColor: "red",
   },
   link: {
     marginTop: 15,

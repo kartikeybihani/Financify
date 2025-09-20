@@ -10,6 +10,7 @@ import {
   Alert,
   Platform,
   Animated,
+  KeyboardAvoidingView,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
@@ -170,7 +171,11 @@ export default function EditEmailModal({
 
   return (
     <Modal visible={visible} transparent animationType="slide">
-      <View style={styles.overlay}>
+      <KeyboardAvoidingView
+        style={styles.overlay}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
+      >
         <View style={styles.sheet}>
           <TouchableOpacity
             style={styles.closeIcon}
@@ -210,7 +215,7 @@ export default function EditEmailModal({
             </TouchableOpacity>
           </View>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -226,11 +231,13 @@ const styles = StyleSheet.create({
     width: "100%",
     maxWidth: 500,
     minHeight: 340,
-    backgroundColor: "#181C24",
+    backgroundColor: "rgba(24, 28, 36, 0.95)",
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     padding: 32,
     alignItems: "center",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.1)",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: -8 },
     shadowOpacity: 0.25,
@@ -243,6 +250,10 @@ const styles = StyleSheet.create({
     right: 18,
     zIndex: 2,
     padding: 4,
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.2)",
   },
   title: {
     fontSize: 22,
@@ -268,13 +279,22 @@ const styles = StyleSheet.create({
   },
   input: {
     width: "100%",
-    backgroundColor: "#23283A",
+    backgroundColor: "rgba(35, 40, 58, 0.8)",
     borderRadius: 12,
-    borderWidth: 0,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.1)",
     color: "#fff",
     fontSize: 16,
     padding: 16,
     marginBottom: 10,
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 2,
   },
   error: {
     color: "#ff4444",
@@ -297,12 +317,32 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   cancelButton: {
-    backgroundColor: "#23283A",
+    backgroundColor: "rgba(35, 40, 58, 0.8)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.1)",
     marginRight: 8,
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 2,
   },
   saveButton: {
-    backgroundColor: "#fff",
+    backgroundColor: "rgba(255, 255, 255, 0.9)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.2)",
     marginLeft: 8,
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 2,
   },
   cancelButtonText: {
     color: "#B4B4B4",

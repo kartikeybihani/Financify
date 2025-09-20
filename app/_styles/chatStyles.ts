@@ -1,28 +1,57 @@
-import { StyleSheet, Platform } from "react-native";
+import { StyleSheet, Platform, Dimensions } from "react-native";
+
+const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
+
+// Responsive breakpoints
+const isSmallScreen = screenWidth < 375;
+const isMediumScreen = screenWidth >= 375 && screenWidth < 414;
+const isLargeScreen = screenWidth >= 414;
+
+// Responsive calculations
+const responsiveWidth = (percentage: number) => screenWidth * (percentage / 100);
+const responsiveHeight = (percentage: number) => screenHeight * (percentage / 100);
+const responsiveFontSize = (baseSize: number) => {
+  if (isSmallScreen) return baseSize * 0.9;
+  if (isLargeScreen) return baseSize * 1.1;
+  return baseSize;
+};
+const responsivePadding = (basePadding: number) => {
+  if (isSmallScreen) return basePadding * 0.8;
+  if (isLargeScreen) return basePadding * 1.2;
+  return basePadding;
+};
+
+// Orientation-aware calculations
+const isLandscape = screenWidth > screenHeight;
+const responsiveOrientationPadding = (basePadding: number) => {
+  return isLandscape ? basePadding * 0.7 : basePadding;
+};
 
 export default StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: "#121212",
+    minHeight: screenHeight,
   },
   headerContainer: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 20,
-    paddingTop: 8,
-    paddingBottom: 16,
+    paddingHorizontal: responsivePadding(20),
+    paddingTop: Platform.OS === "ios" ? responsivePadding(8) : responsivePadding(12),
+    paddingBottom: responsivePadding(16),
     backgroundColor: "transparent",
     borderBottomWidth: 1,
     borderBottomColor: "rgba(74, 144, 226, 0.1)",
     position: 'relative',
+    minHeight: responsiveHeight(8),
   },
   headerGradient: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
-    height: Platform.OS === "ios" ? 100 : 120,
+    height: Platform.OS === "ios" ? responsiveHeight(12) : responsiveHeight(15),
     zIndex: -1,
   },
   titleContainer: {
@@ -31,15 +60,15 @@ export default StyleSheet.create({
     flex: 1,
   },
   mascotContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: responsiveWidth(12),
+    height: responsiveWidth(12),
+    borderRadius: responsiveWidth(6),
     backgroundColor: "rgba(255, 255, 255, 0.08)",
     padding: 2,
     borderWidth: 1.5,
     borderColor: "rgba(74, 144, 226, 0.3)",
     overflow: 'hidden',
-    marginRight: 12,
+    marginRight: responsivePadding(12),
     shadowColor: "#4A90E2",
     shadowOffset: {
       width: 0,
@@ -52,7 +81,7 @@ export default StyleSheet.create({
   mascotImage: {
     width: '100%',
     height: '100%',
-    borderRadius: 22,
+    borderRadius: responsiveWidth(5.5),
   },
   sparkleContainer: {
     position: 'absolute',
@@ -86,14 +115,14 @@ export default StyleSheet.create({
     flex: 1,
   },
   headerTitle: {
-    fontSize: 20,
+    fontSize: responsiveFontSize(20),
     fontWeight: "700",
     color: "#fff",
     letterSpacing: 0.5,
     marginBottom: 2,
   },
   headerSubtitle: {
-    fontSize: 13,
+    fontSize: responsiveFontSize(13),
     color: "rgba(255, 255, 255, 0.7)",
     letterSpacing: 0.3,
     fontWeight: "500",
@@ -103,10 +132,10 @@ export default StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: "rgba(255, 59, 48, 0.1)",
-    padding: 10,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    padding: responsivePadding(10),
+    width: responsiveWidth(10),
+    height: responsiveWidth(10),
+    borderRadius: responsiveWidth(5),
     borderWidth: 1,
     borderColor: "rgba(255, 59, 48, 0.25)",
     shadowColor: "#FF3B30",
@@ -130,11 +159,11 @@ export default StyleSheet.create({
     justifyContent: "space-around",
     backgroundColor: "#1c1c1c",
     borderRadius: 12,
-    marginHorizontal: 20,
-    marginBottom: 10,
+    marginHorizontal: responsivePadding(20),
+    marginBottom: responsivePadding(10),
   },
   tabButton: {
-    paddingVertical: 10,
+    paddingVertical: responsivePadding(10),
     flex: 1,
     alignItems: "center",
     borderRadius: 12,
@@ -144,7 +173,7 @@ export default StyleSheet.create({
   },
   tabText: {
     color: "#aaa",
-    fontSize: 14,
+    fontSize: responsiveFontSize(14),
   },
   activeText: {
     color: "#4A90E2",
@@ -156,18 +185,18 @@ export default StyleSheet.create({
   },
   chatContainer: {
     flex: 1,
-    paddingBottom: 100,
+    paddingBottom: responsiveHeight(12),
   },
   chatScroll: {
     flex: 1,
-    paddingHorizontal: 14,
-    paddingTop: 12,
+    paddingHorizontal: responsivePadding(14),
+    paddingTop: responsivePadding(12),
   },
   chatBubble: {
-    maxWidth: "80%",
-    padding: 12,
+    maxWidth: isSmallScreen ? "85%" : "80%",
+    padding: responsivePadding(12),
     borderRadius: 18,
-    marginVertical: 6,
+    marginVertical: responsivePadding(6),
     shadowColor: "#000",
     shadowOffset: {
       width: 0,
@@ -189,8 +218,8 @@ export default StyleSheet.create({
   },
   chatText: {
     color: "#fff",
-    fontSize: 15,
-    lineHeight: 22,
+    fontSize: responsiveFontSize(15),
+    lineHeight: responsiveFontSize(22),
     letterSpacing: 0.2,
   },
   chatMoney: {
@@ -200,16 +229,16 @@ export default StyleSheet.create({
   inputBar: {
     flexDirection: "row",
     alignItems: "center",
-    paddingLeft: 8,
-    paddingRight: 8,
+    paddingLeft: responsivePadding(8),
+    paddingRight: responsivePadding(8),
     backgroundColor: "#1f1f1f",
     borderRadius: 24,
-    paddingBottom: 8,
-    marginHorizontal: 10,
+    paddingBottom: responsivePadding(4),
+    marginHorizontal: responsivePadding(10),
     marginBottom: 0,
     borderWidth: 1.5,
     borderColor: "rgba(74, 144, 226, 0.25)",
-    paddingTop: 12,
+    paddingTop: responsivePadding(4),
     shadowColor: "#000",
     shadowOffset: {
       width: 0,
@@ -218,11 +247,11 @@ export default StyleSheet.create({
     shadowOpacity: 0.15,
     shadowRadius: 4,
     elevation: 4,
+    minHeight: responsiveHeight(6),
   },
   plusButton: {
-    
-    padding: 2,
-    marginRight: 4,
+    padding: responsivePadding(2),
+    marginRight: responsivePadding(4),
   },
   sendButton: {
     // backgroundColor: "#4A90E2",
@@ -235,20 +264,21 @@ export default StyleSheet.create({
   },
   input: {
     flex: 1,
-    fontSize: 14,
+    fontSize: responsiveFontSize(14),
     color: "#fff",
-    paddingVertical: 4,
-    marginHorizontal: 4,
+    paddingVertical: responsivePadding(4),
+    marginHorizontal: responsivePadding(4),
+    minHeight: responsiveHeight(4),
   },
   nudgeContainer: {
-    marginBottom: 16,
-    paddingHorizontal: 10,
+    marginBottom: responsivePadding(16),
+    paddingHorizontal: responsivePadding(10),
   },
   nudgeHeaderText: {
     color: "#888",
-    fontSize: 13,
-    marginBottom: 8,
-    marginLeft: 2,
+    fontSize: responsiveFontSize(13),
+    marginBottom: responsivePadding(8),
+    marginLeft: responsivePadding(2),
     fontWeight: "500",
     textAlign: "center",
   },
@@ -260,9 +290,9 @@ export default StyleSheet.create({
   nudgeBox: {
     backgroundColor: "#2a2a2a",
     borderRadius: 10,
-    padding: 6,
-    marginBottom: 8,
-    width: "48%",
+    padding: responsivePadding(6),
+    marginBottom: responsivePadding(8),
+    width: isSmallScreen ? "47%" : "48%",
     shadowColor: "#4A90E2",
     shadowOpacity: 0.15,
     shadowRadius: 6,
@@ -273,9 +303,9 @@ export default StyleSheet.create({
   },
   nudgeText: {
     color: "#fff",
-    fontSize: 12,
+    fontSize: responsiveFontSize(12),
     textAlign: "center",
-    lineHeight: 16,
+    lineHeight: responsiveFontSize(16),
   },
   typingIndicator: {
     flexDirection: "row",
@@ -296,8 +326,8 @@ export default StyleSheet.create({
     left: 0,
     right: 0,
     backgroundColor: "#121212",
-    paddingTop: 2,
-    paddingBottom: Platform.OS === "ios" ? 20 : 10,
+    paddingTop: responsivePadding(2),
+    paddingBottom: Platform.OS === "ios" ? responsivePadding(8) : responsivePadding(4),
     borderTopWidth: 1,
     borderTopColor: "rgba(44, 44, 44, 0.8)",
     shadowColor: "#000",
@@ -308,20 +338,21 @@ export default StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 3,
     elevation: 5,
+    minHeight: responsiveHeight(8),
   },
   suggestionsContainer: {
     flexDirection: "row",
-    paddingHorizontal: 10,
-    paddingVertical: 10,
-    marginBottom: 6,
-    marginTop: 2,
+    paddingHorizontal: responsivePadding(10),
+    paddingVertical: responsivePadding(10),
+    marginBottom: responsivePadding(6),
+    marginTop: responsivePadding(2),
     // Optionally add backdrop blur here if using a BlurView wrapper in the component
   },
   suggestionChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+    paddingHorizontal: responsivePadding(14),
+    paddingVertical: responsivePadding(8),
     borderRadius: 16,
-    marginRight: 8,
+    marginRight: responsivePadding(8),
     flexDirection: "row",
     alignItems: "center",
     shadowColor: "#000",
@@ -336,24 +367,25 @@ export default StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(74, 144, 226, 0.25)",
     backgroundColor: "rgba(26, 61, 102, 0.35)", // glassy blue
+    minHeight: responsiveHeight(4),
     // If BlurView is used, backgroundColor can be more transparent
   },
   suggestionIcon: {
-    marginRight: 5,
+    marginRight: responsivePadding(5),
   },
   suggestionText: {
-    fontSize: 13,
+    fontSize: responsiveFontSize(13),
     fontWeight: "600",
     color: "#FFFFFF",
     letterSpacing: 0.2,
   },
   scrollToBottomButton: {
     position: 'absolute',
-    right: 16,
-    bottom: 160,
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    right: responsivePadding(16),
+    bottom: responsiveHeight(20),
+    width: responsiveWidth(9),
+    height: responsiveWidth(9),
+    borderRadius: responsiveWidth(4.5),
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: "#000",
@@ -368,14 +400,14 @@ export default StyleSheet.create({
   scrollButtonTouchable: {
     width: '100%',
     height: '100%',
-    borderRadius: 18,
+    borderRadius: responsiveWidth(4.5),
     justifyContent: 'center',
     alignItems: 'center',
   },
   scrollButtonGradient: {
     width: '100%',
     height: '100%',
-    borderRadius: 18,
+    borderRadius: responsiveWidth(4.5),
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: '#2A2A2A',

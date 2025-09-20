@@ -3,7 +3,6 @@ import {
   View,
   Text,
   StyleSheet,
-  SafeAreaView,
   FlatList,
   TouchableOpacity,
   TextInput,
@@ -17,10 +16,11 @@ import {
   KeyboardAvoidingView,
   Keyboard,
   ListRenderItem,
+  Dimensions,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
 import { AntDesign } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -39,6 +39,22 @@ interface Suggestion {
   icon: keyof typeof Ionicons.glyphMap;
 }
 
+// Responsive calculations
+const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
+const isSmallScreen = screenWidth < 375;
+const isMediumScreen = screenWidth >= 375 && screenWidth < 414;
+const isLargeScreen = screenWidth >= 414;
+
+// Responsive utility functions
+const responsivePadding = (basePadding: number) => {
+  if (isSmallScreen) return basePadding * 0.8;
+  if (isLargeScreen) return basePadding * 1.2;
+  return basePadding;
+};
+
+const responsiveHeight = (percentage: number) =>
+  screenHeight * (percentage / 100);
+
 export default function ChatScreen() {
   const insets = useSafeAreaInsets();
   const [userInput, setUserInput] = useState("");
@@ -46,28 +62,42 @@ export default function ChatScreen() {
   const [isTyping, setIsTyping] = useState(false);
   const [showStartersModal, setShowStartersModal] = useState(false);
   const [pendingGoalMessage, setPendingGoalMessage] = useState("");
-  const [suggestions] = useState<Suggestion[]>([
-    {
-      text: "Set a savings goal",
-      icon: "flag",
-    },
-    {
-      text: "Give me a spending tip",
-      icon: "bulb",
-    },
-    {
-      text: "What's my net worth?",
-      icon: "wallet",
-    },
-    {
-      text: "Track my expenses",
-      icon: "stats-chart",
-    },
-    {
-      text: "Investment advice",
-      icon: "trending-up",
-    },
-  ]);
+  const [dimensions, setDimensions] = useState(Dimensions.get("window"));
+
+  // Handle orientation changes
+  useEffect(() => {
+    const subscription = Dimensions.addEventListener("change", ({ window }) => {
+      setDimensions(window);
+    });
+    return () => subscription?.remove();
+  }, []);
+  const [suggestions] = useState<Suggestion[]>(() => {
+    const baseSuggestions = [
+      {
+        text: "Set a savings goal",
+        icon: "flag" as keyof typeof Ionicons.glyphMap,
+      },
+      {
+        text: "Give me a spending tip",
+        icon: "bulb" as keyof typeof Ionicons.glyphMap,
+      },
+      {
+        text: "What's my net worth?",
+        icon: "wallet" as keyof typeof Ionicons.glyphMap,
+      },
+      {
+        text: "Track my expenses",
+        icon: "stats-chart" as keyof typeof Ionicons.glyphMap,
+      },
+      {
+        text: "Investment advice",
+        icon: "trending-up" as keyof typeof Ionicons.glyphMap,
+      },
+    ];
+
+    // Show fewer suggestions on smaller screens
+    return isSmallScreen ? baseSuggestions.slice(0, 3) : baseSuggestions;
+  });
   const scrollButtonAnimation = useRef(new Animated.Value(0)).current;
 
   const flatListRef = useRef<FlatList>(null);
@@ -574,7 +604,7 @@ export default function ChatScreen() {
         start={{ x: 0, y: 0 }}
         end={{ x: 0, y: 1 }}
       />
-      <SafeAreaView style={{ flex: 1 }}>
+      <SafeAreaView style={{ flex: 1, marginBottom: insets.bottom - 10 }}>
         <View style={styles.headerContainer}>
           <View style={styles.titleContainer}>
             <View style={styles.mascotContainer}>
@@ -627,7 +657,9 @@ export default function ChatScreen() {
                 onScrollBeginDrag={() => (isScrolling.current = true)}
                 onScrollEndDrag={() => (isScrolling.current = false)}
                 contentContainerStyle={{
-                  paddingBottom: Math.max(insets.bottom, 16) + 100,
+                  paddingBottom:
+                    Math.max(insets.bottom, responsivePadding(16)) +
+                    responsiveHeight(12),
                 }}
                 removeClippedSubviews={true}
                 maxToRenderPerBatch={10}
@@ -682,7 +714,7 @@ export default function ChatScreen() {
                     activeOpacity={0.8}
                   >
                     <View style={styles.scrollButtonGradient}>
-                      <AntDesign name="arrowdown" size={20} color="#FFFFFF" />
+                      <AntDesign name="arrow-down" size={20} color="#FFFFFF" />
                     </View>
                   </TouchableOpacity>
                 </Animated.View>
@@ -692,7 +724,11 @@ export default function ChatScreen() {
             <View
               style={[
                 styles.inputBarContainer,
-                { paddingBottom: Math.max(insets.bottom, 16) + 16 },
+                {
+                  paddingBottom:
+                    Math.max(insets.bottom, responsivePadding(16)) +
+                    responsivePadding(16),
+                },
               ]}
             >
               <FlatList

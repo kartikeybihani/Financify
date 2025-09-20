@@ -1407,11 +1407,12 @@ export default function InsightsScreen() {
               />
 
               {/* Recurring transactions card */}
-              <View style={{ paddingHorizontal: 20, marginTop: 16 }}>
+              <View style={{ paddingHorizontal: 8, marginTop: 16 }}>
                 <RecurringTransactionsCard
                   subscriptions={recurringData?.subscriptions || []}
                   bills={recurringData?.bills || []}
                   income={recurringData?.income || []}
+                  other={recurringData?.other || []}
                   onViewAll={() => {
                     // TODO: Navigate to recurring transactions detail screen
                     logger.info("View all recurring transactions");
@@ -1423,40 +1424,6 @@ export default function InsightsScreen() {
               <Text style={[styles.sectionLabel, { marginTop: 32 }]}>
                 Smart Insights
               </Text>
-              {/* <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.insightsScrollContainer}
-              >
-                {[...realInsights, ...dummyInsights].map((item, idx) => (
-                  <TouchableOpacity
-                    key={idx}
-                    style={[
-                      styles.insightCard,
-                      selectedCard === idx && styles.selectedInsightCard,
-                    ]}
-                    activeOpacity={0.9}
-                    onPress={() =>
-                      setSelectedCard(selectedCard === idx ? null : idx)
-                    }
-                  >
-                    <View style={styles.insightIconContainer}>
-                      <Ionicons name={item.icon} size={24} color="#fff" />
-                    </View>
-                    <Text style={styles.insightTitle}>{item.title}</Text>
-                    <Text style={styles.insightDescription}>
-                      {item.description}
-                    </Text>
-                    {selectedCard === idx && (
-                      <View style={styles.insightDetailsContainer}>
-                        <Text style={styles.insightDetails}>
-                          {item.details}
-                        </Text>
-                      </View>
-                    )}
-                  </TouchableOpacity>
-                ))}
-              </ScrollView> */}
 
               <View style={styles.sectionHeader}>
                 <Text style={styles.sectionLabel}>Transactions</Text>
