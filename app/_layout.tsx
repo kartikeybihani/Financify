@@ -60,7 +60,7 @@ function RootLayoutNav() {
 
       if (!session) {
         if (!inAuth && !inOnboarding) {
-          router.replace("/(onboarding)/welcome");
+          router.replace("/(onboarding)/welcome" as any);
         }
         return;
       }
@@ -72,7 +72,7 @@ function RootLayoutNav() {
       ) {
         logger.info("✅ Using cached onboarding completion status");
         if (inAuth || inOnboarding) {
-          router.replace("/(tabs)/chat");
+          router.replace("/(tabs)/chat" as any);
         }
         return;
       }
@@ -94,7 +94,7 @@ function RootLayoutNav() {
           "✅ Onboarding complete in Supabase, updating cache and going to tabs"
         );
         if (!inTabs) {
-          router.replace("/(tabs)/chat");
+          router.replace("/(tabs)/chat" as any);
         }
         return;
       }
@@ -116,13 +116,13 @@ function RootLayoutNav() {
       // Auto-navigation logic only for users coming from outside onboarding
       if (!hasBank && !hasIntent) {
         // No intent and no bank → start at intent screen
-        router.replace("/(onboarding)/intent");
+        router.replace("/(onboarding)/intent" as any);
       } else if (!hasBank) {
         // Has intent but no bank → go to account connection
-        router.replace("/(onboarding)/accountconnection");
+        router.replace("/(onboarding)/accountconnection" as any);
       } else {
         // Has bank → go to final screen
-        router.replace("/(onboarding)/final");
+        router.replace("/(onboarding)/final" as any);
       }
     };
 
