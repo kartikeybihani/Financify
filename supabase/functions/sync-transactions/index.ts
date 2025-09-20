@@ -170,6 +170,21 @@ serve(async (req: Request) => {
       return new Response("Missing item_id or user_id", { status: 400 });
     }
 
+    // Skip SnapTrade investment accounts (they start with "snaptrade-")
+    if (item_id.startsWith('snaptrade-')) {
+      console.log(`🚫 Skipping SnapTrade investment account: ${item_id}`);
+      return new Response(JSON.stringify({
+        message: "SnapTrade account skipped",
+        added: 0,
+        modified: 0,
+        removed: 0,
+        skipped: true
+      }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+
     // 1. Fetch cursor from DB
     console.log("🔍 Fetching cursor from database...");
     const { data: ui, error: fetchErr } = await supabase

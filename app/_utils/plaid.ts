@@ -464,6 +464,12 @@ export const syncTransactions = async (item_id: string) => {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user?.id) throw new Error("User not authenticated");
 
+  // Skip SnapTrade investment accounts
+  if (item_id.startsWith('snaptrade-')) {
+    logger.info(`🚫 Skipping SnapTrade investment account: ${item_id}`);
+    return { added: 0, modified: 0, removed: 0, skipped: true };
+  }
+
   try {
     // Use API endpoint directly (more reliable than Supabase function)
     logger.info("📡 Calling transactions_sync API endpoint...");
@@ -472,6 +478,14 @@ export const syncTransactions = async (item_id: string) => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ item_id, user_id: user.id }),
     });
+    
+    // Check if response is JSON
+    const contentType = res.headers.get('content-type');
+    if (!contentType || !contentType.includes('application/json')) {
+      const textResponse = await res.text();
+      logger.error(`❌ API returned non-JSON response for ${item_id}:`, textResponse.substring(0, 200));
+      throw new Error(`API returned non-JSON response (${res.status}): ${textResponse.substring(0, 100)}...`);
+    }
     
     const data = await res.json();
     logger.info("📦 API response:", { status: res.status, data });
@@ -795,10 +809,23 @@ export const syncAllUserTransactions = async () => {
       return { synced: 0 };
     }
     
-    logger.info(`🔄 Syncing transactions for ${userItems.length} connected accounts...`);
+    // Filter out SnapTrade investment accounts (they start with "snaptrade-")
+    const plaidItems = userItems.filter(item => !item.item_id.startsWith('snaptrade-'));
+    const snapTradeItems = userItems.filter(item => item.item_id.startsWith('snaptrade-'));
     
-    // Sync each account
-    const syncPromises = userItems.map(item => 
+    if (snapTradeItems.length > 0) {
+      logger.info(`🚫 Skipping ${snapTradeItems.length} SnapTrade investment accounts (not Plaid accounts)`);
+    }
+    
+    if (plaidItems.length === 0) {
+      logger.info("No Plaid accounts to sync (only SnapTrade investment accounts found)");
+      return { synced: 0, total: 0 };
+    }
+    
+    logger.info(`🔄 Syncing transactions for ${plaidItems.length} Plaid accounts...`);
+    
+    // Sync each Plaid account only
+    const syncPromises = plaidItems.map(item => 
       syncTransactions(item.item_id).catch(error => {
         logger.error(`Failed to sync item ${item.item_id}:`, error);
         return { error: error.message };
@@ -808,11 +835,11 @@ export const syncAllUserTransactions = async () => {
     const results = await Promise.all(syncPromises);
     const successful = results.filter(result => !result.error).length;
     
-    logger.info(`✅ Sync completed: ${successful}/${userItems.length} accounts synced successfully`);
+    logger.info(`✅ Sync completed: ${successful}/${plaidItems.length} Plaid accounts synced successfully`);
     
     return { 
       synced: successful,
-      total: userItems.length,
+      total: plaidItems.length,
       results 
     };
   } catch (err) {
@@ -835,10 +862,23 @@ export const refreshPlaidData = async () => {
       return { refreshed: 0, message: "No connected accounts found" };
     }
     
-    logger.info(`🔄 Requesting fresh data for ${userItems.length} connected accounts...`);
+    // Filter out SnapTrade investment accounts (they start with "snaptrade-")
+    const plaidItems = userItems.filter(item => !item.item_id.startsWith('snaptrade-'));
+    const snapTradeItems = userItems.filter(item => item.item_id.startsWith('snaptrade-'));
     
-    // Request refresh for each account
-    const refreshPromises = userItems.map(async (item) => {
+    if (snapTradeItems.length > 0) {
+      logger.info(`🚫 Skipping ${snapTradeItems.length} SnapTrade investment accounts (not Plaid accounts)`);
+    }
+    
+    if (plaidItems.length === 0) {
+      logger.info("No Plaid accounts to refresh (only SnapTrade investment accounts found)");
+      return { refreshed: 0, message: "No Plaid accounts found" };
+    }
+    
+    logger.info(`🔄 Requesting fresh data for ${plaidItems.length} Plaid accounts...`);
+    
+    // Request refresh for each Plaid account only
+    const refreshPromises = plaidItems.map(async (item) => {
       try {
         const res = await fetch(`${BASE_URL}/api/refresh_transactions`, {
           method: "POST",
@@ -876,15 +916,15 @@ export const refreshPlaidData = async () => {
     const results = await Promise.all(refreshPromises);
     const successful = results.filter(result => result.success).length;
     
-    logger.info(`✅ Refresh requests completed: ${successful}/${userItems.length} accounts`);
+    logger.info(`✅ Refresh requests completed: ${successful}/${plaidItems.length} Plaid accounts`);
     
     return { 
       refreshed: successful,
-      total: userItems.length,
+      total: plaidItems.length,
       results,
       message: successful > 0 
-        ? `Refresh initiated for ${successful} account${successful > 1 ? 's' : ''}. New data will arrive via webhook soon.`
-        : "Failed to initiate refresh for any accounts"
+        ? `Refresh initiated for ${successful} Plaid account${successful > 1 ? 's' : ''}. New data will arrive via webhook soon.`
+        : "Failed to initiate refresh for any Plaid accounts"
     };
   } catch (err) {
     logger.error("Error in data refresh:", err);
@@ -986,16 +1026,29 @@ export const refreshRecurringTransactions = async (item_id?: string) => {
     if (!user?.id) throw new Error("User not authenticated");
     
     // If no specific item_id, refresh all user items
-    const userItems = item_id 
+    const allUserItems = item_id 
       ? [{ item_id, institution_name: 'Unknown' }] 
       : await getUserItems();
     
-    if (userItems.length === 0) {
+    if (allUserItems.length === 0) {
       logger.info("No connected accounts to refresh recurring transactions");
       return { refreshed: 0, message: "No connected accounts found" };
     }
     
-    logger.info(`🔄 Refreshing recurring transactions for ${userItems.length} account(s)...`);
+    // Filter out SnapTrade investment accounts (they start with "snaptrade-")
+    const userItems = allUserItems.filter(item => !item.item_id.startsWith('snaptrade-'));
+    const snapTradeItems = allUserItems.filter(item => item.item_id.startsWith('snaptrade-'));
+    
+    if (snapTradeItems.length > 0) {
+      logger.info(`🚫 Skipping ${snapTradeItems.length} SnapTrade investment accounts for recurring transactions`);
+    }
+    
+    if (userItems.length === 0) {
+      logger.info("No Plaid accounts to refresh recurring transactions (only SnapTrade investment accounts found)");
+      return { refreshed: 0, message: "No Plaid accounts found" };
+    }
+    
+    logger.info(`🔄 Refreshing recurring transactions for ${userItems.length} Plaid account(s)...`);
     
     // Refresh recurring transactions for each account
     const recurringPromises = userItems.map(async (item) => {
@@ -1095,16 +1148,29 @@ export const refreshAccountBalances = async (item_id?: string) => {
     if (!user?.id) throw new Error("User not authenticated");
     
     // If no specific item_id, refresh all accounts
-    const userItems = item_id 
+    const allUserItems = item_id 
       ? [{ item_id, institution_name: 'Unknown' }] 
       : await getUserItems();
     
-    if (userItems.length === 0) {
+    if (allUserItems.length === 0) {
       logger.info("No connected accounts to refresh balances");
       return { refreshed: 0, message: "No connected accounts found" };
     }
     
-    logger.info(`🏦 Refreshing balances for ${userItems.length} account(s)...`);
+    // Filter out SnapTrade investment accounts (they start with "snaptrade-")
+    const userItems = allUserItems.filter(item => !item.item_id.startsWith('snaptrade-'));
+    const snapTradeItems = allUserItems.filter(item => item.item_id.startsWith('snaptrade-'));
+    
+    if (snapTradeItems.length > 0) {
+      logger.info(`🚫 Skipping ${snapTradeItems.length} SnapTrade investment accounts for balance refresh`);
+    }
+    
+    if (userItems.length === 0) {
+      logger.info("No Plaid accounts to refresh balances (only SnapTrade investment accounts found)");
+      return { refreshed: 0, message: "No Plaid accounts found" };
+    }
+    
+    logger.info(`🏦 Refreshing balances for ${userItems.length} Plaid account(s)...`);
     
     // Refresh balances for each account
     const balancePromises = userItems.map(async (item) => {
