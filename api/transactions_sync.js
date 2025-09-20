@@ -1,6 +1,7 @@
 // /api/transactions_sync.js
 import { client } from "../app/plaidClient.js";
 import { createClient } from "@supabase/supabase-js";
+import { mapPlaidCategory } from "../app/_utils/categoryMapping.ts";
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -90,39 +91,47 @@ export default async function handler(req, res) {
           ""
         ).toLowerCase();
         if (!category || category === "GENERAL_MERCHANDISE") {
-          if (merchantName.includes("amazon")) category = "ONLINE_SHOPPING";
+          if (merchantName.includes("amazon"))
+            category = "GENERAL_MERCHANDISE_ONLINE_SHOPPING";
           else if (
             merchantName.includes("uber") ||
             merchantName.includes("lyft")
           )
-            category = "TRANSPORTATION";
+            category = "TRANSPORTATION_TAXIS_AND_RIDE_SHARES";
           else if (
             merchantName.includes("starbucks") ||
             merchantName.includes("coffee")
           )
-            category = "COFFEE_SHOPS";
+            category = "FOOD_AND_DRINK_COFFEE";
           else if (
             merchantName.includes("mcdonalds") ||
             merchantName.includes("burger")
           )
-            category = "FAST_FOOD";
+            category = "FOOD_AND_DRINK_FAST_FOOD";
           else if (
             merchantName.includes("target") ||
             merchantName.includes("walmart")
           )
-            category = "DISCOUNT_STORES";
+            category = "GENERAL_MERCHANDISE_SUPERSTORES";
           else if (
             merchantName.includes("shell") ||
             merchantName.includes("exxon") ||
             merchantName.includes("chevron")
           )
-            category = "GAS_STATIONS";
+            category = "TRANSPORTATION_GAS";
         }
+
+        // Apply category mapping to get simplified categories
+        const simplifiedCategory = mapPlaidCategory(category);
 
         // Debug log for first few transactions with enhanced info
         if (added.length <= 3 || modified.length <= 3) {
           console.log(
-            `🏷️ Enhanced: "${txn.name}" → Category: "${category}" (Merchant: "${
+            `🏷️ Enhanced: "${
+              txn.name
+            }" → Original: "${category}" → Simplified: "${
+              simplifiedCategory.top
+            } > ${simplifiedCategory.sub}" (Merchant: "${
               txn.merchant_name || "N/A"
             }")`
           );
@@ -137,7 +146,9 @@ export default async function handler(req, res) {
           iso_currency_code: txn.iso_currency_code || null,
           name: txn.name || null,
           merchant_name: txn.merchant_name || null,
-          category: category,
+          category: category, // Keep original Plaid category
+          top_category: simplifiedCategory.top, // New simplified top category
+          sub_category: simplifiedCategory.sub, // New simplified sub category
           transaction_type: txn.payment_channel || null,
           pending: txn.pending ?? false,
         };

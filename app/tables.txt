@@ -55,11 +55,11 @@ CREATE TABLE public.investment_balances (
   last_updated timestamp with time zone DEFAULT now(),
   created_at timestamp with time zone DEFAULT now(),
   CONSTRAINT investment_balances_pkey PRIMARY KEY (id),
-  CONSTRAINT investment_balances_connection_fkey FOREIGN KEY (account_id) REFERENCES public.snaptrade_connections(snaptrade_user_id),
-  CONSTRAINT investment_balances_connection_fkey FOREIGN KEY (account_id) REFERENCES public.snaptrade_connections(account_id),
   CONSTRAINT investment_balances_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id),
   CONSTRAINT investment_balances_connection_fkey FOREIGN KEY (snaptrade_user_id) REFERENCES public.snaptrade_connections(snaptrade_user_id),
-  CONSTRAINT investment_balances_connection_fkey FOREIGN KEY (snaptrade_user_id) REFERENCES public.snaptrade_connections(account_id)
+  CONSTRAINT investment_balances_connection_fkey FOREIGN KEY (account_id) REFERENCES public.snaptrade_connections(snaptrade_user_id),
+  CONSTRAINT investment_balances_connection_fkey FOREIGN KEY (snaptrade_user_id) REFERENCES public.snaptrade_connections(account_id),
+  CONSTRAINT investment_balances_connection_fkey FOREIGN KEY (account_id) REFERENCES public.snaptrade_connections(account_id)
 );
 CREATE TABLE public.investment_holdings (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -87,11 +87,11 @@ CREATE TABLE public.investment_holdings (
   last_updated timestamp with time zone DEFAULT now(),
   created_at timestamp with time zone DEFAULT now(),
   CONSTRAINT investment_holdings_pkey PRIMARY KEY (id),
-  CONSTRAINT investment_holdings_connection_fkey FOREIGN KEY (account_id) REFERENCES public.snaptrade_connections(account_id),
-  CONSTRAINT investment_holdings_connection_fkey FOREIGN KEY (snaptrade_user_id) REFERENCES public.snaptrade_connections(snaptrade_user_id),
   CONSTRAINT investment_holdings_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id),
+  CONSTRAINT investment_holdings_connection_fkey FOREIGN KEY (snaptrade_user_id) REFERENCES public.snaptrade_connections(snaptrade_user_id),
   CONSTRAINT investment_holdings_connection_fkey FOREIGN KEY (account_id) REFERENCES public.snaptrade_connections(snaptrade_user_id),
-  CONSTRAINT investment_holdings_connection_fkey FOREIGN KEY (snaptrade_user_id) REFERENCES public.snaptrade_connections(account_id)
+  CONSTRAINT investment_holdings_connection_fkey FOREIGN KEY (snaptrade_user_id) REFERENCES public.snaptrade_connections(account_id),
+  CONSTRAINT investment_holdings_connection_fkey FOREIGN KEY (account_id) REFERENCES public.snaptrade_connections(account_id)
 );
 CREATE TABLE public.investment_options (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -123,11 +123,11 @@ CREATE TABLE public.investment_options (
   last_updated timestamp with time zone DEFAULT now(),
   created_at timestamp with time zone DEFAULT now(),
   CONSTRAINT investment_options_pkey PRIMARY KEY (id),
-  CONSTRAINT investment_options_connection_fkey FOREIGN KEY (account_id) REFERENCES public.snaptrade_connections(snaptrade_user_id),
-  CONSTRAINT investment_options_connection_fkey FOREIGN KEY (account_id) REFERENCES public.snaptrade_connections(account_id),
   CONSTRAINT investment_options_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id),
   CONSTRAINT investment_options_connection_fkey FOREIGN KEY (snaptrade_user_id) REFERENCES public.snaptrade_connections(snaptrade_user_id),
-  CONSTRAINT investment_options_connection_fkey FOREIGN KEY (snaptrade_user_id) REFERENCES public.snaptrade_connections(account_id)
+  CONSTRAINT investment_options_connection_fkey FOREIGN KEY (account_id) REFERENCES public.snaptrade_connections(snaptrade_user_id),
+  CONSTRAINT investment_options_connection_fkey FOREIGN KEY (snaptrade_user_id) REFERENCES public.snaptrade_connections(account_id),
+  CONSTRAINT investment_options_connection_fkey FOREIGN KEY (account_id) REFERENCES public.snaptrade_connections(account_id)
 );
 CREATE TABLE public.recurring_streams (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -152,8 +152,8 @@ CREATE TABLE public.recurring_streams (
   updated_at timestamp with time zone DEFAULT now(),
   last_synced_at timestamp with time zone DEFAULT now(),
   CONSTRAINT recurring_streams_pkey PRIMARY KEY (id),
-  CONSTRAINT recurring_streams_item_id_fkey FOREIGN KEY (item_id) REFERENCES public.user_items(item_id),
   CONSTRAINT recurring_streams_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id),
+  CONSTRAINT recurring_streams_item_id_fkey FOREIGN KEY (item_id) REFERENCES public.user_items(item_id),
   CONSTRAINT recurring_streams_account_id_fkey FOREIGN KEY (account_id) REFERENCES public.accounts(account_id)
 );
 CREATE TABLE public.snaptrade_connections (

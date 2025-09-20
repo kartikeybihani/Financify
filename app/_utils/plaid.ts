@@ -568,6 +568,20 @@ export const getRecentTransactions = async (user_id: string, limit: number = 50)
     if (error) throw error;
     
     logger.info(`📊 Found ${data?.length || 0} recent transactions for user`);
+    
+    // Debug: Log categories from database query
+    if (data && data.length > 0) {
+      const categoriesFromDB = data.map(tx => tx.category).filter(Boolean);
+      const uniqueCategories = [...new Set(categoriesFromDB)];
+      console.log("🔍 DEBUG: Categories from getRecentTransactions:");
+      console.log("Total transactions:", data.length);
+      console.log("Unique categories:", uniqueCategories.length);
+      uniqueCategories.forEach((category, index) => {
+        const count = categoriesFromDB.filter(cat => cat === category).length;
+        console.log(`${index + 1}. ${category} (${count} transactions)`);
+      });
+    }
+    
     return data || [];
   } catch (err) {
     logger.error("Error fetching recent transactions:", err);

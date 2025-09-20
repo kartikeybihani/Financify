@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from "react";
+import * as React from "react";
+import { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -45,8 +46,7 @@ export default function SignupScreen() {
   const [showFinnyMessage, setShowFinnyMessage] = useState(true);
   const [isTyping, setIsTyping] = useState(false);
   const [showSureButton, setShowSureButton] = useState(false);
-  const [autoAdvanceTimer, setAutoAdvanceTimer] =
-    useState<NodeJS.Timeout | null>(null);
+  const [autoAdvanceTimer, setAutoAdvanceTimer] = useState<number | null>(null);
 
   // Enhanced animation values
   const fadeAnim = useState(new Animated.Value(1))[0];

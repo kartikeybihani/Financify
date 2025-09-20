@@ -9,7 +9,6 @@ import {
   View,
   Text,
   StyleSheet,
-  SafeAreaView,
   ScrollView,
   Dimensions,
   TouchableOpacity,
@@ -19,13 +18,11 @@ import {
   DeviceEventEmitter,
   RefreshControl,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient";
-
 import { styles } from "../_styles/insightsStyles";
 import CategoryGrid from "../_components/insights/CategoryGrid";
 import CategoryDetailModal from "../_components/insights/CategoryDetailModal";
-import FilterModal from "../_components/insights/FilterModal";
 import EnhancedFilterModal, {
   FilterOptions,
   Account,
@@ -317,6 +314,17 @@ export default function InsightsScreen() {
         logger.info(
           `Insights: Loaded ${transactions.length} transactions from Supabase`
         );
+
+        // Debug: Log all unique categories from database
+        const uniqueCategoriesFromDB = [
+          ...new Set(transactions.map((tx) => tx.category).filter(Boolean)),
+        ];
+        console.log("🔍 DEBUG: All unique categories from database:");
+        console.log("Total unique categories:", uniqueCategoriesFromDB.length);
+        uniqueCategoriesFromDB.forEach((category, index) => {
+          console.log(`${index + 1}. ${category}`);
+        });
+
         setTransactions(transactions);
         processTransactionsData(transactions);
         hasData.current = true;
@@ -641,6 +649,18 @@ export default function InsightsScreen() {
       const sortedCategories = Object.entries(categoriesObj).sort(
         (a, b) => b[1].amount - a[1].amount
       );
+
+      // Debug: Log all categories found
+      console.log("🔍 DEBUG: All categories found in current month expenses:");
+      console.log("Total categories:", sortedCategories.length);
+      sortedCategories.forEach(([category, data], index) => {
+        console.log(
+          `${index + 1}. ${category}: $${data.amount.toFixed(
+            2
+          )} (${data.percentage.toFixed(1)}%)`
+        );
+      });
+
       setCategoryBreakdown(sortedCategories);
 
       // Store current month transactions for category detail modal

@@ -1,18 +1,18 @@
-import React from "react";
+import React, { useMemo } from "react";
 import {
   Modal,
   View,
   Text,
   TouchableOpacity,
   StyleSheet,
+  ScrollView,
+  Dimensions,
+  useWindowDimensions,
   Platform,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import {
-  SafeAreaView,
-  useSafeAreaInsets,
-} from "react-native-safe-area-context";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import logger from "../../_utils/logger";
 
 interface Transaction {
@@ -35,7 +35,6 @@ interface TransactionDetailModalProps {
   formatDate: (date: string) => string;
 }
 
-// Get category icon
 const getCategoryIcon = (category: string): keyof typeof Ionicons.glyphMap => {
   const iconMap: { [key: string]: keyof typeof Ionicons.glyphMap } = {
     FOOD_AND_DRINK: "restaurant",
@@ -53,7 +52,6 @@ const getCategoryIcon = (category: string): keyof typeof Ionicons.glyphMap => {
   return iconMap[category] || "receipt";
 };
 
-// Get category color
 const getCategoryColor = (category: string): string => {
   const colorMap: { [key: string]: string } = {
     FOOD_AND_DRINK: "#FF6B6B",
@@ -71,10 +69,8 @@ const getCategoryColor = (category: string): string => {
   return colorMap[category] || "#4A90E2";
 };
 
-// Get account gradient based on type
 const getAccountGradient = (accountName?: string) => {
   if (!accountName) return ["#4a5568", "#2d3748"] as const;
-
   if (accountName.toLowerCase().includes("checking")) {
     return ["#4a5568", "#2d3748"] as const;
   } else if (accountName.toLowerCase().includes("savings")) {
@@ -95,9 +91,51 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
   if (!transaction) return null;
 
   const insets = useSafeAreaInsets();
+  const { height, width } = useWindowDimensions();
+
+  // Responsive layout flags
+  const isLandscape = width > height;
+  const isSmallPhone = height < 700;
+  const isTallPhone = height >= 840;
+
+  // Content needs roughly this much space when paddings are compacted
+  const MIN_CONTENT_PX = isSmallPhone ? 380 : 428;
+
+  // Compute a tight but safe modal height
+  const { maxModalHeight, minModalHeight, compact } = useMemo(() => {
+    // Cap by safe area so we never collide with the notch or home indicator
+    const safeCap =
+      height - Math.max(insets.top, 8) - Math.max(insets.bottom, 8);
+
+    // Base ratios by device class
+    let baseRatio = 0.64; // default
+    if (isSmallPhone) baseRatio = 0.56; // shorten more on small screens
+    if (isTallPhone) baseRatio = 0.7; // can show a bit more on tall phones
+    if (isLandscape) baseRatio = 0.8; // landscape has less vertical room
+
+    const maxH = Math.min(safeCap, height * baseRatio);
+
+    // Ensure minimum so content is not cut, but never exceed our max
+    const minH = Math.min(
+      Math.max(MIN_CONTENT_PX, height * (isSmallPhone ? 0.5 : 0.58)),
+      maxH
+    );
+
+    // Use compact paddings if we are on small devices or landscape
+    const useCompact = isSmallPhone || isLandscape;
+
+    return { maxModalHeight: maxH, minModalHeight: minH, compact: useCompact };
+  }, [
+    height,
+    insets.top,
+    insets.bottom,
+    isSmallPhone,
+    isTallPhone,
+    isLandscape,
+  ]);
 
   const amount = Math.abs(transaction.amount);
-  const isIncome = transaction.amount < 0; // Negative amounts are income/credits
+  const isIncome = transaction.amount < 0;
   const amountColor = isIncome ? "#27AE60" : "#E74C3C";
   const amountText = isIncome
     ? `+$${amount.toFixed(2)}`
@@ -111,12 +149,12 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
   return (
     <Modal
       visible={visible}
-      transparent={true}
+      transparent
       animationType="slide"
       onRequestClose={onClose}
-      statusBarTranslucent={false}
+      statusBarTranslucent={Platform.OS === "android"}
     >
-      <SafeAreaView style={styles.safeAreaContainer}>
+      <View style={styles.safeAreaContainer}>
         <TouchableOpacity
           style={styles.overlay}
           activeOpacity={1}
@@ -124,36 +162,67 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
         >
           <TouchableOpacity
             activeOpacity={1}
-            onPress={() => {}} // Prevent closing when tapping on modal content
+            onPress={() => {}}
             style={[
               styles.modalContainer,
-              { paddingBottom: Math.max(insets.bottom, 16) + 64 },
+              {
+                maxHeight: maxModalHeight,
+                minHeight: minModalHeight,
+                paddingBottom: Math.max(insets.bottom, compact ? 12 : 16),
+              },
             ]}
           >
             {/* Handle */}
-            <View style={styles.handleContainer}>
+            <View
+              style={[
+                styles.handleContainer,
+                compact && { paddingVertical: 10 },
+              ]}
+            >
               <View style={styles.handle} />
             </View>
 
             {/* Header */}
-            <View style={styles.header}>
+            <View
+              style={[
+                styles.header,
+                {
+                  paddingHorizontal: compact ? 20 : 24,
+                  paddingBottom: compact ? 10 : 14,
+                },
+              ]}
+            >
               <View style={styles.headerLeft}>
                 <LinearGradient
                   colors={[categoryColor + "20", categoryColor + "10"] as const}
                   style={[
                     styles.categoryIconContainer,
-                    { borderColor: categoryColor + "30" },
+                    {
+                      borderColor: categoryColor + "30",
+                      width: compact ? 28 : 32,
+                      height: compact ? 28 : 32,
+                      borderRadius: compact ? 14 : 16,
+                      marginRight: compact ? 8 : 10,
+                    },
                   ]}
                 >
                   <Ionicons
                     name={categoryIcon}
-                    size={16}
+                    size={compact ? 14 : 16}
                     color={categoryColor}
                   />
                 </LinearGradient>
                 <View>
-                  <Text style={styles.modalTitle}>Transaction Details</Text>
-                  <Text style={styles.modalSubtitle}>
+                  <Text
+                    style={[styles.modalTitle, compact && { fontSize: 14 }]}
+                    numberOfLines={1}
+                  >
+                    Transaction Details
+                  </Text>
+                  <Text
+                    style={[styles.modalSubtitle, compact && { fontSize: 11 }]}
+                    numberOfLines={1}
+                  >
                     {formatCategoryName(category)}
                   </Text>
                 </View>
@@ -166,24 +235,76 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
               </TouchableOpacity>
             </View>
 
-            {/* Transaction Info */}
-            <View style={styles.content}>
+            {/* Scrollable Content */}
+            <ScrollView
+              style={styles.scrollContainer}
+              contentContainerStyle={[
+                styles.scrollContent,
+                {
+                  paddingHorizontal: compact ? 20 : 24,
+                  paddingTop: compact ? 6 : 8,
+                  paddingBottom: compact ? 24 : 32,
+                  minHeight: Math.max(
+                    0,
+                    (minModalHeight || 0) - (compact ? 100 : 120)
+                  ),
+                },
+              ]}
+              showsVerticalScrollIndicator={false}
+              bounces
+              scrollEnabled
+            >
               {/* Amount Section */}
-              <View style={styles.amountSection}>
-                <Text style={styles.amountLabel}>
+              <View
+                style={[
+                  styles.amountSection,
+                  compact && { marginBottom: 16, paddingVertical: 10 },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.amountLabel,
+                    compact && { fontSize: 10, marginBottom: 4 },
+                  ]}
+                >
                   {isIncome ? "Amount Received" : "Amount Spent"}
                 </Text>
-                <Text style={[styles.amountValue, { color: amountColor }]}>
+                <Text
+                  style={[
+                    styles.amountValue,
+                    { color: amountColor },
+                    compact && { fontSize: 22 },
+                  ]}
+                >
                   {amountText}
                 </Text>
               </View>
 
               {/* Transaction Details */}
-              <View style={styles.detailsSection}>
-                {/* Transaction Name - Clean without label */}
-                <View style={styles.transactionNameContainer}>
-                  <Text style={styles.transactionName}>{transaction.name}</Text>
-                  <Text style={styles.transactionDate}>
+              <View
+                style={[styles.detailsSection, compact && { marginBottom: 16 }]}
+              >
+                <View
+                  style={[
+                    styles.transactionNameContainer,
+                    compact && { marginBottom: 12, paddingBottom: 12 },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.transactionName,
+                      compact && { fontSize: 17 },
+                    ]}
+                    numberOfLines={2}
+                  >
+                    {transaction.name}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.transactionDate,
+                      compact && { fontSize: 13 },
+                    ]}
+                  >
                     {formatDate(transaction.date)}
                   </Text>
                 </View>
@@ -194,21 +315,23 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
                     style={[
                       styles.categoryBadge,
                       { backgroundColor: categoryColor + "20" },
+                      compact && { paddingHorizontal: 10, paddingVertical: 6 },
                     ]}
                     activeOpacity={0.7}
-                    onPress={() => {
-                      // Optional: Add haptic feedback or category filter action
-                      logger.info("Category pressed:", category);
-                    }}
+                    onPress={() => logger.info("Category pressed:", category)}
                   >
                     <Ionicons
                       name={categoryIcon}
-                      size={14}
+                      size={compact ? 13 : 14}
                       color={categoryColor}
                       style={styles.categoryIcon}
                     />
                     <Text
-                      style={[styles.categoryText, { color: categoryColor }]}
+                      style={[
+                        styles.categoryText,
+                        { color: categoryColor },
+                        compact && { fontSize: 12 },
+                      ]}
                     >
                       {formatCategoryName(category)}
                     </Text>
@@ -218,21 +341,50 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
 
               {/* Account Card */}
               {transaction.account_name && (
-                <View style={styles.accountSection}>
-                  <Text style={styles.accountSectionLabel}>Paid with</Text>
-                  <View style={styles.accountCard}>
+                <View
+                  style={[
+                    styles.accountSection,
+                    compact && { marginBottom: 2 },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.accountSectionLabel,
+                      compact && { fontSize: 10, marginBottom: 8 },
+                    ]}
+                  >
+                    Paid with
+                  </Text>
+                  <View
+                    style={[
+                      styles.accountCard,
+                      compact && { borderRadius: 10 },
+                    ]}
+                  >
                     <LinearGradient
                       colors={accountGradient}
                       start={{ x: 0, y: 0 }}
                       end={{ x: 1, y: 1 }}
-                      style={styles.accountCardGradient}
+                      style={[
+                        styles.accountCardGradient,
+                        compact && { padding: 10, minHeight: 56 },
+                      ]}
                     >
-                      {/* Glassmorphism overlay */}
                       <View style={styles.accountCardOverlay} />
 
                       <View style={styles.accountCardContent}>
-                        <View style={styles.accountCardHeader}>
-                          <Text style={styles.bankName}>
+                        <View
+                          style={[
+                            styles.accountCardHeader,
+                            compact && { marginBottom: 2 },
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.bankName,
+                              compact && { fontSize: 9 },
+                            ]}
+                          >
                             {transaction.institution_name || "Bank"}
                           </Text>
                           <Ionicons
@@ -243,11 +395,22 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
                         </View>
 
                         <View style={styles.accountCardFooter}>
-                          <Text style={styles.accountName} numberOfLines={1}>
+                          <Text
+                            style={[
+                              styles.accountName,
+                              compact && { fontSize: 12 },
+                            ]}
+                            numberOfLines={1}
+                          >
                             {transaction.account_name}
                           </Text>
                           {transaction.account_mask && (
-                            <Text style={styles.accountMask}>
+                            <Text
+                              style={[
+                                styles.accountMask,
+                                compact && { fontSize: 10 },
+                              ]}
+                            >
                               •••{transaction.account_mask}
                             </Text>
                           )}
@@ -257,10 +420,10 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
                   </View>
                 </View>
               )}
-            </View>
+            </ScrollView>
           </TouchableOpacity>
         </TouchableOpacity>
-      </SafeAreaView>
+      </View>
     </Modal>
   );
 };
@@ -278,8 +441,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#1a1a1a",
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    height: "55%",
-    minHeight: 450,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: -8 },
     shadowOpacity: 0.4,
@@ -288,6 +449,14 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.15)",
     overflow: "hidden",
+    alignSelf: "flex-end",
+    width: "100%",
+  },
+  scrollContainer: {
+    flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
   },
   handleContainer: {
     alignItems: "center",
@@ -312,6 +481,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     flex: 1,
+    minWidth: 0,
   },
   categoryIconContainer: {
     width: 32,
@@ -344,12 +514,6 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255, 255, 255, 0.06)",
     justifyContent: "center",
     alignItems: "center",
-  },
-  content: {
-    flex: 1,
-    paddingHorizontal: 24,
-    paddingTop: 8,
-    paddingBottom: 24,
   },
   amountSection: {
     alignItems: "center",

@@ -38,7 +38,7 @@ const CategoryGrid: React.FC<CategoryGridProps> = ({
         <Text style={styles.totalSpendingPeriod}>This Month</Text>
       </View>
       <View style={styles.categoryGrid}>
-        {categoryBreakdown.slice(0, 4).map(([category, data], idx) => (
+        {categoryBreakdown.map(([category, data], idx) => (
           <TouchableOpacity
             key={idx}
             style={styles.categoryGridItem}
