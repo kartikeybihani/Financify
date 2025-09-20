@@ -64,7 +64,9 @@ const screenWidth = Dimensions.get("window").width;
 interface Transaction {
   id?: string;
   amount: number;
-  category?: string; // This is the primary category from Plaid stored as string
+  category?: string; // This is the original Plaid category stored as string
+  top_category?: string; // Simplified top-level category (e.g., "Food", "Transportation")
+  sub_category?: string; // Simplified sub-category (e.g., "Eating Out", "Groceries")
   date: string;
   name: string;
   personal_finance_category?: {
@@ -93,6 +95,17 @@ interface Insight {
 
 // Add some nice colors for categories
 const categoryColors = {
+  // Simplified top categories
+  Food: "#FF6B6B",
+  Transportation: "#45B7D1",
+  Travel: "#4A90E2",
+  Loans: "#FFEEAD",
+  Income: "#A8E6CF",
+  Shopping: "#4ECDC4",
+  Entertainment: "#96CEB4",
+  "Personal Care": "#D4A5A5",
+  Other: "#9B786F",
+  // Legacy categories (fallback)
   FOOD_AND_DRINK: "#FF6B6B",
   GENERAL_MERCHANDISE: "#4ECDC4",
   TRANSPORTATION: "#45B7D1",
@@ -101,12 +114,23 @@ const categoryColors = {
   TRAVEL: "#4A90E2",
   PERSONAL_CARE: "#D4A5A5",
   GENERAL_SERVICES: "#9B786F",
+  HOME_IMPROVEMENT: "#8E44AD",
   INCOME: "#A8E6CF",
-  Other: "#4A90E2",
 };
 
 const formatCategoryName = (category: string): string => {
   const categoryMap: { [key: string]: string } = {
+    // Simplified top categories (already formatted)
+    Food: "Food",
+    Transportation: "Transportation",
+    Travel: "Travel",
+    Loans: "Loans",
+    Income: "Income",
+    Shopping: "Shopping",
+    Entertainment: "Entertainment",
+    "Personal Care": "Personal Care",
+    Other: "Other",
+    // Legacy categories (fallback)
     FOOD_AND_DRINK: "Food & Drink",
     GENERAL_MERCHANDISE: "Shopping",
     TRANSPORTATION: "Transportation",
@@ -116,7 +140,6 @@ const formatCategoryName = (category: string): string => {
     PERSONAL_CARE: "Personal Care",
     GENERAL_SERVICES: "Services",
     INCOME: "Income",
-    Other: "Other",
   };
   return categoryMap[category] || category;
 };
@@ -623,8 +646,8 @@ export default function InsightsScreen() {
 
       const categoriesObj: CategoryBreakdown = {};
       for (const tx of currentMonthExpenses) {
-        // Use the category field from database
-        const category = tx.category || "Other";
+        // Use the top_category field from database (simplified categories)
+        const category = tx.top_category || "Other";
 
         if (!categoriesObj[category]) {
           categoriesObj[category] = {
@@ -668,7 +691,9 @@ export default function InsightsScreen() {
 
       const uniqueCategories = [
         "All Categories",
-        ...new Set(currentMonthExpenses.map((tx) => tx.category || "Other")),
+        ...new Set(
+          currentMonthExpenses.map((tx) => tx.top_category || "Other")
+        ),
       ].map((cat) =>
         cat === "All Categories" ? cat : formatCategoryName(cat)
       );
@@ -762,6 +787,17 @@ export default function InsightsScreen() {
     category: string
   ): keyof typeof Ionicons.glyphMap => {
     const iconMap: { [key: string]: keyof typeof Ionicons.glyphMap } = {
+      // Simplified top categories
+      Food: "restaurant",
+      Transportation: "car",
+      Travel: "airplane",
+      Loans: "card",
+      Income: "cash",
+      Shopping: "cart",
+      Entertainment: "game-controller",
+      "Personal Care": "fitness",
+      Other: "apps",
+      // Legacy categories (fallback)
       FOOD_AND_DRINK: "restaurant",
       GENERAL_MERCHANDISE: "cart",
       TRANSPORTATION: "car",
@@ -771,7 +807,6 @@ export default function InsightsScreen() {
       PERSONAL_CARE: "fitness",
       GENERAL_SERVICES: "briefcase",
       INCOME: "cash",
-      Other: "apps",
     };
     return iconMap[category] || "apps";
   };
@@ -1515,7 +1550,7 @@ export default function InsightsScreen() {
                         <Text style={styles.txName}>{tx.name}</Text>
                         <Text style={styles.txMeta}>{formatDate(tx.date)}</Text>
                         <Text style={styles.txCategory}>
-                          {formatCategoryName(tx.category || "Other")}
+                          {formatCategoryName(tx.top_category || "Other")}
                         </Text>
                       </View>
                       <View style={styles.txAmountContainer}>
@@ -1566,6 +1601,7 @@ export default function InsightsScreen() {
           )}
 
           <EnhancedFilterModal
+            key="enhanced-filter-modal"
             visible={showEnhancedFilterModal}
             onClose={() => setShowEnhancedFilterModal(false)}
             accounts={accounts}
@@ -1577,6 +1613,7 @@ export default function InsightsScreen() {
 
           {selectedCategoryDetail && (
             <CategoryDetailModal
+              key="category-detail-modal"
               visible={showCategoryDetail}
               onClose={() => setShowCategoryDetail(false)}
               category={selectedCategoryDetail.category}
@@ -1590,6 +1627,7 @@ export default function InsightsScreen() {
 
           {/* Transaction Detail Modal */}
           <TransactionDetailModal
+            key="transaction-detail-modal"
             visible={showTransactionDetail}
             onClose={() => {
               setShowTransactionDetail(false);

@@ -13,7 +13,9 @@ interface Transaction {
   amount: number;
   date: string;
   name: string;
-  category?: string; // Primary category from Plaid stored as string
+  category?: string; // Original Plaid category stored as string
+  top_category?: string; // Simplified top-level category (e.g., "Food", "Transportation")
+  sub_category?: string; // Simplified sub-category (e.g., "Eating Out", "Groceries")
   personal_finance_category?: {
     primary: string;
   };
@@ -41,7 +43,7 @@ const CategoryDetailModal: React.FC<CategoryDetailModalProps> = ({
   formatDate,
 }) => {
   const categoryTransactions = transactions.filter(
-    (tx) => (tx.category || "Other") === category
+    (tx) => (tx.top_category || "Other") === category
   );
 
   const averageTransaction =
@@ -112,9 +114,18 @@ const CategoryDetailModal: React.FC<CategoryDetailModalProps> = ({
                 {categoryTransactions.map((tx, idx) => (
                   <View key={idx} style={styles.categoryTransactionItem}>
                     <View style={styles.categoryTransactionInfo}>
-                      <Text style={styles.categoryTransactionName}>
-                        {tx.name}
-                      </Text>
+                      <View style={styles.categoryTransactionHeader}>
+                        <Text style={styles.categoryTransactionName}>
+                          {tx.name}
+                        </Text>
+                        {tx.sub_category && (
+                          <View style={styles.subCategoryBadge}>
+                            <Text style={styles.subCategoryText}>
+                              {tx.sub_category}
+                            </Text>
+                          </View>
+                        )}
+                      </View>
                       <Text style={styles.categoryTransactionDate}>
                         {formatDate(tx.date)}
                       </Text>

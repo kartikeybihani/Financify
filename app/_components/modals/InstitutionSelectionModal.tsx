@@ -223,7 +223,7 @@ export default function InstitutionSelectionModal({
           "✅ Found existing Snaptrade data in DB, navigating to /investments without API calls..."
         );
         setIsConnecting(false);
-        router.push("/investments");
+        router.push("/investments" as any);
         onClose();
         return;
       }
@@ -284,7 +284,7 @@ export default function InstitutionSelectionModal({
           } else {
             // Navigate to investments screen to display DB data
             setIsConnecting(false);
-            router.push("/investments");
+            router.push("/investments" as any);
             return;
           }
         } catch (accountError) {
@@ -410,7 +410,7 @@ export default function InstitutionSelectionModal({
 
             // Navigate to investments screen to show data
             setIsConnecting(false);
-            router.push("/investments");
+            router.push("/investments" as any);
           } catch (accountError) {
             logger.error("❌ Failed to fetch accounts:", accountError);
 

@@ -477,10 +477,32 @@ export const styles = StyleSheet.create({
       flex: 1,
       marginRight: 16,
     },
+    categoryTransactionHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      marginBottom: 4,
+      flexWrap: "wrap",
+    },
     categoryTransactionName: {
       fontSize: 16,
       color: "#fff",
-      marginBottom: 4,
+      flex: 1,
+      marginRight: 8,
+    },
+    subCategoryBadge: {
+      backgroundColor: "rgba(74, 144, 226, 0.15)",
+      paddingHorizontal: 8,
+      paddingVertical: 2,
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: "rgba(74, 144, 226, 0.3)",
+    },
+    subCategoryText: {
+      fontSize: 10,
+      color: "#4A90E2",
+      fontWeight: "600",
+      textTransform: "uppercase",
+      letterSpacing: 0.5,
     },
     categoryTransactionDate: {
       fontSize: 12,

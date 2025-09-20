@@ -12,7 +12,9 @@ import {
   Animated,
   Alert,
   DeviceEventEmitter,
+  PixelRatio,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons, AntDesign } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
 import { addNewBankAccount, fetchInitialData } from "../../_utils/plaid";
@@ -47,8 +49,34 @@ export default function FinancialBottomSheet({
   children,
   onAccountAdded,
 }: FinancialBottomSheetProps) {
-  const { height } = useWindowDimensions();
-  const maxHeight = height * 0.85;
+  const { height, width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+
+  // Responsive calculations
+  const screenData = {
+    width,
+    height,
+    scale: PixelRatio.get(),
+    fontScale: PixelRatio.getFontScale(),
+  };
+
+  // Dynamic sizing based on screen dimensions
+  const isSmallScreen = height < 700; // iPhone SE, iPhone 12 mini
+  const isMediumScreen = height >= 700 && height < 800; // iPhone 12, iPhone 13
+  const isLargeScreen = height >= 800; // iPhone 12 Pro Max, iPhone 13 Pro Max
+
+  // Responsive dimensions
+  const responsiveDimensions = {
+    maxHeight: isSmallScreen ? height * 0.9 : height * 0.85,
+    borderRadius: isSmallScreen ? 20 : 28,
+    paddingHorizontal: isSmallScreen ? 16 : 24,
+    paddingVertical: isSmallScreen ? 12 : 16,
+    iconSize: isSmallScreen ? 18 : 20,
+    titleFontSize: isSmallScreen ? 17 : 19,
+    subtitleFontSize: isSmallScreen ? 12 : 13,
+    categoryFontSize: isSmallScreen ? 12 : 13,
+    buttonFontSize: isSmallScreen ? 14 : 15,
+  };
 
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(
     new Set()
@@ -221,37 +249,88 @@ export default function FinancialBottomSheet({
             tint="dark"
           />
           <View style={styles.modalContainer}>
-            <View style={[styles.sheet, { height: maxHeight }]}>
+            <View
+              style={[
+                styles.sheet,
+                {
+                  height: responsiveDimensions.maxHeight,
+                  borderTopLeftRadius: responsiveDimensions.borderRadius,
+                  borderTopRightRadius: responsiveDimensions.borderRadius,
+                },
+              ]}
+            >
               <View style={styles.handleContainer}>
                 <View style={styles.handle} />
               </View>
-              <View style={styles.header}>
+              <View
+                style={[
+                  styles.header,
+                  { paddingHorizontal: responsiveDimensions.paddingHorizontal },
+                ]}
+              >
                 <View style={styles.titleContainer}>
                   <View
                     style={[
                       styles.iconContainer,
-                      { backgroundColor: "#1f1f1f" },
+                      {
+                        backgroundColor: "#1f1f1f",
+                        width: isSmallScreen ? 36 : 42,
+                        height: isSmallScreen ? 36 : 42,
+                        borderRadius: isSmallScreen ? 18 : 21,
+                      },
                     ]}
                   >
-                    <Ionicons name={icon} size={20} color={iconColor} />
+                    <Ionicons
+                      name={icon}
+                      size={responsiveDimensions.iconSize}
+                      color={iconColor}
+                    />
                   </View>
                   <View style={styles.titleTextContainer}>
-                    <Text style={styles.title}>{title}</Text>
-                    <Text style={styles.subtitle}>
+                    <Text
+                      style={[
+                        styles.title,
+                        { fontSize: responsiveDimensions.titleFontSize },
+                      ]}
+                    >
+                      {title}
+                    </Text>
+                    <Text
+                      style={[
+                        styles.subtitle,
+                        { fontSize: responsiveDimensions.subtitleFontSize },
+                      ]}
+                    >
                       Manage your financial accounts
                     </Text>
                   </View>
                 </View>
                 <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-                  <View style={styles.closeButtonContainer}>
-                    <Ionicons name="close" size={20} color="#888" />
+                  <View
+                    style={[
+                      styles.closeButtonContainer,
+                      {
+                        width: isSmallScreen ? 30 : 34,
+                        height: isSmallScreen ? 30 : 34,
+                        borderRadius: isSmallScreen ? 15 : 17,
+                      },
+                    ]}
+                  >
+                    <Ionicons
+                      name="close"
+                      size={responsiveDimensions.iconSize}
+                      color="#888"
+                    />
                   </View>
                 </TouchableOpacity>
               </View>
               <ScrollView
                 style={styles.content}
                 showsVerticalScrollIndicator={false}
-                contentContainerStyle={styles.scrollContent}
+                contentContainerStyle={[
+                  styles.scrollContent,
+                  { padding: responsiveDimensions.paddingVertical },
+                ]}
               >
                 {categories
                   ? categories.map((category, index) => (
@@ -271,7 +350,15 @@ export default function FinancialBottomSheet({
                               color="#888"
                               style={styles.categoryCaretIcon}
                             />
-                            <Text style={styles.categoryTitle}>
+                            <Text
+                              style={[
+                                styles.categoryTitle,
+                                {
+                                  fontSize:
+                                    responsiveDimensions.categoryFontSize,
+                                },
+                              ]}
+                            >
                               {category.title}
                             </Text>
                           </TouchableOpacity>
@@ -285,7 +372,14 @@ export default function FinancialBottomSheet({
                               opacity: isAddingAccount ? 0.6 : 1,
                             }}
                           >
-                            <Text style={styles.addActionText}>Add</Text>
+                            <Text
+                              style={[
+                                styles.addActionText,
+                                { fontSize: isSmallScreen ? 11 : 12 },
+                              ]}
+                            >
+                              Add
+                            </Text>
                             <AntDesign
                               name="right"
                               size={13}
@@ -332,7 +426,7 @@ export default function FinancialBottomSheet({
                                   />
                                   <Text
                                     style={{
-                                      fontSize: 12,
+                                      fontSize: isSmallScreen ? 11 : 12,
                                       fontWeight: "600",
                                       color: "#4A90E2",
                                       fontFamily:
@@ -355,11 +449,20 @@ export default function FinancialBottomSheet({
                     ))
                   : children}
               </ScrollView>
-              <View style={styles.footer}>
+              <View
+                style={[
+                  styles.footer,
+                  { padding: responsiveDimensions.paddingHorizontal },
+                ]}
+              >
                 <TouchableOpacity
                   style={[
                     styles.addAccountButton,
-                    { opacity: isAddingAccount ? 0.6 : 1 },
+                    {
+                      opacity: isAddingAccount ? 0.6 : 1,
+                      paddingVertical: isSmallScreen ? 12 : 14,
+                      paddingHorizontal: isSmallScreen ? 18 : 22,
+                    },
                   ]}
                   onPress={() => handleAddNewAccount()}
                   disabled={isAddingAccount}
@@ -370,11 +473,16 @@ export default function FinancialBottomSheet({
                         ? "hourglass-outline"
                         : "add-circle-outline"
                     }
-                    size={20}
+                    size={responsiveDimensions.iconSize}
                     color="#4A90E2"
                     style={styles.addIcon}
                   />
-                  <Text style={styles.addAccountText}>
+                  <Text
+                    style={[
+                      styles.addAccountText,
+                      { fontSize: responsiveDimensions.buttonFontSize },
+                    ]}
+                  >
                     {isAddingAccount ? "Connecting..." : "Link a New Account"}
                   </Text>
                 </TouchableOpacity>
@@ -399,8 +507,6 @@ const styles = StyleSheet.create({
   },
   sheet: {
     backgroundColor: "#121212",
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: -4 },
     shadowOpacity: 0.25,
@@ -424,7 +530,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 24,
     paddingBottom: 20,
   },
   titleContainer: {
@@ -437,9 +542,6 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   iconContainer: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
     justifyContent: "center",
     alignItems: "center",
     marginRight: 14,
@@ -447,7 +549,6 @@ const styles = StyleSheet.create({
     borderColor: "rgba(255, 255, 255, 0.1)",
   },
   title: {
-    fontSize: 19,
     fontWeight: "600",
     color: "#fff",
     fontFamily: Platform.OS === "ios" ? "System" : "sans-serif",
@@ -455,7 +556,6 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   subtitle: {
-    fontSize: 13,
     color: "#aaa",
     fontFamily: Platform.OS === "ios" ? "System" : "sans-serif",
     letterSpacing: 0.2,
@@ -464,9 +564,6 @@ const styles = StyleSheet.create({
     padding: 4,
   },
   closeButtonContainer: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
     backgroundColor: "rgba(255, 255, 255, 0.06)",
     justifyContent: "center",
     alignItems: "center",
@@ -475,11 +572,9 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    padding: 16,
     paddingTop: 8,
   },
   footer: {
-    padding: 24,
     paddingTop: 16,
     borderTopWidth: 1,
     borderTopColor: "rgba(255, 255, 255, 0.06)",
@@ -489,8 +584,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "rgba(74, 144, 226, 0.08)",
-    paddingVertical: 14,
-    paddingHorizontal: 22,
     borderRadius: 14,
     shadowColor: "#4A90E2",
     shadowOffset: { width: 0, height: 2 },
@@ -503,14 +596,12 @@ const styles = StyleSheet.create({
   },
   addAccountText: {
     color: "#4A90E2",
-    fontSize: 15,
     fontWeight: "600",
     fontFamily: Platform.OS === "ios" ? "System" : "sans-serif",
     letterSpacing: 0.2,
   },
   addActionText: {
     color: "#4A90E2",
-    fontSize: 12,
     fontWeight: "600",
     fontFamily: Platform.OS === "ios" ? "System" : "sans-serif",
     letterSpacing: 0.2,
@@ -546,7 +637,6 @@ const styles = StyleSheet.create({
     marginRight: 12,
   },
   categoryTitle: {
-    fontSize: 13,
     fontWeight: "500",
     color: "#fff",
     fontFamily: Platform.OS === "ios" ? "System" : "sans-serif",
