@@ -12,6 +12,10 @@ const supabase = createClient(
 
 // Conversation logging functionality
 function logConversation(conversationData) {
+  console.log(
+    "🔄 [CONVERSATION_LOG] logConversation called with:",
+    conversationData?.timestamp
+  );
   try {
     const logFilePath = path.join(process.cwd(), "conversation_log.json");
 
