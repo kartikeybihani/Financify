@@ -161,19 +161,90 @@ function detectTopic(query, state) {
   const topics = {
     product_comparison: {
       patterns: [
+        // Company names
         "chase",
         "amex",
         "american express",
         "capital one",
         "citi",
+        "citi bank",
         "discover",
         "wells fargo",
         "bank of america",
+        "bofa",
+        "us bank",
+        "usbank",
+        "barclays",
+        "synchrony",
+        "first national",
+        "pnc",
+        "regions",
+        "huntington",
+        "bmo",
+        "hsbc",
+        "ally",
+        "sofi",
+        "upgrade",
+        "credit one",
+        "first premier",
+        "bilt",
+        "bilt rewards",
+        "bilt card",
+
+        // Card names
+        "sapphire",
+        "freedom",
+        "unlimited",
+        "preferred",
+        "reserve",
+        "ink",
+        "gold card",
+        "platinum",
+        "centurion",
+        "blue cash",
+        "everyday",
+        "venture",
+        "quicksilver",
+        "savor",
+        "double cash",
+        "custom cash",
+        "discover it",
+        "freedom flex",
+        "cash back",
+        "rewards",
+        "miles",
+        "travel",
+        "business",
+        "student",
+        "secured",
+        "premium",
+        "ultimate",
+        "signature",
+
+        // Comparison words
         "vs",
         "versus",
         "compare",
         "better",
         "which",
+        "best",
+        "difference",
+        "pros and cons",
+        "advantages",
+        "disadvantages",
+        "benefits",
+        "drawbacks",
+
+        // Query patterns
+        "tell me about",
+        "what is",
+        "how does",
+        "show me",
+        "explain",
+        "credit card",
+        "debit card",
+        "checking account",
+        "savings account",
       ],
       sources: [
         "chase.com",
@@ -183,6 +254,20 @@ function detectTopic(query, state) {
         "discover.com",
         "wellsfargo.com",
         "bankofamerica.com",
+        "usbank.com",
+        "barclays.com",
+        "synchrony.com",
+        "pnc.com",
+        "regions.com",
+        "huntington.com",
+        "bmo.com",
+        "hsbc.com",
+        "ally.com",
+        "sofi.com",
+        "upgrade.com",
+        "creditone.com",
+        "firstpremier.com",
+        "bilt.com",
       ],
       ttl: 7 * 24 * 60 * 60, // 7 days for product data
       topic: "product_comparison",
@@ -242,6 +327,7 @@ function detectTopic(query, state) {
         key,
         state: state || null,
         isStateRule: false,
+        originalQuery: query, // Pass the original query for intelligent source selection
       };
     }
   }
@@ -327,6 +413,12 @@ async function fetchFromAllowlistedSources(topicInfo) {
     topicInfo.sources
   );
 
+  // For product comparisons, we need to search multiple sources and combine results
+  if (topicInfo.isProductComparison) {
+    return await fetchMultipleSourcesForComparison(topicInfo);
+  }
+
+  // For other topics, use the original single-source approach
   for (const source of topicInfo.sources) {
     try {
       const url = buildSearchUrl(source, topicInfo);
@@ -361,6 +453,226 @@ async function fetchFromAllowlistedSources(topicInfo) {
   return null;
 }
 
+// Intelligently select relevant sources based on the query
+function selectRelevantSources(topicInfo) {
+  if (!topicInfo.originalQuery) {
+    // Fallback to first 3 sources if no original query
+    return topicInfo.sources.slice(0, 3);
+  }
+
+  const query = topicInfo.originalQuery.toLowerCase();
+  const selectedSources = [];
+
+  // Company name to domain mapping
+  const companyMappings = {
+    chase: "chase.com",
+    amex: "americanexpress.com",
+    "american express": "americanexpress.com",
+    "capital one": "capitalone.com",
+    citi: "citi.com",
+    "citi bank": "citi.com",
+    discover: "discover.com",
+    "wells fargo": "wellsfargo.com",
+    "bank of america": "bankofamerica.com",
+    bofa: "bankofamerica.com",
+    "us bank": "usbank.com",
+    usbank: "usbank.com",
+    barclays: "barclays.com",
+    synchrony: "synchrony.com",
+    pnc: "pnc.com",
+    regions: "regions.com",
+    huntington: "huntington.com",
+    bmo: "bmo.com",
+    hsbc: "hsbc.com",
+    ally: "ally.com",
+    sofi: "sofi.com",
+    upgrade: "upgrade.com",
+    "credit one": "creditone.com",
+    "first premier": "firstpremier.com",
+    bilt: "bilt.com",
+  };
+
+  // Check which companies are mentioned in the query
+  for (const [companyName, domain] of Object.entries(companyMappings)) {
+    if (query.includes(companyName) && topicInfo.sources.includes(domain)) {
+      selectedSources.push(domain);
+    }
+  }
+
+  // If no specific companies found, or if it's a comparison query, use the first few sources
+  if (
+    selectedSources.length === 0 ||
+    query.includes("vs") ||
+    query.includes("versus") ||
+    query.includes("compare")
+  ) {
+    // For comparisons, include multiple sources
+    selectedSources.push(...topicInfo.sources.slice(0, 3));
+  }
+
+  // Remove duplicates and limit to 3 sources to avoid timeout
+  const uniqueSources = [...new Set(selectedSources)].slice(0, 3);
+
+  console.log(
+    `🔍 [FACTS] Selected sources for query: ${uniqueSources.join(", ")}`
+  );
+  return uniqueSources;
+}
+
+// Fetch from multiple sources for product comparisons
+async function fetchMultipleSourcesForComparison(topicInfo) {
+  console.log(
+    "🔍 [FACTS] Fetching from multiple sources for product comparison"
+  );
+
+  const results = [];
+  const errors = [];
+
+  // Intelligently select relevant sources based on the query
+  const relevantSources = selectRelevantSources(topicInfo);
+
+  for (const source of relevantSources) {
+    try {
+      const url = buildSearchUrl(source, topicInfo);
+      console.log("🔍 [FACTS] Searching:", url);
+
+      const response = await fetch(url, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (compatible; FinancifyBot/1.0)",
+          Accept:
+            "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        },
+        timeout: 8000, // Shorter timeout for multiple requests
+      });
+
+      if (!response.ok) {
+        console.log(`❌ [FACTS] HTTP ${response.status} from ${source}`);
+        errors.push({ source, error: `HTTP ${response.status}` });
+        continue;
+      }
+
+      const html = await response.text();
+      const extractedData = extractRelevantData(html, topicInfo, url);
+
+      if (extractedData && extractedData.data) {
+        results.push({
+          source: source,
+          url: url,
+          data: extractedData.data,
+          summary: extractedData.summary,
+        });
+        console.log(`✅ [FACTS] Successfully extracted data from ${source}`);
+      }
+    } catch (error) {
+      console.error(`❌ [FACTS] Error fetching from ${source}:`, error);
+      errors.push({ source, error: error.message });
+    }
+  }
+
+  if (results.length === 0) {
+    console.log("❌ [FACTS] No data extracted from any source");
+    return null;
+  }
+
+  // Combine results from multiple sources
+  const combinedData = combineProductComparisonResults(results);
+
+  return {
+    topic: "product_comparison",
+    sources: results.map((r) => r.source),
+    extractedAt: new Date().toISOString(),
+    data: combinedData,
+    summary: {
+      totalSources: results.length,
+      successfulSources: results.length,
+      failedSources: errors.length,
+      hasAPR: combinedData.apr.length > 0,
+      hasAnnualFee: combinedData.annualFee.length > 0,
+      hasRewards: combinedData.rewards.length > 0,
+      hasBenefits: combinedData.benefits.length > 0,
+      hasSignupBonus: combinedData.signupBonus.length > 0,
+    },
+    errors: errors,
+  };
+}
+
+// Combine product comparison results from multiple sources
+function combineProductComparisonResults(results) {
+  const combined = {
+    apr: [],
+    annualFee: [],
+    rewards: [],
+    benefits: [],
+    features: [],
+    signupBonus: [],
+    products: [], // Track which source each item came from
+  };
+
+  results.forEach((result, index) => {
+    const sourceName = result.source.replace(".com", "").toUpperCase();
+
+    // Add source information to each data item
+    if (result.data.apr) {
+      result.data.apr.forEach((item) => {
+        combined.apr.push({
+          ...item,
+          source: sourceName,
+          productIndex: index,
+        });
+      });
+    }
+
+    if (result.data.annualFee) {
+      result.data.annualFee.forEach((item) => {
+        combined.annualFee.push({
+          ...item,
+          source: sourceName,
+          productIndex: index,
+        });
+      });
+    }
+
+    if (result.data.rewards) {
+      result.data.rewards.forEach((item) => {
+        combined.rewards.push({
+          ...item,
+          source: sourceName,
+          productIndex: index,
+        });
+      });
+    }
+
+    if (result.data.benefits) {
+      result.data.benefits.forEach((item) => {
+        combined.benefits.push({
+          ...item,
+          source: sourceName,
+          productIndex: index,
+        });
+      });
+    }
+
+    if (result.data.signupBonus) {
+      result.data.signupBonus.forEach((item) => {
+        combined.signupBonus.push({
+          ...item,
+          source: sourceName,
+          productIndex: index,
+        });
+      });
+    }
+
+    // Track products by source
+    combined.products.push({
+      source: sourceName,
+      url: result.url,
+      summary: result.summary,
+    });
+  });
+
+  return combined;
+}
+
 // Build search URL for allowlisted sources
 function buildSearchUrl(source, topicInfo) {
   const baseUrls = {
@@ -369,6 +681,7 @@ function buildSearchUrl(source, topicInfo) {
     "census.gov": "https://www.census.gov",
     "pewresearch.org": "https://www.pewresearch.org",
     "newyorkfed.org": "https://www.newyorkfed.org",
+    // Financial institutions
     "chase.com": "https://www.chase.com",
     "americanexpress.com": "https://www.americanexpress.com",
     "capitalone.com": "https://www.capitalone.com",
@@ -376,6 +689,20 @@ function buildSearchUrl(source, topicInfo) {
     "discover.com": "https://www.discover.com",
     "wellsfargo.com": "https://www.wellsfargo.com",
     "bankofamerica.com": "https://www.bankofamerica.com",
+    "usbank.com": "https://www.usbank.com",
+    "barclays.com": "https://www.barclays.com",
+    "synchrony.com": "https://www.synchrony.com",
+    "pnc.com": "https://www.pnc.com",
+    "regions.com": "https://www.regions.com",
+    "huntington.com": "https://www.huntington.com",
+    "bmo.com": "https://www.bmo.com",
+    "hsbc.com": "https://www.hsbc.com",
+    "ally.com": "https://www.ally.com",
+    "sofi.com": "https://www.sofi.com",
+    "upgrade.com": "https://www.upgrade.com",
+    "creditone.com": "https://www.creditone.com",
+    "firstpremier.com": "https://www.firstpremier.com",
+    "bilt.com": "https://www.bilt.com",
   };
 
   // For state sites, use the official site
@@ -393,6 +720,20 @@ function buildSearchUrl(source, topicInfo) {
       "discover.com": "/credit-cards",
       "wellsfargo.com": "/credit-cards",
       "bankofamerica.com": "/credit-cards",
+      "usbank.com": "/credit-cards",
+      "barclays.com": "/us/credit-cards",
+      "synchrony.com": "/credit-cards",
+      "pnc.com": "/credit-cards",
+      "regions.com": "/credit-cards",
+      "huntington.com": "/credit-cards",
+      "bmo.com": "/credit-cards",
+      "hsbc.com": "/us/credit-cards",
+      "ally.com": "/credit-cards",
+      "sofi.com": "/credit-card",
+      "upgrade.com": "/credit-cards",
+      "creditone.com": "/credit-cards",
+      "firstpremier.com": "/credit-cards",
+      "bilt.com": "/credit-card",
     },
     bnpl_risks_reporting: {
       "consumerfinance.gov":
@@ -477,6 +818,9 @@ function extractProductComparisonData(html, sourceUrl, topicInfo) {
     /(\d+\.?\d*)\s*%\s*APR/i,
     /APR[:\s]*(\d+\.?\d*)\s*%/i,
     /(\d+\.?\d*)\s*%-(\d+\.?\d*)\s*%\s*APR/i,
+    /variable\s*APR[:\s]*(\d+\.?\d*)\s*%-(\d+\.?\d*)\s*%/i,
+    /purchase\s*APR[:\s]*(\d+\.?\d*)\s*%/i,
+    /(\d+\.?\d*)\s*%\s*variable\s*APR/i,
   ];
 
   for (const pattern of aprPatterns) {
@@ -529,6 +873,13 @@ function extractProductComparisonData(html, sourceUrl, topicInfo) {
     /(\d+\.?\d*)\s*points\s*per\s*dollar/i,
     /(\d+\.?\d*)\s*miles\s*per\s*dollar/i,
     /(\d+\.?\d*)\s*%\s*rewards/i,
+    /(\d+\.?\d*)\s*points\s*on\s*every\s*dollar/i,
+    /(\d+\.?\d*)\s*points\s*per\s*\$1/i,
+    /(\d+\.?\d*)\s*miles\s*per\s*\$1/i,
+    /earn\s*(\d+\.?\d*)\s*points/i,
+    /earn\s*(\d+\.?\d*)\s*miles/i,
+    /(\d+\.?\d*)\s*%\s*back/i,
+    /(\d+\.?\d*)\s*%\s*return/i,
   ];
 
   for (const pattern of rewardsPatterns) {
@@ -575,6 +926,28 @@ function extractProductComparisonData(html, sourceUrl, topicInfo) {
     /global\s*entry/i,
     /tsa\s*precheck/i,
     /no\s*foreign\s*transaction\s*fee/i,
+    /rental\s*car\s*insurance/i,
+    /roadside\s*assistance/i,
+    /price\s*protection/i,
+    /return\s*protection/i,
+    /cell\s*phone\s*protection/i,
+    /baggage\s*insurance/i,
+    /trip\s*cancellation/i,
+    /trip\s*interruption/i,
+    /lost\s*luggage/i,
+    /primary\s*rental\s*coverage/i,
+    /secondary\s*rental\s*coverage/i,
+    /no\s*annual\s*fee/i,
+    /no\s*late\s*fee/i,
+    /no\s*overlimit\s*fee/i,
+    /fraud\s*protection/i,
+    /zero\s*liability/i,
+    /chip\s*technology/i,
+    /contactless/i,
+    /mobile\s*wallet/i,
+    /apple\s*pay/i,
+    /google\s*pay/i,
+    /samsung\s*pay/i,
   ];
 
   for (const pattern of benefitPatterns) {

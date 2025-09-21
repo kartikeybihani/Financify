@@ -1224,6 +1224,16 @@ async function handleAskFactFresh(message, context) {
       };
     }
 
+    // Format the response based on the topic
+    if (data.topic === "product_comparison") {
+      return {
+        intent: "ask_fact_fresh",
+        fact: data,
+        cached: data.cached || false,
+        message: formatProductComparisonResponse(data),
+      };
+    }
+
     return {
       intent: "ask_fact_fresh",
       fact: data,
@@ -1238,6 +1248,76 @@ async function handleAskFactFresh(message, context) {
       message: "No current data available, please use your knowledge",
     };
   }
+}
+
+// Format product comparison response
+function formatProductComparisonResponse(data) {
+  if (!data || !data.data) {
+    return "No product comparison data available.";
+  }
+
+  const { data: productData, sources, summary } = data;
+  let response = "**PRODUCT COMPARISON**\n\n";
+
+  // Add summary of sources
+  if (sources && sources.length > 0) {
+    response += `*Sources: ${sources.join(", ")}*\n\n`;
+  }
+
+  // Add annual fees comparison
+  if (productData.annualFee && productData.annualFee.length > 0) {
+    response += "**Annual Fees:**\n";
+    productData.annualFee.forEach((fee) => {
+      const feeText =
+        fee.value === 0 ? "No annual fee" : `$${fee.value} annual fee`;
+      response += `• ${fee.source}: ${feeText}\n`;
+    });
+    response += "\n";
+  }
+
+  // Add rewards comparison
+  if (productData.rewards && productData.rewards.length > 0) {
+    response += "**Rewards:**\n";
+    productData.rewards.forEach((reward) => {
+      response += `• ${reward.source}: ${reward.text}\n`;
+    });
+    response += "\n";
+  }
+
+  // Add benefits comparison
+  if (productData.benefits && productData.benefits.length > 0) {
+    response += "**Key Benefits:**\n";
+    productData.benefits.forEach((benefit) => {
+      response += `• ${benefit.source}: ${benefit.text}\n`;
+    });
+    response += "\n";
+  }
+
+  // Add signup bonuses
+  if (productData.signupBonus && productData.signupBonus.length > 0) {
+    response += "**Signup Bonuses:**\n";
+    productData.signupBonus.forEach((bonus) => {
+      response += `• ${bonus.source}: ${bonus.text}\n`;
+    });
+    response += "\n";
+  }
+
+  // Add APR information if available
+  if (productData.apr && productData.apr.length > 0) {
+    response += "**APR Information:**\n";
+    productData.apr.forEach((apr) => {
+      response += `• ${apr.source}: ${apr.text}\n`;
+    });
+    response += "\n";
+  }
+
+  // Add data freshness note
+  if (data.extractedAt) {
+    const date = new Date(data.extractedAt).toLocaleDateString();
+    response += `*Data extracted on ${date}*`;
+  }
+
+  return response;
 }
 
 // Detect if the message is asking about financial products
