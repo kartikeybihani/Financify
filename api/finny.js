@@ -97,16 +97,12 @@ async function handleAsk(message, context) {
     const system = [
       "You are Finny: warm, encouraging, blunt when needed.",
       "Use the complete financial data provided. Give accurate, detailed responses based on all available information.",
-      "If advice crosses investing/loans, add a one-line disclosure.",
+      "Do not show net worth calculations or mathematical formulas - just state the facts clearly.",
+      "Only add investment disclaimer ('Note: This response is for informational purposes and does not constitute financial advice.') when the user asks specifically about investments, investing advice, or investment-related recommendations.",
     ].join("\n");
 
-    // Create a comprehensive context with all the RPC data
-    const contextNote = [
-      `NET WORTH DATA: ${JSON.stringify(snap.summary, null, 2)}`,
-      snap.meta ? `META DATA: ${JSON.stringify(snap.meta, null, 2)}` : null,
-    ]
-      .filter(Boolean)
-      .join("\n");
+    // Create smart context based on the question
+    const contextNote = createSmartContext(message, snap);
 
     console.log("🔍 [FINNY] Context note:", contextNote);
 
@@ -155,6 +151,78 @@ async function handleAsk(message, context) {
       type: "assistant",
     };
   }
+}
+
+// Smart context creation based on the question type
+function createSmartContext(message, snap) {
+  const lowerMessage = message.toLowerCase();
+  const context = [];
+
+  // Net worth related questions
+  if (lowerMessage.includes("net worth") || lowerMessage.includes("networth")) {
+    context.push(`Net Worth: $${snap.summary.netWorth}`);
+    context.push(`Liquid Assets: $${snap.summary.liquidAssets}`);
+    context.push(`Investments Total: $${snap.summary.investmentsTotal}`);
+    context.push(`Total Liabilities: $${snap.summary.totalLiabilities}`);
+  }
+
+  // Investment related questions
+  if (
+    lowerMessage.includes("invest") ||
+    lowerMessage.includes("portfolio") ||
+    lowerMessage.includes("stock") ||
+    lowerMessage.includes("fund")
+  ) {
+    context.push(`Investments Total: $${snap.summary.investmentsTotal}`);
+    context.push(`Investment Cash: $${snap.summary.investmentCash}`);
+    if (snap.meta?.investmentsAsOf) {
+      context.push(`Data as of: ${snap.meta.investmentsAsOf}`);
+    }
+  }
+
+  // Cash/liquid assets questions
+  if (
+    lowerMessage.includes("cash") ||
+    lowerMessage.includes("liquid") ||
+    lowerMessage.includes("checking") ||
+    lowerMessage.includes("savings")
+  ) {
+    context.push(`Liquid Assets: $${snap.summary.liquidAssets}`);
+    context.push(`Investment Cash: $${snap.summary.investmentCash}`);
+  }
+
+  // Debt/liability questions
+  if (
+    lowerMessage.includes("debt") ||
+    lowerMessage.includes("liability") ||
+    lowerMessage.includes("owe") ||
+    lowerMessage.includes("credit card")
+  ) {
+    context.push(`Total Liabilities: $${snap.summary.totalLiabilities}`);
+    context.push(`Net Worth: $${snap.summary.netWorth}`);
+  }
+
+  // General financial health questions
+  if (
+    lowerMessage.includes("how am i doing") ||
+    lowerMessage.includes("financial health") ||
+    lowerMessage.includes("overview") ||
+    lowerMessage.includes("summary")
+  ) {
+    // For general questions, provide comprehensive data
+    context.push(`Net Worth: $${snap.summary.netWorth}`);
+    context.push(`Liquid Assets: $${snap.summary.liquidAssets}`);
+    context.push(`Investments Total: $${snap.summary.investmentsTotal}`);
+    context.push(`Total Liabilities: $${snap.summary.totalLiabilities}`);
+    context.push(`Investment Cash: $${snap.summary.investmentCash}`);
+  }
+
+  // If no specific context was created, provide minimal data
+  if (context.length === 0) {
+    context.push(`Net Worth: $${snap.summary.netWorth}`);
+  }
+
+  return context.join("\n");
 }
 
 async function handleClassify(message, context) {
