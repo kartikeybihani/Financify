@@ -398,155 +398,7 @@ async function handleFinancialSummary(req, res, user_id) {
   try {
     console.log("📊 Generating financial summary for user:", user_id);
 
-    // 1) Pull latest month cashflow (income/expense/net)
-    const { data: mieRows, error: mieErr } = await supabase
-      .from("mv_monthly_income_expense")
-      .select("month,income,expense,net")
-      .eq("user_id", user_id)
-      .order("month", { ascending: false })
-      .limit(1);
-
-    if (mieErr) {
-      console.error("Error fetching monthly income/expense:", mieErr);
-      return res.status(500).json({ error: mieErr.message });
-    }
-    const mie = mieRows?.[0] ?? null;
-
-    // 2) Investments snapshot (totals) + allocation
-    const { data: invSnap, error: invErr } = await supabase.rpc(
-      "get_investment_snapshot",
-      { p_user_id: user_id }
-    );
-
-    if (invErr) {
-      console.error("Error fetching investments snapshot:", invErr);
-      return res.status(500).json({ error: invErr.message });
-    }
-
-    const { data: allocRows, error: allocErr } = await supabase
-      .from("mv_investments_allocation")
-      .select("asset_class,class_value,class_weight")
-      .eq("user_id", user_id);
-
-    if (allocErr && allocErr.code !== "PGRST116") {
-      console.error("Error fetching investments allocation:", allocErr);
-      return res.status(500).json({ error: allocErr.message });
-    }
-
-    // 3) Top categories (last month)
-    const { data: catRows, error: catErr } = await supabase
-      .from("mv_spend_by_category_monthly")
-      .select("category,month,total_spend")
-      .eq("user_id", user_id)
-      .order("month", { ascending: false })
-      .limit(50); // grab a few months to be safe
-
-    if (catErr) {
-      console.error("Error fetching spending categories:", catErr);
-      return res.status(500).json({ error: catErr.message });
-    }
-
-    const lastMonth = catRows?.[0]?.month ?? null;
-    const topCats = (catRows || [])
-      .filter((r) => r.month === lastMonth)
-      .sort((a, b) => Number(b.total_spend) - Number(a.total_spend))
-      .slice(0, 5)
-      .map((r) => ({
-        category: r.category,
-        amount: Number(r.total_spend),
-        period: "last_month",
-      }));
-
-    // 4) Recent txns (tiny slice for context, not whole history)
-    const { data: txRows, error: txErr } = await supabase
-      .from("transactions")
-      .select("date,amount,merchant_name,category,name")
-      .eq("user_id", user_id)
-      .order("date", { ascending: false })
-      .limit(10);
-
-    if (txErr) {
-      console.error("Error fetching recent transactions:", txErr);
-      return res.status(500).json({ error: txErr.message });
-    }
-
-    const recentTransactions = (txRows || []).map((t) => ({
-      date: t.date,
-      amount: Number(t.amount),
-      merchant: t.merchant_name || t.name || "Unknown",
-      category: t.category || "uncategorized",
-    }));
-
-    // 5) Accounts list (for small balances + debt inference)
-    const { data: acctRows, error: acctErr } = await supabase
-      .from("accounts")
-      .select(
-        "name,type,subtype,current_balance,available_balance,user_items!inner(user_id)"
-      )
-      .eq("user_items.user_id", user_id);
-
-    if (acctErr) {
-      console.error("Error fetching accounts:", acctErr);
-      return res.status(500).json({ error: acctErr.message });
-    }
-
-    // Heuristic: debt = (credit/loan balances if present) plus any negative balances
-    const debtTotal = (acctRows || []).reduce((sum, a) => {
-      const bal = Number(a.current_balance ?? 0);
-      const looksDebtType =
-        (a.type || "").toLowerCase() === "loan" ||
-        (a.type || "").toLowerCase() === "credit";
-      const add = looksDebtType
-        ? Math.max(bal, 0) // credit/loan balances are already positive debt figures
-        : bal < 0
-        ? -bal
-        : 0; // negative balances elsewhere treated as debt
-      return sum + add;
-    }, 0);
-
-    const liquidAccounts = (acctRows || []).filter(
-      (a) => (a.type || "").toLowerCase() === "depository"
-    );
-    const accounts = liquidAccounts.slice(0, 5).map((a) => ({
-      name: a.name ?? "Account",
-      type: a.type ?? "other",
-      balance: Number(a.current_balance ?? 0),
-    }));
-
-    // 6) Goals (active only)
-    const { data: goalRows, error: goalErr } = await supabase
-      .from("goals")
-      .select("label,target_amount,current_amount,target_date,status")
-      .eq("user_id", user_id)
-      .eq("status", "active")
-      .order("created_at", { ascending: false })
-      .limit(5);
-
-    if (goalErr) {
-      console.error("Error fetching goals:", goalErr);
-      return res.status(500).json({ error: goalErr.message });
-    }
-
-    const goals = (goalRows || []).map((g) => ({
-      label: g.label,
-      target: Number(g.target_amount),
-      progressPct: Math.min(
-        100,
-        Math.round(
-          (Number(g.current_amount ?? 0) / Number(g.target_amount || 1)) * 100
-        )
-      ),
-      timeline: g.target_date
-        ? {
-            month: new Date(g.target_date).toLocaleString("en-US", {
-              month: "long",
-            }),
-            year: new Date(g.target_date).getFullYear(),
-          }
-        : null,
-    }));
-
-    // 7) Get net worth from RPC
+    // Get net worth from RPC
     const { data: netWorthData, error: nwErr } = await supabase.rpc(
       "get_net_worth",
       { p_user_id: user_id }
@@ -557,48 +409,30 @@ async function handleFinancialSummary(req, res, user_id) {
       return res.status(500).json({ error: nwErr.message });
     }
 
-    // Compute summary
+    // Get investments snapshot from RPC
+    const { data: invSnap, error: invErr } = await supabase.rpc(
+      "get_investment_snapshot",
+      { p_user_id: user_id }
+    );
+
+    if (invErr) {
+      console.error("Error fetching investments snapshot:", invErr);
+      return res.status(500).json({ error: invErr.message });
+    }
+
+    // Compute simplified summary using only RPC data
     const investmentsTotal = Number(invSnap?.investments_total ?? 0);
     const cashTotal = Number(invSnap?.cash_total ?? 0);
-    const monthlyIncome = Number(mie?.income ?? 0);
-    const monthlyExpenses = Number(mie?.expense ?? 0);
-    const savingsRatePct =
-      monthlyIncome > 0
-        ? Math.round(((monthlyIncome - monthlyExpenses) / monthlyIncome) * 100)
-        : 0;
     const netWorth = Number(netWorthData ?? 0);
-
-    const highlights = {
-      topSpendingCategories: topCats,
-      upcomingBills: [], // you can populate from recurring_streams when ready
-      alerts: [], // hook your own alerting rules if needed
-    };
-
-    // 8) Allocation (optional array)
-    const allocation = (allocRows || []).map((r) => ({
-      assetClass: r.asset_class,
-      value: Number(r.class_value),
-      weight: Number(r.class_weight),
-    }));
 
     const summary = {
       summary: {
         netWorth: Math.round(netWorth),
-        monthlyIncome: Math.round(monthlyIncome),
-        monthlyExpenses: Math.round(monthlyExpenses),
-        savingsRatePct,
-        debtTotal: Math.round(debtTotal),
         investmentsTotal: Math.round(investmentsTotal),
+        cashTotal: Math.round(cashTotal),
       },
-      allocation, // can be empty []
-      highlights,
-      accounts,
-      goals,
-      recentTransactions,
       meta: {
         investmentsAsOf: invSnap?.as_of ?? null,
-        cashflowMonth: mie?.month ?? null,
-        lastCategoryMonth: lastMonth ?? null,
       },
     };
 
