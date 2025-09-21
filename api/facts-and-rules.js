@@ -52,57 +52,38 @@ export default async function handler(req, res) {
 }
 
 async function handleFactsGet(params) {
-  const { topic } = params;
-  console.log("🔍 [FACTS] Fetching topic:", topic);
+  const { query, state } = params;
+  console.log("🔍 [FACTS] Processing query:", query, "State:", state);
 
-  if (!topic) {
+  if (!query) {
     return {
-      error: "Missing topic parameter",
+      error: "Missing query parameter",
       fallback: true,
       message: "No current data available, please use your knowledge",
     };
   }
 
   try {
+    // Detect topic and determine if state-specific
+    const topicInfo = detectTopic(query, state);
+    console.log("🔍 [FACTS] Detected topic:", topicInfo);
+
     // Check cache first
-    const cacheKey = `facts_${topic}`;
-    const { data: cached } = await supabase
-      .from("facts_cache")
-      .select("*")
-      .eq("key", cacheKey)
-      .maybeSingle();
+    const cacheKey = generateCacheKey(topicInfo);
+    const cached = await getCachedResult(cacheKey, topicInfo.ttl);
 
     if (cached) {
-      const age = (Date.now() - new Date(cached.fetched_at).getTime()) / 1000;
-      const ttl = getTopicTTL(topic);
-
-      if (age < ttl && cached.value_json) {
-        console.log("✅ [FACTS] Returning cached result for:", topic);
-        return {
-          ...cached.value_json,
-          cached: true,
-        };
-      }
+      console.log("✅ [FACTS] Returning cached result for:", cacheKey);
+      return { ...cached, cached: true };
     }
 
-    // Fetch fresh data
-    const freshData = await fetchFreshFacts(topic);
+    // Fetch fresh data from allowlisted sources
+    const freshData = await fetchFromAllowlistedSources(topicInfo);
 
     if (freshData) {
       // Cache the result
-      const cacheData = {
-        key: cacheKey,
-        value_json: freshData,
-        source_url: freshData.source_url,
-        fetched_at: new Date().toISOString(),
-        ttl_seconds: getTopicTTL(topic),
-      };
-      await supabase.from("facts_cache").upsert(cacheData);
-
-      return {
-        ...freshData,
-        cached: false,
-      };
+      await cacheResult(cacheKey, freshData, topicInfo.ttl);
+      return { ...freshData, cached: false };
     }
 
     // No data found
@@ -122,61 +103,38 @@ async function handleFactsGet(params) {
 }
 
 async function handleStateRule(params) {
-  const { state, topic } = params;
-  console.log("🏛️ [STATE-RULE] Fetching rule for:", state, topic);
+  const { state, query } = params;
+  console.log("🏛️ [STATE-RULE] Processing:", state, query);
 
-  if (!state || !topic) {
+  if (!state || !query) {
     return {
-      error: "Missing state or topic parameter",
+      error: "Missing state or query parameter",
       fallback: true,
       message: "No current data available, please use your knowledge",
     };
   }
 
   try {
+    // Use the same engine as facts.get but with state-specific routing
+    const topicInfo = detectTopic(query, state);
+    topicInfo.isStateRule = true;
+
     // Check cache first
-    const cacheKey = `state_rule_${state.toLowerCase()}_${topic}`;
-    const { data: cached } = await supabase
-      .from("facts_cache")
-      .select("*")
-      .eq("key", cacheKey)
-      .maybeSingle();
+    const cacheKey = generateCacheKey(topicInfo);
+    const cached = await getCachedResult(cacheKey, topicInfo.ttl);
 
     if (cached) {
-      const age = (Date.now() - new Date(cached.fetched_at).getTime()) / 1000;
-      const ttl = 90 * 24 * 60 * 60; // 90 days
-
-      if (age < ttl && cached.value_json) {
-        console.log(
-          "✅ [STATE-RULE] Returning cached result for:",
-          state,
-          topic
-        );
-        return {
-          ...cached.value_json,
-          cached: true,
-        };
-      }
+      console.log("✅ [STATE-RULE] Returning cached result for:", cacheKey);
+      return { ...cached, cached: true };
     }
 
-    // Fetch fresh data
-    const freshData = await fetchFreshStateRule(state, topic);
+    // Fetch from state-specific allowlisted sources
+    const freshData = await fetchFromAllowlistedSources(topicInfo);
 
     if (freshData && !freshData.not_available) {
       // Cache the result
-      const cacheData = {
-        key: cacheKey,
-        value_json: freshData,
-        source_url: freshData.source_url,
-        fetched_at: new Date().toISOString(),
-        ttl_seconds: 90 * 24 * 60 * 60,
-      };
-      await supabase.from("facts_cache").upsert(cacheData);
-
-      return {
-        ...freshData,
-        cached: false,
-      };
+      await cacheResult(cacheKey, freshData, topicInfo.ttl);
+      return { ...freshData, cached: false };
     }
 
     // No data found or not available
@@ -195,553 +153,463 @@ async function handleStateRule(params) {
   }
 }
 
-async function fetchFreshFacts(topic) {
-  console.log("🌐 [FACTS] Fetching fresh data for topic:", topic);
+// Topic detection and source routing
+function detectTopic(query, state) {
+  const lowerQuery = query.toLowerCase();
 
-  const topicConfig = FACTS_CONFIG[topic];
-  if (!topicConfig) {
-    throw new Error(`No configuration found for topic: ${topic}`);
+  // Topic detection patterns
+  const topics = {
+    bnpl: {
+      patterns: ["bnpl", "buy now pay later", "credit report", "reporting"],
+      sources: ["consumerfinance.gov"],
+      ttl: 90 * 24 * 60 * 60, // 90 days
+      topic: "bnpl_risks_reporting",
+    },
+    student_loans: {
+      patterns: ["student loan", "repayment plan", "save plan", "idr"],
+      sources: ["studentaid.gov"],
+      ttl: 180 * 24 * 60 * 60, // 180 days
+      topic: "student_loan_plans",
+    },
+    credit_apr: {
+      patterns: ["credit card", "apr", "interest rate"],
+      sources: ["consumerfinance.gov"],
+      ttl: 30 * 24 * 60 * 60, // 30 days
+      topic: "credit_card_apr_band",
+    },
+    housing_burden: {
+      patterns: ["housing", "rent", "cost burden", "affordable housing"],
+      sources: ["pewresearch.org", "census.gov"],
+      ttl: 180 * 24 * 60 * 60, // 180 days
+      topic: "housing_cost_burden",
+    },
+    household_debt: {
+      patterns: ["debt", "household debt", "credit card debt"],
+      sources: ["newyorkfed.org"],
+      ttl: 180 * 24 * 60 * 60, // 180 days
+      topic: "debt_balances_macro",
+    },
+    state_529: {
+      patterns: ["529", "education savings", "college savings"],
+      sources: state ? [getStateOfficialSite(state)] : [],
+      ttl: 90 * 24 * 60 * 60, // 90 days
+      topic: "state_529_deduction_or_credit",
+      isStateSpecific: true,
+    },
+    state_tax: {
+      patterns: ["income tax", "tax rate", "deduction", "credit"],
+      sources: state ? [getStateOfficialSite(state)] : [],
+      ttl: 90 * 24 * 60 * 60, // 90 days
+      topic: "state_income_tax_brackets",
+      isStateSpecific: true,
+    },
+  };
+
+  // Find matching topic
+  for (const [key, config] of Object.entries(topics)) {
+    if (config.patterns.some((pattern) => lowerQuery.includes(pattern))) {
+      return {
+        ...config,
+        key,
+        state: state || null,
+        isStateRule: false,
+      };
+    }
   }
 
-  try {
-    const response = await fetch(topicConfig.url, {
-      headers: {
-        "User-Agent": "Mozilla/5.0 (compatible; FinancifyBot/1.0)",
-        Accept:
-          "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-      },
-      timeout: 10000,
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-    }
-
-    const html = await response.text();
-    const parsedData = parseFactsContent(html, topic, topicConfig);
-
-    if (!parsedData) {
-      return null;
-    }
-
-    return {
-      topic: topic,
-      metric: parsedData.metric,
-      value: parsedData.value,
-      unit: parsedData.unit,
-      as_of: parsedData.as_of,
-      source_title: topicConfig.source_title,
-      source_url: topicConfig.url,
-      ttl_seconds: getTopicTTL(topic),
-    };
-  } catch (error) {
-    console.error(`❌ [FACTS] Error fetching from ${topicConfig.url}:`, error);
-    throw error;
-  }
+  // Default fallback
+  return {
+    patterns: [],
+    sources: ["consumerfinance.gov"],
+    ttl: 90 * 24 * 60 * 60,
+    topic: "general_financial_info",
+    key: "general",
+    state: state || null,
+    isStateRule: false,
+  };
 }
 
-async function fetchFreshStateRule(state, topic) {
-  console.log("🌐 [STATE-RULE] Fetching fresh data for:", state, topic);
+// Get official state website
+function getStateOfficialSite(state) {
+  const stateSites = {
+    AZ: "azdor.gov",
+    CA: "ftb.ca.gov",
+    NY: "tax.ny.gov",
+    TX: "comptroller.texas.gov",
+    NJ: "state.nj.us/treasury/taxation",
+    FL: "floridarevenue.com",
+    IL: "tax.illinois.gov",
+    PA: "revenue.pa.gov",
+    OH: "tax.ohio.gov",
+    GA: "dor.georgia.gov",
+  };
 
-  const stateConfig = STATE_RULE_CONFIGS[state];
-  if (!stateConfig) {
-    throw new Error(`No configuration found for state: ${state}`);
-  }
-
-  const ruleType = inferRuleType(topic);
-  const targetUrl = stateConfig.urls[ruleType] || stateConfig.urls.default;
-
-  try {
-    const response = await fetch(targetUrl, {
-      headers: {
-        "User-Agent": "Mozilla/5.0 (compatible; FinancifyBot/1.0)",
-        Accept:
-          "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-      },
-      timeout: 10000,
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-    }
-
-    const html = await response.text();
-    const parsedData = parseStateContent(html, ruleType, state);
-
-    if (!parsedData) {
-      return { not_available: true };
-    }
-
-    return {
-      state: state,
-      topic: topic,
-      rule_summary: parsedData.rule_summary,
-      key_numbers: parsedData.key_numbers,
-      effective_year: new Date().getFullYear(),
-      updated_at: new Date().toISOString().split("T")[0],
-      source_title: parsedData.source_title,
-      source_url: targetUrl,
-      ttl_seconds: 90 * 24 * 60 * 60,
-    };
-  } catch (error) {
-    console.error(`❌ [STATE-RULE] Error fetching from ${targetUrl}:`, error);
-    throw error;
-  }
+  return stateSites[state] || `${state.toLowerCase()}.gov`;
 }
 
-function parseFactsContent(html, topic, config) {
-  console.log("🔍 [FACTS] Parsing content for topic:", topic);
+// Generate cache key
+function generateCacheKey(topicInfo) {
+  const statePart = topicInfo.state ? `_${topicInfo.state}` : "";
+  const year = new Date().getFullYear();
+  return `${topicInfo.topic}${statePart}_${year}`;
+}
 
+// Cache operations
+async function getCachedResult(cacheKey, ttl) {
   try {
-    // Basic HTML parsing - extract key numbers and metrics
-    // This is a simplified parser - in production you'd want more robust parsing
+    const { data: cached } = await supabase
+      .from("facts_cache")
+      .select("*")
+      .eq("key", cacheKey)
+      .maybeSingle();
 
-    switch (topic) {
-      case "credit_card_apr_band":
-        return parseCreditCardAPR(html);
-      case "bnpl_usage_stats":
-        return parseBNPLStats(html);
-      case "student_loan_plans":
-        return parseStudentLoanPlans(html);
-      case "housing_cost_burden":
-        return parseHousingCostBurden(html);
-      case "debt_balances_macro":
-        return parseDebtBalances(html);
-      default:
-        return null;
+    if (cached) {
+      const age = (Date.now() - new Date(cached.fetched_at).getTime()) / 1000;
+      if (age < ttl && cached.value_json) {
+        return cached.value_json;
+      }
     }
+    return null;
   } catch (error) {
-    console.error("❌ [FACTS] Error parsing content:", error);
+    console.error("❌ [CACHE] Error getting cached result:", error);
     return null;
   }
 }
 
-function parseStateContent(html, ruleType, state) {
-  console.log("🔍 [STATE-RULE] Parsing content for:", state, ruleType);
-
+async function cacheResult(cacheKey, data, ttl) {
   try {
-    // Basic HTML parsing - extract key numbers and rules
-    // This is a simplified parser - in production you'd want more robust parsing
-
-    switch (ruleType) {
-      case "education":
-        return parseEducationRule(html, state);
-      case "income_tax":
-        return parseIncomeTaxRule(html, state);
-      case "sales_tax":
-        return parseSalesTaxRule(html, state);
-      case "property_tax":
-        return parsePropertyTaxRule(html, state);
-      case "deductions":
-        return parseDeductionsRule(html, state);
-      default:
-        return null;
-    }
+    const cacheData = {
+      key: cacheKey,
+      value_json: data,
+      source_url: data.source_url,
+      fetched_at: new Date().toISOString(),
+      ttl_seconds: ttl,
+    };
+    await supabase.from("facts_cache").upsert(cacheData);
   } catch (error) {
-    console.error("❌ [STATE-RULE] Error parsing content:", error);
-    return null;
+    console.error("❌ [CACHE] Error caching result:", error);
   }
 }
 
-// Fact parsing functions
-function parseCreditCardAPR(html) {
+// Fetch from allowlisted sources
+async function fetchFromAllowlistedSources(topicInfo) {
   console.log(
-    "🔍 [FACTS] Parsing credit card APR from HTML length:",
-    html.length
+    "🌐 [FACTS] Fetching from allowlisted sources:",
+    topicInfo.sources
   );
 
-  // Look for various APR patterns in CFPB data
+  for (const source of topicInfo.sources) {
+    try {
+      const url = buildSearchUrl(source, topicInfo);
+      console.log("🔍 [FACTS] Searching:", url);
+
+      const response = await fetch(url, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (compatible; FinancifyBot/1.0)",
+          Accept:
+            "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        },
+        timeout: 10000,
+      });
+
+      if (!response.ok) {
+        console.log(`❌ [FACTS] HTTP ${response.status} from ${source}`);
+        continue;
+      }
+
+      const html = await response.text();
+      const extractedData = extractRelevantData(html, topicInfo, url);
+
+      if (extractedData) {
+        return extractedData;
+      }
+    } catch (error) {
+      console.error(`❌ [FACTS] Error fetching from ${source}:`, error);
+      continue;
+    }
+  }
+
+  return null;
+}
+
+// Build search URL for allowlisted sources
+function buildSearchUrl(source, topicInfo) {
+  const baseUrls = {
+    "consumerfinance.gov": "https://www.consumerfinance.gov",
+    "studentaid.gov": "https://studentaid.gov",
+    "census.gov": "https://www.census.gov",
+    "pewresearch.org": "https://www.pewresearch.org",
+    "newyorkfed.org": "https://www.newyorkfed.org",
+  };
+
+  // For state sites, use the official site
+  if (topicInfo.isStateSpecific && topicInfo.state) {
+    return `https://${source}`;
+  }
+
+  // For national sources, use specific pages based on topic
+  const specificPages = {
+    bnpl_risks_reporting: {
+      "consumerfinance.gov":
+        "/data-research/research-reports/consumer-use-of-buy-now-pay-later-and-other-unsecured-debt/",
+    },
+    student_loan_plans: {
+      "studentaid.gov": "/manage-loans/repayment/plans",
+    },
+    credit_card_apr_band: {
+      "consumerfinance.gov":
+        "/data-research/research-reports/the-consumer-credit-card-market/",
+    },
+    housing_cost_burden: {
+      "pewresearch.org":
+        "/short-reads/2024/10/25/a-look-at-the-state-of-affordable-housing-in-the-us/",
+      "census.gov":
+        "/newsroom/press-releases/2024/renter-households-cost-burdened-race.html",
+    },
+    debt_balances_macro: {
+      "newyorkfed.org": "/microeconomics/hhdc",
+    },
+  };
+
+  const baseUrl = baseUrls[source];
+  const specificPage = specificPages[topicInfo.topic]?.[source];
+
+  if (baseUrl && specificPage) {
+    return baseUrl + specificPage;
+  }
+
+  // Fallback to base URL
+  return baseUrl || `https://${source}`;
+}
+
+// Extract relevant data from HTML
+function extractRelevantData(html, topicInfo, sourceUrl) {
+  console.log("🔍 [FACTS] Extracting data for topic:", topicInfo.topic);
+
+  try {
+    switch (topicInfo.topic) {
+      case "bnpl_risks_reporting":
+        return extractBNPLData(html, sourceUrl);
+      case "student_loan_plans":
+        return extractStudentLoanData(html, sourceUrl);
+      case "credit_card_apr_band":
+        return extractCreditAPRData(html, sourceUrl);
+      case "housing_cost_burden":
+        return extractHousingBurdenData(html, sourceUrl);
+      case "debt_balances_macro":
+        return extractDebtData(html, sourceUrl);
+      case "state_529_deduction_or_credit":
+        return extractState529Data(html, topicInfo.state, sourceUrl);
+      case "state_income_tax_brackets":
+        return extractStateTaxData(html, topicInfo.state, sourceUrl);
+      default:
+        return extractGeneralData(html, sourceUrl);
+    }
+  } catch (error) {
+    console.error("❌ [FACTS] Error extracting data:", error);
+    return null;
+  }
+}
+
+// Extraction functions for each topic
+function extractBNPLData(html, sourceUrl) {
+  // Look for BNPL reporting information
   const patterns = [
-    // Range pattern: "15.99% - 24.99%"
+    /not.*report.*credit.*bureau/i,
+    /typically.*not.*report/i,
+    /credit.*report.*company/i,
+  ];
+
+  for (const pattern of patterns) {
+    if (pattern.test(html)) {
+      return {
+        topic: "bnpl_risks_reporting",
+        metric: "bnpl_reporting_to_cras",
+        value: "Typically not reported to credit bureaus",
+        unit: null,
+        as_of: new Date().toISOString().split("T")[0],
+        source_title: "CFPB – Consumer Use of BNPL and Other Unsecured Debt",
+        source_url: sourceUrl,
+        ttl_seconds: 90 * 24 * 60 * 60,
+      };
+    }
+  }
+
+  return null;
+}
+
+function extractStudentLoanData(html, sourceUrl) {
+  // Look for available repayment plans
+  const plans = [
+    "Standard",
+    "Extended",
+    "Graduated",
+    "SAVE",
+    "ICR",
+    "IBR",
+    "PAYE",
+  ];
+  const foundPlans = plans.filter((plan) =>
+    html.toLowerCase().includes(plan.toLowerCase())
+  );
+
+  if (foundPlans.length > 0) {
+    return {
+      topic: "student_loan_plans",
+      metric: "available_plans",
+      value: foundPlans,
+      unit: "list",
+      as_of: new Date().toISOString().split("T")[0],
+      source_title: "Federal Student Aid – Repayment Plans",
+      source_url: sourceUrl,
+      ttl_seconds: 180 * 24 * 60 * 60,
+    };
+  }
+
+  return null;
+}
+
+function extractCreditAPRData(html, sourceUrl) {
+  // Look for APR ranges
+  const patterns = [
     /(\d+\.?\d*)\s*[-–]\s*(\d+\.?\d*)\s*%/,
-    // Single percentage: "19.99%"
     /(\d+\.?\d*)\s*%/,
-    // APR followed by numbers: "APR: 18.99%"
     /APR[:\s]*(\d+\.?\d*)\s*%/i,
-    // Average APR: "average APR of 20.99%"
-    /average\s+APR[:\s]*(\d+\.?\d*)\s*%/i,
-    // Mean APR: "mean APR of 18.50%"
-    /mean\s+APR[:\s]*(\d+\.?\d*)\s*%/i,
   ];
 
   for (const pattern of patterns) {
     const match = html.match(pattern);
     if (match) {
-      console.log("✅ [FACTS] Found APR match:", match[0]);
       const aprValue = parseFloat(match[1]);
-
-      // If it's a range, use the midpoint
-      if (match[2]) {
-        const highValue = parseFloat(match[2]);
-        const midpoint = (aprValue + highValue) / 2;
-        return {
-          metric: "credit_card_apr_range",
-          value: midpoint,
-          unit: "percentage",
-          as_of: new Date().getFullYear().toString(),
-          range: `${aprValue}% - ${highValue}%`,
-        };
-      }
-
       return {
+        topic: "credit_card_apr_band",
         metric: "credit_card_apr_average",
         value: aprValue,
         unit: "percentage",
-        as_of: new Date().getFullYear().toString(),
+        as_of: new Date().toISOString().split("T")[0],
+        source_title: "CFPB – The Consumer Credit Card Market",
+        source_url: sourceUrl,
+        ttl_seconds: 30 * 24 * 60 * 60,
       };
     }
   }
 
-  // If no specific APR found, return a reasonable fallback based on current market data
-  console.log("⚠️ [FACTS] No APR pattern found, using fallback data");
-  return {
-    metric: "credit_card_apr_average",
-    value: 20.99, // Current average APR as of 2024
-    unit: "percentage",
-    as_of: new Date().getFullYear().toString(),
-    note: "Fallback data - market average",
-  };
+  return null;
 }
 
-function parseBNPLStats(html) {
-  console.log("🔍 [FACTS] Parsing BNPL stats from HTML length:", html.length);
-
-  // Look for BNPL usage statistics with various patterns
+function extractHousingBurdenData(html, sourceUrl) {
+  // Look for cost burden percentages
   const patterns = [
-    // "21% of consumers"
-    /(\d+\.?\d*)\s*%\s*of\s*consumers/i,
-    // "approximately 21%"
-    /approximately\s*(\d+\.?\d*)\s*%/i,
-    // "about 21%"
-    /about\s*(\d+\.?\d*)\s*%/i,
-    // "nearly 21%"
-    /nearly\s*(\d+\.?\d*)\s*%/i,
-    // "around 21%"
-    /around\s*(\d+\.?\d*)\s*%/i,
-    // Just percentage: "21%"
-    /(\d+\.?\d*)\s*%/,
-  ];
-
-  for (const pattern of patterns) {
-    const match = html.match(pattern);
-    if (match) {
-      console.log("✅ [FACTS] Found BNPL usage match:", match[0]);
-      const usageValue = parseFloat(match[1]);
-
-      // Only return if it's a reasonable percentage (0-100)
-      if (usageValue >= 0 && usageValue <= 100) {
-        return {
-          metric: "bnpl_usage_rate",
-          value: usageValue / 100,
-          unit: "share",
-          as_of: new Date().getFullYear().toString(),
-        };
-      }
-    }
-  }
-
-  // Fallback data based on CFPB 2024 report
-  console.log("⚠️ [FACTS] No BNPL usage pattern found, using fallback data");
-  return {
-    metric: "bnpl_usage_rate",
-    value: 0.21, // 21% from CFPB 2024 report
-    unit: "share",
-    as_of: new Date().getFullYear().toString(),
-    note: "Fallback data - CFPB 2024 estimate",
-  };
-}
-
-function parseStudentLoanPlans(html) {
-  // Look for student loan plan information
-  return {
-    metric: "student_loan_plans_available",
-    value: 4, // SAVE, Standard, Graduated, Extended
-    unit: "count",
-    as_of: new Date().getFullYear().toString(),
-  };
-}
-
-function parseHousingCostBurden(html) {
-  console.log(
-    "🔍 [FACTS] Parsing housing cost burden from HTML length:",
-    html.length
-  );
-
-  // Look for housing cost burden statistics with various patterns
-  const patterns = [
-    // "31% of households"
     /(\d+\.?\d*)\s*%\s*of\s*(?:U\.?S\.?\s*)?households/i,
-    // "cost-burdened at 31%"
-    /cost.burdened.*?(\d+\.?\d*)\s*%/i,
-    // "31% cost burdened"
     /(\d+\.?\d*)\s*%\s*cost.burdened/i,
-    // "approximately 31%"
-    /approximately\s*(\d+\.?\d*)\s*%/i,
-    // Just percentage: "31%"
-    /(\d+\.?\d*)\s*%/,
   ];
 
   for (const pattern of patterns) {
     const match = html.match(pattern);
     if (match) {
-      console.log("✅ [FACTS] Found housing burden match:", match[0]);
       const burdenValue = parseFloat(match[1]);
-
-      // Only return if it's a reasonable percentage (0-100)
       if (burdenValue >= 0 && burdenValue <= 100) {
         return {
-          metric: "housing_cost_burden_rate",
+          topic: "housing_cost_burden",
+          metric: "share_households_cost_burdened",
           value: burdenValue / 100,
           unit: "share",
-          as_of: new Date().getFullYear().toString(),
+          as_of: new Date().toISOString().split("T")[0],
+          source_title:
+            "Pew Research – The State of Affordable Housing in the US",
+          source_url: sourceUrl,
+          ttl_seconds: 180 * 24 * 60 * 60,
         };
       }
     }
   }
 
-  // Fallback data based on Pew Research 2024
-  console.log(
-    "⚠️ [FACTS] No housing burden pattern found, using fallback data"
-  );
-  return {
-    metric: "housing_cost_burden_rate",
-    value: 0.31, // 31% from Pew Research 2024
-    unit: "share",
-    as_of: new Date().getFullYear().toString(),
-    note: "Fallback data - Pew Research 2024 estimate",
-  };
+  return null;
 }
 
-function parseDebtBalances(html) {
-  console.log(
-    "🔍 [FACTS] Parsing debt balances from HTML length:",
-    html.length
-  );
-
-  // Look for debt balance statistics with various patterns
+function extractDebtData(html, sourceUrl) {
+  // Look for debt amounts
   const patterns = [
-    // "$17.9 trillion"
     /\$(\d+(?:\.\d+)?)\s*trillion/i,
-    // "17.9 trillion"
     /(\d+(?:\.\d+)?)\s*trillion/i,
-    // "$17,900 billion"
-    /\$(\d+(?:,\d+)?)\s*billion/i,
-    // "17,900 billion"
-    /(\d+(?:,\d+)?)\s*billion/i,
   ];
 
   for (const pattern of patterns) {
     const match = html.match(pattern);
     if (match) {
-      console.log("✅ [FACTS] Found debt balance match:", match[0]);
-      let debtValue = parseFloat(match[1].replace(/,/g, ""));
-
-      // Convert billions to trillions if needed
-      if (pattern.toString().includes("billion")) {
-        debtValue = debtValue / 1000;
-      }
-
+      const debtValue = parseFloat(match[1]);
       return {
+        topic: "debt_balances_macro",
         metric: "total_household_debt",
         value: debtValue,
         unit: "trillion_usd",
-        as_of: new Date().getFullYear().toString(),
+        as_of: new Date().toISOString().split("T")[0],
+        source_title: "NY Fed – Household Debt and Credit Report",
+        source_url: sourceUrl,
+        ttl_seconds: 180 * 24 * 60 * 60,
       };
     }
   }
 
-  // Fallback data based on NY Fed 2024 Q3 data
-  console.log("⚠️ [FACTS] No debt balance pattern found, using fallback data");
-  return {
-    metric: "total_household_debt",
-    value: 17.9, // $17.9 trillion from NY Fed 2024 Q3
-    unit: "trillion_usd",
-    as_of: new Date().getFullYear().toString(),
-    note: "Fallback data - NY Fed 2024 Q3 estimate",
-  };
+  return null;
 }
 
-// State rule parsing functions
-function parseEducationRule(html, state) {
-  const stateRules = {
-    AZ: {
-      rule_summary:
-        "Arizona allows a state income tax deduction for 529 contributions up to $4,000 single / $8,000 MFJ.",
-      key_numbers: [
-        { label: "single", value: 4000, unit: "USD" },
-        { label: "mfj", value: 8000, unit: "USD" },
-      ],
-      source_title: "Arizona Department of Revenue — 529 Deductions",
-    },
-    CA: {
-      rule_summary:
-        "California does not offer a state income tax deduction for 529 contributions.",
-      key_numbers: [{ label: "deduction", value: 0, unit: "USD" }],
-      source_title: "California Franchise Tax Board",
-    },
-    NY: {
-      rule_summary:
-        "New York allows a state income tax deduction for 529 contributions up to $10,000 per taxpayer.",
-      key_numbers: [{ label: "per_taxpayer", value: 10000, unit: "USD" }],
-      source_title: "New York State Department of Taxation and Finance",
-    },
-    TX: {
-      rule_summary:
-        "Texas has no state income tax, so no 529 deduction is available.",
-      key_numbers: [
-        { label: "state_income_tax", value: 0, unit: "percentage" },
-      ],
-      source_title: "Texas Comptroller of Public Accounts",
-    },
-    NJ: {
-      rule_summary:
-        "New Jersey allows a state income tax deduction for 529 contributions up to $10,000 per taxpayer.",
-      key_numbers: [{ label: "per_taxpayer", value: 10000, unit: "USD" }],
-      source_title: "New Jersey Division of Taxation",
-    },
-  };
+function extractState529Data(html, state, sourceUrl) {
+  // Look for 529 deduction amounts
+  const patterns = [
+    /\$(\d+(?:,\d+)?)\s*(?:per\s+)?(?:taxpayer|person|individual)/i,
+    /\$(\d+(?:,\d+)?)\s*(?:single|individual)/i,
+    /\$(\d+(?:,\d+)?)\s*(?:mfj|married)/i,
+  ];
 
-  return stateRules[state] || null;
+  for (const pattern of patterns) {
+    const match = html.match(pattern);
+    if (match) {
+      const amount = parseFloat(match[1].replace(/,/g, ""));
+      return {
+        state: state,
+        topic: "state_529_deduction_or_credit",
+        rule_summary: `${state} allows a state income tax deduction for 529 contributions up to $${amount.toLocaleString()}.`,
+        key_numbers: [
+          { label: "deduction_amount", value: amount, unit: "USD" },
+        ],
+        effective_year: new Date().getFullYear(),
+        updated_at: new Date().toISOString().split("T")[0],
+        source_title: `${state} Department of Revenue – 529 Deductions`,
+        source_url: sourceUrl,
+        ttl_seconds: 90 * 24 * 60 * 60,
+      };
+    }
+  }
+
+  return null;
 }
 
-function parseIncomeTaxRule(html, state) {
-  // Basic income tax parsing - would need more sophisticated parsing in production
+function extractStateTaxData(html, state, sourceUrl) {
+  // Basic state tax extraction
   return {
+    state: state,
+    topic: "state_income_tax_brackets",
     rule_summary: `${state} has specific state income tax rates and brackets.`,
     key_numbers: [],
+    effective_year: new Date().getFullYear(),
+    updated_at: new Date().toISOString().split("T")[0],
     source_title: `${state} Department of Revenue`,
+    source_url: sourceUrl,
+    ttl_seconds: 90 * 24 * 60 * 60,
   };
 }
 
-function parseSalesTaxRule(html, state) {
-  // Basic sales tax parsing
+function extractGeneralData(html, sourceUrl) {
+  // Fallback extraction
   return {
-    rule_summary: `${state} has specific state sales tax rates.`,
-    key_numbers: [],
-    source_title: `${state} Department of Revenue`,
+    topic: "general_financial_info",
+    metric: "general_info",
+    value: "Financial information available",
+    unit: null,
+    as_of: new Date().toISOString().split("T")[0],
+    source_title: "Official Financial Source",
+    source_url: sourceUrl,
+    ttl_seconds: 90 * 24 * 60 * 60,
   };
 }
-
-function parsePropertyTaxRule(html, state) {
-  // Basic property tax parsing
-  return {
-    rule_summary: `${state} has specific property tax rules and rates.`,
-    key_numbers: [],
-    source_title: `${state} Department of Revenue`,
-  };
-}
-
-function parseDeductionsRule(html, state) {
-  // Basic deductions parsing
-  return {
-    rule_summary: `${state} offers various state tax deductions and credits.`,
-    key_numbers: [],
-    source_title: `${state} Department of Revenue`,
-  };
-}
-
-function inferRuleType(topic) {
-  const lowerTopic = topic.toLowerCase();
-
-  if (lowerTopic.includes("529") || lowerTopic.includes("education")) {
-    return "education";
-  }
-  if (lowerTopic.includes("income_tax") || lowerTopic.includes("tax_rate")) {
-    return "income_tax";
-  }
-  if (
-    lowerTopic.includes("sales_tax") ||
-    lowerTopic.includes("sales_tax_rate")
-  ) {
-    return "sales_tax";
-  }
-  if (lowerTopic.includes("property_tax")) {
-    return "property_tax";
-  }
-  if (lowerTopic.includes("deduction") || lowerTopic.includes("deduct")) {
-    return "deductions";
-  }
-
-  return "default";
-}
-
-function getTopicTTL(topic) {
-  const ttlMap = {
-    credit_card_apr_band: 30 * 24 * 60 * 60, // 30 days
-    bnpl_usage_stats: 90 * 24 * 60 * 60, // 90 days
-    bnpl_risks_reporting: 90 * 24 * 60 * 60, // 90 days
-    student_loan_plans: 180 * 24 * 60 * 60, // 180 days
-    housing_cost_burden: 180 * 24 * 60 * 60, // 180 days
-    debt_balances_macro: 180 * 24 * 60 * 60, // 180 days
-  };
-
-  return ttlMap[topic] || 90 * 24 * 60 * 60; // Default 90 days
-}
-
-// Configuration objects
-const FACTS_CONFIG = {
-  credit_card_apr_band: {
-    url: "https://www.consumerfinance.gov/data-research/research-reports/the-consumer-credit-card-market/",
-    source_title: "CFPB: The Consumer Credit Card Market",
-  },
-  bnpl_usage_stats: {
-    url: "https://files.consumerfinance.gov/f/documents/cfpb_BNPL_Report_2025_01.pdf",
-    source_title: "CFPB: Consumer Use of Buy Now, Pay Later",
-  },
-  bnpl_risks_reporting: {
-    url: "https://files.consumerfinance.gov/f/documents/cfpb_BNPL_Report_2025_01.pdf",
-    source_title: "CFPB: Consumer Use of Buy Now, Pay Later",
-  },
-  student_loan_plans: {
-    url: "https://studentaid.gov/manage-loans/repayment/plans",
-    source_title: "Federal Student Aid: Repayment Plans",
-  },
-  housing_cost_burden: {
-    url: "https://www.pewresearch.org/short-reads/2024/10/25/a-look-at-the-state-of-affordable-housing-in-the-us/",
-    source_title: "Pew Research: The State of Affordable Housing in the US",
-  },
-  debt_balances_macro: {
-    url: "https://www.newyorkfed.org/microeconomics/hhdc",
-    source_title: "NY Fed: Household Debt and Credit Report",
-  },
-};
-
-const STATE_RULE_CONFIGS = {
-  AZ: {
-    name: "Arizona",
-    urls: {
-      education:
-        "https://azdor.gov/tax-credits-and-deductions/529-education-savings-accounts",
-      default: "https://azdor.gov/",
-    },
-  },
-  CA: {
-    name: "California",
-    urls: {
-      education: "https://www.ftb.ca.gov/file/personal/deductions/index.html",
-      default: "https://www.ftb.ca.gov/",
-    },
-  },
-  NY: {
-    name: "New York",
-    urls: {
-      education:
-        "https://www.tax.ny.gov/pit/deductions/529_plan_contributions.htm",
-      default: "https://www.tax.ny.gov/",
-    },
-  },
-  TX: {
-    name: "Texas",
-    urls: {
-      education: "https://comptroller.texas.gov/taxes/",
-      default: "https://comptroller.texas.gov/",
-    },
-  },
-  NJ: {
-    name: "New Jersey",
-    urls: {
-      education: "https://www.state.nj.us/treasury/taxation/njit12.shtml",
-      default: "https://www.state.nj.us/treasury/taxation/",
-    },
-  },
-};

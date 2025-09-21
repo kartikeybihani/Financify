@@ -974,7 +974,7 @@ async function handleAskStateRule(message, context) {
       };
     }
 
-    // Call the new facts-and-rules endpoint
+    // Call the cleaned up facts-and-rules endpoint
     const BASE_URL = process.env.APP_BASE_URL;
     const res = await fetch(`${BASE_URL}/api/facts-and-rules`, {
       method: "POST",
@@ -982,7 +982,7 @@ async function handleAskStateRule(message, context) {
       body: JSON.stringify({
         endpoint: "state.rule",
         state: state,
-        topic: inferRuleType(message),
+        query: message,
       }),
     });
 
@@ -1044,63 +1044,18 @@ function extractStateFromMessage(message) {
   return null;
 }
 
-function inferRuleType(query) {
-  const lowerQuery = query.toLowerCase();
-
-  if (lowerQuery.includes("529") || lowerQuery.includes("education")) {
-    return "state_529_deduction_or_credit";
-  }
-  if (lowerQuery.includes("income tax") || lowerQuery.includes("tax rate")) {
-    return "state_income_tax_brackets";
-  }
-  if (
-    lowerQuery.includes("sales tax") ||
-    lowerQuery.includes("sales tax rate")
-  ) {
-    return "sales_tax";
-  }
-  if (lowerQuery.includes("property tax")) {
-    return "property_tax";
-  }
-  if (lowerQuery.includes("deduction") || lowerQuery.includes("deduct")) {
-    return "deductions";
-  }
-  if (
-    lowerQuery.includes("home") ||
-    lowerQuery.includes("buy") ||
-    lowerQuery.includes("house")
-  ) {
-    return "first_time_homebuyer_assistance";
-  }
-  if (lowerQuery.includes("ev") || lowerQuery.includes("electric vehicle")) {
-    return "ev_rebate_or_credit";
-  }
-
-  return "state_529_deduction_or_credit"; // Default topic
-}
-
 async function handleAskFactFresh(message, context) {
   console.log("🌐 [FACT_FRESH] Processing fact fresh query:", message);
 
   try {
-    // Determine the topic based on the message
-    const topic = inferFactTopic(message);
-    if (!topic) {
-      return {
-        error:
-          "Could not determine topic from message. Please be more specific.",
-        intent: "ask_fact_fresh",
-      };
-    }
-
-    // Call the new facts-and-rules endpoint
+    // Call the cleaned up facts-and-rules endpoint
     const BASE_URL = process.env.APP_BASE_URL;
     const res = await fetch(`${BASE_URL}/api/facts-and-rules`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         endpoint: "facts.get",
-        topic: topic,
+        query: message,
       }),
     });
 
@@ -1137,39 +1092,4 @@ async function handleAskFactFresh(message, context) {
       message: "No current data available, please use your knowledge",
     };
   }
-}
-
-function inferFactTopic(message) {
-  const lowerMessage = message.toLowerCase();
-
-  if (lowerMessage.includes("credit card") || lowerMessage.includes("apr")) {
-    return "credit_card_apr_band";
-  }
-  if (
-    lowerMessage.includes("bnpl") ||
-    lowerMessage.includes("buy now pay later")
-  ) {
-    return "bnpl_usage_stats";
-  }
-  if (
-    lowerMessage.includes("student loan") ||
-    lowerMessage.includes("repayment")
-  ) {
-    return "student_loan_plans";
-  }
-  if (
-    lowerMessage.includes("housing") ||
-    lowerMessage.includes("rent") ||
-    lowerMessage.includes("cost burden")
-  ) {
-    return "housing_cost_burden";
-  }
-  if (
-    lowerMessage.includes("debt") ||
-    lowerMessage.includes("household debt")
-  ) {
-    return "debt_balances_macro";
-  }
-
-  return null;
 }
