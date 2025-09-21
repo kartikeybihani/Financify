@@ -66,6 +66,15 @@ export default function ChatScreen() {
     });
     return () => subscription?.remove();
   }, []);
+
+  // Cleanup scroll timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (scrollTimeout.current) {
+        clearTimeout(scrollTimeout.current);
+      }
+    };
+  }, []);
   const [suggestions] = useState<Suggestion[]>(() => {
     const baseSuggestions = [
       {
@@ -99,6 +108,8 @@ export default function ChatScreen() {
   const lastContentOffset = useRef({ y: 0 }).current;
   const isScrolling = useRef(false);
   const shouldScrollToBottom = useRef(true);
+  const isUserScrolling = useRef(false);
+  const scrollTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dotAnimations = useRef([
     new Animated.Value(0),
     new Animated.Value(0),
@@ -258,14 +269,30 @@ export default function ChatScreen() {
         }).start();
       }
 
-      lastContentOffset.y = currentOffset;
-
-      if (currentOffset < lastContentOffset.y) {
-        shouldScrollToBottom.current = false;
+      // Clear any existing timeout
+      if (scrollTimeout.current) {
+        clearTimeout(scrollTimeout.current);
       }
 
-      if (currentOffset >= contentHeight - scrollViewHeight - 10) {
+      // Set user scrolling flag
+      isUserScrolling.current = true;
+
+      // Reset user scrolling flag after a delay
+      scrollTimeout.current = setTimeout(() => {
+        isUserScrolling.current = false;
+      }, 1500);
+
+      lastContentOffset.y = currentOffset;
+
+      // More precise bottom detection
+      const isNearBottom =
+        currentOffset >= contentHeight - scrollViewHeight - 50;
+
+      if (isNearBottom) {
         shouldScrollToBottom.current = true;
+      } else if (currentOffset < lastContentOffset.y - 10) {
+        // User is scrolling up significantly
+        shouldScrollToBottom.current = false;
       }
     },
     [showScrollButton, scrollButtonAnimation]
@@ -273,31 +300,30 @@ export default function ChatScreen() {
 
   const scrollToBottom = useCallback(() => {
     if (flatListRef.current && flatListData.length > 0) {
-      // Force scroll to the absolute bottom by using a large offset
-      setTimeout(() => {
+      // Use requestAnimationFrame for smoother scrolling
+      requestAnimationFrame(() => {
         flatListRef.current?.scrollToEnd({
           animated: true,
         });
-        // Additional scroll to ensure we're at the very bottom
-        setTimeout(() => {
-          flatListRef.current?.scrollToEnd({
-            animated: false,
-          });
-        }, 300);
-      }, 50);
+      });
     }
   }, [flatListData.length]);
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
-    if (shouldScrollToBottom.current && flatListData.length > 0) {
-      setTimeout(() => {
+    if (
+      shouldScrollToBottom.current &&
+      flatListData.length > 0 &&
+      !isUserScrolling.current
+    ) {
+      // Use requestAnimationFrame for smoother auto-scroll
+      requestAnimationFrame(() => {
         if (flatListRef.current) {
           flatListRef.current.scrollToEnd({
             animated: true,
           });
         }
-      }, 100);
+      });
     }
   }, [flatListData.length]);
 
@@ -395,19 +421,29 @@ export default function ChatScreen() {
                 getItemLayout={getItemLayout}
                 style={styles.chatScroll}
                 onScroll={handleScroll}
-                scrollEventThrottle={16}
-                onScrollBeginDrag={() => (isScrolling.current = true)}
-                onScrollEndDrag={() => (isScrolling.current = false)}
+                scrollEventThrottle={8}
+                onScrollBeginDrag={() => {
+                  isScrolling.current = true;
+                  isUserScrolling.current = true;
+                }}
+                onScrollEndDrag={() => {
+                  isScrolling.current = false;
+                  // Keep user scrolling flag for a bit longer
+                  setTimeout(() => {
+                    isUserScrolling.current = false;
+                  }, 1000);
+                }}
                 contentContainerStyle={{
+                  paddingTop: responsivePadding(8),
                   paddingBottom:
-                    Math.max(insets.bottom, responsivePadding(16)) +
-                    responsiveHeight(12),
+                    Math.max(insets.bottom, responsivePadding(20)) +
+                    responsiveHeight(15),
                 }}
                 removeClippedSubviews={true}
-                maxToRenderPerBatch={10}
-                windowSize={10}
-                initialNumToRender={20}
-                updateCellsBatchingPeriod={50}
+                maxToRenderPerBatch={8}
+                windowSize={8}
+                initialNumToRender={15}
+                updateCellsBatchingPeriod={100}
                 maintainVisibleContentPosition={{
                   minIndexForVisible: 0,
                   autoscrollToTopThreshold: 10,
@@ -416,9 +452,10 @@ export default function ChatScreen() {
                 legacyImplementation={false}
                 disableVirtualization={false}
                 disableIntervalMomentum={true}
-                decelerationRate="fast"
+                decelerationRate="normal"
                 keyboardShouldPersistTaps="handled"
                 keyboardDismissMode="interactive"
+                showsVerticalScrollIndicator={false}
               />
 
               {/* Inline Goal Confirmation Buttons */}

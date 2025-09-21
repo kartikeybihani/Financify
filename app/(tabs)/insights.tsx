@@ -1641,6 +1641,7 @@ export default function InsightsScreen() {
           <View style={updateModalStyles.container}>
             <View style={updateModalStyles.iconContainer}>
               <Ionicons
+                key={updateModalInfo?.type || "default"}
                 name={
                   updateModalInfo?.type === "new_accounts"
                     ? "add-circle-outline"

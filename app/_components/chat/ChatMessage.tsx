@@ -292,13 +292,13 @@ export const ChatMessageComponent = ({
 const styles = StyleSheet.create({
   messageContainer: {
     maxWidth: isSmallScreen ? "95%" : "90%",
-    marginVertical: responsivePadding(2),
+    marginVertical: responsivePadding(1),
   },
   userMessageContainer: {
     alignSelf: "flex-end",
     marginRight: responsivePadding(16),
     marginLeft: responsiveWidth(15),
-    marginTop: responsivePadding(16),
+    marginTop: responsivePadding(8),
   },
   userMessageBubble: {
     borderRadius: 12,
@@ -317,7 +317,7 @@ const styles = StyleSheet.create({
   finnyMessageRow: {
     flexDirection: "row",
     alignItems: "flex-start",
-    marginBottom: responsivePadding(2),
+    marginBottom: responsivePadding(1),
   },
   finnyMessageContainer: {
     flex: 1,
@@ -335,14 +335,14 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 2,
     elevation: 2,
-    marginBottom: responsivePadding(5),
+    marginBottom: responsivePadding(2),
     borderRadius: 12,
     borderBottomLeftRadius: 1,
   },
   messageText: {
-    fontSize: responsiveFontSize(16),
-    lineHeight: responsiveFontSize(20),
-    letterSpacing: -0.2,
+    fontSize: responsiveFontSize(14),
+    lineHeight: responsiveFontSize(18),
+    letterSpacing: -0.1,
     fontFamily: Platform.OS === "ios" ? "SF Pro Text" : "System",
   },
   userMessageText: {
@@ -359,7 +359,7 @@ const styles = StyleSheet.create({
   },
   senderNameContainer: {
     marginLeft: responsivePadding(16),
-    marginBottom: responsivePadding(4),
+    marginBottom: responsivePadding(2),
   },
   senderName: {
     fontSize: responsiveFontSize(13),
