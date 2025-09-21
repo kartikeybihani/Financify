@@ -202,12 +202,154 @@ function createSmartContext(message, snap) {
     context.push(`Net Worth: $${snap.summary.netWorth}`);
   }
 
+  // Transaction related questions
+  if (
+    lowerMessage.includes("spend") ||
+    lowerMessage.includes("spent") ||
+    lowerMessage.includes("expense") ||
+    lowerMessage.includes("transaction") ||
+    lowerMessage.includes("purchase") ||
+    lowerMessage.includes("bought")
+  ) {
+    // Add recent transactions
+    if (snap.transactions?.recent?.length > 0) {
+      context.push("Recent transactions:");
+      snap.transactions.recent.slice(0, 5).forEach((txn) => {
+        const amount = Math.abs(txn.amount);
+        const sign = txn.amount < 0 ? "-" : "+";
+        context.push(
+          `${txn.date}: ${sign}$${amount.toFixed(2)} - ${
+            txn.merchant || txn.name
+          }`
+        );
+      });
+    }
+
+    // Add spend by category
+    if (snap.transactions?.spendByCategory?.length > 0) {
+      context.push("This month's spending by category:");
+      snap.transactions.spendByCategory.slice(0, 5).forEach((cat) => {
+        context.push(
+          `${cat.category}: $${cat.total_spend.toFixed(2)} (${
+            cat.txn_count
+          } transactions)`
+        );
+      });
+    }
+  }
+
+  // Cashflow questions
+  if (
+    lowerMessage.includes("income") ||
+    lowerMessage.includes("cashflow") ||
+    lowerMessage.includes("monthly") ||
+    lowerMessage.includes("earn")
+  ) {
+    if (snap.transactions?.cashflow?.length > 0) {
+      context.push("Recent monthly cashflow:");
+      snap.transactions.cashflow.slice(0, 3).forEach((cf) => {
+        context.push(
+          `${cf.month}: Income $${cf.income.toFixed(
+            2
+          )}, Expenses $${cf.expense.toFixed(2)}, Net $${cf.net.toFixed(2)}`
+        );
+      });
+    }
+  }
+
+  // Bills/subscriptions questions
+  if (
+    lowerMessage.includes("bill") ||
+    lowerMessage.includes("subscription") ||
+    lowerMessage.includes("recurring") ||
+    lowerMessage.includes("payment") ||
+    lowerMessage.includes("due")
+  ) {
+    if (snap.recurring?.active?.length > 0) {
+      context.push("Active recurring payments:");
+      snap.recurring.active.forEach((stream) => {
+        if (stream.flow_type === "outflow") {
+          context.push(
+            `${stream.merchant_name}: $${stream.average_amount.toFixed(2)} ${
+              stream.frequency
+            }`
+          );
+        }
+      });
+    }
+
+    if (snap.recurring?.upcoming?.length > 0) {
+      context.push("Upcoming bills:");
+      snap.recurring.upcoming
+        .filter((bill) => bill.flow_type === "outflow" && bill.next_date)
+        .slice(0, 5)
+        .forEach((bill) => {
+          context.push(
+            `${bill.merchant_name}: $${bill.average_amount.toFixed(2)} due ${
+              bill.next_date
+            }`
+          );
+        });
+    }
+  }
+
+  // Goals questions
+  if (
+    lowerMessage.includes("goal") ||
+    lowerMessage.includes("save") ||
+    lowerMessage.includes("target") ||
+    lowerMessage.includes("progress")
+  ) {
+    if (snap.goals?.length > 0) {
+      context.push("Current goals:");
+      snap.goals.forEach((goal) => {
+        context.push(
+          `${goal.label}: $${goal.current_amount.toFixed(
+            2
+          )} / $${goal.target_amount.toFixed(2)} (${
+            goal.progress_pct
+          }%) - Due ${goal.target_date}`
+        );
+      });
+    }
+  }
+
+  // Category specific questions
+  if (
+    lowerMessage.includes("food") ||
+    lowerMessage.includes("restaurant") ||
+    lowerMessage.includes("groceries") ||
+    lowerMessage.includes("entertainment") ||
+    lowerMessage.includes("transport") ||
+    lowerMessage.includes("uber") ||
+    lowerMessage.includes("gas") ||
+    lowerMessage.includes("shopping")
+  ) {
+    if (snap.transactions?.spendByCategory?.length > 0) {
+      const relevantCategories = snap.transactions.spendByCategory.filter(
+        (cat) =>
+          lowerMessage.includes(cat.category.toLowerCase()) ||
+          cat.category.toLowerCase().includes(lowerMessage.split(" ")[0])
+      );
+
+      if (relevantCategories.length > 0) {
+        context.push("Spending in relevant categories:");
+        relevantCategories.forEach((cat) => {
+          context.push(
+            `${cat.category}: $${cat.total_spend.toFixed(2)} this month`
+          );
+        });
+      }
+    }
+  }
+
   // General financial health questions
   if (
     lowerMessage.includes("how am i doing") ||
     lowerMessage.includes("financial health") ||
     lowerMessage.includes("overview") ||
-    lowerMessage.includes("summary")
+    lowerMessage.includes("summary") ||
+    lowerMessage.includes("status")
   ) {
     // For general questions, provide comprehensive data
     context.push(`Net Worth: $${snap.summary.netWorth}`);
@@ -215,6 +357,22 @@ function createSmartContext(message, snap) {
     context.push(`Investments Total: $${snap.summary.investmentsTotal}`);
     context.push(`Total Liabilities: $${snap.summary.totalLiabilities}`);
     context.push(`Investment Cash: $${snap.summary.investmentCash}`);
+
+    // Add top spending categories
+    if (snap.transactions?.spendByCategory?.length > 0) {
+      context.push("Top spending categories this month:");
+      snap.transactions.spendByCategory.slice(0, 3).forEach((cat) => {
+        context.push(`${cat.category}: $${cat.total_spend.toFixed(2)}`);
+      });
+    }
+
+    // Add active goals
+    if (snap.goals?.length > 0) {
+      context.push("Active goals:");
+      snap.goals.slice(0, 3).forEach((goal) => {
+        context.push(`${goal.label}: ${goal.progress_pct}% complete`);
+      });
+    }
   }
 
   // If no specific context was created, provide minimal data

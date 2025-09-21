@@ -420,9 +420,91 @@ async function handleFinancialSummary(req, res, user_id) {
       return res.status(500).json({ error: invErr.message });
     }
 
+    // Get recent transactions (last 10)
+    const { data: recentTxns, error: txnErr } = await supabase.rpc(
+      "get_recent_transactions",
+      { p_user_id: user_id, p_limit: 10 }
+    );
+
+    if (txnErr) {
+      console.error("Error fetching recent transactions:", txnErr);
+    }
+
+    // Get spend by category for current month
+    const currentDate = new Date();
+    const firstDayOfMonth = new Date(
+      currentDate.getFullYear(),
+      currentDate.getMonth(),
+      1
+    );
+    const lastDayOfMonth = new Date(
+      currentDate.getFullYear(),
+      currentDate.getMonth() + 1,
+      0
+    );
+
+    const { data: spendByCategory, error: catErr } = await supabase.rpc(
+      "get_spend_by_category",
+      {
+        p_user_id: user_id,
+        p_start: firstDayOfMonth.toISOString().split("T")[0],
+        p_end: lastDayOfMonth.toISOString().split("T")[0],
+      }
+    );
+
+    if (catErr) {
+      console.error("Error fetching spend by category:", catErr);
+    }
+
+    // Get cashflow for last 3 months
+    const { data: cashflow, error: cfErr } = await supabase.rpc(
+      "get_cashflow_monthly",
+      { p_user_id: user_id, p_months: 3 }
+    );
+
+    if (cfErr) {
+      console.error("Error fetching cashflow:", cfErr);
+    }
+
+    // Get active recurring streams
+    const { data: recurringStreams, error: rsErr } = await supabase.rpc(
+      "get_recurring_streams_active",
+      { p_user_id: user_id }
+    );
+
+    if (rsErr) {
+      console.error("Error fetching recurring streams:", rsErr);
+    }
+
+    // Get upcoming bills (recurring next dates)
+    const { data: upcomingBills, error: billsErr } = await supabase.rpc(
+      "get_recurring_next_dates",
+      { p_user_id: user_id }
+    );
+
+    if (billsErr) {
+      console.error("Error fetching upcoming bills:", billsErr);
+    }
+
+    // Get goals overview
+    const { data: goalsOverview, error: goalsErr } = await supabase.rpc(
+      "get_goals_overview",
+      { p_user_id: user_id, p_limit: 5 }
+    );
+
+    if (goalsErr) {
+      console.error("Error fetching goals overview:", goalsErr);
+    }
+
     // Debug logging
     console.log("Net worth data:", netWorthData);
     console.log("Investment snapshot data:", invSnap);
+    console.log("Recent transactions:", recentTxns?.length || 0);
+    console.log("Spend by category:", spendByCategory?.length || 0);
+    console.log("Cashflow months:", cashflow?.length || 0);
+    console.log("Active recurring streams:", recurringStreams?.length || 0);
+    console.log("Upcoming bills:", upcomingBills?.length || 0);
+    console.log("Goals:", goalsOverview?.length || 0);
 
     // Return complete RPC data for Finny to use
     const netWorthRecord = netWorthData?.[0];
@@ -442,6 +524,16 @@ async function handleFinancialSummary(req, res, user_id) {
           Number(investmentRecord?.investment_cash ?? 0)
         ),
       },
+      transactions: {
+        recent: recentTxns || [],
+        spendByCategory: spendByCategory || [],
+        cashflow: cashflow || [],
+      },
+      recurring: {
+        active: recurringStreams || [],
+        upcoming: upcomingBills || [],
+      },
+      goals: goalsOverview || [],
       meta: {
         investmentsAsOf: investmentRecord?.as_of ?? null,
         rawNetWorthData: netWorthRecord,

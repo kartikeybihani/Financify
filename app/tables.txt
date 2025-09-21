@@ -56,10 +56,10 @@ CREATE TABLE public.investment_balances (
   created_at timestamp with time zone DEFAULT now(),
   CONSTRAINT investment_balances_pkey PRIMARY KEY (id),
   CONSTRAINT investment_balances_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id),
-  CONSTRAINT fk_ib_snaptrade_pair FOREIGN KEY (snaptrade_user_id) REFERENCES public.snaptrade_connections(snaptrade_user_id),
-  CONSTRAINT fk_ib_snaptrade_pair FOREIGN KEY (account_id) REFERENCES public.snaptrade_connections(snaptrade_user_id),
-  CONSTRAINT fk_ib_snaptrade_pair FOREIGN KEY (snaptrade_user_id) REFERENCES public.snaptrade_connections(account_id),
-  CONSTRAINT fk_ib_snaptrade_pair FOREIGN KEY (account_id) REFERENCES public.snaptrade_connections(account_id)
+  CONSTRAINT fk_ib_pair FOREIGN KEY (snaptrade_user_id) REFERENCES public.snaptrade_connections(snaptrade_user_id),
+  CONSTRAINT fk_ib_pair FOREIGN KEY (account_id) REFERENCES public.snaptrade_connections(snaptrade_user_id),
+  CONSTRAINT fk_ib_pair FOREIGN KEY (snaptrade_user_id) REFERENCES public.snaptrade_connections(account_id),
+  CONSTRAINT fk_ib_pair FOREIGN KEY (account_id) REFERENCES public.snaptrade_connections(account_id)
 );
 CREATE TABLE public.investment_holdings (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -88,10 +88,10 @@ CREATE TABLE public.investment_holdings (
   created_at timestamp with time zone DEFAULT now(),
   CONSTRAINT investment_holdings_pkey PRIMARY KEY (id),
   CONSTRAINT investment_holdings_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id),
-  CONSTRAINT fk_ih_snaptrade_pair FOREIGN KEY (snaptrade_user_id) REFERENCES public.snaptrade_connections(snaptrade_user_id),
-  CONSTRAINT fk_ih_snaptrade_pair FOREIGN KEY (account_id) REFERENCES public.snaptrade_connections(snaptrade_user_id),
-  CONSTRAINT fk_ih_snaptrade_pair FOREIGN KEY (snaptrade_user_id) REFERENCES public.snaptrade_connections(account_id),
-  CONSTRAINT fk_ih_snaptrade_pair FOREIGN KEY (account_id) REFERENCES public.snaptrade_connections(account_id)
+  CONSTRAINT fk_ih_pair FOREIGN KEY (snaptrade_user_id) REFERENCES public.snaptrade_connections(snaptrade_user_id),
+  CONSTRAINT fk_ih_pair FOREIGN KEY (account_id) REFERENCES public.snaptrade_connections(snaptrade_user_id),
+  CONSTRAINT fk_ih_pair FOREIGN KEY (snaptrade_user_id) REFERENCES public.snaptrade_connections(account_id),
+  CONSTRAINT fk_ih_pair FOREIGN KEY (account_id) REFERENCES public.snaptrade_connections(account_id)
 );
 CREATE TABLE public.investment_options (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -124,10 +124,10 @@ CREATE TABLE public.investment_options (
   created_at timestamp with time zone DEFAULT now(),
   CONSTRAINT investment_options_pkey PRIMARY KEY (id),
   CONSTRAINT investment_options_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id),
-  CONSTRAINT fk_io_snaptrade_pair FOREIGN KEY (snaptrade_user_id) REFERENCES public.snaptrade_connections(snaptrade_user_id),
-  CONSTRAINT fk_io_snaptrade_pair FOREIGN KEY (account_id) REFERENCES public.snaptrade_connections(snaptrade_user_id),
-  CONSTRAINT fk_io_snaptrade_pair FOREIGN KEY (snaptrade_user_id) REFERENCES public.snaptrade_connections(account_id),
-  CONSTRAINT fk_io_snaptrade_pair FOREIGN KEY (account_id) REFERENCES public.snaptrade_connections(account_id)
+  CONSTRAINT fk_io_pair FOREIGN KEY (snaptrade_user_id) REFERENCES public.snaptrade_connections(snaptrade_user_id),
+  CONSTRAINT fk_io_pair FOREIGN KEY (account_id) REFERENCES public.snaptrade_connections(snaptrade_user_id),
+  CONSTRAINT fk_io_pair FOREIGN KEY (snaptrade_user_id) REFERENCES public.snaptrade_connections(account_id),
+  CONSTRAINT fk_io_pair FOREIGN KEY (account_id) REFERENCES public.snaptrade_connections(account_id)
 );
 CREATE TABLE public.recurring_streams (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
