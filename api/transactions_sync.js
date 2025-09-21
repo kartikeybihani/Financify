@@ -1,7 +1,7 @@
 // /api/transactions_sync.js
 import { client } from "../app/plaidClient.js";
 import { createClient } from "@supabase/supabase-js";
-import { mapPlaidCategory } from "../app/_utils/categoryMapping.js";
+import { mapPlaidCategory } from "../src/utils/categoryMapping.js";
 
 const supabase = createClient(
   process.env.SUPABASE_URL,

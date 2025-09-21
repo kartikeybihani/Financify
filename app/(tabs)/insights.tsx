@@ -338,16 +338,6 @@ export default function InsightsScreen() {
           `Insights: Loaded ${transactions.length} transactions from Supabase`
         );
 
-        // Debug: Log all unique categories from database
-        const uniqueCategoriesFromDB = [
-          ...new Set(transactions.map((tx) => tx.category).filter(Boolean)),
-        ];
-        console.log("🔍 DEBUG: All unique categories from database:");
-        console.log("Total unique categories:", uniqueCategoriesFromDB.length);
-        uniqueCategoriesFromDB.forEach((category, index) => {
-          console.log(`${index + 1}. ${category}`);
-        });
-
         setTransactions(transactions);
         processTransactionsData(transactions);
         hasData.current = true;
