@@ -5,29 +5,7 @@ import finnyConstants from '../_constants/finny';
 import logger from '../_utils/logger';
 import { supabase } from '../_lib/supabase/supabase';
 
-// Utility to split messages for chat display
-function splitIntoMessages(text: string): string[] {
-  // If there are numbered points, group them together
-  const numberedPointRegex = /\n?\d+\.\s/;
-  if (numberedPointRegex.test(text)) {
-    // Find where the first numbered point starts
-    const match = text.match(/\n?\d+\.\s/);
-    if (match) {
-      const idx = text.indexOf(match[0]);
-      const intro = text.slice(0, idx).trim();
-      const points = text.slice(idx).trim();
-      const result: string[] = [];
-      if (intro) result.push(intro);
-      if (points) result.push(points);
-      return result;
-    }
-  }
-  // Otherwise, split by paragraphs (double newlines)
-  return text
-    .split(/\n{2,}/g)
-    .map((p) => p.trim())
-    .filter(Boolean);
-}
+// Message splitting removed - display messages as single strings
 
 export const useChat = () => {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>(finnyConstants.INITIAL_CHAT_MESSAGES);
@@ -108,20 +86,15 @@ export const useChat = () => {
     setChatMessages((prev) => [...prev, msg]);
   };
 
-  const pushChatWithDelay = async (sender: "user" | "finny", messages: string[]) => {
+  const pushChatWithDelay = async (sender: "user" | "finny", message: string) => {
     try {
-      for (let i = 0; i < messages.length; i++) {
-        if (sender === "finny") {
-          setIsTyping(true);
-          await new Promise((resolve) => setTimeout(resolve, 1000 + Math.random() * 1000));
-        }
-
-        pushChat(sender, messages[i]);
-
-        if (i === messages.length - 1) {
-          setIsTyping(false);
-        }
+      if (sender === "finny") {
+        setIsTyping(true);
+        await new Promise((resolve) => setTimeout(resolve, 1000 + Math.random() * 1000));
       }
+
+      pushChat(sender, message);
+      setIsTyping(false);
     } finally {
       setIsTyping(false); // Ensure typing is turned off even if there's an error
     }
@@ -188,10 +161,9 @@ export const useChat = () => {
       // Finny response received
       logger.info("🤖 [CHAT] API Response:", data);
       
-      const messages = data.message || "Sorry, I wasn't able to generate advice just now.";
-      logger.info("messages", messages);
-      const splitMessages = splitIntoMessages(messages);
-      await pushChatWithDelay("finny", splitMessages);
+      const message = data.message || "Sorry, I wasn't able to generate advice just now.";
+      logger.info("messages", message);
+      await pushChatWithDelay("finny", message);
     } catch (error) {
       logger.error("AI error:", error);
       pushChat("finny", "Something went wrong. Try again later.");
@@ -209,6 +181,5 @@ export const useChat = () => {
   };
 };
 
-// Export both as named and default export for compatibility
-export { splitIntoMessages };
+// Export default export
 export default useChat; 

@@ -413,14 +413,12 @@ async function handleFinancialSummary(req, res, user_id) {
     const mie = mieRows?.[0] ?? null;
 
     // 2) Investments snapshot (totals) + allocation
-    const { data: invSnap, error: invErr } = await supabase
-      .from("mv_investments_snapshot")
-      .select("investments_total,cash_total,as_of")
-      .eq("user_id", user_id)
-      .single();
+    const { data: invSnap, error: invErr } = await supabase.rpc(
+      "get_investment_snapshot",
+      { p_user_id: user_id }
+    );
 
-    if (invErr && invErr.code !== "PGRST116") {
-      // no rows is fine
+    if (invErr) {
       console.error("Error fetching investments snapshot:", invErr);
       return res.status(500).json({ error: invErr.message });
     }
@@ -548,7 +546,18 @@ async function handleFinancialSummary(req, res, user_id) {
         : null,
     }));
 
-    // 7) Compute summary
+    // 7) Get net worth from RPC
+    const { data: netWorthData, error: nwErr } = await supabase.rpc(
+      "get_net_worth",
+      { p_user_id: user_id }
+    );
+
+    if (nwErr) {
+      console.error("Error fetching net worth:", nwErr);
+      return res.status(500).json({ error: nwErr.message });
+    }
+
+    // Compute summary
     const investmentsTotal = Number(invSnap?.investments_total ?? 0);
     const cashTotal = Number(invSnap?.cash_total ?? 0);
     const monthlyIncome = Number(mie?.income ?? 0);
@@ -557,11 +566,7 @@ async function handleFinancialSummary(req, res, user_id) {
       monthlyIncome > 0
         ? Math.round(((monthlyIncome - monthlyExpenses) / monthlyIncome) * 100)
         : 0;
-    const netWorth =
-      cashTotal +
-      investmentsTotal +
-      accounts.reduce((s, a) => s + a.balance, 0) -
-      debtTotal;
+    const netWorth = Number(netWorthData ?? 0);
 
     const highlights = {
       topSpendingCategories: topCats,

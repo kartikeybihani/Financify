@@ -11,7 +11,6 @@ import {
   Dimensions,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
-import { splitIntoMessages } from "../../_hooks/useChat";
 import { BlurView } from "expo-blur";
 
 // Enable LayoutAnimation for Android
@@ -231,8 +230,8 @@ export const ChatMessageComponent = ({
     );
   }
 
-  // Use shared splitIntoMessages logic
-  const points = splitIntoMessages(message.text);
+  // Display message as single string (no splitting)
+  const messageText = message.text;
 
   return (
     <Animated.View
@@ -241,7 +240,7 @@ export const ChatMessageComponent = ({
         transform: [{ scale: scaleAnim }, { translateY: slideAnim }],
       }}
     >
-      {showSender && points.length > 0 && (
+      {showSender && messageText && (
         <Animated.View
           style={[
             styles.senderNameContainer,
@@ -254,32 +253,17 @@ export const ChatMessageComponent = ({
           <Text style={styles.senderName}>Finny</Text>
         </Animated.View>
       )}
-      {points.map((point, pointIdx) => (
-        <Animated.View
-          key={pointIdx}
-          style={[
-            styles.finnyMessageRow,
-            pointIdx > 0 && {
-              opacity: fadeAnim,
-              transform: [{ scale: scaleAnim }, { translateY: slideAnim }],
-            },
-          ]}
-        >
+      {messageText && (
+        <Animated.View style={styles.finnyMessageRow}>
           <View style={styles.finnyMessageContainer}>
             <LinearGradient
               colors={["#1A3A5A", "#2E5A8A", "#4A90E2"]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
-              style={[
-                styles.finnyMessageBubble,
-                {
-                  borderBottomLeftRadius: pointIdx === 0 ? 10 : 0,
-                  borderBottomRightRadius: pointIdx === 0 ? 10 : 0,
-                },
-              ]}
+              style={styles.finnyMessageBubble}
             >
               <Text style={[styles.messageText, styles.finnyMessageText]}>
-                {point.split("\n").map((line, lineIdx) => (
+                {messageText.split("\n").map((line, lineIdx) => (
                   <React.Fragment key={lineIdx}>
                     {lineIdx > 0 && <Text>{"\n"}</Text>}
                     <Text>
@@ -300,7 +284,7 @@ export const ChatMessageComponent = ({
             </LinearGradient>
           </View>
         </Animated.View>
-      ))}
+      )}
     </Animated.View>
   );
 };
