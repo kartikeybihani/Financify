@@ -77,6 +77,12 @@ async function handleAsk(message, context) {
     if (merchantQuery) {
       console.log("🔍 [FINNY] Detected merchant query:", merchantQuery);
       enhancedData = await fetchEnhancedMerchantData(userId, merchantQuery);
+      console.log(
+        "🔍 [FINNY] Enhanced data result:",
+        enhancedData ? "Success" : "Failed"
+      );
+    } else {
+      console.log("🔍 [FINNY] No merchant query detected for:", message);
     }
 
     // 3) Fetch financial summary from store_accounts endpoint
@@ -112,6 +118,7 @@ async function handleAsk(message, context) {
       "You are Finny: warm, encouraging, blunt when needed.",
       "Use the complete financial data provided. Give accurate, detailed responses based on all available information.",
       "Do not show net worth calculations or mathematical formulas - just state the facts clearly.",
+      "IMPORTANT: In transaction data, EXPENSE means money spent (going out), INCOME means money received (coming in).",
       "Only add investment disclaimer ('Note: This response is for informational purposes and does not constitute financial advice.') when the user asks specifically about investments, investing advice, or investment-related recommendations.",
     ].join("\n");
 
@@ -230,9 +237,10 @@ function createSmartContext(message, snap) {
       context.push("Recent transactions:");
       snap.transactions.recent.slice(0, 5).forEach((txn) => {
         const amount = Math.abs(txn.amount);
+        const transactionType = txn.amount < 0 ? "INCOME" : "EXPENSE";
         const sign = txn.amount < 0 ? "-" : "+";
         context.push(
-          `${txn.date}: ${sign}$${amount.toFixed(2)} - ${
+          `${txn.date}: ${sign}$${amount.toFixed(2)} (${transactionType}) - ${
             txn.merchant || txn.name
           }`
         );
@@ -350,7 +358,13 @@ function createSmartContext(message, snap) {
     if (enhanced.data.transactions && enhanced.data.transactions.length > 0) {
       context.push("Individual transactions:");
       enhanced.data.transactions.slice(0, 10).forEach((txn) => {
-        context.push(`${txn.date}: $${txn.amount.toFixed(2)} - ${txn.name}`);
+        const transactionType = txn.amount < 0 ? "INCOME" : "EXPENSE";
+        const sign = txn.amount < 0 ? "-" : "+";
+        context.push(
+          `${txn.date}: ${sign}$${Math.abs(txn.amount).toFixed(
+            2
+          )} (${transactionType}) - ${txn.name}`
+        );
       });
     }
   }
@@ -534,6 +548,13 @@ async function fetchEnhancedMerchantData(userId, query) {
     const dateRange = calculateDateRange(query.timePeriod);
 
     if (query.type === "merchant") {
+      console.log(
+        "🔍 [FINNY] Fetching merchant data for:",
+        query.merchant,
+        "Date range:",
+        dateRange
+      );
+
       // Fetch merchant-specific spending data
       const { data: merchantData, error: merchantError } = await supabase.rpc(
         "get_spending_by_merchant",
@@ -549,6 +570,8 @@ async function fetchEnhancedMerchantData(userId, query) {
         console.error("Error fetching merchant data:", merchantError);
         return null;
       }
+
+      console.log("🔍 [FINNY] Merchant data result:", merchantData);
 
       return {
         type: "merchant",
