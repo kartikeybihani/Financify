@@ -59,15 +59,15 @@ export default StyleSheet.create({
     flex: 1,
   },
   mascotContainer: {
-    width: responsiveWidth(12),
-    height: responsiveWidth(12),
-    borderRadius: responsiveWidth(6),
+    width: responsiveWidth(10),
+    height: responsiveWidth(10),
+    borderRadius: responsiveWidth(5),
     backgroundColor: "rgba(255, 255, 255, 0.08)",
     padding: 2,
     borderWidth: 1.5,
     borderColor: "rgba(74, 144, 226, 0.3)",
     overflow: 'hidden',
-    marginRight: responsivePadding(12),
+    marginRight: responsivePadding(10),
     shadowColor: "#4A90E2",
     shadowOffset: {
       width: 0,
@@ -80,7 +80,7 @@ export default StyleSheet.create({
   mascotImage: {
     width: '100%',
     height: '100%',
-    borderRadius: responsiveWidth(5.5),
+    borderRadius: responsiveWidth(4.5),
   },
   sparkleContainer: {
     position: 'absolute',
@@ -188,13 +188,14 @@ export default StyleSheet.create({
   },
   chatScroll: {
     flex: 1,
-    paddingHorizontal: responsivePadding(16),
+    paddingHorizontal: responsivePadding(12),
     paddingTop: responsivePadding(8),
   },
   chatBubble: {
     maxWidth: isSmallScreen ? "85%" : "80%",
-    padding: responsivePadding(12),
-    borderRadius: 18,
+    paddingHorizontal: responsivePadding(20),
+    paddingVertical: responsivePadding(6),
+    borderRadius: 45,
     marginVertical: responsivePadding(6),
     shadowColor: "#000",
     shadowOffset: {
@@ -208,12 +209,12 @@ export default StyleSheet.create({
   chatLeft: {
     alignSelf: "flex-start",
     backgroundColor: "#2c2c2c",
-    borderTopLeftRadius: 4,
+    borderTopLeftRadius: 8,
   },
   chatRight: {
     alignSelf: "flex-end",
     backgroundColor: "#4A90E2",
-    borderTopRightRadius: 4,
+    borderTopRightRadius: 8,
   },
   chatText: {
     color: "#fff",
@@ -325,8 +326,8 @@ export default StyleSheet.create({
     left: 0,
     right: 0,
     backgroundColor: "#121212",
-    paddingTop: responsivePadding(8),
-    paddingBottom: Platform.OS === "ios" ? responsivePadding(12) : responsivePadding(8),
+    paddingTop: responsivePadding(4),
+    paddingBottom: Platform.OS === "ios" ? responsivePadding(8) : responsivePadding(4),
     borderTopWidth: 1,
     borderTopColor: "rgba(44, 44, 44, 0.6)",
     shadowColor: "#000",
@@ -337,21 +338,21 @@ export default StyleSheet.create({
     shadowOpacity: 0.15,
     shadowRadius: 8,
     elevation: 8,
-    minHeight: responsiveHeight(10),
+    minHeight: responsiveHeight(8),
   },
   suggestionsContainer: {
     flexDirection: "row",
     paddingHorizontal: responsivePadding(12),
-    paddingVertical: responsivePadding(8),
+    paddingVertical: responsivePadding(4),
     marginBottom: responsivePadding(8),
-    marginTop: responsivePadding(4),
+    marginTop: responsivePadding(2),
     // Optionally add backdrop blur here if using a BlurView wrapper in the component
   },
   suggestionChip: {
-    paddingHorizontal: responsivePadding(14),
-    paddingVertical: responsivePadding(8),
-    borderRadius: 16,
-    marginRight: responsivePadding(8),
+    paddingHorizontal: responsivePadding(12),
+    paddingVertical: responsivePadding(6),
+    borderRadius: 14,
+    marginRight: responsivePadding(7),
     flexDirection: "row",
     alignItems: "center",
     shadowColor: "#000",
@@ -366,14 +367,14 @@ export default StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(74, 144, 226, 0.25)",
     backgroundColor: "rgba(26, 61, 102, 0.35)", // glassy blue
-    minHeight: responsiveHeight(4),
+    minHeight: responsiveHeight(3.5),
     // If BlurView is used, backgroundColor can be more transparent
   },
   suggestionIcon: {
-    marginRight: responsivePadding(5),
+    marginRight: responsivePadding(4),
   },
   suggestionText: {
-    fontSize: responsiveFontSize(13),
+    fontSize: responsiveFontSize(12),
     fontWeight: "600",
     color: "#FFFFFF",
     letterSpacing: 0.2,

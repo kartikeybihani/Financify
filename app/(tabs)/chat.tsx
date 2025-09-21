@@ -67,14 +67,6 @@ export default function ChatScreen() {
     return () => subscription?.remove();
   }, []);
 
-  // Cleanup scroll timeout on unmount
-  useEffect(() => {
-    return () => {
-      if (scrollTimeout.current) {
-        clearTimeout(scrollTimeout.current);
-      }
-    };
-  }, []);
   const [suggestions] = useState<Suggestion[]>(() => {
     const baseSuggestions = [
       {
@@ -103,13 +95,7 @@ export default function ChatScreen() {
     return isSmallScreen ? baseSuggestions.slice(0, 3) : baseSuggestions;
   });
   const scrollButtonAnimation = useRef(new Animated.Value(0)).current;
-
   const flatListRef = useRef<FlatList>(null);
-  const lastContentOffset = useRef({ y: 0 }).current;
-  const isScrolling = useRef(false);
-  const shouldScrollToBottom = useRef(true);
-  const isUserScrolling = useRef(false);
-  const scrollTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dotAnimations = useRef([
     new Animated.Value(0),
     new Animated.Value(0),
@@ -255,9 +241,9 @@ export default function ChatScreen() {
       const contentHeight = event.nativeEvent.contentSize.height;
       const scrollViewHeight = event.nativeEvent.layoutMeasurement.height;
 
-      const shouldShow =
-        currentOffset < contentHeight - scrollViewHeight - 100 &&
-        contentHeight > scrollViewHeight;
+      // Show scroll button if user is not at the bottom
+      const isAtBottom = currentOffset >= contentHeight - scrollViewHeight - 50;
+      const shouldShow = !isAtBottom && contentHeight > scrollViewHeight;
 
       if (shouldShow !== showScrollButton) {
         setShowScrollButton(shouldShow);
@@ -268,62 +254,24 @@ export default function ChatScreen() {
           friction: 9,
         }).start();
       }
-
-      // Clear any existing timeout
-      if (scrollTimeout.current) {
-        clearTimeout(scrollTimeout.current);
-      }
-
-      // Set user scrolling flag
-      isUserScrolling.current = true;
-
-      // Reset user scrolling flag after a delay
-      scrollTimeout.current = setTimeout(() => {
-        isUserScrolling.current = false;
-      }, 1500);
-
-      lastContentOffset.y = currentOffset;
-
-      // More precise bottom detection
-      const isNearBottom =
-        currentOffset >= contentHeight - scrollViewHeight - 50;
-
-      if (isNearBottom) {
-        shouldScrollToBottom.current = true;
-      } else if (currentOffset < lastContentOffset.y - 10) {
-        // User is scrolling up significantly
-        shouldScrollToBottom.current = false;
-      }
     },
     [showScrollButton, scrollButtonAnimation]
   );
 
   const scrollToBottom = useCallback(() => {
     if (flatListRef.current && flatListData.length > 0) {
-      // Use requestAnimationFrame for smoother scrolling
-      requestAnimationFrame(() => {
-        flatListRef.current?.scrollToEnd({
-          animated: true,
-        });
-      });
+      flatListRef.current.scrollToEnd({ animated: true });
     }
   }, [flatListData.length]);
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
-    if (
-      shouldScrollToBottom.current &&
-      flatListData.length > 0 &&
-      !isUserScrolling.current
-    ) {
-      // Use requestAnimationFrame for smoother auto-scroll
-      requestAnimationFrame(() => {
+    if (flatListData.length > 0) {
+      setTimeout(() => {
         if (flatListRef.current) {
-          flatListRef.current.scrollToEnd({
-            animated: true,
-          });
+          flatListRef.current.scrollToEnd({ animated: true });
         }
-      });
+      }, 100);
     }
   }, [flatListData.length]);
 
@@ -421,23 +369,12 @@ export default function ChatScreen() {
                 getItemLayout={getItemLayout}
                 style={styles.chatScroll}
                 onScroll={handleScroll}
-                scrollEventThrottle={8}
-                onScrollBeginDrag={() => {
-                  isScrolling.current = true;
-                  isUserScrolling.current = true;
-                }}
-                onScrollEndDrag={() => {
-                  isScrolling.current = false;
-                  // Keep user scrolling flag for a bit longer
-                  setTimeout(() => {
-                    isUserScrolling.current = false;
-                  }, 1000);
-                }}
+                scrollEventThrottle={16}
                 contentContainerStyle={{
                   paddingTop: responsivePadding(8),
                   paddingBottom:
-                    Math.max(insets.bottom, responsivePadding(20)) +
-                    responsiveHeight(15),
+                    Math.max(insets.bottom, responsivePadding(8)) +
+                    responsiveHeight(8),
                 }}
                 removeClippedSubviews={true}
                 maxToRenderPerBatch={8}
@@ -485,10 +422,7 @@ export default function ChatScreen() {
                   ]}
                 >
                   <TouchableOpacity
-                    onPress={() => {
-                      shouldScrollToBottom.current = true;
-                      scrollToBottom();
-                    }}
+                    onPress={scrollToBottom}
                     style={styles.scrollButtonTouchable}
                     activeOpacity={0.8}
                   >
@@ -505,8 +439,8 @@ export default function ChatScreen() {
                 styles.inputBarContainer,
                 {
                   paddingBottom:
-                    Math.max(insets.bottom, responsivePadding(16)) +
-                    responsivePadding(16),
+                    Math.max(insets.bottom, responsivePadding(8)) +
+                    responsivePadding(8),
                 },
               ]}
             >
@@ -522,7 +456,7 @@ export default function ChatScreen() {
                   >
                     <Ionicons
                       name={item.icon}
-                      size={14}
+                      size={13}
                       color="#FFFFFF"
                       style={styles.suggestionIcon}
                     />
@@ -548,7 +482,6 @@ export default function ChatScreen() {
                   onFocus={() => {
                     // Auto-scroll to bottom when input is focused
                     setTimeout(() => {
-                      shouldScrollToBottom.current = true;
                       if (flatListRef.current && flatListData.length > 0) {
                         flatListRef.current.scrollToEnd({
                           animated: true,
