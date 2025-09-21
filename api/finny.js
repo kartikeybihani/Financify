@@ -1,5 +1,6 @@
 // api/finny.js
 import { createClient } from "@supabase/supabase-js";
+import { researchFinancialProducts } from "./utils/webResearchEngine.js";
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -101,6 +102,24 @@ async function handleAsk(message, context) {
       );
     }
 
+    // 2.6) Check if this is a financial product query that needs web research
+    let webResearchData = null;
+    const isProductQuery = detectProductQuery(message);
+
+    if (isProductQuery) {
+      console.log("🔍 [FINNY] Detected product query, starting web research");
+      try {
+        webResearchData = await researchFinancialProducts(message, userId);
+        console.log(
+          "🔍 [FINNY] Web research result:",
+          webResearchData.success ? "Success" : "Failed"
+        );
+      } catch (error) {
+        console.error("❌ [FINNY] Web research failed:", error);
+        webResearchData = { success: false, error: error.message };
+      }
+    }
+
     // 3) Fetch financial summary from store_accounts endpoint
     const BASE_URL = process.env.APP_BASE_URL;
     const res = await fetch(`${BASE_URL}/api/store_accounts`, {
@@ -134,6 +153,11 @@ async function handleAsk(message, context) {
       snap.market = marketData;
     }
 
+    // Add web research data to snap if available
+    if (webResearchData && webResearchData.success) {
+      snap.webResearch = webResearchData;
+    }
+
     // 3) Build a comprehensive prompt using the complete RPC data
     const system = [
       "You are Finny: warm, encouraging, blunt when needed.",
@@ -141,6 +165,7 @@ async function handleAsk(message, context) {
       "Do not show net worth calculations or mathematical formulas - just state the facts clearly.",
       "IMPORTANT: In transaction data, EXPENSE means money spent (going out), INCOME means money received (coming in).",
       "For rent vs buy questions: Use the user's financial data (income, savings, debt) and market data (home prices, rent costs, mortgage rates) to provide personalized analysis. Consider their financial capacity, timeline, and local market conditions.",
+      "For financial product questions: Use web research data to provide current, accurate information about credit cards, banks, and investment platforms. Combine this with the user's financial data to give personalized recommendations.",
       "Only add investment disclaimer ('Note: This response is for informational purposes and does not constitute financial advice.') when the user asks specifically about investments, investing advice, or investment-related recommendations.",
     ].join("\n");
 
@@ -429,6 +454,65 @@ function createSmartContext(message, snap) {
           )} (${transactionType}) - ${txn.name}`
         );
       });
+    }
+  }
+
+  // Web research data for financial products
+  if (snap.webResearch?.success && snap.webResearch.results) {
+    const research = snap.webResearch.results;
+
+    context.push("Current financial product information:");
+    context.push(
+      `Sources researched: ${research.summary.successfulSources}/${research.summary.totalSources}`
+    );
+
+    if (research.products && research.products.length > 0) {
+      context.push("Product details:");
+      research.products.forEach((product, index) => {
+        context.push(`${index + 1}. ${product.title}`);
+        if (product.metrics.apr && product.metrics.apr.length > 0) {
+          const avgApr =
+            product.metrics.apr.reduce((sum, val) => sum + val, 0) /
+            product.metrics.apr.length;
+          context.push(`   APR: ${avgApr.toFixed(2)}%`);
+        }
+        if (product.metrics.annualFee && product.metrics.annualFee.length > 0) {
+          const avgFee =
+            product.metrics.annualFee.reduce((sum, val) => sum + val, 0) /
+            product.metrics.annualFee.length;
+          context.push(`   Annual Fee: $${avgFee.toFixed(2)}`);
+        }
+        if (product.benefits && product.benefits.length > 0) {
+          context.push(
+            `   Key Benefits: ${product.benefits.slice(0, 3).join(", ")}`
+          );
+        }
+      });
+    }
+
+    if (research.comparisons && research.comparisons.length > 0) {
+      context.push("Product comparisons:");
+      research.comparisons.forEach((comparison) => {
+        context.push(
+          `${comparison.product1} vs ${comparison.product2}: ${comparison.winner} wins`
+        );
+      });
+    }
+
+    if (research.keyMetrics && research.keyMetrics.averages) {
+      context.push("Market averages:");
+      if (research.keyMetrics.averages.apr) {
+        context.push(
+          `Average APR: ${research.keyMetrics.averages.apr.toFixed(2)}%`
+        );
+      }
+      if (research.keyMetrics.averages.annualFee) {
+        context.push(
+          `Average Annual Fee: $${research.keyMetrics.averages.annualFee.toFixed(
+            2
+          )}`
+        );
+      }
     }
   }
 
@@ -1153,6 +1237,46 @@ async function handleAskFactFresh(message, context) {
       message: "No current data available, please use your knowledge",
     };
   }
+}
+
+// Detect if the message is asking about financial products
+function detectProductQuery(message) {
+  const lowerMessage = message.toLowerCase();
+
+  // Check for product comparison patterns
+  const comparisonPatterns = [
+    "vs",
+    "versus",
+    "compare",
+    "which",
+    "better",
+    "best",
+    "chase",
+    "amex",
+    "american express",
+    "capital one",
+    "citi",
+    "discover",
+    "wells fargo",
+    "bank of america",
+    "credit card",
+    "sapphire",
+    "gold",
+    "platinum",
+    "freedom",
+    "venture",
+    "robinhood",
+    "fidelity",
+    "vanguard",
+    "schwab",
+    "etrade",
+  ];
+
+  const hasProductQuery = comparisonPatterns.some((pattern) =>
+    lowerMessage.includes(pattern)
+  );
+
+  return hasProductQuery;
 }
 
 // Detect if the message is asking about rent vs buy

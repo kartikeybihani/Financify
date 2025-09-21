@@ -265,7 +265,7 @@ export default StyleSheet.create({
     flex: 1,
     fontSize: responsiveFontSize(14),
     color: "#fff",
-    paddingVertical: responsivePadding(4),
+    paddingVertical: responsivePadding(1),
     marginHorizontal: responsivePadding(4),
     minHeight: responsiveHeight(4),
   },
