@@ -524,6 +524,7 @@ async function handleFinancialSummary(req, res, user_id) {
           Number(investmentRecord?.investment_cash ?? 0)
         ),
       },
+      bankAccounts: netWorthRecord?.bank_accounts || [],
       transactions: {
         recent: recentTxns || [],
         spendByCategory: spendByCategory || [],

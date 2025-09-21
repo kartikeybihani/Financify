@@ -210,6 +210,20 @@ function createSmartContext(message, snap) {
   ) {
     context.push(`Liquid Assets: $${snap.summary.liquidAssets}`);
     context.push(`Investment Cash: $${snap.summary.investmentCash}`);
+
+    // Add bank account details
+    if (snap.bankAccounts && snap.bankAccounts.length > 0) {
+      context.push("Bank accounts:");
+      snap.bankAccounts.forEach((account) => {
+        const balance =
+          account.current_balance || account.available_balance || 0;
+        context.push(
+          `${account.institution_name} ${account.name} (${
+            account.mask || "****"
+          }): $${balance.toFixed(2)}`
+        );
+      });
+    }
   }
 
   // Debt/liability questions
@@ -398,6 +412,45 @@ function createSmartContext(message, snap) {
     }
   }
 
+  // Bank-specific questions
+  if (snap.bankAccounts && snap.bankAccounts.length > 0) {
+    const bankNames = snap.bankAccounts
+      .map((acc) => acc.institution_name?.toLowerCase())
+      .filter(Boolean);
+    const hasBankQuery = bankNames.some((bankName) =>
+      lowerMessage.includes(bankName)
+    );
+
+    if (hasBankQuery) {
+      const mentionedBank = bankNames.find((bankName) =>
+        lowerMessage.includes(bankName)
+      );
+      if (mentionedBank) {
+        const bankAccounts = snap.bankAccounts.filter(
+          (acc) => acc.institution_name?.toLowerCase() === mentionedBank
+        );
+
+        context.push(`Accounts at ${mentionedBank}:`);
+        bankAccounts.forEach((account) => {
+          const balance =
+            account.current_balance || account.available_balance || 0;
+          context.push(
+            `${account.name} (${account.mask || "****"}): $${balance.toFixed(
+              2
+            )}`
+          );
+        });
+
+        const totalAtBank = bankAccounts.reduce(
+          (sum, acc) =>
+            sum + (acc.current_balance || acc.available_balance || 0),
+          0
+        );
+        context.push(`Total at ${mentionedBank}: $${totalAtBank.toFixed(2)}`);
+      }
+    }
+  }
+
   // General financial health questions
   if (
     lowerMessage.includes("how am i doing") ||
@@ -412,6 +465,18 @@ function createSmartContext(message, snap) {
     context.push(`Investments Total: $${snap.summary.investmentsTotal}`);
     context.push(`Total Liabilities: $${snap.summary.totalLiabilities}`);
     context.push(`Investment Cash: $${snap.summary.investmentCash}`);
+
+    // Add bank account summary
+    if (snap.bankAccounts && snap.bankAccounts.length > 0) {
+      context.push("Bank accounts:");
+      snap.bankAccounts.forEach((account) => {
+        const balance =
+          account.current_balance || account.available_balance || 0;
+        context.push(
+          `${account.institution_name} ${account.name}: $${balance.toFixed(2)}`
+        );
+      });
+    }
 
     // Add top spending categories
     if (snap.transactions?.spendByCategory?.length > 0) {
