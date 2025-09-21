@@ -3,6 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ChatMessage, Goal } from '../_types/finny';
 import finnyConstants from '../_constants/finny';
 import logger from '../_utils/logger';
+import { supabase } from '../_lib/supabase/supabase';
 
 // Utility to split messages for chat display
 function splitIntoMessages(text: string): string[] {
@@ -135,83 +136,52 @@ export const useChat = () => {
   const handleFinnyResponse = async (messageText: string) => {
     const BASE_URL = "https://financify-rose.vercel.app";
     try {
-      // Get all financial data from storage
-      const [stored, savedGoals] = await Promise.all([
-        AsyncStorage.getItem("financialData"),
-        AsyncStorage.getItem("goals")
-      ]);
-      
-      const parsed = JSON.parse(stored || "{}");
-      const goals = JSON.parse(savedGoals || "[]");
+      // Get user_id for the API calls
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user?.id) {
+        pushChat("finny", "Please log in to get personalized financial advice.");
+        return;
+      }
 
-      // Prepare complete financial context with safe defaults
-      const financialContext = {
-        accounts: Array.isArray(parsed.accounts) ? parsed.accounts.map((acc: any) => ({
-          name: acc.name || 'Unknown Account',
-          type: acc.type || 'unknown',
-          subtype: acc.subtype || 'unknown',
-          balance: acc.balances?.current || 0,
-          available: acc.balances?.available || 0,
-          limit: acc.balances?.limit || 0,
-          currency: acc.balances?.iso_currency_code || 'USD',
-          institution: acc.institution_name || 'Unknown Institution'
-        })) : [],
-        investments: Array.isArray(parsed.investments?.holdings) ? parsed.investments.holdings.map((h: any) => ({
-          name: h.name || 'Unknown Investment',
-          type: h.type || 'unknown',
-          balance: h.institution_value || 0,
-          quantity: h.quantity || 0,
-          value: h.institution_value || 0,
-          cost_basis: h.cost_basis || 0,
-          currency: h.iso_currency_code || 'USD'
-        })) : [],
-        liabilities: Array.isArray(parsed.liabilities) ? parsed.liabilities.map((liab: any) => ({
-          name: liab.name || 'Unknown Liability',
-          type: liab.type || 'unknown',
-          balance: liab.balances?.current || 0,
-          limit: liab.balances?.limit || 0,
-          apr: liab.apr || 0,
-          interest_rate: liab.interest_rate || 0,
-          minimum_payment: liab.minimum_payment_amount || 0
-        })) : [],
-        transactions: Array.isArray(parsed.transactions) ? parsed.transactions.map((txn: any) => ({
-          date: txn.date || new Date().toISOString(),
-          amount: txn.amount || 0,
-          category: Array.isArray(txn.category) ? txn.category : ['uncategorized'],
-          merchant: txn.merchant_name || '',
-          description: txn.name || 'Unknown Transaction',
-          account: txn.account_name || 'Unknown Account'
-        })) : [],
-        goals: Array.isArray(goals) ? goals.map((goal: any) => ({
-          label: goal.label || 'Unnamed Goal',
-          target: goal.target || 0,
-          progress: goal.progress || 0,
-          timeline: goal.timeline || { month: 'Unknown', year: new Date().getFullYear() },
-          description: goal.description || ''
-        })) : [],
-        summary: {
-          netWorth: parsed.netWorth || 0,
-          monthlyIncome: parsed.monthlyIncome || 0,
-          monthlyExpenses: parsed.monthlyExpenses || 0,
-          totalAssets: Array.isArray(parsed.accounts) ? parsed.accounts.reduce((sum: number, acc: any) => 
-            sum + (acc.balances?.current || 0), 0) : 0,
-          totalLiabilities: Array.isArray(parsed.liabilities) ? parsed.liabilities.reduce((sum: number, liab: any) => 
-            sum + (liab.balances?.current || 0), 0) : 0,
-          totalInvestments: Array.isArray(parsed.investments?.holdings) ? parsed.investments.holdings.reduce((sum: number, inv: any) => 
-            sum + (inv.institution_value || 0), 0) : 0
-        }
-      };
-
-      // Sending request to Finny API with complete context...
-      const res = await fetch(`${BASE_URL}/api/finny`, {
+      // 1) First classify the message to determine intent
+      const classifyRes = await fetch(`${BASE_URL}/api/finny`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          action: "ask",
+          action: "classify",
           message: messageText,
-          context: financialContext
+          context: { user_id: user.id }
         }),
       });
+
+      const classifyData = await classifyRes.json();
+      logger.info("🎯 [CHAT] Classification result:", classifyData);
+
+      // 2) Route to appropriate handler based on classification
+      let res;
+      if (classifyData.intent === "ask_personalized") {
+        // For personalized questions, call the ask handler
+        res = await fetch(`${BASE_URL}/api/finny`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "ask",
+            message: messageText,
+            context: { user_id: user.id }
+          }),
+        });
+      } else {
+        // For other intents (goal, ask_state_rule, etc.), route directly
+        res = await fetch(`${BASE_URL}/api/finny`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: classifyData.intent,
+            message: messageText,
+            context: { user_id: user.id }
+          }),
+        });
+      }
 
       // Response status: ${res.status}
       const data = await res.json();

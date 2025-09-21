@@ -10,7 +10,6 @@ import {
   Animated,
   ActivityIndicator,
   Platform,
-  DeviceEventEmitter,
   Image,
   Easing,
   KeyboardAvoidingView,
@@ -25,12 +24,9 @@ import { Ionicons } from "@expo/vector-icons";
 import { AntDesign } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { ChatMessageComponent } from "../_components/chat/ChatMessage";
-import { ChatMessage } from "../_types/finny";
 import { NudgeGrid } from "../_components/chat/NudgeGrid";
 import { useChat } from "../_hooks/useChat";
-import { useGoals } from "../_hooks/useGoals";
 import styles from "../_styles/chatStyles";
-import logger from "../_utils/logger";
 import TypingIndicator from "../_components/chat/TypingIndicator";
 import ConversationStartersModal from "../_components/chat/ConversationStartersModal";
 
@@ -61,7 +57,6 @@ export default function ChatScreen() {
   const [showScrollButton, setShowScrollButton] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
   const [showStartersModal, setShowStartersModal] = useState(false);
-  const [pendingGoalMessage, setPendingGoalMessage] = useState("");
   const [dimensions, setDimensions] = useState(Dimensions.get("window"));
 
   // Handle orientation changes
@@ -73,10 +68,6 @@ export default function ChatScreen() {
   }, []);
   const [suggestions] = useState<Suggestion[]>(() => {
     const baseSuggestions = [
-      {
-        text: "Set a savings goal",
-        icon: "flag" as keyof typeof Ionicons.glyphMap,
-      },
       {
         text: "Give me a spending tip",
         icon: "bulb" as keyof typeof Ionicons.glyphMap,
@@ -92,6 +83,10 @@ export default function ChatScreen() {
       {
         text: "Investment advice",
         icon: "trending-up" as keyof typeof Ionicons.glyphMap,
+      },
+      {
+        text: "Budget help",
+        icon: "calculator" as keyof typeof Ionicons.glyphMap,
       },
     ];
 
@@ -112,15 +107,6 @@ export default function ChatScreen() {
 
   const { chatMessages, showNudges, clearChat, pushChat, handleUserMessage } =
     useChat();
-
-  const [goalMode, setGoalMode] = useState({
-    active: false,
-    label: null,
-    target: null,
-    timeline: null as { month: string; year: string } | null,
-  });
-
-  const { saveGoal, deleteGoal, refreshGoals } = useGoals(pushChat);
 
   // Prepare FlatList data with nudges and messages
   const flatListData = React.useMemo(() => {
@@ -173,102 +159,6 @@ export default function ChatScreen() {
       index,
     };
   }, []);
-
-  // Goal confirmation handlers
-  const handleGoalConfirm = async () => {
-    logger.info("✅ [CHAT] User clicked 'Yes' on goal confirmation");
-    logger.info("📝 [CHAT] Pending goal message:", pendingGoalMessage);
-    setIsTyping(true);
-    logger.info("⏳ [CHAT] Set typing indicator to true");
-
-    try {
-      const goalRes = await fetch(
-        "https://financify-rose.vercel.app/api/finny",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            action: "goal",
-            message: pendingGoalMessage,
-          }),
-        }
-      );
-
-      const goalData = await goalRes.json();
-      setGoalMode({
-        active: true,
-        label: goalData.label,
-        target: goalData.target,
-        timeline: goalData.timeline,
-      });
-
-      if (!goalData.label) {
-        await pushChat("finny", "What would you like to call this goal?");
-        return;
-      }
-      if (!goalData.target) {
-        await pushChat(
-          "finny",
-          `And how much do you want to save for ${goalData.label}?`
-        );
-        return;
-      }
-      if (!goalData.timeline) {
-        await pushChat(
-          "finny",
-          `And by when would you like to reach your $${goalData.target} goal?`
-        );
-        return;
-      }
-
-      const goalInput = {
-        label: goalData.label,
-        target_amount: parseFloat(goalData.target),
-        target_date: `${goalData.timeline.year}-${String(
-          new Date(`${goalData.timeline.month} 1, 2024`).getMonth() + 1
-        ).padStart(2, "0")}-01`,
-        category: "savings" as any, // Default category
-        current_amount: 0,
-      };
-      await saveGoal(goalInput);
-      await pushChat(
-        "finny",
-        `Got it. You're saving $${goalData.target} for "${goalData.label}" by ${goalData.timeline.month} ${goalData.timeline.year}. I've saved it! 🎯`
-      );
-      DeviceEventEmitter.emit("goalsUpdated");
-      setGoalMode({
-        active: false,
-        label: null,
-        target: null,
-        timeline: null,
-      });
-    } catch (error) {
-      logger.error("❌ Goal confirmation error:", error);
-      pushChat(
-        "finny",
-        "Hmm, something went wrong with setting up your goal. Try again?"
-      );
-    } finally {
-      setIsTyping(false);
-    }
-  };
-
-  const handleGoalDecline = async () => {
-    logger.info("❌ [CHAT] User clicked 'Not Yet' on goal confirmation");
-    logger.info("📝 [CHAT] Pending goal message:", pendingGoalMessage);
-    setIsTyping(true);
-    logger.info("⏳ [CHAT] Set typing indicator to true");
-
-    try {
-      // Treat as a regular question
-      await handleUserMessage(pendingGoalMessage);
-    } catch (error) {
-      logger.error("❌ Goal decline error:", error);
-      pushChat("finny", "No worries! Let me know if you need anything else.");
-    } finally {
-      setIsTyping(false);
-    }
-  };
 
   // Remove tagline-related code
   const mascotFlip = useRef(new Animated.Value(0)).current;
@@ -327,170 +217,23 @@ export default function ChatScreen() {
     outputRange: [1, 1.1, 1],
   });
 
-  useEffect(() => {
-    const subscription = DeviceEventEmitter.addListener(
-      "goalsUpdated",
-      refreshGoals
-    );
-    return () => subscription.remove();
-  }, []);
-
-  // Log modal state changes
-  useEffect(() => {
-    logger.info(
-      "🔘 [CHAT] GoalConfirmationModal state changed:"
-      // showInlineGoalConfirm // This state is removed
-    );
-  }, []); // Removed showInlineGoalConfirm from dependency array
-
   const handleSend = async (nudgeText?: string) => {
     const messageText = nudgeText || userInput;
 
     if (!messageText.trim()) {
-      logger.info("❌ [CHAT] Empty message, returning");
       return;
     }
-
-    logger.info("🚀 [CHAT] handleSend called with message:", messageText);
-    logger.info("📝 [CHAT] Pushing user message to chat");
 
     pushChat("user", messageText);
     Keyboard.dismiss();
     setUserInput("");
     setIsTyping(true);
-    logger.info("⏳ [CHAT] Set typing indicator to true");
 
     try {
-      logger.info("🔍 [CHAT] Checking if goalMode is active:", goalMode.active);
-
-      if (goalMode.active) {
-        logger.info("🎯 [CHAT] Goal mode is active, calling goal API");
-        const goalRes = await fetch(
-          "https://financify-rose.vercel.app/api/finny",
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              action: "goal",
-              message: messageText,
-            }),
-          }
-        );
-
-        logger.info("📡 [CHAT] Goal API response status:", goalRes.status);
-        const updated = await goalRes.json();
-        logger.info("✅ [CHAT] Goal API response:", updated);
-        const updatedGoalData = {
-          label: updated.label || goalMode.label,
-          target: updated.target || goalMode.target,
-          timeline: updated.timeline || goalMode.timeline,
-        };
-
-        setGoalMode({
-          active: true,
-          ...updatedGoalData,
-          timeline: updatedGoalData.timeline,
-        });
-        if (!updatedGoalData.label) {
-          await pushChat("finny", "What would you like to call this goal?");
-          return;
-        }
-        if (!updatedGoalData.target) {
-          await pushChat(
-            "finny",
-            `And how much do you want to save for ${updatedGoalData.label}?`
-          );
-          return;
-        }
-        if (!updatedGoalData.timeline) {
-          await pushChat(
-            "finny",
-            `And by when would you like to reach your $${updatedGoalData.target} goal?`
-          );
-          return;
-        }
-
-        const goalInput = {
-          label: updatedGoalData.label,
-          target_amount: parseFloat(updatedGoalData.target),
-          target_date: `${updatedGoalData.timeline.year}-${String(
-            new Date(`${updatedGoalData.timeline.month} 1, 2024`).getMonth() + 1
-          ).padStart(2, "0")}-01`,
-          category: "savings" as any, // Default category
-          current_amount: 0,
-        };
-        await saveGoal(goalInput);
-        await pushChat(
-          "finny",
-          `Awesome! I've added your goal to save $${updatedGoalData.target} for "${updatedGoalData.label}" by ${updatedGoalData.timeline.month} ${updatedGoalData.timeline.year}. 🎯`
-        );
-        DeviceEventEmitter.emit("goalsUpdated");
-        setGoalMode({
-          active: false,
-          label: null,
-          target: null,
-          timeline: null,
-        });
-        return;
-      }
-
-      logger.info("🔍 [CHAT] Goal mode not active, calling classify API");
-      const classifyRes = await fetch(
-        "https://financify-rose.vercel.app/api/finny",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            action: "classify",
-            message: messageText,
-          }),
-        }
-      );
-
-      logger.info(
-        "📡 [CHAT] Classify API response status:",
-        classifyRes.status
-      );
-      const { intent, confidence } = await classifyRes.json();
-      logger.info(
-        "🎯 [CHAT] Classification result - Intent:",
-        intent,
-        "Confidence:",
-        confidence
-      );
-
-      if (intent === "goal" && confidence >= 0.7) {
-        logger.info("🎉 [CHAT] GOAL CONFIRMATION TRIGGERED!");
-        logger.info("📝 [CHAT] Setting pending goal message:", messageText);
-        setPendingGoalMessage(messageText);
-        const actionMsg: ChatMessage = {
-          id: Date.now().toString(),
-          sender: "finny",
-          text: "Sounds like you're trying to set a goal! Do you want me to continue?",
-          type: "action",
-          actions: [
-            { label: "Yes", action: "goal_confirm", style: "primary" },
-            { label: "Not Yet", action: "goal_decline", style: "secondary" },
-          ],
-        };
-        await pushChat(actionMsg.sender, actionMsg.text, actionMsg);
-        return;
-      } else {
-        logger.info(
-          "❌ [CHAT] No goal confirmation - Intent:",
-          intent,
-          "Confidence:",
-          confidence
-        );
-      }
-
-      logger.info("💬 [CHAT] Calling handleUserMessage for regular advice");
       await handleUserMessage(messageText);
     } catch (error) {
-      logger.error("💥 [CHAT] handleSend error:", error);
       pushChat("finny", "Hmm, something went wrong. Try again?");
     } finally {
-      logger.info("⏹️ [CHAT] Setting typing indicator to false");
       setIsTyping(false);
     }
   };
@@ -579,8 +322,7 @@ export default function ChatScreen() {
               (index === 0 || chatMessages[index - 1].sender !== "finny")
             }
             onAction={async (action) => {
-              if (action === "goal_confirm") await handleGoalConfirm();
-              if (action === "goal_decline") await handleGoalDecline();
+              // Handle any future actions here
             }}
           />
         );
@@ -588,7 +330,7 @@ export default function ChatScreen() {
 
       return null;
     },
-    [handleSend, handleGoalConfirm, handleGoalDecline, chatMessages]
+    [handleSend, chatMessages]
   );
 
   return (

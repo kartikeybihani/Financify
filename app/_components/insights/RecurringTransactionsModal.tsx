@@ -85,17 +85,17 @@ const RecurringTransactionsModal: React.FC<RecurringTransactionsModalProps> = ({
     ) {
       return "home-outline";
     }
-    if (stream.average_amount > 0) {
-      return "arrow-down-outline"; // Income
+    if (stream.average_amount < 0) {
+      return "arrow-down-outline"; // Income (negative amount = inflow)
     }
     return "repeat-outline";
   };
 
   const getStreamTypeColor = (stream: RecurringStream) => {
-    if (stream.average_amount > 0) {
-      return "#4CAF50"; // Green for income
+    if (stream.average_amount < 0) {
+      return "#4CAF50"; // Green for income (negative amount = inflow)
     }
-    return "#4A90E2"; // Blue for expenses
+    return "#4A90E2"; // Blue for expenses (positive amount = outflow)
   };
 
   const getFrequencyIcon = (frequency: string) => {
@@ -167,7 +167,7 @@ const RecurringTransactionsModal: React.FC<RecurringTransactionsModalProps> = ({
               <Text style={styles.categoryDetailStatValue}>
                 {
                   subscriptions.filter(
-                    (s) => s.is_active && s.average_amount < 0
+                    (s) => s.is_active && s.average_amount > 0
                   ).length
                 }
               </Text>
@@ -235,11 +235,11 @@ const RecurringTransactionsModal: React.FC<RecurringTransactionsModalProps> = ({
                         styles.categoryTransactionAmount,
                         {
                           color:
-                            stream.average_amount > 0 ? "#4CAF50" : "#ff6b6b",
+                            stream.average_amount < 0 ? "#4CAF50" : "#ff6b6b",
                         },
                       ]}
                     >
-                      {stream.average_amount > 0 ? "+" : "-"}$
+                      {stream.average_amount < 0 ? "+" : "-"}$
                       {Math.abs(stream.average_amount).toFixed(2)}
                     </Text>
                   </View>
