@@ -1,6 +1,7 @@
 // api/finny.js
 import { createClient } from "@supabase/supabase-js";
-import { researchFinancialProducts } from "./utils/webResearchEngine.js";
+import fetch from "node-fetch";
+import * as cheerio from "cheerio";
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -1361,4 +1362,1353 @@ async function fetchMarketData(query) {
     console.error("Error in fetchMarketData:", error);
     return null;
   }
+}
+
+// ============================================================================
+// WEB RESEARCH SYSTEM - CONSOLIDATED UTILITIES
+// ============================================================================
+
+// Rule-based patterns for common financial entities
+const ENTITY_PATTERNS = {
+  // Credit card issuers
+  creditCardIssuers: [
+    "chase",
+    "american express",
+    "amex",
+    "capital one",
+    "citi",
+    "citi bank",
+    "discover",
+    "wells fargo",
+    "bank of america",
+    "bofa",
+    "us bank",
+    "usbank",
+    "barclays",
+    "synchrony",
+    "first national",
+    "pnc",
+    "regions",
+    "huntington",
+    "bmo",
+    "hsbc",
+    "ally",
+    "sofi",
+    "upgrade",
+    "credit one",
+    "first premier",
+    "bilt",
+    "bilt rewards",
+    "bilt card",
+  ],
+
+  // Credit card names
+  creditCardNames: [
+    "sapphire",
+    "freedom",
+    "unlimited",
+    "preferred",
+    "reserve",
+    "ink",
+    "gold card",
+    "platinum",
+    "centurion",
+    "blue cash",
+    "everyday",
+    "venture",
+    "quicksilver",
+    "savor",
+    "double cash",
+    "custom cash",
+    "discover it",
+    "freedom flex",
+    "cash back",
+    "rewards",
+    "miles",
+    "travel",
+    "business",
+    "student",
+    "secured",
+    "premium",
+  ],
+
+  // Banks and financial institutions
+  banks: [
+    "chase",
+    "bank of america",
+    "wells fargo",
+    "citibank",
+    "us bank",
+    "pnc",
+    "capital one",
+    "ally bank",
+    "sofi",
+    "discover bank",
+    "american express",
+    "barclays",
+    "hsbc",
+    "regions",
+    "huntington",
+    "first national",
+    "synchrony",
+    "upgrade",
+    "bmo",
+    "bmo harris",
+  ],
+
+  // Investment platforms
+  investmentPlatforms: [
+    "robinhood",
+    "fidelity",
+    "vanguard",
+    "schwab",
+    "charles schwab",
+    "etrade",
+    "ameritrade",
+    "td ameritrade",
+    "interactive brokers",
+    "webull",
+    "public",
+    "m1 finance",
+    "wealthfront",
+    "betterment",
+    "acorns",
+    "stash",
+    "sofi invest",
+    "ally invest",
+    "merrill edge",
+  ],
+
+  // Financial products
+  financialProducts: [
+    "credit card",
+    "debit card",
+    "checking account",
+    "savings account",
+    "cd",
+    "certificate of deposit",
+    "money market",
+    "ira",
+    "roth ira",
+    "401k",
+    "403b",
+    "hsa",
+    "health savings account",
+    "brokerage account",
+    "investment account",
+    "trading account",
+    "mutual fund",
+    "etf",
+    "index fund",
+    "bond",
+    "stock",
+    "option",
+    "crypto",
+    "cryptocurrency",
+  ],
+
+  // Comparison words
+  comparisonWords: [
+    "vs",
+    "versus",
+    "vs.",
+    "compare",
+    "comparison",
+    "better",
+    "best",
+    "which",
+    "difference",
+    "differences",
+    "pros and cons",
+    "advantages",
+    "disadvantages",
+    "benefits",
+    "drawbacks",
+    "features",
+  ],
+
+  // State codes and names (only full state names to avoid false matches)
+  states: [
+    "alabama",
+    "alaska",
+    "arizona",
+    "arkansas",
+    "california",
+    "colorado",
+    "connecticut",
+    "delaware",
+    "florida",
+    "georgia",
+    "hawaii",
+    "idaho",
+    "illinois",
+    "indiana",
+    "iowa",
+    "kansas",
+    "kentucky",
+    "louisiana",
+    "maine",
+    "maryland",
+    "massachusetts",
+    "michigan",
+    "minnesota",
+    "mississippi",
+    "missouri",
+    "montana",
+    "nebraska",
+    "nevada",
+    "new hampshire",
+    "new jersey",
+    "new mexico",
+    "new york",
+    "north carolina",
+    "north dakota",
+    "ohio",
+    "oklahoma",
+    "oregon",
+    "pennsylvania",
+    "rhode island",
+    "south carolina",
+    "south dakota",
+    "tennessee",
+    "texas",
+    "utah",
+    "vermont",
+    "virginia",
+    "washington",
+    "west virginia",
+    "wisconsin",
+    "wyoming",
+    "washington dc",
+    "washington d.c.",
+  ],
+};
+
+// Domain mappings for financial institutions
+const DOMAIN_MAPPINGS = {
+  chase: {
+    primary: "chase.com",
+    creditCards: "chase.com/credit-cards",
+    searchPaths: [
+      "/credit-cards",
+      "/personal/credit-cards",
+      "/business/credit-cards",
+    ],
+  },
+  "american express": {
+    primary: "americanexpress.com",
+    creditCards: "americanexpress.com/us/credit-cards",
+    searchPaths: ["/us/credit-cards", "/us/credit-cards/all-cards"],
+  },
+  amex: {
+    primary: "americanexpress.com",
+    creditCards: "americanexpress.com/us/credit-cards",
+    searchPaths: ["/us/credit-cards", "/us/credit-cards/all-cards"],
+  },
+  "capital one": {
+    primary: "capitalone.com",
+    creditCards: "capitalone.com/credit-cards",
+    searchPaths: ["/credit-cards", "/credit-cards/all-cards"],
+  },
+  citi: {
+    primary: "citi.com",
+    creditCards: "citi.com/credit-cards",
+    searchPaths: ["/credit-cards", "/credit-cards/all-cards"],
+  },
+  discover: {
+    primary: "discover.com",
+    creditCards: "discover.com/credit-cards",
+    searchPaths: ["/credit-cards", "/credit-cards/all-cards"],
+  },
+  "wells fargo": {
+    primary: "wellsfargo.com",
+    creditCards: "wellsfargo.com/credit-cards",
+    searchPaths: ["/credit-cards", "/personal/credit-cards"],
+  },
+  "bank of america": {
+    primary: "bankofamerica.com",
+    creditCards: "bankofamerica.com/credit-cards",
+    searchPaths: ["/credit-cards", "/personal/credit-cards"],
+  },
+  bilt: {
+    primary: "bilt.com",
+    creditCards: "bilt.com/credit-card",
+    searchPaths: ["/credit-card", "/personal/credit-card"],
+  },
+  fidelity: {
+    primary: "fidelity.com",
+    searchPaths: ["/investing", "/trading", "/retirement"],
+  },
+  vanguard: {
+    primary: "vanguard.com",
+    searchPaths: ["/investing", "/trading", "/retirement"],
+  },
+  schwab: {
+    primary: "schwab.com",
+    searchPaths: ["/investing", "/trading", "/retirement"],
+  },
+  robinhood: {
+    primary: "robinhood.com",
+    searchPaths: ["/investing", "/crypto", "/options"],
+  },
+};
+
+// Rate limiting configuration
+const RATE_LIMITS = {
+  maxConcurrent: 3,
+  delayBetweenRequests: 1000,
+  timeout: 10000,
+  maxRetries: 2,
+};
+
+let requestQueue = [];
+let activeRequests = 0;
+
+// Entity extraction functions
+function extractEntitiesRuleBased(message) {
+  const lowerMessage = message.toLowerCase();
+  const entities = {
+    creditCardIssuers: [],
+    creditCardNames: [],
+    banks: [],
+    investmentPlatforms: [],
+    financialProducts: [],
+    comparisonWords: [],
+    states: [],
+    rawEntities: [],
+  };
+
+  // Extract each type of entity
+  for (const [category, patterns] of Object.entries(ENTITY_PATTERNS)) {
+    for (const pattern of patterns) {
+      if (lowerMessage.includes(pattern)) {
+        // Special handling for states - only match if there's context
+        if (category === "states") {
+          const stateContext = [
+            "tax",
+            "rule",
+            "benefit",
+            "in",
+            "state",
+            "law",
+            "regulation",
+          ];
+          const hasStateContext = stateContext.some((ctx) =>
+            lowerMessage.includes(ctx)
+          );
+
+          if (hasStateContext || pattern.length > 2) {
+            entities[category].push(pattern);
+            entities.rawEntities.push(pattern);
+          }
+        } else {
+          entities[category].push(pattern);
+          entities.rawEntities.push(pattern);
+        }
+      }
+    }
+  }
+
+  // Remove duplicates
+  for (const category in entities) {
+    if (Array.isArray(entities[category])) {
+      entities[category] = [...new Set(entities[category])];
+    }
+  }
+  entities.rawEntities = [...new Set(entities.rawEntities)];
+
+  return entities;
+}
+
+async function extractEntitiesLLM(message, entities) {
+  try {
+    const response = await fetch(
+      "https://openrouter.ai/api/v1/chat/completions",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "openai/gpt-4o-mini",
+          temperature: 0.1,
+          max_tokens: 500,
+          messages: [
+            {
+              role: "system",
+              content: [
+                "You are a financial entity extractor. Extract relevant financial entities from user queries.",
+                "Focus on: credit card issuers, card names, banks, investment platforms, financial products, states.",
+                "Return only valid JSON with the extracted entities.",
+                "",
+                "Example input: 'Chase Sapphire vs Amex Gold'",
+                "Example output: {",
+                '  "creditCardIssuers": ["chase", "amex"],',
+                '  "creditCardNames": ["sapphire", "gold"],',
+                '  "comparisonWords": ["vs"],',
+                '  "rawEntities": ["chase", "sapphire", "amex", "gold", "vs"]',
+                "}",
+              ].join("\n"),
+            },
+            {
+              role: "user",
+              content: `Extract entities from: "${message}"`,
+            },
+          ],
+          response_format: {
+            type: "json_schema",
+            json_schema: {
+              name: "entity_extraction",
+              strict: true,
+              schema: {
+                type: "object",
+                additionalProperties: false,
+                properties: {
+                  creditCardIssuers: {
+                    type: "array",
+                    items: { type: "string" },
+                  },
+                  creditCardNames: { type: "array", items: { type: "string" } },
+                  banks: { type: "array", items: { type: "string" } },
+                  investmentPlatforms: {
+                    type: "array",
+                    items: { type: "string" },
+                  },
+                  financialProducts: {
+                    type: "array",
+                    items: { type: "string" },
+                  },
+                  comparisonWords: { type: "array", items: { type: "string" } },
+                  states: { type: "array", items: { type: "string" } },
+                  rawEntities: { type: "array", items: { type: "string" } },
+                },
+                required: [
+                  "creditCardIssuers",
+                  "creditCardNames",
+                  "banks",
+                  "investmentPlatforms",
+                  "financialProducts",
+                  "comparisonWords",
+                  "states",
+                  "rawEntities",
+                ],
+              },
+            },
+          },
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      console.error("❌ [ENTITY_EXTRACTOR] LLM API error:", response.status);
+      return entities;
+    }
+
+    const data = await response.json();
+    const content = data.choices?.[0]?.message?.content;
+
+    if (!content) {
+      return entities;
+    }
+
+    const llmEntities = JSON.parse(content);
+
+    // Merge LLM results with rule-based results
+    const mergedEntities = {
+      creditCardIssuers: [
+        ...new Set([
+          ...entities.creditCardIssuers,
+          ...llmEntities.creditCardIssuers,
+        ]),
+      ],
+      creditCardNames: [
+        ...new Set([
+          ...entities.creditCardNames,
+          ...llmEntities.creditCardNames,
+        ]),
+      ],
+      banks: [...new Set([...entities.banks, ...llmEntities.banks])],
+      investmentPlatforms: [
+        ...new Set([
+          ...entities.investmentPlatforms,
+          ...llmEntities.investmentPlatforms,
+        ]),
+      ],
+      financialProducts: [
+        ...new Set([
+          ...entities.financialProducts,
+          ...llmEntities.financialProducts,
+        ]),
+      ],
+      comparisonWords: [
+        ...new Set([
+          ...entities.comparisonWords,
+          ...llmEntities.comparisonWords,
+        ]),
+      ],
+      states: [...new Set([...entities.states, ...llmEntities.states])],
+      rawEntities: [
+        ...new Set([...entities.rawEntities, ...llmEntities.rawEntities]),
+      ],
+    };
+
+    return mergedEntities;
+  } catch (error) {
+    console.error("❌ [ENTITY_EXTRACTOR] LLM extraction error:", error);
+    return entities;
+  }
+}
+
+async function extractEntities(message) {
+  console.log("🔍 [ENTITY_EXTRACTOR] Extracting entities from:", message);
+
+  const ruleBasedEntities = extractEntitiesRuleBased(message);
+  console.log("🔍 [ENTITY_EXTRACTOR] Rule-based entities:", ruleBasedEntities);
+
+  const shouldUseLLM =
+    ruleBasedEntities.rawEntities.length < 2 ||
+    message.toLowerCase().includes("vs") ||
+    message.toLowerCase().includes("compare") ||
+    message.toLowerCase().includes("which");
+
+  if (shouldUseLLM) {
+    console.log("🔍 [ENTITY_EXTRACTOR] Using LLM fallback");
+    const finalEntities = await extractEntitiesLLM(message, ruleBasedEntities);
+    console.log("🔍 [ENTITY_EXTRACTOR] Final entities:", finalEntities);
+    return finalEntities;
+  }
+
+  return ruleBasedEntities;
+}
+
+function determineIntent(entities, message) {
+  const lowerMessage = message.toLowerCase();
+
+  if (
+    entities.comparisonWords.length > 0 ||
+    lowerMessage.includes("vs") ||
+    lowerMessage.includes("compare") ||
+    lowerMessage.includes("which")
+  ) {
+    return {
+      intent: "ask_personalized",
+      needs_web: true,
+      needs_user_data: true,
+      reasoning: "Comparison query requires user data + web research",
+    };
+  }
+
+  if (
+    entities.creditCardIssuers.length > 0 ||
+    entities.creditCardNames.length > 0
+  ) {
+    return {
+      intent: "ask_personalized",
+      needs_web: true,
+      needs_user_data: true,
+      reasoning: "Specific product query requires user data + web research",
+    };
+  }
+
+  if (
+    entities.states.length > 0 &&
+    (lowerMessage.includes("tax") ||
+      lowerMessage.includes("rule") ||
+      lowerMessage.includes("benefit"))
+  ) {
+    return {
+      intent: "ask_state_rule",
+      needs_web: true,
+      needs_user_data: false,
+      reasoning: "State-specific rule query",
+    };
+  }
+
+  if (
+    lowerMessage.includes("2025") ||
+    lowerMessage.includes("current") ||
+    lowerMessage.includes("latest")
+  ) {
+    return {
+      intent: "ask_fact_fresh",
+      needs_web: true,
+      needs_user_data: false,
+      reasoning: "Current year facts query",
+    };
+  }
+
+  return {
+    intent: "ask_personalized",
+    needs_web: false,
+    needs_user_data: true,
+    reasoning: "Default to personalized query",
+  };
+}
+
+// Domain mapping functions
+function getDomainMapping(entity) {
+  const lowerEntity = entity.toLowerCase();
+  return DOMAIN_MAPPINGS[lowerEntity] || null;
+}
+
+function getRelevantDomains(entities) {
+  const domains = new Set();
+
+  for (const entity of entities.rawEntities) {
+    const mapping = getDomainMapping(entity);
+    if (mapping) {
+      domains.add(mapping.primary);
+    }
+  }
+
+  if (domains.size === 0) {
+    domains.add("consumerfinance.gov");
+    domains.add("nerdwallet.com");
+  }
+
+  return Array.from(domains);
+}
+
+function buildSearchUrls(domain, entity, searchPaths = []) {
+  const urls = [];
+
+  const mapping = getDomainMapping(entity);
+  if (mapping) {
+    mapping.searchPaths.forEach((path) => {
+      urls.push(`https://${mapping.primary}${path}`);
+    });
+  } else {
+    searchPaths.forEach((path) => {
+      urls.push(`https://${domain}${path}`);
+    });
+  }
+
+  if (urls.length === 0) {
+    urls.push(`https://${domain}`);
+  }
+
+  return urls;
+}
+
+function getSearchStrategy(entities, message) {
+  const lowerMessage = message.toLowerCase();
+
+  const isComparison =
+    entities.comparisonWords.length > 0 ||
+    lowerMessage.includes("vs") ||
+    lowerMessage.includes("compare");
+
+  const domains = getRelevantDomains(entities);
+
+  const searchUrls = [];
+  for (const domain of domains) {
+    const urls = buildSearchUrls(domain, entities.rawEntities[0] || "", []);
+    searchUrls.push(...urls);
+  }
+
+  return {
+    isComparison,
+    domains,
+    searchUrls,
+    strategy: isComparison ? "comparison" : "product_info",
+  };
+}
+
+// Web scraping functions
+async function rateLimitedFetch(url, options = {}) {
+  return new Promise((resolve, reject) => {
+    const request = {
+      url,
+      options: {
+        ...options,
+        timeout: RATE_LIMITS.timeout,
+        headers: {
+          "User-Agent": "Mozilla/5.0 (compatible; FinancifyBot/1.0)",
+          Accept:
+            "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+          "Accept-Language": "en-US,en;q=0.5",
+          "Accept-Encoding": "gzip, deflate",
+          Connection: "keep-alive",
+          "Upgrade-Insecure-Requests": "1",
+          ...options.headers,
+        },
+      },
+      resolve,
+      reject,
+      retries: 0,
+    };
+
+    requestQueue.push(request);
+    processQueue();
+  });
+}
+
+async function processQueue() {
+  if (
+    activeRequests >= RATE_LIMITS.maxConcurrent ||
+    requestQueue.length === 0
+  ) {
+    return;
+  }
+
+  const request = requestQueue.shift();
+  activeRequests++;
+
+  try {
+    const result = await executeRequest(request);
+    request.resolve(result);
+  } catch (error) {
+    if (request.retries < RATE_LIMITS.maxRetries) {
+      request.retries++;
+      requestQueue.unshift(request);
+    } else {
+      request.reject(error);
+    }
+  } finally {
+    activeRequests--;
+    setTimeout(() => processQueue(), RATE_LIMITS.delayBetweenRequests);
+  }
+}
+
+async function executeRequest(request) {
+  const { url, options } = request;
+
+  console.log(`🌐 [WEB_SCRAPER] Fetching: ${url}`);
+
+  const response = await fetch(url, options);
+
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+  }
+
+  const html = await response.text();
+  return {
+    url,
+    html,
+    status: response.status,
+    headers: Object.fromEntries(response.headers.entries()),
+  };
+}
+
+function extractDataFromHTML(html, url, entityType = "credit_card") {
+  const $ = cheerio.load(html);
+  const extractedData = {
+    url,
+    entityType,
+    title: $("title").text().trim(),
+    description: $('meta[name="description"]').attr("content") || "",
+    extractedAt: new Date().toISOString(),
+    data: {},
+  };
+
+  switch (entityType) {
+    case "credit_card":
+      extractedData.data = extractCreditCardData($);
+      break;
+    case "bank":
+      extractedData.data = extractBankData($);
+      break;
+    case "investment":
+      extractedData.data = extractInvestmentData($);
+      break;
+    default:
+      extractedData.data = extractGenericData($);
+  }
+
+  return extractedData;
+}
+
+function extractCreditCardData($) {
+  const data = {
+    apr: [],
+    annualFee: [],
+    rewards: [],
+    benefits: [],
+    features: [],
+  };
+
+  $("*").each((i, element) => {
+    const text = $(element).text();
+    const aprMatch = text.match(/(\d+\.?\d*)\s*%\s*APR/i);
+    if (aprMatch) {
+      data.apr.push({
+        value: parseFloat(aprMatch[1]),
+        text: text.trim(),
+        context: $(element).parent().text().trim(),
+      });
+    }
+
+    const feeMatch = text.match(/\$(\d+)\s*annual\s*fee/i);
+    if (feeMatch) {
+      data.annualFee.push({
+        value: parseFloat(feeMatch[1]),
+        text: text.trim(),
+        context: $(element).parent().text().trim(),
+      });
+    }
+
+    if (
+      text.toLowerCase().includes("rewards") ||
+      text.toLowerCase().includes("cash back")
+    ) {
+      data.rewards.push({
+        text: text.trim(),
+        context: $(element).parent().text().trim(),
+      });
+    }
+  });
+
+  $(
+    '.benefits, .features, .perks, [class*="benefit"], [class*="feature"]'
+  ).each((i, element) => {
+    const benefitText = $(element).text().trim();
+    if (benefitText) {
+      data.benefits.push(benefitText);
+    }
+  });
+
+  return data;
+}
+
+function extractBankData($) {
+  const data = {
+    interestRates: [],
+    fees: [],
+    features: [],
+  };
+
+  $("*").each((i, element) => {
+    const text = $(element).text();
+    const rateMatch = text.match(/(\d+\.?\d*)\s*%\s*APY/i);
+    if (rateMatch) {
+      data.interestRates.push({
+        value: parseFloat(rateMatch[1]),
+        text: text.trim(),
+        context: $(element).parent().text().trim(),
+      });
+    }
+  });
+
+  return data;
+}
+
+function extractInvestmentData($) {
+  const data = {
+    fees: [],
+    features: [],
+    accountTypes: [],
+  };
+
+  $("*").each((i, element) => {
+    const text = $(element).text();
+    const feeMatch = text.match(/\$(\d+\.?\d*)\s*per\s*trade/i);
+    if (feeMatch) {
+      data.fees.push({
+        value: parseFloat(feeMatch[1]),
+        text: text.trim(),
+        context: $(element).parent().text().trim(),
+      });
+    }
+  });
+
+  return data;
+}
+
+function extractGenericData($) {
+  const data = {
+    keyNumbers: [],
+    features: [],
+    benefits: [],
+  };
+
+  $("*").each((i, element) => {
+    const text = $(element).text();
+
+    const rateMatch = text.match(/(\d+\.?\d*)\s*%/);
+    if (rateMatch) {
+      data.keyNumbers.push({
+        type: "percentage",
+        value: parseFloat(rateMatch[1]),
+        text: text.trim(),
+      });
+    }
+
+    const dollarMatch = text.match(/\$(\d+(?:,\d{3})*(?:\.\d{2})?)/);
+    if (dollarMatch) {
+      data.keyNumbers.push({
+        type: "dollar",
+        value: parseFloat(dollarMatch[1].replace(/,/g, "")),
+        text: text.trim(),
+      });
+    }
+  });
+
+  return data;
+}
+
+async function scrapeMultipleUrls(urls, entityType = "credit_card") {
+  console.log(`🌐 [WEB_SCRAPER] Starting scrape of ${urls.length} URLs`);
+
+  const results = [];
+  const errors = [];
+
+  for (const url of urls) {
+    try {
+      const response = await rateLimitedFetch(url);
+      const extractedData = extractDataFromHTML(response.html, url, entityType);
+      results.push(extractedData);
+      console.log(`✅ [WEB_SCRAPER] Successfully scraped: ${url}`);
+    } catch (error) {
+      console.error(`❌ [WEB_SCRAPER] Failed to scrape ${url}:`, error.message);
+      errors.push({ url, error: error.message });
+    }
+  }
+
+  return {
+    results,
+    errors,
+    successCount: results.length,
+    errorCount: errors.length,
+  };
+}
+
+// Simple caching functions
+async function getCachedData(type, identifier, userSpecific = false) {
+  try {
+    const cacheKey = `${type}_${identifier}`;
+
+    const { data: cached, error } = await supabase
+      .from("web_scrape_cache")
+      .select("*")
+      .eq("cache_key", cacheKey)
+      .maybeSingle();
+
+    if (error) {
+      console.error("❌ [CACHE] Error getting cached data:", error);
+      return null;
+    }
+
+    if (!cached) {
+      return null;
+    }
+
+    const now = new Date();
+    const cachedAt = new Date(cached.created_at);
+    const ttl = 30 * 24 * 60 * 60; // 30 days
+    const age = (now - cachedAt) / 1000;
+
+    if (age > ttl) {
+      console.log(
+        `🕒 [CACHE] Cache expired for ${cacheKey}, age: ${age}s, ttl: ${ttl}s`
+      );
+      return null;
+    }
+
+    console.log(`✅ [CACHE] Cache hit for ${cacheKey}, age: ${age}s`);
+    return {
+      data: cached.data_json,
+      cachedAt: cached.created_at,
+      ttl: ttl - age,
+      source: "cache",
+    };
+  } catch (error) {
+    console.error("❌ [CACHE] Error in getCachedData:", error);
+    return null;
+  }
+}
+
+async function setCachedData(type, identifier, data, userSpecific = false) {
+  try {
+    const cacheKey = `${type}_${identifier}`;
+
+    const dataSize = JSON.stringify(data).length;
+    if (dataSize > 1000000) {
+      console.warn(`⚠️ [CACHE] Data too large for cache: ${dataSize} bytes`);
+      return false;
+    }
+
+    const cacheData = {
+      cache_key: cacheKey,
+      data_type: type,
+      data_json: data,
+      user_specific: userSpecific,
+      data_size: dataSize,
+      created_at: new Date().toISOString(),
+    };
+
+    const { error } = await supabase
+      .from("web_scrape_cache")
+      .upsert(cacheData, { onConflict: "cache_key" });
+
+    if (error) {
+      console.error("❌ [CACHE] Error setting cached data:", error);
+      return false;
+    }
+
+    console.log(
+      `✅ [CACHE] Cached data for ${cacheKey}, size: ${dataSize} bytes`
+    );
+    return true;
+  } catch (error) {
+    console.error("❌ [CACHE] Error in setCachedData:", error);
+    return false;
+  }
+}
+
+async function getCachedDataWithFallback(
+  type,
+  identifier,
+  fallbackFn,
+  userSpecific = false
+) {
+  const cached = await getCachedData(type, identifier, userSpecific);
+  if (cached) {
+    return cached;
+  }
+
+  console.log(
+    `🔄 [CACHE] Cache miss for ${type}_${identifier}, calling fallback`
+  );
+  try {
+    const freshData = await fallbackFn();
+
+    await setCachedData(type, identifier, freshData, userSpecific);
+
+    return {
+      data: freshData,
+      cachedAt: new Date().toISOString(),
+      ttl: 30 * 24 * 60 * 60,
+      source: "fresh",
+    };
+  } catch (error) {
+    console.error("❌ [CACHE] Fallback function failed:", error);
+    throw error;
+  }
+}
+
+// Main web research function
+async function researchFinancialProducts(message, userId = null) {
+  console.log("🔍 [WEB_RESEARCH] Starting research for:", message);
+
+  try {
+    const entities = await extractEntities(message);
+    console.log("🔍 [WEB_RESEARCH] Extracted entities:", entities);
+
+    const intent = determineIntent(entities, message);
+    console.log("🔍 [WEB_RESEARCH] Determined intent:", intent);
+
+    const searchStrategy = getSearchStrategy(entities, message);
+    console.log("🔍 [WEB_RESEARCH] Search strategy:", searchStrategy);
+
+    const researchResults = await researchDomains(
+      searchStrategy,
+      entities,
+      userId
+    );
+    const combinedResults = combineResearchResults(
+      researchResults,
+      entities,
+      intent
+    );
+
+    return {
+      success: true,
+      entities,
+      intent,
+      searchStrategy,
+      results: combinedResults,
+      timestamp: new Date().toISOString(),
+    };
+  } catch (error) {
+    console.error("❌ [WEB_RESEARCH] Research failed:", error);
+    return {
+      success: false,
+      error: error.message,
+      timestamp: new Date().toISOString(),
+    };
+  }
+}
+
+async function researchDomains(searchStrategy, entities, userId) {
+  const results = [];
+
+  for (const url of searchStrategy.searchUrls) {
+    try {
+      const entityType = determineEntityType(entities, url);
+
+      const cachedResult = await getCachedDataWithFallback(
+        entityType,
+        url,
+        async () => {
+          console.log(`🌐 [WEB_RESEARCH] Scraping ${url}`);
+          return await scrapeMultipleUrls([url], entityType);
+        },
+        false
+      );
+
+      if (cachedResult && cachedResult.data.results.length > 0) {
+        results.push({
+          url,
+          entityType,
+          data: cachedResult.data.results[0],
+          source: cachedResult.source,
+          cachedAt: cachedResult.cachedAt,
+        });
+      }
+    } catch (error) {
+      console.error(`❌ [WEB_RESEARCH] Failed to research ${url}:`, error);
+      results.push({
+        url,
+        error: error.message,
+        failed: true,
+      });
+    }
+  }
+
+  return results;
+}
+
+function determineEntityType(entities, url) {
+  if (
+    entities.creditCardIssuers.length > 0 ||
+    entities.creditCardNames.length > 0
+  ) {
+    return "creditCard";
+  }
+  if (entities.banks.length > 0) {
+    return "bank";
+  }
+  if (entities.investmentPlatforms.length > 0) {
+    return "investment";
+  }
+  return "generic";
+}
+
+function combineResearchResults(researchResults, entities, intent) {
+  const combined = {
+    summary: {
+      totalSources: researchResults.length,
+      successfulSources: researchResults.filter((r) => !r.failed).length,
+      failedSources: researchResults.filter((r) => r.failed).length,
+    },
+    products: [],
+    comparisons: [],
+    keyMetrics: {},
+    recommendations: [],
+  };
+
+  for (const result of researchResults) {
+    if (result.failed) continue;
+
+    const product = {
+      source: result.url,
+      title: result.data.title,
+      description: result.data.description,
+      metrics: extractKeyMetrics(result.data.data),
+      benefits: extractBenefits(result.data.data),
+      features: extractFeatures(result.data.data),
+    };
+
+    combined.products.push(product);
+  }
+
+  if (intent.intent === "ask_personalized" && intent.needs_web) {
+    combined.comparisons = generateComparisons(combined.products, entities);
+  }
+
+  combined.keyMetrics = extractKeyMetricsAcrossProducts(combined.products);
+
+  return combined;
+}
+
+function extractKeyMetrics(data) {
+  const metrics = {};
+
+  if (data.apr && data.apr.length > 0) {
+    metrics.apr = data.apr.map((apr) => apr.value);
+  }
+
+  if (data.annualFee && data.annualFee.length > 0) {
+    metrics.annualFee = data.annualFee.map((fee) => fee.value);
+  }
+
+  if (data.interestRates && data.interestRates.length > 0) {
+    metrics.interestRates = data.interestRates.map((rate) => rate.value);
+  }
+
+  if (data.fees && data.fees.length > 0) {
+    metrics.fees = data.fees.map((fee) => fee.value);
+  }
+
+  return metrics;
+}
+
+function extractBenefits(data) {
+  const benefits = [];
+
+  if (data.benefits && data.benefits.length > 0) {
+    benefits.push(...data.benefits);
+  }
+
+  if (data.rewards && data.rewards.length > 0) {
+    benefits.push(...data.rewards.map((r) => r.text));
+  }
+
+  return benefits;
+}
+
+function extractFeatures(data) {
+  const features = [];
+
+  if (data.features && data.features.length > 0) {
+    features.push(...data.features);
+  }
+
+  if (data.keyNumbers && data.keyNumbers.length > 0) {
+    features.push(...data.keyNumbers.map((kn) => kn.text));
+  }
+
+  return features;
+}
+
+function generateComparisons(products, entities) {
+  const comparisons = [];
+
+  if (products.length < 2) {
+    return comparisons;
+  }
+
+  for (let i = 0; i < products.length; i++) {
+    for (let j = i + 1; j < products.length; j++) {
+      const product1 = products[i];
+      const product2 = products[j];
+
+      const comparison = {
+        product1: product1.title,
+        product2: product2.title,
+        metrics: {
+          apr: compareMetrics(
+            product1.metrics.apr,
+            product2.metrics.apr,
+            "lower"
+          ),
+          annualFee: compareMetrics(
+            product1.metrics.annualFee,
+            product2.metrics.annualFee,
+            "lower"
+          ),
+          interestRates: compareMetrics(
+            product1.metrics.interestRates,
+            product2.metrics.interestRates,
+            "higher"
+          ),
+        },
+        winner: determineWinner(product1, product2),
+      };
+
+      comparisons.push(comparison);
+    }
+  }
+
+  return comparisons;
+}
+
+function compareMetrics(metrics1, metrics2, betterDirection) {
+  if (
+    !metrics1 ||
+    !metrics2 ||
+    metrics1.length === 0 ||
+    metrics2.length === 0
+  ) {
+    return { result: "insufficient_data" };
+  }
+
+  const avg1 = metrics1.reduce((sum, val) => sum + val, 0) / metrics1.length;
+  const avg2 = metrics2.reduce((sum, val) => sum + val, 0) / metrics2.length;
+
+  if (betterDirection === "lower") {
+    return {
+      result:
+        avg1 < avg2
+          ? "product1_better"
+          : avg2 < avg1
+          ? "product2_better"
+          : "tie",
+      product1: avg1,
+      product2: avg2,
+    };
+  } else {
+    return {
+      result:
+        avg1 > avg2
+          ? "product1_better"
+          : avg2 > avg1
+          ? "product2_better"
+          : "tie",
+      product1: avg1,
+      product2: avg2,
+    };
+  }
+}
+
+function determineWinner(product1, product2) {
+  let score1 = 0;
+  let score2 = 0;
+
+  if (product1.metrics.apr && product2.metrics.apr) {
+    const avg1 =
+      product1.metrics.apr.reduce((sum, val) => sum + val, 0) /
+      product1.metrics.apr.length;
+    const avg2 =
+      product2.metrics.apr.reduce((sum, val) => sum + val, 0) /
+      product2.metrics.apr.length;
+    if (avg1 < avg2) score1++;
+    else if (avg2 < avg1) score2++;
+  }
+
+  if (product1.metrics.annualFee && product2.metrics.annualFee) {
+    const avg1 =
+      product1.metrics.annualFee.reduce((sum, val) => sum + val, 0) /
+      product1.metrics.annualFee.length;
+    const avg2 =
+      product2.metrics.annualFee.reduce((sum, val) => sum + val, 0) /
+      product2.metrics.annualFee.length;
+    if (avg1 < avg2) score1++;
+    else if (avg2 < avg1) score2++;
+  }
+
+  if (score1 > score2) return "product1";
+  if (score2 > score1) return "product2";
+  return "tie";
+}
+
+function extractKeyMetricsAcrossProducts(products) {
+  const metrics = {
+    apr: [],
+    annualFee: [],
+    interestRates: [],
+    fees: [],
+  };
+
+  for (const product of products) {
+    if (product.metrics.apr) metrics.apr.push(...product.metrics.apr);
+    if (product.metrics.annualFee)
+      metrics.annualFee.push(...product.metrics.annualFee);
+    if (product.metrics.interestRates)
+      metrics.interestRates.push(...product.metrics.interestRates);
+    if (product.metrics.fees) metrics.fees.push(...product.metrics.fees);
+  }
+
+  const averages = {};
+  for (const [key, values] of Object.entries(metrics)) {
+    if (values.length > 0) {
+      averages[key] = values.reduce((sum, val) => sum + val, 0) / values.length;
+    }
+  }
+
+  return {
+    ranges: metrics,
+    averages,
+  };
 }
