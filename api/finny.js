@@ -11,40 +11,39 @@ const supabase = createClient(
 );
 
 // Conversation logging functionality
-function logConversation(conversationData) {
+async function logConversation(conversationData) {
   console.log(
     "🔄 [CONVERSATION_LOG] logConversation called with:",
     conversationData?.timestamp
   );
   try {
-    const logFilePath = path.join(process.cwd(), "conversation_log.json");
+    // Store conversation in Supabase instead of local file
+    const { error } = await supabase.from("conversation_logs").insert([
+      {
+        user_id: conversationData.user_id,
+        user_message: conversationData.user_message,
+        finny_response: conversationData.finny_response,
+        timestamp: conversationData.timestamp,
+        intent: conversationData.intent,
+        entities: conversationData.entities,
+        confidence: conversationData.confidence,
+        response_time_ms: conversationData.response_time_ms,
+        sources_used: conversationData.sources_used,
+        cached: conversationData.cached,
+        enhanced_data: conversationData.enhanced_data || false,
+        market_data: conversationData.market_data || false,
+        web_research: conversationData.web_research || false,
+      },
+    ]);
 
-    // Read existing log file
-    let logData = { conversations: [], metadata: {} };
-    if (fs.existsSync(logFilePath)) {
-      const fileContent = fs.readFileSync(logFilePath, "utf8");
-      logData = JSON.parse(fileContent);
+    if (error) {
+      console.error("❌ [CONVERSATION_LOG] Supabase error:", error);
+    } else {
+      console.log(
+        "📝 [CONVERSATION_LOG] Logged conversation to Supabase:",
+        conversationData.timestamp
+      );
     }
-
-    // Add new conversation entry
-    logData.conversations.push(conversationData);
-
-    // Keep only last 1000 conversations to prevent file from growing too large
-    if (logData.conversations.length > 1000) {
-      logData.conversations = logData.conversations.slice(-1000);
-    }
-
-    // Update metadata
-    logData.metadata.last_updated = new Date().toISOString();
-    logData.metadata.total_conversations = logData.conversations.length;
-
-    // Write back to file
-    fs.writeFileSync(logFilePath, JSON.stringify(logData, null, 2));
-
-    console.log(
-      "📝 [CONVERSATION_LOG] Logged conversation:",
-      conversationData.timestamp
-    );
   } catch (error) {
     console.error("❌ [CONVERSATION_LOG] Error logging conversation:", error);
     // Don't throw error - logging failure shouldn't break the API
