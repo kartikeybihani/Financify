@@ -6,13 +6,12 @@ import {
   Platform,
   UIManager,
   ScrollView,
-  SafeAreaView,
-  ActivityIndicator,
   RefreshControl,
   DeviceEventEmitter,
   Image,
   Dimensions,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { Feather, Ionicons } from "@expo/vector-icons";
 import { styles } from "../_styles/homeStyles";
 import { supabase } from "../_lib/supabase/supabase";

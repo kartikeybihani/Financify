@@ -4,8 +4,6 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
-  Image,
   Linking,
   Share,
   Switch,
@@ -13,6 +11,7 @@ import {
   ScrollView,
   DeviceEventEmitter,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import {
   Ionicons,
   MaterialIcons,

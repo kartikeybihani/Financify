@@ -8,13 +8,12 @@ import {
   TouchableOpacity,
   Dimensions,
   Animated,
-  SafeAreaView,
-  Image,
   Platform,
   FlatList,
   ViewToken,
   StatusBar,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
@@ -209,7 +208,7 @@ export default function FinalScreen() {
     }).start();
 
     // Text typing animation with natural feel
-    let typingTimeout: NodeJS.Timeout;
+    let typingTimeout: ReturnType<typeof setTimeout>;
     const typeNextChar = () => {
       if (index.current < message.length) {
         setTypedText(
