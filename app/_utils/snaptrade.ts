@@ -3,7 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../_lib/supabase/supabase';
 import logger from './logger';
 
-const BASE_URL = "https://financify-rose.vercel.app";
+const BASE_URL = process.env.EXPO_PUBLIC_APP_BASE_URL || "https://financify-rose.vercel.app";
 
 // Storage keys for SnapTrade credentials
 const SNAPTRADE_CREDENTIALS_KEY = 'snaptrade_credentials';

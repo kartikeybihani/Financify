@@ -36,9 +36,7 @@ import {
   fetchInitialData,
   getPrimaryItemId,
   syncAllUserTransactions,
-  refreshPlaidData,
-  refreshAccountBalances,
-  performCompleteDataRefresh,
+  refreshBothBalancesAndTransactions,
   getAllRecurringTransactions,
   refreshRecurringTransactions,
   getUpdateLinkToken,
@@ -50,7 +48,8 @@ import {
   getUserAccountsForFilter,
 } from "../_utils/plaid";
 
-const BASE_URL = "https://financify-rose.vercel.app";
+const BASE_URL =
+  process.env.EXPO_PUBLIC_APP_BASE_URL || "https://financify-rose.vercel.app";
 import {
   debugTransactionCategories,
   getCurrentMonthCategoryBreakdown,
@@ -287,7 +286,7 @@ export default function InsightsScreen() {
         // Parallelize independent API calls for faster loading
         const [hasStoredData] = await Promise.all([
           loadData(), // Load stored data first
-          loadUserAccounts(true), // Load accounts for filter modal
+          loadUserAccounts(false), // Load accounts for filter modal
         ]);
 
         // If no stored data, fetch fresh data (sequential dependency)
@@ -411,18 +410,11 @@ export default function InsightsScreen() {
         const uniqueInstitutions = [
           ...new Set(userAccounts.map((acc) => acc.institution_name)),
         ];
-        logger.debug(
-          "DEBUG: Unique institutions in filter:",
-          uniqueInstitutions
-        );
 
         // Check which accounts belong to which institution
         uniqueInstitutions.forEach((institution) => {
           const accountsForInstitution = userAccounts.filter(
             (acc) => acc.institution_name === institution
-          );
-          logger.debug(
-            `DEBUG: ${institution} has ${accountsForInstitution.length} accounts:`
           );
           accountsForInstitution.forEach((acc) => {
             logger.debug(`    - ${acc.name} (${acc.subtype})`);
@@ -998,13 +990,10 @@ export default function InsightsScreen() {
       logger.info("🔄 POST RE-AUTH: Comprehensive data refresh...");
 
       // Step 4: Comprehensive data refresh
-      // 4a. Request fresh data from Plaid
-      await refreshPlaidData();
+      // 4a. Refresh both balances and transactions from Plaid
+      await refreshBothBalancesAndTransactions(item_id);
 
-      // 4b. Refresh account balances (critical after re-auth)
-      await refreshAccountBalances(item_id);
-
-      // 4c. Sync all transactions
+      // 4b. Sync all transactions
       await syncAllUserTransactions();
 
       // Step 5: Refresh UI from database (the single source of truth)
@@ -1207,14 +1196,14 @@ export default function InsightsScreen() {
     try {
       logger.info("☁️ CLOUD REFRESH: Starting comprehensive data refresh...");
 
-      // Step 1: Request fresh data from Plaid (triggers their data extraction)
+      // Step 1: Refresh both balances and transactions from Plaid
       setRefreshStatus({
         type: "cloud",
-        message: "Requesting fresh data from Plaid...",
+        message: "Refreshing balances and transactions...",
       });
-      logger.info("🔄 Step 1: Calling refreshPlaidData()...");
-      const result = await refreshPlaidData();
-      logger.info("📦 refreshPlaidData result:", result);
+      logger.info("🔄 Step 1: Calling refreshBothBalancesAndTransactions()...");
+      const result = await refreshBothBalancesAndTransactions();
+      logger.info("📦 refreshBothBalancesAndTransactions result:", result);
 
       // Step 2: Check for re-auth errors and handle them
       if (result.results) {
@@ -1225,36 +1214,27 @@ export default function InsightsScreen() {
         });
       }
 
-      logger.info("✅ Refresh request sent to Plaid:", result.message);
+      logger.info("✅ Combined refresh completed:", result.message);
 
-      // Step 3: Refresh account balances first (they change most frequently)
-      setRefreshStatus({
-        type: "cloud",
-        message: "Updating account balances...",
-      });
-      logger.info("🔄 Step 3: Calling refreshAccountBalances()...");
-      const balanceResult = await refreshAccountBalances();
-      logger.info("📦 refreshAccountBalances result:", balanceResult);
-
-      // Step 4: Sync transactions to Supabase
+      // Step 3: Sync transactions to Supabase
       setRefreshStatus({
         type: "cloud",
         message: "Syncing transactions to database...",
       });
-      logger.info("🔄 Step 4: Calling syncAllUserTransactions()...");
+      logger.info("🔄 Step 3: Calling syncAllUserTransactions()...");
       const syncResult = await syncAllUserTransactions();
       logger.info("📦 syncAllUserTransactions result:", syncResult);
 
-      // Step 5: Refresh recurring transactions
+      // Step 4: Refresh recurring transactions
       setRefreshStatus({
         type: "cloud",
         message: "Analyzing recurring transactions...",
       });
-      logger.info("🔄 Step 5: Calling refreshRecurringTransactions()...");
+      logger.info("🔄 Step 4: Calling refreshRecurringTransactions()...");
       const recurringResult = await refreshRecurringTransactions();
       logger.info("📦 refreshRecurringTransactions result:", recurringResult);
 
-      // Step 6: Refresh UI from Supabase (single source of truth)
+      // Step 5: Refresh UI from Supabase (single source of truth)
       setRefreshStatus({ type: "cloud", message: "Updating interface..." });
       await fetchFreshData();
       await loadFilteredTransactions(filterOptions, true);

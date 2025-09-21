@@ -107,7 +107,7 @@ export const useChat = () => {
   };
 
   const handleFinnyResponse = async (messageText: string) => {
-    const BASE_URL = "https://financify-rose.vercel.app";
+    const BASE_URL = process.env.EXPO_PUBLIC_APP_BASE_URL || "https://financify-rose.vercel.app";
     try {
       // Get user_id for the API calls
       const { data: { user } } = await supabase.auth.getUser();

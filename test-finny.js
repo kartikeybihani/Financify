@@ -7,7 +7,7 @@ import https from "https";
 import http from "http";
 
 // Configuration
-const API_BASE_URL = "https://financify-rose.vercel.app";
+const API_BASE_URL = process.env.APP_BASE_URL;
 const API_ENDPOINT = "/api/finny";
 
 // Test queries - you can modify these or pass custom ones via command line

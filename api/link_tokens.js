@@ -182,7 +182,7 @@ export default async function handler(req, res) {
         client_name: "Financify",
         country_codes: ["US"],
         language: "en",
-        webhook: "https://financify-rose.vercel.app/api/webhook",
+        webhook: `${process.env.APP_BASE_URL}/api/webhook`,
         redirect_uri,
         access_token: access_token,
         update: { account_selection_enabled: true },
@@ -207,7 +207,7 @@ export default async function handler(req, res) {
       additional_consented_products: [],
       country_codes: ["US"],
       language: "en",
-      webhook: "https://financify-rose.vercel.app/api/webhook",
+      webhook: `${process.env.APP_BASE_URL}/api/webhook`,
       redirect_uri,
     });
 

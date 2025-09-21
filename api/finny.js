@@ -42,6 +42,9 @@ export default async function handler(req, res) {
       case "ask_state_rule":
         response = await handleAskStateRule(message, context);
         break;
+      case "ask_fact_fresh":
+        response = await handleAskFactFresh(message, context);
+        break;
       default:
         return res.status(400).json({ error: "Invalid action" });
     }
@@ -86,7 +89,7 @@ async function handleAsk(message, context) {
     }
 
     // 3) Fetch financial summary from store_accounts endpoint
-    const BASE_URL = "https://financify-rose.vercel.app";
+    const BASE_URL = process.env.APP_BASE_URL;
     const res = await fetch(`${BASE_URL}/api/store_accounts`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -826,27 +829,34 @@ async function handleClassify(message, context) {
               "Intents:",
               "- goal  set or modify a savings or payoff goal",
               "- ask_personalized  question about the user's money that needs their data",
-              "- ask_concept_static  timeless concept explainers",
               "- ask_fact_fresh  current year numbers or facts that change",
               "- ask_state_rule  state specific rules or taxes",
               "- calc_projection  what if or plan math",
               "",
               "Rules:",
+              "- **Intents are primary; flags can combine.** Return exactly one `intent`, but `needs_user_data`, `needs_calc`, and `needs_web` may be **true** together.",
               "- If message asks for this year current latest updated 2025 etc then ask_fact_fresh",
               "- If asking about specific financial products (cards, banks, rates, benefits, offers) that change over time then ask_fact_fresh",
               "- If comparing specific products/services by name (e.g., 'Chase vs Amex', 'Vanguard vs Fidelity') then ask_fact_fresh",
-              "- If a US state is mentioned choose ask_state_rule and set state",
-              "- If affordability or FIRE by age or projection choose calc_projection",
+              "- If the message compares **named** products (e.g., 'Chase Sapphire vs Amex Gold'), set `intent=ask_fact_fresh`, `needs_web=true`, `needs_user_data=false`.",
+              "- If the message mentions a **US state** by name or postal code and asks about **rules/benefits/taxes**, set `intent=ask_state_rule`, `needs_web=true`, and fill `state` (use `user_hint_state` only if no state in text).",
+              "- If the message asks 'rent vs buy in <city/state>' → `ask_state_rule` (needs_web) + `needs_user_data=true` (we'll use their cashflow).",
+              "- If the message asks about **BNPL reporting/risks** or **current APRs** → `ask_fact_fresh` (needs_web).",
+              "- If affordability or FIRE by age or projection choose calc_projection (but set needs_calc=true)",
               "- If it clearly sets a goal choose goal",
               "- If it needs the user's actual data choose ask_personalized",
-              "- Otherwise choose ask_concept_static",
+              "- If purely personal (spend, net worth, goals) → `ask_personalized` (needs_user_data=true, needs_web=false).",
+              "- Otherwise choose ask_personalized",
               "",
               "Sample inputs and expected intent:",
               '"Set a 2000 emergency fund by March" → goal',
               '"How much did I spend on Uber last month" or "How are you" or "Whats up" or "Am I normal?" → ask_personalized',
-              '"Difference between Roth and traditional IRA" → ask_concept_static',
+              '"Difference between Roth and traditional IRA" → ask_personalized',
               '"What is the 2025 estate tax exemption" → ask_fact_fresh',
               '"Which card has better benefits Chase Rewards or Bolt?" → ask_fact_fresh',
+              '"Which card is better for groceries, Amex Gold or SavorOne?" → ask_fact_fresh, needs_web:true, entities:["Amex Gold","SavorOne"]',
+              '"Rent vs buy in Phoenix at 7%" → ask_state_rule, needs_web:true, needs_user_data:true, state:"AZ"',
+              '"Is BNPL hurting my credit?" → ask_fact_fresh, needs_web:true, entities:["BNPL"]',
               '"Does New Jersey have inheritance tax" → ask_state_rule with state NJ',
               '"Can I hit FIRE by 35" → calc_projection',
               "Return JSON only. No extra text.",
@@ -874,7 +884,6 @@ async function handleClassify(message, context) {
                   enum: [
                     "goal",
                     "ask_personalized",
-                    "ask_concept_static",
                     "ask_fact_fresh",
                     "ask_state_rule",
                     "calc_projection",
@@ -965,54 +974,39 @@ async function handleAskStateRule(message, context) {
       };
     }
 
-    // Check cache first
-    const cacheKey = `state_rule_${state.toLowerCase()}_${message
-      .toLowerCase()
-      .replace(/[^a-z0-9]/g, "_")}`;
-    const { data: cached } = await supabase
-      .from("facts_cache")
-      .select("*")
-      .eq("key", cacheKey)
-      .maybeSingle();
+    // Call the new facts-and-rules endpoint
+    const BASE_URL = process.env.APP_BASE_URL;
+    const res = await fetch(`${BASE_URL}/api/facts-and-rules`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        endpoint: "state.rule",
+        state: state,
+        topic: inferRuleType(message),
+      }),
+    });
 
-    if (cached) {
-      const age = (Date.now() - new Date(cached.fetched_at).getTime()) / 1000;
-      const ttl = 90 * 24 * 60 * 60; // 90 days
-
-      if (age < ttl && cached.value_json) {
-        console.log("✅ [STATE_RULE] Returning cached result for:", state);
-        return {
-          intent: "ask_state_rule",
-          rule: cached.value_json,
-          cached: true,
-        };
-      }
-    }
-
-    // Get state-specific information
-    const rule = await fetchStateRule(state, message);
-    if (!rule) {
+    if (!res.ok) {
+      console.log("❌ [STATE_RULE] Failed to fetch state rule:", res.status);
       return {
-        error: `Could not find information for ${state}. Please try again or contact support.`,
+        error: "Failed to fetch state rule. Please try again.",
         intent: "ask_state_rule",
       };
     }
 
-    // Cache the result
-    const cacheData = {
-      key: cacheKey,
-      value_json: rule,
-      source_url: rule.source_url,
-      fetched_at: new Date().toISOString(),
-      ttl_seconds: 90 * 24 * 60 * 60, // 90 days
-    };
-    await supabase.from("facts_cache").upsert(cacheData);
+    const data = await res.json();
 
-    console.log("✅ [STATE_RULE] Successfully processed rule for:", state);
+    if (data.error) {
+      return {
+        error: data.error,
+        intent: "ask_state_rule",
+      };
+    }
+
     return {
       intent: "ask_state_rule",
-      rule: rule,
-      cached: false,
+      rule: data,
+      cached: data.cached || false,
     };
   } catch (error) {
     console.error("❌ [STATE_RULE] Error processing state rule:", error);
@@ -1050,53 +1044,14 @@ function extractStateFromMessage(message) {
   return null;
 }
 
-async function fetchStateRule(state, query) {
-  console.log(`🏛️ [STATE_RULE] Fetching rule for ${state}:`, query);
-
-  const stateConfig = STATE_RULE_CONFIGS[state];
-  if (!stateConfig) {
-    throw new Error(`No configuration found for state: ${state}`);
-  }
-
-  try {
-    // Determine the type of rule being asked about
-    const ruleType = inferRuleType(query);
-    const targetUrl = stateConfig.urls[ruleType] || stateConfig.urls.default;
-
-    console.log(`🔍 [STATE_RULE] Using URL: ${targetUrl}`);
-
-    // For now, use hardcoded data instead of web scraping to ensure reliability
-    // In production, you would implement actual web scraping here
-    const parsedData = parseStateContent("", ruleType, state);
-
-    // Create the rule object
-    const rule = {
-      state: state,
-      value: parsedData.value,
-      unit: parsedData.unit || "USD",
-      explanation: parsedData.explanation,
-      source_url: targetUrl,
-      source_title: parsedData.sourceTitle || `${state} Department of Revenue`,
-      last_verified: new Date().toISOString(),
-      confidence: parsedData.confidence || 0.8,
-      ttl_seconds: 90 * 24 * 60 * 60, // 90 days
-    };
-
-    return rule;
-  } catch (error) {
-    console.error(`❌ [STATE_RULE] Error fetching rule for ${state}:`, error);
-    throw error;
-  }
-}
-
 function inferRuleType(query) {
   const lowerQuery = query.toLowerCase();
 
   if (lowerQuery.includes("529") || lowerQuery.includes("education")) {
-    return "education";
+    return "state_529_deduction_or_credit";
   }
   if (lowerQuery.includes("income tax") || lowerQuery.includes("tax rate")) {
-    return "income_tax";
+    return "state_income_tax_brackets";
   }
   if (
     lowerQuery.includes("sales tax") ||
@@ -1110,105 +1065,111 @@ function inferRuleType(query) {
   if (lowerQuery.includes("deduction") || lowerQuery.includes("deduct")) {
     return "deductions";
   }
-
-  return "default";
-}
-
-function parseStateContent(html, ruleType, state) {
-  // Basic HTML parsing - extract key numbers and create explanations
-  // This is a simplified parser - in production you'd want more robust parsing
-
-  let value = null;
-  let unit = "USD";
-  let explanation = "";
-  let confidence = 0.7;
-
-  // Extract numbers that look like percentages or dollar amounts
-  const percentMatches = html.match(/(\d+\.?\d*)\s*%/g);
-  const dollarMatches = html.match(/\$(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/g);
-
-  if (ruleType === "education" && state === "AZ") {
-    // Arizona 529 deduction - typically around $4,000 per year
-    value = 4000;
-    unit = "USD";
-    explanation = `Arizona offers a state income tax deduction for contributions to 529 education savings plans. The deduction limit is $4,000 per beneficiary per year for single filers and $8,000 per beneficiary per year for married couples filing jointly. This deduction helps reduce your Arizona state taxable income, potentially saving you hundreds of dollars in state taxes. The deduction applies to contributions made during the tax year and can be claimed on your Arizona state tax return.`;
-    confidence = 0.9;
-  } else if (ruleType === "education" && state === "CA") {
-    // California doesn't have a 529 deduction
-    value = 0;
-    unit = "USD";
-    explanation = `California does not offer a state income tax deduction for contributions to 529 education savings plans. However, California residents can still benefit from 529 plans through federal tax advantages and the ability to use funds for qualified education expenses without federal tax penalties. While you won't get a state tax deduction, the federal benefits and tax-free growth make 529 plans still valuable for California residents saving for education.`;
-    confidence = 0.95;
-  } else if (ruleType === "education" && state === "NY") {
-    // New York 529 deduction - up to $10,000 per year
-    value = 10000;
-    unit = "USD";
-    explanation = `New York offers a state income tax deduction for contributions to 529 education savings plans. The deduction limit is up to $10,000 per year per taxpayer, regardless of filing status. This deduction can significantly reduce your New York state taxable income, potentially saving you hundreds of dollars in state taxes depending on your tax bracket. The deduction applies to contributions made to any qualified 529 plan, not just New York's own plan.`;
-    confidence = 0.9;
-  } else if (ruleType === "education" && state === "TX") {
-    // Texas has no state income tax
-    value = 0;
-    unit = "USD";
-    explanation = `Texas does not have a state income tax, so there is no state tax deduction available for 529 education savings plan contributions. However, Texas residents can still benefit from 529 plans through federal tax advantages, including tax-free growth and tax-free withdrawals for qualified education expenses. While you won't get a state tax deduction, the federal benefits make 529 plans valuable for Texas residents saving for education.`;
-    confidence = 0.95;
-  } else if (ruleType === "education" && state === "NJ") {
-    // New Jersey 529 deduction - up to $10,000 per year
-    value = 10000;
-    unit = "USD";
-    explanation = `New Jersey offers a state income tax deduction for contributions to 529 education savings plans. The deduction limit is up to $10,000 per year per taxpayer, with additional benefits for contributions to New Jersey's own 529 plan. This deduction can reduce your New Jersey state taxable income, potentially saving you hundreds of dollars in state taxes. The deduction applies to contributions made during the tax year and can be claimed on your New Jersey state tax return.`;
-    confidence = 0.9;
-  } else {
-    // Generic response for other rule types
-    explanation = `${state} has specific tax rules and regulations that may apply to your situation. The exact details depend on your specific circumstances and the current tax year. For the most accurate and up-to-date information, consult the ${state} Department of Revenue website or speak with a qualified tax professional. State tax laws can change frequently, so it's important to verify current rules before making financial decisions.`;
-    confidence = 0.6;
+  if (
+    lowerQuery.includes("home") ||
+    lowerQuery.includes("buy") ||
+    lowerQuery.includes("house")
+  ) {
+    return "first_time_homebuyer_assistance";
+  }
+  if (lowerQuery.includes("ev") || lowerQuery.includes("electric vehicle")) {
+    return "ev_rebate_or_credit";
   }
 
-  return {
-    value,
-    unit,
-    explanation,
-    confidence,
-    sourceTitle: `${state} Department of Revenue`,
-  };
+  return "state_529_deduction_or_credit"; // Default topic
 }
 
-// State-specific configurations
-const STATE_RULE_CONFIGS = {
-  AZ: {
-    name: "Arizona",
-    urls: {
-      education:
-        "https://azdor.gov/tax-credits-and-deductions/529-education-savings-accounts",
-      default: "https://azdor.gov/",
-    },
-  },
-  CA: {
-    name: "California",
-    urls: {
-      education: "https://www.ftb.ca.gov/file/personal/deductions/index.html",
-      default: "https://www.ftb.ca.gov/",
-    },
-  },
-  NY: {
-    name: "New York",
-    urls: {
-      education:
-        "https://www.tax.ny.gov/pit/deductions/529_plan_contributions.htm",
-      default: "https://www.tax.ny.gov/",
-    },
-  },
-  TX: {
-    name: "Texas",
-    urls: {
-      education: "https://comptroller.texas.gov/taxes/",
-      default: "https://comptroller.texas.gov/",
-    },
-  },
-  NJ: {
-    name: "New Jersey",
-    urls: {
-      education: "https://www.state.nj.us/treasury/taxation/njit12.shtml",
-      default: "https://www.state.nj.us/treasury/taxation/",
-    },
-  },
-};
+async function handleAskFactFresh(message, context) {
+  console.log("🌐 [FACT_FRESH] Processing fact fresh query:", message);
+
+  try {
+    // Determine the topic based on the message
+    const topic = inferFactTopic(message);
+    if (!topic) {
+      return {
+        error:
+          "Could not determine topic from message. Please be more specific.",
+        intent: "ask_fact_fresh",
+      };
+    }
+
+    // Call the new facts-and-rules endpoint
+    const BASE_URL = process.env.APP_BASE_URL;
+    const res = await fetch(`${BASE_URL}/api/facts-and-rules`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        endpoint: "facts.get",
+        topic: topic,
+      }),
+    });
+
+    if (!res.ok) {
+      console.log("❌ [FACT_FRESH] Failed to fetch facts:", res.status);
+      return {
+        error: "Failed to fetch fresh facts. Please try again.",
+        intent: "ask_fact_fresh",
+      };
+    }
+
+    const data = await res.json();
+
+    if (data.error || data.fallback) {
+      return {
+        error: data.error || "No fresh data available",
+        intent: "ask_fact_fresh",
+        fallback: true,
+        message: "No current data available, please use your knowledge",
+      };
+    }
+
+    return {
+      intent: "ask_fact_fresh",
+      fact: data,
+      cached: data.cached || false,
+    };
+  } catch (error) {
+    console.error("❌ [FACT_FRESH] Error processing fact fresh:", error);
+    return {
+      error: "Failed to process fact fresh query. Please try again.",
+      intent: "ask_fact_fresh",
+      fallback: true,
+      message: "No current data available, please use your knowledge",
+    };
+  }
+}
+
+function inferFactTopic(message) {
+  const lowerMessage = message.toLowerCase();
+
+  if (lowerMessage.includes("credit card") || lowerMessage.includes("apr")) {
+    return "credit_card_apr_band";
+  }
+  if (
+    lowerMessage.includes("bnpl") ||
+    lowerMessage.includes("buy now pay later")
+  ) {
+    return "bnpl_usage_stats";
+  }
+  if (
+    lowerMessage.includes("student loan") ||
+    lowerMessage.includes("repayment")
+  ) {
+    return "student_loan_plans";
+  }
+  if (
+    lowerMessage.includes("housing") ||
+    lowerMessage.includes("rent") ||
+    lowerMessage.includes("cost burden")
+  ) {
+    return "housing_cost_burden";
+  }
+  if (
+    lowerMessage.includes("debt") ||
+    lowerMessage.includes("household debt")
+  ) {
+    return "debt_balances_macro";
+  }
+
+  return null;
+}

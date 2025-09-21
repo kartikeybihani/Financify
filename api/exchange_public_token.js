@@ -56,7 +56,7 @@ export default async function handler(req, res) {
         item_id,
         institution_id,
         institution_name,
-        webhook: "https://financify-rose.vercel.app/api/webhook",
+        webhook: `${process.env.APP_BASE_URL}/api/webhook`,
       },
       { onConflict: "item_id" }
     );

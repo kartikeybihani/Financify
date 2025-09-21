@@ -4,18 +4,10 @@ import { open, create } from "react-native-plaid-link-sdk";
 import {supabase} from "../_lib/supabase/supabase";
 import logger from "./logger";
 
-const BASE_URL = "https://financify-rose.vercel.app";
+const BASE_URL = process.env.EXPO_PUBLIC_APP_BASE_URL || "https://financify-rose.vercel.app";
 
 // === Last Used Item Management ===
 import { setLastUsedItemId, getLastUsedItemId } from "../../src/utils/lastUsedItem";
-import { fetchUserItems } from "../../src/utils/supabase";
-import { 
-  cacheRemove, 
-  txPreviewKey, 
-  balancesKey, 
-  institutionKey, 
-  lastSyncKey 
-} from "../../src/utils/cache";
 
 // === Get User Items from Supabase ===
 export async function getUserItems() {
@@ -95,8 +87,6 @@ export const fetchLinkToken = async () => {
   if (!res.ok) throw new Error(data.error || "Failed to get link token");
   return data.link_token;
 };
-
-// SnapTrade functions moved to app/utils/snaptrade.ts
 
 // === Connect Flow ===
 export const handlePlaidConnect = async (
@@ -309,89 +299,8 @@ export const handleDisconnectAll = async () => {
 };
 
 // === Plaid Data Fetchers ===
-export const fetchInstitution = async (item_id: string) => {
-  try {
-    const res = await fetch(`${BASE_URL}/api/plaid`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ endpoint: "institution", item_id }),
-    });
-    const data = await res.json();
-    return data.institution;
-  } catch (err) {
-    logger.error("Error fetching institution:", err);
-    return null;
-  }
-};
-
-// === Fetch Accounts ===
-export const fetchAccounts = async (item_id: string) => {
-  const res = await fetch(`${BASE_URL}/api/plaid`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ endpoint: "accounts", item_id }),
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || "Failed to fetch accounts");
-  return data.accounts;
-};
-
-// === Fetch Identity ===
-export const fetchIdentity = async (item_id: string) => {
-  try {
-    const res = await fetch(`${BASE_URL}/api/plaid`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ endpoint: "identity", item_id }),
-    });
-    const data = await res.json();
-    return data.identity;
-  } catch (err) {
-    logger.error("Error fetching identity:", err);
-    return [];
-  }
-};
-
-// === Fetch Investments ===
-export const fetchInvestments = async (item_id: string) => {
-  try {
-    const res = await fetch(`${BASE_URL}/api/plaid`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ endpoint: "investments", item_id }),
-    });
-    const data = await res.json();
-    logger.info("Investments data loaded...");
-    return {
-      holdings: data.holdings || [],
-      securities: data.securities || [],
-      investmentTransactions: data.investment_transactions || [],
-    };
-  } catch (err) {
-    logger.error("Error fetching investments:", err);
-    return {
-      holdings: [],
-      securities: [],
-      investmentTransactions: [],
-    };
-  }
-};
-
-export const fetchLiabilities = async (item_id: string) => {
-  try {
-    const res = await fetch(`${BASE_URL}/api/plaid`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ endpoint: "liabilities", item_id }),
-    });
-    const data = await res.json();
-    logger.info("Liabilities data loaded...");
-    return data.liabilities || [];
-  } catch (err) {
-    logger.error("Error fetching liabilities:", err);
-    return [];
-  }
-};
+// Note: Direct Plaid API calls moved to API endpoints
+// Use database functions instead for better performance
 
 // === Bootup Fetch ===
 export const fetchInitialData = async () => {
@@ -519,51 +428,6 @@ export const storeAccounts = async (item_id: string) => {
   return data;
 };
 
-// === Fetch Accounts from Database ===
-export const fetchAccountsFromDatabase = async (item_id: string) => {
-  try {
-    const { data: accounts, error } = await supabase
-      .from("accounts")
-      .select("*")
-      .eq("item_id", item_id);
-
-    if (error) throw error;
-    
-    logger.info(`📊 Found ${accounts?.length || 0} accounts in database for item_id: ${item_id}`);
-    
-    // Transform database format to UI-compatible format
-    const transformedAccounts = (accounts || []).map(account => ({
-        ...account,
-        // UI expects nested balances object, database has flat fields
-        balances: {
-          current: account.current_balance || 0,
-          available: account.available_balance || 0,
-        },
-        // Keep all original fields for compatibility
-        account_id: account.account_id,
-        name: account.name,
-        type: account.type,
-        subtype: account.subtype,
-        mask: account.mask,
-        official_name: account.official_name,
-    }));
-    
-    logger.info("🔄 Transformed accounts for UI compatibility:", transformedAccounts.length);
-    if (transformedAccounts.length > 0) {
-      logger.info("📊 Sample transformed account:", {
-        name: transformedAccounts[0].name,
-        type: transformedAccounts[0].type,
-        balances: transformedAccounts[0].balances,
-      });
-    }
-    
-    return transformedAccounts;
-  } catch (err) {
-    logger.error("Error fetching accounts from database:", err);
-    return [];
-  }
-};
-
 // === Supabase Data Fetchers for UI ===
 
 // Fetch recent transactions for a user
@@ -603,28 +467,6 @@ export const getRecentTransactions = async (user_id: string, limit: number = 50)
   }
 };
 
-// Fetch transactions for a specific account
-export const getAccountTransactions = async (account_id: string, limit: number = 100) => {
-  try {
-    const { data, error } = await supabase
-      .from("transactions")
-      .select(`
-        *,
-        accounts(name, type, subtype)
-      `)
-      .eq("account_id", account_id)
-      .order("date", { ascending: false })
-      .limit(limit);
-    
-    if (error) throw error;
-    
-    logger.info(`📊 Found ${data?.length || 0} transactions for account ${account_id}`);
-    return data || [];
-  } catch (err) {
-    logger.error("Error fetching account transactions:", err);
-    return [];
-  }
-};
 
 // Fetch all accounts for a user (across all items)
 export const getAllUserAccounts = async (user_id: string) => {
@@ -670,35 +512,6 @@ export const getAllUserAccounts = async (user_id: string) => {
   }
 };
 
-// Fetch transactions by date range
-export const getTransactionsByDateRange = async (
-  user_id: string, 
-  startDate: string, 
-  endDate: string,
-  limit: number = 200
-) => {
-  try {
-    const { data, error } = await supabase
-      .from("transactions")
-      .select(`
-        *,
-        accounts(name, type, subtype, item_id)
-      `)
-      .eq("user_id", user_id)
-      .gte("date", startDate)
-      .lte("date", endDate)
-      .order("date", { ascending: false })
-      .limit(limit);
-    
-    if (error) throw error;
-    
-    logger.info(`📊 Found ${data?.length || 0} transactions between ${startDate} and ${endDate}`);
-    return data || [];
-  } catch (err) {
-    logger.error("Error fetching transactions by date range:", err);
-    return [];
-  }
-};
 
 // Get spending by category for analytics
 export const getSpendingByCategory = async (user_id: string, days: number = 30) => {
@@ -772,25 +585,6 @@ export const getItemIds = async (): Promise<string[]> => {
   }
 };
 
-// === Cache Invalidation Helpers ===
-export const invalidateItemCache = async (userId: string, itemId: string) => {
-  const keysToRemove = [
-    txPreviewKey(userId, itemId),
-    balancesKey(userId, itemId),
-    // Keep institution cache - it rarely changes
-  ];
-  
-  await Promise.all(keysToRemove.map(key => cacheRemove(key)));
-  logger.info(`🧹 Invalidated cache for item ${itemId}`);
-};
-
-export const invalidateAllUserCache = async (userId: string) => {
-  const items = await getUserItems();
-  await Promise.all(
-    items.map(item => invalidateItemCache(userId, item.item_id))
-  );
-  logger.info(`🧹 Invalidated cache for all ${items.length} user items`);
-};
 
 // Manual sync for UI - syncs all connected accounts for the current user
 export const syncAllUserTransactions = async () => {
@@ -798,8 +592,8 @@ export const syncAllUserTransactions = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user?.id) throw new Error("User not authenticated");
     
-    // Invalidate cache first
-    await invalidateAllUserCache(user.id);
+    // Clear cache first (simplified approach)
+    logger.info("🧹 Clearing cache before sync...");
     
     // Get all user items
     const userItems = await getUserItems();
@@ -844,90 +638,6 @@ export const syncAllUserTransactions = async () => {
     };
   } catch (err) {
     logger.error("Error in manual sync:", err);
-    throw err;
-  }
-};
-
-// === Refresh Latest Data (Plaid transactions/refresh) ===
-export const refreshPlaidData = async () => {
-  try {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user?.id) throw new Error("User not authenticated");
-    
-    // Get all user items
-    const userItems = await getUserItems();
-    
-    if (userItems.length === 0) {
-      logger.info("No connected accounts to refresh");
-      return { refreshed: 0, message: "No connected accounts found" };
-    }
-    
-    // Filter out SnapTrade investment accounts (they start with "snaptrade-")
-    const plaidItems = userItems.filter(item => !item.item_id.startsWith('snaptrade-'));
-    const snapTradeItems = userItems.filter(item => item.item_id.startsWith('snaptrade-'));
-    
-    if (snapTradeItems.length > 0) {
-      logger.info(`🚫 Skipping ${snapTradeItems.length} SnapTrade investment accounts (not Plaid accounts)`);
-    }
-    
-    if (plaidItems.length === 0) {
-      logger.info("No Plaid accounts to refresh (only SnapTrade investment accounts found)");
-      return { refreshed: 0, message: "No Plaid accounts found" };
-    }
-    
-    logger.info(`🔄 Requesting fresh data for ${plaidItems.length} Plaid accounts...`);
-    
-    // Request refresh for each Plaid account only
-    const refreshPromises = plaidItems.map(async (item) => {
-      try {
-        const res = await fetch(`${BASE_URL}/api/refresh_transactions`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ 
-            item_id: item.item_id,
-            user_id: user.id 
-          }),
-        });
-        
-        const data = await res.json();
-        
-        if (!res.ok) {
-          throw new Error(data.error || `Refresh failed for ${item.institution_name}`);
-        }
-        
-        logger.info(`✅ Refresh requested for ${item.institution_name}:`, data.request_id);
-        return { 
-          item_id: item.item_id, 
-          institution_name: item.institution_name,
-          success: true, 
-          request_id: data.request_id 
-        };
-      } catch (error) {
-        logger.error(`Failed to refresh item ${item.item_id}:`, error);
-        return { 
-          item_id: item.item_id, 
-          institution_name: item.institution_name,
-          success: false, 
-          error: error instanceof Error ? error.message : String(error)
-        };
-      }
-    });
-    
-    const results = await Promise.all(refreshPromises);
-    const successful = results.filter(result => result.success).length;
-    
-    logger.info(`✅ Refresh requests completed: ${successful}/${plaidItems.length} Plaid accounts`);
-    
-    return { 
-      refreshed: successful,
-      total: plaidItems.length,
-      results,
-      message: successful > 0 
-        ? `Refresh initiated for ${successful} Plaid account${successful > 1 ? 's' : ''}. New data will arrive via webhook soon.`
-        : "Failed to initiate refresh for any Plaid accounts"
-    };
-  } catch (err) {
-    logger.error("Error in data refresh:", err);
     throw err;
   }
 };
@@ -1110,11 +820,6 @@ export const refreshRecurringTransactions = async (item_id?: string) => {
   }
 };
 
-// === Legacy function for backward compatibility ===
-export const getRecurringTransactions = async (item_id?: string) => {
-  logger.info("⚠️ Using legacy getRecurringTransactions - consider using getRecurringTransactionsFromDatabase");
-  return getRecurringTransactionsFromDatabase(item_id);
-};
 
 // === Get All Recurring Transactions from Database (All Connected Accounts) ===
 export const getAllRecurringTransactions = async () => {
@@ -1141,8 +846,8 @@ export const getAllRecurringTransactions = async () => {
   }
 };
 
-// === Refresh Account Balances ===
-export const refreshAccountBalances = async (item_id?: string) => {
+// === Refresh Both Balances and Transactions ===
+export const refreshBothBalancesAndTransactions = async (item_id?: string) => {
   try {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user?.id) throw new Error("User not authenticated");
@@ -1153,7 +858,7 @@ export const refreshAccountBalances = async (item_id?: string) => {
       : await getUserItems();
     
     if (allUserItems.length === 0) {
-      logger.info("No connected accounts to refresh balances");
+      logger.info("No connected accounts to refresh");
       return { refreshed: 0, message: "No connected accounts found" };
     }
     
@@ -1162,43 +867,50 @@ export const refreshAccountBalances = async (item_id?: string) => {
     const snapTradeItems = allUserItems.filter(item => item.item_id.startsWith('snaptrade-'));
     
     if (snapTradeItems.length > 0) {
-      logger.info(`🚫 Skipping ${snapTradeItems.length} SnapTrade investment accounts for balance refresh`);
+      logger.info(`🚫 Skipping ${snapTradeItems.length} SnapTrade investment accounts for combined refresh`);
     }
     
     if (userItems.length === 0) {
-      logger.info("No Plaid accounts to refresh balances (only SnapTrade investment accounts found)");
+      logger.info("No Plaid accounts to refresh (only SnapTrade investment accounts found)");
       return { refreshed: 0, message: "No Plaid accounts found" };
     }
     
-    logger.info(`🏦 Refreshing balances for ${userItems.length} Plaid account(s)...`);
+    logger.info(`🔄 Refreshing both balances and transactions for ${userItems.length} Plaid account(s)...`);
     
-    // Refresh balances for each account
-    const balancePromises = userItems.map(async (item) => {
+    // Refresh both balances and transactions for each account
+    const refreshPromises = userItems.map(async (item) => {
       try {
-        const res = await fetch(`${BASE_URL}/api/refresh_balances`, {
+        const res = await fetch(`${BASE_URL}/api/refresh_data`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ 
             item_id: item.item_id,
-            user_id: user.id 
+            user_id: user.id,
+            refresh_type: "both"
           }),
         });
         
         const data = await res.json();
         
         if (!res.ok) {
-          throw new Error(data.error || `Balance refresh failed for ${item.institution_name}`);
+          throw new Error(data.error || `Combined refresh failed for ${item.institution_name}`);
         }
         
-        logger.info(`✅ Balances refreshed for ${item.institution_name || item.item_id}:`, data.updated);
+        logger.info(`✅ Combined refresh completed for ${item.institution_name || item.item_id}:`, {
+          balances: data.results?.balances?.updated || 0,
+          transactions: data.results?.transactions?.request_id ? 'initiated' : 'failed'
+        });
+        
         return { 
           item_id: item.item_id, 
           institution_name: item.institution_name,
           success: true, 
-          updated: data.updated 
+          balances_updated: data.results?.balances?.updated || 0,
+          transactions_request_id: data.results?.transactions?.request_id,
+          errors: data.errors || []
         };
       } catch (error) {
-        logger.error(`Failed to refresh balances for item ${item.item_id}:`, error);
+        logger.error(`Failed to refresh item ${item.item_id}:`, error);
         return { 
           item_id: item.item_id, 
           institution_name: item.institution_name,
@@ -1208,102 +920,32 @@ export const refreshAccountBalances = async (item_id?: string) => {
       }
     });
     
-    const results = await Promise.all(balancePromises);
+    const results = await Promise.all(refreshPromises);
     const successful = results.filter(result => result.success).length;
-    const totalUpdated = results
+    const totalBalancesUpdated = results
       .filter(result => result.success)
-      .reduce((sum, result) => sum + (result.updated || 0), 0);
+      .reduce((sum, result) => sum + (result.balances_updated || 0), 0);
     
-    logger.info(`✅ Balance refresh completed: ${successful}/${userItems.length} items, ${totalUpdated} accounts updated`);
+    logger.info(`✅ Combined refresh completed: ${successful}/${userItems.length} items, ${totalBalancesUpdated} balances updated`);
     
     return { 
       refreshed: successful,
       total: userItems.length,
-      accountsUpdated: totalUpdated,
+      balancesUpdated: totalBalancesUpdated,
       results,
       message: successful > 0 
-        ? `Updated balances for ${totalUpdated} accounts across ${successful} bank${successful > 1 ? 's' : ''}`
-        : "Failed to refresh balances for any accounts"
+        ? `Refreshed ${successful} bank${successful > 1 ? 's' : ''}, updated ${totalBalancesUpdated} balances, initiated transaction refresh`
+        : "Failed to refresh any accounts"
     };
   } catch (err) {
-    logger.error("Error refreshing account balances:", err);
+    logger.error("Error in combined refresh:", err);
     throw err;
-  }
-};
-
-// === Complete Post Re-Auth Data Refresh ===
-export const performCompleteDataRefresh = async (item_id?: string) => {
-  try {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user?.id) throw new Error("User not authenticated");
-    
-    logger.info("🔄 Starting complete data refresh...");
-    
-    const refreshResults = {
-      refreshRequested: false,
-      transactionsSynced: false,
-      balancesRefreshed: false,
-      accountsUpdated: false,
-      recurringTransactionsRefreshed: false,
-      errors: [] as string[]
-    };
-    
-    // 1. Request fresh data from Plaid (triggers webhook)
-    try {
-      await refreshPlaidData();
-      refreshResults.refreshRequested = true;
-      logger.info("✅ Fresh data requested from Plaid");
-    } catch (error) {
-      const errorMsg = `Failed to request fresh data: ${error instanceof Error ? error.message : String(error)}`;
-      refreshResults.errors.push(errorMsg);
-      logger.warn("⚠️", errorMsg);
-    }
-    
-    // 2. Refresh account balances immediately
-    try {
-      const balanceResult = await refreshAccountBalances(item_id);
-      refreshResults.balancesRefreshed = balanceResult.refreshed > 0;
-      logger.info("✅ Account balances refreshed:", balanceResult.message);
-    } catch (error) {
-      const errorMsg = `Failed to refresh balances: ${error instanceof Error ? error.message : String(error)}`;
-      refreshResults.errors.push(errorMsg);
-      logger.warn("⚠️", errorMsg);
-    }
-    
-    // 3. Sync transactions immediately
-    try {
-      await syncAllUserTransactions();
-      refreshResults.transactionsSynced = true;
-      logger.info("✅ Transactions synced");
-    } catch (error) {
-      const errorMsg = `Failed to sync transactions: ${error instanceof Error ? error.message : String(error)}`;
-      refreshResults.errors.push(errorMsg);
-      logger.warn("⚠️", errorMsg);
-    }
-    
-    // 4. Refresh recurring transactions
-    try {
-      const recurringResult = await refreshRecurringTransactions(item_id);
-      refreshResults.recurringTransactionsRefreshed = recurringResult.refreshed > 0;
-      logger.info("✅ Recurring transactions refreshed:", recurringResult.message);
-    } catch (error) {
-      const errorMsg = `Failed to refresh recurring transactions: ${error instanceof Error ? error.message : String(error)}`;
-      refreshResults.errors.push(errorMsg);
-      logger.warn("⚠️", errorMsg);
-    }
-    
-    logger.info("✅ Complete data refresh finished:", refreshResults);
-    return refreshResults;
-    
-  } catch (error) {
-    logger.error("❌ Complete data refresh failed:", error);
-    throw error;
   }
 };
 
 // === Enhanced Filtering Functions for Insights ===
 // Helper function to get date range from time period
-export const getDateRangeFromTimePeriod = (timePeriod: string) => {
+const getDateRangeFromTimePeriod = (timePeriod: string) => {
   const now = new Date();
   let startDate: string;
   let endDate: string = now.toISOString().split('T')[0]; // Today
@@ -1487,60 +1129,19 @@ export const getUserAccountsForFilter = async (userId: string) => {
   }
 };
 
-// === Facts Pipeline Client Helper ===
-export const handleAskFactFresh = async (text: string, entities?: string[]) => {
-  try {
-    logger.info("🔍 [FACTS] Looking up fresh fact:", text);
-    
-    const r = await fetch(`${BASE_URL}/api/finny`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ 
-        action: "ask_fact_fresh",
-        message: text,
-        context: { entities: entities || [] }
-      })
-    }).then(r => r.json());
-
-    if (r.error || !r.message) {
-      logger.error("❌ [FACTS] Error response:", r);
-      return "I couldn't verify that from an official source yet. Want me to try a broader search?";
-    }
-    
-    logger.info("✅ [FACTS] Success:", r.message);
-    return r.message;
-  } catch (error) {
-    logger.error("❌ [FACTS] Client error:", error);
-    return "I'm having trouble looking up that information right now. Please try again later.";
-  }
-};
 
 const plaidUtils = {
   initializePlaid: fetchInitialData,
   getPlaidLinkToken: fetchLinkToken,
   exchangePublicToken: handlePlaidConnect,
   addNewBankAccount,                       // add additional bank accounts
-  getAccounts: fetchAccounts,              // now takes item_id (from Plaid API)
-  getAccountsFromDB: fetchAccountsFromDatabase, // from local database
   storeAccounts,                           // store accounts after connection
-  syncTransactions,                        // sync via Supabase function
   syncAllUserTransactions,                 // manual sync for UI
-  refreshPlaidData,                        // refresh latest data (Plaid transactions/refresh)
-  refreshAccountBalances,                  // refresh account balances (Plaid accounts/balance/get)
-  performCompleteDataRefresh,              // complete post re-auth data refresh
-  getRecurringTransactions,                // get recurring transactions for one account (legacy)
+  refreshBothBalancesAndTransactions,      // refresh both balances and transactions in one call
   getAllRecurringTransactions,             // get recurring transactions for all accounts (from DB)
   getRecurringTransactionsFromDatabase,    // get recurring transactions from database
   refreshRecurringTransactions,            // refresh recurring transactions (Plaid → DB)
-  getInvestments: fetchInvestments,        // now takes item_id
-  getLiabilities: fetchLiabilities,        // now takes item_id
   disconnectPlaid: handleDisconnect,       // disconnect single item
-  disconnectAll: handleDisconnectAll,      // disconnect all items
-  
-  // SnapTrade functions moved to app/utils/snaptrade.ts
-  
-  // Facts pipeline
-  handleAskFactFresh,                      // client helper for fresh facts lookup
   
   // Legacy support functions
   clearOldPlaidData,                       // clear old AsyncStorage data
@@ -1550,22 +1151,15 @@ const plaidUtils = {
   getUserItems,                            // get all user items from Supabase
   getPrimaryItemId,                        // get primary/last used item ID
   
-  // Cache management
-  invalidateItemCache,                     // clear cache for specific item
-  invalidateAllUserCache,                  // clear cache for all user items
-  
   // Supabase data fetchers for UI
   getRecentTransactions,
-  getAccountTransactions,
   getAllUserAccounts,
-  getTransactionsByDateRange,
   getSpendingByCategory,
   
   // Enhanced filtering functions
   getFilteredTransactions,
   getFilteredTransactionsCount,
   getUserAccountsForFilter,
-  getDateRangeFromTimePeriod,
 };
 
 export default plaidUtils;
