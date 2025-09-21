@@ -70,7 +70,16 @@ async function handleAsk(message, context) {
       };
     }
 
-    // 2) Fetch financial summary from store_accounts endpoint
+    // 2) Check if this is a merchant-specific query that needs enhanced data
+    const merchantQuery = detectMerchantQuery(message);
+    let enhancedData = null;
+
+    if (merchantQuery) {
+      console.log("🔍 [FINNY] Detected merchant query:", merchantQuery);
+      enhancedData = await fetchEnhancedMerchantData(userId, merchantQuery);
+    }
+
+    // 3) Fetch financial summary from store_accounts endpoint
     const BASE_URL = "https://financify-rose.vercel.app";
     const res = await fetch(`${BASE_URL}/api/store_accounts`, {
       method: "POST",
@@ -92,6 +101,11 @@ async function handleAsk(message, context) {
 
     const snap = await res.json();
     console.log("✅ [FINNY] Fetched financial summary:", Object.keys(snap));
+
+    // Add enhanced merchant data to snap if available
+    if (enhancedData) {
+      snap.enhanced = enhancedData;
+    }
 
     // 3) Build a comprehensive prompt using the complete RPC data
     const system = [
@@ -314,6 +328,33 @@ function createSmartContext(message, snap) {
     }
   }
 
+  // Enhanced merchant or category-specific queries
+  if (snap.enhanced?.data) {
+    const enhanced = snap.enhanced;
+
+    if (enhanced.type === "merchant") {
+      context.push(
+        `Enhanced data for ${enhanced.merchant} (${enhanced.timePeriod}):`
+      );
+    } else if (enhanced.type === "category") {
+      context.push(
+        `Enhanced data for ${enhanced.category} (${enhanced.timePeriod}):`
+      );
+    }
+
+    context.push(
+      `Total spent: $${enhanced.data.total_spend?.toFixed(2) || "0.00"}`
+    );
+    context.push(`Number of transactions: ${enhanced.data.txn_count || 0}`);
+
+    if (enhanced.data.transactions && enhanced.data.transactions.length > 0) {
+      context.push("Individual transactions:");
+      enhanced.data.transactions.slice(0, 10).forEach((txn) => {
+        context.push(`${txn.date}: $${txn.amount.toFixed(2)} - ${txn.name}`);
+      });
+    }
+  }
+
   // Category specific questions
   if (
     lowerMessage.includes("food") ||
@@ -381,6 +422,253 @@ function createSmartContext(message, snap) {
   }
 
   return context.join("\n");
+}
+
+// Detect if the message is asking about a specific merchant or category
+function detectMerchantQuery(message) {
+  const lowerMessage = message.toLowerCase();
+
+  // Common merchant names and patterns
+  const merchantPatterns = [
+    "chipotle",
+    "starbucks",
+    "mcdonalds",
+    "uber",
+    "lyft",
+    "amazon",
+    "target",
+    "walmart",
+    "netflix",
+    "spotify",
+    "apple",
+    "google",
+    "gas station",
+    "restaurant",
+    "coffee",
+    "grocery",
+    "pharmacy",
+  ];
+
+  // Category patterns
+  const categoryPatterns = [
+    "food",
+    "transportation",
+    "shopping",
+    "entertainment",
+    "travel",
+    "loans",
+    "income",
+    "personal care",
+    "other",
+  ];
+
+  // Time period patterns
+  const timePatterns = [
+    "this month",
+    "last month",
+    "this week",
+    "last week",
+    "today",
+    "yesterday",
+    "this year",
+    "last year",
+  ];
+
+  // Check if message contains merchant and time period
+  const hasMerchant = merchantPatterns.some((pattern) =>
+    lowerMessage.includes(pattern)
+  );
+  const hasCategory = categoryPatterns.some((pattern) =>
+    lowerMessage.includes(pattern)
+  );
+  const hasTimePeriod = timePatterns.some((pattern) =>
+    lowerMessage.includes(pattern)
+  );
+
+  if (hasTimePeriod) {
+    const timePeriod = timePatterns.find((pattern) =>
+      lowerMessage.includes(pattern)
+    );
+
+    if (hasMerchant) {
+      // Extract merchant name
+      const merchant = merchantPatterns.find((pattern) =>
+        lowerMessage.includes(pattern)
+      );
+
+      return {
+        type: "merchant",
+        merchant: merchant,
+        timePeriod: timePeriod,
+        originalMessage: message,
+      };
+    } else if (hasCategory) {
+      // Extract category name
+      const category = categoryPatterns.find((pattern) =>
+        lowerMessage.includes(pattern)
+      );
+
+      return {
+        type: "category",
+        category: category,
+        timePeriod: timePeriod,
+        originalMessage: message,
+      };
+    }
+  }
+
+  return null;
+}
+
+// Fetch enhanced merchant or category data using the new RPC functions
+async function fetchEnhancedMerchantData(userId, query) {
+  try {
+    const { createClient } = await import("@supabase/supabase-js");
+    const supabase = createClient(
+      process.env.SUPABASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_ROLE_KEY ||
+        process.env.EXPO_PUBLIC_SUPABASE_SERVICE_ROLE_KEY
+    );
+
+    // Calculate date range based on time period
+    const dateRange = calculateDateRange(query.timePeriod);
+
+    if (query.type === "merchant") {
+      // Fetch merchant-specific spending data
+      const { data: merchantData, error: merchantError } = await supabase.rpc(
+        "get_spending_by_merchant",
+        {
+          p_user_id: userId,
+          p_merchant_name: query.merchant,
+          p_start: dateRange.start,
+          p_end: dateRange.end,
+        }
+      );
+
+      if (merchantError) {
+        console.error("Error fetching merchant data:", merchantError);
+        return null;
+      }
+
+      return {
+        type: "merchant",
+        merchant: query.merchant,
+        timePeriod: query.timePeriod,
+        dateRange: dateRange,
+        data: merchantData?.[0] || null,
+      };
+    } else if (query.type === "category") {
+      // Fetch category-specific transaction data
+      const { data: categoryData, error: categoryError } = await supabase.rpc(
+        "get_transactions_by_category",
+        {
+          p_user_id: userId,
+          p_category: query.category,
+          p_start: dateRange.start,
+          p_end: dateRange.end,
+        }
+      );
+
+      if (categoryError) {
+        console.error("Error fetching category data:", categoryError);
+        return null;
+      }
+
+      // Calculate total and count from the transactions
+      const totalSpend = categoryData.reduce(
+        (sum, txn) => sum + parseFloat(txn.amount),
+        0
+      );
+      const txnCount = categoryData.length;
+
+      return {
+        type: "category",
+        category: query.category,
+        timePeriod: query.timePeriod,
+        dateRange: dateRange,
+        data: {
+          total_spend: totalSpend,
+          txn_count: txnCount,
+          transactions: categoryData.map((txn) => ({
+            id: txn.id,
+            date: txn.date,
+            amount: parseFloat(txn.amount),
+            name: txn.name,
+            merchant_name: txn.merchant_name,
+            category: txn.category,
+            top_category: txn.top_category,
+            sub_category: txn.sub_category,
+          })),
+        },
+      };
+    }
+
+    return null;
+  } catch (error) {
+    console.error("Error in fetchEnhancedMerchantData:", error);
+    return null;
+  }
+}
+
+// Calculate date range based on time period
+function calculateDateRange(timePeriod) {
+  const now = new Date();
+  let start, end;
+
+  switch (timePeriod) {
+    case "this month":
+      start = new Date(now.getFullYear(), now.getMonth(), 1);
+      end = now;
+      break;
+    case "last month":
+      start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      end = new Date(now.getFullYear(), now.getMonth(), 0);
+      break;
+    case "this week":
+      const dayOfWeek = now.getDay();
+      start = new Date(now);
+      start.setDate(now.getDate() - dayOfWeek);
+      end = now;
+      break;
+    case "last week":
+      const lastWeekEnd = new Date(now);
+      lastWeekEnd.setDate(now.getDate() - now.getDay());
+      const lastWeekStart = new Date(lastWeekEnd);
+      lastWeekStart.setDate(lastWeekEnd.getDate() - 7);
+      start = lastWeekStart;
+      end = lastWeekEnd;
+      break;
+    case "today":
+      start = new Date(now);
+      start.setHours(0, 0, 0, 0);
+      end = now;
+      break;
+    case "yesterday":
+      start = new Date(now);
+      start.setDate(now.getDate() - 1);
+      start.setHours(0, 0, 0, 0);
+      end = new Date(now);
+      end.setDate(now.getDate() - 1);
+      end.setHours(23, 59, 59, 999);
+      break;
+    case "this year":
+      start = new Date(now.getFullYear(), 0, 1);
+      end = now;
+      break;
+    case "last year":
+      start = new Date(now.getFullYear() - 1, 0, 1);
+      end = new Date(now.getFullYear() - 1, 11, 31);
+      break;
+    default:
+      // Default to this month
+      start = new Date(now.getFullYear(), now.getMonth(), 1);
+      end = now;
+  }
+
+  return {
+    start: start.toISOString().split("T")[0],
+    end: end.toISOString().split("T")[0],
+  };
 }
 
 async function handleClassify(message, context) {
