@@ -2,11 +2,50 @@
 import { createClient } from "@supabase/supabase-js";
 import fetch from "node-fetch";
 import * as cheerio from "cheerio";
+import fs from "fs";
+import path from "path";
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
+
+// Conversation logging functionality
+function logConversation(conversationData) {
+  try {
+    const logFilePath = path.join(process.cwd(), "conversation_log.json");
+
+    // Read existing log file
+    let logData = { conversations: [], metadata: {} };
+    if (fs.existsSync(logFilePath)) {
+      const fileContent = fs.readFileSync(logFilePath, "utf8");
+      logData = JSON.parse(fileContent);
+    }
+
+    // Add new conversation entry
+    logData.conversations.push(conversationData);
+
+    // Keep only last 1000 conversations to prevent file from growing too large
+    if (logData.conversations.length > 1000) {
+      logData.conversations = logData.conversations.slice(-1000);
+    }
+
+    // Update metadata
+    logData.metadata.last_updated = new Date().toISOString();
+    logData.metadata.total_conversations = logData.conversations.length;
+
+    // Write back to file
+    fs.writeFileSync(logFilePath, JSON.stringify(logData, null, 2));
+
+    console.log(
+      "📝 [CONVERSATION_LOG] Logged conversation:",
+      conversationData.timestamp
+    );
+  } catch (error) {
+    console.error("❌ [CONVERSATION_LOG] Error logging conversation:", error);
+    // Don't throw error - logging failure shouldn't break the API
+  }
+}
 
 export default async function handler(req, res) {
   console.log("🤖 [FINNY] Request received:", req.method);
@@ -61,6 +100,7 @@ export default async function handler(req, res) {
 
 async function handleAsk(message, context) {
   console.log("🔍 [FINNY] Starting ask handler for message:", message);
+  const startTime = Date.now();
 
   try {
     // 1) Get user_id from context
@@ -208,10 +248,32 @@ async function handleAsk(message, context) {
     const text =
       data.choices?.[0]?.message?.content ?? "I'm not sure yet. Ask me again?";
 
-    return {
+    const response = {
       message: text,
       type: "assistant",
     };
+
+    // Log the conversation
+    const conversationData = {
+      user_message: message,
+      finny_response: text,
+      timestamp: new Date().toISOString(),
+      user_id: userId,
+      intent: "ask_personalized",
+      entities: [],
+      confidence: 1.0,
+      response_time_ms: Date.now() - startTime,
+      sources_used: [],
+      cached: false,
+      enhanced_data: enhancedData ? true : false,
+      market_data: marketData ? true : false,
+      web_research: webResearchData?.success || false,
+    };
+
+    // Log conversation asynchronously (don't wait for it)
+    setImmediate(() => logConversation(conversationData));
+
+    return response;
   } catch (error) {
     console.error("❌ [FINNY] Ask handler error:", error);
     return {
@@ -940,6 +1002,7 @@ async function handleClassify(message, context) {
     "🔍 [FINNY] Starting classification in handleClassify for message:",
     message
   );
+  const startTime = Date.now();
 
   const { text, user } = { text: message, user: context };
   if (!text || typeof text !== "string") {
@@ -1090,6 +1153,24 @@ async function handleClassify(message, context) {
     if (!out.state || typeof out.state !== "string") out.state = null;
     if (!Array.isArray(out.entities)) out.entities = [];
 
+    // Log the classification
+    const conversationData = {
+      user_message: message,
+      finny_response: `Classification: ${out.intent} (confidence: ${out.confidence})`,
+      timestamp: new Date().toISOString(),
+      user_id: context?.user_id || "unknown",
+      intent: "classify",
+      entities: out.entities,
+      confidence: out.confidence,
+      response_time_ms: Date.now() - startTime,
+      sources_used: [],
+      cached: false,
+      classification_result: out,
+    };
+
+    // Log conversation asynchronously
+    setImmediate(() => logConversation(conversationData));
+
     return out;
   } catch (e) {
     console.error("❌ [FINNY] Classification error:", e?.message);
@@ -1192,6 +1273,7 @@ function extractStateFromMessage(message) {
 
 async function handleAskFactFresh(message, context) {
   console.log("🌐 [FACT_FRESH] Processing fact fresh query:", message);
+  const startTime = Date.now();
 
   try {
     // Call the cleaned up facts-and-rules endpoint
@@ -1225,20 +1307,41 @@ async function handleAskFactFresh(message, context) {
     }
 
     // Format the response based on the topic
+    let response;
     if (data.topic === "product_comparison") {
-      return {
+      response = {
         intent: "ask_fact_fresh",
         fact: data,
         cached: data.cached || false,
         message: formatProductComparisonResponse(data),
       };
+    } else {
+      response = {
+        intent: "ask_fact_fresh",
+        fact: data,
+        cached: data.cached || false,
+      };
     }
 
-    return {
+    // Log the conversation
+    const conversationData = {
+      user_message: message,
+      finny_response: response.message || JSON.stringify(response.fact),
+      timestamp: new Date().toISOString(),
+      user_id: context?.user_id || "unknown",
       intent: "ask_fact_fresh",
-      fact: data,
+      entities: [],
+      confidence: 0.9,
+      response_time_ms: Date.now() - startTime,
+      sources_used: data.sources || [],
       cached: data.cached || false,
+      topic: data.topic,
     };
+
+    // Log conversation asynchronously
+    setImmediate(() => logConversation(conversationData));
+
+    return response;
   } catch (error) {
     console.error("❌ [FACT_FRESH] Error processing fact fresh:", error);
     return {
