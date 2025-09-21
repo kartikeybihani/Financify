@@ -159,6 +159,35 @@ function detectTopic(query, state) {
 
   // Topic detection patterns
   const topics = {
+    product_comparison: {
+      patterns: [
+        "chase",
+        "amex",
+        "american express",
+        "capital one",
+        "citi",
+        "discover",
+        "wells fargo",
+        "bank of america",
+        "vs",
+        "versus",
+        "compare",
+        "better",
+        "which",
+      ],
+      sources: [
+        "chase.com",
+        "americanexpress.com",
+        "capitalone.com",
+        "citi.com",
+        "discover.com",
+        "wellsfargo.com",
+        "bankofamerica.com",
+      ],
+      ttl: 7 * 24 * 60 * 60, // 7 days for product data
+      topic: "product_comparison",
+      isProductComparison: true,
+    },
     bnpl: {
       patterns: ["bnpl", "buy now pay later", "credit report", "reporting"],
       sources: ["consumerfinance.gov"],
@@ -340,6 +369,13 @@ function buildSearchUrl(source, topicInfo) {
     "census.gov": "https://www.census.gov",
     "pewresearch.org": "https://www.pewresearch.org",
     "newyorkfed.org": "https://www.newyorkfed.org",
+    "chase.com": "https://www.chase.com",
+    "americanexpress.com": "https://www.americanexpress.com",
+    "capitalone.com": "https://www.capitalone.com",
+    "citi.com": "https://www.citi.com",
+    "discover.com": "https://www.discover.com",
+    "wellsfargo.com": "https://www.wellsfargo.com",
+    "bankofamerica.com": "https://www.bankofamerica.com",
   };
 
   // For state sites, use the official site
@@ -349,6 +385,15 @@ function buildSearchUrl(source, topicInfo) {
 
   // For national sources, use specific pages based on topic
   const specificPages = {
+    product_comparison: {
+      "chase.com": "/credit-cards",
+      "americanexpress.com": "/us/credit-cards",
+      "capitalone.com": "/credit-cards",
+      "citi.com": "/credit-cards",
+      "discover.com": "/credit-cards",
+      "wellsfargo.com": "/credit-cards",
+      "bankofamerica.com": "/credit-cards",
+    },
     bnpl_risks_reporting: {
       "consumerfinance.gov":
         "/data-research/research-reports/consumer-use-of-buy-now-pay-later-and-other-unsecured-debt/",
@@ -388,6 +433,8 @@ function extractRelevantData(html, topicInfo, sourceUrl) {
 
   try {
     switch (topicInfo.topic) {
+      case "product_comparison":
+        return extractProductComparisonData(html, sourceUrl, topicInfo);
       case "bnpl_risks_reporting":
         return extractBNPLData(html, sourceUrl);
       case "student_loan_plans":
@@ -412,6 +459,158 @@ function extractRelevantData(html, topicInfo, sourceUrl) {
 }
 
 // Extraction functions for each topic
+function extractProductComparisonData(html, sourceUrl, topicInfo) {
+  console.log("🔍 [FACTS] Extracting product comparison data from:", sourceUrl);
+
+  // Extract key financial product information
+  const data = {
+    apr: [],
+    annualFee: [],
+    rewards: [],
+    benefits: [],
+    features: [],
+    signupBonus: [],
+  };
+
+  // Look for APR information
+  const aprPatterns = [
+    /(\d+\.?\d*)\s*%\s*APR/i,
+    /APR[:\s]*(\d+\.?\d*)\s*%/i,
+    /(\d+\.?\d*)\s*%-(\d+\.?\d*)\s*%\s*APR/i,
+  ];
+
+  for (const pattern of aprPatterns) {
+    const matches = html.match(new RegExp(pattern.source, "gi"));
+    if (matches) {
+      matches.forEach((match) => {
+        const aprMatch = match.match(/(\d+\.?\d*)/);
+        if (aprMatch) {
+          data.apr.push({
+            value: parseFloat(aprMatch[1]),
+            text: match.trim(),
+            source: sourceUrl,
+          });
+        }
+      });
+    }
+  }
+
+  // Look for annual fee information
+  const feePatterns = [
+    /\$(\d+)\s*annual\s*fee/i,
+    /annual\s*fee[:\s]*\$(\d+)/i,
+    /no\s*annual\s*fee/i,
+  ];
+
+  for (const pattern of feePatterns) {
+    if (pattern.test(html)) {
+      if (pattern.source.includes("no")) {
+        data.annualFee.push({
+          value: 0,
+          text: "No annual fee",
+          source: sourceUrl,
+        });
+      } else {
+        const match = html.match(pattern);
+        if (match && match[1]) {
+          data.annualFee.push({
+            value: parseFloat(match[1]),
+            text: match[0].trim(),
+            source: sourceUrl,
+          });
+        }
+      }
+    }
+  }
+
+  // Look for rewards information
+  const rewardsPatterns = [
+    /(\d+\.?\d*)\s*%\s*cash\s*back/i,
+    /(\d+\.?\d*)\s*points\s*per\s*dollar/i,
+    /(\d+\.?\d*)\s*miles\s*per\s*dollar/i,
+    /(\d+\.?\d*)\s*%\s*rewards/i,
+  ];
+
+  for (const pattern of rewardsPatterns) {
+    const matches = html.match(new RegExp(pattern.source, "gi"));
+    if (matches) {
+      matches.forEach((match) => {
+        const rewardMatch = match.match(/(\d+\.?\d*)/);
+        if (rewardMatch) {
+          data.rewards.push({
+            value: parseFloat(rewardMatch[1]),
+            text: match.trim(),
+            source: sourceUrl,
+          });
+        }
+      });
+    }
+  }
+
+  // Look for signup bonus
+  const bonusPatterns = [
+    /\$(\d+(?:,\d+)?)\s*sign.*up\s*bonus/i,
+    /(\d+(?:,\d+)?)\s*points\s*sign.*up\s*bonus/i,
+    /(\d+(?:,\d+)?)\s*miles\s*sign.*up\s*bonus/i,
+  ];
+
+  for (const pattern of bonusPatterns) {
+    const match = html.match(pattern);
+    if (match && match[1]) {
+      data.signupBonus.push({
+        value: parseFloat(match[1].replace(/,/g, "")),
+        text: match[0].trim(),
+        source: sourceUrl,
+      });
+    }
+  }
+
+  // Extract benefits and features from common sections
+  const benefitPatterns = [
+    /travel\s*insurance/i,
+    /purchase\s*protection/i,
+    /extended\s*warranty/i,
+    /concierge\s*service/i,
+    /lounge\s*access/i,
+    /global\s*entry/i,
+    /tsa\s*precheck/i,
+    /no\s*foreign\s*transaction\s*fee/i,
+  ];
+
+  for (const pattern of benefitPatterns) {
+    if (pattern.test(html)) {
+      data.benefits.push({
+        text: pattern.source.replace(/\\/g, "").replace(/i$/, ""),
+        source: sourceUrl,
+      });
+    }
+  }
+
+  // Return structured data if we found anything
+  if (
+    data.apr.length > 0 ||
+    data.annualFee.length > 0 ||
+    data.rewards.length > 0 ||
+    data.benefits.length > 0
+  ) {
+    return {
+      topic: "product_comparison",
+      source: sourceUrl,
+      extractedAt: new Date().toISOString(),
+      data: data,
+      summary: {
+        hasAPR: data.apr.length > 0,
+        hasAnnualFee: data.annualFee.length > 0,
+        hasRewards: data.rewards.length > 0,
+        hasBenefits: data.benefits.length > 0,
+        hasSignupBonus: data.signupBonus.length > 0,
+      },
+    };
+  }
+
+  return null;
+}
+
 function extractBNPLData(html, sourceUrl) {
   // Look for BNPL reporting information
   const patterns = [
