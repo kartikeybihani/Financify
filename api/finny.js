@@ -93,35 +93,17 @@ async function handleAsk(message, context) {
     const snap = await res.json();
     console.log("✅ [FINNY] Fetched financial summary:", Object.keys(snap));
 
-    // 3) Build a tiny, safe prompt using the proper financial summary
+    // 3) Build a comprehensive prompt using the complete RPC data
     const system = [
       "You are Finny: warm, encouraging, blunt when needed.",
-      "Use the SUMMARY only. If user asks specifics (merchant/category/month), ask to run a detailed check.",
+      "Use the complete financial data provided. Give accurate, detailed responses based on all available information.",
       "If advice crosses investing/loans, add a one-line disclosure.",
     ].join("\n");
 
-    const summaryLine = `NetWorth:$${snap.summary?.netWorth || 0} • Income:$${
-      snap.summary?.monthlyIncome || 0
-    }/mo • Expenses:$${snap.summary?.monthlyExpenses || 0}/mo • Savings:${
-      snap.summary?.savingsRatePct || 0
-    }% • Debt:$${snap.summary?.debtTotal || 0} • Invest:$${
-      snap.summary?.investmentsTotal || 0
-    }`;
-
-    const topCats = (snap.highlights?.topSpendingCategories || [])
-      .slice(0, 3)
-      .map((c) => `${c.category}:$${c.amount}`)
-      .join(", ");
-    const alloc = (snap.allocation || [])
-      .slice(0, 4)
-      .map((a) => `${a.assetClass}:${Math.round((a.weight || 0) * 100)}%`)
-      .join(", ");
-
+    // Create a comprehensive context with all the RPC data
     const contextNote = [
-      `SUMMARY → ${summaryLine}`,
-      topCats ? `Top categories (last month): ${topCats}` : null,
-      alloc ? `Allocation: ${alloc}` : null,
-      snap.goals?.length ? `${snap.goals.length} active goals` : null,
+      `NET WORTH DATA: ${JSON.stringify(snap.summary, null, 2)}`,
+      snap.meta ? `META DATA: ${JSON.stringify(snap.meta, null, 2)}` : null,
     ]
       .filter(Boolean)
       .join("\n");

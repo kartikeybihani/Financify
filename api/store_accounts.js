@@ -424,20 +424,28 @@ async function handleFinancialSummary(req, res, user_id) {
     console.log("Net worth data:", netWorthData);
     console.log("Investment snapshot data:", invSnap);
 
-    // Compute simplified summary using only RPC data
+    // Return complete RPC data for Finny to use
     const netWorthRecord = netWorthData?.[0];
-    const investmentsTotal = Number(invSnap?.investments_total ?? 0);
-    const cashTotal = Number(invSnap?.cash_total ?? 0);
-    const netWorth = Number(netWorthRecord?.net_worth ?? 0);
+    const investmentRecord = invSnap?.[0];
 
     const summary = {
       summary: {
-        netWorth: Math.round(netWorth),
-        investmentsTotal: Math.round(investmentsTotal),
-        cashTotal: Math.round(cashTotal),
+        netWorth: Math.round(Number(netWorthRecord?.net_worth ?? 0)),
+        liquidAssets: Math.round(Number(netWorthRecord?.liquid_assets ?? 0)),
+        investmentsTotal: Math.round(
+          Number(netWorthRecord?.investments_total ?? 0)
+        ),
+        totalLiabilities: Math.round(
+          Number(netWorthRecord?.total_liabilities ?? 0)
+        ),
+        investmentCash: Math.round(
+          Number(investmentRecord?.investment_cash ?? 0)
+        ),
       },
       meta: {
-        investmentsAsOf: invSnap?.as_of ?? null,
+        investmentsAsOf: investmentRecord?.as_of ?? null,
+        rawNetWorthData: netWorthRecord,
+        rawInvestmentData: investmentRecord,
       },
     };
 
