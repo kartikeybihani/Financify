@@ -482,8 +482,10 @@ async function handleFinancialSummary(req, res, user_id) {
     // 5) Accounts list (for small balances + debt inference)
     const { data: acctRows, error: acctErr } = await supabase
       .from("accounts")
-      .select("name,type,subtype,current_balance,available_balance")
-      .eq("user_id", user_id);
+      .select(
+        "name,type,subtype,current_balance,available_balance,user_items!inner(user_id)"
+      )
+      .eq("user_items.user_id", user_id);
 
     if (acctErr) {
       console.error("Error fetching accounts:", acctErr);
