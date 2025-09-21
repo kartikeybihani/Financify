@@ -420,10 +420,15 @@ async function handleFinancialSummary(req, res, user_id) {
       return res.status(500).json({ error: invErr.message });
     }
 
+    // Debug logging
+    console.log("Net worth data:", netWorthData);
+    console.log("Investment snapshot data:", invSnap);
+
     // Compute simplified summary using only RPC data
+    const netWorthRecord = netWorthData?.[0];
     const investmentsTotal = Number(invSnap?.investments_total ?? 0);
     const cashTotal = Number(invSnap?.cash_total ?? 0);
-    const netWorth = Number(netWorthData ?? 0);
+    const netWorth = Number(netWorthRecord?.net_worth ?? 0);
 
     const summary = {
       summary: {
