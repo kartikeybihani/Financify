@@ -88,6 +88,19 @@ async function handleAsk(message, context) {
       console.log("🔍 [FINNY] No merchant query detected for:", message);
     }
 
+    // 2.5) Check if this is a rent vs buy question that needs market data
+    const rentVsBuyQuery = detectRentVsBuyQuery(message);
+    let marketData = null;
+
+    if (rentVsBuyQuery) {
+      console.log("🔍 [FINNY] Detected rent vs buy query:", rentVsBuyQuery);
+      marketData = await fetchMarketData(rentVsBuyQuery);
+      console.log(
+        "🔍 [FINNY] Market data result:",
+        marketData ? "Success" : "Failed"
+      );
+    }
+
     // 3) Fetch financial summary from store_accounts endpoint
     const BASE_URL = process.env.APP_BASE_URL;
     const res = await fetch(`${BASE_URL}/api/store_accounts`, {
@@ -116,12 +129,18 @@ async function handleAsk(message, context) {
       snap.enhanced = enhancedData;
     }
 
+    // Add market data to snap if available
+    if (marketData) {
+      snap.market = marketData;
+    }
+
     // 3) Build a comprehensive prompt using the complete RPC data
     const system = [
       "You are Finny: warm, encouraging, blunt when needed.",
       "Use the complete financial data provided. Give accurate, detailed responses based on all available information.",
       "Do not show net worth calculations or mathematical formulas - just state the facts clearly.",
       "IMPORTANT: In transaction data, EXPENSE means money spent (going out), INCOME means money received (coming in).",
+      "For rent vs buy questions: Use the user's financial data (income, savings, debt) and market data (home prices, rent costs, mortgage rates) to provide personalized analysis. Consider their financial capacity, timeline, and local market conditions.",
       "Only add investment disclaimer ('Note: This response is for informational purposes and does not constitute financial advice.') when the user asks specifically about investments, investing advice, or investment-related recommendations.",
     ].join("\n");
 
@@ -525,6 +544,48 @@ function createSmartContext(message, snap) {
     }
   }
 
+  // Rent vs buy questions
+  if (
+    lowerMessage.includes("rent vs buy") ||
+    lowerMessage.includes("rent or buy") ||
+    lowerMessage.includes("renting vs buying") ||
+    lowerMessage.includes("home buying") ||
+    lowerMessage.includes("buy a house") ||
+    lowerMessage.includes("buy a home")
+  ) {
+    // Add user's financial capacity
+    context.push(`Net Worth: $${snap.summary.netWorth}`);
+    context.push(`Liquid Assets: $${snap.summary.liquidAssets}`);
+    context.push(`Total Liabilities: $${snap.summary.totalLiabilities}`);
+
+    // Add market data if available
+    if (snap.market) {
+      const market = snap.market;
+      context.push(`Market Data for ${market.location}:`);
+      context.push(
+        `Median Home Price: $${market.median_home_price.toLocaleString()}`
+      );
+      context.push(
+        `Median Rent: $${market.median_rent.toLocaleString()}/month`
+      );
+      context.push(`Current Mortgage Rate: ${market.mortgage_rate}%`);
+      context.push(`Price-to-Rent Ratio: ${market.price_to_rent_ratio}`);
+      context.push(`Market Trend: ${market.market_trend}`);
+    }
+
+    // Add recent cashflow for affordability analysis
+    if (snap.transactions?.cashflow?.length > 0) {
+      const latestCashflow = snap.transactions.cashflow[0];
+      context.push(
+        `Recent Monthly Cashflow: Income $${latestCashflow.income.toFixed(
+          2
+        )}, Expenses $${latestCashflow.expense.toFixed(
+          2
+        )}, Net $${latestCashflow.net.toFixed(2)}`
+      );
+    }
+  }
+
   // If no specific context was created, provide minimal data
   if (context.length === 0) {
     context.push(`Net Worth: $${snap.summary.netWorth}`);
@@ -840,7 +901,7 @@ async function handleClassify(message, context) {
               "- If comparing specific products/services by name (e.g., 'Chase vs Amex', 'Vanguard vs Fidelity') then ask_fact_fresh",
               "- If the message compares **named** products (e.g., 'Chase Sapphire vs Amex Gold'), set `intent=ask_fact_fresh`, `needs_web=true`, `needs_user_data=false`.",
               "- If the message mentions a **US state** by name or postal code and asks about **rules/benefits/taxes**, set `intent=ask_state_rule`, `needs_web=true`, and fill `state` (use `user_hint_state` only if no state in text).",
-              "- If the message asks 'rent vs buy in <city/state>' → `ask_state_rule` (needs_web) + `needs_user_data=true` (we'll use their cashflow).",
+              "- If the message asks 'rent vs buy in <city/state>' → `ask_personalized` (needs_web=true, needs_user_data=true) - this is a personal financial decision requiring user data.",
               "- If the message asks about **BNPL reporting/risks** or **current APRs** → `ask_fact_fresh` (needs_web).",
               "- If affordability or FIRE by age or projection choose calc_projection (but set needs_calc=true)",
               "- If it clearly sets a goal choose goal",
@@ -855,7 +916,7 @@ async function handleClassify(message, context) {
               '"What is the 2025 estate tax exemption" → ask_fact_fresh',
               '"Which card has better benefits Chase Rewards or Bolt?" → ask_fact_fresh',
               '"Which card is better for groceries, Amex Gold or SavorOne?" → ask_fact_fresh, needs_web:true, entities:["Amex Gold","SavorOne"]',
-              '"Rent vs buy in Phoenix at 7%" → ask_state_rule, needs_web:true, needs_user_data:true, state:"AZ"',
+              '"Rent vs buy in Phoenix at 7%" → ask_personalized, needs_web:true, needs_user_data:true, state:"AZ"',
               '"Is BNPL hurting my credit?" → ask_fact_fresh, needs_web:true, entities:["BNPL"]',
               '"Does New Jersey have inheritance tax" → ask_state_rule with state NJ',
               '"Can I hit FIRE by 35" → calc_projection',
@@ -1091,5 +1152,89 @@ async function handleAskFactFresh(message, context) {
       fallback: true,
       message: "No current data available, please use your knowledge",
     };
+  }
+}
+
+// Detect if the message is asking about rent vs buy
+function detectRentVsBuyQuery(message) {
+  const lowerMessage = message.toLowerCase();
+
+  const rentVsBuyPatterns = [
+    "rent vs buy",
+    "rent versus buy",
+    "rent or buy",
+    "should i rent or buy",
+    "renting vs buying",
+    "renting versus buying",
+    "renting or buying",
+    "home buying",
+    "buy a house",
+    "buy a home",
+    "purchase a home",
+    "purchase a house",
+  ];
+
+  const hasRentVsBuy = rentVsBuyPatterns.some((pattern) =>
+    lowerMessage.includes(pattern)
+  );
+
+  if (hasRentVsBuy) {
+    // Extract location if mentioned
+    const locationPatterns = [
+      /in\s+([a-zA-Z\s]+)/i,
+      /at\s+([a-zA-Z\s]+)/i,
+      /([a-zA-Z\s]+)\s+rent/i,
+      /([a-zA-Z\s]+)\s+buy/i,
+    ];
+
+    let location = null;
+    for (const pattern of locationPatterns) {
+      const match = lowerMessage.match(pattern);
+      if (match && match[1]) {
+        location = match[1].trim();
+        break;
+      }
+    }
+
+    return {
+      type: "rent_vs_buy",
+      location: location,
+      originalMessage: message,
+    };
+  }
+
+  return null;
+}
+
+// Fetch market data for rent vs buy analysis
+async function fetchMarketData(query) {
+  try {
+    const { createClient } = await import("@supabase/supabase-js");
+    const supabase = createClient(
+      process.env.SUPABASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_ROLE_KEY ||
+        process.env.EXPO_PUBLIC_SUPABASE_SERVICE_ROLE_KEY
+    );
+
+    // For now, return mock data - in production you'd fetch from real estate APIs
+    // like Zillow, Realtor.com, or Census data
+    const mockMarketData = {
+      location: query.location || "Arizona",
+      median_home_price: 450000,
+      median_rent: 1800,
+      mortgage_rate: 7.2,
+      property_tax_rate: 0.006,
+      home_insurance_rate: 0.003,
+      hoa_fees: 200,
+      market_trend: "stable",
+      price_to_rent_ratio: 20.8,
+      affordability_index: 0.65,
+    };
+
+    console.log("🔍 [FINNY] Returning mock market data for:", query.location);
+    return mockMarketData;
+  } catch (error) {
+    console.error("Error in fetchMarketData:", error);
+    return null;
   }
 }

@@ -49,28 +49,32 @@ export type Intent =
   | "calc_projection";
 
 export type Fact = {
-  label: string;
+  topic: string;
+  metric: string;
   value: number | string | null;
   unit: string | null;
-  explanation: string;           // 4 to 6 sentences max
+  as_of: string;                 // ISO date
+  source_title: string;
   source_url: string;
-  source_title: string | null;
-  last_verified: string;         // ISO date
-  confidence: number;            // 0 to 1
   ttl_seconds: number;
+  cached?: boolean;
 };
 
 export type Rule = {
-  label: string;                 // e.g. Arizona 529 deduction 2025
-  value: number | string | null; // use number for limits when clear
-  unit: string | null;
-  explanation: string;           // who qualifies, thresholds, filing notes
   state: string;                 // AZ etc
-  effective_start: string | null;
-  effective_end: string | null;
-  citations: { title: string; url: string }[];
-  confidence: number;
+  topic: string;
+  rule_summary: string;          // who qualifies, thresholds, filing notes
+  key_numbers: Array<{
+    label: string;
+    value: number;
+    unit: string;
+  }>;
+  effective_year: number;
+  updated_at: string;
+  source_title: string;
+  source_url: string;
   ttl_seconds: number;
+  cached?: boolean;
 };
 
 export type ProjectionInput = {
