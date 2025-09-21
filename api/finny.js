@@ -18,6 +18,7 @@ export default async function handler(req, res) {
   console.log("📝 [FINNY] Action:", action);
   console.log("📝 [FINNY] Message received:", message);
   console.log("📊 [FINNY] Context provided:", context ? "Yes" : "No");
+  console.log("📊 [FINNY] Context:", context);
 
   if (!action) {
     return res
@@ -70,7 +71,8 @@ async function handleAsk(message, context) {
     }
 
     // 2) Fetch financial summary from store_accounts endpoint
-    const res = await fetch(`${process.env.APP_BASE_URL}/api/store_accounts`, {
+    const BASE_URL = "https://financify-rose.vercel.app";
+    const res = await fetch(`${BASE_URL}/api/store_accounts`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
