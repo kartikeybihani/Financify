@@ -496,6 +496,16 @@ async function handleFinancialSummary(req, res, user_id) {
       console.error("Error fetching goals overview:", goalsErr);
     }
 
+    // Get detailed investment holdings
+    const { data: investmentHoldings, error: holdingsErr } = await supabase.rpc(
+      "get_investment_holdings_detailed",
+      { p_user_id: user_id }
+    );
+
+    if (holdingsErr) {
+      console.error("Error fetching investment holdings:", holdingsErr);
+    }
+
     // Debug logging
     console.log("Net worth data:", netWorthData);
     console.log("Investment snapshot data:", invSnap);
@@ -505,6 +515,7 @@ async function handleFinancialSummary(req, res, user_id) {
     console.log("Active recurring streams:", recurringStreams?.length || 0);
     console.log("Upcoming bills:", upcomingBills?.length || 0);
     console.log("Goals:", goalsOverview?.length || 0);
+    console.log("Investment holdings:", investmentHoldings?.length || 0);
 
     // Return complete RPC data for Finny to use
     const netWorthRecord = netWorthData?.[0];
@@ -535,6 +546,7 @@ async function handleFinancialSummary(req, res, user_id) {
         upcoming: upcomingBills || [],
       },
       goals: goalsOverview || [],
+      holdings: investmentHoldings || [],
       meta: {
         investmentsAsOf: investmentRecord?.as_of ?? null,
         rawNetWorthData: netWorthRecord,

@@ -201,6 +201,33 @@ function createSmartContext(message, snap) {
     }
   }
 
+  // Investment holdings questions
+  if (
+    lowerMessage.includes("holdings") ||
+    lowerMessage.includes("stocks") ||
+    lowerMessage.includes("shares") ||
+    lowerMessage.includes("equity") ||
+    lowerMessage.includes("portfolio") ||
+    lowerMessage.includes("investment")
+  ) {
+    if (snap.holdings && snap.holdings.length > 0) {
+      context.push("Your investment holdings:");
+      snap.holdings.forEach((holding) => {
+        context.push(
+          `${holding.symbol} (${holding.description}): ${
+            holding.units
+          } shares, $${holding.market_value.toFixed(2)}`
+        );
+      });
+
+      const totalHoldingsValue = snap.holdings.reduce(
+        (sum, holding) => sum + (holding.market_value || 0),
+        0
+      );
+      context.push(`Total holdings value: $${totalHoldingsValue.toFixed(2)}`);
+    }
+  }
+
   // Cash/liquid assets questions
   if (
     lowerMessage.includes("cash") ||
