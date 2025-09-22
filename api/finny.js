@@ -216,7 +216,7 @@ export default async function handler(req, res) {
         response = await handleAsk(message, safeContext);
         break;
       case "goal":
-        response = { message: "Let's set a new goal", type: "assistant" };
+        response = await handleGoal(message, safeContext);
         break;
       case "ask_state_rule":
         response = await handleAskStateRule(message, safeContext);
@@ -2045,6 +2045,259 @@ function formatNumber(value) {
   if (typeof value !== "number") return String(value ?? "");
   if (Number.isInteger(value)) return value.toLocaleString();
   return value.toLocaleString(undefined, { maximumFractionDigits: 2 });
+}
+
+// =====================
+// GOALS: Slot-filling
+// =====================
+
+const GOAL_CATEGORY_KEYWORDS = [
+  { key: "emergency_fund", words: ["emergency", "rainy", "safety"] },
+  { key: "vacation", words: ["vacation", "trip", "travel", "holiday"] },
+  { key: "car", words: ["car", "auto", "vehicle"] },
+  {
+    key: "house_down_payment",
+    words: ["house", "home", "down payment", "mortgage"],
+  },
+  {
+    key: "education",
+    words: ["school", "tuition", "education", "college", "university"],
+  },
+  { key: "retirement", words: ["retirement", "retire", "401k", "ira"] },
+  { key: "wedding", words: ["wedding", "marriage"] },
+  { key: "debt_payoff", words: ["debt", "loan", "payoff", "credit card"] },
+  { key: "investment", words: ["invest", "portfolio", "stock", "bond"] },
+  { key: "other", words: [] },
+];
+
+function guessGoalCategory(label) {
+  const m = (label || "").toLowerCase();
+  for (const entry of GOAL_CATEGORY_KEYWORDS) {
+    if (entry.words.some((w) => m.includes(w))) return entry.key;
+  }
+  // domain-specific tweak: phones/gadgets → treat as emergency_fund or other
+  if (/phone|iphone|android|pixel|device|gadget/.test(m))
+    return "emergency_fund";
+  return "other";
+}
+
+function parseCurrencyAmount(text) {
+  if (!text) return null;
+  // capture $1,234.56 or 1234 or 1.2k
+  const dollarMatch = text.match(/\$\s*([0-9,.]+)(?:\s*\b)/i);
+  if (dollarMatch) {
+    const val = Number(dollarMatch[1].replace(/,/g, ""));
+    return isFinite(val) && val > 0 ? val : null;
+  }
+  const kMatch = text.match(/\b([0-9]+(?:\.[0-9]+)?)\s*k\b/i);
+  if (kMatch) {
+    const val = Number(kMatch[1]) * 1000;
+    return isFinite(val) && val > 0 ? val : null;
+  }
+  const numMatch = text.match(/\b([0-9]{2,})(?:\.[0-9]+)?\b/);
+  if (numMatch) {
+    const val = Number(numMatch[1]);
+    return isFinite(val) && val > 0 ? val : null;
+  }
+  return null;
+}
+
+function parseTargetDate(text) {
+  if (!text) return null;
+  const now = new Date();
+  // Patterns like "by Dec", "by December 15", "by 12/31/2025", "next month", "in 6 weeks"
+  const byDate = text.match(
+    /\bby\s+([a-zA-Z]+\s+\d{1,2}(?:,\s*\d{4})?|\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{2,4})?|[a-zA-Z]+)\b/i
+  );
+  const onDate = text.match(
+    /\b(on|by)\s+(\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{2,4})?)\b/i
+  );
+  const monthOnly = text.match(
+    /\bby\s+(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t)?(?:ember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b/i
+  );
+  const nextMonth = /\bnext\s+month\b/i.test(text);
+  const inWeeks = text.match(/\bin\s+(\d{1,2})\s+weeks?\b/i);
+  const inMonths = text.match(/\bin\s+(\d{1,2})\s+months?\b/i);
+
+  let d = null;
+  if (onDate && onDate[2]) {
+    d = new Date(onDate[2]);
+  } else if (byDate && byDate[1]) {
+    d = new Date(byDate[1]);
+    if (isNaN(d.getTime())) {
+      // try MM/DD parsing
+      d = new Date(byDate[1].replace(/-/g, "/"));
+    }
+  } else if (monthOnly && monthOnly[1]) {
+    const monthStr = monthOnly[1].toLowerCase().slice(0, 3);
+    const monthIdx = [
+      "jan",
+      "feb",
+      "mar",
+      "apr",
+      "may",
+      "jun",
+      "jul",
+      "aug",
+      "sep",
+      "oct",
+      "nov",
+      "dec",
+    ].indexOf(monthStr);
+    if (monthIdx >= 0) {
+      d = new Date(now.getFullYear(), monthIdx, 1);
+      if (d < now) d = new Date(now.getFullYear() + 1, monthIdx, 1);
+    }
+  } else if (nextMonth) {
+    d = new Date(now.getFullYear(), now.getMonth() + 1, now.getDate());
+  } else if (inWeeks) {
+    const weeks = Number(inWeeks[1]);
+    d = new Date(now.getTime() + weeks * 7 * 24 * 60 * 60 * 1000);
+  } else if (inMonths) {
+    const months = Number(inMonths[1]);
+    d = new Date(now.getFullYear(), now.getMonth() + months, now.getDate());
+  }
+
+  if (d && !isNaN(d.getTime())) {
+    // ensure in the future
+    const dMid = new Date(d);
+    dMid.setHours(0, 0, 0, 0);
+    const nowMid = new Date();
+    nowMid.setHours(0, 0, 0, 0);
+    if (dMid <= nowMid) {
+      // bump by one month as a safe default
+      d = new Date(now.getFullYear(), now.getMonth() + 1, now.getDate());
+    }
+    return d.toISOString().split("T")[0];
+  }
+  return null;
+}
+
+function extractLabel(text, amount, dateStr) {
+  let t = (text || "").trim();
+  // remove amount and date hints to isolate a label-ish phrase
+  t = t.replace(/\$[0-9,.]+/g, "");
+  t = t.replace(/\bin\s+\d+\s+(weeks?|months?)\b/gi, "");
+  t = t.replace(/\bby\b[^.]+/gi, "");
+  t = t.replace(/\bfor\b/gi, "");
+  // pick concise label
+  const m =
+    t.match(/add\s+a?\s*goal\s*(?:for|to)?\s*(.*)/i) ||
+    t.match(
+      /i\s*want\s*to\s*(?:add|set)\s*(?:a\s*)?goal\s*(?:for|to)?\s*(.*)/i
+    );
+  const raw = m && m[1] ? m[1].trim() : t;
+  return raw.replace(/^[,\s:-]+|[,\s:-]+$/g, "").slice(0, 60) || null;
+}
+
+async function handleGoal(message, context) {
+  const startTime = Date.now();
+  const userId = context?.user_id;
+  if (!userId) {
+    return {
+      message: "Please log in to create a goal.",
+      type: "assistant",
+      intent: "goal",
+    };
+  }
+
+  const amount = parseCurrencyAmount(message);
+  const dateStr = parseTargetDate(message);
+  const label = extractLabel(message, amount, dateStr);
+  const categoryGuess = guessGoalCategory(label || message);
+
+  // Ask for missing critical slots, one at a time
+  if (!label) {
+    return {
+      intent: "goal",
+      message: "What should I call this goal? (e.g., Emergency phone)",
+      missing: ["label"],
+    };
+  }
+  if (!amount) {
+    return {
+      intent: "goal",
+      message: `How much do you want to save for "${label}"? (e.g., $500)`,
+      missing: ["target_amount"],
+    };
+  }
+  if (!dateStr) {
+    return {
+      intent: "goal",
+      message: `When would you like to hit "${label}"? (e.g., by Dec 15 or in 3 months)`,
+      missing: ["target_date"],
+    };
+  }
+
+  // Build row
+  const goalRow = {
+    user_id: userId,
+    label: label,
+    description: null,
+    note: null,
+    target_amount: Math.round(Number(amount)),
+    current_amount: 0,
+    target_date: dateStr,
+    category: categoryGuess,
+    status: "active",
+  };
+
+  try {
+    const insertT0 = Date.now();
+    const { data, error } = await supabase
+      .from("goals")
+      .insert([goalRow])
+      .select()
+      .single();
+    const latency = Date.now() - insertT0;
+
+    if (error) {
+      console.error("❌ [GOAL] Insert failed:", error);
+      return {
+        intent: "goal",
+        message:
+          "I couldn't save that goal right now. Please try again shortly.",
+      };
+    }
+
+    // Log asynchronously
+    setImmediate(() =>
+      logConversation({
+        user_message: redactPII(message),
+        finny_response: `Goal created: ${label}`,
+        timestamp: new Date().toISOString(),
+        user_id: userId,
+        intent: "goal",
+        entities: [
+          label,
+          String(goalRow.target_amount),
+          goalRow.target_date,
+          goalRow.category,
+        ],
+        confidence: 1.0,
+        response_time_ms: Date.now() - startTime,
+        sources_used: ["supabase:goals.insert"],
+        cached: false,
+        request_id: generateRequestId(),
+        metrics: { intent: "goal", latency_ms: { insert: latency } },
+      })
+    );
+
+    const niceAmt = `$${Number(goalRow.target_amount).toLocaleString()}`;
+    return {
+      intent: "goal",
+      message: `Done! I created "${label}" for ${niceAmt} by ${
+        goalRow.target_date
+      } in ${goalRow.category.replace(/_/g, " ")}.`,
+      goal: data,
+    };
+  } catch (e) {
+    console.error("❌ [GOAL] Unexpected error:", e);
+    return {
+      intent: "goal",
+      message: "Hit an error while saving your goal. Please try again.",
+    };
+  }
 }
 
 // Detect if the message is asking about financial products

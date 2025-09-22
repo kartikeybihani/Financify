@@ -193,6 +193,9 @@ export const useChat = () => {
       } else if (data.intent === "ask_personalized" && data.message) {
         // Handle personalized responses (including rent vs buy analysis)
         message = data.message;
+      } else if (data.intent === "goal") {
+        // Minimal handling for goal flow: display message; future: add UI for follow-ups
+        message = data.message || "Let's set a goal.";
       } else {
         // Default message handling
         message = data.message || "Sorry, I wasn't able to generate advice just now.";
