@@ -4,6 +4,43 @@ import fetch from "node-fetch";
 import * as cheerio from "cheerio";
 import fs from "fs";
 import path from "path";
+import crypto from "crypto";
+
+// Utilities
+function generateRequestId() {
+  try {
+    return crypto.randomUUID();
+  } catch {
+    return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  }
+}
+
+async function withTimeout(promise, ms, onTimeoutValue = null) {
+  let timeoutId;
+  const timeoutPromise = new Promise((resolve) => {
+    timeoutId = setTimeout(() => resolve(onTimeoutValue), ms);
+  });
+  const result = await Promise.race([promise, timeoutPromise]);
+  clearTimeout(timeoutId);
+  return result;
+}
+
+function redactPII(text) {
+  if (!text || typeof text !== "string") return text;
+  let out = text;
+  out = out.replace(
+    /([A-Za-z0-9._%+-])[A-Za-z0-9._%+-]*@([A-Za-z0-9-])[A-Za-z0-9.-]*(\.[A-Za-z]{2,})/g,
+    "$1*****@$2*****$3"
+  );
+  out = out.replace(
+    /(?:\+?1[-.\s]?)?(\d{3})[-.\s]?(\d{3})[-.\s]?(\d{4})/g,
+    "***-***-$3"
+  );
+  out = out.replace(/\b\d{3}-\d{2}-(\d{4})\b/g, "***-**-$1");
+  out = out.replace(/\b(\d{8,})\b/g, (m) => `****${m.slice(-4)}`);
+  out = out.replace(/\b(\d{2,})\s+([A-Za-z])/g, "#### $2");
+  return out;
+}
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -17,27 +54,50 @@ async function logConversation(conversationData) {
     conversationData?.timestamp
   );
   try {
-    // Store conversation in Supabase instead of local file
-    const { error } = await supabase.from("conversation_logs").insert([
-      {
-        user_id: conversationData.user_id,
-        user_message: conversationData.user_message,
-        finny_response: conversationData.finny_response,
-        timestamp: conversationData.timestamp,
-        intent: conversationData.intent,
-        entities: conversationData.entities,
-        confidence: conversationData.confidence,
-        response_time_ms: conversationData.response_time_ms,
-        sources_used: conversationData.sources_used,
-        cached: conversationData.cached,
-        enhanced_data: conversationData.enhanced_data || false,
-        market_data: conversationData.market_data || false,
-        web_research: conversationData.web_research || false,
-      },
-    ]);
+    // Insert with metrics and request_id if columns exist; fallback otherwise
+    const baseRow = {
+      user_id: conversationData.user_id,
+      user_message: conversationData.user_message,
+      finny_response: conversationData.finny_response,
+      timestamp: conversationData.timestamp,
+      intent: conversationData.intent,
+      entities: conversationData.entities,
+      confidence: conversationData.confidence,
+      response_time_ms: conversationData.response_time_ms,
+      sources_used: conversationData.sources_used,
+      cached: conversationData.cached,
+      enhanced_data: conversationData.enhanced_data || false,
+      market_data: conversationData.market_data || false,
+      web_research: conversationData.web_research || false,
+      metrics: conversationData.metrics || null,
+      request_id: conversationData.request_id || null,
+    };
 
+    let { error } = await supabase.from("conversation_logs").insert([baseRow]);
     if (error) {
-      console.error("❌ [CONVERSATION_LOG] Supabase error:", error);
+      const msg = (error?.message || "").toLowerCase();
+      const missingCols =
+        msg.includes("column") &&
+        (msg.includes("metrics") || msg.includes("request_id"));
+      if (missingCols) {
+        const { metrics, request_id, ...fallbackRow } = baseRow;
+        const retry = await supabase
+          .from("conversation_logs")
+          .insert([fallbackRow]);
+        if (retry.error) {
+          console.error(
+            "❌ [CONVERSATION_LOG] Insert (fallback) error:",
+            retry.error
+          );
+        } else {
+          console.log(
+            "📝 [CONVERSATION_LOG] Logged (fallback) to Supabase:",
+            conversationData.timestamp
+          );
+        }
+      } else {
+        console.error("❌ [CONVERSATION_LOG] Supabase error:", error);
+      }
     } else {
       console.log(
         "📝 [CONVERSATION_LOG] Logged conversation to Supabase:",
@@ -60,9 +120,53 @@ export default async function handler(req, res) {
 
   const { action, message, context, ...otherParams } = req.body;
   console.log("📝 [FINNY] Action:", action);
-  console.log("📝 [FINNY] Message received:", message);
+  // Avoid logging full message/context to reduce PII exposure
   console.log("📊 [FINNY] Context provided:", context ? "Yes" : "No");
-  console.log("📊 [FINNY] Context:", context);
+
+  // Derive user from Supabase JWT instead of trusting client context
+  let serverUserId = null;
+  let userProfile = { name: null, age: null };
+  const requestId = generateRequestId();
+  try {
+    const authHeader =
+      req.headers["authorization"] || req.headers["Authorization"];
+    const token =
+      typeof authHeader === "string" && authHeader.startsWith("Bearer ")
+        ? authHeader.slice("Bearer ".length)
+        : null;
+    if (token) {
+      const { data: authData, error: authError } = await supabase.auth.getUser(
+        token
+      );
+      if (!authError && authData?.user?.id) {
+        serverUserId = authData.user.id;
+        // Try to enrich profile from auth metadata
+        try {
+          const admin = supabase.auth.admin;
+          if (admin && serverUserId) {
+            const { data: adminUser, error: adminErr } =
+              await admin.getUserById(serverUserId);
+            if (!adminErr && adminUser?.user) {
+              const meta = adminUser.user.user_metadata || {};
+              userProfile.name = meta.name || meta.full_name || null;
+              userProfile.age = meta.age || null;
+            }
+          }
+        } catch (e) {
+          console.log("ℹ️ [FINNY] Could not fetch user profile:", e?.message);
+        }
+      }
+    }
+  } catch (e) {
+    console.error("⚠️ [FINNY] Auth verification failed:", e?.message);
+  }
+
+  // Build safe context that overrides any client-provided user_id
+  const safeContext = {
+    ...(context || {}),
+    user_id: serverUserId || null,
+    profile: userProfile,
+  };
 
   if (!action) {
     return res
@@ -75,19 +179,19 @@ export default async function handler(req, res) {
 
     switch (action) {
       case "classify":
-        response = await handleClassify(message, context);
+        response = await handleClassify(message, safeContext);
         break;
       case "ask":
-        response = await handleAsk(message, context);
+        response = await handleAsk(message, safeContext);
         break;
       case "goal":
         response = { message: "Let's set a new goal", type: "assistant" };
         break;
       case "ask_state_rule":
-        response = await handleAskStateRule(message, context);
+        response = await handleAskStateRule(message, safeContext);
         break;
       case "ask_fact_fresh":
-        response = await handleAskFactFresh(message, context);
+        response = await handleAskFactFresh(message, safeContext);
         break;
       default:
         return res.status(400).json({ error: "Invalid action" });
@@ -104,6 +208,15 @@ export default async function handler(req, res) {
 async function handleAsk(message, context) {
   console.log("🔍 [FINNY] Starting ask handler for message:", message);
   const startTime = Date.now();
+  const timings = {
+    user_data_ms: 0,
+    market_ms: 0,
+    web_ms: 0,
+    summary_ms: 0,
+    llm_ms: 0,
+  };
+  const toolsUsed = [];
+  let degraded = false;
 
   try {
     // 1) Get user_id from context
@@ -124,11 +237,23 @@ async function handleAsk(message, context) {
 
     if (merchantQuery) {
       console.log("🔍 [FINNY] Detected merchant query:", merchantQuery);
-      enhancedData = await fetchEnhancedMerchantData(userId, merchantQuery);
+      const t0 = Date.now();
+      enhancedData = await withTimeout(
+        fetchEnhancedMerchantData(userId, merchantQuery),
+        1500,
+        null
+      );
+      timings.user_data_ms += Date.now() - t0;
+      toolsUsed.push({
+        name: "enhanced_merchant_or_category",
+        latency_ms: Date.now() - t0,
+        cache_hit: false,
+      });
       console.log(
         "🔍 [FINNY] Enhanced data result:",
         enhancedData ? "Success" : "Failed"
       );
+      if (!enhancedData) degraded = true;
     } else {
       console.log("🔍 [FINNY] No merchant query detected for:", message);
     }
@@ -139,11 +264,23 @@ async function handleAsk(message, context) {
 
     if (rentVsBuyQuery) {
       console.log("🔍 [FINNY] Detected rent vs buy query:", rentVsBuyQuery);
-      marketData = await fetchMarketData(rentVsBuyQuery);
+      const t0 = Date.now();
+      marketData = await withTimeout(
+        fetchMarketData(rentVsBuyQuery),
+        1800,
+        null
+      );
+      timings.market_ms = Date.now() - t0;
+      toolsUsed.push({
+        name: "market_data",
+        latency_ms: timings.market_ms,
+        cache_hit: false,
+      });
       console.log(
         "🔍 [FINNY] Market data result:",
         marketData ? "Success" : "Failed"
       );
+      if (!marketData) degraded = true;
     }
 
     // 2.6) Check if this is a financial product query that needs web research
@@ -153,19 +290,33 @@ async function handleAsk(message, context) {
     if (isProductQuery) {
       console.log("🔍 [FINNY] Detected product query, starting web research");
       try {
-        webResearchData = await researchFinancialProducts(message, userId);
+        const t0 = Date.now();
+        webResearchData = await withTimeout(
+          researchFinancialProducts(message, userId),
+          2500,
+          { success: false, error: "timeout" }
+        );
+        timings.web_ms = Date.now() - t0;
+        toolsUsed.push({
+          name: "web_research",
+          latency_ms: timings.web_ms,
+          cache_hit: false,
+        });
         console.log(
           "🔍 [FINNY] Web research result:",
           webResearchData.success ? "Success" : "Failed"
         );
+        if (!webResearchData?.success) degraded = true;
       } catch (error) {
         console.error("❌ [FINNY] Web research failed:", error);
         webResearchData = { success: false, error: error.message };
+        degraded = true;
       }
     }
 
     // 3) Fetch financial summary from store_accounts endpoint
     const BASE_URL = process.env.APP_BASE_URL;
+    const sumT0 = Date.now();
     const res = await fetch(`${BASE_URL}/api/store_accounts`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -173,6 +324,12 @@ async function handleAsk(message, context) {
         mode: "financial_summary",
         user_id: userId,
       }),
+    });
+    timings.summary_ms = Date.now() - sumT0;
+    toolsUsed.push({
+      name: "user_summary_rpc",
+      latency_ms: timings.summary_ms,
+      cache_hit: false,
     });
 
     if (!res.ok) {
@@ -219,6 +376,7 @@ async function handleAsk(message, context) {
     console.log("🔍 [FINNY] Context note:", contextNote);
 
     // 3) LLM call
+    const llmT0 = Date.now();
     const resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -238,6 +396,12 @@ async function handleAsk(message, context) {
         ],
       }),
     });
+    timings.llm_ms = Date.now() - llmT0;
+    toolsUsed.push({
+      name: "llm",
+      latency_ms: timings.llm_ms,
+      cache_hit: false,
+    });
 
     if (!resp.ok) {
       console.error("❌ [FINNY] OpenRouter API error:", resp.status);
@@ -252,14 +416,16 @@ async function handleAsk(message, context) {
       data.choices?.[0]?.message?.content ?? "I'm not sure yet. Ask me again?";
 
     const response = {
-      message: text,
+      message: degraded
+        ? `${text}\n\n(Using available data; some live sources timed out.)`
+        : text,
       type: "assistant",
     };
 
     // Log the conversation
     const conversationData = {
-      user_message: message,
-      finny_response: text,
+      user_message: redactPII(message),
+      finny_response: redactPII(text),
       timestamp: new Date().toISOString(),
       user_id: userId,
       intent: "ask_personalized",
@@ -271,6 +437,25 @@ async function handleAsk(message, context) {
       enhanced_data: enhancedData ? true : false,
       market_data: marketData ? true : false,
       web_research: webResearchData?.success || false,
+      request_id: generateRequestId(),
+      metrics: {
+        intent: "ask_personalized",
+        latency_ms: {
+          total: Date.now() - startTime,
+          llm: timings.llm_ms,
+          data_fetch: timings.summary_ms + timings.user_data_ms,
+          web_research: timings.web_ms,
+          market: timings.market_ms,
+        },
+        tools_used: toolsUsed,
+        model: "openai/gpt-4o-mini",
+        cache_hits: {
+          web_research: false,
+          summary: false,
+        },
+        tokens: null,
+        result: degraded ? "degraded" : "success",
+      },
     };
 
     // Log conversation asynchronously (don't wait for it)
@@ -291,6 +476,12 @@ async function handleAsk(message, context) {
 function createSmartContext(message, snap) {
   const lowerMessage = message.toLowerCase();
   const context = [];
+
+  // Profile enrichment
+  if (snap.profile) {
+    if (snap.profile.name) context.push(`Name: ${snap.profile.name}`);
+    if (snap.profile.age) context.push(`Age: ${snap.profile.age}`);
+  }
 
   // Net worth related questions
   if (lowerMessage.includes("net worth") || lowerMessage.includes("networth")) {
@@ -1233,10 +1424,14 @@ async function handleAskStateRule(message, context) {
       };
     }
 
+    // Build a richer, user-friendly message
+    const formatted = formatStateRuleResponse(data, message);
+
     return {
       intent: "ask_state_rule",
       rule: data,
       cached: data.cached || false,
+      message: formatted,
     };
   } catch (error) {
     console.error("❌ [STATE_RULE] Error processing state rule:", error);
@@ -1424,6 +1619,79 @@ function formatProductComparisonResponse(data) {
   }
 
   return response;
+}
+
+// Format state rule responses (e.g., tax brackets, deductions) into a friendly summary
+function formatStateRuleResponse(rule, originalQuery) {
+  try {
+    if (!rule || typeof rule !== "object") {
+      return "Couldn't load state details right now.";
+    }
+
+    const state = rule.state || "State";
+    const topic = rule.topic || "state_rule";
+    const year = rule.effective_year || new Date().getFullYear();
+    const title =
+      topic === "state_income_tax_brackets"
+        ? `STATE INCOME TAX — ${state}`
+        : topic === "state_529_deduction_or_credit"
+        ? `STATE 529 DEDUCTION/CREDIT — ${state}`
+        : `STATE RULE — ${state}`;
+
+    let out = `**${title} (${year})**\n\n`;
+
+    if (rule.rule_summary) {
+      out += `${rule.rule_summary}\n\n`;
+    }
+
+    // Key numbers table-ish bullets if present
+    if (Array.isArray(rule.key_numbers) && rule.key_numbers.length > 0) {
+      out += "**Key numbers:**\n";
+      for (const kn of rule.key_numbers) {
+        const label = kn.label?.replace(/_/g, " ") || "value";
+        const unit = kn.unit ? ` ${kn.unit}` : "";
+        out += `- ${label}: ${formatNumber(kn.value)}${unit}\n`;
+      }
+      out += "\n";
+    }
+
+    // If response is generic, guide the user with clarifying options
+    const looksGeneric =
+      topic === "state_income_tax_brackets" &&
+      (!rule.key_numbers || rule.key_numbers.length === 0);
+
+    if (looksGeneric) {
+      out += "**Did you mean one of these?**\n";
+      out += "- Standard deduction amount\n";
+      out += "- 529 plan contribution deduction/credit limits\n";
+      out += "- Itemized deduction caps or phase-outs\n";
+      out += "- Retirement income exclusions (pensions, Social Security)\n";
+      out += "- Child/Dependent credits and eligibility\n\n";
+      out +=
+        "Reply with the specific deduction or credit, and I'll pull the exact limits for " +
+        `${state} (${year}).\n\n`;
+    }
+
+    if (rule.source_title || rule.updated_at) {
+      const dateStr = rule.updated_at || new Date().toISOString().split("T")[0];
+      out += `*Source: ${
+        rule.source_title || "Official state site"
+      } (${dateStr})*`;
+      if (rule.source_url) {
+        out += `\n${rule.source_url}`;
+      }
+    }
+
+    return out;
+  } catch (e) {
+    return "Couldn't format the state rule details right now.";
+  }
+}
+
+function formatNumber(value) {
+  if (typeof value !== "number") return String(value ?? "");
+  if (Number.isInteger(value)) return value.toLocaleString();
+  return value.toLocaleString(undefined, { maximumFractionDigits: 2 });
 }
 
 // Detect if the message is asking about financial products

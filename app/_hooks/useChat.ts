@@ -116,14 +116,23 @@ export const useChat = () => {
         return;
       }
 
+      // Fetch session once and reuse the access token for all requests in this flow
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData?.session?.access_token || '';
+
       // 1) First classify the message to determine intent
       const classifyRes = await fetch(`${BASE_URL}/api/finny`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          // Pass Supabase JWT to server; server will derive userId
+          "Authorization": `Bearer ${accessToken}`
+        },
         body: JSON.stringify({
           action: "classify",
           message: messageText,
-          context: { user_id: user.id }
+          // client context no longer carries user_id; server derives it
+          context: {}
         }),
       });
 
@@ -136,22 +145,28 @@ export const useChat = () => {
         // For personalized questions, call the ask handler
         res = await fetch(`${BASE_URL}/api/finny`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { 
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${accessToken}`
+          },
           body: JSON.stringify({
             action: "ask",
             message: messageText,
-            context: { user_id: user.id }
+            context: {}
           }),
         });
       } else {
         // For other intents (goal, ask_state_rule, etc.), route directly
         res = await fetch(`${BASE_URL}/api/finny`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { 
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${accessToken}`
+          },
           body: JSON.stringify({
             action: classifyData.intent,
             message: messageText,
-            context: { user_id: user.id }
+            context: {}
           }),
         });
       }
