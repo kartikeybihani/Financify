@@ -253,6 +253,44 @@ async function handleAsk(message, context) {
     // 0) If this looks like a stock question, route to Finnhub fast-path regardless of classifier
     if (looksLikeStockQuery(message)) {
       try {
+        if (looksLikeStockDeepQuery(message)) {
+          const plan = await planStockRequest(message);
+          const exec = await executeStockPlan(plan || {}, message);
+          if (!exec.error && exec.data?.current != null) {
+            const formatted = formatPlannedStockResponse(exec);
+            const response = { message: formatted, type: "assistant" };
+            setImmediate(() =>
+              logConversation({
+                user_message: redactPII(message),
+                finny_response: redactPII(formatted),
+                timestamp: new Date().toISOString(),
+                user_id: context?.user_id || "unknown",
+                intent: "ask_fact_fresh",
+                entities: [exec.ticker].filter(Boolean),
+                confidence: 0.95,
+                response_time_ms: Date.now() - startTime,
+                sources_used: [
+                  "finnhub:quote",
+                  "finnhub:profile2",
+                  "finnhub:recommendation",
+                  "finnhub:price-target",
+                  "finnhub:metric",
+                  plan?.wants?.includes("earnings") ? "finnhub:earnings" : null,
+                  plan?.wants?.includes("filings") ? "finnhub:filings" : null,
+                  plan?.wants?.includes("insider") ? "finnhub:insider" : null,
+                ].filter(Boolean),
+                cached: false,
+                request_id: generateRequestId(),
+                metrics: {
+                  intent: "ask_fact_fresh",
+                  latency_ms: { total: Date.now() - startTime },
+                },
+              })
+            );
+            return response;
+          }
+        }
+
         const stockResponse = await getCachedDataWithFallback(
           "stock_snapshot",
           message.toLowerCase().trim(),
@@ -2682,6 +2720,243 @@ function looksLikeStockQuery(message) {
       m
     ) || /\b[A-Z]{1,5}\b/.test(message)
   );
+}
+
+function looksLikeStockDeepQuery(message) {
+  const m = message.toLowerCase();
+  return (
+    m.includes("more") ||
+    m.includes("market cap") ||
+    m.includes("cap") ||
+    m.includes("earnings") ||
+    m.includes("guidance") ||
+    m.includes("dividend") ||
+    m.includes("pe") ||
+    m.includes("p/e") ||
+    m.includes("ps") ||
+    m.includes("filings") ||
+    m.includes("insider") ||
+    m.includes("target") ||
+    m.includes("52w") ||
+    m.includes("52-week")
+  );
+}
+
+async function planStockRequest(message) {
+  try {
+    const r = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "openai/gpt-4o-mini",
+        temperature: 0.1,
+        messages: [
+          {
+            role: "system",
+            content: [
+              "You are a stock request planner.",
+              "Given a user query, decide what the user wants to fetch.",
+              "Return JSON only matching the schema.",
+            ].join("\n"),
+          },
+          { role: "user", content: message },
+        ],
+        response_format: {
+          type: "json_schema",
+          json_schema: {
+            name: "stock_plan",
+            strict: true,
+            schema: {
+              type: "object",
+              additionalProperties: false,
+              properties: {
+                ticker_candidates: { type: "array", items: { type: "string" } },
+                company_candidates: {
+                  type: "array",
+                  items: { type: "string" },
+                },
+                wants: {
+                  type: "array",
+                  items: {
+                    type: "string",
+                    enum: [
+                      "price",
+                      "market_cap",
+                      "pe",
+                      "ps",
+                      "volume",
+                      "52w",
+                      "earnings",
+                      "guidance",
+                      "dividend",
+                      "news",
+                      "filings",
+                      "analyst_targets",
+                      "insider",
+                    ],
+                  },
+                },
+                horizon: { type: ["string", "null"] },
+                needs_web: { type: "boolean" },
+              },
+              required: [
+                "ticker_candidates",
+                "company_candidates",
+                "wants",
+                "needs_web",
+              ],
+            },
+          },
+        },
+      }),
+    });
+    const data = await r.json();
+    const content = data.choices?.[0]?.message?.content;
+    if (!content) return null;
+    const plan = JSON.parse(content);
+    // Ensure arrays
+    plan.ticker_candidates = Array.isArray(plan.ticker_candidates)
+      ? plan.ticker_candidates
+      : [];
+    plan.company_candidates = Array.isArray(plan.company_candidates)
+      ? plan.company_candidates
+      : [];
+    plan.wants = Array.isArray(plan.wants) ? plan.wants : [];
+    return plan;
+  } catch (e) {
+    console.error("❌ [STOCK_PLANNER] Error:", e);
+    return null;
+  }
+}
+
+async function executeStockPlan(plan, message) {
+  const wants = plan?.wants || [];
+  const preferredTicker = plan?.ticker_candidates?.[0] || null;
+  const { ticker } = preferredTicker
+    ? { ticker: preferredTicker }
+    : await resolveTickerForQuery(message);
+  if (!ticker) return { error: "Could not resolve ticker" };
+
+  // Base snapshot always
+  const base = await fetchStockSnapshot(ticker);
+  if (base?.error) return base;
+
+  const apiKey =
+    process.env.FINHUB_API_KEY ||
+    process.env.FINNHUB_API_KEY ||
+    process.env.EXPO_PUBLIC_FINNHUB_API_KEY;
+  const extra = {};
+
+  // Earnings
+  if (wants.includes("earnings")) {
+    extra.earnings = await fetchJson(
+      `https://finnhub.io/api/v1/stock/earnings?symbol=${ticker}&token=${apiKey}`
+    );
+  }
+  // Filings
+  if (wants.includes("filings")) {
+    extra.filings = await fetchJson(
+      `https://finnhub.io/api/v1/filings?symbol=${ticker}&token=${apiKey}`
+    );
+  }
+  // Insider
+  if (wants.includes("insider")) {
+    extra.insider = await fetchJson(
+      `https://finnhub.io/api/v1/stock/insider-transactions?symbol=${ticker}&token=${apiKey}`
+    );
+  }
+
+  return { ticker, planWants: wants, data: base, extra };
+}
+
+function formatPlannedStockResponse(exec) {
+  const d = exec.data;
+  const wants = new Set(exec.planWants || []);
+  let out = formatStockResponse(d);
+  const lines = [];
+
+  // Append requested items succinctly
+  if (wants.has("market_cap") && d.profile?.marketCapitalization != null) {
+    lines.push(
+      `Market cap: $${Number(d.profile.marketCapitalization).toLocaleString()}`
+    );
+  }
+  if (wants.has("volume") && d.metrics?.volume) {
+    lines.push(`Volume: ${Number(d.metrics.volume).toLocaleString()}`);
+  }
+  if (wants.has("52w")) {
+    const hi = d.metrics?.["52WeekHigh"];
+    const lo = d.metrics?.["52WeekLow"];
+    if (hi || lo)
+      lines.push(
+        `52-week range: ${lo ? `$${Number(lo).toFixed(2)}` : "?"} - ${
+          hi ? `$${Number(hi).toFixed(2)}` : "?"
+        }`
+      );
+  }
+  if (wants.has("dividend")) {
+    const y = d.metrics?.dividendYieldIndicatedAnnual;
+    const dps = d.metrics?.dividendPerShareTTM;
+    if (y || dps)
+      lines.push(
+        `Dividend: ${dps ? `$${Number(dps).toFixed(2)} TTM` : "n/a"}${
+          y ? ` (${Number(y * 100).toFixed(2)}% yield)` : ""
+        }`
+      );
+  }
+  if (
+    wants.has("earnings") &&
+    Array.isArray(exec.extra?.earnings) &&
+    exec.extra.earnings.length > 0
+  ) {
+    const e = exec.extra.earnings[0];
+    const eps = e?.epsActual != null ? e.epsActual : e?.eps ? e.eps : null;
+    const surprise =
+      e?.epsSurprisePercent != null
+        ? `${Number(e.epsSurprisePercent).toFixed(1)}%`
+        : null;
+    lines.push(
+      `Recent earnings: EPS ${eps != null ? eps : "n/a"}${
+        surprise ? ` (surprise ${surprise})` : ""
+      }`
+    );
+  }
+  if (
+    wants.has("filings") &&
+    Array.isArray(exec.extra?.filings) &&
+    exec.extra.filings.length > 0
+  ) {
+    const f = exec.extra.filings
+      .slice(0, 2)
+      .map((x) => x.form)
+      .join(", ");
+    lines.push(`Recent filings: ${f}`);
+  }
+  if (
+    wants.has("insider") &&
+    Array.isArray(exec.extra?.insider?.data) &&
+    exec.extra.insider.data.length > 0
+  ) {
+    const t = exec.extra.insider.data.slice(0, 2);
+    lines.push(
+      `Insider trades: ${t
+        .map(
+          (x) =>
+            `${x.name || "Insider"} ${
+              x.change >= 0 ? "bought" : "sold"
+            } ${Math.abs(x.change)} shares`
+        )
+        .join("; ")}`
+    );
+  }
+
+  if (lines.length > 0) {
+    out += "\n\nMore details:\n- " + lines.join("\n- ");
+  }
+  return out;
 }
 
 async function resolveTickerForQuery(message) {
