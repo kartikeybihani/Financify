@@ -2397,12 +2397,22 @@ async function handleGoal(message, context) {
       .replace(/^(create|set|add)\b.*$/i, "")
       .trim();
     const base = prettyLabel.length > 0 ? prettyLabel : "this goal";
+    // Add encouraging first message if this is the very first prompt
+    const isFirstPrompt =
+      missing.length === Object.keys(slots).filter((k) => !slots[k]).length;
+    let encouragingPrefix = "";
+    if (isFirstPrompt && missing[0] === "label") {
+      encouragingPrefix = "🎯 Let's set up a new goal together! ";
+    } else if (isFirstPrompt) {
+      encouragingPrefix = "Great start! ";
+    }
+
     const prompts = {
-      label: "What should I call this goal? (e.g., Emergency phone)",
-      target_amount: `How much do you want to save for your ${base} goal? (e.g., $500)`,
-      target_date: `When would you like to hit your ${base} goal? (e.g., by Dec 15 or in 3 months)`,
+      label: `${encouragingPrefix}What should I call this goal? (e.g., Emergency fund, Dream vacation)`,
+      target_amount: `Perfect! 💰 How much do you want to save for your ${base} goal? (e.g., $500)`,
+      target_date: `Awesome! ⏰ When would you like to hit your ${base} goal? (e.g., by Dec 15 or in 3 months)`,
       category:
-        "Which category fits best? (emergency_fund, vacation, car, other)",
+        "Great! Which category fits best? (emergency_fund, vacation, car, other)",
     };
     const nextKey = missing[0];
     return {
@@ -2462,6 +2472,19 @@ Ready to create this goal?`;
     return {
       intent: "goal",
       message: confirmText2,
+      type: "action",
+      actions: [
+        {
+          label: "Cancel",
+          action: "cancel",
+          style: "secondary",
+        },
+        {
+          label: "Confirm ✨",
+          action: "confirm",
+          style: "primary",
+        },
+      ],
       flow: { active: true, stage: "confirm", slots: updatedSlots },
     };
   }
@@ -2479,6 +2502,19 @@ Ready to create this goal?`;
     return {
       intent: "goal",
       message: confirmText,
+      type: "action",
+      actions: [
+        {
+          label: "Cancel",
+          action: "cancel",
+          style: "secondary",
+        },
+        {
+          label: "Confirm ✨",
+          action: "confirm",
+          style: "primary",
+        },
+      ],
       flow: { active: true, stage: "confirm", slots },
     };
   }
@@ -2523,12 +2559,12 @@ Ready to create this goal?`;
     setImmediate(() =>
       logConversation({
         user_message: redactPII(message),
-        finny_response: `Goal created: ${label}`,
+        finny_response: `Goal created: ${goalRow.label}`,
         timestamp: new Date().toISOString(),
         user_id: userId,
         intent: "goal",
         entities: [
-          label,
+          goalRow.label,
           String(goalRow.target_amount),
           goalRow.target_date,
           goalRow.category,
@@ -2545,9 +2581,9 @@ Ready to create this goal?`;
     const niceAmt = `$${Number(goalRow.target_amount).toLocaleString()}`;
     return {
       intent: "goal",
-      message: `Done! I created "${label}" for ${niceAmt} by ${
-        goalRow.target_date
-      } in ${goalRow.category.replace(/_/g, " ")}.`,
+      message: `🎉 Amazing! Your "${goalRow.label}" goal is all set for ${niceAmt} by ${goalRow.target_date}!
+
+You're officially on your financial journey now. This is such a great step forward - every goal starts with a decision, and you just made yours! 🌟`,
       goal: data,
       flow: { active: false },
     };

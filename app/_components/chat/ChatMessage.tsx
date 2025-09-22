@@ -167,40 +167,48 @@ export const ChatMessageComponent = ({
         {/* Action buttons below the bubble */}
         <View
           style={{
-            flexDirection: "column",
-            alignItems: "flex-start",
+            flexDirection: "row",
+            alignItems: "center",
             marginLeft: 12,
             marginTop: 8,
+            gap: responsivePadding(8),
           }}
         >
           {message.actions.map((btn, idx) => (
             <View
               key={btn.action}
               style={{
-                marginBottom: responsivePadding(12),
-                width: isSmallScreen ? "65%" : "60%",
+                flex: 1,
+                maxWidth: isSmallScreen ? "45%" : "40%",
               }}
             >
               <Animated.View style={{ opacity: fadeAnim, width: "100%" }}>
                 <View
                   style={{
-                    paddingHorizontal: responsivePadding(14),
-                    paddingVertical: responsivePadding(10),
-                    borderRadius: 11,
+                    paddingHorizontal: responsivePadding(12),
+                    paddingVertical: responsivePadding(8),
+                    borderRadius: 8,
                     marginRight: responsivePadding(8),
                     flexDirection: "row",
                     alignItems: "center",
                     shadowColor: "#000",
-                    shadowOffset: { width: 0, height: 2 },
-                    shadowOpacity: 0.2,
-                    shadowRadius: 4,
-                    elevation: 4,
-                    opacity: clicked ? 0.5 : 0.95,
+                    shadowOffset: { width: 0, height: 1 },
+                    shadowOpacity: 0.15,
+                    shadowRadius: 3,
+                    elevation: 3,
+                    opacity: clicked ? 0.5 : 1,
                     borderWidth: 1,
-                    borderColor: "rgba(74, 144, 226, 0.25)",
-                    backgroundColor: "rgba(26, 61, 102, 0.35)",
+                    borderColor:
+                      btn.style === "primary"
+                        ? "rgba(74, 144, 226, 0.4)"
+                        : "rgba(255, 59, 48, 0.3)",
+                    backgroundColor:
+                      btn.style === "primary"
+                        ? "rgba(74, 144, 226, 0.8)"
+                        : "rgba(255, 59, 48, 0.1)",
                     width: "100%",
                     alignSelf: "flex-start",
+                    minHeight: 36,
                   }}
                 >
                   <Text
@@ -213,7 +221,7 @@ export const ChatMessageComponent = ({
                     style={{
                       fontSize: responsiveFontSize(13),
                       fontWeight: "600",
-                      color: "#FFFFFF",
+                      color: btn.style === "primary" ? "#FFFFFF" : "#FF3B30",
                       letterSpacing: 0.2,
                       textAlign: "center",
                       flex: 1,

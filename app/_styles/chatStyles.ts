@@ -412,45 +412,4 @@ export default StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#2A2A2A',
   },
-  
-  // Goal confirmation button styles
-  goalConfirmationButtons: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingHorizontal: responsivePadding(20),
-    paddingVertical: responsivePadding(16),
-    gap: responsivePadding(12),
-    backgroundColor: 'rgba(0, 0, 0, 0.05)',
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.1)',
-  },
-  goalButton: {
-    flex: 1,
-    paddingVertical: responsivePadding(12),
-    paddingHorizontal: responsivePadding(24),
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 48,
-  },
-  cancelButton: {
-    backgroundColor: 'rgba(255, 59, 48, 0.1)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 59, 48, 0.3)',
-  },
-  confirmButton: {
-    backgroundColor: 'rgba(74, 144, 226, 0.8)',
-    borderWidth: 1,
-    borderColor: 'rgba(74, 144, 226, 1)',
-  },
-  cancelButtonText: {
-    color: '#FF3B30',
-    fontSize: responsiveFontSize(16),
-    fontWeight: '600',
-  },
-  confirmButtonText: {
-    color: '#FFFFFF',
-    fontSize: responsiveFontSize(16),
-    fontWeight: '600',
-  },
 }); 

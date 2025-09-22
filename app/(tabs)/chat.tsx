@@ -302,7 +302,9 @@ export default function ChatScreen() {
               (index === 0 || chatMessages[index - 1].sender !== "finny")
             }
             onAction={async (action) => {
-              // Handle any future actions here
+              if (action === "confirm" || action === "cancel") {
+                await handleSend(action);
+              }
             }}
           />
         );
@@ -400,26 +402,6 @@ export default function ChatScreen() {
                 keyboardDismissMode="interactive"
                 showsVerticalScrollIndicator={false}
               />
-
-              {/* Goal Confirmation Buttons */}
-              {goalFlow?.stage === "confirm" && (
-                <View style={styles.goalConfirmationButtons}>
-                  <TouchableOpacity
-                    style={[styles.goalButton, styles.cancelButton]}
-                    onPress={() => handleSend("cancel")}
-                    activeOpacity={0.8}
-                  >
-                    <Text style={styles.cancelButtonText}>Cancel</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.goalButton, styles.confirmButton]}
-                    onPress={() => handleSend("confirm")}
-                    activeOpacity={0.8}
-                  >
-                    <Text style={styles.confirmButtonText}>Confirm</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
 
               {showScrollButton && (
                 <Animated.View

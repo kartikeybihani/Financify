@@ -198,7 +198,24 @@ export const useChat = () => {
         // Persist flow state if provided
         if (data.flow && data.flow.active) setGoalFlow(data.flow);
         else setGoalFlow(null);
-        // Minimal handling for goal flow: display message
+        // Handle goal messages with actions
+        if (data.type === "action" && data.actions) {
+          // Create action message
+          const actionMessage: ChatMessage = {
+            id: `finny-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            sender: "finny",
+            text: data.message || "Let's set a goal.",
+            timestamp: Date.now(),
+            type: "action",
+            actions: data.actions,
+          };
+          // Add typing delay for action messages
+          setIsTyping(true);
+          await new Promise((resolve) => setTimeout(resolve, 1000 + Math.random() * 1000));
+          pushChat(actionMessage);
+          setIsTyping(false);
+          return; // Don't process as regular message
+        }
         message = data.message || "Let's set a goal.";
       } else {
         // Default message handling
