@@ -2118,6 +2118,13 @@ function parseTargetDate(text) {
   const nextMonth = /\bnext\s+month\b/i.test(text);
   const inWeeks = text.match(/\bin\s+(\d{1,2})\s+weeks?\b/i);
   const inMonths = text.match(/\bin\s+(\d{1,2})\s+months?\b/i);
+  const bareMonths = text.match(/\b(\d{1,2})\s+months?\b/i);
+  const ddMonthYYYY = text.match(
+    /\bby\s+(\d{1,2})\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s*(\d{4})?\b/i
+  );
+  const monthYYYY = text.match(
+    /\bby\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+(\d{4})\b/i
+  );
 
   let d = null;
   if (onDate && onDate[2]) {
@@ -2128,6 +2135,43 @@ function parseTargetDate(text) {
       // try MM/DD parsing
       d = new Date(byDate[1].replace(/-/g, "/"));
     }
+  } else if (ddMonthYYYY) {
+    const day = Number(ddMonthYYYY[1]);
+    const monStr = ddMonthYYYY[2].toLowerCase().slice(0, 3);
+    const year = ddMonthYYYY[3] ? Number(ddMonthYYYY[3]) : now.getFullYear();
+    const monthIdx = [
+      "jan",
+      "feb",
+      "mar",
+      "apr",
+      "may",
+      "jun",
+      "jul",
+      "aug",
+      "sep",
+      "oct",
+      "nov",
+      "dec",
+    ].indexOf(monStr);
+    if (monthIdx >= 0) d = new Date(year, monthIdx, day);
+  } else if (monthYYYY) {
+    const monStr = monthYYYY[1].toLowerCase().slice(0, 3);
+    const year = Number(monthYYYY[2]);
+    const monthIdx = [
+      "jan",
+      "feb",
+      "mar",
+      "apr",
+      "may",
+      "jun",
+      "jul",
+      "aug",
+      "sep",
+      "oct",
+      "nov",
+      "dec",
+    ].indexOf(monStr);
+    if (monthIdx >= 0) d = new Date(year, monthIdx, 1);
   } else if (monthOnly && monthOnly[1]) {
     const monthStr = monthOnly[1].toLowerCase().slice(0, 3);
     const monthIdx = [
@@ -2155,6 +2199,9 @@ function parseTargetDate(text) {
     d = new Date(now.getTime() + weeks * 7 * 24 * 60 * 60 * 1000);
   } else if (inMonths) {
     const months = Number(inMonths[1]);
+    d = new Date(now.getFullYear(), now.getMonth() + months, now.getDate());
+  } else if (bareMonths) {
+    const months = Number(bareMonths[1]);
     d = new Date(now.getFullYear(), now.getMonth() + months, now.getDate());
   }
 
@@ -2215,10 +2262,10 @@ async function handleGoal(message, context) {
 
   // Improve label parsing to avoid echoing the whole sentence
   const labelFromFor = message.match(
-    /\bgoal\b.*?\bfor\b\s+([^$\d\n]+?)(?:\s+for|\s+by|\s+in|\s+on|$)/i
+    /\bgoal\b.*?\bfor\b\s+([^$\d\n]+?)(?:\s+for|\s+by|\s+in|\s+on|\s*\$|\s*\d|$)/i
   );
   const labelAlt = message.match(
-    /\bfor\b\s+([^$\d\n]+?)(?:\s+by|\s+in|\s+on|$)/i
+    /\bfor\b\s+([^$\d\n]+?)(?:\s+by|\s+in|\s+on|\s*\$|\s*\d|$)/i
   );
   const lbl =
     (labelFromFor && labelFromFor[1]) ||
@@ -2247,14 +2294,14 @@ async function handleGoal(message, context) {
   if (!slots.category) missing.push("category");
 
   if (missing.length > 0) {
+    const prettyLabel = String(slots.label || "this goal")
+      .replace(/^(create|set|add)\b.*$/i, "")
+      .trim();
+    const base = prettyLabel.length > 0 ? prettyLabel : "this goal";
     const prompts = {
       label: "What should I call this goal? (e.g., Emergency phone)",
-      target_amount: `How much do you want to save for "${
-        slots.label || "this goal"
-      }"? (e.g., $500)`,
-      target_date: `When would you like to hit "${
-        slots.label || "this goal"
-      }"? (e.g., by Dec 15 or in 3 months)`,
+      target_amount: `How much do you want to save for your ${base} goal? (e.g., $500)`,
+      target_date: `When would you like to hit your ${base} goal? (e.g., by Dec 15 or in 3 months)`,
       category:
         "Which category fits best? (emergency_fund, vacation, car, other)",
     };
@@ -2265,6 +2312,69 @@ async function handleGoal(message, context) {
       missing: [nextKey],
       flow: { active: true, slots },
     };
+  }
+
+  // All slots captured → confirmation stage then insert
+  const isConfirmStage = (priorFlow && priorFlow.stage) === "confirm";
+  const wantsConfirm =
+    /\b(confirm|yes|create|looks good|go ahead|save)\b/i.test(message);
+
+  // If already in confirm stage and user sent edits (amount/date/label/category), apply and re-confirm
+  if (
+    isConfirmStage &&
+    (extracted.target_amount ||
+      extracted.target_date ||
+      extracted.label ||
+      extracted.category)
+  ) {
+    const updatedSlots = {
+      ...slots,
+      target_amount: extracted.target_amount || slots.target_amount,
+      target_date: extracted.target_date || slots.target_date,
+      label: extracted.label || slots.label,
+      category: extracted.category || slots.category,
+    };
+    const prettyLabel2 = String(updatedSlots.label);
+    const niceAmt2 = `$${Number(updatedSlots.target_amount).toLocaleString()}`;
+    const confirmText2 = `Please confirm: create your ${prettyLabel2} goal for ${niceAmt2} by ${
+      updatedSlots.target_date
+    } in ${
+      updatedSlots.category || guessGoalCategory(updatedSlots.label)
+    }. Reply "confirm" to save or edit any detail.`;
+    return {
+      intent: "goal",
+      message: confirmText2,
+      flow: { active: true, stage: "confirm", slots: updatedSlots },
+    };
+  }
+
+  if (!isConfirmStage && !wantsConfirm) {
+    const prettyLabel = String(slots.label);
+    const niceAmt = `$${Number(slots.target_amount).toLocaleString()}`;
+    const confirmText = `Please confirm: create your ${prettyLabel} goal for ${niceAmt} by ${
+      slots.target_date
+    } in ${
+      slots.category || guessGoalCategory(slots.label)
+    }. Reply "confirm" to save or change any detail (e.g., "$2500" or "by Jan 2026").`;
+    return {
+      intent: "goal",
+      message: confirmText,
+      flow: { active: true, stage: "confirm", slots },
+    };
+  }
+
+  // If in confirm stage and user canceled
+  if (isConfirmStage && /\b(cancel|stop|nevermind|no)\b/i.test(message)) {
+    return {
+      intent: "goal",
+      message: "No problem — I canceled the goal setup.",
+      flow: { active: false },
+    };
+  }
+
+  // If in confirm stage and user confirmed or provided confirm keyword → insert
+  if (!isConfirmStage || wantsConfirm) {
+    // proceed to insert
   }
 
   // All slots captured → insert
@@ -2328,6 +2438,7 @@ async function handleGoal(message, context) {
         goalRow.target_date
       } in ${goalRow.category.replace(/_/g, " ")}.`,
       goal: data,
+      flow: { active: false },
     };
   } catch (e) {
     console.error("❌ [GOAL] Unexpected error:", e);
