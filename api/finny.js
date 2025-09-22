@@ -2105,9 +2105,9 @@ function parseCurrencyAmount(text) {
 function parseTargetDate(text) {
   if (!text) return null;
   const now = new Date();
-  // Patterns like "by Dec", "by December 15", "by 12/31/2025", "next month", "in 6 weeks"
+  // Patterns like "by Dec", "by December 15", "by 12/31/2025", "by December 2025", "next month", "in 6 weeks"
   const byDate = text.match(
-    /\bby\s+([a-zA-Z]+\s+\d{1,2}(?:,\s*\d{4})?|\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{2,4})?|[a-zA-Z]+)\b/i
+    /\bby\s+([a-zA-Z]+\s+\d{1,2}(?:,\s*\d{4})?|\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{2,4})?|[a-zA-Z]+\s+\d{4}|[a-zA-Z]+)\b/i
   );
   const onDate = text.match(
     /\b(on|by)\s+(\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{2,4})?)\b/i
@@ -2125,15 +2125,49 @@ function parseTargetDate(text) {
   const monthYYYY = text.match(
     /\bby\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+(\d{4})\b/i
   );
+  // NEW: Standalone month-year patterns (without "by" prefix)
+  const standaloneMonthYYYY = text.match(
+    /\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t)?(?:ember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+(\d{4})\b/i
+  );
+  const standaloneDdMonthYYYY = text.match(
+    /\b(\d{1,2})\s+(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t)?(?:ember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+(\d{4})\b/i
+  );
+  const standaloneMonthOnly = text.match(
+    /\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t)?(?:ember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b/i
+  );
 
   let d = null;
   if (onDate && onDate[2]) {
     d = new Date(onDate[2]);
   } else if (byDate && byDate[1]) {
+    // Try direct parsing first
     d = new Date(byDate[1]);
     if (isNaN(d.getTime())) {
       // try MM/DD parsing
       d = new Date(byDate[1].replace(/-/g, "/"));
+    }
+    // If still invalid, check if it's a "Month YYYY" format like "December 2025"
+    if (isNaN(d.getTime())) {
+      const monthYearMatch = byDate[1].match(/^([a-zA-Z]+)\s+(\d{4})$/i);
+      if (monthYearMatch) {
+        const monStr = monthYearMatch[1].toLowerCase().slice(0, 3);
+        const year = Number(monthYearMatch[2]);
+        const monthIdx = [
+          "jan",
+          "feb",
+          "mar",
+          "apr",
+          "may",
+          "jun",
+          "jul",
+          "aug",
+          "sep",
+          "oct",
+          "nov",
+          "dec",
+        ].indexOf(monStr);
+        if (monthIdx >= 0) d = new Date(year, monthIdx, 1);
+      }
     }
   } else if (ddMonthYYYY) {
     const day = Number(ddMonthYYYY[1]);
@@ -2172,8 +2206,68 @@ function parseTargetDate(text) {
       "dec",
     ].indexOf(monStr);
     if (monthIdx >= 0) d = new Date(year, monthIdx, 1);
+  } else if (standaloneMonthYYYY) {
+    // Handle "December 2025", "Dec 2025", etc.
+    const monStr = standaloneMonthYYYY[1].toLowerCase().slice(0, 3);
+    const year = Number(standaloneMonthYYYY[2]);
+    const monthIdx = [
+      "jan",
+      "feb",
+      "mar",
+      "apr",
+      "may",
+      "jun",
+      "jul",
+      "aug",
+      "sep",
+      "oct",
+      "nov",
+      "dec",
+    ].indexOf(monStr);
+    if (monthIdx >= 0) d = new Date(year, monthIdx, 1);
+  } else if (standaloneDdMonthYYYY) {
+    // Handle "15 December 2025", "15 Dec 2025", etc.
+    const day = Number(standaloneDdMonthYYYY[1]);
+    const monStr = standaloneDdMonthYYYY[2].toLowerCase().slice(0, 3);
+    const year = Number(standaloneDdMonthYYYY[3]);
+    const monthIdx = [
+      "jan",
+      "feb",
+      "mar",
+      "apr",
+      "may",
+      "jun",
+      "jul",
+      "aug",
+      "sep",
+      "oct",
+      "nov",
+      "dec",
+    ].indexOf(monStr);
+    if (monthIdx >= 0) d = new Date(year, monthIdx, day);
   } else if (monthOnly && monthOnly[1]) {
     const monthStr = monthOnly[1].toLowerCase().slice(0, 3);
+    const monthIdx = [
+      "jan",
+      "feb",
+      "mar",
+      "apr",
+      "may",
+      "jun",
+      "jul",
+      "aug",
+      "sep",
+      "oct",
+      "nov",
+      "dec",
+    ].indexOf(monthStr);
+    if (monthIdx >= 0) {
+      d = new Date(now.getFullYear(), monthIdx, 1);
+      if (d < now) d = new Date(now.getFullYear() + 1, monthIdx, 1);
+    }
+  } else if (standaloneMonthOnly && standaloneMonthOnly[1]) {
+    // Handle standalone "December", "Dec", etc. (without "by")
+    const monthStr = standaloneMonthOnly[1].toLowerCase().slice(0, 3);
     const monthIdx = [
       "jan",
       "feb",
@@ -2267,9 +2361,14 @@ async function handleGoal(message, context) {
   const labelAlt = message.match(
     /\bfor\b\s+([^$\d\n]+?)(?:\s+by|\s+in|\s+on|\s*\$|\s*\d|$)/i
   );
+  // Handle "Create a [ITEM] goal" pattern
+  const labelFromCreatePattern = message.match(
+    /(?:create|set|add)\s+(?:a\s+)?([^$\d\n]+?)\s+goal(?:\s+of|\s+for|\s|$)/i
+  );
   const lbl =
     (labelFromFor && labelFromFor[1]) ||
     (labelAlt && labelAlt[1]) ||
+    (labelFromCreatePattern && labelFromCreatePattern[1]) ||
     extractLabel(message);
   if (lbl) extracted.label = lbl.replace(/\s{2,}/g, " ").trim();
   if (extracted.label) extracted.category = guessGoalCategory(extracted.label);
