@@ -217,6 +217,7 @@ export const useChat = () => {
     chatMessages,
     isTyping,
     showNudges,
+    goalFlow,
     clearChat,
     pushChat,
     pushChatWithDelay,

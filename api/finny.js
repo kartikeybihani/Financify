@@ -2417,15 +2417,30 @@ async function handleGoal(message, context) {
   const isConfirmStage = (priorFlow && priorFlow.stage) === "confirm";
   const wantsConfirm =
     /\b(confirm|yes|create|looks good|go ahead|save)\b/i.test(message);
+  const wantsCancel = /\b(cancel|stop|nevermind|no)\b/i.test(message);
 
-  // If already in confirm stage and user sent edits (amount/date/label/category), apply and re-confirm
-  if (
+  // If in confirm stage and user canceled
+  if (isConfirmStage && wantsCancel) {
+    return {
+      intent: "goal",
+      message: "No problem — I canceled the goal setup.",
+      flow: { active: false },
+    };
+  }
+
+  // If in confirm stage and user confirmed → proceed to insert
+  if (isConfirmStage && wantsConfirm) {
+    // Skip to insertion logic
+  } else if (
     isConfirmStage &&
+    !wantsConfirm &&
+    !wantsCancel &&
     (extracted.target_amount ||
       extracted.target_date ||
       extracted.label ||
       extracted.category)
   ) {
+    // User is in confirm stage and sent edits (amount/date/label/category), apply and re-confirm
     const updatedSlots = {
       ...slots,
       target_amount: extracted.target_amount || slots.target_amount,
@@ -2435,11 +2450,15 @@ async function handleGoal(message, context) {
     };
     const prettyLabel2 = String(updatedSlots.label);
     const niceAmt2 = `$${Number(updatedSlots.target_amount).toLocaleString()}`;
-    const confirmText2 = `Please confirm: create your ${prettyLabel2} goal for ${niceAmt2} by ${
-      updatedSlots.target_date
-    } in ${
+    const confirmText2 = `**Goal Summary:**
+• **Name:** ${prettyLabel2}
+• **Amount:** ${niceAmt2}
+• **Due:** ${updatedSlots.target_date}
+• **Category:** ${
       updatedSlots.category || guessGoalCategory(updatedSlots.label)
-    }. Reply "confirm" to save or edit any detail.`;
+    }
+
+Ready to create this goal?`;
     return {
       intent: "goal",
       message: confirmText2,
@@ -2450,24 +2469,17 @@ async function handleGoal(message, context) {
   if (!isConfirmStage && !wantsConfirm) {
     const prettyLabel = String(slots.label);
     const niceAmt = `$${Number(slots.target_amount).toLocaleString()}`;
-    const confirmText = `Please confirm: create your ${prettyLabel} goal for ${niceAmt} by ${
-      slots.target_date
-    } in ${
-      slots.category || guessGoalCategory(slots.label)
-    }. Reply "confirm" to save or change any detail (e.g., "$2500" or "by Jan 2026").`;
+    const confirmText = `**Goal Summary:**
+• **Name:** ${prettyLabel}
+• **Amount:** ${niceAmt}
+• **Due:** ${slots.target_date}
+• **Category:** ${slots.category || guessGoalCategory(slots.label)}
+
+Ready to create this goal?`;
     return {
       intent: "goal",
       message: confirmText,
       flow: { active: true, stage: "confirm", slots },
-    };
-  }
-
-  // If in confirm stage and user canceled
-  if (isConfirmStage && /\b(cancel|stop|nevermind|no)\b/i.test(message)) {
-    return {
-      intent: "goal",
-      message: "No problem — I canceled the goal setup.",
-      flow: { active: false },
     };
   }
 

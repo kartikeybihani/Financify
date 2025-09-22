@@ -102,8 +102,14 @@ export default function ChatScreen() {
     new Animated.Value(0),
   ]).current;
 
-  const { chatMessages, showNudges, clearChat, pushChat, handleUserMessage } =
-    useChat();
+  const {
+    chatMessages,
+    showNudges,
+    goalFlow,
+    clearChat,
+    pushChat,
+    handleUserMessage,
+  } = useChat();
 
   // Prepare FlatList data with nudges and messages
   const flatListData = React.useMemo(() => {
@@ -395,8 +401,25 @@ export default function ChatScreen() {
                 showsVerticalScrollIndicator={false}
               />
 
-              {/* Inline Goal Confirmation Buttons */}
-              {/* This block is removed as per the edit hint */}
+              {/* Goal Confirmation Buttons */}
+              {goalFlow?.stage === "confirm" && (
+                <View style={styles.goalConfirmationButtons}>
+                  <TouchableOpacity
+                    style={[styles.goalButton, styles.cancelButton]}
+                    onPress={() => handleSend("cancel")}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={styles.cancelButtonText}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.goalButton, styles.confirmButton]}
+                    onPress={() => handleSend("confirm")}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={styles.confirmButtonText}>Confirm</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
 
               {showScrollButton && (
                 <Animated.View
