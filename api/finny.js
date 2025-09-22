@@ -250,6 +250,81 @@ async function handleAsk(message, context) {
   let degraded = false;
 
   try {
+    // 0) If this looks like a stock question, route to Finnhub fast-path regardless of classifier
+    if (looksLikeStockQuery(message)) {
+      try {
+        const stockResponse = await getCachedDataWithFallback(
+          "stock_snapshot",
+          message.toLowerCase().trim(),
+          async () => {
+            const { ticker, queryUsed } = await resolveTickerForQuery(message);
+            if (!ticker) {
+              return {
+                error: "Could not resolve ticker from query",
+                queryUsed,
+              };
+            }
+            const snapshot = await fetchStockSnapshot(ticker);
+            return { ...snapshot, ticker, queryUsed };
+          },
+          false
+        );
+
+        const data = stockResponse?.data || stockResponse;
+        if (data && !data.error && data.current) {
+          const formatted = formatStockResponse(data);
+          const response = {
+            message: formatted,
+            type: "assistant",
+          };
+
+          // Log
+          setImmediate(() =>
+            logConversation({
+              user_message: redactPII(message),
+              finny_response: redactPII(formatted),
+              timestamp: new Date().toISOString(),
+              user_id: context?.user_id || "unknown",
+              intent: "ask_fact_fresh",
+              entities: [data.ticker, data.profile?.name].filter(Boolean),
+              confidence: 0.95,
+              response_time_ms: Date.now() - startTime,
+              sources_used: [
+                "finnhub:quote",
+                "finnhub:profile2",
+                "finnhub:recommendation",
+                data.priceTarget ? "finnhub:price-target" : null,
+              ].filter(Boolean),
+              cached: !!stockResponse?.cachedAt,
+              request_id: generateRequestId(),
+              metrics: {
+                intent: "ask_fact_fresh",
+                latency_ms: { total: Date.now() - startTime },
+                tools_used: [
+                  {
+                    name: "finnhub",
+                    latency_ms: Date.now() - startTime,
+                    cache_hit: !!stockResponse?.cachedAt,
+                  },
+                ],
+                model: null,
+                cache_hits: { finnhub: !!stockResponse?.cachedAt },
+                tokens: null,
+                result: "success",
+              },
+            })
+          );
+
+          return response;
+        }
+      } catch (e) {
+        console.log(
+          "ℹ️ [FINNY] Stock fast-path failed, falling back:",
+          e?.message
+        );
+      }
+    }
+
     // 1) Get user_id from context
     const userId = context?.user_id;
 
@@ -1522,14 +1597,33 @@ async function handleAskStateRule(message, context) {
 
     const data = await res.json();
 
-    if (data.error) {
+    // If upstream failed or returned fallback, synthesize a safe rule object
+    if (data.error || data.fallback || data.not_available) {
+      const safeRule = {
+        topic: data.topic || "state_rule",
+        state: state,
+        effective_year: new Date().getFullYear(),
+        rule_summary:
+          data.message ||
+          "Up-to-date details are unavailable right now. Ask a specific question (e.g., standard deduction amount), and I'll fetch it.",
+        key_numbers: Array.isArray(data.key_numbers) ? data.key_numbers : [],
+        source_title: data.source_title || "Official State Source",
+        source_url: data.source_url || null,
+        updated_at: data.updated_at || new Date().toISOString(),
+        cached: data.cached || false,
+        fallback: true,
+      };
+
+      const formatted = formatStateRuleResponse(safeRule, message);
       return {
-        error: data.error,
         intent: "ask_state_rule",
+        rule: safeRule,
+        cached: !!safeRule.cached,
+        message: formatted,
       };
     }
 
-    // Build a richer, user-friendly message
+    // Build a richer, user-friendly message for valid data
     const formatted = formatStateRuleResponse(data, message);
 
     return {
