@@ -689,16 +689,27 @@ function createSmartContext(message, snap) {
 
     // Add bank account details
     if (snap.bankAccounts && snap.bankAccounts.length > 0) {
-      context.push("Bank accounts:");
-      snap.bankAccounts.forEach((account) => {
-        const balance =
-          account.current_balance || account.available_balance || 0;
-        context.push(
-          `${account.institution_name} ${account.name} (${
-            account.mask || "****"
-          }): $${balance.toFixed(2)}`
+      const liquidAccounts = snap.bankAccounts.filter((account) => {
+        const type = (account.type || "").toLowerCase();
+        const subtype = (account.subtype || "").toLowerCase();
+        return (
+          type === "depository" ||
+          subtype.includes("checking") ||
+          subtype.includes("savings")
         );
       });
+      if (liquidAccounts.length > 0) {
+        context.push("Bank accounts (liquid):");
+        liquidAccounts.forEach((account) => {
+          const available =
+            account.available_balance ?? account.current_balance ?? 0;
+          context.push(
+            `${account.institution_name} ${account.name} (${
+              account.mask || "****"
+            }): $${Number(available).toFixed(2)}`
+          );
+        });
+      }
     }
   }
 
@@ -841,13 +852,35 @@ function createSmartContext(message, snap) {
   ) {
     if (snap.goals?.length > 0) {
       context.push("Current goals:");
+      const now = new Date();
+      const nowUTC = Date.UTC(
+        now.getUTCFullYear(),
+        now.getUTCMonth(),
+        now.getUTCDate()
+      );
+      const msPerDay = 24 * 60 * 60 * 1000;
       snap.goals.forEach((goal) => {
+        let timeLeft = "";
+        if (goal.target_date) {
+          const due = new Date(goal.target_date);
+          if (!isNaN(due.getTime())) {
+            const dueUTC = Date.UTC(
+              due.getUTCFullYear(),
+              due.getUTCMonth(),
+              due.getUTCDate()
+            );
+            const days = Math.max(0, Math.ceil((dueUTC - nowUTC) / msPerDay));
+            const months = Math.floor(days / 30);
+            const remDays = days - months * 30;
+            timeLeft = ` — Time until due: ${months} months ${remDays} days`;
+          }
+        }
         context.push(
           `${goal.label}: $${goal.current_amount.toFixed(
             2
           )} / $${goal.target_amount.toFixed(2)} (${
             goal.progress_pct
-          }%) - Due ${goal.target_date}`
+          }%) - Due ${goal.target_date}${timeLeft}`
         );
       });
     }

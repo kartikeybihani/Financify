@@ -198,7 +198,7 @@ export const useChat = () => {
         message = data.message || "Sorry, I wasn't able to generate advice just now.";
       }
       
-      logger.info("messages", message);
+      // logger.info("messages", message);
       await pushChatWithDelay("finny", message);
     } catch (error) {
       logger.error("AI error:", error);
