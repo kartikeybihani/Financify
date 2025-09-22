@@ -2201,44 +2201,82 @@ async function handleGoal(message, context) {
     };
   }
 
-  const amount = parseCurrencyAmount(message);
-  const dateStr = parseTargetDate(message);
-  const label = extractLabel(message, amount, dateStr);
-  const categoryGuess = guessGoalCategory(label || message);
+  // Pull prior flow state if any
+  const priorFlow = (context && context.goal_flow) || {};
+  const priorSlots = priorFlow.slots || {};
 
-  // Ask for missing critical slots, one at a time
-  if (!label) {
-    return {
-      intent: "goal",
-      message: "What should I call this goal? (e.g., Emergency phone)",
-      missing: ["label"],
+  // Extract from current message
+  const extracted = {
+    target_amount: parseCurrencyAmount(message),
+    target_date: parseTargetDate(message),
+    label: null,
+    category: null,
+  };
+
+  // Improve label parsing to avoid echoing the whole sentence
+  const labelFromFor = message.match(
+    /\bgoal\b.*?\bfor\b\s+([^$\d\n]+?)(?:\s+for|\s+by|\s+in|\s+on|$)/i
+  );
+  const labelAlt = message.match(
+    /\bfor\b\s+([^$\d\n]+?)(?:\s+by|\s+in|\s+on|$)/i
+  );
+  const lbl =
+    (labelFromFor && labelFromFor[1]) ||
+    (labelAlt && labelAlt[1]) ||
+    extractLabel(message);
+  if (lbl) extracted.label = lbl.replace(/\s{2,}/g, " ").trim();
+  if (extracted.label) extracted.category = guessGoalCategory(extracted.label);
+
+  // Merge with prior
+  const slots = {
+    label: priorSlots.label || extracted.label || null,
+    target_amount: priorSlots.target_amount || extracted.target_amount || null,
+    target_date: priorSlots.target_date || extracted.target_date || null,
+    category:
+      priorSlots.category ||
+      extracted.category ||
+      (priorSlots.label ? guessGoalCategory(priorSlots.label) : null) ||
+      null,
+  };
+
+  // Missing management
+  const missing = [];
+  if (!slots.label) missing.push("label");
+  if (!slots.target_amount) missing.push("target_amount");
+  if (!slots.target_date) missing.push("target_date");
+  if (!slots.category) missing.push("category");
+
+  if (missing.length > 0) {
+    const prompts = {
+      label: "What should I call this goal? (e.g., Emergency phone)",
+      target_amount: `How much do you want to save for "${
+        slots.label || "this goal"
+      }"? (e.g., $500)`,
+      target_date: `When would you like to hit "${
+        slots.label || "this goal"
+      }"? (e.g., by Dec 15 or in 3 months)`,
+      category:
+        "Which category fits best? (emergency_fund, vacation, car, other)",
     };
-  }
-  if (!amount) {
+    const nextKey = missing[0];
     return {
       intent: "goal",
-      message: `How much do you want to save for "${label}"? (e.g., $500)`,
-      missing: ["target_amount"],
-    };
-  }
-  if (!dateStr) {
-    return {
-      intent: "goal",
-      message: `When would you like to hit "${label}"? (e.g., by Dec 15 or in 3 months)`,
-      missing: ["target_date"],
+      message: prompts[nextKey],
+      missing: [nextKey],
+      flow: { active: true, slots },
     };
   }
 
-  // Build row
+  // All slots captured → insert
   const goalRow = {
     user_id: userId,
-    label: label,
+    label: String(slots.label),
     description: null,
     note: null,
-    target_amount: Math.round(Number(amount)),
+    target_amount: Math.round(Number(slots.target_amount)),
     current_amount: 0,
-    target_date: dateStr,
-    category: categoryGuess,
+    target_date: String(slots.target_date),
+    category: String(slots.category || guessGoalCategory(slots.label)),
     status: "active",
   };
 

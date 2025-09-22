@@ -11,6 +11,7 @@ export const useChat = () => {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>(finnyConstants.INITIAL_CHAT_MESSAGES);
   const [isTyping, setIsTyping] = useState(false);
   const [showNudges, setShowNudges] = useState(true);
+  const [goalFlow, setGoalFlow] = useState<any | null>(null);
 
   useEffect(() => {
     loadChatMessages();
@@ -120,8 +121,8 @@ export const useChat = () => {
       const { data: sessionData } = await supabase.auth.getSession();
       const accessToken = sessionData?.session?.access_token || '';
 
-      // 1) First classify the message to determine intent
-      const classifyRes = await fetch(`${BASE_URL}/api/finny`, {
+      // 1) First classify the message to determine intent (skip if goal flow active)
+      const classifyRes = goalFlow?.active ? null : await fetch(`${BASE_URL}/api/finny`, {
         method: "POST",
         headers: { 
           "Content-Type": "application/json",
@@ -136,12 +137,12 @@ export const useChat = () => {
         }),
       });
 
-      const classifyData = await classifyRes.json();
-      logger.info("🎯 [CHAT] Classification result:", classifyData);
+      const classifyData = classifyRes ? await classifyRes.json() : { intent: "goal" };
+      if (classifyRes) logger.info("🎯 [CHAT] Classification result:", classifyData);
 
       // 2) Route to appropriate handler based on classification
       let res;
-      if (classifyData.intent === "ask_personalized") {
+      if (!goalFlow?.active && classifyData.intent === "ask_personalized") {
         // For personalized questions, call the ask handler
         res = await fetch(`${BASE_URL}/api/finny`, {
           method: "POST",
@@ -164,9 +165,9 @@ export const useChat = () => {
             "Authorization": `Bearer ${accessToken}`
           },
           body: JSON.stringify({
-            action: classifyData.intent,
+            action: goalFlow?.active ? "goal" : classifyData.intent,
             message: messageText,
-            context: {}
+            context: goalFlow ? { goal_flow: goalFlow } : {}
           }),
         });
       }
@@ -194,7 +195,10 @@ export const useChat = () => {
         // Handle personalized responses (including rent vs buy analysis)
         message = data.message;
       } else if (data.intent === "goal") {
-        // Minimal handling for goal flow: display message; future: add UI for follow-ups
+        // Persist flow state if provided
+        if (data.flow && data.flow.active) setGoalFlow(data.flow);
+        else setGoalFlow(null);
+        // Minimal handling for goal flow: display message
         message = data.message || "Let's set a goal.";
       } else {
         // Default message handling
