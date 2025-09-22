@@ -174,65 +174,116 @@ export const ChatMessageComponent = ({
             gap: responsivePadding(8),
           }}
         >
-          {message.actions.map((btn, idx) => (
-            <View
-              key={btn.action}
-              style={{
-                flex: 1,
-                maxWidth: isSmallScreen ? "45%" : "40%",
-              }}
-            >
-              <Animated.View style={{ opacity: fadeAnim, width: "100%" }}>
-                <View
+          {message.actions.map((btn, idx) => {
+            const [isPressed, setIsPressed] = useState(false);
+            const pressAnim = useRef(new Animated.Value(1)).current;
+
+            const handlePressIn = () => {
+              setIsPressed(true);
+              Animated.spring(pressAnim, {
+                toValue: 0.95,
+                useNativeDriver: true,
+                tension: 300,
+                friction: 10,
+              }).start();
+            };
+
+            const handlePressOut = () => {
+              setIsPressed(false);
+              Animated.spring(pressAnim, {
+                toValue: 1,
+                useNativeDriver: true,
+                tension: 300,
+                friction: 10,
+              }).start();
+            };
+
+            return (
+              <View
+                key={btn.action}
+                style={{
+                  flex: 1,
+                  maxWidth: isSmallScreen ? "45%" : "40%",
+                }}
+              >
+                <Animated.View
                   style={{
-                    paddingHorizontal: responsivePadding(12),
-                    paddingVertical: responsivePadding(8),
-                    borderRadius: 8,
-                    marginRight: responsivePadding(8),
-                    flexDirection: "row",
-                    alignItems: "center",
-                    shadowColor: "#000",
-                    shadowOffset: { width: 0, height: 1 },
-                    shadowOpacity: 0.15,
-                    shadowRadius: 3,
-                    elevation: 3,
-                    opacity: clicked ? 0.5 : 1,
-                    borderWidth: 1,
-                    borderColor:
-                      btn.style === "primary"
-                        ? "rgba(74, 144, 226, 0.4)"
-                        : "rgba(255, 59, 48, 0.3)",
-                    backgroundColor:
-                      btn.style === "primary"
-                        ? "rgba(74, 144, 226, 0.8)"
-                        : "rgba(255, 59, 48, 0.1)",
+                    opacity: fadeAnim,
                     width: "100%",
-                    alignSelf: "flex-start",
-                    minHeight: 36,
+                    transform: [{ scale: pressAnim }],
                   }}
                 >
-                  <Text
-                    onPress={() => {
-                      if (!clicked && onAction) {
-                        setClicked(true);
-                        onAction(btn.action);
-                      }
-                    }}
+                  <LinearGradient
+                    colors={
+                      btn.style === "primary"
+                        ? [
+                            "rgba(74, 144, 226, 0.95)",
+                            "rgba(74, 144, 226, 0.8)",
+                            "rgba(74, 144, 226, 0.9)",
+                          ]
+                        : [
+                            "rgba(255, 255, 255, 0.25)",
+                            "rgba(255, 255, 255, 0.12)",
+                            "rgba(255, 255, 255, 0.18)",
+                          ]
+                    }
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
                     style={{
-                      fontSize: responsiveFontSize(13),
-                      fontWeight: "600",
-                      color: btn.style === "primary" ? "#FFFFFF" : "#FF3B30",
-                      letterSpacing: 0.2,
-                      textAlign: "center",
-                      flex: 1,
+                      paddingHorizontal: responsivePadding(16),
+                      paddingVertical: responsivePadding(12),
+                      borderRadius: 14,
+                      marginRight: responsivePadding(8),
+                      flexDirection: "row",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      shadowColor: btn.style === "primary" ? "#4A90E2" : "#000",
+                      shadowOffset: { width: 0, height: 6 },
+                      shadowOpacity: btn.style === "primary" ? 0.35 : 0.15,
+                      shadowRadius: 12,
+                      elevation: 12,
+                      opacity: clicked ? 0.6 : 1,
+                      borderWidth: 1.5,
+                      borderColor:
+                        btn.style === "primary"
+                          ? "rgba(74, 144, 226, 0.7)"
+                          : "rgba(255, 59, 48, 0.5)",
+                      width: "100%",
+                      alignSelf: "flex-start",
+                      minHeight: 44,
                     }}
                   >
-                    {btn.label}
-                  </Text>
-                </View>
-              </Animated.View>
-            </View>
-          ))}
+                    <Text
+                      onPress={() => {
+                        if (!clicked && onAction) {
+                          setClicked(true);
+                          onAction(btn.action);
+                        }
+                      }}
+                      onPressIn={handlePressIn}
+                      onPressOut={handlePressOut}
+                      style={{
+                        fontSize: responsiveFontSize(14),
+                        fontWeight: "700",
+                        color: btn.style === "primary" ? "#FFFFFF" : "#FF3B30",
+                        letterSpacing: 0.5,
+                        textAlign: "center",
+                        flex: 1,
+                        textShadowColor:
+                          btn.style === "primary"
+                            ? "rgba(0, 0, 0, 0.3)"
+                            : "rgba(0, 0, 0, 0.1)",
+                        textShadowOffset: { width: 0, height: 1 },
+                        textShadowRadius: 2,
+                      }}
+                    >
+                      {btn.label}
+                    </Text>
+                  </LinearGradient>
+                </Animated.View>
+              </View>
+            );
+          })}
         </View>
       </Animated.View>
     );
