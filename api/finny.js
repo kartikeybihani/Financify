@@ -1654,6 +1654,9 @@ async function handleAskStateRule(message, context) {
 
       // LLM fallback: produce a user-friendly summary if we don't have specifics
       const llmText = await llmStateRuleAnswer(message, state);
+      if (llmText) {
+        safeRule.rule_summary = llmText;
+      }
       const formatted = llmText || formatStateRuleResponse(safeRule, message);
       return {
         intent: "ask_state_rule",
