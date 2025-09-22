@@ -2730,7 +2730,7 @@ async function fetchStockSnapshot(ticker) {
     process.env.EXPO_PUBLIC_FINNHUB_API_KEY;
   if (!apiKey) return { error: "Missing FINNHUB API key" };
 
-  const [quote, profile, recs, priceTarget] = await Promise.all([
+  const [quote, profile, recs, priceTarget, metrics, news] = await Promise.all([
     fetchJson(
       `https://finnhub.io/api/v1/quote?symbol=${ticker}&token=${apiKey}`
     ),
@@ -2743,6 +2743,19 @@ async function fetchStockSnapshot(ticker) {
     fetchJson(
       `https://finnhub.io/api/v1/stock/price-target?symbol=${ticker}&token=${apiKey}`
     ),
+    fetchJson(
+      `https://finnhub.io/api/v1/stock/metric?symbol=${ticker}&metric=all&token=${apiKey}`
+    ),
+    // last 5 company news items within ~30 days
+    (() => {
+      const now = new Date();
+      const past = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      const from = past.toISOString().slice(0, 10);
+      const to = now.toISOString().slice(0, 10);
+      return fetchJson(
+        `https://finnhub.io/api/v1/company-news?symbol=${ticker}&from=${from}&to=${to}&token=${apiKey}`
+      );
+    })(),
   ]);
 
   return {
@@ -2757,6 +2770,8 @@ async function fetchStockSnapshot(ticker) {
     profile: profile || null,
     recommendations: recs || [],
     priceTarget: priceTarget || null,
+    metrics: metrics?.metric || null,
+    news: Array.isArray(news) ? news.slice(0, 5) : [],
   };
 }
 
@@ -2799,6 +2814,21 @@ function formatStockResponse(data) {
   if (data.profile?.finnhubIndustry)
     out += `- Industry: ${data.profile.finnhubIndustry}\n`;
   if (data.profile?.weburl) out += `- Website: ${data.profile.weburl}\n`;
+  // Add a couple of basic metrics if available
+  const pe = data.metrics?.peBasicExclExtraTTM || data.metrics?.peBasicTTM;
+  const ps = data.metrics?.psTTM;
+  if (pe || ps) {
+    out += "\nKey ratios (TTM):\n";
+    if (pe) out += `- P/E: ${Number(pe).toFixed(1)}\n`;
+    if (ps) out += `- P/S: ${Number(ps).toFixed(1)}\n`;
+  }
+  // Add latest headlines
+  if (Array.isArray(data.news) && data.news.length > 0) {
+    out += "\nRecent headlines:\n";
+    for (const n of data.news.slice(0, 3)) {
+      if (n.headline) out += `- ${n.headline}\n`;
+    }
+  }
   if (data.ts) out += `\n*As of ${new Date(data.ts).toLocaleString()}*`;
   out += `\n\nThis is informational, not investment advice.`;
   return out;
