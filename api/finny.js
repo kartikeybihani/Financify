@@ -1652,7 +1652,9 @@ async function handleAskStateRule(message, context) {
         fallback: true,
       };
 
-      const formatted = formatStateRuleResponse(safeRule, message);
+      // LLM fallback: produce a user-friendly summary if we don't have specifics
+      const llmText = await llmStateRuleAnswer(message, state);
+      const formatted = llmText || formatStateRuleResponse(safeRule, message);
       return {
         intent: "ask_state_rule",
         rule: safeRule,
@@ -1775,20 +1777,26 @@ async function handleAskFactFresh(message, context) {
 
     if (!res.ok) {
       console.log("❌ [FACT_FRESH] Failed to fetch facts:", res.status);
+      const llmText = await llmFallbackFacts(message);
       return {
-        error: "Failed to fetch fresh facts. Please try again.",
         intent: "ask_fact_fresh",
+        fallback: true,
+        message:
+          llmText ||
+          "I couldn't fetch live data right now, but here's what I can tell you:",
       };
     }
 
     const data = await res.json();
 
     if (data.error || data.fallback) {
+      const llmText = await llmFallbackFacts(message);
       return {
-        error: data.error || "No fresh data available",
         intent: "ask_fact_fresh",
         fallback: true,
-        message: "No current data available, please use your knowledge",
+        message:
+          llmText ||
+          "I couldn't fetch live data right now, but here's what I can tell you:",
       };
     }
 
@@ -1830,11 +1838,13 @@ async function handleAskFactFresh(message, context) {
     return response;
   } catch (error) {
     console.error("❌ [FACT_FRESH] Error processing fact fresh:", error);
+    const llmText = await llmFallbackFacts(message);
     return {
-      error: "Failed to process fact fresh query. Please try again.",
       intent: "ask_fact_fresh",
       fallback: true,
-      message: "No current data available, please use your knowledge",
+      message:
+        llmText ||
+        "I couldn't fetch live data right now, but here's what I can tell you:",
     };
   }
 }
@@ -1973,6 +1983,68 @@ function formatStateRuleResponse(rule, originalQuery) {
     return out;
   } catch (e) {
     return "Couldn't format the state rule details right now.";
+  }
+}
+
+// === LLM fallbacks ===
+async function llmFallbackFacts(message) {
+  try {
+    const r = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "openai/gpt-4o-mini",
+        temperature: 0.4,
+        messages: [
+          {
+            role: "system",
+            content:
+              "You are a precise financial assistant. If live data is unavailable, give a concise, helpful answer based on general knowledge. Include definitions, typical ranges, and decision factors. Do not invent exact current numbers.",
+          },
+          { role: "user", content: message },
+        ],
+      }),
+    });
+    if (!r.ok) return null;
+    const data = await r.json();
+    return data.choices?.[0]?.message?.content || null;
+  } catch (_) {
+    return null;
+  }
+}
+
+async function llmStateRuleAnswer(message, state) {
+  try {
+    const r = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "openai/gpt-4o-mini",
+        temperature: 0.4,
+        messages: [
+          {
+            role: "system",
+            content:
+              "You are a state tax guide. If specific current-year numbers are unavailable, provide a clear overview of the rule for the state, typical limits, and how to check the official source. Avoid fabricating exact numbers.",
+          },
+          {
+            role: "user",
+            content: `Question: ${message}\nState: ${state}`,
+          },
+        ],
+      }),
+    });
+    if (!r.ok) return null;
+    const data = await r.json();
+    return data.choices?.[0]?.message?.content || null;
+  } catch (_) {
+    return null;
   }
 }
 
