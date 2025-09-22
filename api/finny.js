@@ -78,10 +78,16 @@ async function logConversation(conversationData) {
         request_id: conversationData.request_id || null,
       };
 
-      let { error } = await withTimeout(
+      const insertResult = await withTimeout(
         supabase.from("conversation_logs").insert([baseRow]),
         5000 // 5 second timeout
       );
+
+      if (!insertResult) {
+        throw new Error("Insert timed out");
+      }
+
+      const { error } = insertResult;
 
       if (error) {
         const msg = (error?.message || "").toLowerCase();
@@ -94,6 +100,9 @@ async function logConversation(conversationData) {
             supabase.from("conversation_logs").insert([fallbackRow]),
             5000
           );
+          if (!retry) {
+            throw new Error("Fallback insert timed out");
+          }
           if (retry.error) {
             throw new Error(`Fallback insert failed: ${retry.error.message}`);
           } else {
@@ -387,6 +396,7 @@ async function handleAsk(message, context) {
       "Use the complete financial data provided. Give accurate, detailed responses based on all available information.",
       "Do not show net worth calculations or mathematical formulas - just state the facts clearly.",
       "IMPORTANT: In transaction data, EXPENSE means money spent (going out), INCOME means money received (coming in).",
+      "CREDIT CARD DATA STRUCTURE: For credit cards, 'current_balance' is the debt amount (what you owe), and 'available_balance' is the credit limit. Available credit = credit limit - debt.",
       "For rent vs buy questions: Use the user's financial data (income, savings, debt) and market data (home prices, rent costs, mortgage rates) to provide personalized analysis. Consider their financial capacity, timeline, and local market conditions.",
       "For financial product questions: Use web research data to provide current, accurate information about credit cards, banks, and investment platforms. Combine this with the user's financial data to give personalized recommendations.",
       "Only add investment disclaimer ('Note: This response is for informational purposes and does not constitute financial advice.') when the user asks specifically about investments, investing advice, or investment-related recommendations.",
@@ -601,15 +611,16 @@ function createSmartContext(message, snap) {
       if (creditCards.length > 0) {
         context.push("Credit cards:");
         creditCards.forEach((card) => {
-          const balance = card.current_balance || card.available_balance || 0;
-          const limit = card.limit || 0;
-          const available = limit - balance;
+          // For credit cards: current_balance is debt, available_balance is credit limit
+          const debt = card.current_balance || 0;
+          const creditLimit = card.available_balance || 0;
+          const availableCredit = creditLimit - debt;
           context.push(
             `${card.institution_name} ${card.name} (${
               card.mask || "****"
-            }): Balance $${balance.toFixed(2)}, Limit $${limit.toFixed(
+            }): Debt $${debt.toFixed(2)}, Credit Limit $${creditLimit.toFixed(
               2
-            )}, Available $${available.toFixed(2)}`
+            )}, Available Credit $${availableCredit.toFixed(2)}`
           );
         });
       }
@@ -868,23 +879,24 @@ function createSmartContext(message, snap) {
       if (creditCards.length > 0) {
         context.push("Your credit cards:");
         creditCards.forEach((card) => {
-          const balance = card.current_balance || card.available_balance || 0;
-          const limit = card.limit || 0;
-          const available = limit - balance;
+          // For credit cards: current_balance is debt, available_balance is credit limit
+          const debt = card.current_balance || 0;
+          const creditLimit = card.available_balance || 0;
+          const availableCredit = creditLimit - debt;
           context.push(
             `${card.institution_name} ${card.name} (${
               card.mask || "****"
-            }): Balance $${balance.toFixed(2)}, Limit $${limit.toFixed(
+            }): Debt $${debt.toFixed(2)}, Credit Limit $${creditLimit.toFixed(
               2
-            )}, Available Credit $${available.toFixed(2)}`
+            )}, Available Credit $${availableCredit.toFixed(2)}`
           );
         });
 
         // Calculate total available credit
         const totalAvailableCredit = creditCards.reduce((sum, card) => {
-          const balance = card.current_balance || card.available_balance || 0;
-          const limit = card.limit || 0;
-          return sum + (limit - balance);
+          const debt = card.current_balance || 0;
+          const creditLimit = card.available_balance || 0;
+          return sum + (creditLimit - debt);
         }, 0);
         context.push(
           `Total Available Credit: $${totalAvailableCredit.toFixed(2)}`
@@ -1567,6 +1579,57 @@ async function handleAskFactFresh(message, context) {
   const startTime = Date.now();
 
   try {
+    // Fast-path: handle stock/company queries via Finnhub if detected
+    if (looksLikeStockQuery(message)) {
+      const stockResponse = await getCachedDataWithFallback(
+        "stock_snapshot",
+        message.toLowerCase().trim(),
+        async () => {
+          const { ticker, queryUsed } = await resolveTickerForQuery(message);
+          if (!ticker) {
+            return { error: "Could not resolve ticker from query", queryUsed };
+          }
+          const snapshot = await fetchStockSnapshot(ticker);
+          return { ...snapshot, ticker, queryUsed };
+        },
+        false
+      );
+
+      const data = stockResponse?.data || stockResponse;
+      if (data && !data.error && data.current) {
+        const formatted = formatStockResponse(data);
+        const response = {
+          intent: "ask_fact_fresh",
+          fact: { topic: "stock_snapshot", ...data },
+          cached: !!stockResponse?.cachedAt,
+          message: formatted,
+        };
+
+        setImmediate(() =>
+          logConversation({
+            user_message: message,
+            finny_response: response.message,
+            timestamp: new Date().toISOString(),
+            user_id: context?.user_id || "unknown",
+            intent: "ask_fact_fresh",
+            entities: [data.ticker, data.profile?.name].filter(Boolean),
+            confidence: 0.95,
+            response_time_ms: Date.now() - startTime,
+            sources_used: [
+              "finnhub:quote",
+              "finnhub:profile2",
+              "finnhub:recommendation",
+              data.priceTarget ? "finnhub:price-target" : null,
+            ].filter(Boolean),
+            cached: !!stockResponse?.cachedAt,
+            topic: "stock_snapshot",
+          })
+        );
+
+        return response;
+      }
+    }
+
     // Call the cleaned up facts-and-rules endpoint
     const BASE_URL = process.env.APP_BASE_URL;
     const res = await fetch(`${BASE_URL}/api/facts-and-rules`, {
@@ -2515,6 +2578,147 @@ function getRelevantDomains(entities) {
   }
 
   return Array.from(domains);
+}
+
+// === Stocks via Finnhub ===
+function looksLikeStockQuery(message) {
+  const m = message.toLowerCase();
+  return (
+    /\b(stock|stocks|ticker|share|price|quote|buy|sell|valuation|pt|price target)\b/.test(
+      m
+    ) || /\b[A-Z]{1,5}\b/.test(message)
+  );
+}
+
+async function resolveTickerForQuery(message) {
+  const apiKey =
+    process.env.FINHUB_API_KEY ||
+    process.env.FINNHUB_API_KEY ||
+    process.env.EXPO_PUBLIC_FINNHUB_API_KEY;
+  if (!apiKey) return { ticker: null, queryUsed: null };
+
+  // Heuristic: if an explicit 1-5 letter uppercase word present, try it first
+  const explicit = (message.match(/\b[A-Z]{1,5}\b/g) || []).find(
+    (t) => t !== "USD" && t !== "ETF"
+  );
+  if (explicit) {
+    const prof = await fetchJson(
+      `https://finnhub.io/api/v1/stock/profile2?symbol=${encodeURIComponent(
+        explicit
+      )}&token=${apiKey}`
+    );
+    if (prof && (prof.ticker || prof.ticker === explicit)) {
+      return { ticker: explicit, queryUsed: explicit };
+    }
+  }
+
+  // Name-based lookup using search endpoint
+  const cleaned = message.replace(/\?|\./g, " ").trim();
+  const search = await fetchJson(
+    `https://finnhub.io/api/v1/search?q=${encodeURIComponent(
+      cleaned
+    )}&token=${apiKey}`
+  );
+  const best = Array.isArray(search?.result)
+    ? search.result.find(
+        (r) =>
+          r.type === "Common Stock" || r.type === "ETF" || r.type === "Equity"
+      ) || search.result[0]
+    : null;
+  const symbol = best?.symbol || null;
+  return { ticker: symbol, queryUsed: cleaned };
+}
+
+async function fetchStockSnapshot(ticker) {
+  const apiKey =
+    process.env.FINHUB_API_KEY ||
+    process.env.FINNHUB_API_KEY ||
+    process.env.EXPO_PUBLIC_FINNHUB_API_KEY;
+  if (!apiKey) return { error: "Missing FINNHUB API key" };
+
+  const [quote, profile, recs, priceTarget] = await Promise.all([
+    fetchJson(
+      `https://finnhub.io/api/v1/quote?symbol=${ticker}&token=${apiKey}`
+    ),
+    fetchJson(
+      `https://finnhub.io/api/v1/stock/profile2?symbol=${ticker}&token=${apiKey}`
+    ),
+    fetchJson(
+      `https://finnhub.io/api/v1/stock/recommendation?symbol=${ticker}&token=${apiKey}`
+    ),
+    fetchJson(
+      `https://finnhub.io/api/v1/stock/price-target?symbol=${ticker}&token=${apiKey}`
+    ),
+  ]);
+
+  return {
+    current: quote?.c ?? null,
+    change: quote?.d ?? null,
+    changePercent: quote?.dp ?? null,
+    high: quote?.h ?? null,
+    low: quote?.l ?? null,
+    prevClose: quote?.pc ?? null,
+    open: quote?.o ?? null,
+    ts: quote?.t ? new Date(quote.t * 1000).toISOString() : null,
+    profile: profile || null,
+    recommendations: recs || [],
+    priceTarget: priceTarget || null,
+  };
+}
+
+function formatStockResponse(data) {
+  const name = data.profile?.name || data.ticker || "Stock";
+  const cur =
+    data.current != null ? `$${Number(data.current).toFixed(2)}` : "n/a";
+  const dp =
+    data.changePercent != null
+      ? `${Number(data.changePercent).toFixed(2)}%`
+      : "n/a";
+  const pt = data.priceTarget?.targetMean
+    ? `$${Number(data.priceTarget.targetMean).toFixed(2)}`
+    : null;
+
+  let recLine = "";
+  if (Array.isArray(data.recommendations) && data.recommendations.length > 0) {
+    const latest = data.recommendations[0];
+    const totals = [
+      latest?.strongBuy || 0,
+      latest?.buy || 0,
+      latest?.hold || 0,
+      latest?.sell || 0,
+      latest?.strongSell || 0,
+    ];
+    const sum = totals.reduce((a, b) => a + b, 0) || 1;
+    recLine = `Analyst mix (latest ${latest?.period || ""}): Buy ${(
+      (100 * (totals[0] + totals[1])) /
+      sum
+    ).toFixed(0)}%, Hold ${((100 * totals[2]) / sum).toFixed(0)}%, Sell ${(
+      (100 * (totals[3] + totals[4])) /
+      sum
+    ).toFixed(0)}%`;
+  }
+
+  let out = `**${name} (${data.ticker}) — Snapshot**\n\n`;
+  out += `- Price: ${cur} (${dp} today)\n`;
+  if (pt) out += `- Street price target (mean): ${pt}\n`;
+  if (recLine) out += `- ${recLine}\n`;
+  if (data.profile?.finnhubIndustry)
+    out += `- Industry: ${data.profile.finnhubIndustry}\n`;
+  if (data.profile?.weburl) out += `- Website: ${data.profile.weburl}\n`;
+  if (data.ts) out += `\n*As of ${new Date(data.ts).toLocaleString()}*`;
+  out += `\n\nThis is informational, not investment advice.`;
+  return out;
+}
+
+async function fetchJson(url) {
+  const r = await withTimeout(fetch(url), 10000, null);
+  if (!r) return null;
+  if (!r.ok) return null;
+  try {
+    return await r.json();
+  } catch {
+    return null;
+  }
 }
 
 function buildSearchUrls(domain, entity, searchPaths = []) {
