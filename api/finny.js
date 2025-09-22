@@ -47,66 +47,88 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-// Conversation logging functionality
+// Conversation logging functionality with retry logic
 async function logConversation(conversationData) {
   console.log(
     "🔄 [CONVERSATION_LOG] logConversation called with:",
     conversationData?.timestamp
   );
-  try {
-    // Insert with metrics and request_id if columns exist; fallback otherwise
-    const baseRow = {
-      user_id: conversationData.user_id,
-      user_message: conversationData.user_message,
-      finny_response: conversationData.finny_response,
-      timestamp: conversationData.timestamp,
-      intent: conversationData.intent,
-      entities: conversationData.entities,
-      confidence: conversationData.confidence,
-      response_time_ms: conversationData.response_time_ms,
-      sources_used: conversationData.sources_used,
-      cached: conversationData.cached,
-      enhanced_data: conversationData.enhanced_data || false,
-      market_data: conversationData.market_data || false,
-      web_research: conversationData.web_research || false,
-      metrics: conversationData.metrics || null,
-      request_id: conversationData.request_id || null,
-    };
 
-    let { error } = await supabase.from("conversation_logs").insert([baseRow]);
-    if (error) {
-      const msg = (error?.message || "").toLowerCase();
-      const missingCols =
-        msg.includes("column") &&
-        (msg.includes("metrics") || msg.includes("request_id"));
-      if (missingCols) {
-        const { metrics, request_id, ...fallbackRow } = baseRow;
-        const retry = await supabase
-          .from("conversation_logs")
-          .insert([fallbackRow]);
-        if (retry.error) {
-          console.error(
-            "❌ [CONVERSATION_LOG] Insert (fallback) error:",
-            retry.error
+  const maxRetries = 3;
+  const retryDelay = 1000; // 1 second
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      // Insert with metrics and request_id if columns exist; fallback otherwise
+      const baseRow = {
+        user_id: conversationData.user_id,
+        user_message: conversationData.user_message,
+        finny_response: conversationData.finny_response,
+        timestamp: conversationData.timestamp,
+        intent: conversationData.intent,
+        entities: conversationData.entities,
+        confidence: conversationData.confidence,
+        response_time_ms: conversationData.response_time_ms,
+        sources_used: conversationData.sources_used,
+        cached: conversationData.cached,
+        enhanced_data: conversationData.enhanced_data || false,
+        market_data: conversationData.market_data || false,
+        web_research: conversationData.web_research || false,
+        metrics: conversationData.metrics || null,
+        request_id: conversationData.request_id || null,
+      };
+
+      let { error } = await withTimeout(
+        supabase.from("conversation_logs").insert([baseRow]),
+        5000 // 5 second timeout
+      );
+
+      if (error) {
+        const msg = (error?.message || "").toLowerCase();
+        const missingCols =
+          msg.includes("column") &&
+          (msg.includes("metrics") || msg.includes("request_id"));
+        if (missingCols) {
+          const { metrics, request_id, ...fallbackRow } = baseRow;
+          const retry = await withTimeout(
+            supabase.from("conversation_logs").insert([fallbackRow]),
+            5000
           );
+          if (retry.error) {
+            throw new Error(`Fallback insert failed: ${retry.error.message}`);
+          } else {
+            console.log(
+              "📝 [CONVERSATION_LOG] Logged (fallback) to Supabase:",
+              conversationData.timestamp
+            );
+            return; // Success
+          }
         } else {
-          console.log(
-            "📝 [CONVERSATION_LOG] Logged (fallback) to Supabase:",
-            conversationData.timestamp
-          );
+          throw error; // Will trigger retry
         }
       } else {
-        console.error("❌ [CONVERSATION_LOG] Supabase error:", error);
+        console.log(
+          "📝 [CONVERSATION_LOG] Logged conversation to Supabase:",
+          conversationData.timestamp
+        );
+        return; // Success
       }
-    } else {
-      console.log(
-        "📝 [CONVERSATION_LOG] Logged conversation to Supabase:",
-        conversationData.timestamp
+    } catch (error) {
+      console.error(
+        `❌ [CONVERSATION_LOG] Attempt ${attempt}/${maxRetries} failed:`,
+        error.message
       );
+
+      if (attempt === maxRetries) {
+        console.error(
+          "❌ [CONVERSATION_LOG] All retry attempts failed, giving up"
+        );
+        return; // Don't throw error - logging failure shouldn't break the API
+      }
+
+      // Wait before retrying
+      await new Promise((resolve) => setTimeout(resolve, retryDelay * attempt));
     }
-  } catch (error) {
-    console.error("❌ [CONVERSATION_LOG] Error logging conversation:", error);
-    // Don't throw error - logging failure shouldn't break the API
   }
 }
 
@@ -566,6 +588,32 @@ function createSmartContext(message, snap) {
   ) {
     context.push(`Total Liabilities: $${snap.summary.totalLiabilities}`);
     context.push(`Net Worth: $${snap.summary.netWorth}`);
+
+    // Add credit card details if available
+    if (snap.bankAccounts && snap.bankAccounts.length > 0) {
+      const creditCards = snap.bankAccounts.filter(
+        (account) =>
+          account.type?.toLowerCase().includes("credit") ||
+          account.name?.toLowerCase().includes("credit") ||
+          account.subtype?.toLowerCase().includes("credit")
+      );
+
+      if (creditCards.length > 0) {
+        context.push("Credit cards:");
+        creditCards.forEach((card) => {
+          const balance = card.current_balance || card.available_balance || 0;
+          const limit = card.limit || 0;
+          const available = limit - balance;
+          context.push(
+            `${card.institution_name} ${card.name} (${
+              card.mask || "****"
+            }): Balance $${balance.toFixed(2)}, Limit $${limit.toFixed(
+              2
+            )}, Available $${available.toFixed(2)}`
+          );
+        });
+      }
+    }
   }
 
   // Transaction related questions
@@ -798,6 +846,51 @@ function createSmartContext(message, snap) {
             `${cat.category}: $${cat.total_spend.toFixed(2)} this month`
           );
         });
+      }
+    }
+  }
+
+  // Credit card specific questions
+  if (
+    lowerMessage.includes("credit card") ||
+    lowerMessage.includes("credit cards") ||
+    lowerMessage.includes("available credit") ||
+    lowerMessage.includes("credit limit")
+  ) {
+    if (snap.bankAccounts && snap.bankAccounts.length > 0) {
+      const creditCards = snap.bankAccounts.filter(
+        (account) =>
+          account.type?.toLowerCase().includes("credit") ||
+          account.name?.toLowerCase().includes("credit") ||
+          account.subtype?.toLowerCase().includes("credit")
+      );
+
+      if (creditCards.length > 0) {
+        context.push("Your credit cards:");
+        creditCards.forEach((card) => {
+          const balance = card.current_balance || card.available_balance || 0;
+          const limit = card.limit || 0;
+          const available = limit - balance;
+          context.push(
+            `${card.institution_name} ${card.name} (${
+              card.mask || "****"
+            }): Balance $${balance.toFixed(2)}, Limit $${limit.toFixed(
+              2
+            )}, Available Credit $${available.toFixed(2)}`
+          );
+        });
+
+        // Calculate total available credit
+        const totalAvailableCredit = creditCards.reduce((sum, card) => {
+          const balance = card.current_balance || card.available_balance || 0;
+          const limit = card.limit || 0;
+          return sum + (limit - balance);
+        }, 0);
+        context.push(
+          `Total Available Credit: $${totalAvailableCredit.toFixed(2)}`
+        );
+      } else {
+        context.push("No credit cards found in your account data.");
       }
     }
   }

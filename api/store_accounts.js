@@ -506,9 +506,9 @@ async function handleFinancialSummary(req, res, user_id) {
       console.error("Error fetching investment holdings:", holdingsErr);
     }
 
-    // Debug logging
-    console.log("Net worth data:", netWorthData);
-    console.log("Investment snapshot data:", invSnap);
+    // Debug logging with proper serialization
+    console.log("Net worth data:", JSON.stringify(netWorthData, null, 2));
+    console.log("Investment snapshot data:", JSON.stringify(invSnap, null, 2));
     console.log("Recent transactions:", recentTxns?.length || 0);
     console.log("Spend by category:", spendByCategory?.length || 0);
     console.log("Cashflow months:", cashflow?.length || 0);
