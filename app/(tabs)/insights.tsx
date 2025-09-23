@@ -17,11 +17,15 @@ import {
   FlatList,
   DeviceEventEmitter,
   RefreshControl,
+  Animated,
+  Platform,
 } from "react-native";
+import * as Haptics from "expo-haptics";
+import TopChips from "../_components/insights/components/TopChips";
+import RecurringSection from "../_components/insights/components/RecurringSection";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { styles } from "../_styles/insightsStyles";
-import CategoryGrid from "../_components/insights/CategoryGrid";
 import CategoryDetailModal from "../_components/insights/CategoryDetailModal";
 import EnhancedFilterModal, {
   FilterOptions,
@@ -29,12 +33,13 @@ import EnhancedFilterModal, {
 } from "../_components/EnhancedFilterModal";
 import TransactionDetailModal from "../_components/transactions/TransactionDetailModal";
 import ReAuthBanner from "../_components/ui/ReAuthBanner";
-import RecurringTransactionsCard from "../_components/insights/RecurringTransactionsCard";
 import InsightsLoadingSkeleton from "../_components/insights/InsightsLoadingSkeleton";
+import SpendingSection from "../_components/insights/components/SpendingSection";
+import TransactionsSection from "../_components/insights/components/TransactionsSection";
+import CashFlowSection from "../_components/insights/components/CashFlowSection";
+import RefreshStatus from "../_components/insights/components/RefreshStatus";
 import { supabase } from "../_lib/supabase/supabase";
 import {
-  fetchInitialData,
-  getPrimaryItemId,
   syncAllUserTransactions,
   refreshBothBalancesAndTransactions,
   getAllRecurringTransactions,
@@ -42,7 +47,6 @@ import {
   getUpdateLinkToken,
   openPlaidLink,
   getRecentTransactions,
-  getSpendingByCategory,
   getFilteredTransactions,
   getFilteredTransactionsCount,
   getUserAccountsForFilter,
@@ -233,6 +237,14 @@ export default function InsightsScreen() {
   const [showTransactionDetail, setShowTransactionDetail] = useState(false);
   const [selectedTransaction, setSelectedTransaction] =
     useState<Transaction | null>(null);
+
+  // Top bar section state
+  const [activeSection, setActiveSection] = useState<
+    "cashflow" | "spending" | "transactions" | "recurring"
+  >("spending");
+
+  // Animation values for smooth transitions
+  const fadeAnim = useRef(new Animated.Value(1)).current;
 
   // Simple cache for filtered results
   const filterCache = useRef<
@@ -807,6 +819,33 @@ export default function InsightsScreen() {
     setShowTransactionDetail(true);
   };
 
+  // Handle smooth section transitions
+  const handleSectionChange = (
+    newSection: "cashflow" | "spending" | "transactions" | "recurring"
+  ) => {
+    if (newSection === activeSection) return;
+
+    // Fade out current content
+    Animated.timing(fadeAnim, {
+      toValue: 0,
+      duration: 150,
+      useNativeDriver: true,
+    }).start(() => {
+      // Change section
+      setActiveSection(newSection);
+
+      // Fade in new content
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 200,
+        useNativeDriver: true,
+      }).start();
+    });
+
+    // Light haptic feedback
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+  };
+
   // Check for re-auth needs (both database flags and API errors)
   const checkForReAuthNeeds = async () => {
     try {
@@ -1372,6 +1411,13 @@ export default function InsightsScreen() {
         </View>
       </View>
 
+      {!isInitialLoad && (
+        <TopChips
+          activeSection={activeSection as any}
+          onChange={handleSectionChange as any}
+        />
+      )}
+
       {isInitialLoad ? (
         <InsightsLoadingSkeleton />
       ) : (
@@ -1399,14 +1445,7 @@ export default function InsightsScreen() {
             <>
               {/* Refresh Status Indicator */}
               {refreshStatus.type && (
-                <View style={refreshStatusStyles.container}>
-                  <View style={refreshStatusStyles.content}>
-                    <ActivityIndicator size="small" color="#4A90E2" />
-                    <Text style={refreshStatusStyles.message}>
-                      {refreshStatus.message}
-                    </Text>
-                  </View>
-                </View>
+                <RefreshStatus message={refreshStatus.message} />
               )}
 
               {/* Re-auth banners */}
@@ -1421,152 +1460,90 @@ export default function InsightsScreen() {
                   />
                 ))}
 
-              <Text style={styles.sectionLabel}>
-                Spending Overview - This Month
-              </Text>
-              <CategoryGrid
-                categoryBreakdown={categoryBreakdown}
-                onCategoryPress={handleCategoryPress}
-                formatCategoryName={formatCategoryName}
-                getCategoryIcon={getCategoryIcon}
-              />
-
-              {/* Recurring transactions card */}
-              <View style={{ paddingHorizontal: 8, marginTop: 16 }}>
-                <RecurringTransactionsCard
-                  subscriptions={recurringData?.subscriptions || []}
-                  bills={recurringData?.bills || []}
-                  income={recurringData?.income || []}
-                  other={recurringData?.other || []}
-                  onViewAll={() => {
-                    // TODO: Navigate to recurring transactions detail screen
-                    logger.info("View all recurring transactions");
-                  }}
-                  isLoading={recurringLoading}
-                />
-              </View>
-
-              <Text style={[styles.sectionLabel, { marginTop: 32 }]}>
-                Smart Insights
-              </Text>
-
-              <View style={styles.sectionHeader}>
-                <Text style={styles.sectionLabel}>Transactions</Text>
-                <View style={styles.headerButtonsContainer}>
-                  <TouchableOpacity
-                    style={styles.refreshAccountsButton}
-                    onPress={() => loadUserAccounts(true)}
-                    activeOpacity={0.7}
-                  >
-                    <Ionicons name="reload" size={12} color="#4A90E2" />
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.filterButton}
-                    onPress={() => setShowEnhancedFilterModal(true)}
-                    activeOpacity={0.7}
-                  >
-                    <Ionicons
-                      name="funnel"
-                      size={14}
-                      color="#667eea"
-                      style={{ marginRight: 6 }}
-                    />
-                    <Text style={styles.filterButtonText}>
-                      {getFilterDescription()}
-                    </Text>
-                    <Ionicons
-                      name="chevron-down"
-                      size={14}
-                      color="#667eea"
-                      style={styles.dropdownArrow}
-                    />
-                  </TouchableOpacity>
-                </View>
-              </View>
-
-              {/* Transaction Count Info */}
-              {totalFilteredCount > 0 && (
-                <View style={transactionInfoStyles.container}>
-                  <Text style={transactionInfoStyles.text}>
-                    Showing {filteredTransactions.length} of{" "}
-                    {totalFilteredCount} transactions
-                  </Text>
-                </View>
+              {/* Cash Flow Section */}
+              {activeSection === "cashflow" && (
+                <Animated.View
+                  style={[
+                    sectionContentStyles.container,
+                    { opacity: fadeAnim },
+                  ]}
+                >
+                  <CashFlowSection />
+                </Animated.View>
               )}
 
-              {/* Filtered Transactions List */}
-              <FlatList
-                data={filteredTransactions}
-                scrollEnabled={false}
-                keyExtractor={(item, index) =>
-                  `${item.plaid_transaction_id || item.id || index}`
-                }
-                renderItem={({ item: tx }) => {
-                  // Handle transaction amount display logic
-                  const amount = Math.abs(tx.amount);
-                  const isIncome = tx.amount < 0; // Negative amounts are actually income/credits
-                  const amountColor = isIncome ? "#4CAF50" : "#ff6b6b"; // Green for income, red for expenses
-                  const amountText = isIncome
-                    ? `+$${amount.toFixed(2)}`
-                    : `-$${amount.toFixed(2)}`;
+              {/* Spending Section */}
+              {activeSection === "spending" && (
+                <Animated.View
+                  style={[
+                    sectionContentStyles.container,
+                    { opacity: fadeAnim },
+                  ]}
+                >
+                  <SpendingSection
+                    titleStyle={styles.sectionLabel}
+                    categoryBreakdown={categoryBreakdown}
+                    onCategoryPress={handleCategoryPress}
+                    formatCategoryName={formatCategoryName}
+                    getCategoryIcon={getCategoryIcon}
+                  />
+                  <Text style={[styles.sectionLabel, { marginTop: 32 }]}>
+                    Smart Insights
+                  </Text>
+                </Animated.View>
+              )}
 
-                  return (
-                    <TouchableOpacity
-                      style={styles.txItem}
-                      onPress={() => handleTransactionPress(tx)}
-                      activeOpacity={0.7}
-                    >
-                      <View style={styles.txInfo}>
-                        <Text style={styles.txName}>{tx.name}</Text>
-                        <Text style={styles.txMeta}>{formatDate(tx.date)}</Text>
-                        <Text style={styles.txCategory}>
-                          {formatCategoryName(tx.top_category || "Other")}
-                        </Text>
-                      </View>
-                      <View style={styles.txAmountContainer}>
-                        <Text style={[styles.txAmount, { color: amountColor }]}>
-                          {amountText}
-                        </Text>
-                        <Ionicons
-                          name="chevron-forward"
-                          size={16}
-                          color="#666"
-                        />
-                      </View>
-                    </TouchableOpacity>
-                  );
-                }}
-                ListFooterComponent={() => (
-                  <View style={loadMoreStyles.container}>
-                    {loadingMore && (
-                      <ActivityIndicator
-                        size="small"
-                        color="#4A90E2"
-                        style={loadMoreStyles.indicator}
-                      />
-                    )}
-                    {hasMoreTransactions && !loadingMore && (
-                      <TouchableOpacity
-                        style={loadMoreStyles.button}
-                        onPress={loadMoreTransactions}
-                      >
-                        <Text style={loadMoreStyles.buttonText}>Load More</Text>
-                        <Ionicons
-                          name="chevron-down"
-                          size={16}
-                          color="#4A90E2"
-                        />
-                      </TouchableOpacity>
-                    )}
-                    {!hasMoreTransactions &&
-                      filteredTransactions.length > 0 && (
-                        <Text style={loadMoreStyles.endText}>
-                          No more transactions to load
-                        </Text>
-                      )}
-                  </View>
-                )}
-              />
+              {/* Transactions Section */}
+              {activeSection === "transactions" && (
+                <Animated.View
+                  style={[
+                    sectionContentStyles.container,
+                    { opacity: fadeAnim },
+                  ]}
+                >
+                  <TransactionsSection
+                    titleStyle={styles.sectionLabel}
+                    sectionHeaderStyle={styles.sectionHeader}
+                    headerButtonsContainerStyle={styles.headerButtonsContainer}
+                    refreshAccountsButtonStyle={styles.refreshAccountsButton}
+                    filterButtonStyle={styles.filterButton}
+                    filterButtonTextStyle={styles.filterButtonText}
+                    dropdownArrowStyle={styles.dropdownArrow}
+                    transactionInfoContainerStyle={
+                      transactionInfoStyles.container
+                    }
+                    transactionInfoTextStyle={transactionInfoStyles.text}
+                    loadMoreStyles={loadMoreStyles as any}
+                    filteredTransactions={filteredTransactions}
+                    totalFilteredCount={totalFilteredCount}
+                    hasMoreTransactions={hasMoreTransactions}
+                    loadingMore={loadingMore}
+                    onPressLoadMore={loadMoreTransactions}
+                    onPressRefreshAccounts={() => loadUserAccounts(true)}
+                    onPressOpenFilter={() => setShowEnhancedFilterModal(true)}
+                    getFilterDescription={getFilterDescription}
+                    onPressTransaction={handleTransactionPress}
+                    formatDate={formatDate}
+                    formatCategoryName={formatCategoryName}
+                  />
+                </Animated.View>
+              )}
+
+              {/* Recurring Section */}
+              {activeSection === "recurring" && (
+                <Animated.View
+                  style={[
+                    sectionContentStyles.container,
+                    { opacity: fadeAnim },
+                  ]}
+                >
+                  <RecurringSection
+                    recurringData={recurringData}
+                    isLoading={recurringLoading}
+                    titleStyle={styles.sectionLabel}
+                  />
+                </Animated.View>
+              )}
             </>
           )}
 
@@ -1832,5 +1809,34 @@ const loadMoreStyles = StyleSheet.create({
     fontSize: 14,
     fontStyle: "italic",
     marginTop: 8,
+  },
+});
+
+// Section Content Styles
+const sectionContentStyles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  placeholderContainer: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 60,
+    paddingHorizontal: 40,
+  },
+  placeholderTitle: {
+    fontSize: 20,
+    fontWeight: "600",
+    color: "#fff",
+    marginTop: 16,
+    marginBottom: 12,
+    textAlign: "center",
+  },
+  placeholderText: {
+    fontSize: 16,
+    color: "#888",
+    textAlign: "center",
+    lineHeight: 24,
+    maxWidth: 300,
   },
 });
