@@ -82,50 +82,20 @@ export default async function handler(req, res) {
             available_balance: account.balances.available,
           }));
 
-          const accountIds = balanceUpdates.map(update => update.account_id);
-          
-          const { data: existingAccounts, error: checkError } = await supabase
+          const { data: updateResults, error: batchError } = await supabase
             .from("accounts")
-            .select('account_id')
-            .in('account_id', accountIds);
-            
-          let batchError = checkError;
-          let updateResults = [];
-          
-          if (!checkError && existingAccounts) {
-            const existingAccountIds = new Set(existingAccounts.map(acc => acc.account_id));
-            const validUpdates = balanceUpdates.filter(update => 
-              existingAccountIds.has(update.account_id)
-            );
-            
-            if (validUpdates.length > 0) {
-              const updatePromises = validUpdates.map(update => 
-                supabase
-                  .from("accounts")
-                  .update({
-                    current_balance: update.current_balance,
-                    available_balance: update.available_balance,
-                  })
-                  .eq("account_id", update.account_id)
-                  .select('account_id')
-              );
-              
-              const results = await Promise.allSettled(updatePromises);
-              updateResults = results
-                .filter(result => result.status === 'fulfilled' && !result.value.error)
-                .map(result => result.value.data)
-                .flat()
-                .filter(Boolean);
-                
-              const failedUpdates = results.filter(result => 
-                result.status === 'rejected' || result.value.error
-              );
-              
-              if (failedUpdates.length > 0) {
-                console.warn(`Some balance updates failed: ${failedUpdates.length} out of ${validUpdates.length}`);
+            .upsert(
+              balanceUpdates.map(update => ({
+                account_id: update.account_id,
+                current_balance: update.current_balance,
+                available_balance: update.available_balance,
+              })),
+              { 
+                onConflict: 'account_id',
+                ignoreDuplicates: true  // This prevents creating new records
               }
-            }
-          }
+            )
+            .select('account_id');
 
           let successful, failed;
           
