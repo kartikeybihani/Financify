@@ -82,50 +82,57 @@ export default async function handler(req, res) {
             available_balance: account.balances.available,
           }));
 
-          // Update each account's balance
-          const updatePromises = balanceUpdates.map(async (update) => {
-            const { error } = await supabase
-              .from("accounts")
-              .update({
+          const { data: updateResults, error: batchError } = await supabase
+            .from("accounts")
+            .upsert(
+              balanceUpdates.map(update => ({
+                account_id: update.account_id,
                 current_balance: update.current_balance,
                 available_balance: update.available_balance,
-              })
-              .eq("account_id", update.account_id);
+              })),
+              { 
+                onConflict: 'account_id',
+                ignoreDuplicates: false 
+              }
+            )
+            .select('account_id');
 
-            if (error) {
-              console.error(
-                `Failed to update balance for account ${update.account_id}:`,
-                error
-              );
-              return {
-                account_id: update.account_id,
-                success: false,
-                error: error.message,
-              };
-            }
-
-            return { account_id: update.account_id, success: true };
-          });
-
-          const balanceResults = await Promise.all(updatePromises);
-          const successful = balanceResults.filter((r) => r.success).length;
-          const failed = balanceResults.filter((r) => !r.success).length;
+          let successful, failed;
+          if (batchError) {
+            console.error('Failed to batch update balances:', batchError);
+            successful = 0;
+            failed = accounts.length;
+          } else {
+            successful = updateResults?.length || 0;
+            failed = accounts.length - successful;
+          }
 
           console.log(
             `✅ Balance update complete: ${successful} successful, ${failed} failed`
           );
 
-          results.balances = {
-            message: "Account balances refreshed successfully",
-            updated: successful,
-            failed: failed,
-            total: accounts.length,
-            balances: balanceUpdates.map((update) => ({
-              account_id: update.account_id,
-              current_balance: update.current_balance,
-              available_balance: update.available_balance,
-            })),
-          };
+          if (batchError) {
+            results.balances = {
+              message: "Balance update failed",
+              updated: 0,
+              failed: accounts.length,
+              total: accounts.length,
+              balances: [],
+              error: batchError.message,
+            };
+          } else {
+            results.balances = {
+              message: "Account balances refreshed successfully",
+              updated: successful,
+              failed: failed,
+              total: accounts.length,
+              balances: balanceUpdates.map((update) => ({
+                account_id: update.account_id,
+                current_balance: update.current_balance,
+                available_balance: update.available_balance,
+              })),
+            };
+          }
         } else {
           results.balances = {
             message: "No accounts found to update",
