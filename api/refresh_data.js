@@ -82,22 +82,53 @@ export default async function handler(req, res) {
             available_balance: account.balances.available,
           }));
 
-          const { data: updateResults, error: batchError } = await supabase
+          const accountIds = balanceUpdates.map(update => update.account_id);
+          
+          const { data: existingAccounts, error: checkError } = await supabase
             .from("accounts")
-            .upsert(
-              balanceUpdates.map(update => ({
-                account_id: update.account_id,
-                current_balance: update.current_balance,
-                available_balance: update.available_balance,
-              })),
-              { 
-                onConflict: 'account_id',
-                ignoreDuplicates: false 
+            .select('account_id')
+            .in('account_id', accountIds);
+            
+          let batchError = checkError;
+          let updateResults = [];
+          
+          if (!checkError && existingAccounts) {
+            const existingAccountIds = new Set(existingAccounts.map(acc => acc.account_id));
+            const validUpdates = balanceUpdates.filter(update => 
+              existingAccountIds.has(update.account_id)
+            );
+            
+            if (validUpdates.length > 0) {
+              const updatePromises = validUpdates.map(update => 
+                supabase
+                  .from("accounts")
+                  .update({
+                    current_balance: update.current_balance,
+                    available_balance: update.available_balance,
+                  })
+                  .eq("account_id", update.account_id)
+                  .select('account_id')
+              );
+              
+              const results = await Promise.allSettled(updatePromises);
+              updateResults = results
+                .filter(result => result.status === 'fulfilled' && !result.value.error)
+                .map(result => result.value.data)
+                .flat()
+                .filter(Boolean);
+                
+              const failedUpdates = results.filter(result => 
+                result.status === 'rejected' || result.value.error
+              );
+              
+              if (failedUpdates.length > 0) {
+                console.warn(`Some balance updates failed: ${failedUpdates.length} out of ${validUpdates.length}`);
               }
-            )
-            .select('account_id');
+            }
+          }
 
           let successful, failed;
+          
           if (batchError) {
             console.error('Failed to batch update balances:', batchError);
             successful = 0;
@@ -111,28 +142,17 @@ export default async function handler(req, res) {
             `✅ Balance update complete: ${successful} successful, ${failed} failed`
           );
 
-          if (batchError) {
-            results.balances = {
-              message: "Balance update failed",
-              updated: 0,
-              failed: accounts.length,
-              total: accounts.length,
-              balances: [],
-              error: batchError.message,
-            };
-          } else {
-            results.balances = {
-              message: "Account balances refreshed successfully",
-              updated: successful,
-              failed: failed,
-              total: accounts.length,
-              balances: balanceUpdates.map((update) => ({
-                account_id: update.account_id,
-                current_balance: update.current_balance,
-                available_balance: update.available_balance,
-              })),
-            };
-          }
+          results.balances = {
+            message: failed > 0 ? "Balance update completed with some failures" : "Account balances refreshed successfully",
+            updated: successful,
+            failed: failed,
+            total: accounts.length,
+            balances: balanceUpdates.map((update) => ({
+              account_id: update.account_id,
+              current_balance: update.current_balance,
+              available_balance: update.available_balance,
+            })),
+          };
         } else {
           results.balances = {
             message: "No accounts found to update",
