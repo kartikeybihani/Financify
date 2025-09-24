@@ -27,19 +27,29 @@ async function withTimeout(promise, ms, onTimeoutValue = null) {
 
 function redactPII(text) {
   if (!text || typeof text !== "string") return text;
-  let out = text;
-  out = out.replace(
-    /([A-Za-z0-9._%+-])[A-Za-z0-9._%+-]*@([A-Za-z0-9-])[A-Za-z0-9.-]*(\.[A-Za-z]{2,})/g,
-    "$1*****@$2*****$3"
+  const combined =
+    /([A-Za-z0-9._%+-])[A-Za-z0-9._%+-]*@([A-Za-z0-9-])[A-Za-z0-9.-]*(\.[A-Za-z]{2,})|(?:\+?1[-.\s]?)?(\d{3})[-.\s]?(\d{3})[-.\s]?(\d{4})|\b\d{3}-\d{2}-(\d{4})\b|\b(\d{8,})\b|\b(\d{2,})\s+([A-Za-z])/g;
+  return text.replace(
+    combined,
+    (match, e1, e2, e3, p1, p2, p3, ssn4, longNum, addrNum, addrChar) => {
+      if (e1 !== undefined && e2 !== undefined && e3 !== undefined) {
+        return `${e1}*****@${e2}*****${e3}`;
+      }
+      if (p1 !== undefined && p2 !== undefined && p3 !== undefined) {
+        return `***-***-${p3}`;
+      }
+      if (ssn4 !== undefined) {
+        return `***-**-${ssn4}`;
+      }
+      if (longNum !== undefined) {
+        return `****${String(longNum).slice(-4)}`;
+      }
+      if (addrNum !== undefined && addrChar !== undefined) {
+        return `#### ${addrChar}`;
+      }
+      return match;
+    }
   );
-  out = out.replace(
-    /(?:\+?1[-.\s]?)?(\d{3})[-.\s]?(\d{3})[-.\s]?(\d{4})/g,
-    "***-***-$3"
-  );
-  out = out.replace(/\b\d{3}-\d{2}-(\d{4})\b/g, "***-**-$1");
-  out = out.replace(/\b(\d{8,})\b/g, (m) => `****${m.slice(-4)}`);
-  out = out.replace(/\b(\d{2,})\s+([A-Za-z])/g, "#### $2");
-  return out;
 }
 
 const supabase = createClient(
@@ -2690,13 +2700,6 @@ function detectRentVsBuyQuery(message) {
 // Fetch market data for rent vs buy analysis
 async function fetchMarketData(query) {
   try {
-    const { createClient } = await import("@supabase/supabase-js");
-    const supabase = createClient(
-      process.env.SUPABASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL,
-      process.env.SUPABASE_SERVICE_ROLE_KEY ||
-        process.env.EXPO_PUBLIC_SUPABASE_SERVICE_ROLE_KEY
-    );
-
     // For now, return mock data - in production you'd fetch from real estate APIs
     // like Zillow, Realtor.com, or Census data
     const mockMarketData = {
@@ -4343,10 +4346,71 @@ function generateComparisons(products, entities) {
     return comparisons;
   }
 
-  for (let i = 0; i < products.length; i++) {
-    for (let j = i + 1; j < products.length; j++) {
-      const product1 = products[i];
-      const product2 = products[j];
+  // Optional capping to reduce O(n^2) blowup
+  const options = (entities && entities.comparisonOptions) || {};
+  const envTopN = parseInt(process.env.FINNY_COMPARISON_TOP_N || "", 10);
+  const envMaxPairs = parseInt(
+    process.env.FINNY_COMPARISON_MAX_PAIRS || "",
+    10
+  );
+  const topN = Number.isFinite(options.topN)
+    ? options.topN
+    : Number.isFinite(envTopN)
+    ? envTopN
+    : undefined;
+  const maxPairs = Number.isFinite(options.maxPairs)
+    ? options.maxPairs
+    : Number.isFinite(envMaxPairs)
+    ? envMaxPairs
+    : undefined;
+
+  let workingProducts = products;
+  if (topN && products.length > topN) {
+    // Rank products by a simple composite of key metrics.
+    // Lower APR and Annual Fee are better; higher Interest Rates are better.
+    // We convert to a score where lower is better: apr + annualFee - interestRates
+    const scored = products.map((p) => {
+      const aprAvg =
+        Array.isArray(p.metrics?.apr) && p.metrics.apr.length
+          ? p.metrics.apr.reduce((s, v) => s + v, 0) / p.metrics.apr.length
+          : undefined;
+      const feeAvg =
+        Array.isArray(p.metrics?.annualFee) && p.metrics.annualFee.length
+          ? p.metrics.annualFee.reduce((s, v) => s + v, 0) /
+            p.metrics.annualFee.length
+          : undefined;
+      const irAvg =
+        Array.isArray(p.metrics?.interestRates) &&
+        p.metrics.interestRates.length
+          ? p.metrics.interestRates.reduce((s, v) => s + v, 0) /
+            p.metrics.interestRates.length
+          : undefined;
+
+      const parts = [];
+      if (typeof aprAvg === "number") parts.push(aprAvg);
+      if (typeof feeAvg === "number") parts.push(feeAvg);
+      if (typeof irAvg === "number") parts.push(-irAvg); // invert so higher IR helps lower score
+
+      const score = parts.length
+        ? parts.reduce((s, v) => s + v, 0) / parts.length
+        : Number.POSITIVE_INFINITY; // deprioritize when no metrics
+
+      return { product: p, score };
+    });
+
+    scored.sort((a, b) => a.score - b.score);
+    workingProducts = scored.slice(0, topN).map((s) => s.product);
+  }
+
+  let pairCount = 0;
+  for (let i = 0; i < workingProducts.length; i++) {
+    for (let j = i + 1; j < workingProducts.length; j++) {
+      if (typeof maxPairs === "number" && pairCount >= maxPairs) {
+        return comparisons;
+      }
+      const product1 = workingProducts[i];
+      const product2 = workingProducts[j];
+      pairCount++;
 
       const comparison = {
         product1: product1.title,
@@ -4421,25 +4485,23 @@ function determineWinner(product1, product2) {
   let score2 = 0;
 
   if (product1.metrics.apr && product2.metrics.apr) {
-    const avg1 =
-      product1.metrics.apr.reduce((sum, val) => sum + val, 0) /
-      product1.metrics.apr.length;
-    const avg2 =
-      product2.metrics.apr.reduce((sum, val) => sum + val, 0) /
-      product2.metrics.apr.length;
-    if (avg1 < avg2) score1++;
-    else if (avg2 < avg1) score2++;
+    const aprComparison = compareMetrics(
+      product1.metrics.apr,
+      product2.metrics.apr,
+      "lower"
+    );
+    if (aprComparison.result === "product1_better") score1++;
+    else if (aprComparison.result === "product2_better") score2++;
   }
 
   if (product1.metrics.annualFee && product2.metrics.annualFee) {
-    const avg1 =
-      product1.metrics.annualFee.reduce((sum, val) => sum + val, 0) /
-      product1.metrics.annualFee.length;
-    const avg2 =
-      product2.metrics.annualFee.reduce((sum, val) => sum + val, 0) /
-      product2.metrics.annualFee.length;
-    if (avg1 < avg2) score1++;
-    else if (avg2 < avg1) score2++;
+    const feeComparison = compareMetrics(
+      product1.metrics.annualFee,
+      product2.metrics.annualFee,
+      "lower"
+    );
+    if (feeComparison.result === "product1_better") score1++;
+    else if (feeComparison.result === "product2_better") score2++;
   }
 
   if (score1 > score2) return "product1";

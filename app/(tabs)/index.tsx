@@ -355,14 +355,14 @@ export default function HomeScreen() {
   };
 
   // Debug: Log all account types
-  logger.debug(
-    "All account types:",
-    accounts.map((acc) => ({
-      name: acc.name,
-      type: acc.type,
-      subtype: (acc as any).subtype,
-    }))
-  );
+  // logger.debug(
+  //   "All account types:",
+  //   accounts.map((acc) => ({
+  //     name: acc.name,
+  //     type: acc.type,
+  //     subtype: (acc as any).subtype,
+  //   }))
+  // );
 
   // Memoized categorized account arrays
   const categorizedLiabilities = useMemo(
@@ -382,10 +382,10 @@ export default function HomeScreen() {
   );
 
   // Debug: Log categorization results
-  logger.debug("Categorized Deposits:", categorizedDeposits.length);
-  logger.debug("Categorized Liabilities:", categorizedLiabilities.length);
-  logger.debug("Investment Holdings:", investments?.holdings?.length || 0);
-  logger.debug("Investment Accounts:", categorizedInvestments.length);
+  // logger.debug("Categorized Deposits:", categorizedDeposits.length);
+  // logger.debug("Categorized Liabilities:", categorizedLiabilities.length);
+  // logger.debug("Investment Holdings:", investments?.holdings?.length || 0);
+  // logger.debug("Investment Accounts:", categorizedInvestments.length);
 
   // Memoized financial totals
   const accountsTotal = useMemo(

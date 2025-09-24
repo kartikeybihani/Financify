@@ -82,34 +82,17 @@ export default async function handler(req, res) {
             available_balance: account.balances.available,
           }));
 
-          // Update each account's balance
-          const updatePromises = balanceUpdates.map(async (update) => {
-            const { error } = await supabase
-              .from("accounts")
-              .update({
-                current_balance: update.current_balance,
-                available_balance: update.available_balance,
-              })
-              .eq("account_id", update.account_id);
+          // Batch upsert balances to minimize DB round-trips
+          const { error: upsertError } = await supabase
+            .from("accounts")
+            .upsert(balanceUpdates, { onConflict: "account_id" });
 
-            if (error) {
-              console.error(
-                `Failed to update balance for account ${update.account_id}:`,
-                error
-              );
-              return {
-                account_id: update.account_id,
-                success: false,
-                error: error.message,
-              };
-            }
+          const successful = upsertError ? 0 : balanceUpdates.length;
+          const failed = upsertError ? balanceUpdates.length : 0;
 
-            return { account_id: update.account_id, success: true };
-          });
-
-          const balanceResults = await Promise.all(updatePromises);
-          const successful = balanceResults.filter((r) => r.success).length;
-          const failed = balanceResults.filter((r) => !r.success).length;
+          if (upsertError) {
+            console.error("Failed to batch update balances:", upsertError);
+          }
 
           console.log(
             `✅ Balance update complete: ${successful} successful, ${failed} failed`

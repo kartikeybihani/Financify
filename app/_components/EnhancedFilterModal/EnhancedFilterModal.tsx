@@ -1,12 +1,5 @@
 import React, { useState, useEffect } from "react";
-import {
-  Modal,
-  View,
-  Text,
-  TouchableOpacity,
-  ScrollView,
-  TextInput,
-} from "react-native";
+import { Modal, View, Text, TouchableOpacity, ScrollView } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 
@@ -123,35 +116,25 @@ const EnhancedFilterModal: React.FC<EnhancedFilterModalProps> = ({
                 </View>
               </View>
               <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-                <View style={styles.closeButtonContainer}>
-                  <Ionicons
-                    name="close"
-                    size={18}
-                    color="rgba(255,255,255,0.8)"
-                  />
-                </View>
+                <LinearGradient
+                  colors={
+                    [
+                      "rgba(255, 255, 255, 0.15)",
+                      "rgba(255, 255, 255, 0.05)",
+                    ] as const
+                  }
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={[
+                    styles.closeButtonContainer,
+                    { borderWidth: 1, borderColor: "rgba(255,255,255,0.2)" },
+                  ]}
+                >
+                  <Ionicons name="close" size={18} color="#fff" />
+                </LinearGradient>
               </TouchableOpacity>
             </View>
           </LinearGradient>
-
-          {/* Search Bar */}
-          <View style={styles.searchBarContainer}>
-            <View style={styles.searchBar}>
-              <Ionicons
-                name="search"
-                size={20}
-                color="rgba(255,255,255,0.6)"
-                style={styles.searchIcon}
-              />
-              <TextInput
-                style={styles.searchInput}
-                placeholder="Search..."
-                placeholderTextColor="rgba(255,255,255,0.4)"
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
-            </View>
-          </View>
 
           <ScrollView
             style={styles.content}
@@ -244,10 +227,20 @@ const EnhancedFilterModal: React.FC<EnhancedFilterModalProps> = ({
                 onPress={handleApplyFilters}
                 activeOpacity={0.7}
               >
-                <View style={styles.applyButtonContent}>
-                  <Ionicons name="checkmark" size={18} color="#fff" />
+                <LinearGradient
+                  colors={
+                    [
+                      "rgba(74, 144, 226, 0.15)",
+                      "rgba(74, 144, 226, 0.05)",
+                    ] as const
+                  }
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.resetButtonGradient}
+                >
+                  <Ionicons name="checkmark-circle" size={18} color="#fff" />
                   <Text style={styles.applyButtonText}>Apply Filters</Text>
-                </View>
+                </LinearGradient>
               </TouchableOpacity>
             </View>
           </View>

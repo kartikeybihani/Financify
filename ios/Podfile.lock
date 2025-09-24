@@ -6,7 +6,7 @@ PODS:
   - EXJSONUtils (0.15.0)
   - EXManifests (1.0.8):
     - ExpoModulesCore
-  - Expo (54.0.9):
+  - Expo (54.0.10):
     - ExpoModulesCore
     - hermes-engine
     - RCTRequired
@@ -210,13 +210,15 @@ PODS:
     - ExpoModulesCore
   - ExpoCrypto (15.0.7):
     - ExpoModulesCore
-  - ExpoFileSystem (19.0.14):
+  - ExpoFileSystem (19.0.15):
     - ExpoModulesCore
   - ExpoFont (14.0.8):
     - ExpoModulesCore
+  - ExpoGlassEffect (0.1.4):
+    - ExpoModulesCore
   - ExpoHaptics (15.0.7):
     - ExpoModulesCore
-  - ExpoHead (6.0.7):
+  - ExpoHead (6.0.8):
     - ExpoModulesCore
     - RNScreens
   - ExpoKeepAwake (15.0.7):
@@ -225,7 +227,7 @@ PODS:
     - ExpoModulesCore
   - ExpoLinking (8.0.8):
     - ExpoModulesCore
-  - ExpoModulesCore (3.0.17):
+  - ExpoModulesCore (3.0.18):
     - hermes-engine
     - RCTRequired
     - RCTTypeSafety
@@ -2306,6 +2308,7 @@ DEPENDENCIES:
   - ExpoCrypto (from `../node_modules/expo-crypto/ios`)
   - ExpoFileSystem (from `../node_modules/expo-file-system/ios`)
   - ExpoFont (from `../node_modules/expo-font/ios`)
+  - ExpoGlassEffect (from `../node_modules/expo-glass-effect/ios`)
   - ExpoHaptics (from `../node_modules/expo-haptics/ios`)
   - ExpoHead (from `../node_modules/expo-router/ios`)
   - ExpoKeepAwake (from `../node_modules/expo-keep-awake/ios`)
@@ -2432,6 +2435,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/expo-file-system/ios"
   ExpoFont:
     :path: "../node_modules/expo-font/ios"
+  ExpoGlassEffect:
+    :path: "../node_modules/expo-glass-effect/ios"
   ExpoHaptics:
     :path: "../node_modules/expo-haptics/ios"
   ExpoHead:
@@ -2617,7 +2622,7 @@ SPEC CHECKSUMS:
   EXConstants: 59d46d25b89f88cc38291a56dbce4d550758f72d
   EXJSONUtils: 1d3e4590438c3ee593684186007028a14b3686cd
   EXManifests: 7469efed75d694ce3c43a6da9c6f3886f66d3c26
-  Expo: dc1fc2172065c07a1577cb42db4a963ae35c3225
+  Expo: 3d042ea779f0053cce219e99a5d80ff5e87a986e
   expo-dev-client: b0363ce1f16a248d7c9b67ceaee2dbee058c1e05
   expo-dev-launcher: 903b23df8c217bfad6d3692fec0368074eb22dc0
   expo-dev-menu: e5b5cfce6ef9f4559d7c2f7cb928afb4810dfabf
@@ -2626,14 +2631,15 @@ SPEC CHECKSUMS:
   ExpoAsset: 3c3b7dd9b1318846a02ef05ce420e63d542aeb9f
   ExpoBlur: b5b7a26572b3c33a11f0b2aa2f95c17c4c393b76
   ExpoCrypto: 4c50a152f5939e16a2ca10be77b002a3a391c4d3
-  ExpoFileSystem: adffad7d1f57f768ca7a5e3bf450312fb9ebd27a
+  ExpoFileSystem: 72fef9c5cb92b9995eeee114a14acb66d94d5bd4
   ExpoFont: d3e56c7cc03d9fd113b90a5513ad32b4bf46b0ff
+  ExpoGlassEffect: 11f4ae0db0d49a6e96ecd81ef524ba3124a39fdc
   ExpoHaptics: b48d913e7e5f23816c6f130e525c9a6501b160b5
-  ExpoHead: 6738545755eccce6b4937ad2ced7e2ccd7994bd8
+  ExpoHead: 511ab91efdcf6b04fdfe76fc83931bb4c0956b09
   ExpoKeepAwake: 3f5e3ac53627849174f3603271df8e08f174ed4a
   ExpoLinearGradient: f9e7182e5253d53b2de4134b69d70bbfc2d50588
   ExpoLinking: f5c171877e118e792cb9a77e5ade0b080d899b14
-  ExpoModulesCore: 1a826269555ed0fc8b79c7ebfa67cb0e333d001c
+  ExpoModulesCore: f35e51bd73613b2d3556c5c7d13f2f42f58b1ea9
   ExpoSplashScreen: 9d2ff8fa08f2c00336a83f93bebffed3a8312519
   ExpoSymbols: ef7b8ac77ac2d496b1bc3f0f7daf5e19c3a9933a
   ExpoSystemUI: 5e7fbe4b716edb9e3a7bc0441e4a3b6b1f9eb1ea

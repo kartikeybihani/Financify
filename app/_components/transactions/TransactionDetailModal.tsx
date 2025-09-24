@@ -19,6 +19,7 @@ interface Transaction {
   id?: string;
   amount: number;
   category?: string;
+  top_category?: string;
   date: string;
   name: string;
   account_name?: string;
@@ -136,12 +137,14 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
 
   const amount = Math.abs(transaction.amount);
   const isIncome = transaction.amount < 0;
-  const amountColor = isIncome ? "#27AE60" : "#E74C3C";
+  // Use green for income, soft blue for expenses
+  const amountColor = isIncome ? "#27AE60" : "#4A90E2";
   const amountText = isIncome
     ? `+$${amount.toFixed(2)}`
     : `-$${amount.toFixed(2)}`;
 
-  const category = transaction.category || "Other";
+  // Prefer simplified top_category for consistency with list UI
+  const category = transaction.top_category || transaction.category || "Other";
   const categoryIcon = getCategoryIcon(category);
   const categoryColor = getCategoryColor(category);
   const accountGradient = getAccountGradient(transaction.account_name);

@@ -9,6 +9,7 @@ import {
 } from "react-native";
 import { BlurView } from "expo-blur";
 import { LinearGradient } from "expo-linear-gradient";
+import { GlassView } from "expo-glass-effect";
 
 type SectionKey = "cashflow" | "spending" | "transactions" | "recurring";
 
@@ -25,6 +26,11 @@ const labels: { key: SectionKey; label: string }[] = [
 ];
 
 export default function TopChips({ activeSection, onChange }: TopChipsProps) {
+  // Check if we should use iOS 26+ liquid glass effect
+  const isIOS = Platform.OS === "ios";
+  const iosVersion = isIOS ? parseInt(Platform.Version as string, 10) : 0;
+  const shouldUseLiquidGlass = isIOS && iosVersion >= 26;
+
   return (
     <View style={styles.container}>
       <ScrollView
@@ -40,17 +46,37 @@ export default function TopChips({ activeSection, onChange }: TopChipsProps) {
             style={styles.chipTouchable}
           >
             {activeSection === key ? (
-              <LinearGradient
-                colors={["#4A90E2", "#0F1218", "#7B8794"]}
-                locations={[0, 0.65, 1]}
-                start={{ x: 0.1, y: 0 }}
-                end={{ x: 0.95, y: 1 }}
-                style={[styles.glassChip, styles.gradientActive]}
+              shouldUseLiquidGlass ? (
+                <GlassView
+                  glassEffectStyle="regular"
+                  tintColor="rgba(74, 144, 226, 0.3)"
+                  style={styles.glassChip}
+                >
+                  <Text style={[styles.chipText, styles.chipTextActive]}>
+                    {label}
+                  </Text>
+                </GlassView>
+              ) : (
+                <LinearGradient
+                  colors={["#4A90E2", "#0F1218", "#7B8794"]}
+                  locations={[0, 0.65, 1]}
+                  start={{ x: 0.1, y: 0 }}
+                  end={{ x: 0.95, y: 1 }}
+                  style={[styles.glassChip, styles.gradientActive]}
+                >
+                  <Text style={[styles.chipText, styles.chipTextActive]}>
+                    {label}
+                  </Text>
+                </LinearGradient>
+              )
+            ) : shouldUseLiquidGlass ? (
+              <GlassView
+                glassEffectStyle="regular"
+                tintColor="rgba(255, 255, 255, 0.1)"
+                style={styles.glassChip}
               >
-                <Text style={[styles.chipText, styles.chipTextActive]}>
-                  {label}
-                </Text>
-              </LinearGradient>
+                <Text style={styles.chipText}>{label}</Text>
+              </GlassView>
             ) : Platform.OS === "ios" ? (
               <BlurView tint="dark" intensity={28} style={styles.glassChip}>
                 <Text style={styles.chipText}>{label}</Text>

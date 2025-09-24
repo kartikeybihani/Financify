@@ -224,7 +224,7 @@ export default function InsightsScreen() {
   const [filterOptions, setFilterOptions] = useState<FilterOptions>({
     accountIds: [],
     categoryIds: [],
-    timePeriod: "7days",
+    timePeriod: "30days",
   });
   const [filteredTransactions, setFilteredTransactions] = useState<
     Transaction[]

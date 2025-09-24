@@ -1,10 +1,11 @@
-import React from "react";
+import React, { useMemo, useState } from "react";
 import {
   View,
   Text,
   TouchableOpacity,
   FlatList,
   ActivityIndicator,
+  TextInput,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
@@ -49,11 +50,11 @@ interface Props {
 
 export default function TransactionsSection(props: Props) {
   const {
-    titleStyle,
-    sectionHeaderStyle,
-    headerButtonsContainerStyle,
-    refreshAccountsButtonStyle,
-    filterButtonStyle,
+    titleStyle: _titleStyle,
+    sectionHeaderStyle: _sectionHeaderStyle,
+    headerButtonsContainerStyle: _headerButtonsContainerStyle,
+    refreshAccountsButtonStyle: _refreshAccountsButtonStyle,
+    filterButtonStyle: _filterButtonStyle,
     filterButtonTextStyle,
     dropdownArrowStyle,
     transactionInfoContainerStyle,
@@ -64,7 +65,7 @@ export default function TransactionsSection(props: Props) {
     hasMoreTransactions,
     loadingMore,
     onPressLoadMore,
-    onPressRefreshAccounts,
+    onPressRefreshAccounts: _onPressRefreshAccounts,
     onPressOpenFilter,
     getFilterDescription,
     onPressTransaction,
@@ -72,51 +73,125 @@ export default function TransactionsSection(props: Props) {
     formatCategoryName,
   } = props;
 
+  const [searchQuery, setSearchQuery] = useState("");
+
+  const displayedTransactions = useMemo(() => {
+    if (!searchQuery.trim()) return filteredTransactions;
+    const q = searchQuery.trim().toLowerCase();
+    return filteredTransactions.filter((tx) => {
+      const name = (tx.name || "").toLowerCase();
+      const category = (tx.top_category || "").toLowerCase();
+      return name.includes(q) || category.includes(q);
+    });
+  }, [filteredTransactions, searchQuery]);
+
   return (
     <View>
-      <View style={sectionHeaderStyle}>
-        <Text style={titleStyle}>Transactions</Text>
-        <View style={headerButtonsContainerStyle}>
-          <TouchableOpacity
-            style={refreshAccountsButtonStyle}
-            onPress={onPressRefreshAccounts}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="reload" size={12} color="#4A90E2" />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={filterButtonStyle}
-            onPress={onPressOpenFilter}
-            activeOpacity={0.7}
-          >
+      {/* Filter Bar */}
+      <View style={{ paddingHorizontal: 4, marginBottom: 12 }}>
+        <TouchableOpacity
+          onPress={onPressOpenFilter}
+          activeOpacity={0.8}
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "space-between",
+            backgroundColor: "rgba(102, 126, 234, 0.08)",
+            borderRadius: 14,
+            paddingVertical: 10,
+            paddingHorizontal: 12,
+            borderWidth: 1,
+            borderColor: "rgba(102, 126, 234, 0.2)",
+            shadowColor: "#667eea",
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: 0.12,
+            shadowRadius: 4,
+          }}
+        >
+          <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
             <Ionicons
               name="funnel"
-              size={14}
+              size={16}
               color="#667eea"
-              style={{ marginRight: 6 }}
+              style={{ marginRight: 8 }}
             />
-            <Text style={filterButtonTextStyle}>{getFilterDescription()}</Text>
-            <Ionicons
-              name="chevron-down"
-              size={14}
-              color="#667eea"
-              style={dropdownArrowStyle}
-            />
-          </TouchableOpacity>
+            <Text
+              style={[filterButtonTextStyle, { flex: 1 }]}
+              numberOfLines={1}
+            >
+              {getFilterDescription()}
+            </Text>
+          </View>
+          <Ionicons
+            name="chevron-down"
+            size={16}
+            color="#667eea"
+            style={dropdownArrowStyle}
+          />
+        </TouchableOpacity>
+      </View>
+
+      {/* Search Bar */}
+      <View style={{ paddingHorizontal: 4, marginBottom: 12 }}>
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            backgroundColor: "rgba(255,255,255,0.08)",
+            borderRadius: 24,
+            paddingHorizontal: 14,
+            paddingVertical: 12,
+            borderWidth: 1,
+            borderColor: "rgba(255,255,255,0.12)",
+            shadowColor: "#000",
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: 0.08,
+            shadowRadius: 4,
+          }}
+        >
+          <Ionicons
+            name="search"
+            size={20}
+            color="rgba(255,255,255,0.6)"
+            style={{ marginRight: 8 }}
+          />
+          <TextInput
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholder="Search by name or category..."
+            placeholderTextColor="rgba(255,255,255,0.4)"
+            style={{ flex: 1, color: "#fff", fontSize: 15, paddingVertical: 2 }}
+            autoCapitalize="none"
+            autoCorrect={false}
+            returnKeyType="search"
+          />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity
+              onPress={() => setSearchQuery("")}
+              style={{
+                padding: 6,
+                borderRadius: 12,
+                backgroundColor: "rgba(255,255,255,0.06)",
+              }}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="close" size={14} color="rgba(255,255,255,0.7)" />
+            </TouchableOpacity>
+          )}
         </View>
       </View>
 
       {totalFilteredCount > 0 && (
         <View style={transactionInfoContainerStyle}>
           <Text style={transactionInfoTextStyle}>
-            Showing {filteredTransactions.length} of {totalFilteredCount}{" "}
+            Showing {displayedTransactions.length} of {totalFilteredCount}{" "}
             transactions
           </Text>
         </View>
       )}
 
       <FlatList
-        data={filteredTransactions}
+        data={displayedTransactions}
         scrollEnabled={false}
         keyExtractor={(item, index) =>
           `${item.plaid_transaction_id || item.id || index}`
@@ -124,7 +199,8 @@ export default function TransactionsSection(props: Props) {
         renderItem={({ item: tx }) => {
           const amount = Math.abs(tx.amount);
           const isIncome = tx.amount < 0;
-          const amountColor = isIncome ? "#4CAF50" : "#ff6b6b";
+          // Psychology: use soft blue for expenses instead of red
+          const amountColor = isIncome ? "#4CAF50" : "#4A90E2";
           const amountText = isIncome
             ? `+$${amount.toFixed(2)}`
             : `-$${amount.toFixed(2)}`;
@@ -136,28 +212,28 @@ export default function TransactionsSection(props: Props) {
                 justifyContent: "space-between",
                 borderBottomWidth: 1,
                 borderBottomColor: "#2a2a2a",
-                paddingVertical: 12,
-                paddingHorizontal: 4,
+                paddingVertical: 8,
+                paddingHorizontal: 2,
               }}
               onPress={() => onPressTransaction(tx)}
               activeOpacity={0.7}
             >
-              <View style={{ flex: 1, marginRight: 12 }}>
+              <View style={{ flex: 1, marginRight: 10 }}>
                 <Text
                   style={{
                     color: "#fff",
-                    fontSize: 15,
+                    fontSize: 14,
                     fontWeight: "500",
-                    marginBottom: 4,
+                    marginBottom: 2,
                   }}
                 >
                   {tx.name}
                 </Text>
-                <Text style={{ color: "#888", fontSize: 12, marginBottom: 2 }}>
+                <Text style={{ color: "#888", fontSize: 11, marginBottom: 1 }}>
                   {formatDate(tx.date)}
                 </Text>
                 <Text
-                  style={{ color: "#4A90E2", fontSize: 11, fontWeight: "500" }}
+                  style={{ color: "#4A90E2", fontSize: 10, fontWeight: "500" }}
                 >
                   {formatCategoryName(tx.top_category || "Other")}
                 </Text>
@@ -167,19 +243,20 @@ export default function TransactionsSection(props: Props) {
                   flexDirection: "row",
                   alignItems: "center",
                   justifyContent: "flex-end",
-                  gap: 8,
+                  gap: 6,
                 }}
               >
                 <Text
                   style={{
-                    fontSize: 16,
+                    fontSize: 14,
                     fontWeight: "600",
                     color: amountColor,
+                    opacity: isIncome ? 1 : 0.95,
                   }}
                 >
                   {amountText}
                 </Text>
-                <Ionicons name="chevron-forward" size={16} color="#666" />
+                <Ionicons name="chevron-forward" size={14} color="#666" />
               </View>
             </TouchableOpacity>
           );
