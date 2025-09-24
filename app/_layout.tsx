@@ -1,5 +1,6 @@
 // app/(root)/_layout.tsx
 
+import "react-native-reanimated";
 import React from "react";
 import { Stack, useRouter, useSegments } from "expo-router";
 
@@ -8,7 +9,6 @@ import { StatusBar } from "expo-status-bar";
 import { useFonts } from "expo-font";
 import { useEffect, useState } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import "react-native-reanimated";
 import AuthProvider, { useAuth } from "./_contexts/AuthContext";
 import { runStorageMigrationV2 } from "../src/utils/migrate";
 import logger from "./_utils/logger";

@@ -11,6 +11,7 @@ import {
   Image,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 import { BlurView } from "expo-blur";
 import * as WebBrowser from "expo-web-browser";
 import { useRouter } from "expo-router";
@@ -556,9 +557,17 @@ export default function InstitutionSelectionModal({
                   onPress={handleClose}
                   style={styles.closeButton}
                 >
-                  <View style={styles.closeButtonContainer}>
-                    <Ionicons name="close" size={20} color="#888" />
-                  </View>
+                  <LinearGradient
+                    colors={[
+                      "rgba(255, 255, 255, 0.15)",
+                      "rgba(255, 255, 255, 0.05)",
+                    ]}
+                    style={styles.closeButtonCircle}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                  >
+                    <Ionicons name="close" size={18} color="#fff" />
+                  </LinearGradient>
                 </TouchableOpacity>
               </View>
 
@@ -659,13 +668,14 @@ const styles = StyleSheet.create({
   closeButton: {
     padding: 4,
   },
-  closeButtonContainer: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: "rgba(255, 255, 255, 0.06)",
-    justifyContent: "center",
+  closeButtonCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.2)",
   },
   content: {
     flex: 1,

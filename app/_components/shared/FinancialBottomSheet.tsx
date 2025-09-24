@@ -16,8 +16,9 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons, AntDesign } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 import { BlurView } from "expo-blur";
-import { addNewBankAccount, fetchInitialData } from "../../_utils/plaid";
+import { addNewBankAccount } from "../../_utils/plaid";
 import InstitutionSelectionModal from "../modals/InstitutionSelectionModal";
 import logger from "../../_utils/logger";
 
@@ -306,22 +307,28 @@ export default function FinancialBottomSheet({
                   </View>
                 </View>
                 <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-                  <View
+                  <LinearGradient
+                    colors={[
+                      "rgba(255, 255, 255, 0.15)",
+                      "rgba(255, 255, 255, 0.05)",
+                    ]}
                     style={[
-                      styles.closeButtonContainer,
+                      styles.closeButtonCircle,
                       {
                         width: isSmallScreen ? 30 : 34,
                         height: isSmallScreen ? 30 : 34,
                         borderRadius: isSmallScreen ? 15 : 17,
                       },
                     ]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
                   >
                     <Ionicons
                       name="close"
                       size={responsiveDimensions.iconSize}
-                      color="#888"
+                      color="#fff"
                     />
-                  </View>
+                  </LinearGradient>
                 </TouchableOpacity>
               </View>
               <ScrollView
@@ -562,6 +569,12 @@ const styles = StyleSheet.create({
   },
   closeButton: {
     padding: 4,
+  },
+  closeButtonCircle: {
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.2)",
   },
   closeButtonContainer: {
     backgroundColor: "rgba(255, 255, 255, 0.06)",

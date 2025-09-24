@@ -11,7 +11,6 @@ import {
   Dimensions,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
-import { BlurView } from "expo-blur";
 
 // Enable LayoutAnimation for Android
 if (Platform.OS === "android") {
@@ -53,16 +52,90 @@ interface ChatMessageProps {
   };
   showSender?: boolean;
   onAction?: (action: string) => void;
+  // For grouping logic
+  prevSender?: "user" | "finny" | null;
+  nextSender?: "user" | "finny" | null;
+}
+
+const BASE_RADIUS = 18;
+const PILL_RADIUS = 22; // for one-liners
+const GROUP_RADIUS = 14; // middle of a group
+
+function getBubbleRadii({
+  sender,
+  isFirstInGroup,
+  isLastInGroup,
+  isSingleLine,
+}: {
+  sender: "user" | "finny";
+  isFirstInGroup: boolean;
+  isLastInGroup: boolean;
+  isSingleLine: boolean;
+}) {
+  const r = isSingleLine ? PILL_RADIUS : BASE_RADIUS;
+  const mid = GROUP_RADIUS;
+  const isUser = sender === "user";
+
+  if (isFirstInGroup && isLastInGroup) {
+    return {
+      borderTopLeftRadius: r,
+      borderTopRightRadius: r,
+      borderBottomLeftRadius: r,
+      borderBottomRightRadius: r,
+    } as const;
+  }
+
+  if (isFirstInGroup) {
+    return isUser
+      ? {
+          borderTopLeftRadius: r,
+          borderTopRightRadius: r,
+          borderBottomLeftRadius: r,
+          borderBottomRightRadius: mid,
+        }
+      : {
+          borderTopLeftRadius: r,
+          borderTopRightRadius: r,
+          borderBottomLeftRadius: mid,
+          borderBottomRightRadius: r,
+        };
+  }
+
+  if (isLastInGroup) {
+    return isUser
+      ? {
+          borderTopLeftRadius: r,
+          borderTopRightRadius: mid,
+          borderBottomLeftRadius: r,
+          borderBottomRightRadius: r,
+        }
+      : {
+          borderTopLeftRadius: r,
+          borderTopRightRadius: r,
+          borderBottomLeftRadius: r,
+          borderBottomRightRadius: mid,
+        };
+  }
+
+  return {
+    borderTopLeftRadius: mid,
+    borderTopRightRadius: mid,
+    borderBottomLeftRadius: mid,
+    borderBottomRightRadius: mid,
+  } as const;
 }
 
 export const ChatMessageComponent = ({
   message,
   showSender = true,
   onAction,
+  prevSender,
+  nextSender,
 }: ChatMessageProps) => {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.8)).current;
   const slideAnim = useRef(new Animated.Value(20)).current;
+  const [lineCount, setLineCount] = useState(1);
 
   useEffect(() => {
     // Smooth entrance animation
@@ -97,6 +170,22 @@ export const ChatMessageComponent = ({
   }, []);
 
   const isUser = message.sender === "user";
+  const isFirstInGroup = prevSender !== message.sender;
+  const isLastInGroup = nextSender !== message.sender;
+  const isSingleLine = lineCount <= 1;
+
+  const bubbleRadii = getBubbleRadii({
+    sender: message.sender,
+    isFirstInGroup,
+    isLastInGroup,
+    isSingleLine,
+  });
+
+  const onTextLayout = (e: any) => {
+    // e.nativeEvent.lines is available on RN Text layout events
+    const lines = (e?.nativeEvent?.lines as any[]) || [];
+    setLineCount(lines.length > 0 ? lines.length : 1);
+  };
 
   if (isUser) {
     return (
@@ -114,9 +203,12 @@ export const ChatMessageComponent = ({
           colors={["#2A3A4A", "#1A2A3A"]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
-          style={styles.userMessageBubble}
+          style={[styles.userMessageBubble, bubbleRadii]}
         >
-          <Text style={[styles.messageText, styles.userMessageText]}>
+          <Text
+            onTextLayout={onTextLayout}
+            style={[styles.messageText, styles.userMessageText]}
+          >
             {message.text}
           </Text>
         </LinearGradient>
@@ -156,9 +248,12 @@ export const ChatMessageComponent = ({
               colors={["#1A3A5A", "#2E5A8A", "#4A90E2"]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
-              style={styles.finnyMessageBubble}
+              style={[styles.finnyMessageBubble, bubbleRadii]}
             >
-              <Text style={[styles.messageText, styles.finnyMessageText]}>
+              <Text
+                onTextLayout={onTextLayout}
+                style={[styles.messageText, styles.finnyMessageText]}
+              >
                 {message.text}
               </Text>
             </LinearGradient>
@@ -319,13 +414,15 @@ export const ChatMessageComponent = ({
               colors={["#1A3A5A", "#2E5A8A", "#4A90E2"]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
-              style={styles.finnyMessageBubble}
+              style={[styles.finnyMessageBubble, bubbleRadii]}
             >
               <Text style={[styles.messageText, styles.finnyMessageText]}>
                 {messageText.split("\n").map((line, lineIdx) => (
                   <React.Fragment key={lineIdx}>
                     {lineIdx > 0 && <Text>{"\n"}</Text>}
-                    <Text>
+                    <Text
+                      onTextLayout={lineIdx === 0 ? onTextLayout : undefined}
+                    >
                       {line.split(/(\*\*[^*]+\*\*)/).map((chunk, idx) => {
                         if (chunk.startsWith("**") && chunk.endsWith("**")) {
                           return (

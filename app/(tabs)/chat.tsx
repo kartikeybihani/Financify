@@ -58,6 +58,8 @@ export default function ChatScreen() {
   const [isTyping, setIsTyping] = useState(false);
   const [showStartersModal, setShowStartersModal] = useState(false);
   const [dimensions, setDimensions] = useState(Dimensions.get("window"));
+  const atBottomRef = useRef(true);
+  const contentHeights = useRef({ content: 0, view: 0 });
 
   // Handle orientation changes
   useEffect(() => {
@@ -247,8 +249,12 @@ export default function ChatScreen() {
       const contentHeight = event.nativeEvent.contentSize.height;
       const scrollViewHeight = event.nativeEvent.layoutMeasurement.height;
 
-      // Show scroll button if user is not at the bottom
-      const isAtBottom = currentOffset >= contentHeight - scrollViewHeight - 50;
+      // keep latest measurements for precise bottom scrolls
+      contentHeights.current.content = contentHeight;
+      contentHeights.current.view = scrollViewHeight;
+
+      const isAtBottom = currentOffset >= contentHeight - scrollViewHeight - 1;
+      atBottomRef.current = isAtBottom;
       const shouldShow = !isAtBottom && contentHeight > scrollViewHeight;
 
       if (shouldShow !== showScrollButton) {
@@ -264,26 +270,57 @@ export default function ChatScreen() {
     [showScrollButton, scrollButtonAnimation]
   );
 
-  const scrollToBottom = useCallback(() => {
-    if (flatListRef.current && flatListData.length > 0) {
-      flatListRef.current.scrollToEnd({ animated: true });
+  const onContentSizeChange = useCallback((w: number, h: number) => {
+    contentHeights.current.content = h;
+    if (atBottomRef.current && flatListRef.current) {
+      // Only auto-scroll if user is already at bottom
+      requestAnimationFrame(() => {
+        (flatListRef.current as any)?.scrollToEnd({ animated: false });
+      });
     }
-  }, [flatListData.length]);
+  }, []);
 
-  // Auto-scroll to bottom when new messages arrive
-  useEffect(() => {
-    if (flatListData.length > 0) {
-      setTimeout(() => {
-        if (flatListRef.current) {
-          flatListRef.current.scrollToEnd({ animated: true });
-        }
-      }, 100);
-    }
-  }, [flatListData.length]);
+  const onLayout = useCallback((e: any) => {
+    const h = e.nativeEvent.layout.height;
+    contentHeights.current.view = h;
+  }, []);
+
+  const scrollToAbsoluteBottom = useCallback(() => {
+    const list = flatListRef.current as any;
+    if (!list) return;
+    const { content, view } = contentHeights.current;
+    const target = Math.max(0, content - view + 1);
+    requestAnimationFrame(() => {
+      try {
+        list.scrollToOffset({ animated: true, offset: target });
+      } catch {
+        try {
+          list.scrollToEnd({ animated: true });
+        } catch {}
+      }
+    });
+  }, []);
+
+  const scrollToBottom = useCallback(() => {
+    const list = flatListRef.current as any;
+    if (!list) return;
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        try {
+          list.scrollToEnd({ animated: true });
+        } catch {}
+        setTimeout(() => {
+          try {
+            list.scrollToEnd({ animated: true });
+          } catch {}
+        }, 0);
+      });
+    });
+  }, []);
 
   // FlatList render item function
   const renderItem: ListRenderItem<any> = useCallback(
-    ({ item }) => {
+    ({ item, index }) => {
       if (item.type === "nudges") {
         return <NudgeGrid onNudgePress={handleSend} />;
       }
@@ -293,14 +330,22 @@ export default function ChatScreen() {
       }
 
       if (item.type === "message") {
-        const { message, index } = item;
+        const { message } = item;
+        const prev =
+          index > 0 && (flatListData as any)[index - 1]?.type === "message"
+            ? (flatListData as any)[index - 1]?.message?.sender
+            : null;
+        const next =
+          index < flatListData.length - 1 &&
+          (flatListData as any)[index + 1]?.type === "message"
+            ? (flatListData as any)[index + 1]?.message?.sender
+            : null;
         return (
           <ChatMessageComponent
             message={message}
-            showSender={
-              message.sender === "finny" &&
-              (index === 0 || chatMessages[index - 1].sender !== "finny")
-            }
+            showSender={message.sender === "finny" && prev !== "finny"}
+            prevSender={prev as any}
+            nextSender={next as any}
             onAction={async (action) => {
               if (action === "confirm" || action === "cancel") {
                 await handleSend(action);
@@ -359,7 +404,7 @@ export default function ChatScreen() {
             onPress={clearChat}
             activeOpacity={0.7}
           >
-            <Ionicons name="trash-outline" size={16} color="#FF3B30" />
+            <Ionicons name="trash-outline" size={18} color="#FF3B30" />
           </TouchableOpacity>
         </View>
         <KeyboardAvoidingView
@@ -374,10 +419,27 @@ export default function ChatScreen() {
                 data={flatListData}
                 renderItem={renderItem}
                 keyExtractor={keyExtractor}
-                getItemLayout={getItemLayout}
                 style={styles.chatScroll}
+                onLayout={onLayout}
+                onContentSizeChange={onContentSizeChange}
                 onScroll={handleScroll}
                 scrollEventThrottle={16}
+                onScrollToIndexFailed={(info) => {
+                  // Wait for more items to render, then try again
+                  setTimeout(() => {
+                    try {
+                      (flatListRef.current as any)?.scrollToIndex({
+                        index: info.index,
+                        animated: true,
+                        viewPosition: 1,
+                      });
+                    } catch {
+                      (flatListRef.current as any)?.scrollToEnd({
+                        animated: true,
+                      });
+                    }
+                  }, 100);
+                }}
                 contentContainerStyle={{
                   paddingTop: responsivePadding(8),
                   paddingBottom:
@@ -385,14 +447,10 @@ export default function ChatScreen() {
                     responsiveHeight(8),
                 }}
                 removeClippedSubviews={true}
-                maxToRenderPerBatch={8}
-                windowSize={8}
-                initialNumToRender={15}
+                maxToRenderPerBatch={10}
+                windowSize={10}
+                initialNumToRender={20}
                 updateCellsBatchingPeriod={100}
-                maintainVisibleContentPosition={{
-                  minIndexForVisible: 0,
-                  autoscrollToTopThreshold: 10,
-                }}
                 // Additional performance optimizations
                 legacyImplementation={false}
                 disableVirtualization={false}
@@ -427,12 +485,12 @@ export default function ChatScreen() {
                   ]}
                 >
                   <TouchableOpacity
-                    onPress={scrollToBottom}
+                    onPress={scrollToAbsoluteBottom}
                     style={styles.scrollButtonTouchable}
                     activeOpacity={0.8}
                   >
                     <View style={styles.scrollButtonGradient}>
-                      <AntDesign name="arrow-down" size={20} color="#FFFFFF" />
+                      <AntDesign name="arrow-down" size={19} color="#FFFFFF" />
                     </View>
                   </TouchableOpacity>
                 </Animated.View>

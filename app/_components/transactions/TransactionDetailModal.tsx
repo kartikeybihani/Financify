@@ -99,33 +99,24 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
   const isSmallPhone = height < 700;
   const isTallPhone = height >= 840;
 
-  // Content needs roughly this much space when paddings are compacted
-  const MIN_CONTENT_PX = isSmallPhone ? 380 : 428;
-
   // Compute a tight but safe modal height
-  const { maxModalHeight, minModalHeight, compact } = useMemo(() => {
+  const { maxModalHeight, compact } = useMemo(() => {
     // Cap by safe area so we never collide with the notch or home indicator
     const safeCap =
       height - Math.max(insets.top, 8) - Math.max(insets.bottom, 8);
 
     // Base ratios by device class
-    let baseRatio = 0.64; // default
-    if (isSmallPhone) baseRatio = 0.56; // shorten more on small screens
-    if (isTallPhone) baseRatio = 0.7; // can show a bit more on tall phones
-    if (isLandscape) baseRatio = 0.8; // landscape has less vertical room
+    let baseRatio = 0.7; // default (slightly taller)
+    if (isSmallPhone) baseRatio = 0.6; // shorten less to gain height
+    if (isTallPhone) baseRatio = 0.78; // show more on tall phones
+    if (isLandscape) baseRatio = 0.86; // landscape still gets more height
 
     const maxH = Math.min(safeCap, height * baseRatio);
-
-    // Ensure minimum so content is not cut, but never exceed our max
-    const minH = Math.min(
-      Math.max(MIN_CONTENT_PX, height * (isSmallPhone ? 0.5 : 0.58)),
-      maxH
-    );
 
     // Use compact paddings if we are on small devices or landscape
     const useCompact = isSmallPhone || isLandscape;
 
-    return { maxModalHeight: maxH, minModalHeight: minH, compact: useCompact };
+    return { maxModalHeight: maxH, compact: useCompact };
   }, [
     height,
     insets.top,
@@ -134,6 +125,9 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
     isTallPhone,
     isLandscape,
   ]);
+
+  // Deterministic account card height
+  const accountCardHeight = isSmallPhone ? 45 : isTallPhone ? 85 : 65;
 
   const amount = Math.abs(transaction.amount);
   const isIncome = transaction.amount < 0;
@@ -170,8 +164,7 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
               styles.modalContainer,
               {
                 maxHeight: maxModalHeight,
-                minHeight: minModalHeight,
-                paddingBottom: Math.max(insets.bottom, compact ? 12 : 16),
+                paddingBottom: Math.max(insets.bottom, compact ? 8 : 12),
               },
             ]}
           >
@@ -232,9 +225,19 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
               </View>
 
               <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-                <View style={styles.closeButtonContainer}>
-                  <Ionicons name="close" size={18} color="#888" />
-                </View>
+                <LinearGradient
+                  colors={
+                    [
+                      "rgba(255, 255, 255, 0.15)",
+                      "rgba(255, 255, 255, 0.05)",
+                    ] as const
+                  }
+                  style={styles.closeButtonCircle}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                >
+                  <Ionicons name="close" size={18} color="#fff" />
+                </LinearGradient>
               </TouchableOpacity>
             </View>
 
@@ -247,10 +250,6 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
                   paddingHorizontal: compact ? 20 : 24,
                   paddingTop: compact ? 6 : 8,
                   paddingBottom: compact ? 24 : 32,
-                  minHeight: Math.max(
-                    0,
-                    (minModalHeight || 0) - (compact ? 100 : 120)
-                  ),
                 },
               ]}
               showsVerticalScrollIndicator={false}
@@ -370,12 +369,15 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
                       end={{ x: 1, y: 1 }}
                       style={[
                         styles.accountCardGradient,
-                        compact && { padding: 10, minHeight: 56 },
+                        { height: accountCardHeight },
+                        compact && { padding: 10 },
                       ]}
                     >
                       <View style={styles.accountCardOverlay} />
 
-                      <View style={styles.accountCardContent}>
+                      <View
+                        style={[styles.accountCardContent, { height: "100%" }]}
+                      >
                         <View
                           style={[
                             styles.accountCardHeader,
@@ -456,10 +458,10 @@ const styles = StyleSheet.create({
     width: "100%",
   },
   scrollContainer: {
-    flex: 1,
+    // Let content determine height; do not force flex expansion
   },
   scrollContent: {
-    flexGrow: 1,
+    // Removed flexGrow to let content drive height naturally
   },
   handleContainer: {
     alignItems: "center",
@@ -509,6 +511,15 @@ const styles = StyleSheet.create({
   },
   closeButton: {
     padding: 4,
+  },
+  closeButtonCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.2)",
   },
   closeButtonContainer: {
     width: 32,
@@ -602,7 +613,6 @@ const styles = StyleSheet.create({
   },
   accountCardGradient: {
     padding: 12,
-    minHeight: 60,
     position: "relative",
   },
   accountCardOverlay: {

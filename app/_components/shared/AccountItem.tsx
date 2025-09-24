@@ -129,12 +129,6 @@ export default function AccountItem({
             </View>
           </View>
 
-          {/* Enhanced visual effects */}
-          {/* <View style={styles.shineEffect} /> */}
-          {/* <View style={styles.glowEffect1} /> */}
-          {/* <View style={styles.glowEffect2} /> */}
-          {/* <View style={styles.holographicEffect} /> */}
-
           {/* Glass morphism border */}
           <View style={styles.glassBorder} />
         </LinearGradient>
@@ -253,17 +247,6 @@ const styles = StyleSheet.create({
     color: "rgba(255, 255, 255, 0.95)",
     fontFamily: Platform.OS === "ios" ? "System" : "sans-serif",
   },
-  shineEffect: {
-    position: "absolute",
-    top: -30,
-    left: -30,
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: "rgba(255, 255, 255, 0.08)",
-    transform: [{ rotate: "45deg" }],
-    opacity: 0.6,
-  },
   bankNameText: {
     position: "absolute",
     top: 18,
@@ -278,44 +261,13 @@ const styles = StyleSheet.create({
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 2,
   },
-  glowEffect1: {
-    position: "absolute",
-    top: 20,
-    right: 20,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "rgba(255, 255, 255, 0.04)",
-    opacity: 0.7,
-  },
-  glowEffect2: {
-    position: "absolute",
-    bottom: 20,
-    left: 20,
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: "rgba(255, 255, 255, 0.08)",
-    opacity: 0.6,
-  },
-  holographicEffect: {
-    position: "absolute",
-    top: -20,
-    right: -20,
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    backgroundColor: "rgba(255, 255, 255, 0.03)",
-    transform: [{ rotate: "45deg" }],
-    opacity: 0.8,
-  },
   glassBorder: {
     position: "absolute",
     top: 0,
     left: 0,
     right: 0,
     bottom: 0,
-    borderRadius: 16,
+    borderRadius: 8,
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.2)",
     backgroundColor: "transparent",

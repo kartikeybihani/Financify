@@ -2,7 +2,11 @@ import React from "react";
 import { Platform } from "react-native";
 import { Tabs } from "expo-router";
 import { NativeTabs, Label, Icon } from "expo-router/unstable-native-tabs";
-import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import {
+  Ionicons,
+  MaterialCommunityIcons,
+  FontAwesome,
+} from "@expo/vector-icons";
 
 export default function TabLayout() {
   // Check if we should use NativeTabs (iOS 26+ only)
@@ -25,8 +29,8 @@ export default function TabLayout() {
     {
       name: "chat",
       label: "Finny",
-      icon: "chatbubble-outline",
-      iconCategory: "Ionicons",
+      icon: "fire",
+      iconCategory: "FontAwesome",
     },
     {
       name: "goals",
@@ -51,7 +55,7 @@ export default function TabLayout() {
         </NativeTabs.Trigger>
         <NativeTabs.Trigger name="chat">
           <Label>Finny</Label>
-          <Icon sf={{ default: "bubble.left", selected: "bubble.left.fill" }} />
+          <Icon sf={{ default: "flame", selected: "flame.fill" }} />
         </NativeTabs.Trigger>
         <NativeTabs.Trigger name="goals">
           <Label>Goals</Label>
@@ -85,7 +89,9 @@ export default function TabLayout() {
               const IconComponent =
                 tab.iconCategory === "Ionicons"
                   ? Ionicons
-                  : MaterialCommunityIcons;
+                  : tab.iconCategory === "MaterialCommunityIcons"
+                  ? MaterialCommunityIcons
+                  : FontAwesome;
               return (
                 <IconComponent
                   name={tab.icon as any}
