@@ -14,10 +14,12 @@ import {
   Animated,
   Alert,
   KeyboardAvoidingView,
+  Keyboard,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import DateTimePicker from "@react-native-community/datetimepicker";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Goal } from "../../_types/finny";
 import logger from "../../_utils/logger";
 import {
@@ -53,10 +55,15 @@ const GoalDetailModal = ({
   const [localProgressAmount, setLocalProgressAmount] = useState<number>(0);
   const [showNoteField, setShowNoteField] = useState(false);
   const [isInputFocused, setIsInputFocused] = useState(false);
+  const [isProgressFocused, setIsProgressFocused] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [progressSectionY, setProgressSectionY] = useState(0);
+  const scrollViewRef = useRef<ScrollView | null>(null);
 
   // Animation refs
   const noteAnimation = useRef(new Animated.Value(0)).current;
   const noteHeightAnimation = useRef(new Animated.Value(0)).current;
+  const insets = useSafeAreaInsets();
 
   React.useEffect(() => {
     if (goal) {
@@ -108,6 +115,38 @@ const GoalDetailModal = ({
       ]).start();
     }
   }, [showNoteField]);
+
+  // Keyboard listeners to smoothly adjust padding and scroll target into view
+  useEffect(() => {
+    const onShow = (e: any) => {
+      const height = e?.endCoordinates?.height ?? 0;
+      setKeyboardHeight(height);
+
+      if (isProgressFocused && scrollViewRef.current) {
+        requestAnimationFrame(() => {
+          scrollViewRef.current?.scrollTo({
+            y: Math.max(0, progressSectionY - 60),
+            animated: true,
+          });
+        });
+      }
+    };
+    const onHide = () => setKeyboardHeight(0);
+
+    const showSub =
+      Platform.OS === "ios"
+        ? Keyboard.addListener("keyboardWillShow", onShow)
+        : Keyboard.addListener("keyboardDidShow", onShow);
+    const hideSub =
+      Platform.OS === "ios"
+        ? Keyboard.addListener("keyboardWillHide", onHide)
+        : Keyboard.addListener("keyboardDidHide", onHide);
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, [isProgressFocused, progressSectionY]);
 
   // Check if progress has been changed
   const hasProgressChanged =
@@ -273,7 +312,16 @@ const GoalDetailModal = ({
 
               <ScrollView
                 showsVerticalScrollIndicator={false}
-                contentContainerStyle={styles.scrollContent}
+                ref={scrollViewRef}
+                contentContainerStyle={[
+                  styles.scrollContent,
+                  {
+                    paddingBottom:
+                      Math.max(20, SCREEN_HEIGHT * 0.025) + keyboardHeight,
+                  },
+                ]}
+                keyboardShouldPersistTaps="handled"
+                keyboardDismissMode="interactive"
               >
                 {!isEditing && (
                   <>
@@ -363,8 +411,49 @@ const GoalDetailModal = ({
                       behavior={Platform.OS === "ios" ? "padding" : "height"}
                       style={styles.keyboardAvoidingView}
                       enabled={isInputFocused}
+                      keyboardVerticalOffset={Math.max(0, insets.top) + 56}
                     >
-                      {renderProgressSection()}
+                      <View
+                        onLayout={(e) =>
+                          setProgressSectionY(e.nativeEvent.layout.y)
+                        }
+                      >
+                        <View style={styles.progressSection}>
+                          <View style={styles.progressHeader}>
+                            <Text style={styles.progressTitle}>
+                              Current Progress
+                            </Text>
+                            <Text style={styles.progressAmount}>
+                              of ${(goal.target_amount || 0).toLocaleString()}
+                            </Text>
+                          </View>
+                          <View style={styles.progressInputContainer}>
+                            <Text style={styles.currencySymbol}>$</Text>
+                            <TextInput
+                              style={styles.progressInput}
+                              value={String(localProgressAmount)}
+                              onChangeText={(text) => {
+                                const newAmount = Math.max(
+                                  0,
+                                  parseFloat(text) || 0
+                                );
+                                setLocalProgressAmount(newAmount);
+                              }}
+                              onFocus={() => {
+                                setIsInputFocused(true);
+                                setIsProgressFocused(true);
+                              }}
+                              onBlur={() => {
+                                setIsInputFocused(false);
+                                setIsProgressFocused(false);
+                              }}
+                              keyboardType="numeric"
+                              placeholder="0"
+                              placeholderTextColor="#666"
+                            />
+                          </View>
+                        </View>
+                      </View>
                     </KeyboardAvoidingView>
                   </>
                 )}
@@ -374,6 +463,7 @@ const GoalDetailModal = ({
                     behavior={Platform.OS === "ios" ? "padding" : "height"}
                     style={styles.keyboardAvoidingView}
                     enabled={isInputFocused}
+                    keyboardVerticalOffset={Math.max(0, insets.top) + 56}
                   >
                     <View style={styles.editSection}>
                       <View style={styles.editNameRow}>

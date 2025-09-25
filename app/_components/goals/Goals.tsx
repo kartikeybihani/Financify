@@ -212,13 +212,27 @@ const Goals: React.FC<GoalsProps> = ({
 
   const handleSaveGoal = async (goalInput: GoalInput) => {
     try {
+      // Optimistically add a local goal card for smooth UX
+      const tempId = generateId();
+      const optimisticGoal: Goal = {
+        id: tempId as any,
+        user_id: undefined as any,
+        label: goalInput.label,
+        description: null as any,
+        note: goalInput.note || undefined,
+        target_amount: goalInput.target_amount,
+        current_amount: goalInput.current_amount || 0,
+        target_date: goalInput.target_date,
+        category: goalInput.category,
+        status: "active" as any,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      setLocalGoalsData((prev) => [optimisticGoal, ...prev]);
+
+      // Persist in background; server refresh will reconcile and replace temp
       await addManualGoal(goalInput);
-      // Force refresh to ensure UI updates
       await refreshGoals();
-      // Notify parent component to refresh its data
-      if (onGoalAdded) {
-        await onGoalAdded();
-      }
 
       // Trigger celebration animation
       Animated.sequence([
@@ -258,7 +272,11 @@ const Goals: React.FC<GoalsProps> = ({
 
   const handleDeleteGoal = async (goalToDelete: Goal) => {
     try {
+      // Optimistic removal
+      setLocalGoalsData((prev) => prev.filter((g) => g.id !== goalToDelete.id));
       await deleteGoal(goalToDelete.id);
+      // Sync with server to ensure consistency and cache update
+      await refreshGoals();
       setState((prev: GoalsState) => ({
         ...prev,
         notification: {
@@ -268,6 +286,8 @@ const Goals: React.FC<GoalsProps> = ({
       }));
     } catch (error) {
       logger.error("Error deleting goal:", error);
+      // Revert by refreshing full list
+      await refreshGoals();
       setState((prev: GoalsState) => ({
         ...prev,
         notification: {
@@ -290,16 +310,31 @@ const Goals: React.FC<GoalsProps> = ({
 
   const handleEditGoal = async (id: string, updates: Partial<Goal>) => {
     try {
+      // Optimistically update local list and selected goal
+      const existing = localGoalsData.find((g) => g.id === id);
+      if (existing) {
+        const optimisticGoal: Goal = {
+          ...existing,
+          ...updates,
+          updated_at: new Date().toISOString(),
+        } as Goal;
+        setLocalGoalsData((prev) =>
+          prev.map((g) => (g.id === id ? optimisticGoal : g))
+        );
+        setSelectedGoal(optimisticGoal);
+      }
+
       if (updateGoal) {
         await updateGoal(id, updates);
-        setState((prev: GoalsState) => ({
-          ...prev,
-          notification: {
-            visible: true,
-            message: "Goal updated successfully",
-          },
-        }));
       }
+
+      setState((prev: GoalsState) => ({
+        ...prev,
+        notification: {
+          visible: true,
+          message: "Goal updated successfully",
+        },
+      }));
     } catch (error) {
       logger.error("Error updating goal:", error);
       setState((prev: GoalsState) => ({
@@ -411,11 +446,7 @@ const Goals: React.FC<GoalsProps> = ({
         )}
       </ScrollView>
 
-      {state.refreshing && (
-        <View style={styles.loadingOverlay}>
-          <ActivityIndicator size="large" color="#4A90E2" />
-        </View>
-      )}
+      {/* Remove overlay loader; rely solely on RefreshControl spinner to avoid duplication */}
 
       {sortedGoalsData.length !== 0 && (
         <TouchableOpacity

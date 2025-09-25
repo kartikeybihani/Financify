@@ -63,7 +63,7 @@ export default function GoalsScreen() {
   const { goalsData, loading, deleteGoal, updateGoal, refreshGoals } = useGoals(
     () => {}
   );
-  const [isRefreshing, setIsRefreshing] = useState(false);
+  // Use only initial-load header spinner; pull-to-refresh spinner is handled inside Goals via RefreshControl
   const [hasInitialData, setHasInitialData] = useState(false);
   const goalsAnimations = React.useRef<Animated.Value[]>(
     Array(10)
@@ -98,7 +98,7 @@ export default function GoalsScreen() {
           <Text style={styles.headerTitle}>Goals</Text>
         </View>
       </View>
-      {(isRefreshing || (loading && !hasInitialData)) && (
+      {loading && !hasInitialData && (
         <View style={styles.loadingContainer}>
           <ActivityIndicator color="#4A90E2" />
         </View>
@@ -109,9 +109,7 @@ export default function GoalsScreen() {
           goalsAnimations={goalsAnimations}
           deleteGoal={deleteGoal}
           updateGoal={updateGoal}
-          onRefreshStart={() => setIsRefreshing(true)}
-          onRefreshEnd={() => setIsRefreshing(false)}
-          onGoalAdded={refreshGoals}
+          // Refresh control manages its own spinner; avoid duplicating header loader
         />
       </View>
     </SafeAreaView>

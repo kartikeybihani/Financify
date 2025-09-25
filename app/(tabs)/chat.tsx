@@ -404,7 +404,7 @@ export default function ChatScreen() {
             onPress={clearChat}
             activeOpacity={0.7}
           >
-            <Ionicons name="trash-outline" size={18} color="#FF3B30" />
+            <Ionicons name="trash-outline" size={20} color="#FF3B30" />
           </TouchableOpacity>
         </View>
         <KeyboardAvoidingView
