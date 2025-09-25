@@ -14,7 +14,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import logger from "../../_utils/logger";
+// logger removed as we no longer use it in this modal
 
 interface Transaction {
   id?: string;
@@ -83,6 +83,114 @@ const getAccountGradient = (accountName?: string) => {
   return ["#374151", "#1f2937"] as const;
 };
 
+// Emoji and background helpers aligned with CategorySelector
+const getCategoryEmojiForName = (categoryName: string): string => {
+  const name = categoryName || "";
+  const lc = name.toLowerCase();
+  if (
+    lc.includes("food") ||
+    lc.includes("drink") ||
+    lc.includes("restaurant") ||
+    lc.includes("dining")
+  )
+    return "🍔";
+  if (
+    lc.includes("shop") ||
+    lc.includes("retail") ||
+    lc.includes("store") ||
+    lc.includes("merchand")
+  )
+    return "🛒";
+  if (lc.includes("transport") || lc.includes("car") || lc.includes("gas"))
+    return "🚗";
+  if (
+    lc.includes("entertainment") ||
+    lc.includes("recreation") ||
+    lc.includes("movie") ||
+    lc.includes("game")
+  )
+    return "🎬";
+  if (lc.includes("travel") || lc.includes("hotel") || lc.includes("flight"))
+    return "✈️";
+  if (lc.includes("health") || lc.includes("medical") || lc.includes("care"))
+    return "🏋️";
+  if (lc.includes("home") || lc.includes("improvement") || lc.includes("rent"))
+    return "🏠";
+  if (
+    lc.includes("payment") ||
+    lc.includes("transfer") ||
+    lc.includes("loan") ||
+    lc.includes("card")
+  )
+    return "💳";
+  if (
+    lc.includes("service") ||
+    lc.includes("professional") ||
+    lc.includes("business")
+  )
+    return "💼";
+  if (
+    lc.includes("income") ||
+    lc.includes("deposit") ||
+    lc.includes("salary") ||
+    lc.includes("payroll")
+  )
+    return "📈";
+  return "📊";
+};
+
+const getCategoryBackgroundColorForName = (categoryName: string): string => {
+  const map: { [key: string]: string } = {
+    Payment: "#e8f5e8",
+    Transfer: "#e8f5e8",
+    Deposit: "#e8f4fd",
+    Income: "#e8f4fd",
+    "Food and Drink": "#fff3e0",
+    Shops: "#f3e5f5",
+    Recreation: "#ffebee",
+    Transportation: "#e0f2f1",
+    Travel: "#e1f5fe",
+    Healthcare: "#f9fbe7",
+    Service: "#fce4ec",
+    Community: "#e8f5e8",
+    "Government and Non-Profit": "#e3f2fd",
+    Other: "#f5f5f5",
+  };
+
+  if (map[categoryName]) return map[categoryName];
+  const name = categoryName.toLowerCase();
+  if (
+    name.includes("food") ||
+    name.includes("restaurant") ||
+    name.includes("dining")
+  )
+    return "#fff3e0";
+  if (
+    name.includes("shop") ||
+    name.includes("retail") ||
+    name.includes("store")
+  )
+    return "#f3e5f5";
+  if (
+    name.includes("transport") ||
+    name.includes("car") ||
+    name.includes("gas")
+  )
+    return "#e0f2f1";
+  if (name.includes("health") || name.includes("medical")) return "#f9fbe7";
+  if (name.includes("travel") || name.includes("hotel")) return "#e1f5fe";
+  if (name.includes("entertainment") || name.includes("recreation"))
+    return "#ffebee";
+  if (name.includes("payment") || name.includes("transfer")) return "#e8f5e8";
+  if (
+    name.includes("income") ||
+    name.includes("deposit") ||
+    name.includes("salary")
+  )
+    return "#e8f4fd";
+  return "#f8f9fa";
+};
+
 const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
   visible,
   onClose,
@@ -142,6 +250,8 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
   const category = transaction.top_category || transaction.category || "Other";
   const categoryIcon = getCategoryIcon(category);
   const categoryColor = getCategoryColor(category);
+  const categoryEmoji = getCategoryEmojiForName(category);
+  const categoryBg = getCategoryBackgroundColorForName(category);
   const accountGradient = getAccountGradient(transaction.account_name);
 
   return (
@@ -179,67 +289,11 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
               <View style={styles.handle} />
             </View>
 
-            {/* Header */}
+            {/* Top label and close button */}
             <View
-              style={[
-                styles.header,
-                {
-                  paddingHorizontal: compact ? 20 : 24,
-                  paddingBottom: compact ? 10 : 14,
-                },
-              ]}
+              style={[styles.topBar, { paddingHorizontal: compact ? 20 : 24 }]}
             >
-              <View style={styles.headerLeft}>
-                <LinearGradient
-                  colors={[categoryColor + "20", categoryColor + "10"] as const}
-                  style={[
-                    styles.categoryIconContainer,
-                    {
-                      borderColor: categoryColor + "30",
-                      width: compact ? 28 : 32,
-                      height: compact ? 28 : 32,
-                      borderRadius: compact ? 14 : 16,
-                      marginRight: compact ? 8 : 10,
-                    },
-                  ]}
-                >
-                  <Ionicons
-                    name={categoryIcon}
-                    size={compact ? 14 : 16}
-                    color={categoryColor}
-                  />
-                </LinearGradient>
-                <View>
-                  <Text
-                    style={[styles.modalTitle, compact && { fontSize: 14 }]}
-                    numberOfLines={1}
-                  >
-                    Transaction Details
-                  </Text>
-                  <Text
-                    style={[styles.modalSubtitle, compact && { fontSize: 11 }]}
-                    numberOfLines={1}
-                  >
-                    {formatCategoryName(category)}
-                  </Text>
-                </View>
-              </View>
-
-              <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-                <LinearGradient
-                  colors={
-                    [
-                      "rgba(255, 255, 255, 0.15)",
-                      "rgba(255, 255, 255, 0.05)",
-                    ] as const
-                  }
-                  style={styles.closeButtonCircle}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                >
-                  <Ionicons name="close" size={18} color="#fff" />
-                </LinearGradient>
-              </TouchableOpacity>
+              <Text style={styles.topLabel}>Transaction</Text>
             </View>
 
             {/* Scrollable Content */}
@@ -257,88 +311,58 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
               bounces
               scrollEnabled
             >
-              {/* Amount Section */}
-              <View
-                style={[
-                  styles.amountSection,
-                  compact && { marginBottom: 16, paddingVertical: 10 },
-                ]}
-              >
+              {/* Centered Core Details */}
+              <View style={styles.coreDetailsContainer}>
                 <Text
                   style={[
-                    styles.amountLabel,
-                    compact && { fontSize: 10, marginBottom: 4 },
+                    styles.transactionNameCentered,
+                    compact && { fontSize: 20 },
                   ]}
+                  numberOfLines={2}
                 >
-                  {isIncome ? "Amount Received" : "Amount Spent"}
+                  {transaction.name}
                 </Text>
                 <Text
                   style={[
-                    styles.amountValue,
+                    styles.amountValueCentered,
                     { color: amountColor },
-                    compact && { fontSize: 22 },
+                    compact && { fontSize: 20 },
                   ]}
                 >
                   {amountText}
                 </Text>
-              </View>
-
-              {/* Transaction Details */}
-              <View
-                style={[styles.detailsSection, compact && { marginBottom: 16 }]}
-              >
-                <View
+                <Text
                   style={[
-                    styles.transactionNameContainer,
-                    compact && { marginBottom: 12, paddingBottom: 12 },
+                    styles.transactionDateCentered,
+                    compact && { fontSize: 13 },
                   ]}
                 >
-                  <Text
+                  {formatDate(transaction.date)}
+                </Text>
+                <View style={styles.categoryContainerCentered}>
+                  <View
                     style={[
-                      styles.transactionName,
-                      compact && { fontSize: 17 },
-                    ]}
-                    numberOfLines={2}
-                  >
-                    {transaction.name}
-                  </Text>
-                  <Text
-                    style={[
-                      styles.transactionDate,
-                      compact && { fontSize: 13 },
-                    ]}
-                  >
-                    {formatDate(transaction.date)}
-                  </Text>
-                </View>
-
-                {/* Category Badge */}
-                <View style={styles.categoryContainer}>
-                  <TouchableOpacity
-                    style={[
-                      styles.categoryBadge,
-                      { backgroundColor: categoryColor + "20" },
+                      styles.categoryPill,
+                      {
+                        backgroundColor: categoryBg,
+                        borderColor: categoryColor + "40",
+                      },
                       compact && { paddingHorizontal: 10, paddingVertical: 6 },
                     ]}
-                    activeOpacity={0.7}
-                    onPress={() => logger.info("Category pressed:", category)}
                   >
-                    <Ionicons
-                      name={categoryIcon}
-                      size={compact ? 13 : 14}
-                      color={categoryColor}
-                      style={styles.categoryIcon}
-                    />
+                    <Text style={styles.categoryEmojiText}>
+                      {categoryEmoji}
+                    </Text>
                     <Text
                       style={[
-                        styles.categoryText,
+                        styles.categoryPillText,
                         { color: categoryColor },
                         compact && { fontSize: 12 },
                       ]}
                     >
                       {formatCategoryName(category)}
                     </Text>
-                  </TouchableOpacity>
+                  </View>
                 </View>
               </View>
 
@@ -361,7 +385,7 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
                   <View
                     style={[
                       styles.accountCard,
-                      compact && { borderRadius: 10 },
+                      compact && { borderRadius: 12 },
                     ]}
                   >
                     <LinearGradient
@@ -474,84 +498,51 @@ const styles = StyleSheet.create({
     borderRadius: 2,
     backgroundColor: "rgba(255, 255, 255, 0.3)",
   },
-  header: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingHorizontal: 24,
-    paddingBottom: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: "rgba(255, 255, 255, 0.08)",
-  },
-  headerLeft: {
+  topBar: {
     flexDirection: "row",
     alignItems: "center",
-    flex: 1,
-    minWidth: 0,
+    justifyContent: "center",
+    paddingBottom: 10,
   },
-  categoryIconContainer: {
+  topSpacer: {
     width: 32,
     height: 32,
-    borderRadius: 16,
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: 10,
-    borderWidth: 1,
   },
-  modalTitle: {
-    fontSize: 15,
-    fontWeight: "500",
-    color: "rgba(255, 255, 255, 0.7)",
-    letterSpacing: 0.2,
-    marginBottom: 2,
-  },
-  modalSubtitle: {
-    fontSize: 12,
-    color: "rgba(255, 255, 255, 0.5)",
-    letterSpacing: 0.1,
-  },
-  closeButton: {
-    padding: 4,
-  },
-  closeButtonCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.2)",
-  },
-  closeButtonContainer: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: "rgba(255, 255, 255, 0.06)",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  amountSection: {
-    alignItems: "center",
-    marginBottom: 20,
-    paddingVertical: 12,
-    backgroundColor: "rgba(255, 255, 255, 0.03)",
-    borderRadius: 12,
-  },
-  amountLabel: {
+  topLabel: {
     fontSize: 11,
-    color: "rgba(255, 255, 255, 0.5)",
-    marginBottom: 6,
+    color: "rgba(255, 255, 255, 0.6)",
     textTransform: "uppercase",
     letterSpacing: 0.8,
-    fontWeight: "400",
+    fontWeight: "700",
+    textAlign: "center",
   },
-  amountValue: {
-    fontSize: 24,
-    fontWeight: "600",
-    letterSpacing: 0.3,
-  },
-  detailsSection: {
+  coreDetailsContainer: {
+    alignItems: "center",
     marginBottom: 20,
+  },
+  transactionNameCentered: {
+    fontSize: 20,
+    color: "#ffffff",
+    fontWeight: "700",
+    textAlign: "center",
+    marginBottom: 8,
+    letterSpacing: 0.2,
+  },
+  amountValueCentered: {
+    fontSize: 28,
+    fontWeight: "700",
+    letterSpacing: 0.3,
+    marginBottom: 8,
+  },
+  transactionDateCentered: {
+    fontSize: 14,
+    color: "rgba(255, 255, 255, 0.7)",
+    fontWeight: "500",
+    marginBottom: 10,
+  },
+  categoryContainerCentered: {
+    alignItems: "center",
+    marginBottom: 18,
   },
   transactionNameContainer: {
     marginBottom: 16,
@@ -584,16 +575,33 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.1)",
   },
+  categoryPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 24,
+    borderWidth: 1,
+  },
   categoryIcon: {
     marginRight: 6,
+  },
+  categoryEmojiText: {
+    fontSize: 14,
+    marginRight: 8,
   },
   categoryText: {
     fontSize: 13,
     fontWeight: "600",
     letterSpacing: 0.3,
   },
+  categoryPillText: {
+    fontSize: 13,
+    fontWeight: "700",
+    letterSpacing: 0.2,
+  },
   accountSection: {
-    marginBottom: 4,
+    marginBottom: 2,
   },
   accountSectionLabel: {
     fontSize: 11,
