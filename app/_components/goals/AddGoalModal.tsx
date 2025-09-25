@@ -1,4 +1,5 @@
-import React, { useState, useRef, useEffect } from "react";
+import * as React from "react";
+import { useState, useRef, useEffect } from "react";
 import {
   View,
   Text,
@@ -12,15 +13,18 @@ import {
   Dimensions,
   KeyboardAvoidingView,
   Platform,
+  Keyboard,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { AddGoalModalProps, GoalInput } from "../../_types/addGoalModalTypes";
 import { LinearGradient } from "expo-linear-gradient";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   getCategoryOptions,
   GoalCategory,
 } from "../../../src/utils/goalCategories";
+import CategoryPickerModal from "../shared/CategoryPickerModal";
 
 const initialGoalState: Omit<GoalInput, "target_date" | "category"> = {
   label: "",
@@ -49,6 +53,9 @@ export default function AddGoalModal({
   const [showNoteField, setShowNoteField] = useState(false);
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
   const [isReady, setIsReady] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+
+  const insets = useSafeAreaInsets();
 
   const categoryOptions = getCategoryOptions();
 
@@ -83,8 +90,32 @@ export default function AddGoalModal({
       // Reset note animations
       noteAnimation.setValue(0);
       noteHeightAnimation.setValue(0);
+      setKeyboardHeight(0);
     }
   }, [visible]);
+
+  // Keyboard handling to avoid inputs being covered
+  useEffect(() => {
+    const onShow = (e: any) => {
+      const height = e?.endCoordinates?.height ?? 0;
+      setKeyboardHeight(height);
+    };
+    const onHide = () => setKeyboardHeight(0);
+
+    const showSub =
+      Platform.OS === "ios"
+        ? Keyboard.addListener("keyboardWillShow", onShow)
+        : Keyboard.addListener("keyboardDidShow", onShow);
+    const hideSub =
+      Platform.OS === "ios"
+        ? Keyboard.addListener("keyboardWillHide", onHide)
+        : Keyboard.addListener("keyboardDidHide", onHide);
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   // Animate note field when showNoteField changes
   useEffect(() => {
@@ -175,7 +206,9 @@ export default function AddGoalModal({
           <KeyboardAvoidingView
             behavior={Platform.OS === "ios" ? "padding" : "height"}
             style={styles.keyboardAvoidingView}
-            keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
+            keyboardVerticalOffset={
+              Platform.OS === "ios" ? Math.max(0, insets.top) + 12 : 20
+            }
           >
             <TouchableWithoutFeedback onPress={(e) => e.stopPropagation()}>
               <Animated.View
@@ -222,9 +255,13 @@ export default function AddGoalModal({
 
                   <ScrollView
                     showsVerticalScrollIndicator={false}
-                    contentContainerStyle={styles.scrollContent}
+                    contentContainerStyle={[
+                      styles.scrollContent,
+                      { paddingBottom: 20 + keyboardHeight },
+                    ]}
                     keyboardShouldPersistTaps="handled"
                     keyboardDismissMode="interactive"
+                    automaticallyAdjustKeyboardInsets={true}
                   >
                     <View style={[styles.formSection, styles.coreField]}>
                       <Text style={[styles.label, styles.coreLabel]}>
@@ -625,90 +662,12 @@ export default function AddGoalModal({
                   )}
 
                   {showCategoryPicker && (
-                    <Modal
+                    <CategoryPickerModal
                       visible={showCategoryPicker}
-                      transparent
-                      animationType="slide"
-                      onRequestClose={() => setShowCategoryPicker(false)}
-                    >
-                      <TouchableWithoutFeedback
-                        onPress={() => setShowCategoryPicker(false)}
-                      >
-                        <View style={styles.categoryModalOverlay}>
-                          <TouchableWithoutFeedback
-                            onPress={(e) => e.stopPropagation()}
-                          >
-                            <View style={styles.categoryModalContent}>
-                              <ScrollView
-                                style={styles.categoryList}
-                                showsVerticalScrollIndicator={false}
-                              >
-                                <View style={styles.adaptiveCategoryGrid}>
-                                  {categoryOptions.map((category) => (
-                                    <TouchableOpacity
-                                      key={category.value}
-                                      style={[
-                                        styles.adaptiveCategoryBox,
-                                        selectedCategory === category.value &&
-                                          styles.categoryBoxSelected,
-                                        {
-                                          backgroundColor:
-                                            category.backgroundColor,
-                                          borderColor:
-                                            selectedCategory === category.value
-                                              ? category.color
-                                              : category.color + "40",
-                                          borderWidth:
-                                            selectedCategory === category.value
-                                              ? 2
-                                              : 1,
-                                        },
-                                      ]}
-                                      onPress={() => {
-                                        setSelectedCategory(category.value);
-                                        setShowCategoryPicker(false);
-                                      }}
-                                      activeOpacity={0.7}
-                                    >
-                                      <Text style={styles.categoryEmoji}>
-                                        {category.emoji}
-                                      </Text>
-                                      <Text
-                                        style={[
-                                          styles.adaptiveCategoryText,
-                                          {
-                                            color:
-                                              selectedCategory ===
-                                              category.value
-                                                ? category.color
-                                                : "#333",
-                                            fontWeight:
-                                              selectedCategory ===
-                                              category.value
-                                                ? "700"
-                                                : "600",
-                                          },
-                                        ]}
-                                      >
-                                        {category.label}
-                                      </Text>
-                                      {selectedCategory === category.value && (
-                                        <Ionicons
-                                          name="checkmark-circle"
-                                          size={18}
-                                          color={category.color}
-                                          style={styles.categoryCheckmark}
-                                        />
-                                      )}
-                                    </TouchableOpacity>
-                                  ))}
-                                </View>
-                              </ScrollView>
-                            </View>
-                          </TouchableWithoutFeedback>
-                        </View>
-                      </TouchableWithoutFeedback>
-                    </Modal>
+                      selectedCategory={selectedCategory}
+                      onSelect={(cat) => setSelectedCategory(cat)}
+                      onClose={() => setShowCategoryPicker(false)}
+                    />
                   )}
                 </LinearGradient>
               </Animated.View>

@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef } from "react";
+import * as React from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -255,35 +256,26 @@ const Goals: React.FC<GoalsProps> = ({
     }
   };
 
-  const handleDeleteGoal = (goalToDelete: Goal) => {
-    Alert.alert("Delete Goal", "Are you sure you want to delete this goal?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Delete",
-        style: "destructive",
-        onPress: async () => {
-          try {
-            await deleteGoal(goalToDelete.id);
-            setState((prev: GoalsState) => ({
-              ...prev,
-              notification: {
-                visible: true,
-                message: "Goal deleted successfully",
-              },
-            }));
-          } catch (error) {
-            logger.error("Error deleting goal:", error);
-            setState((prev: GoalsState) => ({
-              ...prev,
-              notification: {
-                visible: true,
-                message: "Failed to delete goal",
-              },
-            }));
-          }
+  const handleDeleteGoal = async (goalToDelete: Goal) => {
+    try {
+      await deleteGoal(goalToDelete.id);
+      setState((prev: GoalsState) => ({
+        ...prev,
+        notification: {
+          visible: true,
+          message: "Goal deleted successfully",
         },
-      },
-    ]);
+      }));
+    } catch (error) {
+      logger.error("Error deleting goal:", error);
+      setState((prev: GoalsState) => ({
+        ...prev,
+        notification: {
+          visible: true,
+          message: "Failed to delete goal",
+        },
+      }));
+    }
   };
 
   const handleOptimisticUpdate = (updatedGoal: Goal) => {

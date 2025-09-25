@@ -1,4 +1,5 @@
-import React, { useState, useRef, useEffect } from "react";
+import * as React from "react";
+import { useState, useRef, useEffect } from "react";
 import {
   Modal,
   View,
@@ -23,6 +24,7 @@ import {
   getCategoryDisplayName,
   getCategoryOptions,
 } from "../../../src/utils/goalCategories";
+import CategoryPickerModal from "../shared/CategoryPickerModal";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 
@@ -35,14 +37,14 @@ interface GoalDetailModalProps {
   onOptimisticUpdate?: (updatedGoal: Goal) => void;
 }
 
-const GoalDetailModal: React.FC<GoalDetailModalProps> = ({
+const GoalDetailModal = ({
   goal,
   visible,
   onClose,
   onDelete,
   onEdit,
   onOptimisticUpdate,
-}) => {
+}: GoalDetailModalProps) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editedGoal, setEditedGoal] = useState<Goal | null>(null);
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -774,79 +776,13 @@ const GoalDetailModal: React.FC<GoalDetailModalProps> = ({
         </View>
       </TouchableWithoutFeedback>
 
-      {showCategoryPicker && (
-        <Modal
+      {showCategoryPicker && editedGoal && (
+        <CategoryPickerModal
           visible={showCategoryPicker}
-          transparent
-          animationType="slide"
-          onRequestClose={() => setShowCategoryPicker(false)}
-        >
-          <TouchableWithoutFeedback
-            onPress={() => setShowCategoryPicker(false)}
-          >
-            <View style={styles.categoryModalOverlay}>
-              <TouchableWithoutFeedback onPress={(e) => e.stopPropagation()}>
-                <View style={styles.categoryModalContent}>
-                  <View style={styles.categoryGrid}>
-                    {getCategoryOptions().map((category) => (
-                      <TouchableOpacity
-                        key={category.value}
-                        style={[
-                          styles.categoryGridItem,
-                          {
-                            backgroundColor: category.backgroundColor,
-                            borderColor:
-                              editedGoal?.category === category.value
-                                ? category.color
-                                : category.color + "40",
-                            borderWidth:
-                              editedGoal?.category === category.value ? 2 : 1,
-                          },
-                        ]}
-                        onPress={() => {
-                          setEditedGoal((prev) =>
-                            prev ? { ...prev, category: category.value } : null
-                          );
-                          setShowCategoryPicker(false);
-                        }}
-                        activeOpacity={0.7}
-                      >
-                        <Text style={styles.categoryGridEmoji}>
-                          {category.emoji}
-                        </Text>
-                        <Text
-                          style={[
-                            styles.categoryGridText,
-                            {
-                              color:
-                                editedGoal?.category === category.value
-                                  ? category.color
-                                  : "#333",
-                              fontWeight:
-                                editedGoal?.category === category.value
-                                  ? "700"
-                                  : "600",
-                            },
-                          ]}
-                        >
-                          {category.label}
-                        </Text>
-                        {editedGoal?.category === category.value && (
-                          <Ionicons
-                            name="checkmark-circle"
-                            size={18}
-                            color={category.color}
-                            style={styles.categoryGridCheckmark}
-                          />
-                        )}
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                </View>
-              </TouchableWithoutFeedback>
-            </View>
-          </TouchableWithoutFeedback>
-        </Modal>
+          selectedCategory={editedGoal.category}
+          onSelect={(cat) => setEditedGoal({ ...editedGoal, category: cat })}
+          onClose={() => setShowCategoryPicker(false)}
+        />
       )}
     </Modal>
   );

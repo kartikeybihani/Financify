@@ -133,8 +133,8 @@ export function useGoals(pushChat: (sender: "user" | "finny", message: string) =
         return;
       }
 
-      logger.info("📊 [GOALS] Loaded goals from database:", goals?.length || 0, "goals");
-      logger.info("📋 [GOALS] Goals data:", goals);
+      // logger.info("📊 [GOALS] Loaded goals from database:", goals?.length || 0, "goals");
+      // logger.info("📋 [GOALS] Goals data:", goals);
       
       const goalsArray = goals || [];
       setGoalsData(goalsArray);
