@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import {
   View,
   Text,
@@ -77,33 +77,81 @@ export default function InvestmentsScreen({
   const [options, setOptions] = useState<OptionPosition[]>([]);
   const [balances, setBalances] = useState<BalanceRow[]>([]);
   const [connections, setConnections] = useState<ConnectionRow[]>([]);
-  const [isInitialLoad, setIsInitialLoad] = useState(true);
+  const hasData = useRef(false);
 
   const loadFromDb = async () => {
     try {
+      logger.info("Investments: Loading data from Supabase...");
+
       const [h, o, b, c] = await Promise.all([
         getSnaptradeHoldingsFromDB(),
         getSnaptradeOptionsFromDB(),
         getSnaptradeBalancesFromDB(),
         getSnaptradeConnectionsFromDB(),
       ]);
-      setHoldings(h || []);
-      setOptions(o || []);
-      setBalances(b || []);
-      setConnections(c || []);
-      setIsInitialLoad(false);
+
+      const hasAnyData =
+        (h && h.length > 0) ||
+        (o && o.length > 0) ||
+        (b && b.length > 0) ||
+        (c && c.length > 0);
+
+      if (hasAnyData) {
+        logger.info(
+          `Investments: Loaded data from Supabase - Holdings: ${
+            h?.length || 0
+          }, Options: ${o?.length || 0}, Balances: ${
+            b?.length || 0
+          }, Connections: ${c?.length || 0}`
+        );
+        setHoldings(h || []);
+        setOptions(o || []);
+        setBalances(b || []);
+        setConnections(c || []);
+        hasData.current = true;
+        return true;
+      }
+
+      logger.info("Investments: No investment data found in database");
+      setHoldings([]);
+      setOptions([]);
+      setBalances([]);
+      setConnections([]);
+      return false;
     } catch (err) {
       logger.error("Failed to load investments from DB", err);
-      setIsInitialLoad(false);
+      return false;
     }
   };
 
   useEffect(() => {
-    loadFromDb();
-    // Populate investment accounts in main accounts table
-    populateInvestmentAccountsInDB().catch((err) =>
-      logger.error("Failed to populate investment accounts:", err)
-    );
+    const initializeScreen = async () => {
+      // If we already have data, don't reload unnecessarily
+      if (hasData.current) {
+        logger.info("Investments: Data already loaded, skipping reload");
+        return;
+      }
+
+      try {
+        // Load stored data first (like transaction screens)
+        const hasStoredData = await loadFromDb();
+
+        // If no stored data, we could potentially trigger a sync here
+        // but for now, we'll just show the empty state
+        if (!hasStoredData) {
+          logger.info("Investments: No stored data found, showing empty state");
+        }
+
+        // Populate investment accounts in main accounts table (non-blocking)
+        populateInvestmentAccountsInDB().catch((err) =>
+          logger.error("Failed to populate investment accounts:", err)
+        );
+      } catch (error) {
+        logger.error("Error during investment initialization:", error);
+      }
+    };
+
+    initializeScreen();
   }, []);
 
   const handleSync = async () => {
@@ -145,7 +193,11 @@ export default function InvestmentsScreen({
       await syncSnaptradeInvestments(user.id, first.account_id);
 
       logger.info("🔄 Reloading data from database...");
-      await loadFromDb();
+      const hasStoredData = await loadFromDb();
+
+      if (hasStoredData) {
+        hasData.current = true;
+      }
 
       logger.info("🔄 Updating investment accounts in main table...");
       await populateInvestmentAccountsInDB();
@@ -185,17 +237,17 @@ export default function InvestmentsScreen({
     let totalDailyPerformance = 0;
     let hasValidDayData = false;
 
-    console.log(
-      "🔍 Calculating today's performance with holdings:",
-      holdings.length
-    );
+    // console.log(
+    //   "🔍 Calculating today's performance with holdings:",
+    //   holdings.length
+    // );
 
     for (const holding of holdings) {
-      console.log(`🔍 Processing ${holding.symbol}:`, {
-        day_change: holding.day_change,
-        day_change_percent: holding.day_change_percent,
-        market_value: holding.market_value,
-      });
+      // console.log(`🔍 Processing ${holding.symbol}:`, {
+      //   day_change: holding.day_change,
+      //   day_change_percent: holding.day_change_percent,
+      //   market_value: holding.market_value,
+      // });
 
       // First priority: use day_change field from database if available
       if (
@@ -203,9 +255,9 @@ export default function InvestmentsScreen({
         holding.day_change !== undefined &&
         !isNaN(holding.day_change)
       ) {
-        console.log(
-          `✅ Adding day_change for ${holding.symbol}: ${holding.day_change}`
-        );
+        // console.log(
+        //   `✅ Adding day_change for ${holding.symbol}: ${holding.day_change}`
+        // );
         totalDailyPerformance += holding.day_change;
         hasValidDayData = true;
         continue;
@@ -220,9 +272,9 @@ export default function InvestmentsScreen({
       ) {
         const dailyChange =
           (holding.market_value * holding.day_change_percent) / 100;
-        console.log(
-          `✅ Adding day_change_percent for ${holding.symbol}: ${dailyChange} (${holding.day_change_percent}% of ${holding.market_value})`
-        );
+        // console.log(
+        //   `✅ Adding day_change_percent for ${holding.symbol}: ${dailyChange} (${holding.day_change_percent}% of ${holding.market_value})`
+        // );
         totalDailyPerformance += dailyChange;
         hasValidDayData = true;
         continue;
@@ -235,7 +287,7 @@ export default function InvestmentsScreen({
 
     // If we don't have day change data, we can't accurately show today's performance
     if (!hasValidDayData) {
-      console.log("⚠️ No day change data found, setting performance to 0");
+      // console.log("⚠️ No day change data found, setting performance to 0");
       return {
         amount: 0,
         percentage: 0,
@@ -248,11 +300,11 @@ export default function InvestmentsScreen({
         ? (totalDailyPerformance / totalPortfolioValue) * 100
         : 0;
 
-    console.log(
-      `✅ Final performance: $${totalDailyPerformance.toFixed(
-        2
-      )}, ${todayPortfolioPercentage.toFixed(2)}%`
-    );
+    // console.log(
+    //   `✅ Final performance: $${totalDailyPerformance.toFixed(
+    //     2
+    //   )}, ${todayPortfolioPercentage.toFixed(2)}%`
+    // );
 
     return {
       amount: totalDailyPerformance,
@@ -496,30 +548,23 @@ export default function InvestmentsScreen({
 
   return embedded ? (
     <View style={styles.container}>
-      {isInitialLoad ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator color="#4A90E2" size="large" />
-          <Text style={styles.loadingText}>Loading investment data...</Text>
-        </View>
-      ) : (
-        <ScrollView
-          style={{ flex: 1 }}
-          contentContainerStyle={styles.embeddedContent}
-          showsVerticalScrollIndicator={false}
-        >
-          {renderPortfolioSummary()}
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={styles.embeddedContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {renderPortfolioSummary()}
 
-          {syncError && (
-            <View style={styles.errorContainer}>
-              <Ionicons name="warning" size={16} color="#F44336" />
-              <Text style={styles.errorText}>{syncError}</Text>
-            </View>
-          )}
+        {syncError && (
+          <View style={styles.errorContainer}>
+            <Ionicons name="warning" size={16} color="#F44336" />
+            <Text style={styles.errorText}>{syncError}</Text>
+          </View>
+        )}
 
-          {renderHoldings()}
-          {renderOptions()}
-        </ScrollView>
-      )}
+        {renderHoldings()}
+        {renderOptions()}
+      </ScrollView>
     </View>
   ) : (
     <SafeAreaView style={styles.safeArea}>
@@ -548,30 +593,23 @@ export default function InvestmentsScreen({
           </TouchableOpacity>
         </View>
 
-        {isInitialLoad ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator color="#4A90E2" size="large" />
-            <Text style={styles.loadingText}>Loading investment data...</Text>
-          </View>
-        ) : (
-          <ScrollView
-            style={{ flex: 1 }}
-            contentContainerStyle={styles.content}
-            showsVerticalScrollIndicator={false}
-          >
-            {renderPortfolioSummary()}
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={styles.content}
+          showsVerticalScrollIndicator={false}
+        >
+          {renderPortfolioSummary()}
 
-            {syncError && (
-              <View style={styles.errorContainer}>
-                <Ionicons name="warning" size={16} color="#F44336" />
-                <Text style={styles.errorText}>{syncError}</Text>
-              </View>
-            )}
+          {syncError && (
+            <View style={styles.errorContainer}>
+              <Ionicons name="warning" size={16} color="#F44336" />
+              <Text style={styles.errorText}>{syncError}</Text>
+            </View>
+          )}
 
-            {renderHoldings()}
-            {renderOptions()}
-          </ScrollView>
-        )}
+          {renderHoldings()}
+          {renderOptions()}
+        </ScrollView>
       </View>
     </SafeAreaView>
   );
