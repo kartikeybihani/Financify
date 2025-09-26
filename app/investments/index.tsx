@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   Platform,
   Image,
+  ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -31,6 +32,8 @@ interface Holding {
   price: number;
   market_value: number;
   unrealized_pl: number | null;
+  day_change?: number | null;
+  day_change_percent?: number | null;
 }
 
 interface OptionPosition {
@@ -74,6 +77,7 @@ export default function InvestmentsScreen({
   const [options, setOptions] = useState<OptionPosition[]>([]);
   const [balances, setBalances] = useState<BalanceRow[]>([]);
   const [connections, setConnections] = useState<ConnectionRow[]>([]);
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
 
   const loadFromDb = async () => {
     try {
@@ -87,8 +91,10 @@ export default function InvestmentsScreen({
       setOptions(o || []);
       setBalances(b || []);
       setConnections(c || []);
+      setIsInitialLoad(false);
     } catch (err) {
       logger.error("Failed to load investments from DB", err);
+      setIsInitialLoad(false);
     }
   };
 
@@ -172,7 +178,79 @@ export default function InvestmentsScreen({
     0
   );
 
-  const renderPortfolioHero = () => {
+  // Calculate today's portfolio performance using the day_change fields where available
+  // If day_change is not provided by SnapTrade API, we'll calculate a simplified daily change
+  // by taking the price change since previous day and multiplying by number of units
+  const calculateTodayPerformance = () => {
+    let totalDailyPerformance = 0;
+    let hasValidDayData = false;
+
+    for (const holding of holdings) {
+      // First priority: use day_change field from SnapTrade if available
+      if (holding.day_change !== null && holding.day_change !== undefined) {
+        totalDailyPerformance += holding.day_change;
+        hasValidDayData = true;
+        continue;
+      }
+
+      // Second priority: calculate approximate daily change from day_change_percent
+      if (
+        holding.day_change_percent !== null &&
+        holding.day_change_percent !== undefined &&
+        holding.market_value
+      ) {
+        const dailyChange =
+          (holding.market_value * holding.day_change_percent) / 100;
+        totalDailyPerformance += dailyChange;
+        hasValidDayData = true;
+        continue;
+      }
+    }
+
+    // If we don't have day change data, we can't accurately show today's performance
+    // This is the correct approach since we cannot use total unrealized_pl for daily changes
+    if (!hasValidDayData) {
+      return {
+        amount: 0,
+        percentage: 0,
+      };
+    }
+
+    // Calculate today's performance percentage of the portfolio
+    const todayPortfolioPercentage =
+      totalPortfolioValue > 0
+        ? (totalDailyPerformance / totalPortfolioValue) * 100
+        : 0;
+
+    return {
+      amount: totalDailyPerformance,
+      percentage: todayPortfolioPercentage,
+    };
+  };
+
+  const todayPerformance = calculateTodayPerformance();
+
+  const getBrokerageLogoUrl = (brokerageName: string): string => {
+    // Map brokerage names to their domains
+    const brokerageDomainMap: { [key: string]: string } = {
+      Fidelity: "fidelity.com",
+      Vanguard: "vanguard.com",
+      "Charles Schwab": "schwab.com",
+      "TD Ameritrade": "ameritrade.com",
+      "E*TRADE": "etrade.com",
+      Robinhood: "robinhood.com",
+      Webull: "webull.com",
+      Alpaca: "alpaca.markets",
+      // Add more as needed
+    };
+
+    const domain =
+      brokerageDomainMap[brokerageName] ||
+      brokerageName.toLowerCase().replace(/\s+/g, "") + ".com";
+    return `https://img.logo.dev/${domain}?token=pk_VDL82EqXQlGEUFN2v4q7Vg&retina=true`;
+  };
+
+  const renderPortfolioSummary = () => {
     const lastConnection = connections.length > 0 ? connections[0] : null;
     const lastSyncDate = lastConnection?.last_synced_at
       ? new Date(lastConnection.last_synced_at).toLocaleDateString()
@@ -181,10 +259,10 @@ export default function InvestmentsScreen({
       lastConnection?.brokerage_name || "Investment Account";
 
     return (
-      <View style={styles.portfolioHero}>
-        <View style={styles.portfolioContent}>
-          <View style={styles.portfolioLeft}>
-            <Text style={styles.portfolioValueLabel}>Total Portfolio</Text>
+      <View style={styles.portfolioSummaryContainer}>
+        <View style={styles.portfolioSummaryContent}>
+          <View style={styles.portfolioInfo}>
+            <Text style={styles.portfolioLabel}>Total Portfolio Value</Text>
             <Text style={styles.portfolioValue}>
               $
               {totalPortfolioValue.toLocaleString("en-US", {
@@ -192,191 +270,224 @@ export default function InvestmentsScreen({
                 maximumFractionDigits: 2,
               })}
             </Text>
-            {totalUnrealizedPL !== 0 && (
-              <View style={styles.portfolioChange}>
-                <Ionicons
-                  name={
-                    totalUnrealizedPL >= 0 ? "trending-up" : "trending-down"
-                  }
-                  size={14}
-                  color="#4ECDC4"
-                />
-                <Text style={styles.portfolioChangeText}>
-                  {totalUnrealizedPL >= 0 ? "+" : ""}$
-                  {totalUnrealizedPL.toFixed(2)}
-                  {totalUnrealizedPL >= 0 ? " 🚀" : " 📉"}
-                </Text>
+
+            {/* Today's Performance - only show actual daily gains/losses */}
+            {Math.abs(todayPerformance.amount) > 0 && (
+              <View style={styles.todayPerformanceContainer}>
+                <View style={styles.profitLossIndicator}>
+                  <Ionicons
+                    name={
+                      todayPerformance.amount >= 0
+                        ? "trending-up"
+                        : "trending-down"
+                    }
+                    size={14}
+                    color={todayPerformance.amount >= 0 ? "#4ECDC4" : "#FF6B6B"}
+                  />
+                  <Text
+                    style={[
+                      styles.todayPerformanceText,
+                      {
+                        color:
+                          todayPerformance.amount >= 0 ? "#4ECDC4" : "#FF6B6B",
+                      },
+                    ]}
+                  >
+                    Today: {todayPerformance.amount >= 0 ? "+" : ""}$
+                    {Math.abs(todayPerformance.amount).toFixed(2)} (
+                    {todayPerformance.amount >= 0 ? "+" : ""}
+                    {todayPerformance.percentage.toFixed(2)}%)
+                  </Text>
+                </View>
               </View>
             )}
-          </View>
 
-          <View style={styles.portfolioRight}>
-            <Text style={styles.accountNameSmall}>{brokerageName}</Text>
-            <Text style={styles.lastSyncSmall}>
-              Last synced: {lastSyncDate}
-            </Text>
+            {totalCash > 0 && (
+              <Text style={styles.availableCash}>
+                Available Cash: $
+                {totalCash.toLocaleString("en-US", {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                })}
+              </Text>
+            )}
+          </View>
+          <View style={styles.accountInfo}>
+            <View style={styles.brokerageInfo}>
+              <Image
+                source={{ uri: getBrokerageLogoUrl(brokerageName) }}
+                style={styles.brokerageLogo}
+                defaultSource={require("../assets/icon.png")}
+              />
+              <View style={styles.brokerageDetails}>
+                <Text style={styles.accountName}>{brokerageName}</Text>
+                <Text style={styles.lastSyncText}>
+                  Last synced: {lastSyncDate}
+                </Text>
+              </View>
+            </View>
+            {/* Sync Button */}
+            <TouchableOpacity
+              style={[
+                styles.syncButton,
+                isSyncing && styles.syncButtonDisabled,
+              ]}
+              onPress={handleSync}
+              disabled={isSyncing}
+            >
+              <Ionicons
+                name={isSyncing ? "hourglass" : "refresh"}
+                size={18}
+                color="#4A90E2"
+              />
+            </TouchableOpacity>
           </View>
         </View>
       </View>
     );
   };
 
-  const renderHoldings = () => (
-    <View style={styles.section}>
-      <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>
-          📈 Your Holdings ({holdings.length})
+  const renderHoldings = () => {
+    if (holdings.length === 0) return null;
+
+    return (
+      <View style={styles.investmentGroup}>
+        <Text style={styles.sectionHeading}>
+          Your Holdings ({holdings.length})
         </Text>
-      </View>
-      <View style={styles.cashInfo}>
-        <Text style={styles.cashLabel}>Available Cash</Text>
-        <Text style={styles.cashValue}>
-          $
-          {totalCash.toLocaleString("en-US", {
-            minimumFractionDigits: 2,
-            maximumFractionDigits: 2,
-          })}
-        </Text>
-      </View>
-      {holdings.length > 0 ? (
-        <View style={styles.holdingsGrid}>
-          {holdings.slice(0, 8).map((h, idx) => (
-            <View key={idx} style={styles.holdingCard}>
-              <View style={styles.holdingHeader}>
-                <View style={styles.holdingSymbolContainer}>
+        <View style={styles.glassContainer}>
+          {holdings.map((h, idx) => (
+            <View key={idx}>
+              <View style={styles.holdingRow}>
+                <View style={styles.holdingLeft}>
                   <Image
                     source={{ uri: getCompanyLogoUrl(h.symbol) }}
-                    style={styles.companyLogo}
+                    style={styles.stockLogo}
                     defaultSource={require("../assets/icon.png")}
                   />
-                  <View style={styles.holdingSymbolInfo}>
-                    <Text style={styles.holdingSymbol}>{h.symbol}</Text>
-                    <Text style={styles.holdingDescription}>
+                  <View style={styles.stockInfo}>
+                    <Text style={styles.stockSymbol}>{h.symbol}</Text>
+                    <Text style={styles.stockDescription} numberOfLines={1}>
                       {h.description}
+                    </Text>
+                    <Text style={styles.stockQuantity}>QTY: {h.units}</Text>
+                  </View>
+                </View>
+                <View style={styles.holdingRight}>
+                  <Text style={styles.stockValue}>
+                    $
+                    {h.market_value?.toLocaleString("en-US", {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    }) || "0.00"}
+                  </Text>
+                  <View style={styles.stockDetails}>
+                    <Text style={styles.stockDetail}>
+                      ${h.price?.toFixed(2) || "0.00"}
+                    </Text>
+                    {h.unrealized_pl !== null && (
+                      <Text
+                        style={[
+                          styles.pnlText,
+                          (h.unrealized_pl || 0) >= 0
+                            ? styles.pnlPositive
+                            : styles.pnlNegative,
+                        ]}
+                      >
+                        {(h.unrealized_pl || 0) >= 0 ? "+" : ""}$
+                        {Math.abs(h.unrealized_pl).toFixed(2)}
+                      </Text>
+                    )}
+                  </View>
+                </View>
+              </View>
+              {idx < holdings.length - 1 && <View style={styles.divider} />}
+            </View>
+          ))}
+        </View>
+      </View>
+    );
+  };
+
+  const renderOptions = () => {
+    if (options.length === 0) return null;
+
+    return (
+      <View style={styles.investmentGroup}>
+        <Text style={styles.sectionHeading}>Options ({options.length})</Text>
+        <View style={styles.glassContainer}>
+          {options.map((o, idx) => (
+            <View key={idx}>
+              <View style={styles.holdingRow}>
+                <View style={styles.holdingLeft}>
+                  <View style={styles.optionIconContainer}>
+                    <Ionicons
+                      name="bar-chart-outline"
+                      size={20}
+                      color="#FF9800"
+                    />
+                  </View>
+                  <View style={styles.stockInfo}>
+                    <Text style={styles.stockSymbol}>
+                      {o.underlying_symbol} {o.option_type}
+                    </Text>
+                    <Text style={styles.stockDescription}>
+                      Strike: ${o.strike_price} • Exp: {o.expiration_date}
+                    </Text>
+                    <Text style={styles.stockQuantity}>
+                      {o.units} contracts
                     </Text>
                   </View>
                 </View>
-                <Text style={styles.holdingValue}>
-                  $
-                  {h.market_value?.toLocaleString("en-US", {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  }) || "0.00"}
-                </Text>
-              </View>
-              <View style={styles.holdingDetails}>
-                <View style={styles.holdingDetail}>
-                  <Text style={styles.holdingDetailLabel}>Shares</Text>
-                  <Text style={styles.holdingDetailValue}>{h.units}</Text>
-                </View>
-                <View style={styles.holdingDetail}>
-                  <Text style={styles.holdingDetailLabel}>Price</Text>
-                  <Text style={styles.holdingDetailValue}>
-                    ${h.price?.toFixed(2) || "0.00"}
+                <View style={styles.holdingRight}>
+                  <Text style={styles.stockValue}>
+                    $
+                    {o.market_value?.toLocaleString("en-US", {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    }) || "0.00"}
                   </Text>
+                  <View style={styles.stockDetails}>
+                    <Text style={styles.stockDetail}>
+                      ${o.price?.toFixed(2) || "0.00"} premium per contract
+                    </Text>
+                  </View>
                 </View>
-                {h.unrealized_pl !== null && (
-                  <Text
-                    style={[
-                      styles.holdingPnL,
-                      (h.unrealized_pl || 0) >= 0
-                        ? styles.holdingPnLPositive
-                        : styles.holdingPnLNegative,
-                    ]}
-                  >
-                    {h.unrealized_pl >= 0 ? "↗" : "↘"} $
-                    {Math.abs(h.unrealized_pl).toFixed(2)}
-                  </Text>
-                )}
               </View>
+              {idx < options.length - 1 && <View style={styles.divider} />}
             </View>
           ))}
         </View>
-      ) : (
-        <View style={styles.emptyState}>
-          <View style={styles.emptyStateIcon}>
-            <Ionicons name="trending-up" size={24} color="#4A90E2" />
-          </View>
-          <Text style={styles.emptyStateText}>
-            No holdings data available. Sync your account to see your
-            investments!
-          </Text>
-        </View>
-      )}
-    </View>
-  );
-
-  const renderOptions = () => (
-    <View style={styles.section}>
-      <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>📊 Options ({options.length})</Text>
       </View>
-      {options.length > 0 ? (
-        <View style={styles.holdingsGrid}>
-          {options.slice(0, 6).map((o, idx) => (
-            <View key={idx} style={styles.optionCard}>
-              <View style={styles.optionHeader}>
-                <Text style={styles.optionSymbol}>
-                  {o.underlying_symbol} {o.option_type}
-                </Text>
-                <Text style={styles.optionValue}>
-                  $
-                  {o.market_value?.toLocaleString("en-US", {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  }) || "0.00"}
-                </Text>
-              </View>
-              <Text style={styles.holdingDescription}>
-                Strike: ${o.strike_price} | Exp: {o.expiration_date}
-              </Text>
-              <View style={styles.optionDetails}>
-                <View style={styles.optionDetail}>
-                  <Text style={styles.optionDetailLabel}>Contracts</Text>
-                  <Text style={styles.optionDetailValue}>{o.units}</Text>
-                </View>
-                <View style={styles.optionDetail}>
-                  <Text style={styles.optionDetailLabel}>Price</Text>
-                  <Text style={styles.optionDetailValue}>
-                    ${o.price?.toFixed(2) || "0.00"}
-                  </Text>
-                </View>
-              </View>
-            </View>
-          ))}
-        </View>
-      ) : (
-        <View style={styles.emptyState}>
-          <View style={styles.emptyStateIcon}>
-            <Ionicons name="bar-chart" size={24} color="#FF9800" />
-          </View>
-          <Text style={styles.emptyStateText}>
-            No options data available. Start trading options to see them here!
-          </Text>
-        </View>
-      )}
-    </View>
-  );
+    );
+  };
 
   return embedded ? (
     <View style={styles.container}>
-      <ScrollView
-        style={{ flex: 1 }}
-        contentContainerStyle={styles.content}
-        showsVerticalScrollIndicator={false}
-      >
-        {renderPortfolioHero()}
+      {isInitialLoad ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator color="#4A90E2" size="large" />
+          <Text style={styles.loadingText}>Loading investment data...</Text>
+        </View>
+      ) : (
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={styles.embeddedContent}
+          showsVerticalScrollIndicator={false}
+        >
+          {renderPortfolioSummary()}
 
-        {syncError && (
-          <View style={styles.errorContainer}>
-            <Ionicons name="warning" size={16} color="#F44336" />
-            <Text style={styles.errorText}>{syncError}</Text>
-          </View>
-        )}
+          {syncError && (
+            <View style={styles.errorContainer}>
+              <Ionicons name="warning" size={16} color="#F44336" />
+              <Text style={styles.errorText}>{syncError}</Text>
+            </View>
+          )}
 
-        {renderHoldings()}
-        {renderOptions()}
-      </ScrollView>
+          {renderHoldings()}
+          {renderOptions()}
+        </ScrollView>
+      )}
     </View>
   ) : (
     <SafeAreaView style={styles.safeArea}>
@@ -405,23 +516,30 @@ export default function InvestmentsScreen({
           </TouchableOpacity>
         </View>
 
-        <ScrollView
-          style={{ flex: 1 }}
-          contentContainerStyle={styles.content}
-          showsVerticalScrollIndicator={false}
-        >
-          {renderPortfolioHero()}
+        {isInitialLoad ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator color="#4A90E2" size="large" />
+            <Text style={styles.loadingText}>Loading investment data...</Text>
+          </View>
+        ) : (
+          <ScrollView
+            style={{ flex: 1 }}
+            contentContainerStyle={styles.content}
+            showsVerticalScrollIndicator={false}
+          >
+            {renderPortfolioSummary()}
 
-          {syncError && (
-            <View style={styles.errorContainer}>
-              <Ionicons name="warning" size={16} color="#F44336" />
-              <Text style={styles.errorText}>{syncError}</Text>
-            </View>
-          )}
+            {syncError && (
+              <View style={styles.errorContainer}>
+                <Ionicons name="warning" size={16} color="#F44336" />
+                <Text style={styles.errorText}>{syncError}</Text>
+              </View>
+            )}
 
-          {renderHoldings()}
-          {renderOptions()}
-        </ScrollView>
+            {renderHoldings()}
+            {renderOptions()}
+          </ScrollView>
+        )}
       </View>
     </SafeAreaView>
   );

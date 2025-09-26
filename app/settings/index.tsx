@@ -12,13 +12,7 @@ import {
   DeviceEventEmitter,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import {
-  Ionicons,
-  MaterialIcons,
-  FontAwesome,
-  Entypo,
-  AntDesign,
-} from "@expo/vector-icons";
+import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { supabase } from "../_lib/supabase/supabase";

@@ -506,39 +506,166 @@ async function handleSnapTradeSync(res, userId, accountId) {
       // Holdings are in the positions array
       const positions = holdingsData.positions || [];
       if (positions && positions.length > 0) {
-        const holdingsRows = positions.map((holding) => {
-          const symbol = holding.symbol?.symbol || holding.symbol;
-          return {
-            user_id: connection.user_id,
-            snaptrade_user_id: connection.snaptrade_user_id,
-            account_id: accountId,
-            symbol_id: symbol?.id,
-            symbol: symbol?.symbol,
-            raw_symbol: symbol?.raw_symbol,
-            description: symbol?.description,
-            currency_code: holding.currency?.code || "USD",
-            exchange_code: symbol?.exchange?.code,
-            exchange_name: symbol?.exchange?.name,
-            security_type: symbol?.type?.description,
-            units: holding.units || 0,
-            price: holding.price,
-            market_value:
+        // Process holdings with dynamic day change calculation
+        console.log("🔍 Calculating daily performance changes...");
+        const holdingsRows = await Promise.all(
+          positions.map(async (holding) => {
+            const symbol = holding.symbol?.symbol || holding.symbol;
+
+            const currentMarketValue =
               holding.units && holding.price
                 ? holding.units * holding.price
-                : null,
-            average_purchase_price: holding.average_purchase_price,
-            total_cost_basis:
-              holding.units && holding.average_purchase_price
-                ? holding.units * holding.average_purchase_price
-                : null,
-            unrealized_pl: holding.open_pnl,
-            realized_pl: 0,
-            day_change: null,
-            day_change_percent: null,
-            is_active: true,
-            last_updated: new Date().toISOString(),
-          };
-        });
+                : null;
+
+            let dayChange = holding.day_change || null;
+            let dayChangePercent = holding.day_change_percent || null;
+
+            // If SnapTrade doesn't provide day_change data, calculate it dynamically
+            if (!dayChange && currentMarketValue && symbol?.id) {
+              try {
+                // Get previous market value by checking for yesterday's data
+                const yesterday = new Date();
+                yesterday.setDate(yesterday.getDate() - 1);
+                const yesterdayISO = yesterday.toISOString().split("T")[0];
+
+                // Look for previous day's snapshot - try multiple strategies for better coverage
+                let { data: previousHoldings, error: prevError } =
+                  await supabase
+                    .from("investment_holdings")
+                    .select("price, market_value, last_updated, units")
+                    .eq("snaptrade_user_id", connection.snaptrade_user_id)
+                    .eq("account_id", accountId)
+                    .eq("symbol_id", symbol.id)
+                    .eq("is_active", true)
+                    .lte("last_updated", yesterdayISO + "T23:59:59")
+                    .gte("last_updated", yesterdayISO + "T00:00:00")
+                    .order("last_updated", { ascending: false })
+                    .limit(1);
+
+                // If no data for yesterday, try up to 3 days before for weekends/holidays
+                if (
+                  (!prevError &&
+                    (!previousHoldings || previousHoldings.length === 0)) ||
+                  prevError
+                ) {
+                  const beforeYesterday = new Date(yesterday);
+                  beforeYesterday.setDate(beforeYesterday.getDate() - 1);
+                  const dayBefore = beforeYesterday.toISOString().split("T")[0];
+
+                  const beforeResult = await supabase
+                    .from("investment_holdings")
+                    .select("price, market_value, last_updated, units")
+                    .eq("snaptrade_user_id", connection.snaptrade_user_id)
+                    .eq("account_id", accountId)
+                    .eq("symbol_id", symbol.id)
+                    .eq("is_active", true)
+                    .lte("last_updated", dayBefore + "T23:59:59")
+                    .order("last_updated", { ascending: false })
+                    .limit(1);
+
+                  if (
+                    !beforeResult.error &&
+                    beforeResult.data &&
+                    beforeResult.data.length > 0
+                  ) {
+                    previousHoldings = beforeResult.data;
+                    prevError = null;
+                    console.log(
+                      `📊 Using ${dayBefore} data for ${symbol.symbol} (no weekend data available)`
+                    );
+                  }
+                }
+
+                if (
+                  !prevError &&
+                  previousHoldings &&
+                  previousHoldings.length > 0
+                ) {
+                  const prevHolding = previousHoldings[0];
+
+                  // Ensure we're comparing apples to apples - same number of units if available
+                  let prevMarketValue = prevHolding.market_value;
+
+                  // If unit counts are different, normalize by price change instead
+                  if (
+                    prevHolding.price &&
+                    holding.price &&
+                    prevHolding.units !== holding.units &&
+                    prevHolding.units > 0
+                  ) {
+                    // Calculate price change and apply to current units
+                    const priceChange = holding.price - prevHolding.price;
+                    dayChange = priceChange * holding.units;
+                    dayChangePercent =
+                      prevHolding.price > 0
+                        ? (priceChange / prevHolding.price) * 100
+                        : null;
+                    console.log(
+                      `📈 Calculated price-based day change for ${
+                        symbol.symbol
+                      }: $${dayChange.toFixed(2)}`
+                    );
+                  } else if (prevMarketValue && currentMarketValue) {
+                    // Standard market value comparison
+                    dayChange = currentMarketValue - prevMarketValue;
+                    dayChangePercent =
+                      prevMarketValue > 0
+                        ? (dayChange / prevMarketValue) * 100
+                        : null;
+                    console.log(
+                      `📈 Calculated market value day change for ${
+                        symbol.symbol
+                      }: $${dayChange.toFixed(2)} ${
+                        dayChange >= 0 ? "📈" : "📉"
+                      }`
+                    );
+                  }
+                } else {
+                  console.log(
+                    `ℹ️ No previous data found for ${symbol.symbol} - first day tracking`
+                  );
+                  dayChange = null;
+                  dayChangePercent = null;
+                }
+              } catch (calcError) {
+                console.log(
+                  `⚠️ Could not calculate day change for ${symbol.symbol}:`,
+                  calcError.message
+                );
+                dayChange = null;
+                dayChangePercent = null;
+              }
+            }
+
+            return {
+              user_id: connection.user_id,
+              snaptrade_user_id: connection.snaptrade_user_id,
+              account_id: accountId,
+              symbol_id: symbol?.id,
+              symbol: symbol?.symbol,
+              raw_symbol: symbol?.raw_symbol,
+              description: symbol?.description,
+              currency_code: holding.currency?.code || "USD",
+              exchange_code: symbol?.exchange?.code,
+              exchange_name: symbol?.exchange?.name,
+              security_type: symbol?.type?.description,
+              units: holding.units || 0,
+              price: holding.price,
+              market_value: currentMarketValue,
+              average_purchase_price: holding.average_purchase_price,
+              total_cost_basis:
+                holding.units && holding.average_purchase_price
+                  ? holding.units * holding.average_purchase_price
+                  : null,
+              unrealized_pl: holding.open_pnl,
+              realized_pl: 0,
+              day_change: dayChange,
+              day_change_percent: dayChangePercent,
+              is_active: true,
+              last_updated: new Date().toISOString(),
+            };
+          })
+        );
 
         // Use upsert to handle existing holdings properly
         try {

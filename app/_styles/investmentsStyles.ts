@@ -22,6 +22,11 @@ export const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#121212",
   },
+  // Embedded content styles
+  embeddedContent: {
+    paddingBottom: 32,
+    paddingHorizontal: 4,
+  },
   header: {
     flexDirection: "row",
     alignItems: "center",
@@ -70,19 +75,85 @@ export const styles = StyleSheet.create({
     paddingHorizontal: 0,
   },
   
-  // Hero Portfolio Value Section
-  portfolioHero: {
-    backgroundColor: "rgba(31, 31, 31, 0.8)",
-    borderRadius: 24,
-    padding: 24,
+  // Portfolio Summary Section
+  portfolioSummaryContainer: {
     marginBottom: 24,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.15,
-    shadowRadius: 16,
-    elevation: 8,
-    borderWidth: 1,
-    borderColor: "rgba(78, 205, 196, 0.2)",
+  },
+  portfolioSummaryContent: {
+    marginBottom: 24,
+  },
+  portfolioInfo: {
+    marginBottom: 12,
+  },
+  portfolioLabel: {
+    fontSize: FONTS.sm,
+    color: "rgba(255, 255, 255, 0.7)",
+    fontWeight: "500",
+    textTransform: "uppercase",
+    letterSpacing: 1.0,
+    marginBottom: 6,
+  },
+  portfolioValue: {
+    fontSize: FONTS.xxxl,
+    fontWeight: "700",
+    color: "#fff",
+    marginBottom: 8,
+  },
+  profitLossIndicator: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 6,
+  },
+  profitLossText: {
+    fontSize: FONTS.base,
+    fontWeight: "600",
+    marginLeft: 4,
+  },
+  accountInfo: {
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255, 255, 255, 0.1)",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  brokerageInfo: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+  },
+  brokerageLogo: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    marginRight: 8,
+  },
+  brokerageDetails: {
+    flex: 1,
+    marginRight: 8,
+  },
+  accountName: {
+    fontSize: FONTS.base,
+    color: "#fff",
+    fontWeight: "600",
+    marginBottom: 2,
+  },
+  lastSyncText: {
+    fontSize: FONTS.sm,
+    color: "rgba(255, 255, 255, 0.6)",
+  },
+  availableCash: {
+    fontSize: FONTS.sm,
+    color: "rgba(255, 255, 255, 0.8)",
+    marginTop: 4,
+  },
+  todayPerformanceContainer: {
+    marginTop: 6,
+  },
+  todayPerformanceText: {
+    fontSize: FONTS.sm,
+    fontWeight: "600",
+    marginLeft: 4,
   },
   portfolioContent: {
     flexDirection: "row",
@@ -113,6 +184,143 @@ export const styles = StyleSheet.create({
     color: "rgba(255, 255, 255, 0.5)",
     textAlign: "right",
   },
+  
+  // Investment Group Styles
+  investmentGroup: {
+    marginBottom: 16, // Reduced from 24
+  },
+  sectionHeading: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "rgba(255, 255, 255, 0.9)",
+    marginBottom: 8, // Reduced from 12
+    marginLeft: 0, // Removed left margin for cleaner alignment
+  },
+  glassContainer: {
+    backgroundColor: "rgba(255, 255, 255, 0.05)",
+    borderRadius: 12,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.1)",
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+  },
+  flexRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+  },
+  iconContainer: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "rgba(74, 144, 226, 0.1)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 12,
+  },
+  primaryLabel: {
+    fontSize: 16,
+    color: "#fff",
+    fontWeight: "500",
+    flex: 1,
+  },
+  cashAmountText: {
+    fontSize: 18,
+    color: "#4A90E2",
+    fontWeight: "600",
+  },
+  
+  // Holdings Row Styles
+  holdingRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+  },
+  holdingLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+    marginRight: 12,
+  },
+  holdingRight: {
+    alignItems: "flex-end",
+  },
+  stockLogo: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    marginRight: 12,
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+  },
+  optionIconContainer: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "rgba(255, 152, 0, 0.1)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 12,
+  },
+  stockInfo: {
+    flex: 1,
+  },
+  stockSymbol: {
+    fontSize: FONTS.base,
+    fontWeight: "700",
+    color: "#fff",
+    marginBottom: 2,
+  },
+  stockDescription: {
+    fontSize: FONTS.xs,
+    color: "rgba(255, 255, 255, 0.6)",
+    lineHeight: 14,
+  },
+  stockQuantity: {
+    fontSize: FONTS.xs,
+    color: "rgba(255, 255, 255, 0.5)",
+    marginTop: 2,
+  },
+  stockValue: {
+    fontSize: FONTS.lg,
+    fontWeight: "700",
+    color: "#4ECDC4",
+    marginBottom: 4,
+  },
+  stockDetails: {
+    alignItems: "flex-end",
+  },
+  stockDetail: {
+    fontSize: FONTS.xs,
+    color: "rgba(255, 255, 255, 0.5)",
+    marginBottom: 2,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    marginLeft: 44,
+    marginRight: 16,
+  },
+  pnlText: {
+    fontSize: FONTS.xs,
+    fontWeight: "600",
+  },
+  pnlPositive: {
+    color: "#4ECDC4",
+  },
+  pnlNegative: {
+    color: "#FF6B6B",
+  },
   portfolioValueLabel: {
     fontSize: FONTS.sm,
     color: "rgba(255, 255, 255, 0.7)",
@@ -121,14 +329,6 @@ export const styles = StyleSheet.create({
     marginBottom: 4,
     fontWeight: "500",
     textAlign: "left",
-  },
-  portfolioValue: {
-    fontSize: FONTS.xl,
-    fontWeight: "700",
-    color: "#fff",
-    marginBottom: 6,
-    textAlign: "left",
-    fontFamily: Platform.OS === "ios" ? "System" : "sans-serif",
   },
   portfolioChange: {
     flexDirection: "row",
@@ -151,9 +351,9 @@ export const styles = StyleSheet.create({
   
   // Sync Button (Header)
   syncButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     backgroundColor: "rgba(255, 255, 255, 0.1)",
     alignItems: "center",
     justifyContent: "center",
