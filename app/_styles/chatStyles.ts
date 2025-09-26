@@ -30,7 +30,7 @@ const responsiveOrientationPadding = (basePadding: number) => {
 export default StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: "#121212",
+    backgroundColor: "#0F0F0F",
     minHeight: screenHeight,
   },
   headerContainer: {
@@ -42,8 +42,13 @@ export default StyleSheet.create({
     paddingBottom: 12,
     backgroundColor: "transparent",
     borderBottomWidth: 1,
-    borderBottomColor: "rgba(74, 144, 226, 0.1)",
+    borderBottomColor: "rgba(30, 30, 30, 0.8)",
     position: 'relative',
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
+    elevation: 12,
   },
   headerGradient: {
     position: 'absolute',
@@ -52,6 +57,9 @@ export default StyleSheet.create({
     right: 0,
     height: Platform.OS === "ios" ? 44 : 50,
     zIndex: -1,
+    backgroundColor: "transparent",
+    borderBottomWidth: 0.5,
+    borderBottomColor: "rgba(30, 30, 30, 0.8)",
   },
   titleContainer: {
     flexDirection: "row",
@@ -180,7 +188,7 @@ export default StyleSheet.create({
   },
   chatArea: {
     flex: 1,
-    backgroundColor: "#121212",
+    backgroundColor: "#0F0F0F",
   },
   chatContainer: {
     flex: 1,
@@ -200,11 +208,11 @@ export default StyleSheet.create({
     shadowColor: "#000",
     shadowOffset: {
       width: 0,
-      height: 2,
+      height: 4,
     },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 8,
   },
   chatLeft: {
     alignSelf: "flex-start",
@@ -242,11 +250,11 @@ export default StyleSheet.create({
     shadowColor: "#000",
     shadowOffset: {
       width: 0,
-      height: 2,
+      height: 4,
     },
-    shadowOpacity: 0.15,
-    shadowRadius: 4,
-    elevation: 4,
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    elevation: 8,
     minHeight: responsiveHeight(6),
   },
   plusButton: {
@@ -325,11 +333,11 @@ export default StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: "#121212",
+    backgroundColor: "#0F0F0F",
     paddingTop: responsivePadding(4),
     paddingBottom: Platform.OS === "ios" ? responsivePadding(8) : responsivePadding(4),
     borderTopWidth: 1,
-    borderTopColor: "rgba(44, 44, 44, 0.6)",
+    borderTopColor: "rgba(25, 25, 25, 0.8)",
     shadowColor: "#000",
     shadowOffset: {
       width: 0,
@@ -355,20 +363,19 @@ export default StyleSheet.create({
     marginRight: responsivePadding(7),
     flexDirection: "row",
     alignItems: "center",
-    shadowColor: "#000",
+    shadowColor: "#4A90E2",
     shadowOffset: {
       width: 0,
-      height: 2,
+      height: 4,
     },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 4,
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 8,
     opacity: 0.95,
     borderWidth: 1,
-    borderColor: "rgba(74, 144, 226, 0.25)",
-    backgroundColor: "rgba(26, 61, 102, 0.35)", // glassy blue
+    borderColor: "rgba(74, 144, 226, 0.4)",
+    backgroundColor: "rgba(26, 61, 102, 0.4)",
     minHeight: responsiveHeight(3.5),
-    // If BlurView is used, backgroundColor can be more transparent
   },
   suggestionIcon: {
     marginRight: responsivePadding(4),
@@ -378,6 +385,15 @@ export default StyleSheet.create({
     fontWeight: "600",
     color: "#FFFFFF",
     letterSpacing: 0.2,
+  },
+  suggestionChipDisabled: {
+    opacity: 0.4,
+    borderColor: "rgba(74, 144, 226, 0.15)",
+    backgroundColor: "rgba(26, 61, 102, 0.2)",
+    shadowOpacity: 0.05,
+  },
+  suggestionTextDisabled: {
+    color: "#666",
   },
   scrollToBottomButton: {
     position: 'absolute',

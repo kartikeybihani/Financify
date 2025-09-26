@@ -1,11 +1,12 @@
-import React from "react";
+import React, { useMemo } from "react";
 import {
   View,
   Text,
   TouchableOpacity,
   StyleSheet,
   Platform,
-  Dimensions,
+  useWindowDimensions,
+  FlatList,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { GlassView } from "expo-glass-effect";
@@ -17,7 +18,7 @@ interface RecurringStream {
   merchant_name?: string;
   category: string;
   frequency: string;
-  average_amount: number;
+  average_amount: number; // negative for inflow per Plaid
   last_amount: number;
   last_date: string;
   first_date: string;
@@ -38,34 +39,44 @@ interface Props {
   titleStyle: any;
 }
 
+type SpacerItem = { spacer: true; id: string };
+type ListItem = RecurringStream | SpacerItem;
+
 export default function RecurringSection({
   recurringData,
   isLoading,
   titleStyle,
 }: Props) {
-  // Check if we should use iOS 18+ liquid glass effect
   const isIOS = Platform.OS === "ios";
-  const iosVersion = isIOS ? parseInt(Platform.Version as string, 10) : 0;
+  const iosVersion = isIOS
+    ? parseInt(String(Platform.Version).split(".")[0] || "0", 10)
+    : 0;
   const shouldUseLiquidGlass = isIOS && iosVersion >= 18;
 
-  // Helper function to convert frequency to monthly multiplier
-  const getMonthlyMultiplier = (frequency: string): number => {
-    switch (frequency.toLowerCase()) {
-      case "daily":
-        return 30;
-      case "weekly":
-        return 4.33;
-      case "monthly":
-        return 1;
-      case "quarterly":
-        return 0.33;
-      case "annually":
-      case "yearly":
-        return 0.083;
-      default:
-        return 1;
+  const { width } = useWindowDimensions();
+  const horizontalPadding = 0; // No extra padding since parent container already has padding
+  const interCardGap = 20;
+  const cardWidth = Math.floor(
+    (width - 40 - horizontalPadding * 2 - interCardGap) / 2
+  ); // 40px is the parent container padding (20px left + 20px right)
+
+  // Build and pad list so there are always two items per row
+  const data: ListItem[] = useMemo(() => {
+    const active = recurringData
+      ? [
+          ...(recurringData.subscriptions || []),
+          ...(recurringData.bills || []),
+          ...(recurringData.income || []),
+          ...(recurringData.other || []),
+        ].filter((item) => item.is_active)
+      : [];
+
+    // Ensure even count so the last row never has a single item
+    if (active.length % 2 !== 0) {
+      return [...active, { spacer: true, id: "spacer" }];
     }
-  };
+    return active;
+  }, [recurringData]);
 
   const getStreamTypeIcon = (stream: RecurringStream) => {
     const merchant = (
@@ -91,75 +102,178 @@ export default function RecurringSection({
       return "home-outline";
     }
     if (stream.average_amount < 0) {
-      return "arrow-down-outline"; // Income (negative amount = inflow)
+      return "arrow-down-outline"; // inflow
     }
     return "repeat-outline";
   };
 
   const getStreamTypeColor = (stream: RecurringStream) => {
-    if (stream.average_amount < 0) {
-      return "#4CAF50"; // Green for income (negative amount = inflow)
-    }
-    return "#FF6B6B"; // Red for expenses (positive amount = outflow)
+    return stream.average_amount < 0 ? "#4CAF50" : "#FF6B6B";
   };
 
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-    });
+  const safeDate = (iso: string | undefined) => {
+    const d = iso ? new Date(iso) : null;
+    return d && !isNaN(d.getTime()) ? d : null;
   };
 
-  // Calculate next transaction date based on frequency
   const getNextTransactionDate = (stream: RecurringStream) => {
-    const lastDate = new Date(stream.last_date);
-    const frequency = stream.frequency.toLowerCase();
+    const last = safeDate(stream.last_date);
+    if (!last) return null;
 
-    let nextDate = new Date(lastDate);
-
-    switch (frequency) {
+    const next = new Date(last);
+    switch ((stream.frequency || "").toLowerCase()) {
       case "daily":
-        nextDate.setDate(nextDate.getDate() + 1);
+        next.setDate(next.getDate() + 1);
         break;
       case "weekly":
-        nextDate.setDate(nextDate.getDate() + 7);
+        next.setDate(next.getDate() + 7);
         break;
       case "monthly":
-        nextDate.setMonth(nextDate.getMonth() + 1);
+        next.setMonth(next.getMonth() + 1);
         break;
       case "quarterly":
-        nextDate.setMonth(nextDate.getMonth() + 3);
+        next.setMonth(next.getMonth() + 3);
         break;
       case "annually":
       case "yearly":
-        nextDate.setFullYear(nextDate.getFullYear() + 1);
+        next.setFullYear(next.getFullYear() + 1);
         break;
       default:
-        nextDate.setDate(nextDate.getDate() + 1);
+        next.setDate(next.getDate() + 1);
     }
-
-    return nextDate;
+    return next;
   };
 
-  // Get all recurring items
-  const allRecurring = recurringData
-    ? [
-        ...(recurringData.subscriptions || []),
-        ...(recurringData.bills || []),
-        ...(recurringData.income || []),
-        ...(recurringData.other || []),
-      ].filter((item) => item.is_active)
-    : [];
+  const formatShort = (d: Date | null) => {
+    if (!d) return "TBD";
+    return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    // If you want the year too, add year: "numeric"
+  };
+
+  const renderCard = ({ item }: { item: ListItem }) => {
+    if ((item as SpacerItem).spacer) {
+      return (
+        <View
+          style={[
+            styles.transactionBox,
+            {
+              width: cardWidth,
+              opacity: 0,
+            },
+          ]}
+          pointerEvents="none"
+        />
+      );
+    }
+
+    const stream = item as RecurringStream;
+    const color = getStreamTypeColor(stream);
+    const iconName = getStreamTypeIcon(
+      stream
+    ) as keyof typeof Ionicons.glyphMap;
+    const nextDate = getNextTransactionDate(stream);
+
+    const CardShell = shouldUseLiquidGlass ? GlassView : View;
+
+    return (
+      <TouchableOpacity key={stream.stream_id} activeOpacity={0.85}>
+        <CardShell
+          {...(shouldUseLiquidGlass
+            ? {
+                glassEffectStyle: "regular",
+                tintColor: "rgba(20, 20, 25, 0.9)",
+              }
+            : {})}
+          style={[styles.transactionBox, { width: cardWidth, height: 120 }]}
+        >
+          {!shouldUseLiquidGlass && (
+            <LinearGradient
+              colors={[
+                "rgba(255, 255, 255, 0.06)",
+                "rgba(255, 255, 255, 0.02)",
+                "rgba(0, 0, 0, 0.05)",
+              ]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.gradientOverlay}
+            />
+          )}
+
+          <View style={styles.boxHeader}>
+            <View
+              style={[styles.iconContainer, { backgroundColor: color + "15" }]}
+            >
+              <Ionicons name={iconName} size={18} color={color} />
+            </View>
+            <Text style={styles.merchantName} numberOfLines={1}>
+              {stream.merchant_name || stream.description}
+            </Text>
+          </View>
+
+          <View style={styles.boxContent}>
+            <Text style={[styles.amount, { color }]}>
+              {stream.average_amount < 0 ? "+" : "-"}$
+              {Math.abs(stream.average_amount).toFixed(2)}
+            </Text>
+            <Text style={styles.frequency}>
+              {(stream.frequency || "").toLowerCase()}
+            </Text>
+          </View>
+
+          <View style={styles.boxFooter}>
+            <Text style={styles.nextDate}>Next: {formatShort(nextDate)}</Text>
+          </View>
+        </CardShell>
+      </TouchableOpacity>
+    );
+  };
 
   if (isLoading) {
+    // Skeleton that matches the real grid
+    const placeholders = Array.from({ length: 6 }).map((_, i) => ({
+      spacer: false,
+      stream_id: `ph-${i}`,
+      description: "",
+      category: "",
+      frequency: "",
+      average_amount: 0,
+      last_amount: 0,
+      last_date: "",
+      first_date: "",
+      is_active: true,
+      account_id: "",
+      transaction_ids: [],
+      iso_currency_code: "USD",
+      merchant_name: "",
+    })) as RecurringStream[];
+
     return (
       <View>
         <Text style={titleStyle}>Recurring Transactions</Text>
-        <View style={styles.gridContainer}>
-          {[1, 2, 3, 4, 5, 6].map((i) => (
-            <View key={i} style={styles.loadingBox} />
-          ))}
+        <View
+          style={{
+            paddingTop: 12,
+            paddingBottom: 4,
+          }}
+        >
+          <View
+            style={{
+              flexDirection: "row",
+              flexWrap: "wrap",
+              justifyContent: "space-between",
+            }}
+          >
+            {placeholders.map((ph) => (
+              <View
+                key={ph.stream_id}
+                style={{ width: cardWidth, marginBottom: 20 }}
+              >
+                <View
+                  style={[styles.loadingBox, { width: cardWidth, height: 120 }]}
+                />
+              </View>
+            ))}
+          </View>
         </View>
       </View>
     );
@@ -168,131 +282,44 @@ export default function RecurringSection({
   return (
     <View>
       <Text style={titleStyle}>Recurring Transactions</Text>
-      <View style={styles.gridContainer}>
-        {allRecurring.map((stream) => (
-          <TouchableOpacity key={stream.stream_id} activeOpacity={0.7}>
-            {shouldUseLiquidGlass ? (
-              <GlassView
-                glassEffectStyle="regular"
-                tintColor="rgba(20, 20, 25, 0.9)"
-                style={styles.transactionBox}
-              >
-                <View style={styles.boxHeader}>
-                  <View
-                    style={[
-                      styles.iconContainer,
-                      { backgroundColor: getStreamTypeColor(stream) + "15" },
-                    ]}
-                  >
-                    <Ionicons
-                      name={getStreamTypeIcon(stream)}
-                      size={20}
-                      color={getStreamTypeColor(stream)}
-                    />
-                  </View>
-                  <Text style={styles.merchantName} numberOfLines={1}>
-                    {stream.merchant_name || stream.description}
-                  </Text>
-                </View>
-
-                <View style={styles.boxContent}>
-                  <Text
-                    style={[
-                      styles.amount,
-                      { color: getStreamTypeColor(stream) },
-                    ]}
-                  >
-                    {stream.average_amount < 0 ? "+" : "-"}$
-                    {Math.abs(stream.average_amount).toFixed(2)}
-                  </Text>
-                  <Text style={styles.frequency}>{stream.frequency}</Text>
-                </View>
-
-                <View style={styles.boxFooter}>
-                  <Text style={styles.nextDate}>
-                    Next:{" "}
-                    {formatDate(getNextTransactionDate(stream).toISOString())}
-                  </Text>
-                </View>
-              </GlassView>
-            ) : (
-              <View style={styles.transactionBox}>
-                <LinearGradient
-                  colors={[
-                    "rgba(255, 255, 255, 0.06)",
-                    "rgba(255, 255, 255, 0.02)",
-                    "rgba(0, 0, 0, 0.05)",
-                  ]}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={styles.gradientOverlay}
-                />
-                <View style={styles.boxHeader}>
-                  <View
-                    style={[
-                      styles.iconContainer,
-                      { backgroundColor: getStreamTypeColor(stream) + "15" },
-                    ]}
-                  >
-                    <Ionicons
-                      name={getStreamTypeIcon(stream)}
-                      size={20}
-                      color={getStreamTypeColor(stream)}
-                    />
-                  </View>
-                  <Text style={styles.merchantName} numberOfLines={1}>
-                    {stream.merchant_name || stream.description}
-                  </Text>
-                </View>
-
-                <View style={styles.boxContent}>
-                  <Text
-                    style={[
-                      styles.amount,
-                      { color: getStreamTypeColor(stream) },
-                    ]}
-                  >
-                    {stream.average_amount < 0 ? "+" : "-"}$
-                    {Math.abs(stream.average_amount).toFixed(2)}
-                  </Text>
-                  <Text style={styles.frequency}>{stream.frequency}</Text>
-                </View>
-
-                <View style={styles.boxFooter}>
-                  <Text style={styles.nextDate}>
-                    Next:{" "}
-                    {formatDate(getNextTransactionDate(stream).toISOString())}
-                  </Text>
-                </View>
-              </View>
-            )}
-          </TouchableOpacity>
-        ))}
+      <View
+        style={{
+          paddingTop: 12,
+          paddingBottom: 4,
+        }}
+      >
+        <View
+          style={{
+            flexDirection: "row",
+            flexWrap: "wrap",
+            justifyContent: "space-between",
+          }}
+        >
+          {data.map((it) => (
+            <View
+              key={
+                "spacer" in it
+                  ? (it as SpacerItem).id
+                  : (it as RecurringStream).stream_id
+              }
+              style={{ width: cardWidth, marginBottom: 18 }}
+            >
+              {renderCard({ item: it })}
+            </View>
+          ))}
+        </View>
       </View>
     </View>
   );
 }
 
-const screenWidth = Dimensions.get("window").width;
-const cardWidth = (screenWidth - 48) / 2; // 20px padding on each side + 8px gap between cards
-
 const styles = StyleSheet.create({
-  gridContainer: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    paddingHorizontal: 20,
-    marginTop: 12,
-  },
   transactionBox: {
-    width: cardWidth,
     backgroundColor: "rgba(20, 20, 25, 0.95)",
-    borderRadius: 20,
-    padding: 18,
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.12)",
-    minHeight: 120,
-    marginBottom: 16,
-    marginRight: 8,
+    borderRadius: 16,
+    padding: 12,
+    borderWidth: 0,
+    borderColor: "rgba(255, 255, 255, 0.08)",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
@@ -311,16 +338,16 @@ const styles = StyleSheet.create({
   boxHeader: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 8,
+    marginBottom: 6,
     zIndex: 1,
   },
   iconContainer: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     alignItems: "center",
     justifyContent: "center",
-    marginRight: 12,
+    marginRight: 10,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
@@ -336,7 +363,7 @@ const styles = StyleSheet.create({
     opacity: 0.9,
   },
   boxContent: {
-    marginBottom: 12,
+    marginBottom: 8,
     zIndex: 1,
   },
   amount: {
@@ -357,8 +384,8 @@ const styles = StyleSheet.create({
   boxFooter: {
     borderTopWidth: 0.5,
     borderTopColor: "rgba(255, 255, 255, 0.06)",
-    paddingTop: 10,
-    marginTop: 4,
+    paddingTop: 6,
+    marginTop: 2,
     zIndex: 1,
   },
   nextDate: {
@@ -369,13 +396,9 @@ const styles = StyleSheet.create({
     opacity: 0.7,
   },
   loadingBox: {
-    width: cardWidth,
-    height: 120,
     backgroundColor: "rgba(20, 20, 25, 0.95)",
     borderRadius: 20,
-    marginBottom: 16,
-    marginRight: 8,
-    borderWidth: 1,
+    borderWidth: 0,
     borderColor: "rgba(255, 255, 255, 0.08)",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },

@@ -138,23 +138,23 @@ export const ChatMessageComponent = ({
   const [lineCount, setLineCount] = useState(1);
 
   useEffect(() => {
-    // Smooth entrance animation
+    // Enhanced entrance animation
     Animated.parallel([
       Animated.timing(fadeAnim, {
         toValue: 1,
-        duration: 300,
+        duration: 400,
         easing: Easing.out(Easing.cubic),
         useNativeDriver: true,
       }),
       Animated.timing(scaleAnim, {
         toValue: 1,
-        duration: 300,
-        easing: Easing.elastic(0.8),
+        duration: 400,
+        easing: Easing.elastic(0.7),
         useNativeDriver: true,
       }),
       Animated.timing(slideAnim, {
         toValue: 0,
-        duration: 300,
+        duration: 400,
         easing: Easing.out(Easing.cubic),
         useNativeDriver: true,
       }),

@@ -11,7 +11,12 @@ import { BlurView } from "expo-blur";
 import { LinearGradient } from "expo-linear-gradient";
 import { GlassView } from "expo-glass-effect";
 
-type SectionKey = "cashflow" | "spending" | "transactions" | "recurring";
+type SectionKey =
+  | "investments"
+  | "spending"
+  | "transactions"
+  | "recurring"
+  | "cashflow";
 
 interface TopChipsProps {
   activeSection: SectionKey;
@@ -19,10 +24,11 @@ interface TopChipsProps {
 }
 
 const labels: { key: SectionKey; label: string }[] = [
-  { key: "cashflow", label: "Cash Flow" },
+  { key: "investments", label: "Investments" },
   { key: "spending", label: "Spending" },
   { key: "transactions", label: "Transactions" },
   { key: "recurring", label: "Recurring" },
+  { key: "cashflow", label: "Cash Flow" },
 ];
 
 export default function TopChips({ activeSection, onChange }: TopChipsProps) {
@@ -95,12 +101,12 @@ export default function TopChips({ activeSection, onChange }: TopChipsProps) {
 
 const styles = StyleSheet.create({
   container: {
-    paddingHorizontal: 20,
+    paddingHorizontal: 0,
     paddingVertical: 16,
     backgroundColor: "#121212",
   },
   chipsRow: {
-    paddingHorizontal: 2,
+    paddingHorizontal: 0,
     gap: 10,
   },
   chipTouchable: {

@@ -2,15 +2,11 @@ import React, { useRef, useEffect, useState, useCallback } from "react";
 import {
   View,
   Text,
-  StyleSheet,
   FlatList,
   TouchableOpacity,
   TextInput,
-  LayoutAnimation,
   Animated,
-  ActivityIndicator,
   Platform,
-  Image,
   Easing,
   KeyboardAvoidingView,
   Keyboard,
@@ -22,7 +18,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import { Ionicons } from "@expo/vector-icons";
 import { AntDesign } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient";
 import { ChatMessageComponent } from "../_components/chat/ChatMessage";
 import { NudgeGrid } from "../_components/chat/NudgeGrid";
 import { useChat } from "../_hooks/useChat";
@@ -68,6 +63,19 @@ export default function ChatScreen() {
     });
     return () => subscription?.remove();
   }, []);
+
+  // Auto-scroll to bottom when user comes to this screen - only once
+  const [hasInitialScrolled, setHasInitialScrolled] = useState(false);
+
+  useEffect(() => {
+    if (!hasInitialScrolled) {
+      const timer = setTimeout(() => {
+        scrollToAbsoluteBottom();
+        setHasInitialScrolled(true);
+      }, 150);
+      return () => clearTimeout(timer);
+    }
+  }, [hasInitialScrolled]);
 
   const [suggestions] = useState<Suggestion[]>(() => {
     const baseSuggestions = [
@@ -139,6 +147,17 @@ export default function ChatScreen() {
 
     return data;
   }, [chatMessages, showNudges, isTyping]);
+
+  // Auto-scroll to bottom when new messages are added (not on initial load)
+  useEffect(() => {
+    if (hasInitialScrolled && flatListData.length > 0) {
+      const timer = setTimeout(() => {
+        scrollToAbsoluteBottom();
+      }, 100);
+
+      return () => clearTimeout(timer);
+    }
+  }, [flatListData.length, hasInitialScrolled]);
 
   // FlatList key extractor
   const keyExtractor = useCallback((item: any) => item.id, []);
@@ -270,15 +289,18 @@ export default function ChatScreen() {
     [showScrollButton, scrollButtonAnimation]
   );
 
-  const onContentSizeChange = useCallback((w: number, h: number) => {
-    contentHeights.current.content = h;
-    if (atBottomRef.current && flatListRef.current) {
-      // Only auto-scroll if user is already at bottom
-      requestAnimationFrame(() => {
-        (flatListRef.current as any)?.scrollToEnd({ animated: false });
-      });
-    }
-  }, []);
+  const onContentSizeChange = useCallback(
+    (w: number, h: number) => {
+      contentHeights.current.content = h;
+      if (atBottomRef.current && flatListRef.current && hasInitialScrolled) {
+        // Only auto-scroll if user is already at bottom and we've done initial load
+        requestAnimationFrame(() => {
+          (flatListRef.current as any)?.scrollToEnd({ animated: true });
+        });
+      }
+    },
+    [hasInitialScrolled]
+  );
 
   const onLayout = useCallback((e: any) => {
     const h = e.nativeEvent.layout.height;
@@ -362,17 +384,6 @@ export default function ChatScreen() {
 
   return (
     <View style={styles.safeArea}>
-      <StatusBar style="light" backgroundColor="transparent" translucent />
-      <LinearGradient
-        colors={[
-          "rgba(26, 61, 102, 0.95)",
-          "rgba(26, 61, 102, 0.3)",
-          "transparent",
-        ]}
-        style={styles.headerGradient}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 0, y: 1 }}
-      />
       <SafeAreaView style={{ flex: 1, marginBottom: insets.bottom - 10 }}>
         <View style={styles.headerContainer}>
           <View style={styles.titleContainer}>
@@ -514,16 +525,28 @@ export default function ChatScreen() {
                 data={suggestions}
                 renderItem={({ item }) => (
                   <TouchableOpacity
-                    onPress={() => handleSend(item.text)}
-                    style={styles.suggestionChip}
+                    onPress={() => !isTyping && handleSend(item.text)}
+                    style={[
+                      styles.suggestionChip,
+                      isTyping && styles.suggestionChipDisabled,
+                    ]}
+                    activeOpacity={isTyping ? 1 : 0.7}
+                    disabled={isTyping}
                   >
                     <Ionicons
                       name={item.icon}
                       size={13}
-                      color="#FFFFFF"
+                      color={isTyping ? "#666" : "#FFFFFF"}
                       style={styles.suggestionIcon}
                     />
-                    <Text style={styles.suggestionText}>{item.text}</Text>
+                    <Text
+                      style={[
+                        styles.suggestionText,
+                        isTyping && styles.suggestionTextDisabled,
+                      ]}
+                    >
+                      {item.text}
+                    </Text>
                   </TouchableOpacity>
                 )}
                 keyExtractor={(item, index) => index.toString()}
@@ -543,14 +566,12 @@ export default function ChatScreen() {
                   onChangeText={setUserInput}
                   onSubmitEditing={() => handleSend()}
                   onFocus={() => {
-                    // Auto-scroll to bottom when input is focused
-                    setTimeout(() => {
-                      if (flatListRef.current && flatListData.length > 0) {
-                        flatListRef.current.scrollToEnd({
-                          animated: true,
-                        });
-                      }
-                    }, 300);
+                    // Scroll to bottom only if user isn't already at the bottom
+                    if (!atBottomRef.current) {
+                      setTimeout(() => {
+                        scrollToAbsoluteBottom();
+                      }, 150);
+                    }
                   }}
                 />
                 <TouchableOpacity

@@ -39,6 +39,7 @@ import TransactionsSection from "../_components/insights/components/Transactions
 import CashFlowSection from "../_components/insights/components/CashFlowSection";
 import RefreshStatus from "../_components/insights/components/RefreshStatus";
 import { supabase } from "../_lib/supabase/supabase";
+import InvestmentsScreen from "../investments";
 import {
   syncAllUserTransactions,
   refreshBothBalancesAndTransactions,
@@ -51,17 +52,8 @@ import {
   getFilteredTransactionsCount,
   getUserAccountsForFilter,
 } from "../_utils/plaid";
-
-const BASE_URL =
-  process.env.EXPO_PUBLIC_APP_BASE_URL || "https://financify-rose.vercel.app";
-import {
-  debugTransactionCategories,
-  getCurrentMonthCategoryBreakdown,
-  countNullCategories,
-  forceFullResync,
-} from "../../src/utils/categoryFix";
+import { forceFullResync } from "../../src/utils/categoryFix";
 import logger from "../_utils/logger";
-const screenWidth = Dimensions.get("window").width;
 
 // Define types
 interface Transaction {
@@ -147,18 +139,6 @@ const formatCategoryName = (category: string): string => {
   return categoryMap[category] || category;
 };
 
-// Dummy insights with proper typing
-const dummyInsights: Insight[] = [
-  {
-    icon: "trending-up",
-    title: "Spending Up 12% This Month",
-    description:
-      "Your spending has increased compared to last month, especially in dining and transport.",
-    details:
-      "Try reviewing your discretionary expenses and set category-based limits using our Advisor tool.",
-  },
-];
-
 export default function InsightsScreen() {
   const [selectedCard, setSelectedCard] = useState<number | null>(null);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -240,7 +220,7 @@ export default function InsightsScreen() {
 
   // Top bar section state
   const [activeSection, setActiveSection] = useState<
-    "cashflow" | "spending" | "transactions" | "recurring"
+    "investments" | "spending" | "transactions" | "recurring" | "cashflow"
   >("spending");
 
   // Animation values for smooth transitions
@@ -1542,6 +1522,18 @@ export default function InsightsScreen() {
                     isLoading={recurringLoading}
                     titleStyle={styles.sectionLabel}
                   />
+                </Animated.View>
+              )}
+
+              {/* Investments Section */}
+              {activeSection === "investments" && (
+                <Animated.View
+                  style={[
+                    sectionContentStyles.container,
+                    { opacity: fadeAnim },
+                  ]}
+                >
+                  <InvestmentsScreen embedded={true} />
                 </Animated.View>
               )}
             </>

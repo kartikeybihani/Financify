@@ -66,8 +66,8 @@ export const styles = StyleSheet.create({
     letterSpacing: 0.2,
   },
   content: {
-    padding: 16,
     paddingBottom: 32,
+    paddingHorizontal: 0,
   },
   
   // Hero Portfolio Value Section

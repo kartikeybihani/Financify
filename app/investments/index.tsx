@@ -62,7 +62,11 @@ const getCompanyLogoUrl = (symbol: string): string => {
   return `https://img.logo.dev/ticker/${symbol.toUpperCase()}?token=pk_VDL82EqXQlGEUFN2v4q7Vg&retina=true`;
 };
 
-export default function InvestmentsScreen() {
+export default function InvestmentsScreen({
+  embedded = false,
+}: {
+  embedded?: boolean;
+}) {
   const router = useRouter();
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
@@ -354,7 +358,27 @@ export default function InvestmentsScreen() {
     </View>
   );
 
-  return (
+  return embedded ? (
+    <View style={styles.container}>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+      >
+        {renderPortfolioHero()}
+
+        {syncError && (
+          <View style={styles.errorContainer}>
+            <Ionicons name="warning" size={16} color="#F44336" />
+            <Text style={styles.errorText}>{syncError}</Text>
+          </View>
+        )}
+
+        {renderHoldings()}
+        {renderOptions()}
+      </ScrollView>
+    </View>
+  ) : (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
         <View style={styles.header}>

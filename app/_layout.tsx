@@ -185,7 +185,7 @@ export default function RootLayout() {
   return (
     <AuthProvider>
       <RootLayoutNav />
-      <StatusBar style="light" />
+      <StatusBar style="light" backgroundColor="transparent" translucent />
     </AuthProvider>
   );
 }

@@ -23,6 +23,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     supportsTablet: true,
     usesAppleSignIn: true,
     bundleIdentifier: "com.kartikey08.financify",
+    scheme: "financify",
     infoPlist: {
       "ITSAppUsesNonExemptEncryption": false
     }
