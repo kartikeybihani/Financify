@@ -369,6 +369,11 @@ export const styles = StyleSheet.create({
     backgroundColor: "rgba(102, 102, 102, 0.1)",
     opacity: 0.6,
   },
+  buttonGroup: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
   
   // Error Container
   errorContainer: {

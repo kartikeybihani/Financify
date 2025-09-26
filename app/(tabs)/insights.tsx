@@ -52,6 +52,12 @@ import {
   getFilteredTransactionsCount,
   getUserAccountsForFilter,
 } from "../_utils/plaid";
+import {
+  getSnaptradeHoldingsFromDB,
+  getSnaptradeOptionsFromDB,
+  getSnaptradeBalancesFromDB,
+  getSnaptradeConnectionsFromDB,
+} from "../_utils/snaptrade";
 import { forceFullResync } from "../../src/utils/categoryFix";
 import logger from "../_utils/logger";
 
@@ -218,6 +224,12 @@ export default function InsightsScreen() {
   const [selectedTransaction, setSelectedTransaction] =
     useState<Transaction | null>(null);
 
+  // Investment data state
+  const [investmentHoldings, setInvestmentHoldings] = useState<any[]>([]);
+  const [investmentOptions, setInvestmentOptions] = useState<any[]>([]);
+  const [investmentBalances, setInvestmentBalances] = useState<any[]>([]);
+  const [investmentConnections, setInvestmentConnections] = useState<any[]>([]);
+
   // Top bar section state
   const [activeSection, setActiveSection] = useState<
     "investments" | "spending" | "transactions" | "recurring" | "cashflow"
@@ -293,6 +305,7 @@ export default function InsightsScreen() {
           loadFilteredTransactions(filterOptions, true), // Load filtered transactions
           checkForReAuthNeeds(), // Check for update flags and re-auth needs
           loadRecurringTransactions(), // Load recurring transactions from database
+          loadInvestmentData(), // Load investment data from database
         ]);
       } catch (error) {
         logger.error("Error during initialization:", error);
@@ -561,6 +574,8 @@ export default function InsightsScreen() {
           await loadFilteredTransactions(filterOptions, true);
           // Also reload recurring transactions from database when data changes
           await loadRecurringTransactions();
+          // Also reload investment data if financial data changes
+          await loadInvestmentData();
         }
       }
     );
@@ -826,6 +841,57 @@ export default function InsightsScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
   };
 
+  // Load investment data from database
+  const loadInvestmentData = async () => {
+    try {
+      logger.info("Insights: Loading investment data from Supabase...");
+
+      const user = await getCachedAuthUser();
+      if (!user?.id) {
+        logger.error("No authenticated user loading investment data");
+        return false;
+      }
+
+      const [holdings, options, balances, connections] = await Promise.all([
+        getSnaptradeHoldingsFromDB(),
+        getSnaptradeOptionsFromDB(),
+        getSnaptradeBalancesFromDB(),
+        getSnaptradeConnectionsFromDB(),
+      ]);
+
+      const hasAnyData =
+        (holdings && holdings.length > 0) ||
+        (options && options.length > 0) ||
+        (balances && balances.length > 0) ||
+        (connections && connections.length > 0);
+
+      if (hasAnyData) {
+        logger.info(
+          `Insights: Loaded investment data from Supabase - Holdings: ${
+            holdings?.length || 0
+          }, Options: ${options?.length || 0}, Balances: ${
+            balances?.length || 0
+          }, Connections: ${connections?.length || 0}`
+        );
+        setInvestmentHoldings(holdings || []);
+        setInvestmentOptions(options || []);
+        setInvestmentBalances(balances || []);
+        setInvestmentConnections(connections || []);
+        return true;
+      }
+
+      logger.info("Insights: No investment data found");
+      setInvestmentHoldings([]);
+      setInvestmentOptions([]);
+      setInvestmentBalances([]);
+      setInvestmentConnections([]);
+      return false;
+    } catch (err) {
+      logger.error("Failed to load investment data:", err);
+      return false;
+    }
+  };
+
   // Check for re-auth needs (both database flags and API errors)
   const checkForReAuthNeeds = async () => {
     try {
@@ -1019,6 +1085,7 @@ export default function InsightsScreen() {
       await fetchFreshData();
       await loadFilteredTransactions(filterOptions, true);
       await loadRecurringTransactions();
+      await loadInvestmentData();
 
       logger.info(
         "✅ RE-AUTH COMPLETE: All data synced and UI updated from database"
@@ -1030,6 +1097,7 @@ export default function InsightsScreen() {
       try {
         await fetchFreshData();
         await loadFilteredTransactions(filterOptions, true);
+        await loadInvestmentData();
       } catch (fallbackError) {
         logger.error("❌ Fallback data refresh also failed:", fallbackError);
       }
@@ -1098,6 +1166,7 @@ export default function InsightsScreen() {
       await fetchFreshData();
       await loadFilteredTransactions(filterOptions, true);
       await loadRecurringTransactions();
+      await loadInvestmentData();
 
       setRefreshStatus({ type: "manual", message: "Sync completed!" });
       logger.info(
@@ -1177,6 +1246,7 @@ export default function InsightsScreen() {
       await fetchFreshData();
       await loadFilteredTransactions(filterOptions, true);
       await loadRecurringTransactions();
+      await loadInvestmentData();
 
       setRefreshStatus({ type: "category_fix", message: "Categories fixed!" });
       logger.info(
@@ -1258,6 +1328,7 @@ export default function InsightsScreen() {
       await fetchFreshData();
       await loadFilteredTransactions(filterOptions, true);
       await loadRecurringTransactions();
+      await loadInvestmentData();
 
       setRefreshStatus({
         type: "cloud",
@@ -1281,6 +1352,7 @@ export default function InsightsScreen() {
         await fetchFreshData();
         await loadFilteredTransactions(filterOptions, true);
         await loadRecurringTransactions();
+        await loadInvestmentData();
       } catch (fallbackError) {
         logger.error("❌ Fallback refresh failed:", fallbackError);
         setRefreshStatus({ type: "cloud", message: "Unable to refresh data" });
@@ -1533,7 +1605,15 @@ export default function InsightsScreen() {
                     { opacity: fadeAnim },
                   ]}
                 >
-                  <InvestmentsScreen embedded={true} />
+                  <InvestmentsScreen
+                    embedded={true}
+                    preloadedData={{
+                      holdings: investmentHoldings,
+                      options: investmentOptions,
+                      balances: investmentBalances,
+                      connections: investmentConnections,
+                    }}
+                  />
                 </Animated.View>
               )}
             </>

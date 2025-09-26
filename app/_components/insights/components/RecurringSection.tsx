@@ -7,6 +7,7 @@ import {
   Platform,
   useWindowDimensions,
   FlatList,
+  Dimensions,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { GlassView } from "expo-glass-effect";
@@ -53,7 +54,7 @@ export default function RecurringSection({
     : 0;
   const shouldUseLiquidGlass = isIOS && iosVersion >= 18;
 
-  const { width } = useWindowDimensions();
+  const { width } = Dimensions.get("window");
   const horizontalPadding = 0; // No extra padding since parent container already has padding
   const interCardGap = 20;
   const cardWidth = Math.floor(
@@ -319,7 +320,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 12,
     borderWidth: 0,
-    borderColor: "rgba(255, 255, 255, 0.08)",
+    borderColor: "rgba(248, 17, 17, 0.08)",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,

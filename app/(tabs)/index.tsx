@@ -36,6 +36,10 @@ import { useRouter } from "expo-router";
 import FinancialBottomSheet from "../_components/shared/FinancialBottomSheet";
 import FinancialCard from "../_components/shared/FinancialCard";
 import AccountItem from "../_components/shared/AccountItem";
+import CategorySelectionModal from "../_components/modals/CategorySelectionModal";
+import CashDepositInstitutionModal from "../_components/modals/CashDepositInstitutionModal";
+import CreditCardInstitutionModal from "../_components/modals/CreditCardInstitutionModal";
+import InstitutionSelectionModal from "../_components/modals/InstitutionSelectionModal";
 import { LoadingSkeleton } from "../../src/components/LoadingSkeleton";
 import { Goal } from "../_types/finny";
 import { useGoals } from "../_hooks/useGoals";
@@ -78,6 +82,10 @@ export default function HomeScreen() {
 
   // Modal states
   const [activeModal, setActiveModal] = useState<"accounts" | null>(null);
+  const [showCategoryModal, setShowCategoryModal] = useState(false);
+  const [showCashModal, setShowCashModal] = useState(false);
+  const [showCreditModal, setShowCreditModal] = useState(false);
+  const [showInvestmentModal, setShowInvestmentModal] = useState(false);
 
   // Financial data states
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -770,27 +778,9 @@ export default function HomeScreen() {
           {/* Add Account Button */}
           <TouchableOpacity
             style={styles.addAccountButton}
-            onPress={async () => {
+            onPress={() => {
               logger.info("Add Another Account pressed from home screen");
-              try {
-                await addNewBankAccount(
-                  async (itemId) => {
-                    logger.info(
-                      "Successfully added new bank account from home:",
-                      itemId
-                    );
-                    await fetchFreshData();
-                  },
-                  (error) => {
-                    logger.error(
-                      "Failed to add new bank account from home:",
-                      error
-                    );
-                  }
-                );
-              } catch (error) {
-                logger.error("Error calling addNewBankAccount:", error);
-              }
+              setShowCategoryModal(true);
             }}
           >
             <Text style={styles.addAccountButtonText}>
@@ -848,7 +838,7 @@ export default function HomeScreen() {
                     onPress={() => {
                       setActiveModal(null);
                       setTimeout(() => {
-                        router.push("/investments");
+                        router.push("/(tabs)/insights" as any);
                       }, 150);
                     }}
                   />
@@ -911,6 +901,105 @@ export default function HomeScreen() {
                 items: [],
               },
             ]}
+          />
+
+          {/* Category Selection Modal */}
+          <CategorySelectionModal
+            visible={showCategoryModal}
+            onClose={() => setShowCategoryModal(false)}
+            onCategorySelect={(category) => {
+              setShowCategoryModal(false);
+              if (category === "cash_deposit") {
+                setShowCashModal(true);
+              } else if (category === "liabilities") {
+                setShowCreditModal(true);
+              } else if (category === "investments") {
+                setShowInvestmentModal(true);
+              } else if (category === "retirement") {
+                setShowInvestmentModal(true);
+              }
+            }}
+          />
+
+          {/* Cash Deposit Institution Modal */}
+          <CashDepositInstitutionModal
+            visible={showCashModal}
+            onClose={() => setShowCashModal(false)}
+            onInstitutionSelect={async (institutionId) => {
+              logger.info("Cash deposit institution selected:", institutionId);
+              try {
+                if (institutionId === "other") {
+                  // Handle other institutions for cash deposits
+                  await addNewBankAccount(
+                    async (itemId) => {
+                      logger.info(
+                        "Successfully added new cash account:",
+                        itemId
+                      );
+                      await fetchFreshData();
+                    },
+                    (error) => {
+                      logger.error("Failed to add new cash account:", error);
+                    }
+                  );
+                } else {
+                  // Use standard bank account addition flow
+                  await addNewBankAccount(
+                    async (itemId) => {
+                      logger.info(
+                        "Successfully added new cash account:",
+                        itemId
+                      );
+                      await fetchFreshData();
+                    },
+                    (error) => {
+                      logger.error("Failed to add new cash account:", error);
+                    }
+                  );
+                }
+              } catch (error) {
+                logger.error("Error adding cash account:", error);
+              }
+            }}
+          />
+
+          {/* Credit Card Institution Modal */}
+          <CreditCardInstitutionModal
+            visible={showCreditModal}
+            onClose={() => setShowCreditModal(false)}
+            onInstitutionSelect={async (institutionId) => {
+              logger.info("Credit card institution selected:", institutionId);
+              try {
+                await addNewBankAccount(
+                  async (itemId) => {
+                    logger.info(
+                      "Successfully added new credit card account:",
+                      itemId
+                    );
+                    await fetchFreshData();
+                  },
+                  (error) => {
+                    logger.error(
+                      "Failed to add new credit card account:",
+                      error
+                    );
+                  }
+                );
+              } catch (error) {
+                logger.error("Error adding credit card account:", error);
+              }
+            }}
+          />
+
+          {/* Investment Institution Modal */}
+          <InstitutionSelectionModal
+            visible={showInvestmentModal}
+            onClose={() => setShowInvestmentModal(false)}
+            onInstitutionSelect={async (institutionId) => {
+              logger.info("Investment institution selected:", institutionId);
+              // Investment institutions are handled by the InstitutionSelectionModal itself
+              // which calls the Snaptrade connection logic
+            }}
           />
         </ScrollView>
       </>

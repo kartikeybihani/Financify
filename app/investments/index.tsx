@@ -24,6 +24,7 @@ import {
   populateInvestmentAccountsInDB,
 } from "../_utils/snaptrade";
 import { styles } from "../_styles/investmentsStyles";
+import InstitutionSelectionModal from "../_components/modals/InstitutionSelectionModal";
 
 interface Holding {
   symbol: string;
@@ -67,8 +68,15 @@ const getCompanyLogoUrl = (symbol: string): string => {
 
 export default function InvestmentsScreen({
   embedded = false,
+  preloadedData,
 }: {
   embedded?: boolean;
+  preloadedData?: {
+    holdings?: any[];
+    options?: any[];
+    balances?: any[];
+    connections?: any[];
+  };
 }) {
   const router = useRouter();
   const [isSyncing, setIsSyncing] = useState(false);
@@ -77,6 +85,7 @@ export default function InvestmentsScreen({
   const [options, setOptions] = useState<OptionPosition[]>([]);
   const [balances, setBalances] = useState<BalanceRow[]>([]);
   const [connections, setConnections] = useState<ConnectionRow[]>([]);
+  const [showInstitutionModal, setShowInstitutionModal] = useState(false);
   const hasData = useRef(false);
 
   const loadFromDb = async () => {
@@ -132,27 +141,50 @@ export default function InvestmentsScreen({
         return;
       }
 
-      try {
-        // Load stored data first (like transaction screens)
-        const hasStoredData = await loadFromDb();
+      // Check if data is preloaded (when embedded in insights screen)
+      if (preloadedData) {
+        logger.info("Investments: Using preloaded data from insights screen");
+        setHoldings(preloadedData.holdings || []);
+        setOptions(preloadedData.options || []);
+        setBalances(preloadedData.balances || []);
+        setConnections(preloadedData.connections || []);
 
-        // If no stored data, we could potentially trigger a sync here
-        // but for now, we'll just show the empty state
-        if (!hasStoredData) {
-          logger.info("Investments: No stored data found, showing empty state");
+        const hasAnyData =
+          (preloadedData.holdings && preloadedData.holdings.length > 0) ||
+          (preloadedData.options && preloadedData.options.length > 0) ||
+          (preloadedData.balances && preloadedData.balances.length > 0) ||
+          (preloadedData.connections && preloadedData.connections.length > 0);
+
+        hasData.current = !!hasAnyData;
+        return; // Skip all database loading/logic when using preloaded data
+      }
+
+      // Only perform database loading when NOT embedded (standalone mode)
+      if (!embedded) {
+        try {
+          // Load stored data first (like transaction screens)
+          const hasStoredData = await loadFromDb();
+
+          // If no stored data, we could potentially trigger a sync here
+          // but for now, we'll just show the empty state
+          if (!hasStoredData) {
+            logger.info(
+              "Investments: No stored data found, showing empty state"
+            );
+          }
+
+          // Populate investment accounts in main accounts table (non-blocking)
+          populateInvestmentAccountsInDB().catch((err) =>
+            logger.error("Failed to populate investment accounts:", err)
+          );
+        } catch (error) {
+          logger.error("Error during investment initialization:", error);
         }
-
-        // Populate investment accounts in main accounts table (non-blocking)
-        populateInvestmentAccountsInDB().catch((err) =>
-          logger.error("Failed to populate investment accounts:", err)
-        );
-      } catch (error) {
-        logger.error("Error during investment initialization:", error);
       }
     };
 
     initializeScreen();
-  }, []);
+  }, [preloadedData, embedded]);
 
   const handleSync = async () => {
     setIsSyncing(true);
@@ -211,6 +243,20 @@ export default function InvestmentsScreen({
     } finally {
       setIsSyncing(false);
     }
+  };
+
+  const handleAddInvestmentAccount = () => {
+    logger.info("Add Investment Account button pressed");
+    setShowInstitutionModal(true);
+  };
+
+  const handleInstitutionSelect = (institutionId: string) => {
+    logger.info("Investment institution selected:", institutionId);
+    setShowInstitutionModal(false);
+  };
+
+  const handleInstitutionModalClose = () => {
+    setShowInstitutionModal(false);
   };
 
   const totalHoldingsValue = holdings.reduce(
@@ -410,21 +456,31 @@ export default function InvestmentsScreen({
                 </Text>
               </View>
             </View>
-            {/* Sync Button */}
-            <TouchableOpacity
-              style={[
-                styles.syncButton,
-                isSyncing && styles.syncButtonDisabled,
-              ]}
-              onPress={handleSync}
-              disabled={isSyncing}
-            >
-              <Ionicons
-                name={isSyncing ? "hourglass" : "refresh"}
-                size={18}
-                color="#4A90E2"
-              />
-            </TouchableOpacity>
+            {/* Button Group with Spacing */}
+            <View style={styles.buttonGroup}>
+              {/* Sync Button */}
+              <TouchableOpacity
+                style={[
+                  styles.syncButton,
+                  isSyncing && styles.syncButtonDisabled,
+                ]}
+                onPress={handleSync}
+                disabled={isSyncing}
+              >
+                <Ionicons
+                  name={isSyncing ? "hourglass" : "refresh"}
+                  size={18}
+                  color="#4A90E2"
+                />
+              </TouchableOpacity>
+              {/* Add Account Button */}
+              <TouchableOpacity
+                style={styles.syncButton}
+                onPress={handleAddInvestmentAccount}
+              >
+                <Ionicons name="add-outline" size={18} color="#4A90E2" />
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </View>
@@ -546,71 +602,85 @@ export default function InvestmentsScreen({
     );
   };
 
-  return embedded ? (
-    <View style={styles.container}>
-      <ScrollView
-        style={{ flex: 1 }}
-        contentContainerStyle={styles.embeddedContent}
-        showsVerticalScrollIndicator={false}
-      >
-        {renderPortfolioSummary()}
-
-        {syncError && (
-          <View style={styles.errorContainer}>
-            <Ionicons name="warning" size={16} color="#F44336" />
-            <Text style={styles.errorText}>{syncError}</Text>
-          </View>
-        )}
-
-        {renderHoldings()}
-        {renderOptions()}
-      </ScrollView>
-    </View>
-  ) : (
-    <SafeAreaView style={styles.safeArea}>
-      <View style={styles.container}>
-        <View style={styles.header}>
-          <TouchableOpacity
-            style={styles.backBtn}
-            onPress={() => router.back()}
+  return (
+    <>
+      {embedded ? (
+        <View style={styles.container}>
+          <ScrollView
+            style={{ flex: 1 }}
+            contentContainerStyle={styles.embeddedContent}
+            showsVerticalScrollIndicator={false}
           >
-            <Ionicons name="chevron-back" size={24} color="#4A90E2" />
-          </TouchableOpacity>
-          <View style={styles.headerTextContainer}>
-            <Text style={styles.greetingText}>Investment Portfolio</Text>
-            <Text style={styles.subGreeting}>Track your wealth</Text>
-          </View>
-          <TouchableOpacity
-            style={[styles.syncButton, isSyncing && styles.syncButtonDisabled]}
-            onPress={handleSync}
-            disabled={isSyncing}
-          >
-            <Ionicons
-              name={isSyncing ? "hourglass" : "refresh"}
-              size={18}
-              color="#4A90E2"
-            />
-          </TouchableOpacity>
+            {renderPortfolioSummary()}
+
+            {syncError && (
+              <View style={styles.errorContainer}>
+                <Ionicons name="warning" size={16} color="#F44336" />
+                <Text style={styles.errorText}>{syncError}</Text>
+              </View>
+            )}
+
+            {renderHoldings()}
+            {renderOptions()}
+          </ScrollView>
         </View>
-
-        <ScrollView
-          style={{ flex: 1 }}
-          contentContainerStyle={styles.content}
-          showsVerticalScrollIndicator={false}
-        >
-          {renderPortfolioSummary()}
-
-          {syncError && (
-            <View style={styles.errorContainer}>
-              <Ionicons name="warning" size={16} color="#F44336" />
-              <Text style={styles.errorText}>{syncError}</Text>
+      ) : (
+        <SafeAreaView style={styles.safeArea}>
+          <View style={styles.container}>
+            <View style={styles.header}>
+              <TouchableOpacity
+                style={styles.backBtn}
+                onPress={() => router.back()}
+              >
+                <Ionicons name="chevron-back" size={24} color="#4A90E2" />
+              </TouchableOpacity>
+              <View style={styles.headerTextContainer}>
+                <Text style={styles.greetingText}>Investment Portfolio</Text>
+                <Text style={styles.subGreeting}>Track your wealth</Text>
+              </View>
+              <TouchableOpacity
+                style={[
+                  styles.syncButton,
+                  isSyncing && styles.syncButtonDisabled,
+                ]}
+                onPress={handleSync}
+                disabled={isSyncing}
+              >
+                <Ionicons
+                  name={isSyncing ? "hourglass" : "refresh"}
+                  size={18}
+                  color="#4A90E2"
+                />
+              </TouchableOpacity>
             </View>
-          )}
 
-          {renderHoldings()}
-          {renderOptions()}
-        </ScrollView>
-      </View>
-    </SafeAreaView>
+            <ScrollView
+              style={{ flex: 1 }}
+              contentContainerStyle={styles.content}
+              showsVerticalScrollIndicator={false}
+            >
+              {renderPortfolioSummary()}
+
+              {syncError && (
+                <View style={styles.errorContainer}>
+                  <Ionicons name="warning" size={16} color="#F44336" />
+                  <Text style={styles.errorText}>{syncError}</Text>
+                </View>
+              )}
+
+              {renderHoldings()}
+              {renderOptions()}
+            </ScrollView>
+          </View>
+        </SafeAreaView>
+      )}
+
+      {/* Institution Selection Modal */}
+      <InstitutionSelectionModal
+        visible={showInstitutionModal}
+        onClose={handleInstitutionModalClose}
+        onInstitutionSelect={handleInstitutionSelect}
+      />
+    </>
   );
 }

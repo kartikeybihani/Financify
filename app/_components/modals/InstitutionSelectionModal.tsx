@@ -5,10 +5,9 @@ import {
   Text,
   TouchableOpacity,
   StyleSheet,
-  ScrollView,
   Platform,
-  useWindowDimensions,
   Image,
+  Pressable,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -28,13 +27,12 @@ import {
 } from "../../_utils/snaptrade";
 import { supabase } from "../../_lib/supabase/supabase";
 import logger from "../../_utils/logger";
-
-interface Institution {
-  id: string;
-  name: string;
-  color: string;
-  initials: string;
-}
+import {
+  INVESTMENT_INSTITUTIONS,
+  INSTITUTION_LOGO_MAP,
+  LIGHT_BG_LOGO_IDS,
+  type Institution,
+} from "../shared/modal-constants";
 
 interface Holding {
   symbol: string;
@@ -75,101 +73,12 @@ interface InstitutionSelectionModalProps {
   onReopenFinancialSheet?: () => void;
 }
 
-const institutions: Institution[] = [
-  {
-    id: "american_express",
-    name: "American Express",
-    color: "#006FCF",
-    initials: "AE",
-  },
-  {
-    id: "capital_one",
-    name: "Capital One",
-    color: "#FF0000",
-    initials: "CO",
-  },
-  {
-    id: "chase",
-    name: "Chase",
-    color: "#117ACA",
-    initials: "CH",
-  },
-  {
-    id: "fidelity",
-    name: "Fidelity",
-    color: "#00A651",
-    initials: "FI",
-  },
-  {
-    id: "wells_fargo",
-    name: "Wells Fargo",
-    color: "#D71921",
-    initials: "WF",
-  },
-  {
-    id: "alpaca",
-    name: "Alpaca",
-    color: "#FFC107",
-    initials: "AL",
-  },
-  {
-    id: "charles_schwab",
-    name: "Charles Schwab",
-    color: "#00A0DF",
-    initials: "CS",
-  },
-  {
-    id: "coinbase",
-    name: "Coinbase",
-    color: "#0052FF",
-    initials: "CB",
-  },
-  {
-    id: "etrade",
-    name: "E*TRADE",
-    color: "#9013FE",
-    initials: "ET",
-  },
-  {
-    id: "interactive_brokers",
-    name: "Interactive Brokers",
-    color: "#DC143C",
-    initials: "IB",
-  },
-  {
-    id: "public",
-    name: "Public",
-    color: "#212121",
-    initials: "PU",
-  },
-  {
-    id: "robinhood",
-    name: "Robinhood",
-    color: "#00C805",
-    initials: "RH",
-  },
-  {
-    id: "wealthfront",
-    name: "Wealthfront",
-    color: "#4840BB",
-    initials: "WF",
-  },
-  {
-    id: "webull",
-    name: "Webull",
-    color: "#1976D2",
-    initials: "WB",
-  },
-];
-
 export default function InstitutionSelectionModal({
   visible,
   onClose,
   onInstitutionSelect,
   onReopenFinancialSheet,
 }: InstitutionSelectionModalProps) {
-  const { height } = useWindowDimensions();
-  const maxHeight = height * 0.85;
   const [isConnecting, setIsConnecting] = useState(false);
   const [showInvestmentModal, setShowInvestmentModal] = useState(false);
   const [investmentData, setInvestmentData] = useState<{
@@ -185,32 +94,6 @@ export default function InstitutionSelectionModal({
   });
   const [isSyncing, setIsSyncing] = useState(false);
   const router = useRouter();
-
-  // Map institution ids to local logo assets
-  const institutionLogoMap: Record<string, any> = {
-    american_express: require("../../../assets/invest_logo/amex.png"),
-    capital_one: require("../../../assets/invest_logo/capitalone.png"),
-    chase: require("../../../assets/invest_logo/chase.png"),
-    wells_fargo: require("../../../assets/invest_logo/wellsfargo.png"),
-    alpaca: require("../../../assets/invest_logo/alpaca.png"),
-    charles_schwab: require("../../../assets/invest_logo/charles.png"),
-    coinbase: require("../../../assets/invest_logo/coinbase.png"),
-    etrade: require("../../../assets/invest_logo/etrade.png"),
-    public: require("../../../assets/invest_logo/public.png"),
-    robinhood: require("../../../assets/invest_logo/robinhood.png"),
-    wealthfront: require("../../../assets/invest_logo/wealthfront.png"),
-    webull: require("../../../assets/invest_logo/webull.png"),
-    fidelity: require("../../../assets/invest_logo/fidelity.png"),
-    interactive_brokers: require("../../../assets/invest_logo/ib.png"),
-  };
-
-  // Logos that use dark text/mark; use lighter bg for contrast
-  const lightBgLogoIds = new Set<string>([
-    "public",
-    "capital_one",
-    "etrade",
-    "alpaca",
-  ]);
 
   const handleFidelityConnection = async () => {
     logger.info("🔄 Starting Fidelity connection...");
@@ -484,8 +367,8 @@ export default function InstitutionSelectionModal({
 
   const renderInstitutionCard = (institution: Institution) => {
     const isLoadingFidelity = isConnecting && institution.id === "fidelity";
-    const logoSource = (institutionLogoMap as any)[institution.id];
-    const useLightBg = lightBgLogoIds.has(institution.id);
+    const logoSource = (INSTITUTION_LOGO_MAP as any)[institution.id];
+    const useLightBg = LIGHT_BG_LOGO_IDS.has(institution.id);
 
     return (
       <TouchableOpacity
@@ -539,74 +422,74 @@ export default function InstitutionSelectionModal({
       >
         <View style={styles.overlay}>
           <BlurView
-            intensity={50}
+            intensity={30}
             style={StyleSheet.absoluteFill}
             tint="dark"
           />
-          <View style={styles.modalContainer}>
-            <View style={[styles.sheet, { height: maxHeight }]}>
-              <View style={styles.handleContainer}>
-                <View style={styles.handle} />
-              </View>
+          <Pressable style={styles.overlay} onPress={handleClose}>
+            <View style={styles.modalContainer}>
+              <View style={styles.sheet}>
+                <Pressable onPress={(e) => e.stopPropagation()}>
+                  <View style={styles.handleContainer}>
+                    <View style={styles.handle} />
+                  </View>
 
-              <View style={styles.header}>
-                <View style={styles.titleContainer}>
-                  <Text style={styles.title}>Select your institution</Text>
-                </View>
-                <TouchableOpacity
-                  onPress={handleClose}
-                  style={styles.closeButton}
-                >
-                  <LinearGradient
-                    colors={[
-                      "rgba(255, 255, 255, 0.15)",
-                      "rgba(255, 255, 255, 0.05)",
-                    ]}
-                    style={styles.closeButtonCircle}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                  >
-                    <Ionicons name="close" size={18} color="#fff" />
-                  </LinearGradient>
-                </TouchableOpacity>
-              </View>
-
-              <ScrollView
-                style={styles.content}
-                showsVerticalScrollIndicator={false}
-                contentContainerStyle={styles.scrollContent}
-              >
-                <View style={styles.institutionsGrid}>
-                  {institutions.map((institution) =>
-                    renderInstitutionCard(institution)
-                  )}
-
-                  {/* Other Institutions Card */}
-                  <TouchableOpacity
-                    style={[
-                      styles.institutionCard,
-                      styles.otherInstitutionsCard,
-                    ]}
-                    onPress={handleOtherInstitutions}
-                    activeOpacity={0.8}
-                  >
-                    <View style={styles.institutionContent}>
-                      <View style={styles.otherInstitutionsIcon}>
-                        <Ionicons
-                          name="business-outline"
-                          size={24}
-                          color="#4A90E2"
-                        />
-                      </View>
-                      <Text style={styles.institutionName}>
-                        Other Institutions
-                      </Text>
+                  <View style={styles.header}>
+                    <View style={styles.titleContainer}>
+                      <Text style={styles.title}>Select your institution</Text>
                     </View>
-                  </TouchableOpacity>
-                </View>
-              </ScrollView>
+                    <TouchableOpacity
+                      onPress={handleClose}
+                      style={styles.closeButton}
+                    >
+                      <LinearGradient
+                        colors={[
+                          "rgba(255, 255, 255, 0.15)",
+                          "rgba(255, 255, 255, 0.05)",
+                        ]}
+                        style={styles.closeButtonCircle}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                      >
+                        <Ionicons name="close" size={18} color="#fff" />
+                      </LinearGradient>
+                    </TouchableOpacity>
+                  </View>
+
+                  <View style={styles.content}>
+                    <View style={styles.institutionsGrid}>
+                      {INVESTMENT_INSTITUTIONS.map((institution) =>
+                        renderInstitutionCard(institution)
+                      )}
+
+                      {/* Other Institutions Card */}
+                      <TouchableOpacity
+                        style={[
+                          styles.institutionCard,
+                          styles.otherInstitutionsCard,
+                        ]}
+                        onPress={handleOtherInstitutions}
+                        activeOpacity={0.8}
+                      >
+                        <View style={styles.institutionContent}>
+                          <View style={styles.otherInstitutionsIcon}>
+                            <Ionicons
+                              name="business-outline"
+                              size={24}
+                              color="#4A90E2"
+                            />
+                          </View>
+                          <Text style={styles.institutionName}>
+                            Other Institutions
+                          </Text>
+                        </View>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                </Pressable>
+              </View>
             </View>
-          </View>
+          </Pressable>
         </View>
       </Modal>
     </>
@@ -616,7 +499,7 @@ export default function InstitutionSelectionModal({
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.8)",
+    backgroundColor: "transparent",
     justifyContent: "flex-end",
     zIndex: 9999,
   },
@@ -628,6 +511,9 @@ const styles = StyleSheet.create({
     backgroundColor: "#121212",
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
+    borderTopWidth: 0,
+    borderLeftWidth: 0,
+    borderRightWidth: 0,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: -4 },
     shadowOpacity: 0.25,
@@ -678,9 +564,6 @@ const styles = StyleSheet.create({
     borderColor: "rgba(255, 255, 255, 0.2)",
   },
   content: {
-    flex: 1,
-  },
-  scrollContent: {
     padding: 20,
     paddingTop: 0,
   },
@@ -694,13 +577,13 @@ const styles = StyleSheet.create({
     width: "47%",
     backgroundColor: "#ffffff",
     borderRadius: 12,
-    padding: 8,
+    padding: 6,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 16,
+    marginBottom: 12,
     borderWidth: 1,
     borderColor: "rgba(0, 0, 0, 0.08)",
-    minHeight: 80,
+    minHeight: 70,
   },
   institutionCardLoading: {
     opacity: 0.6,
@@ -717,21 +600,19 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   logoContainer: {
-    width: 64,
-    height: 64,
+    width: 55,
+    height: 55,
     alignItems: "center",
     justifyContent: "center",
   },
   logoPlaceholder: {
-    width: 48,
-    height: 48,
     borderRadius: 8,
     alignItems: "center",
     justifyContent: "center",
   },
   logoImage: {
-    width: 124,
-    height: 114,
+    width: 120,
+    height: 120,
   },
   logoText: {
     color: "#000",

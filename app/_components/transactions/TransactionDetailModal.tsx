@@ -490,11 +490,11 @@ const styles = StyleSheet.create({
   },
   handleContainer: {
     alignItems: "center",
-    paddingVertical: 12,
+    paddingVertical: 10,
   },
   handle: {
     width: 40,
-    height: 4,
+    height: 3,
     borderRadius: 2,
     backgroundColor: "rgba(255, 255, 255, 0.3)",
   },

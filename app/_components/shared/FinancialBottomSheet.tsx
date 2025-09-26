@@ -51,15 +51,6 @@ export default function FinancialBottomSheet({
   onAccountAdded,
 }: FinancialBottomSheetProps) {
   const { height, width } = useWindowDimensions();
-  const insets = useSafeAreaInsets();
-
-  // Responsive calculations
-  const screenData = {
-    width,
-    height,
-    scale: PixelRatio.get(),
-    fontScale: PixelRatio.getFontScale(),
-  };
 
   // Dynamic sizing based on screen dimensions
   const isSmallScreen = height < 700; // iPhone SE, iPhone 12 mini
