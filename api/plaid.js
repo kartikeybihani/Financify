@@ -517,16 +517,24 @@ async function handleSnapTradeSync(res, userId, accountId) {
                 ? holding.units * holding.price
                 : null;
 
-            let dayChange = holding.day_change || null;
-            let dayChangePercent = holding.day_change_percent || null;
+            let dayChange = null;
+            let dayChangePercent = null;
 
-            // If SnapTrade doesn't provide day_change data, calculate it dynamically
-            if (!dayChange && currentMarketValue && symbol?.id) {
+            // Calculate day change dynamically since SnapTrade day_change is always null
+            if (currentMarketValue && symbol?.id) {
               try {
+                console.log(
+                  `🔍 Analyzing ${symbol.symbol}: currentMarketValue = $${currentMarketValue}`
+                );
+
                 // Get previous market value by checking for yesterday's data
                 const yesterday = new Date();
                 yesterday.setDate(yesterday.getDate() - 1);
                 const yesterdayISO = yesterday.toISOString().split("T")[0];
+
+                console.log(
+                  `📅 Looking for historical data before: ${yesterdayISO}T23:59:59`
+                );
 
                 // Look for previous day's snapshot - try multiple strategies for better coverage
                 let { data: previousHoldings, error: prevError } =
@@ -542,37 +550,52 @@ async function handleSnapTradeSync(res, userId, accountId) {
                     .order("last_updated", { ascending: false })
                     .limit(1);
 
-                // If no data for yesterday, try up to 3 days before for weekends/holidays
+                console.log(`📊 Yesterday query result for ${symbol.symbol}:`, {
+                  found: previousHoldings?.length || 0,
+                  error: prevError?.message || null,
+                });
+
+                // If no data for yesterday, try up to 7 days before for weekends/holidays
                 if (
                   (!prevError &&
                     (!previousHoldings || previousHoldings.length === 0)) ||
                   prevError
                 ) {
-                  const beforeYesterday = new Date(yesterday);
-                  beforeYesterday.setDate(beforeYesterday.getDate() - 1);
-                  const dayBefore = beforeYesterday.toISOString().split("T")[0];
+                  console.log(
+                    `🔍 No yesterday's data for ${symbol.symbol}, trying previous days...`
+                  );
 
-                  const beforeResult = await supabase
-                    .from("investment_holdings")
-                    .select("price, market_value, last_updated, units")
-                    .eq("snaptrade_user_id", connection.snaptrade_user_id)
-                    .eq("account_id", accountId)
-                    .eq("symbol_id", symbol.id)
-                    .eq("is_active", true)
-                    .lte("last_updated", dayBefore + "T23:59:59")
-                    .order("last_updated", { ascending: false })
-                    .limit(1);
+                  // Try multiple days back up to a week
+                  for (let daysBack = 1; daysBack <= 7; daysBack++) {
+                    const beforeDate = new Date(yesterday);
+                    beforeDate.setDate(beforeDate.getDate() - daysBack);
+                    const dayBefore = beforeDate.toISOString().split("T")[0];
 
-                  if (
-                    !beforeResult.error &&
-                    beforeResult.data &&
-                    beforeResult.data.length > 0
-                  ) {
-                    previousHoldings = beforeResult.data;
-                    prevError = null;
-                    console.log(
-                      `📊 Using ${dayBefore} data for ${symbol.symbol} (no weekend data available)`
-                    );
+                    const beforeResult = await supabase
+                      .from("investment_holdings")
+                      .select("price, market_value, last_updated, units")
+                      .eq("snaptrade_user_id", connection.snaptrade_user_id)
+                      .eq("account_id", accountId)
+                      .eq("symbol_id", symbol.id)
+                      .eq("is_active", true)
+                      .lte("last_updated", dayBefore + "T23:59:59")
+                      .order("last_updated", { ascending: false })
+                      .limit(1);
+
+                    if (
+                      !beforeResult.error &&
+                      beforeResult.data &&
+                      beforeResult.data.length > 0
+                    ) {
+                      previousHoldings = beforeResult.data;
+                      prevError = null;
+                      console.log(
+                        `📊 Using ${dayBefore} data for ${
+                          symbol.symbol
+                        } (${daysBack} day${daysBack > 1 ? "s" : ""} back)`
+                      );
+                      break;
+                    }
                   }
                 }
 
@@ -583,15 +606,33 @@ async function handleSnapTradeSync(res, userId, accountId) {
                 ) {
                   const prevHolding = previousHoldings[0];
 
-                  // Ensure we're comparing apples to apples - same number of units if available
-                  let prevMarketValue = prevHolding.market_value;
+                  console.log(`📈 Previous data found for ${symbol.symbol}:`, {
+                    price: prevHolding.price,
+                    marketValue: prevHolding.market_value,
+                    units: prevHolding.units,
+                    lastUpdated: prevHolding.last_updated,
+                  });
 
-                  // If unit counts are different, normalize by price change instead
-                  if (
+                  // Standard market value comparison (preferred)
+                  if (prevHolding.market_value && currentMarketValue) {
+                    dayChange = currentMarketValue - prevHolding.market_value;
+                    dayChangePercent =
+                      prevHolding.market_value > 0
+                        ? (dayChange / prevHolding.market_value) * 100
+                        : null;
+                    console.log(
+                      `💰 Market Value Comparison for ${symbol.symbol}: ${
+                        prevHolding.market_value
+                      } → ${currentMarketValue} = $${dayChange.toFixed(2)} ${
+                        dayChange >= 0 ? "📈" : "📉"
+                      }`
+                    );
+                  }
+                  // Fallback to price-based calculation if market_value comparison fails
+                  else if (
                     prevHolding.price &&
                     holding.price &&
-                    prevHolding.units !== holding.units &&
-                    prevHolding.units > 0
+                    holding.units > 0
                   ) {
                     // Calculate price change and apply to current units
                     const priceChange = holding.price - prevHolding.price;
@@ -601,23 +642,11 @@ async function handleSnapTradeSync(res, userId, accountId) {
                         ? (priceChange / prevHolding.price) * 100
                         : null;
                     console.log(
-                      `📈 Calculated price-based day change for ${
-                        symbol.symbol
-                      }: $${dayChange.toFixed(2)}`
-                    );
-                  } else if (prevMarketValue && currentMarketValue) {
-                    // Standard market value comparison
-                    dayChange = currentMarketValue - prevMarketValue;
-                    dayChangePercent =
-                      prevMarketValue > 0
-                        ? (dayChange / prevMarketValue) * 100
-                        : null;
-                    console.log(
-                      `📈 Calculated market value day change for ${
-                        symbol.symbol
-                      }: $${dayChange.toFixed(2)} ${
-                        dayChange >= 0 ? "📈" : "📉"
-                      }`
+                      `📊 Price Comparison for ${symbol.symbol}: ${
+                        prevHolding.price
+                      } → ${holding.price} × ${
+                        holding.units
+                      } = $${dayChange.toFixed(2)}`
                     );
                   }
                 } else {

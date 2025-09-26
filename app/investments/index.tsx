@@ -185,9 +185,27 @@ export default function InvestmentsScreen({
     let totalDailyPerformance = 0;
     let hasValidDayData = false;
 
+    console.log(
+      "🔍 Calculating today's performance with holdings:",
+      holdings.length
+    );
+
     for (const holding of holdings) {
-      // First priority: use day_change field from SnapTrade if available
-      if (holding.day_change !== null && holding.day_change !== undefined) {
+      console.log(`🔍 Processing ${holding.symbol}:`, {
+        day_change: holding.day_change,
+        day_change_percent: holding.day_change_percent,
+        market_value: holding.market_value,
+      });
+
+      // First priority: use day_change field from database if available
+      if (
+        holding.day_change !== null &&
+        holding.day_change !== undefined &&
+        !isNaN(holding.day_change)
+      ) {
+        console.log(
+          `✅ Adding day_change for ${holding.symbol}: ${holding.day_change}`
+        );
         totalDailyPerformance += holding.day_change;
         hasValidDayData = true;
         continue;
@@ -197,19 +215,27 @@ export default function InvestmentsScreen({
       if (
         holding.day_change_percent !== null &&
         holding.day_change_percent !== undefined &&
+        !isNaN(holding.day_change_percent) &&
         holding.market_value
       ) {
         const dailyChange =
           (holding.market_value * holding.day_change_percent) / 100;
+        console.log(
+          `✅ Adding day_change_percent for ${holding.symbol}: ${dailyChange} (${holding.day_change_percent}% of ${holding.market_value})`
+        );
         totalDailyPerformance += dailyChange;
         hasValidDayData = true;
         continue;
       }
     }
 
+    console.log(
+      `📊 Total daily performance calculated: $${totalDailyPerformance}, hasValidDayData: ${hasValidDayData}`
+    );
+
     // If we don't have day change data, we can't accurately show today's performance
-    // This is the correct approach since we cannot use total unrealized_pl for daily changes
     if (!hasValidDayData) {
+      console.log("⚠️ No day change data found, setting performance to 0");
       return {
         amount: 0,
         percentage: 0,
@@ -221,6 +247,12 @@ export default function InvestmentsScreen({
       totalPortfolioValue > 0
         ? (totalDailyPerformance / totalPortfolioValue) * 100
         : 0;
+
+    console.log(
+      `✅ Final performance: $${totalDailyPerformance.toFixed(
+        2
+      )}, ${todayPortfolioPercentage.toFixed(2)}%`
+    );
 
     return {
       amount: totalDailyPerformance,
