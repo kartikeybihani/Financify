@@ -290,11 +290,11 @@ export default function InvestmentsScreen({
     );
 
     for (const holding of holdings) {
-      console.log(`🔍 Processing ${holding.symbol}:`, {
-        day_change: holding.day_change,
-        day_change_percent: holding.day_change_percent,
-        market_value: holding.market_value,
-      });
+      // console.log(`🔍 Processing ${holding.symbol}:`, {
+      //   day_change: holding.day_change,
+      //   day_change_percent: holding.day_change_percent,
+      //   market_value: holding.market_value,
+      // });
 
       // STEP 1: First priority - use day_change field from Supabase database if available
       if (
@@ -302,9 +302,9 @@ export default function InvestmentsScreen({
         holding.day_change !== undefined &&
         !isNaN(holding.day_change)
       ) {
-        console.log(
-          `✅ Using day_change from Supabase for ${holding.symbol}: ${holding.day_change}`
-        );
+        // console.log(
+        //   `✅ Using day_change from Supabase for ${holding.symbol}: ${holding.day_change}`
+        // );
         totalDailyPerformance += holding.day_change;
         hasValidDayData = true;
         continue;
@@ -319,9 +319,9 @@ export default function InvestmentsScreen({
       ) {
         const dailyChange =
           (holding.market_value * holding.day_change_percent) / 100;
-        console.log(
-          `✅ Using day_change_percent from Supabase for ${holding.symbol}: ${dailyChange} (${holding.day_change_percent}% of ${holding.market_value})`
-        );
+        // console.log(
+        //   `✅ Using day_change_percent from Supabase for ${holding.symbol}: ${dailyChange} (${holding.day_change_percent}% of ${holding.market_value})`
+        // );
         totalDailyPerformance += dailyChange;
         hasValidDayData = true;
         continue;
@@ -329,9 +329,9 @@ export default function InvestmentsScreen({
 
       // STEP 3: Fallback calculation (for first-time users when database fields are null)
       // This is a simplified calculation - in production, you'd want more sophisticated logic
-      console.log(
-        `⚠️ No day change data in Supabase for ${holding.symbol}, skipping fallback calculation for now`
-      );
+      // console.log(
+      //   `⚠️ No day change data in Supabase for ${holding.symbol}, skipping fallback calculation for now`
+      // );
     }
 
     console.log(
@@ -340,9 +340,9 @@ export default function InvestmentsScreen({
 
     // If we don't have day change data from Supabase, we can't accurately show today's performance
     if (!hasValidDayData) {
-      console.log(
-        "⚠️ No day change data found in Supabase database, setting performance to 0"
-      );
+      // console.log(
+      //   "⚠️ No day change data found in Supabase database, setting performance to 0"
+      // );
       return {
         amount: 0,
         percentage: 0,
