@@ -15,6 +15,25 @@ CREATE TABLE public.accounts (
   CONSTRAINT accounts_pkey PRIMARY KEY (account_id),
   CONSTRAINT accounts_item_id_fkey FOREIGN KEY (item_id) REFERENCES public.user_items(item_id)
 );
+CREATE TABLE public.conversation_logs (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL,
+  user_message text NOT NULL,
+  finny_response text NOT NULL,
+  timestamp timestamp with time zone NOT NULL,
+  intent text,
+  entities jsonb DEFAULT '[]'::jsonb,
+  confidence numeric DEFAULT 0.0,
+  response_time_ms integer DEFAULT 0,
+  sources_used jsonb DEFAULT '[]'::jsonb,
+  cached boolean DEFAULT false,
+  enhanced_data boolean DEFAULT false,
+  market_data boolean DEFAULT false,
+  web_research boolean DEFAULT false,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT conversation_logs_pkey PRIMARY KEY (id),
+  CONSTRAINT conversation_logs_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
+);
 CREATE TABLE public.facts_cache (
   key text NOT NULL,
   value_json jsonb NOT NULL,
@@ -208,4 +227,15 @@ CREATE TABLE public.user_items (
   last_synced_at timestamp with time zone,
   CONSTRAINT user_items_pkey PRIMARY KEY (id),
   CONSTRAINT user_items_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
+);
+CREATE TABLE public.web_scrape_cache (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  cache_key text NOT NULL UNIQUE,
+  data_type text NOT NULL,
+  data_json jsonb NOT NULL,
+  user_specific boolean DEFAULT false,
+  data_size integer DEFAULT 0,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT web_scrape_cache_pkey PRIMARY KEY (id)
 );

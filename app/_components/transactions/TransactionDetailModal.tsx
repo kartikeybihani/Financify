@@ -191,13 +191,13 @@ const getCategoryBackgroundColorForName = (categoryName: string): string => {
   return "#f8f9fa";
 };
 
-const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
+function TransactionDetailModal({
   visible,
   onClose,
   transaction,
   formatCategoryName,
   formatDate,
-}) => {
+}: TransactionDetailModalProps) {
   if (!transaction) return null;
 
   const insets = useSafeAreaInsets();
@@ -456,7 +456,7 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
       </View>
     </Modal>
   );
-};
+}
 
 const styles = StyleSheet.create({
   safeAreaContainer: {

@@ -520,8 +520,36 @@ async function handleSnapTradeSync(res, userId, accountId) {
             let dayChange = null;
             let dayChangePercent = null;
 
+            // First, check if we have existing day_change data to preserve
+            try {
+              const { data: existingHolding } = await supabase
+                .from("investment_holdings")
+                .select("day_change, day_change_percent")
+                .eq("snaptrade_user_id", connection.snaptrade_user_id)
+                .eq("account_id", accountId)
+                .eq("symbol_id", symbol.id)
+                .eq("is_active", true)
+                .single();
+
+              if (
+                existingHolding?.day_change !== null &&
+                existingHolding?.day_change !== undefined
+              ) {
+                console.log(
+                  `💾 Preserving existing day_change for ${symbol.symbol}: $${existingHolding.day_change}`
+                );
+                dayChange = existingHolding.day_change;
+                dayChangePercent = existingHolding.day_change_percent;
+              }
+            } catch (preserveError) {
+              console.log(
+                `ℹ️ No existing day_change data for ${symbol.symbol}, will calculate new`
+              );
+            }
+
             // Calculate day change dynamically since SnapTrade day_change is always null
-            if (currentMarketValue && symbol?.id) {
+            // Only calculate if we don't have existing data to preserve
+            if (dayChange === null && currentMarketValue && symbol?.id) {
               try {
                 console.log(
                   `🔍 Analyzing ${symbol.symbol}: currentMarketValue = $${currentMarketValue}`

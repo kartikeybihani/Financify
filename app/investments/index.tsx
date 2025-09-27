@@ -35,6 +35,7 @@ interface Holding {
   unrealized_pl: number | null;
   day_change?: number | null;
   day_change_percent?: number | null;
+  security_type?: string;
 }
 
 interface OptionPosition {
@@ -276,40 +277,40 @@ export default function InvestmentsScreen({
     0
   );
 
-  // Calculate today's portfolio performance using the day_change fields where available
-  // If day_change is not provided by SnapTrade API, we'll calculate a simplified daily change
-  // by taking the price change since previous day and multiplying by number of units
+  // Calculate today's portfolio performance using the day_change fields from Supabase first
+  // Step 1: Check Supabase investment_holdings table for day_change and day_change_percent
+  // Step 2: If not available, fall back to calculation logic
   const calculateTodayPerformance = () => {
     let totalDailyPerformance = 0;
     let hasValidDayData = false;
 
-    // console.log(
-    //   "🔍 Calculating today's performance with holdings:",
-    //   holdings.length
-    // );
+    console.log(
+      "🔍 Calculating today's performance with holdings:",
+      holdings.length
+    );
 
     for (const holding of holdings) {
-      // console.log(`🔍 Processing ${holding.symbol}:`, {
-      //   day_change: holding.day_change,
-      //   day_change_percent: holding.day_change_percent,
-      //   market_value: holding.market_value,
-      // });
+      console.log(`🔍 Processing ${holding.symbol}:`, {
+        day_change: holding.day_change,
+        day_change_percent: holding.day_change_percent,
+        market_value: holding.market_value,
+      });
 
-      // First priority: use day_change field from database if available
+      // STEP 1: First priority - use day_change field from Supabase database if available
       if (
         holding.day_change !== null &&
         holding.day_change !== undefined &&
         !isNaN(holding.day_change)
       ) {
-        // console.log(
-        //   `✅ Adding day_change for ${holding.symbol}: ${holding.day_change}`
-        // );
+        console.log(
+          `✅ Using day_change from Supabase for ${holding.symbol}: ${holding.day_change}`
+        );
         totalDailyPerformance += holding.day_change;
         hasValidDayData = true;
         continue;
       }
 
-      // Second priority: calculate approximate daily change from day_change_percent
+      // STEP 2: Second priority - calculate from day_change_percent from Supabase database
       if (
         holding.day_change_percent !== null &&
         holding.day_change_percent !== undefined &&
@@ -318,22 +319,30 @@ export default function InvestmentsScreen({
       ) {
         const dailyChange =
           (holding.market_value * holding.day_change_percent) / 100;
-        // console.log(
-        //   `✅ Adding day_change_percent for ${holding.symbol}: ${dailyChange} (${holding.day_change_percent}% of ${holding.market_value})`
-        // );
+        console.log(
+          `✅ Using day_change_percent from Supabase for ${holding.symbol}: ${dailyChange} (${holding.day_change_percent}% of ${holding.market_value})`
+        );
         totalDailyPerformance += dailyChange;
         hasValidDayData = true;
         continue;
       }
+
+      // STEP 3: Fallback calculation (for first-time users when database fields are null)
+      // This is a simplified calculation - in production, you'd want more sophisticated logic
+      console.log(
+        `⚠️ No day change data in Supabase for ${holding.symbol}, skipping fallback calculation for now`
+      );
     }
 
     console.log(
       `📊 Total daily performance calculated: $${totalDailyPerformance}, hasValidDayData: ${hasValidDayData}`
     );
 
-    // If we don't have day change data, we can't accurately show today's performance
+    // If we don't have day change data from Supabase, we can't accurately show today's performance
     if (!hasValidDayData) {
-      // console.log("⚠️ No day change data found, setting performance to 0");
+      console.log(
+        "⚠️ No day change data found in Supabase database, setting performance to 0"
+      );
       return {
         amount: 0,
         percentage: 0,
@@ -346,11 +355,11 @@ export default function InvestmentsScreen({
         ? (totalDailyPerformance / totalPortfolioValue) * 100
         : 0;
 
-    // console.log(
-    //   `✅ Final performance: $${totalDailyPerformance.toFixed(
-    //     2
-    //   )}, ${todayPortfolioPercentage.toFixed(2)}%`
-    // );
+    console.log(
+      `✅ Final performance: $${totalDailyPerformance.toFixed(
+        2
+      )}, ${todayPortfolioPercentage.toFixed(2)}%`
+    );
 
     return {
       amount: totalDailyPerformance,
@@ -432,6 +441,32 @@ export default function InvestmentsScreen({
               </View>
             )}
 
+            {/* Total Change (Unrealized P&L) - Lifetime gains/losses */}
+            {Math.abs(totalUnrealizedPL) > 0 && (
+              <View style={styles.todayPerformanceContainer}>
+                <View style={styles.profitLossIndicator}>
+                  <Ionicons
+                    name={
+                      totalUnrealizedPL >= 0 ? "trending-up" : "trending-down"
+                    }
+                    size={14}
+                    color={totalUnrealizedPL >= 0 ? "#4ECDC4" : "#FF6B6B"}
+                  />
+                  <Text
+                    style={[
+                      styles.todayPerformanceText,
+                      {
+                        color: totalUnrealizedPL >= 0 ? "#4ECDC4" : "#FF6B6B",
+                      },
+                    ]}
+                  >
+                    Total: {totalUnrealizedPL >= 0 ? "+" : ""}$
+                    {Math.abs(totalUnrealizedPL).toFixed(2)}
+                  </Text>
+                </View>
+              </View>
+            )}
+
             {totalCash > 0 && (
               <Text style={styles.availableCash}>
                 Available Cash: $
@@ -488,15 +523,47 @@ export default function InvestmentsScreen({
   };
 
   const renderHoldings = () => {
-    if (holdings.length === 0) return null;
+    // Filter out cash holdings - we already show available cash separately
+    const nonCashHoldings = holdings.filter((holding) => {
+      // Filter out holdings that are cash or cash equivalents
+      const symbol = holding.symbol?.toLowerCase() || "";
+      const description = holding.description?.toLowerCase() || "";
+      const securityType = holding.security_type?.toLowerCase() || "";
+
+      // Common cash/cash equivalent indicators
+      const isCash =
+        symbol === "cash" ||
+        symbol === "csh" ||
+        symbol === "cash_equivalent" ||
+        description.includes("cash") ||
+        description.includes("money market") ||
+        description.includes("sweep") ||
+        securityType.includes("cash") ||
+        securityType.includes("money market") ||
+        securityType.includes("sweep");
+
+      if (isCash) {
+        console.log(
+          `🚫 Filtering out cash holding: ${holding.symbol} - ${holding.description}`
+        );
+      }
+
+      return !isCash;
+    });
+
+    console.log(
+      `📊 Holdings: ${holdings.length} total, ${nonCashHoldings.length} non-cash`
+    );
+
+    if (nonCashHoldings.length === 0) return null;
 
     return (
       <View style={styles.investmentGroup}>
         <Text style={styles.sectionHeading}>
-          Your Holdings ({holdings.length})
+          Your Holdings ({nonCashHoldings.length})
         </Text>
         <View style={styles.glassContainer}>
-          {holdings.map((h, idx) => (
+          {nonCashHoldings.map((h, idx) => (
             <View key={idx}>
               <View style={styles.holdingRow}>
                 <View style={styles.holdingLeft}>
@@ -525,6 +592,7 @@ export default function InvestmentsScreen({
                     <Text style={styles.stockDetail}>
                       ${h.price?.toFixed(2) || "0.00"}
                     </Text>
+                    {/* Total Change (Unrealized P&L) - Lifetime gains/losses */}
                     {h.unrealized_pl !== null && (
                       <Text
                         style={[
@@ -538,10 +606,44 @@ export default function InvestmentsScreen({
                         {Math.abs(h.unrealized_pl).toFixed(2)}
                       </Text>
                     )}
+                    {/* Day Change Display from Supabase */}
+                    {h.day_change !== null &&
+                      h.day_change !== undefined &&
+                      !isNaN(h.day_change) && (
+                        <Text
+                          style={[
+                            styles.pnlText,
+                            (h.day_change || 0) >= 0
+                              ? styles.pnlPositive
+                              : styles.pnlNegative,
+                          ]}
+                        >
+                          Today: {(h.day_change || 0) >= 0 ? "+" : ""}$
+                          {Math.abs(h.day_change).toFixed(2)}
+                        </Text>
+                      )}
+                    {/* Day Change Percent Display from Supabase */}
+                    {h.day_change_percent !== null &&
+                      h.day_change_percent !== undefined &&
+                      !isNaN(h.day_change_percent) && (
+                        <Text
+                          style={[
+                            styles.pnlText,
+                            (h.day_change_percent || 0) >= 0
+                              ? styles.pnlPositive
+                              : styles.pnlNegative,
+                          ]}
+                        >
+                          Today: {(h.day_change_percent || 0) >= 0 ? "+" : ""}
+                          {Math.abs(h.day_change_percent).toFixed(2)}%
+                        </Text>
+                      )}
                   </View>
                 </View>
               </View>
-              {idx < holdings.length - 1 && <View style={styles.divider} />}
+              {idx < nonCashHoldings.length - 1 && (
+                <View style={styles.divider} />
+              )}
             </View>
           ))}
         </View>

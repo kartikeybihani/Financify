@@ -1,0 +1,86 @@
+MANUALLY CREATED RPC FUNCTIONS
+================================
+
+1. get_cashflow_monthly
+   - Returns monthly cashflow data (income, expenses, net)
+   - Parameters: p_user_id, p_months
+
+2. get_goals_overview
+   - Returns active goals with progress percentage
+   - Parameters: p_user_id, p_limit
+
+3. get_investment_holdings_detailed
+   - Returns detailed investment holdings
+   - Parameters: p_user_id
+
+4. get_investment_snapshot
+   - Returns investment totals and cash balances
+   - Parameters: p_user_id
+
+5. get_net_worth
+   - Calculates net worth including liquid assets, investments, and liabilities
+   - Parameters: p_user_id
+
+6. get_recent_transactions
+   - Returns recent transactions with merchant and category info
+   - Parameters: p_user_id, p_limit
+
+7. get_recurring_next_dates
+   - Calculates next occurrence dates for recurring streams
+   - Parameters: p_user_id
+
+8. get_recurring_streams_active
+   - Returns active recurring income/expense streams
+   - Parameters: p_user_id
+
+9. get_spend_by_category
+   - Returns spending breakdown by category
+   - Parameters: p_user_id, p_start, p_end
+
+10. get_spend_by_merchant
+    - Returns spending breakdown by merchant
+    - Parameters: p_user_id, p_start, p_end, p_merchant
+
+11. get_spending_by_category_enhanced
+    - Enhanced category spending with transaction details
+    - Parameters: p_user_id, p_start, p_end, p_category
+
+12. get_spending_by_merchant
+    - Enhanced merchant spending with transaction details
+    - Parameters: p_user_id, p_start, p_end, p_merchant_name
+
+13. get_top_merchants_by_category
+    - Returns top merchants within a specific category
+    - Parameters: p_user_id, p_start, p_end, p_category, p_limit
+
+14. get_transactions_by_category
+    - Returns transactions filtered by category
+    - Parameters: p_user_id, p_start, p_end, p_category
+
+15. secure_delete_snaptrade_credentials
+    - Securely deletes SnapTrade credentials from Vault
+    - Parameters: p_user_id, p_snaptrade_user_id, p_account_id
+
+16. secure_get_plaid_token
+    - Securely retrieves Plaid access token from Vault
+    - Parameters: p_item_id, p_user_id
+
+17. secure_get_snaptrade_credentials
+    - Securely retrieves SnapTrade credentials from Vault
+    - Parameters: p_user_id, p_snaptrade_user_id, p_account_id
+
+18. secure_store_plaid_token
+    - Securely stores Plaid access token in Vault
+    - Parameters: p_token, p_item_id, p_user_id
+
+19. secure_store_snaptrade_credentials
+    - Securely stores SnapTrade credentials in Vault
+    - Parameters: p_user_id, p_snaptrade_user_id, p_account_id, p_user_secret
+
+20. update_updated_at_column
+    - Trigger function to update updated_at timestamp
+
+21. update_web_scrape_cache_updated_at
+    - Trigger function to update web scrape cache timestamp
+
+TOTAL: 21 manually created functions
