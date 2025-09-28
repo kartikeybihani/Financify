@@ -74,6 +74,8 @@ export const CategorySelectorSheet: React.FC<CategorySelectorSheetProps> = ({
   const slideAnim = React.useRef(new Animated.Value(0)).current;
   const opacityAnim = React.useRef(new Animated.Value(0)).current;
   const addFormAnim = React.useRef(new Animated.Value(0)).current;
+  const gridOpacityAnim = React.useRef(new Animated.Value(1)).current;
+  const gridScaleAnim = React.useRef(new Animated.Value(1)).current;
 
   const insets = useSafeAreaInsets();
   const { height, width } = useWindowDimensions();
@@ -146,17 +148,49 @@ export const CategorySelectorSheet: React.FC<CategorySelectorSheetProps> = ({
 
   useEffect(() => {
     if (showAddForm) {
-      Animated.timing(addFormAnim, {
-        toValue: 1,
-        duration: 300,
-        useNativeDriver: true,
-      }).start();
+      // Hide grid with scale and fade out
+      Animated.parallel([
+        Animated.timing(gridOpacityAnim, {
+          toValue: 0,
+          duration: 250,
+          useNativeDriver: true,
+        }),
+        Animated.timing(gridScaleAnim, {
+          toValue: 0.95,
+          duration: 250,
+          useNativeDriver: true,
+        }),
+      ]).start(() => {
+        // Show add form with subtle pop animation
+        Animated.spring(addFormAnim, {
+          toValue: 1,
+          tension: 100,
+          friction: 8,
+          useNativeDriver: true,
+        }).start();
+      });
     } else {
+      // Hide add form quickly
       Animated.timing(addFormAnim, {
         toValue: 0,
         duration: 200,
         useNativeDriver: true,
-      }).start();
+      }).start(() => {
+        // Show grid with scale and fade in
+        Animated.parallel([
+          Animated.timing(gridOpacityAnim, {
+            toValue: 1,
+            duration: 300,
+            useNativeDriver: true,
+          }),
+          Animated.spring(gridScaleAnim, {
+            toValue: 1,
+            tension: 100,
+            friction: 8,
+            useNativeDriver: true,
+          }),
+        ]).start();
+      });
     }
   }, [showAddForm]);
 
@@ -196,6 +230,13 @@ export const CategorySelectorSheet: React.FC<CategorySelectorSheetProps> = ({
   const handleSaveNewCategory = () => {
     if (newCategoryName.trim() && newCategoryEmoji.trim()) {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+
+      // Console log the new category data
+      console.log("New category created:", {
+        name: newCategoryName.trim(),
+        emoji: newCategoryEmoji.trim(),
+        timestamp: new Date().toISOString(),
+      });
 
       const randomColor =
         CATEGORY_COLORS[Math.floor(Math.random() * CATEGORY_COLORS.length)];
@@ -419,17 +460,28 @@ export const CategorySelectorSheet: React.FC<CategorySelectorSheetProps> = ({
             <Animated.View
               style={[
                 {
-                  backgroundColor: "rgba(255,255,255,0.05)",
-                  borderRadius: 16,
-                  padding: 16,
-                  marginBottom: 16,
-                  borderWidth: 1,
-                  borderColor: "rgba(255,255,255,0.1)",
+                  // backgroundColor: "rgba(255,255,255,0.08)",
+                  borderRadius: 20,
+                  padding: 20,
+                  marginBottom: 20,
+                  // borderWidth: 1,
+                  // borderColor: "rgba(255,255,255,0.15)",
+                  shadowColor: "#000",
+                  shadowOffset: { width: 0, height: 8 },
+                  shadowOpacity: 0.3,
+                  shadowRadius: 16,
+                  elevation: 12,
                   transform: [
                     {
                       translateY: addFormAnim.interpolate({
                         inputRange: [0, 1],
-                        outputRange: [-50, 0],
+                        outputRange: [30, 0],
+                      }),
+                    },
+                    {
+                      scale: addFormAnim.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [0.9, 1],
                       }),
                     },
                   ],
@@ -572,105 +624,115 @@ export const CategorySelectorSheet: React.FC<CategorySelectorSheetProps> = ({
           )}
 
           {/* Adaptive Category Grid */}
-          <View style={styles.adaptiveCategoryGrid}>
-            {/* All Categories as first item */}
-            <TouchableOpacity
+          {!showAddForm && (
+            <Animated.View
               style={[
-                styles.adaptiveCategoryBox,
-                localSelectedIds.length === 0 && styles.categoryBoxSelected,
+                styles.adaptiveCategoryGrid,
                 {
-                  backgroundColor: "#e8f4fd", // Light blue background
-                  borderWidth: localSelectedIds.length === 0 ? 2 : 1,
-                  borderColor:
-                    localSelectedIds.length === 0
-                      ? "#4A90E2"
-                      : "rgba(74,144,226,0.3)",
+                  opacity: gridOpacityAnim,
+                  transform: [{ scale: gridScaleAnim }],
                 },
               ]}
-              onPress={selectAllCategories}
-              activeOpacity={0.7}
             >
-              <Text style={styles.categoryEmoji}>🏷️</Text>
-              <Text
+              {/* All Categories as first item */}
+              <TouchableOpacity
                 style={[
-                  styles.adaptiveCategoryText,
+                  styles.adaptiveCategoryBox,
+                  localSelectedIds.length === 0 && styles.categoryBoxSelected,
                   {
-                    color: localSelectedIds.length === 0 ? "#4A90E2" : "#333",
-                    fontWeight: localSelectedIds.length === 0 ? "700" : "600",
+                    backgroundColor: "#e8f4fd", // Light blue background
+                    borderWidth: localSelectedIds.length === 0 ? 2 : 1,
+                    borderColor:
+                      localSelectedIds.length === 0
+                        ? "#4A90E2"
+                        : "rgba(74,144,226,0.3)",
                   },
                 ]}
+                onPress={selectAllCategories}
+                activeOpacity={0.7}
               >
-                All Categories
-              </Text>
-              {localSelectedIds.length === 0 && (
-                <Ionicons
-                  name="checkmark-circle"
-                  size={18}
-                  color="#4A90E2"
-                  style={styles.categoryCheckmark}
-                />
-              )}
-            </TouchableOpacity>
-
-            {/* Regular Categories */}
-            {categories.map((category) => {
-              const isSelected = localSelectedIds.includes(category.id);
-
-              return (
-                <TouchableOpacity
-                  key={category.id}
+                <Text style={styles.categoryEmoji}>🏷️</Text>
+                <Text
                   style={[
-                    styles.adaptiveCategoryBox,
-                    isSelected && styles.categoryBoxSelected,
+                    styles.adaptiveCategoryText,
                     {
-                      backgroundColor: getCategoryBackgroundColor(
-                        category.name
-                      ),
-                      borderColor: isSelected
-                        ? category.color
-                        : category.color + "40",
+                      color: localSelectedIds.length === 0 ? "#4A90E2" : "#333",
+                      fontWeight: localSelectedIds.length === 0 ? "700" : "600",
                     },
                   ]}
-                  onPress={() => handleToggleCategorySelection(category.id)}
-                  activeOpacity={0.7}
                 >
-                  <Text style={styles.categoryEmoji}>
-                    {getEmojiForCategory(category.icon, category.name)}
-                  </Text>
-                  <Text
+                  All Categories
+                </Text>
+                {localSelectedIds.length === 0 && (
+                  <Ionicons
+                    name="checkmark-circle"
+                    size={18}
+                    color="#4A90E2"
+                    style={styles.categoryCheckmark}
+                  />
+                )}
+              </TouchableOpacity>
+
+              {/* Regular Categories */}
+              {categories.map((category) => {
+                const isSelected = localSelectedIds.includes(category.id);
+
+                return (
+                  <TouchableOpacity
+                    key={category.id}
                     style={[
-                      styles.adaptiveCategoryText,
+                      styles.adaptiveCategoryBox,
+                      isSelected && styles.categoryBoxSelected,
                       {
-                        color: isSelected ? category.color : "#333",
-                        fontWeight: isSelected ? "700" : "600",
+                        backgroundColor: getCategoryBackgroundColor(
+                          category.name
+                        ),
+                        borderColor: isSelected
+                          ? category.color
+                          : category.color + "40",
                       },
                     ]}
-                    numberOfLines={2}
+                    onPress={() => handleToggleCategorySelection(category.id)}
+                    activeOpacity={0.7}
                   >
-                    {category.name}
-                  </Text>
-                  {isSelected && (
-                    <Ionicons
-                      name="checkmark-circle"
-                      size={18}
-                      color={category.color}
-                      style={styles.categoryCheckmark}
-                    />
-                  )}
-                </TouchableOpacity>
-              );
-            })}
+                    <Text style={styles.categoryEmoji}>
+                      {getEmojiForCategory(category.icon, category.name)}
+                    </Text>
+                    <Text
+                      style={[
+                        styles.adaptiveCategoryText,
+                        {
+                          color: isSelected ? category.color : "#333",
+                          fontWeight: isSelected ? "700" : "600",
+                        },
+                      ]}
+                      numberOfLines={2}
+                    >
+                      {category.name}
+                    </Text>
+                    {isSelected && (
+                      <Ionicons
+                        name="checkmark-circle"
+                        size={18}
+                        color={category.color}
+                        style={styles.categoryCheckmark}
+                      />
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
 
-            {/* Add New Category Button - Part of the grid */}
-            <TouchableOpacity
-              style={styles.adaptiveAddNewBox}
-              onPress={handleAddNewPress}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.categoryEmoji}>➕</Text>
-              <Text style={styles.adaptiveAddNewText}>Add New</Text>
-            </TouchableOpacity>
-          </View>
+              {/* Add New Category Button - Part of the grid */}
+              <TouchableOpacity
+                style={styles.adaptiveAddNewBox}
+                onPress={handleAddNewPress}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.categoryEmoji}>➕</Text>
+                <Text style={styles.adaptiveAddNewText}>Add New</Text>
+              </TouchableOpacity>
+            </Animated.View>
+          )}
         </ScrollView>
       </Animated.View>
     </Animated.View>
