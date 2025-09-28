@@ -116,13 +116,6 @@ const CategoryDetailModal: React.FC<CategoryDetailModalProps> = ({
                         <Text style={styles.categoryTransactionName}>
                           {tx.name}
                         </Text>
-                        {tx.sub_category && (
-                          <View style={styles.subCategoryBadge}>
-                            <Text style={styles.subCategoryText}>
-                              {tx.sub_category}
-                            </Text>
-                          </View>
-                        )}
                       </View>
                       <Text style={styles.categoryTransactionDate}>
                         {formatDate(tx.date)}

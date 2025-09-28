@@ -344,6 +344,48 @@ export const hasSnaptradeConnection = async (): Promise<boolean> => {
   }
 };
 
+// === Check SnapTrade Connection Status ===
+export const getSnaptradeConnectionStatus = async (): Promise<{
+  hasConnection: boolean;
+  isActive: boolean;
+  status: string | null;
+  needsReconnection: boolean;
+}> => {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      return { hasConnection: false, isActive: false, status: null, needsReconnection: false };
+    }
+
+    const { data: connections, error } = await supabase
+      .from("snaptrade_connections")
+      .select("is_active, connection_status")
+      .eq("user_id", user.id)
+      .eq("is_active", true)
+      .order("last_synced_at", { ascending: false })
+      .limit(1);
+
+    if (error || !connections || connections.length === 0) {
+      return { hasConnection: false, isActive: false, status: null, needsReconnection: false };
+    }
+
+    const connection = connections[0];
+    const needsReconnection = !connection.is_active || 
+                             connection.connection_status === "disabled" || 
+                             connection.connection_status === "error";
+
+    return {
+      hasConnection: true,
+      isActive: connection.is_active,
+      status: connection.connection_status,
+      needsReconnection
+    };
+  } catch (error) {
+    logger.error("❌ Failed to check SnapTrade connection status:", error);
+    return { hasConnection: false, isActive: false, status: null, needsReconnection: false };
+  }
+};
+
 // === Clear SnapTrade Connection ===
 export const clearSnaptradeConnection = async (): Promise<void> => {
   try {
@@ -541,6 +583,7 @@ export const storeSnaptradeCredentials = async (
         account_name: metadata?.account_name || "Investment Account",
         account_type: metadata?.account_type || "investment",
         is_active: true,
+        connection_status: "active",
         last_synced_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       }, {
@@ -744,6 +787,7 @@ const snaptradeUtils = {
   registerSnaptradeUser,
   storeSnaptradeCredentials,
   hasSnaptradeConnection,
+  getSnaptradeConnectionStatus,
   clearSnaptradeConnection,
   getStoredSnaptradeCredentials,
   getSnaptradeCredentialsWithFallback,

@@ -207,6 +207,7 @@ CREATE TABLE public.snaptrade_connections (
   account_name text,
   account_type text,
   is_active boolean NOT NULL DEFAULT true,
+  connection_status text DEFAULT 'active'::text CHECK (connection_status = ANY (ARRAY['active'::text, 'disabled'::text, 'error'::text, 'pending'::text])),
   last_synced_at timestamp with time zone,
   created_at timestamp with time zone DEFAULT now(),
   updated_at timestamp with time zone DEFAULT now(),
