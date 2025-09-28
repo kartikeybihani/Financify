@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -7,6 +7,9 @@ import {
   useWindowDimensions,
   Alert,
   StyleSheet,
+  TextInput,
+  Animated,
+  Keyboard,
 } from "react-native";
 import { BlurView } from "expo-blur";
 import { Ionicons } from "@expo/vector-icons";
@@ -22,13 +25,34 @@ export default function CategorySelectorScreen() {
   const insets = useSafeAreaInsets();
   const { height, width } = useWindowDimensions();
   const [loading, setLoading] = useState(false);
+  const [showAddCategory, setShowAddCategory] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState("");
+  const [newCategoryIcon, setNewCategoryIcon] = useState("📦");
+  const [addCategoryLoading, setAddCategoryLoading] = useState(false);
+  const [slideAnim] = useState(new Animated.Value(0));
+  const [heightAnim] = useState(new Animated.Value(0));
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+
+  // Refs for text inputs
+  const categoryNameInputRef = useRef<TextInput>(null);
+  const categoryIconInputRef = useRef<TextInput>(null);
+
+  // Get current user ID
+  useEffect(() => {
+    const getUser = async () => {
+      const { data: userData } = await supabase.auth.getUser();
+      setCurrentUserId(userData.user?.id || null);
+    };
+    getUser();
+  }, []);
 
   const {
     categories,
     getCategoryIcon,
     getCategoryColor,
     formatCategoryName: formatCategoryFromHook,
-  } = useCategories();
+    refreshCategories,
+  } = useCategories(currentUserId || undefined);
 
   // Responsive layout flags
   const isLandscape = width > height;
@@ -37,6 +61,238 @@ export default function CategorySelectorScreen() {
 
   const handleClose = () => {
     router.back();
+  };
+
+  const handleAddNewCategory = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setShowAddCategory(true);
+
+    // Animate both slide and height
+    Animated.parallel([
+      Animated.timing(slideAnim, {
+        toValue: 1,
+        duration: 300,
+        useNativeDriver: false, // Height animation needs layout
+      }),
+      Animated.timing(heightAnim, {
+        toValue: 1,
+        duration: 300,
+        useNativeDriver: false,
+      }),
+    ]).start(() => {
+      // Focus on category name input after animation completes
+      setTimeout(() => {
+        categoryNameInputRef.current?.focus();
+      }, 100);
+    });
+  };
+
+  const handleCancelAddCategory = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
+    // Reset form data
+    setNewCategoryName("");
+    setNewCategoryIcon("📦");
+    setAddCategoryLoading(false);
+
+    // Dismiss keyboard first
+    Keyboard.dismiss();
+
+    // Animate both slide and height back to original state
+    Animated.parallel([
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 300,
+        useNativeDriver: false,
+      }),
+      Animated.timing(heightAnim, {
+        toValue: 0,
+        duration: 300,
+        useNativeDriver: false,
+      }),
+    ]).start(() => {
+      // Hide the form after animation completes
+      setShowAddCategory(false);
+    });
+  };
+
+  const handleSaveCategory = async () => {
+    if (!newCategoryName.trim()) {
+      Alert.alert("Error", "Please enter a category name");
+      return;
+    }
+
+    if (newCategoryName.length > 25) {
+      Alert.alert("Error", "Category name must be 25 characters or less");
+      return;
+    }
+
+    setAddCategoryLoading(true);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
+    try {
+      const { data: userData } = await supabase.auth.getUser();
+      if (!userData.user) {
+        throw new Error("User not authenticated");
+      }
+
+      // Create slug from name
+      let baseSlug = newCategoryName
+        .toLowerCase()
+        .replace(/[^a-z0-9\s-]/g, "")
+        .replace(/\s+/g, "-")
+        .trim();
+
+      // Handle potential slug conflicts by adding a number suffix
+      let slug = baseSlug;
+      let counter = 1;
+      let slugExists = true;
+
+      while (slugExists) {
+        const { data: existingSlug } = await supabase
+          .from("categories")
+          .select("id")
+          .eq("slug", slug)
+          .limit(1);
+
+        if (!existingSlug || existingSlug.length === 0) {
+          slugExists = false;
+        } else {
+          slug = `${baseSlug}-${counter}`;
+          counter++;
+        }
+      }
+
+      // Get the next rank (highest rank + 1)
+      const { data: maxRankData } = await supabase
+        .from("categories")
+        .select("rank")
+        .eq("user_id", userData.user.id)
+        .order("rank", { ascending: false })
+        .limit(1);
+
+      const nextRank = maxRankData?.[0]?.rank ? maxRankData[0].rank + 1 : 1;
+
+      // Generate UUID for the new category (React Native compatible)
+      const categoryId = "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(
+        /[xy]/g,
+        function (c) {
+          const r = (Math.random() * 16) | 0;
+          const v = c == "x" ? r : (r & 0x3) | 0x8;
+          return v.toString(16);
+        }
+      );
+
+      const { data, error } = await supabase
+        .from("categories")
+        .insert({
+          id: categoryId,
+          user_id: userData.user.id,
+          name: newCategoryName.trim(),
+          slug: slug,
+          icon: newCategoryIcon,
+          color: "#4A90E2", // Default blue color
+          rank: nextRank,
+          is_active: true,
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      // Refresh categories to show the new category
+      await refreshCategories();
+
+      // Dismiss keyboard first
+      Keyboard.dismiss();
+
+      // Animate both slide and height back to original state
+      Animated.parallel([
+        Animated.timing(slideAnim, {
+          toValue: 0,
+          duration: 300,
+          useNativeDriver: false,
+        }),
+        Animated.timing(heightAnim, {
+          toValue: 0,
+          duration: 300,
+          useNativeDriver: false,
+        }),
+      ]).start(() => {
+        // Reset form and hide after animation completes
+        setNewCategoryName("");
+        setNewCategoryIcon("📦");
+        setShowAddCategory(false);
+      });
+
+      Alert.alert(
+        "Success",
+        `Category "${newCategoryName}" added successfully!`
+      );
+    } catch (error) {
+      console.error("Error adding category:", error);
+      Alert.alert("Error", "Failed to add category. Please try again.");
+    } finally {
+      setAddCategoryLoading(false);
+    }
+  };
+
+  const handleCategoryLongPress = (categoryId: string) => {
+    if (categoryId === "all") return; // Don't allow deleting "All Categories"
+
+    const category = categories.find((cat) => cat.id === categoryId);
+    if (!category) return;
+
+    // Only allow deleting user-created categories (not default ones)
+    if (!category.user_id) {
+      Alert.alert(
+        "Cannot Delete",
+        "Default categories cannot be deleted. You can only delete categories you've created.",
+        [{ text: "OK", style: "default" }]
+      );
+      return;
+    }
+
+    Alert.alert(
+      "Delete Category",
+      `Are you sure you want to delete "${category.name}"? This action cannot be undone.`,
+      [
+        {
+          text: "Cancel",
+          style: "cancel",
+        },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => handleDeleteCategory(categoryId),
+        },
+      ]
+    );
+  };
+
+  const handleDeleteCategory = async (categoryId: string) => {
+    try {
+      setLoading(true);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
+      const { error } = await supabase
+        .from("categories")
+        .delete()
+        .eq("id", categoryId)
+        .eq("user_id", currentUserId); // Ensure user can only delete their own categories
+
+      if (error) throw error;
+
+      // Refresh categories to update the grid
+      await refreshCategories();
+
+      Alert.alert("Success", "Category deleted successfully!");
+    } catch (error) {
+      console.error("Error deleting category:", error);
+      Alert.alert("Error", "Failed to delete category. Please try again.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleCategorySelect = async (categoryId: string) => {
@@ -294,7 +550,17 @@ export default function CategorySelectorScreen() {
         activeOpacity={1}
         onPress={handleClose}
       />
-      <View style={styles.container}>
+      <Animated.View
+        style={[
+          styles.container,
+          {
+            height: heightAnim.interpolate({
+              inputRange: [0, 1],
+              outputRange: ["40%", "70%"], // Expand from 40% to 70% of screen height
+            }),
+          },
+        ]}
+      >
         {/* Header with back button */}
         <View style={styles.header}>
           <TouchableOpacity
@@ -363,6 +629,7 @@ export default function CategorySelectorScreen() {
                     },
                   ]}
                   onPress={() => handleCategorySelect(category.id)}
+                  onLongPress={() => handleCategoryLongPress(category.id)}
                   activeOpacity={0.7}
                   disabled={loading}
                 >
@@ -378,6 +645,12 @@ export default function CategorySelectorScreen() {
                   >
                     {formatCategoryFromHook(category.name)}
                   </Text>
+                  {/* Show delete indicator for user-created categories */}
+                  {category.user_id && (
+                    <View style={styles.deleteIndicator}>
+                      <Text style={styles.deleteIndicatorText}>⋯</Text>
+                    </View>
+                  )}
                 </TouchableOpacity>
               );
             })}
@@ -385,18 +658,112 @@ export default function CategorySelectorScreen() {
             {/* Add New Category Button */}
             <TouchableOpacity
               style={styles.addNewChip}
-              onPress={() => {
-                console.log("Add new category pressed");
-              }}
+              onPress={handleAddNewCategory}
               activeOpacity={0.7}
-              disabled={loading}
+              disabled={loading || showAddCategory}
             >
               <Text style={styles.chipIcon}>➕</Text>
               <Text style={styles.addNewChipText}>Add New</Text>
             </TouchableOpacity>
           </View>
+
+          {/* Add Category Input Form */}
+          {showAddCategory && (
+            <Animated.View
+              style={[
+                styles.addCategoryForm,
+                {
+                  transform: [
+                    {
+                      translateY: slideAnim.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [100, 0],
+                      }),
+                    },
+                  ],
+                  opacity: slideAnim,
+                },
+              ]}
+            >
+              <View style={styles.addCategoryContainer}>
+                <Text style={styles.addCategoryTitle}>Add New Category</Text>
+
+                <View style={styles.addCategoryInputContainer}>
+                  {/* Emoji Input */}
+                  <View style={styles.emojiInputContainer}>
+                    <Text style={styles.emojiLabel}>Icon</Text>
+                    <TextInput
+                      ref={categoryIconInputRef}
+                      style={styles.emojiInput}
+                      value={newCategoryIcon}
+                      onChangeText={setNewCategoryIcon}
+                      maxLength={2}
+                      placeholder="📦"
+                      placeholderTextColor="rgba(255, 255, 255, 0.5)"
+                      returnKeyType="next"
+                      onSubmitEditing={() => {
+                        categoryNameInputRef.current?.focus();
+                      }}
+                    />
+                  </View>
+
+                  {/* Category Name Input */}
+                  <View style={styles.nameInputContainer}>
+                    <Text style={styles.nameLabel}>Name</Text>
+                    <TextInput
+                      ref={categoryNameInputRef}
+                      style={styles.nameInput}
+                      value={newCategoryName}
+                      onChangeText={setNewCategoryName}
+                      maxLength={25}
+                      placeholder="Enter category name"
+                      placeholderTextColor="rgba(255, 255, 255, 0.5)"
+                      returnKeyType="done"
+                      onSubmitEditing={() => {
+                        if (newCategoryName.trim()) {
+                          handleSaveCategory();
+                        }
+                      }}
+                    />
+                    <Text style={styles.characterCount}>
+                      {newCategoryName.length}/25
+                    </Text>
+                  </View>
+                </View>
+
+                {/* Action Buttons */}
+                <View style={styles.addCategoryButtons}>
+                  <TouchableOpacity
+                    style={styles.cancelButton}
+                    onPress={handleCancelAddCategory}
+                    activeOpacity={0.7}
+                    disabled={addCategoryLoading}
+                  >
+                    <Text style={styles.cancelButtonText}>Cancel</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.saveButton,
+                      (!newCategoryName.trim() || addCategoryLoading) &&
+                        styles.saveButtonDisabled,
+                    ]}
+                    onPress={handleSaveCategory}
+                    activeOpacity={0.7}
+                    disabled={!newCategoryName.trim() || addCategoryLoading}
+                  >
+                    {addCategoryLoading ? (
+                      <Text style={styles.saveButtonText}>Saving...</Text>
+                    ) : (
+                      <Text style={styles.saveButtonText}>Save</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </Animated.View>
+          )}
         </ScrollView>
-      </View>
+      </Animated.View>
     </View>
   );
 }
@@ -417,7 +784,6 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   container: {
-    height: "40%",
     backgroundColor: "#1a1a1a",
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
@@ -455,7 +821,6 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     justifyContent: "center",
     gap: 8,
-    // backgroundColor: "rgba(255, 0, 0, 0.1)", // Debug: red background to see container
     minHeight: 100, // Debug: ensure container has height
   },
   categoryChip: {
@@ -499,5 +864,124 @@ const styles = StyleSheet.create({
     fontWeight: "500",
     color: "rgba(255, 255, 255, 0.7)",
     marginLeft: 2,
+  },
+  // Add Category Form Styles
+  addCategoryForm: {
+    marginTop: 20,
+    paddingHorizontal: 20,
+  },
+  addCategoryContainer: {
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    borderRadius: 16,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.2)",
+  },
+  addCategoryTitle: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#ffffff",
+    textAlign: "center",
+    marginBottom: 20,
+  },
+  addCategoryInputContainer: {
+    flexDirection: "row",
+    gap: 12,
+    marginBottom: 20,
+  },
+  emojiInputContainer: {
+    flex: 0.3,
+  },
+  emojiLabel: {
+    fontSize: 12,
+    fontWeight: "500",
+    color: "rgba(255, 255, 255, 0.7)",
+    marginBottom: 8,
+  },
+  emojiInput: {
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    fontSize: 20,
+    color: "#ffffff",
+    textAlign: "center",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.2)",
+  },
+  nameInputContainer: {
+    flex: 0.7,
+  },
+  nameLabel: {
+    fontSize: 12,
+    fontWeight: "500",
+    color: "rgba(255, 255, 255, 0.7)",
+    marginBottom: 8,
+  },
+  nameInput: {
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    fontSize: 16,
+    color: "#ffffff",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.2)",
+  },
+  characterCount: {
+    fontSize: 10,
+    color: "rgba(255, 255, 255, 0.5)",
+    textAlign: "right",
+    marginTop: 4,
+  },
+  addCategoryButtons: {
+    flexDirection: "row",
+    gap: 12,
+  },
+  cancelButton: {
+    flex: 1,
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.2)",
+  },
+  cancelButtonText: {
+    fontSize: 16,
+    fontWeight: "500",
+    color: "rgba(255, 255, 255, 0.7)",
+  },
+  saveButton: {
+    flex: 1,
+    backgroundColor: "#4A90E2",
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: "center",
+  },
+  saveButtonDisabled: {
+    backgroundColor: "rgba(74, 144, 226, 0.3)",
+  },
+  saveButtonText: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#ffffff",
+  },
+  // Delete indicator styles
+  deleteIndicator: {
+    position: "absolute",
+    top: -2,
+    right: -2,
+    backgroundColor: "rgba(255, 0, 0, 0.8)",
+    borderRadius: 8,
+    width: 16,
+    height: 16,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  deleteIndicatorText: {
+    fontSize: 8,
+    color: "#ffffff",
+    fontWeight: "bold",
   },
 });
