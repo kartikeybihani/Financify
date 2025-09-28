@@ -64,7 +64,7 @@ export const categoryMap: Record<string, SimplifiedCategory> = {
   PERSONAL_CARE_DOCTOR: { top: "Personal Care", sub: "Healthcare" },
   
   // Other categories
-  HOME_IMPROVEMENT_HARDWARE: { top: "Other", sub: "Home Improvement" },
+  HOME_IMPROVEMENT_HARDWARE: { top: "Other", sub: "Home" },
   GENERAL_SERVICES_OTHER_GENERAL_SERVICES: { top: "Other", sub: "General Services" },
   GOVERNMENT_AND_NON_PROFIT_GOVERNMENT_DEPARTMENTS_AND_AGENCIES: { top: "Other", sub: "Government" },
   TRANSFER_IN_ACCOUNT_TRANSFER: { top: "Other", sub: "Transfers" },

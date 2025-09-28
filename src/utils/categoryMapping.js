@@ -86,7 +86,7 @@ const categoryMap = {
   PERSONAL_CARE_DOCTOR: { top: "Personal Care", sub: "Healthcare" },
 
   // Other categories
-  HOME_IMPROVEMENT_HARDWARE: { top: "Other", sub: "Home Improvement" },
+  HOME_IMPROVEMENT_HARDWARE: { top: "Other", sub: "Home" },
   GENERAL_SERVICES_OTHER_GENERAL_SERVICES: {
     top: "Other",
     sub: "General Services",

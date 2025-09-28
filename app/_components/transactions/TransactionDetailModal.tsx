@@ -1,5 +1,5 @@
 import * as React from "react";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import {
   Modal,
   View,
@@ -14,6 +14,8 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { CategorySelectorSheet } from "../../../src/components/EnhancedFilterModal/CategorySelectorSheet";
+import * as Haptics from "expo-haptics";
 // logger removed as we no longer use it in this modal
 
 interface Transaction {
@@ -35,6 +37,7 @@ interface TransactionDetailModalProps {
   transaction: Transaction | null;
   formatCategoryName: (category: string) => string;
   formatDate: (date: string) => string;
+  onCategoryChange?: (transactionId: string, newCategory: string) => void;
 }
 
 const getCategoryIcon = (category: string): keyof typeof Ionicons.glyphMap => {
@@ -191,17 +194,37 @@ const getCategoryBackgroundColorForName = (categoryName: string): string => {
   return "#f8f9fa";
 };
 
+// Mock categories data - in a real app, this would come from props or a context
+const MOCK_CATEGORIES = [
+  { id: "food", name: "Food and Drink", icon: "restaurant", color: "#FF6B6B" },
+  { id: "shopping", name: "Shops", icon: "storefront", color: "#4ECDC4" },
+  { id: "transport", name: "Transportation", icon: "car", color: "#45B7D1" },
+  {
+    id: "entertainment",
+    name: "Recreation",
+    icon: "game-controller",
+    color: "#96CEB4",
+  },
+  { id: "travel", name: "Travel", icon: "airplane", color: "#4A90E2" },
+  { id: "health", name: "Healthcare", icon: "fitness", color: "#D4A5A5" },
+  { id: "home", name: "Home", icon: "construct", color: "#8E44AD" },
+  { id: "payments", name: "Payment", icon: "card", color: "#FFEEAD" },
+  { id: "services", name: "Service", icon: "briefcase", color: "#9B786F" },
+  { id: "income", name: "Income", icon: "trending-up", color: "#27AE60" },
+  { id: "other", name: "Other", icon: "apps", color: "#4A90E2" },
+];
+
 function TransactionDetailModal({
   visible,
   onClose,
   transaction,
   formatCategoryName,
   formatDate,
+  onCategoryChange,
 }: TransactionDetailModalProps) {
-  if (!transaction) return null;
-
   const insets = useSafeAreaInsets();
   const { height, width } = useWindowDimensions();
+  const [showCategoryModal, setShowCategoryModal] = useState(false);
 
   // Responsive layout flags
   const isLandscape = width > height;
@@ -235,6 +258,8 @@ function TransactionDetailModal({
     isLandscape,
   ]);
 
+  if (!transaction) return null;
+
   // Deterministic account card height
   const accountCardHeight = isSmallPhone ? 45 : isTallPhone ? 85 : 65;
 
@@ -253,6 +278,37 @@ function TransactionDetailModal({
   const categoryEmoji = getCategoryEmojiForName(category);
   const categoryBg = getCategoryBackgroundColorForName(category);
   const accountGradient = getAccountGradient(transaction.account_name);
+
+  // Handle category selection
+  const handleCategorySelect = (categoryIds: string[]) => {
+    if (categoryIds.length > 0 && transaction?.id && onCategoryChange) {
+      const selectedCategory = MOCK_CATEGORIES.find(
+        (cat) => cat.id === categoryIds[0]
+      );
+      if (selectedCategory) {
+        onCategoryChange(transaction.id, selectedCategory.name);
+      }
+    }
+    setShowCategoryModal(false);
+  };
+
+  // Handle adding new category
+  const handleAddCategory = (newCategory: {
+    name: string;
+    emoji: string;
+    color: string;
+  }) => {
+    // In a real app, this would save to the database and update the categories list
+    console.log("New category added:", newCategory);
+    // For now, just close the modal
+    setShowCategoryModal(false);
+  };
+
+  const handleCategoryPress = () => {
+    // Add haptic feedback
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setShowCategoryModal(true);
+  };
 
   return (
     <Modal
@@ -340,7 +396,7 @@ function TransactionDetailModal({
                   {formatDate(transaction.date)}
                 </Text>
                 <View style={styles.categoryContainerCentered}>
-                  <View
+                  <TouchableOpacity
                     style={[
                       styles.categoryPill,
                       {
@@ -349,6 +405,8 @@ function TransactionDetailModal({
                       },
                       compact && { paddingHorizontal: 10, paddingVertical: 6 },
                     ]}
+                    onPress={handleCategoryPress}
+                    activeOpacity={0.7}
                   >
                     <Text style={styles.categoryEmojiText}>
                       {categoryEmoji}
@@ -362,7 +420,13 @@ function TransactionDetailModal({
                     >
                       {formatCategoryName(category)}
                     </Text>
-                  </View>
+                    <Ionicons
+                      name="chevron-down"
+                      size={14}
+                      color={categoryColor}
+                      style={{ marginLeft: 6, opacity: 0.7 }}
+                    />
+                  </TouchableOpacity>
                 </View>
               </View>
 
@@ -454,6 +518,16 @@ function TransactionDetailModal({
           </TouchableOpacity>
         </TouchableOpacity>
       </View>
+
+      {/* Category Selector Sheet */}
+      <CategorySelectorSheet
+        visible={showCategoryModal}
+        onClose={() => setShowCategoryModal(false)}
+        categories={MOCK_CATEGORIES}
+        selectedCategoryIds={[]}
+        onCategorySelect={handleCategorySelect}
+        onAddCategory={handleAddCategory}
+      />
     </Modal>
   );
 }
