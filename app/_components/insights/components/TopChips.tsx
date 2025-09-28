@@ -8,6 +8,7 @@ import {
   Platform,
 } from "react-native";
 import { GlassView } from "expo-glass-effect";
+import { LinearGradient } from "expo-linear-gradient";
 
 type SectionKey =
   | "investments"
@@ -23,8 +24,8 @@ interface TopChipsProps {
 
 const labels: { key: SectionKey; label: string }[] = [
   { key: "investments", label: "Investments" },
-  { key: "spending", label: "Spending" },
   { key: "transactions", label: "Transactions" },
+  { key: "spending", label: "Spending" },
   { key: "recurring", label: "Recurring" },
   { key: "cashflow", label: "Cash Flow" },
 ];
@@ -39,6 +40,7 @@ export default function TopChips({ activeSection, onChange }: TopChipsProps) {
 
   const renderChip = (key: SectionKey, label: string) => {
     const CardShell = shouldUseLiquidGlass ? GlassView : View;
+    const isActive = activeSection === key;
 
     return (
       <TouchableOpacity
@@ -47,27 +49,30 @@ export default function TopChips({ activeSection, onChange }: TopChipsProps) {
         activeOpacity={0.85}
         style={styles.chipTouchable}
       >
-        <CardShell
-          {...(shouldUseLiquidGlass
-            ? {
-                glassEffectStyle: "regular",
-                tintColor:
-                  activeSection === key
-                    ? "rgba(74, 144, 226, 0.9)"
-                    : "rgba(20, 20, 25, 0.9)",
-              }
-            : {})}
-          style={styles.glassChip}
-        >
-          <Text
-            style={[
-              styles.chipText,
-              activeSection === key && styles.chipTextActive,
-            ]}
+        {isActive ? (
+          <LinearGradient
+            colors={["#022c59", "#1d61ab", "#4088d6", "#022c59"]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.gradientChip}
           >
-            {label}
-          </Text>
-        </CardShell>
+            <Text style={[styles.chipText, styles.chipTextActive]}>
+              {label}
+            </Text>
+          </LinearGradient>
+        ) : (
+          <CardShell
+            {...(shouldUseLiquidGlass
+              ? {
+                  glassEffectStyle: "regular",
+                  tintColor: "rgba(20, 20, 25, 0.9)",
+                }
+              : {})}
+            style={styles.glassChip}
+          >
+            <Text style={styles.chipText}>{label}</Text>
+          </CardShell>
+        )}
       </TouchableOpacity>
     );
   };
@@ -99,6 +104,12 @@ const styles = StyleSheet.create({
     marginRight: 10,
   },
   glassChip: {
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 18,
+    overflow: "hidden",
+  },
+  gradientChip: {
     paddingVertical: 10,
     paddingHorizontal: 16,
     borderRadius: 18,

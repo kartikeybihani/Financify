@@ -84,9 +84,17 @@ export const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: "rgba(255, 255, 255, 0.08)",
+    backgroundColor: "rgba(255, 255, 255, 0.15)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.2)",
     justifyContent: "center",
     alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    backdropFilter: "blur(10px)",
   },
   // Search Bar Styles - Added for fluid search functionality
   searchBarContainer: {
@@ -310,11 +318,12 @@ export const styles = StyleSheet.create({
   },
   modalContent: {
     flex: 1,
+    marginBottom: 5,
   },
   modalScrollContent: {
     paddingHorizontal: 8,
-    paddingBottom: 24,
-    minHeight: "100%",
+    paddingBottom: 8,
+    flexGrow: 1,
   },
 
   // All Items Card (Accounts & Categories)
@@ -506,7 +515,10 @@ export const styles = StyleSheet.create({
 
   // Time Period Modal specific
   timePeriodModalContainer: {
-    height: "85%",
+    minHeight: "40%",
+    maxHeight: "90%",
+    alignSelf: "flex-end",
+    width: "100%",
   },
   timePeriodSection: {
     marginBottom: 32,
@@ -661,8 +673,10 @@ export const styles = StyleSheet.create({
 
   // Category Modal specific
   categoryModalContainer: {
-    minHeight: "50%",
-    maxHeight: "85%",
+    minHeight: "40%",
+    maxHeight: "90%",
+    alignSelf: "flex-end",
+    width: "100%",
   },
   // Legacy - replaced by adaptiveCategoryGrid
   categoryGrid: {
@@ -775,6 +789,7 @@ export const styles = StyleSheet.create({
     gap: 10,
     paddingHorizontal: 8,
     paddingTop: 8,
+    paddingBottom: 8,
   },
   
   // Adaptive Category Boxes

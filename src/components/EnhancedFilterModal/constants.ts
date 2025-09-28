@@ -42,40 +42,25 @@ const MONTHS: MonthData[] = [
   { name: "December", emoji: "🎄" },
 ];
 
-// Generate monthly periods from Sept 2023 to Sept 2025
+// Generate monthly periods dynamically from current month back to 2 years ago
 const generateMonthlyPeriods = (): TimePeriod[] => {
   const periods: TimePeriod[] = [];
-
-  // 2023 - Sept to Dec
-  for (let month = 8; month < 12; month++) {
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth(); // 0-based (0 = January, 11 = December)
+  
+  // Generate periods from current month back to 2 years ago
+  for (let i = 0; i < 25; i++) { // 25 months covers 2 years + 1 month
+    const targetDate = new Date(currentYear, currentMonth - i, 1);
+    const year = targetDate.getFullYear();
+    const month = targetDate.getMonth();
+    
     periods.push({
-      id: `${MONTHS[month].name.toLowerCase()}2023`,
-      label: `${MONTHS[month].name} 2023`,
+      id: `${MONTHS[month].name.toLowerCase()}${year}`,
+      label: `${MONTHS[month].name} ${year}`,
       emoji: MONTHS[month].emoji,
       description: `${MONTHS[month].name} expenses`,
-      year: 2023,
-    });
-  }
-
-  // 2024 - Full year
-  for (let month = 0; month < 12; month++) {
-    periods.push({
-      id: `${MONTHS[month].name.toLowerCase()}2024`,
-      label: `${MONTHS[month].name} 2024`,
-      emoji: MONTHS[month].emoji,
-      description: `${MONTHS[month].name} expenses`,
-      year: 2024,
-    });
-  }
-
-  // 2025 - Jan to Sept
-  for (let month = 0; month < 9; month++) {
-    periods.push({
-      id: `${MONTHS[month].name.toLowerCase()}2025`,
-      label: `${MONTHS[month].name} 2025`,
-      emoji: MONTHS[month].emoji,
-      description: `${MONTHS[month].name} expenses`,
-      year: 2025,
+      year: year,
     });
   }
 

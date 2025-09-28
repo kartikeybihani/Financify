@@ -1,6 +1,13 @@
 import * as React from "react";
 import { useState } from "react";
-import { Modal, View, Text, TouchableOpacity, ScrollView } from "react-native";
+import {
+  Modal,
+  View,
+  Text,
+  TouchableOpacity,
+  ScrollView,
+  Dimensions,
+} from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 
@@ -23,6 +30,30 @@ export const CategorySelector: React.FC<CategorySelectorProps> = ({
   setLocalFilters,
 }) => {
   const [showModal, setShowModal] = useState(false);
+
+  // Get screen dimensions for responsive sizing
+  const screenHeight = Dimensions.get("window").height;
+  const screenWidth = Dimensions.get("window").width;
+
+  // Calculate responsive modal height
+  const calculateModalHeight = () => {
+    const isSmallPhone = screenHeight < 700;
+    const isMediumPhone = screenHeight >= 700 && screenHeight < 800;
+    const isLargePhone = screenHeight >= 800;
+
+    if (isSmallPhone) {
+      // For small phones, use 70% to reduce whitespace
+      return screenHeight * 0.4;
+    } else if (isMediumPhone) {
+      // For medium phones, use 65%
+      return screenHeight * 0.4;
+    } else {
+      // For large phones/tablets, use 60% to prevent excessive whitespace
+      return Math.min(screenHeight * 0.4, 500);
+    }
+  };
+
+  const modalHeight = calculateModalHeight();
 
   const handleToggleCategorySelection = (categoryId: string) => {
     setLocalFilters((prev) => toggleCategorySelection(categoryId, prev));
@@ -78,10 +109,12 @@ export const CategorySelector: React.FC<CategorySelectorProps> = ({
             style={styles.modalGradientOverlay}
           />
 
-          <TouchableOpacity
-            style={[styles.modalContainer, styles.categoryModalContainer]}
-            activeOpacity={1}
-            onPress={(e) => e.stopPropagation()}
+          <View
+            style={[
+              styles.modalContainer,
+              styles.categoryModalContainer,
+              { height: modalHeight },
+            ]}
           >
             {/* Close Icon */}
             <TouchableOpacity
@@ -99,25 +132,31 @@ export const CategorySelector: React.FC<CategorySelectorProps> = ({
               <View style={styles.closeButtonContainer}>
                 <Ionicons
                   name="close"
-                  size={18}
-                  color="rgba(255,255,255,0.8)"
+                  size={20}
+                  color="rgba(255,255,255,0.9)"
                 />
               </View>
             </TouchableOpacity>
-            <View style={{ height: 45 }} />
+            <View style={{ height: 60 }} />
             {/* Modal Content */}
             <ScrollView
               style={styles.modalContent}
               showsVerticalScrollIndicator={false}
-              contentContainerStyle={[
-                styles.modalScrollContent,
-                { flexGrow: 1 },
-              ]}
+              contentContainerStyle={styles.modalScrollContent}
               bounces={true}
               keyboardShouldPersistTaps="handled"
             >
               {/* Adaptive Category Grid */}
-              <View style={styles.adaptiveCategoryGrid}>
+              <View
+                style={[
+                  styles.adaptiveCategoryGrid,
+                  {
+                    // Responsive gap based on screen size
+                    gap: screenWidth < 350 ? 8 : 10,
+                    paddingHorizontal: screenWidth < 350 ? 4 : 8,
+                  },
+                ]}
+              >
                 {/* All Categories as first item */}
                 <TouchableOpacity
                   style={[
@@ -132,12 +171,23 @@ export const CategorySelector: React.FC<CategorySelectorProps> = ({
                         (localFilters.categoryIds || []).length === 0
                           ? "#4A90E2"
                           : "rgba(74,144,226,0.3)",
+                      // Responsive sizing for smaller screens
+                      paddingVertical: screenHeight < 700 ? 4 : 6,
+                      paddingHorizontal: screenWidth < 350 ? 6 : 8,
+                      minWidth: screenWidth < 350 ? 60 : 70,
                     },
                   ]}
                   onPress={selectAllCategories}
                   activeOpacity={0.7}
                 >
-                  <Text style={styles.categoryEmoji}>🏷️</Text>
+                  <Text
+                    style={[
+                      styles.categoryEmoji,
+                      { fontSize: screenWidth < 350 ? 16 : 18 },
+                    ]}
+                  >
+                    🏷️
+                  </Text>
                   <Text
                     style={[
                       styles.adaptiveCategoryText,
@@ -150,6 +200,7 @@ export const CategorySelector: React.FC<CategorySelectorProps> = ({
                           (localFilters.categoryIds || []).length === 0
                             ? "700"
                             : "600",
+                        fontSize: screenWidth < 350 ? 10 : 12,
                       },
                     ]}
                   >
@@ -260,22 +311,33 @@ export const CategorySelector: React.FC<CategorySelectorProps> = ({
                           backgroundColor: getCategoryBackgroundColor(
                             category.name
                           ),
-
                           borderColor: isSelected
                             ? category.color
                             : category.color + "40",
+                          // Responsive sizing for smaller screens
+                          paddingVertical: screenHeight < 700 ? 4 : 6,
+                          paddingHorizontal: screenWidth < 350 ? 6 : 8,
+                          minWidth: screenWidth < 350 ? 60 : 70,
                         },
                       ]}
                       onPress={() => handleToggleCategorySelection(category.id)}
                       activeOpacity={0.7}
                     >
-                      <Text style={styles.categoryEmoji}>{category.icon}</Text>
+                      <Text
+                        style={[
+                          styles.categoryEmoji,
+                          { fontSize: screenWidth < 350 ? 16 : 18 },
+                        ]}
+                      >
+                        {category.icon}
+                      </Text>
                       <Text
                         style={[
                           styles.adaptiveCategoryText,
                           {
                             color: isSelected ? category.color : "#333",
                             fontWeight: isSelected ? "700" : "600",
+                            fontSize: screenWidth < 350 ? 10 : 12,
                           },
                         ]}
                         numberOfLines={2}
@@ -293,22 +355,9 @@ export const CategorySelector: React.FC<CategorySelectorProps> = ({
                     </TouchableOpacity>
                   );
                 })}
-
-                {/* Add New Category Button - Part of the grid */}
-                <TouchableOpacity
-                  style={styles.adaptiveAddNewBox}
-                  onPress={() => {
-                    // Future: Add new category functionality
-                    console.log("Add new category pressed");
-                  }}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.categoryEmoji}>➕</Text>
-                  <Text style={styles.adaptiveAddNewText}>Add New</Text>
-                </TouchableOpacity>
               </View>
             </ScrollView>
-          </TouchableOpacity>
+          </View>
         </TouchableOpacity>
       </Modal>
     </>

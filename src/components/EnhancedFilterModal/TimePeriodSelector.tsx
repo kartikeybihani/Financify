@@ -133,10 +133,8 @@ export const TimePeriodSelector: React.FC<TimePeriodSelectorProps> = ({
             style={styles.modalGradientOverlay}
           />
 
-          <TouchableOpacity
-            style={[styles.modalContainer, styles.container]}
-            activeOpacity={1}
-            onPress={(e) => e.stopPropagation()}
+          <View
+            style={[styles.modalContainer, styles.timePeriodModalContainer]}
           >
             {/* Close Icon */}
             <TouchableOpacity
@@ -159,11 +157,12 @@ export const TimePeriodSelector: React.FC<TimePeriodSelectorProps> = ({
                 />
               </View>
             </TouchableOpacity>
+            <View style={{ height: 60 }} />
             {/* Modal Content */}
             <ScrollView
               style={styles.modalContent}
               showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ paddingTop: 40, paddingBottom: 24 }}
+              contentContainerStyle={styles.modalScrollContent}
             >
               {/* Quick Options */}
               <View style={styles.adaptiveCategoryGrid}>
@@ -210,168 +209,76 @@ export const TimePeriodSelector: React.FC<TimePeriodSelectorProps> = ({
 
               {/* Monthly Selection */}
               <View style={{ marginTop: 32 }}>
-                {/* 2025 */}
-                <Text style={[styles.yearTitle, { marginBottom: -2 }]}>
-                  2025
-                </Text>
-                <View style={styles.adaptiveCategoryGrid}>
-                  {MONTHLY_PERIODS.filter((p) => p.year === 2025).map(
-                    (period) => {
-                      const isSelected = period.id === localFilters.timePeriod;
-                      const backgroundColor = getMonthBackgroundColor(
-                        period.label
-                      );
-                      const borderColor = getMonthBorderColor(period.label);
+                {(() => {
+                  // Get unique years from the monthly periods, sorted in descending order
+                  const uniqueYears = [
+                    ...new Set(MONTHLY_PERIODS.map((p) => p.year)),
+                  ].sort((a, b) => (b || 0) - (a || 0));
 
-                      return (
-                        <TouchableOpacity
-                          key={period.id}
-                          style={[
-                            styles.adaptiveCategoryBox,
-                            {
-                              backgroundColor,
-                              borderWidth: isSelected ? 2 : 1,
-                              borderColor: isSelected
-                                ? borderColor
-                                : borderColor + "40",
-                            },
-                          ]}
-                          onPress={() => handlePeriodSelection(period.id)}
-                          activeOpacity={0.7}
-                        >
-                          {/* <Text style={styles.categoryEmoji}>
-                            {period.emoji}
-                          </Text> */}
-                          <Text
-                            style={[
-                              styles.adaptiveCategoryText,
-                              {
-                                color: isSelected ? borderColor : "#333",
-                                fontWeight: isSelected ? "700" : "600",
-                              },
-                            ]}
-                            numberOfLines={2}
-                          >
-                            {period.label.split(" ")[0]}
-                          </Text>
-                        </TouchableOpacity>
-                      );
-                    }
-                  )}
-                </View>
+                  return uniqueYears.map((year, yearIndex) => (
+                    <View key={year}>
+                      <Text
+                        style={[
+                          styles.yearTitle,
+                          {
+                            marginBottom: -2,
+                            marginTop: yearIndex === 0 ? 0 : 32,
+                          },
+                        ]}
+                      >
+                        {year}
+                      </Text>
+                      <View style={styles.adaptiveCategoryGrid}>
+                        {MONTHLY_PERIODS.filter((p) => p.year === year).map(
+                          (period) => {
+                            const isSelected =
+                              period.id === localFilters.timePeriod;
+                            const backgroundColor = getMonthBackgroundColor(
+                              period.label
+                            );
+                            const borderColor = getMonthBorderColor(
+                              period.label
+                            );
 
-                {/* 2024 */}
-                <Text
-                  style={[
-                    styles.yearTitle,
-                    { marginTop: 32, marginBottom: -2 },
-                  ]}
-                >
-                  2024
-                </Text>
-                <View style={styles.adaptiveCategoryGrid}>
-                  {MONTHLY_PERIODS.filter((p) => p.year === 2024).map(
-                    (period) => {
-                      const isSelected = period.id === localFilters.timePeriod;
-                      const backgroundColor = getMonthBackgroundColor(
-                        period.label
-                      );
-                      const borderColor = getMonthBorderColor(period.label);
-
-                      return (
-                        <TouchableOpacity
-                          key={period.id}
-                          style={[
-                            styles.adaptiveCategoryBox,
-                            {
-                              backgroundColor,
-                              borderWidth: isSelected ? 2 : 1,
-                              borderColor: isSelected
-                                ? borderColor
-                                : borderColor + "40",
-                            },
-                          ]}
-                          onPress={() => handlePeriodSelection(period.id)}
-                          activeOpacity={0.7}
-                        >
-                          {/* <Text style={styles.categoryEmoji}>
-                            {period.emoji}
-                          </Text> */}
-                          <Text
-                            style={[
-                              styles.adaptiveCategoryText,
-                              {
-                                color: isSelected ? borderColor : "#333",
-                                fontWeight: isSelected ? "700" : "600",
-                              },
-                            ]}
-                            numberOfLines={2}
-                          >
-                            {period.label.split(" ")[0]}
-                          </Text>
-                        </TouchableOpacity>
-                      );
-                    }
-                  )}
-                </View>
-
-                {/* 2023 */}
-                <Text
-                  style={[
-                    styles.yearTitle,
-                    { marginTop: 32, marginBottom: -2 },
-                  ]}
-                >
-                  2023
-                </Text>
-                <View style={styles.adaptiveCategoryGrid}>
-                  {MONTHLY_PERIODS.filter((p) => p.year === 2023).map(
-                    (period) => {
-                      const isSelected = period.id === localFilters.timePeriod;
-                      const backgroundColor = getMonthBackgroundColor(
-                        period.label
-                      );
-                      const borderColor = getMonthBorderColor(period.label);
-
-                      return (
-                        <TouchableOpacity
-                          key={period.id}
-                          style={[
-                            styles.adaptiveCategoryBox,
-                            {
-                              backgroundColor,
-                              borderWidth: isSelected ? 2 : 1,
-                              borderColor: isSelected
-                                ? borderColor
-                                : borderColor + "40",
-                            },
-                          ]}
-                          onPress={() => handlePeriodSelection(period.id)}
-                          activeOpacity={0.7}
-                        >
-                          {/* <Text style={styles.categoryEmoji}>
-                            {period.emoji}
-                          </Text> */}
-                          <Text
-                            style={[
-                              styles.adaptiveCategoryText,
-                              {
-                                color: isSelected ? borderColor : "#333",
-                                fontWeight: isSelected ? "700" : "600",
-                              },
-                            ]}
-                            numberOfLines={2}
-                          >
-                            {period.label.split(" ")[0]}
-                          </Text>
-                        </TouchableOpacity>
-                      );
-                    }
-                  )}
-                </View>
+                            return (
+                              <TouchableOpacity
+                                key={period.id}
+                                style={[
+                                  styles.adaptiveCategoryBox,
+                                  {
+                                    backgroundColor,
+                                    borderWidth: isSelected ? 2 : 1,
+                                    borderColor: isSelected
+                                      ? borderColor
+                                      : borderColor + "40",
+                                  },
+                                ]}
+                                onPress={() => handlePeriodSelection(period.id)}
+                                activeOpacity={0.7}
+                              >
+                                <Text
+                                  style={[
+                                    styles.adaptiveCategoryText,
+                                    {
+                                      color: isSelected ? borderColor : "#333",
+                                      fontWeight: isSelected ? "700" : "600",
+                                    },
+                                  ]}
+                                  numberOfLines={2}
+                                >
+                                  {period.label.split(" ")[0]}
+                                </Text>
+                              </TouchableOpacity>
+                            );
+                          }
+                        )}
+                      </View>
+                    </View>
+                  ));
+                })()}
               </View>
             </ScrollView>
-          </TouchableOpacity>
+          </View>
         </TouchableOpacity>
       </Modal>
     </>

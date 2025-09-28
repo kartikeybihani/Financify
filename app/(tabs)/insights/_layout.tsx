@@ -21,7 +21,7 @@ export default function InsightsStackLayout() {
         options={{
           title: "Select Category",
           presentation: "transparentModal",
-          animation: "slide_from_bottom",
+          animation: "ios_from_right",
           gestureEnabled: true,
           gestureDirection: "horizontal",
         }}
