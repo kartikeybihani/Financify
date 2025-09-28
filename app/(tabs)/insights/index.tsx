@@ -5,6 +5,7 @@ import React, {
   useMemo,
   useCallback,
 } from "react";
+import { router } from "expo-router";
 import {
   View,
   Text,
@@ -21,25 +22,24 @@ import {
   Platform,
 } from "react-native";
 import * as Haptics from "expo-haptics";
-import TopChips from "../_components/insights/components/TopChips";
-import RecurringSection from "../_components/insights/components/RecurringSection";
+import TopChips from "../../_components/insights/components/TopChips";
+import RecurringSection from "../../_components/insights/components/RecurringSection";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { styles } from "../_styles/insightsStyles";
-import CategoryDetailModal from "../_components/insights/CategoryDetailModal";
+import { styles } from "../../_styles/insightsStyles";
+import CategoryDetailModal from "../../_components/insights/CategoryDetailModal";
 import EnhancedFilterModal, {
   FilterOptions,
   Account,
-} from "../_components/EnhancedFilterModal";
-import TransactionDetailModal from "../_components/transactions/TransactionDetailModal";
-import ReAuthBanner from "../_components/ui/ReAuthBanner";
-import InsightsLoadingSkeleton from "../_components/insights/InsightsLoadingSkeleton";
-import SpendingSection from "../_components/insights/components/SpendingSection";
-import TransactionsSection from "../_components/insights/components/TransactionsSection";
-import CashFlowSection from "../_components/insights/components/CashFlowSection";
-import RefreshStatus from "../_components/insights/components/RefreshStatus";
-import { supabase } from "../_lib/supabase/supabase";
-import InvestmentsScreen from "../investments";
+} from "../../_components/EnhancedFilterModal";
+import ReAuthBanner from "../../_components/ui/ReAuthBanner";
+import InsightsLoadingSkeleton from "../../_components/insights/InsightsLoadingSkeleton";
+import SpendingSection from "../../_components/insights/components/SpendingSection";
+import TransactionsSection from "../../_components/insights/components/TransactionsSection";
+import CashFlowSection from "../../_components/insights/components/CashFlowSection";
+import RefreshStatus from "../../_components/insights/components/RefreshStatus";
+import { supabase } from "../../_lib/supabase/supabase";
+import InvestmentsScreen from "../../investments";
 import {
   syncAllUserTransactions,
   refreshBothBalancesAndTransactions,
@@ -51,15 +51,16 @@ import {
   getFilteredTransactions,
   getFilteredTransactionsCount,
   getUserAccountsForFilter,
-} from "../_utils/plaid";
+} from "../../_utils/plaid";
 import {
   getSnaptradeHoldingsFromDB,
   getSnaptradeOptionsFromDB,
   getSnaptradeBalancesFromDB,
   getSnaptradeConnectionsFromDB,
-} from "../_utils/snaptrade";
-import { forceFullResync } from "../../src/utils/categoryFix";
-import logger from "../_utils/logger";
+} from "../../_utils/snaptrade";
+import { forceFullResync } from "../../../src/utils/categoryFix";
+import logger from "../../_utils/logger";
+import { useCategories } from "../../_hooks/useCategories";
 
 // Define types
 interface Transaction {
@@ -68,6 +69,7 @@ interface Transaction {
   category?: string; // This is the original Plaid category stored as string
   top_category?: string; // Simplified top-level category (e.g., "Food", "Transportation")
   sub_category?: string; // Simplified sub-category (e.g., "Eating Out", "Groceries")
+  new_category?: string; // User-overridden category (highest priority)
   date: string;
   name: string;
   personal_finance_category?: {
@@ -95,60 +97,19 @@ interface Insight {
 }
 
 // Add some nice colors for categories
-const categoryColors = {
-  // Simplified top categories
-  Food: "#FF6B6B",
-  Transportation: "#45B7D1",
-  Travel: "#4A90E2",
-  Loans: "#FFEEAD",
-  Income: "#A8E6CF",
-  Shopping: "#4ECDC4",
-  Entertainment: "#96CEB4",
-  "Personal Care": "#D4A5A5",
-  Other: "#9B786F",
-  // Legacy categories (fallback)
-  FOOD_AND_DRINK: "#FF6B6B",
-  GENERAL_MERCHANDISE: "#4ECDC4",
-  TRANSPORTATION: "#45B7D1",
-  ENTERTAINMENT: "#96CEB4",
-  LOAN_PAYMENTS: "#FFEEAD",
-  TRAVEL: "#4A90E2",
-  PERSONAL_CARE: "#D4A5A5",
-  GENERAL_SERVICES: "#9B786F",
-  HOME_IMPROVEMENT: "#8E44AD",
-  INCOME: "#A8E6CF",
-};
-
-const formatCategoryName = (category: string): string => {
-  const categoryMap: { [key: string]: string } = {
-    // Simplified top categories (already formatted)
-    Food: "Food",
-    Transportation: "Transportation",
-    Travel: "Travel",
-    Loans: "Loans",
-    Income: "Income",
-    Shopping: "Shopping",
-    Entertainment: "Entertainment",
-    "Personal Care": "Personal Care",
-    Other: "Other",
-    // Legacy categories (fallback)
-    FOOD_AND_DRINK: "Food & Drink",
-    GENERAL_MERCHANDISE: "Shopping",
-    TRANSPORTATION: "Transportation",
-    ENTERTAINMENT: "Entertainment",
-    LOAN_PAYMENTS: "Loan Payments",
-    TRAVEL: "Travel",
-    PERSONAL_CARE: "Personal Care",
-    GENERAL_SERVICES: "Services",
-    INCOME: "Income",
-  };
-  return categoryMap[category] || category;
-};
+// Removed hardcoded category colors and formatCategoryName - now using database via useCategories hook
 
 export default function InsightsScreen() {
   const [selectedCard, setSelectedCard] = useState<number | null>(null);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [realInsights, setRealInsights] = useState<Insight[]>([]);
+
+  // Use the categories hook for database-driven categories
+  const {
+    getCategoryColor,
+    formatCategoryName: formatCategoryFromHook,
+    getCategoryIcon,
+  } = useCategories();
   const [categoryBreakdown, setCategoryBreakdown] = useState<
     [string, { amount: number; percentage: number; color: string }][]
   >([]);
@@ -219,11 +180,6 @@ export default function InsightsScreen() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMoreTransactions, setHasMoreTransactions] = useState(true);
 
-  // Transaction detail modal state
-  const [showTransactionDetail, setShowTransactionDetail] = useState(false);
-  const [selectedTransaction, setSelectedTransaction] =
-    useState<Transaction | null>(null);
-
   // Investment data state
   const [investmentHoldings, setInvestmentHoldings] = useState<any[]>([]);
   const [investmentOptions, setInvestmentOptions] = useState<any[]>([]);
@@ -279,6 +235,70 @@ export default function InsightsScreen() {
 
     authUserCache.current = { user, timestamp: now };
     return user;
+  }, []);
+
+  // Listen for transaction category updates
+  useEffect(() => {
+    const subscription = DeviceEventEmitter.addListener(
+      "transactionCategoryUpdated",
+      (data) => {
+        console.log("🔄 Transaction category updated:", data);
+
+        // Handle targeted transaction updates
+        console.log("🔄 Processing transaction category update:", {
+          updateType: data.updateType,
+          affectedTransactionsCount: data.affectedTransactions?.length || 0,
+          newCategory: data.newCategory,
+        });
+
+        if (data.affectedTransactions && data.affectedTransactions.length > 0) {
+          console.log("📝 Updating filtered transactions with new categories");
+
+          // Update the filtered transactions list with new categories
+          setFilteredTransactions((prevTransactions) => {
+            const updatedTransactions = prevTransactions.map((transaction) => {
+              // Check if this transaction was affected by the update
+              const affectedTx = data.affectedTransactions.find(
+                (affected: any) => affected.transactionId === transaction.id
+              );
+
+              if (affectedTx) {
+                console.log("✅ Updating transaction:", {
+                  id: transaction.id,
+                  name: transaction.name,
+                  oldCategory:
+                    transaction.new_category || transaction.top_category,
+                  newCategory: data.newCategory,
+                });
+
+                // Update the transaction with new category
+                return {
+                  ...transaction,
+                  new_category: data.newCategory,
+                  top_category: data.newCategory, // Also update top_category for consistency
+                };
+              }
+
+              return transaction;
+            });
+
+            console.log(
+              "📊 Updated transactions count:",
+              updatedTransactions.length
+            );
+            return updatedTransactions;
+          });
+        } else {
+          console.log(
+            "⚠️ No affected transactions found, falling back to full refresh"
+          );
+          // Fallback: refresh all data if no specific transactions provided
+          loadData();
+        }
+      }
+    );
+
+    return () => subscription.remove();
   }, []);
 
   // Initialize data and check for update flags on mount
@@ -635,16 +655,14 @@ export default function InsightsScreen() {
 
       const categoriesObj: CategoryBreakdown = {};
       for (const tx of currentMonthExpenses) {
-        // Use the top_category field from database (simplified categories)
-        const category = tx.top_category || "Other";
+        // Prioritize new_category (user overrides), then fall back to top_category
+        const category = tx.new_category || tx.top_category || "Other";
 
         if (!categoriesObj[category]) {
           categoriesObj[category] = {
             amount: 0,
             percentage: 0,
-            color:
-              categoryColors[category as keyof typeof categoryColors] ||
-              "#4A90E2",
+            color: getCategoryColor(category),
           };
         }
         categoriesObj[category].amount += tx.amount;
@@ -681,10 +699,12 @@ export default function InsightsScreen() {
       const uniqueCategories = [
         "All Categories",
         ...new Set(
-          currentMonthExpenses.map((tx) => tx.top_category || "Other")
+          currentMonthExpenses.map(
+            (tx) => tx.new_category || tx.top_category || "Other"
+          )
         ),
       ].map((cat) =>
-        cat === "All Categories" ? cat : formatCategoryName(cat)
+        cat === "All Categories" ? cat : formatCategoryFromHook(cat)
       );
 
       setCategories(uniqueCategories);
@@ -704,10 +724,10 @@ export default function InsightsScreen() {
             maximumFractionDigits: 2,
           })} ${displayPeriod}`,
           description: topCategory
-            ? `Top category: ${formatCategoryName(topCategory[0])}`
+            ? `Top category: ${formatCategoryFromHook(topCategory[0])}`
             : "Building your spending insights...",
           details: topCategory
-            ? `You've spent the most on ${formatCategoryName(
+            ? `You've spent the most on ${formatCategoryFromHook(
                 topCategory[0]
               )} — $${topCategory[1].amount.toLocaleString("en-US", {
                 minimumFractionDigits: 2,
@@ -772,33 +792,7 @@ export default function InsightsScreen() {
     }
   };
 
-  const getCategoryIcon = (
-    category: string
-  ): keyof typeof Ionicons.glyphMap => {
-    const iconMap: { [key: string]: keyof typeof Ionicons.glyphMap } = {
-      // Simplified top categories
-      Food: "restaurant",
-      Transportation: "car",
-      Travel: "airplane",
-      Loans: "card",
-      Income: "cash",
-      Shopping: "cart",
-      Entertainment: "game-controller",
-      "Personal Care": "fitness",
-      Other: "apps",
-      // Legacy categories (fallback)
-      FOOD_AND_DRINK: "restaurant",
-      GENERAL_MERCHANDISE: "cart",
-      TRANSPORTATION: "car",
-      ENTERTAINMENT: "game-controller",
-      LOAN_PAYMENTS: "card",
-      TRAVEL: "airplane",
-      PERSONAL_CARE: "fitness",
-      GENERAL_SERVICES: "briefcase",
-      INCOME: "cash",
-    };
-    return iconMap[category] || "apps";
-  };
+  // Removed hardcoded getCategoryIcon - now using database version from useCategories hook
 
   const handleCategoryPress = (
     category: string,
@@ -808,10 +802,10 @@ export default function InsightsScreen() {
     setShowCategoryDetail(true);
   };
 
-  // Handle transaction click
+  // Handle transaction click - show transaction detail modal
   const handleTransactionPress = (transaction: Transaction) => {
-    setSelectedTransaction(transaction);
-    setShowTransactionDetail(true);
+    // This is now handled by the TransactionsSection component itself
+    // No navigation needed - pure modal approach
   };
 
   // Handle smooth section transitions
@@ -1536,7 +1530,7 @@ export default function InsightsScreen() {
                     titleStyle={styles.sectionLabel}
                     categoryBreakdown={categoryBreakdown}
                     onCategoryPress={handleCategoryPress}
-                    formatCategoryName={formatCategoryName}
+                    formatCategoryName={formatCategoryFromHook}
                     getCategoryIcon={getCategoryIcon}
                   />
                   <Text style={[styles.sectionLabel, { marginTop: 32 }]}>
@@ -1575,8 +1569,11 @@ export default function InsightsScreen() {
                     onPressOpenFilter={() => setShowEnhancedFilterModal(true)}
                     getFilterDescription={getFilterDescription}
                     onPressTransaction={handleTransactionPress}
+                    showTransactionDetail={(transactionId: string) => {
+                      // Modal is handled internally by TransactionsSection
+                    }}
                     formatDate={formatDate}
-                    formatCategoryName={formatCategoryName}
+                    formatCategoryName={formatCategoryFromHook}
                   />
                 </Animated.View>
               )}
@@ -1638,24 +1635,11 @@ export default function InsightsScreen() {
               category={selectedCategoryDetail.category}
               data={selectedCategoryDetail.data}
               transactions={currentMonthTransactions}
-              formatCategoryName={formatCategoryName}
+              formatCategoryName={formatCategoryFromHook}
               getCategoryIcon={getCategoryIcon}
               formatDate={formatDate}
             />
           )}
-
-          {/* Transaction Detail Modal */}
-          <TransactionDetailModal
-            key="transaction-detail-modal"
-            visible={showTransactionDetail}
-            onClose={() => {
-              setShowTransactionDetail(false);
-              setSelectedTransaction(null);
-            }}
-            transaction={selectedTransaction}
-            formatCategoryName={formatCategoryName}
-            formatDate={formatDate}
-          />
         </ScrollView>
       )}
 

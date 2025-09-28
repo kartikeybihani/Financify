@@ -15,6 +15,28 @@ CREATE TABLE public.accounts (
   CONSTRAINT accounts_pkey PRIMARY KEY (account_id),
   CONSTRAINT accounts_item_id_fkey FOREIGN KEY (item_id) REFERENCES public.user_items(item_id)
 );
+CREATE TABLE public.categories (
+  id uuid NOT NULL,
+  user_id uuid,
+  name text NOT NULL,
+  slug text UNIQUE,
+  icon text,
+  color text,
+  rank integer DEFAULT 0,
+  is_active boolean DEFAULT true,
+  CONSTRAINT categories_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.category_rules (
+  id uuid NOT NULL,
+  user_id uuid NOT NULL,
+  merchant_name text NOT NULL,
+  top_category_id uuid NOT NULL,
+  sub_category_id uuid NOT NULL,
+  apply_to_past boolean DEFAULT false,
+  active boolean DEFAULT true,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT category_rules_pkey PRIMARY KEY (id)
+);
 CREATE TABLE public.conversation_logs (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL,
@@ -191,6 +213,14 @@ CREATE TABLE public.snaptrade_connections (
   user_secret text,
   CONSTRAINT snaptrade_connections_pkey PRIMARY KEY (id),
   CONSTRAINT snaptrade_connections_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
+);
+CREATE TABLE public.transaction_category_overrides (
+  user_id uuid NOT NULL,
+  transaction_id uuid NOT NULL,
+  top_category_id uuid NOT NULL,
+  sub_category_id uuid NOT NULL,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT transaction_category_overrides_pkey PRIMARY KEY (transaction_id)
 );
 CREATE TABLE public.transactions (
   id uuid NOT NULL DEFAULT gen_random_uuid(),

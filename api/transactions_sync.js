@@ -80,8 +80,11 @@ export default async function handler(req, res) {
           category = txn.personal_finance_category.primary;
         }
         // Fallback to legacy category array (first item)
-        else if (txn.category && txn.category.length > 0) {
-          category = txn.category[0];
+        else if (
+          txn.personal_finance_category &&
+          txn.personal_finance_category.length > 0
+        ) {
+          category = txn.personal_finance_category[0];
         }
 
         // Enhanced merchant-based category detection

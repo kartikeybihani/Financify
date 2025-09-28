@@ -171,24 +171,6 @@ export const CategorySelector: React.FC<CategorySelectorProps> = ({
                     category.id
                   );
 
-                  // Convert Ionicon to emoji for better visual appeal
-                  const getEmojiForCategory = (icon: string, name: string) => {
-                    const emojiMap: { [key: string]: string } = {
-                      restaurant: "🍔",
-                      storefront: "🛒",
-                      car: "🚗",
-                      "game-controller": "🎬",
-                      airplane: "✈️",
-                      fitness: "🏋️",
-                      construct: "🏠",
-                      card: "💳",
-                      briefcase: "💼",
-                      "trending-up": "📈",
-                      apps: "📱",
-                    };
-                    return emojiMap[icon] || "📊";
-                  };
-
                   // Get predefined light background color for categories
                   const getCategoryBackgroundColor = (categoryName: string) => {
                     const colorMap: { [key: string]: string } = {
@@ -287,9 +269,7 @@ export const CategorySelector: React.FC<CategorySelectorProps> = ({
                       onPress={() => handleToggleCategorySelection(category.id)}
                       activeOpacity={0.7}
                     >
-                      <Text style={styles.categoryEmoji}>
-                        {getEmojiForCategory(category.icon, category.name)}
-                      </Text>
+                      <Text style={styles.categoryEmoji}>{category.icon}</Text>
                       <Text
                         style={[
                           styles.adaptiveCategoryText,

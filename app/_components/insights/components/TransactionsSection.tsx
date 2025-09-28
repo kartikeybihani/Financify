@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -8,11 +8,14 @@ import {
   TextInput,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { useCategories } from "../../../_hooks/useCategories";
+import TransactionDetailModal from "../../../_components/modals/TransactionDetailModal";
 
 interface Transaction {
   id?: string;
   amount: number;
   top_category?: string;
+  new_category?: string;
   date: string;
   name: string;
   plaid_transaction_id?: string;
@@ -44,11 +47,17 @@ interface Props {
   onPressOpenFilter: () => void;
   getFilterDescription: () => string;
   onPressTransaction: (tx: Transaction) => void;
+  showTransactionDetail: (transactionId: string) => void;
   formatDate: (dateStr: string) => string;
   formatCategoryName: (cat: string) => string;
 }
 
 export default function TransactionsSection(props: Props) {
+  const [selectedTransactionId, setSelectedTransactionId] = useState<
+    string | null
+  >(null);
+  const [showDetailModal, setShowDetailModal] = useState(false);
+  const [isModalTransitioning, setIsModalTransitioning] = useState(false);
   const {
     titleStyle: _titleStyle,
     sectionHeaderStyle: _sectionHeaderStyle,
@@ -69,11 +78,31 @@ export default function TransactionsSection(props: Props) {
     onPressOpenFilter,
     getFilterDescription,
     onPressTransaction,
+    showTransactionDetail,
     formatDate,
     formatCategoryName,
   } = props;
 
   const [searchQuery, setSearchQuery] = useState("");
+
+  // Use the categories hook
+  const { formatCategoryName: formatCategoryFromHook } = useCategories();
+
+  // Ensure modal state is properly reset
+  useEffect(() => {
+    if (!showDetailModal) {
+      setSelectedTransactionId(null);
+    }
+  }, [showDetailModal]);
+
+  // Reset modal state when component unmounts or when transactions change
+  useEffect(() => {
+    return () => {
+      setSelectedTransactionId(null);
+      setShowDetailModal(false);
+      setIsModalTransitioning(false);
+    };
+  }, []);
 
   const displayedTransactions = useMemo(() => {
     if (!searchQuery.trim()) return filteredTransactions;
@@ -92,6 +121,8 @@ export default function TransactionsSection(props: Props) {
         <TouchableOpacity
           onPress={onPressOpenFilter}
           activeOpacity={0.8}
+          delayPressIn={0}
+          delayPressOut={0}
           style={{
             flexDirection: "row",
             alignItems: "center",
@@ -174,6 +205,8 @@ export default function TransactionsSection(props: Props) {
                 backgroundColor: "rgba(255,255,255,0.06)",
               }}
               activeOpacity={0.7}
+              delayPressIn={0}
+              delayPressOut={0}
             >
               <Ionicons name="close" size={14} color="rgba(255,255,255,0.7)" />
             </TouchableOpacity>
@@ -215,8 +248,31 @@ export default function TransactionsSection(props: Props) {
                 paddingVertical: 8,
                 paddingHorizontal: 2,
               }}
-              onPress={() => onPressTransaction(tx)}
+              onPress={() => {
+                // Prevent rapid clicks during modal transitions
+                if (isModalTransitioning) return;
+
+                setIsModalTransitioning(true);
+
+                // Ensure clean state before opening modal
+                if (showDetailModal) {
+                  setShowDetailModal(false);
+                  setSelectedTransactionId(null);
+                  // Use requestAnimationFrame to ensure state is reset before opening new modal
+                  requestAnimationFrame(() => {
+                    setSelectedTransactionId(tx.id || null);
+                    setShowDetailModal(true);
+                    setIsModalTransitioning(false);
+                  });
+                } else {
+                  setSelectedTransactionId(tx.id || null);
+                  setShowDetailModal(true);
+                  setIsModalTransitioning(false);
+                }
+              }}
               activeOpacity={0.7}
+              delayPressIn={0}
+              delayPressOut={0}
             >
               <View style={{ flex: 1, marginRight: 10 }}>
                 <Text
@@ -235,7 +291,9 @@ export default function TransactionsSection(props: Props) {
                 <Text
                   style={{ color: "#4A90E2", fontSize: 10, fontWeight: "500" }}
                 >
-                  {formatCategoryName(tx.top_category || "Other")}
+                  {formatCategoryFromHook(
+                    tx.new_category || tx.top_category || "Other"
+                  )}
                 </Text>
               </View>
               <View
@@ -274,6 +332,8 @@ export default function TransactionsSection(props: Props) {
               <TouchableOpacity
                 style={loadMoreStyles.button}
                 onPress={onPressLoadMore}
+                delayPressIn={0}
+                delayPressOut={0}
               >
                 <Text style={loadMoreStyles.buttonText}>Load More</Text>
                 <Ionicons name="chevron-down" size={16} color="#4A90E2" />
@@ -286,6 +346,19 @@ export default function TransactionsSection(props: Props) {
             )}
           </View>
         )}
+      />
+
+      {/* Transaction Detail Modal */}
+      <TransactionDetailModal
+        key={`modal-${selectedTransactionId || "closed"}`}
+        visible={showDetailModal}
+        transactionId={selectedTransactionId}
+        onClose={() => {
+          // Reset state immediately without delay to prevent race conditions
+          setShowDetailModal(false);
+          setSelectedTransactionId(null);
+          setIsModalTransitioning(false);
+        }}
       />
     </View>
   );

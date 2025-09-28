@@ -1,10 +1,9 @@
 import React from "react";
 import { View, Text, TouchableOpacity, Animated } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
 import { styles } from "../../_styles/goalsStyles";
 import { GoalItemProps } from "../../_types/goalsTypes";
 import {
-  getCategoryIcon,
+  getCategoryEmoji,
   getCategoryColor,
   calculateProgressPercentage,
   formatGoalProgress,
@@ -53,11 +52,9 @@ const GoalItem: React.FC<GoalItemProps> = ({
             })}
           </Text>
           <View style={styles.timelineIconContainer}>
-            <Ionicons
-              name={getCategoryIcon(item.category) as any}
-              size={18}
-              color={getCategoryColor(item.category)}
-            />
+            <Text style={{ fontSize: 18 }}>
+              {getCategoryEmoji(item.category)}
+            </Text>
           </View>
         </View>
         <Text style={styles.timelineLabel}>{item.label}</Text>

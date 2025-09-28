@@ -1,86 +1,222 @@
 MANUALLY CREATED RPC FUNCTIONS
 ================================
 
-1. get_cashflow_monthly
-   - Returns monthly cashflow data (income, expenses, net)
-   - Parameters: p_user_id, p_months
+ACTIVE FUNCTIONS (USED IN CODEBASE)
+===================================
 
-2. get_goals_overview
-   - Returns active goals with progress percentage
-   - Parameters: p_user_id, p_limit
+TRANSACTION & CATEGORY MANAGEMENT
+---------------------------------
 
-3. get_investment_holdings_detailed
-   - Returns detailed investment holdings
-   - Parameters: p_user_id
+1. update_transaction_category_by_name ⭐ ACTIVE
+   - Updates a single transaction's category by name
+   - Parameters: p_transaction_id (uuid), p_new_category (text)
+   - Returns: boolean
+   - Purpose: Individual transaction category override using category names
+   - Used in: CategorySelector.tsx (single transaction updates)
 
-4. get_investment_snapshot
+2. update_similar_transactions_by_name ⭐ ACTIVE
+   - Updates all transactions with same merchant name and creates category rule
+   - Parameters: p_merchant_name (text), p_new_category (text), p_user_id (uuid)
+   - Returns: integer (updated_count)
+   - Purpose: Bulk update similar transactions and create rules for future categorization
+   - Used in: CategorySelector.tsx (similar transactions updates)
+
+3. get_affected_transaction_ids ⭐ ACTIVE
+   - Returns transaction IDs affected by category updates
+   - Parameters: p_user_id (uuid), p_merchant_name (text), p_new_category (text)
+   - Returns: TABLE(transaction_id uuid, transaction_name text, amount numeric, date date)
+   - Purpose: Get details of transactions affected by category changes
+   - Used in: CategorySelector.tsx (tracking affected transactions)
+
+FINANCIAL ANALYTICS & REPORTING
+-------------------------------
+
+4. get_net_worth ⭐ ACTIVE
+   - Calculates comprehensive net worth including all assets and liabilities
+   - Parameters: p_user_id (uuid)
+   - Returns: TABLE(liquid_assets numeric, investments_total numeric, total_liabilities numeric, net_worth numeric, bank_accounts jsonb)
+   - Purpose: Complete financial position summary
+   - Used in: store_accounts.js
+
+5. get_investment_snapshot ⭐ ACTIVE
    - Returns investment totals and cash balances
-   - Parameters: p_user_id
+   - Parameters: p_user_id (uuid)
+   - Returns: TABLE(investments_total numeric, investment_cash numeric, as_of timestamp with time zone)
+   - Purpose: Quick investment portfolio summary
+   - Used in: store_accounts.js
 
-5. get_net_worth
-   - Calculates net worth including liquid assets, investments, and liabilities
-   - Parameters: p_user_id
-
-6. get_recent_transactions
+6. get_recent_transactions ⭐ ACTIVE
    - Returns recent transactions with merchant and category info
-   - Parameters: p_user_id, p_limit
+   - Parameters: p_user_id (uuid), p_limit (integer)
+   - Returns: TABLE(date date, amount numeric, merchant text, category text, name text)
+   - Purpose: Quick access to latest transaction data
+   - Used in: store_accounts.js
 
-7. get_recurring_next_dates
-   - Calculates next occurrence dates for recurring streams
-   - Parameters: p_user_id
-
-8. get_recurring_streams_active
-   - Returns active recurring income/expense streams
-   - Parameters: p_user_id
-
-9. get_spend_by_category
+7. get_spend_by_category ⭐ ACTIVE
    - Returns spending breakdown by category
-   - Parameters: p_user_id, p_start, p_end
+   - Parameters: p_user_id (uuid), p_start (date), p_end (date)
+   - Returns: TABLE(category text, total_spend numeric, txn_count integer)
+   - Purpose: Category-based spending analysis
+   - Used in: store_accounts.js
 
-10. get_spend_by_merchant
-    - Returns spending breakdown by merchant
-    - Parameters: p_user_id, p_start, p_end, p_merchant
+8. get_cashflow_monthly ⭐ ACTIVE
+   - Returns monthly cashflow data (income, expenses, net)
+   - Parameters: p_user_id (uuid), p_months (integer DEFAULT 6)
+   - Returns: TABLE(month date, income numeric, expense numeric, net numeric)
+   - Purpose: Provides monthly financial overview for dashboard
+   - Used in: store_accounts.js
 
-11. get_spending_by_category_enhanced
-    - Enhanced category spending with transaction details
-    - Parameters: p_user_id, p_start, p_end, p_category
+9. get_spending_by_merchant ⭐ ACTIVE
+   - Enhanced merchant spending with transaction details
+   - Parameters: p_user_id (uuid), p_merchant_name (text), p_start (date), p_end (date)
+   - Returns: TABLE(total_spend numeric, txn_count integer, transactions jsonb)
+   - Purpose: Detailed merchant analysis with transaction breakdown
+   - Used in: finny.js
 
-12. get_spending_by_merchant
-    - Enhanced merchant spending with transaction details
-    - Parameters: p_user_id, p_start, p_end, p_merchant_name
-
-13. get_top_merchants_by_category
-    - Returns top merchants within a specific category
-    - Parameters: p_user_id, p_start, p_end, p_category, p_limit
-
-14. get_transactions_by_category
+10. get_transactions_by_category ⭐ ACTIVE
     - Returns transactions filtered by category
-    - Parameters: p_user_id, p_start, p_end, p_category
+    - Parameters: p_user_id (uuid), p_category (text), p_start (date), p_end (date)
+    - Returns: TABLE(id uuid, amount numeric, date date, name text, merchant_name text, category text, top_category text, sub_category text, transaction_type text)
+    - Purpose: Category-filtered transaction listing
+    - Used in: finny.js
 
-15. secure_delete_snaptrade_credentials
-    - Securely deletes SnapTrade credentials from Vault
-    - Parameters: p_user_id, p_snaptrade_user_id, p_account_id
+GOALS & INVESTMENT TRACKING
+---------------------------
 
-16. secure_get_plaid_token
+11. get_goals_overview ⭐ ACTIVE
+    - Returns active goals with progress percentage
+    - Parameters: p_user_id (uuid), p_limit (integer DEFAULT 5)
+    - Returns: TABLE(label text, category text, status text, target_amount numeric, current_amount numeric, progress_pct numeric, target_date date)
+    - Purpose: Financial goals tracking and progress monitoring
+    - Used in: store_accounts.js
+
+12. get_investment_holdings_detailed ⭐ ACTIVE
+    - Returns detailed investment holdings
+    - Parameters: p_user_id (uuid)
+    - Returns: TABLE(symbol text, description text, units numeric, market_value numeric, unrealized_pl numeric, day_change_percent numeric, price numeric)
+    - Purpose: Comprehensive investment portfolio analysis
+    - Used in: store_accounts.js
+
+RECURRING TRANSACTIONS
+----------------------
+
+13. get_recurring_streams_active ⭐ ACTIVE
+    - Returns active recurring income/expense streams
+    - Parameters: p_user_id (uuid)
+    - Returns: TABLE(stream_id text, stream_type text, flow_type text, merchant_name text, category text, average_amount numeric, last_amount numeric, frequency text, first_date date, last_date date)
+    - Purpose: Manages recurring transaction patterns
+    - Used in: store_accounts.js
+
+14. get_recurring_next_dates ⭐ ACTIVE
+    - Calculates next occurrence dates for recurring streams
+    - Parameters: p_user_id (uuid)
+    - Returns: TABLE(stream_id text, stream_type text, flow_type text, merchant_name text, category text, average_amount numeric, frequency text, last_date date, first_date date, next_date date)
+    - Purpose: Predicts upcoming recurring transactions
+    - Used in: store_accounts.js
+
+SECURITY & CREDENTIAL MANAGEMENT
+--------------------------------
+
+15. secure_get_plaid_token ⭐ ACTIVE
     - Securely retrieves Plaid access token from Vault
-    - Parameters: p_item_id, p_user_id
+    - Parameters: p_item_id (text), p_user_id (uuid)
+    - Returns: text
+    - Purpose: Secure access to encrypted Plaid tokens
+    - Used in: transactions_sync.js, plaid.js, refresh_data.js, store_accounts.js, link_tokens.js, refresh_recurring_transactions.js, remove_item.js, sync-transactions function
 
-17. secure_get_snaptrade_credentials
-    - Securely retrieves SnapTrade credentials from Vault
-    - Parameters: p_user_id, p_snaptrade_user_id, p_account_id
-
-18. secure_store_plaid_token
+16. secure_store_plaid_token ⭐ ACTIVE
     - Securely stores Plaid access token in Vault
-    - Parameters: p_token, p_item_id, p_user_id
+    - Parameters: p_item_id (text), p_user_id (uuid), p_token (text)
+    - Returns: uuid (secret_id)
+    - Purpose: Encrypted storage of banking credentials
+    - Used in: store-plaid-token function
 
-19. secure_store_snaptrade_credentials
+17. secure_store_snaptrade_credentials ⭐ ACTIVE
     - Securely stores SnapTrade credentials in Vault
-    - Parameters: p_user_id, p_snaptrade_user_id, p_account_id, p_user_secret
+    - Parameters: p_user_id (uuid), p_snaptrade_user_id (text), p_account_id (text), p_user_secret (text)
+    - Returns: uuid (secret_id)
+    - Purpose: Encrypted storage of investment credentials
+    - Used in: store-snaptrade-credentials function
 
-20. update_updated_at_column
-    - Trigger function to update updated_at timestamp
+AUTOMATIC CATEGORIZATION FUNCTIONS
+----------------------------------
 
-21. update_web_scrape_cache_updated_at
+18. apply_category_rules_to_existing_transactions ⭐ ACTIVE
+    - Applies category rules to existing transactions that don't have new_category set
+    - Parameters: none
+    - Returns: integer (updated_count)
+    - Purpose: Bulk apply existing rules to uncategorized transactions
+    - Used in: Automatic categorization system
+
+19. auto_apply_category_rules ⭐ ACTIVE (TRIGGER)
+    - Trigger function that automatically applies category rules to new transactions
+    - Parameters: none (trigger function)
+    - Returns: trigger
+    - Purpose: Automatic categorization of new transactions based on existing rules
+    - Used in: Automatic categorization system
+
+UTILITY & TRIGGER FUNCTIONS
+---------------------------
+
+20. update_updated_at_column ⭐ ACTIVE
+    - Trigger function to automatically update updated_at timestamp
+    - Parameters: none (trigger function)
+    - Returns: trigger
+    - Purpose: Maintains audit trail for record modifications
+
+21. update_web_scrape_cache_updated_at ⭐ ACTIVE
     - Trigger function to update web scrape cache timestamp
+    - Parameters: none (trigger function)
+    - Returns: trigger
+    - Purpose: Cache invalidation for web scraping data
 
-TOTAL: 21 manually created functions
+REMAINING UNUSED FUNCTIONS (CANDIDATES FOR REMOVAL)
+===================================================
+
+22. apply_transaction_override
+    - Applies category overrides to specific transactions
+    - Parameters: p_user_id (uuid), p_transaction_id (uuid), p_top_category_id (uuid), p_sub_category_id (uuid)
+    - Returns: boolean
+    - Status: UNUSED - Consider removing
+
+23. create_category_rule
+    - Creates rules for automatic transaction categorization
+    - Parameters: p_user_id (uuid), p_merchant_name (text), p_top_category_id (uuid), p_sub_category_id (uuid), p_apply_to_past (boolean DEFAULT false)
+    - Returns: uuid (rule_id)
+    - Status: UNUSED - Consider removing
+
+24. get_category_tree
+    - Returns the complete category hierarchy
+    - Parameters: none
+    - Returns: TABLE(id uuid, parent_id uuid, name text, slug text, icon text, color text, rank integer)
+    - Status: UNUSED - Consider removing
+
+25. get_mapped_sub_category
+    - Maps Plaid categories to custom sub-categories
+    - Parameters: plaid_category (text)
+    - Returns: text
+    - Status: UNUSED - Consider removing
+
+26. get_mapped_top_category
+    - Maps Plaid categories to custom top-level categories
+    - Parameters: plaid_category (text)
+    - Returns: text
+    - Status: UNUSED - Consider removing
+
+27. get_spend_by_category_effective
+    - Enhanced spending analysis using effective categories (with overrides)
+    - Parameters: p_user_id (uuid), p_start (date), p_end (date)
+    - Returns: TABLE(top_category text, sub_category text, total_spend numeric, txn_count integer)
+    - Status: UNUSED - Consider removing
+
+TOTAL: 21 ACTIVE functions, 6 REMAINING unused functions
+
+NOTES:
+- ⭐ ACTIVE functions are currently used in the codebase
+- All functions use Row Level Security (RLS) where applicable
+- Functions with p_user_id parameter automatically filter by authenticated user
+- Date parameters use PostgreSQL date type for consistency
+- Numeric parameters use PostgreSQL numeric type for precision
+- Functions return TABLE types for complex result sets
+- Security functions use Supabase Vault for encrypted credential storage
+- Automatic categorization functions work with triggers for real-time categorization

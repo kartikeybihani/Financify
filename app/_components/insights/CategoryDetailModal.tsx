@@ -1,6 +1,5 @@
 import React from "react";
 import { Modal, View, Text, TouchableOpacity, ScrollView } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
 import { styles } from "../../_styles/insightsStyles";
 
 interface CategoryData {
@@ -15,6 +14,7 @@ interface Transaction {
   name: string;
   category?: string; // Original Plaid category stored as string
   top_category?: string; // Simplified top-level category (e.g., "Food", "Transportation")
+  new_category?: string; // User-updated category
   sub_category?: string; // Simplified sub-category (e.g., "Eating Out", "Groceries")
   personal_finance_category?: {
     primary: string;
@@ -28,7 +28,7 @@ interface CategoryDetailModalProps {
   data: CategoryData;
   transactions: Transaction[];
   formatCategoryName: (category: string) => string;
-  getCategoryIcon: (category: string) => keyof typeof Ionicons.glyphMap;
+  getCategoryIcon: (category: string) => string;
   formatDate: (date: string) => string;
 }
 
@@ -43,7 +43,7 @@ const CategoryDetailModal: React.FC<CategoryDetailModalProps> = ({
   formatDate,
 }) => {
   const categoryTransactions = transactions.filter(
-    (tx) => (tx.top_category || "Other") === category
+    (tx) => (tx.new_category || tx.top_category || "Other") === category
   );
 
   const averageTransaction =
@@ -71,11 +71,9 @@ const CategoryDetailModal: React.FC<CategoryDetailModalProps> = ({
                 { backgroundColor: data.color },
               ]}
             >
-              <Ionicons
-                name={getCategoryIcon(category)}
-                size={24}
-                color="#fff"
-              />
+              <Text style={{ fontSize: 24, color: "#fff" }}>
+                {getCategoryIcon(category)}
+              </Text>
             </View>
             <View>
               <Text style={styles.categoryDetailTitle}>

@@ -16,122 +16,162 @@ const PLAID_BASE_URL = PLAID_ENV === "production"
 const PLAID_CLIENT_ID = Deno.env.get("PLAID_CLIENT_ID")!;
 const PLAID_SECRET = Deno.env.get("PLAID_SECRET")!;
 
-// Category mapping utility
-interface SimplifiedCategory {
-  top: string;
-  sub: string;
+// Category mapping utility using database categories
+interface Category {
+  id: string;
+  user_id: string | null;
+  name: string;
+  slug: string;
+  icon: string;
+  color: string;
+  rank: number;
+  is_active: boolean;
 }
 
-const categoryMap: Record<string, SimplifiedCategory> = {
-  // Food & Drink
-  FOOD_AND_DRINK_FAST_FOOD: { top: "Food", sub: "Eating Out" },
-  FOOD_AND_DRINK_RESTAURANT: { top: "Food", sub: "Eating Out" },
-  FOOD_AND_DRINK_COFFEE: { top: "Food", sub: "Eating Out" },
-  FOOD_AND_DRINK_GROCERIES: { top: "Food", sub: "Groceries" },
-  FOOD_AND_DRINK_ALCOHOL_AND_BARS: { top: "Food", sub: "Eating Out" },
-  FOOD_AND_DRINK_DELIVERY: { top: "Food", sub: "Eating Out" },
-  
-  // Transportation
-  TRANSPORTATION_GAS: { top: "Transportation", sub: "Fuel" },
-  TRANSPORTATION_TAXIS_AND_RIDE_SHARES: { top: "Transportation", sub: "Local Transport" },
-  TRANSPORTATION_PARKING: { top: "Transportation", sub: "Parking" },
-  TRANSPORTATION_PUBLIC_TRANSPORTATION: { top: "Transportation", sub: "Local Transport" },
-  TRANSPORTATION_AUTOMOTIVE: { top: "Transportation", sub: "Vehicle Maintenance" },
-  
-  // Travel
-  TRAVEL_FLIGHTS: { top: "Travel", sub: "Flights" },
-  TRAVEL_LODGING: { top: "Travel", sub: "Lodging" },
-  TRAVEL_RENTAL_CARS: { top: "Travel", sub: "Car Rental" },
-  TRAVEL_TRAINS: { top: "Travel", sub: "Ground Transport" },
-  TRAVEL_BUSES: { top: "Travel", sub: "Ground Transport" },
-  
-  // Loans & Payments
-  LOAN_PAYMENTS_PERSONAL_LOAN_PAYMENT: { top: "Loans", sub: "Personal Loan" },
-  LOAN_PAYMENTS_CREDIT_CARD_PAYMENT: { top: "Loans", sub: "Credit Card Payment" },
-  LOAN_PAYMENTS_STUDENT_LOAN_PAYMENT: { top: "Loans", sub: "Student Loan" },
-  LOAN_PAYMENTS_MORTGAGE_PAYMENT: { top: "Loans", sub: "Mortgage" },
-  LOAN_PAYMENTS_AUTO_LOAN_PAYMENT: { top: "Loans", sub: "Auto Loan" },
-  
-  // Income
-  INCOME_WAGES: { top: "Income", sub: "Wages" },
-  INCOME_INTEREST_EARNED: { top: "Income", sub: "Interest" },
-  INCOME_DIVIDENDS: { top: "Income", sub: "Dividends" },
-  INCOME_TAX_REFUND: { top: "Income", sub: "Tax Refund" },
-  INCOME_BONUS: { top: "Income", sub: "Bonus" },
-  
-  // Shopping
-  GENERAL_MERCHANDISE_SUPERSTORES: { top: "Shopping", sub: "Superstores" },
-  GENERAL_MERCHANDISE_CLOTHING_AND_ACCESSORIES: { top: "Shopping", sub: "Clothing" },
-  GENERAL_MERCHANDISE_ELECTRONICS: { top: "Shopping", sub: "Electronics" },
-  GENERAL_MERCHANDISE_ONLINE_SHOPPING: { top: "Shopping", sub: "Online Shopping" },
-  GENERAL_MERCHANDISE_DEPARTMENT_STORES: { top: "Shopping", sub: "Department Stores" },
-  
-  // Entertainment
-  ENTERTAINMENT_VIDEO_GAMES: { top: "Entertainment", sub: "Video Games" },
-  ENTERTAINMENT_SPORTING_EVENTS_AMUSEMENT_PARKS_AND_MUSEUMS: { top: "Entertainment", sub: "Events & Museums" },
-  ENTERTAINMENT_MOVIES_AND_MUSIC: { top: "Entertainment", sub: "Movies & Music" },
-  ENTERTAINMENT_THEATERS: { top: "Entertainment", sub: "Theaters" },
-  
-  // Personal Care
-  PERSONAL_CARE_HAIR_AND_BEAUTY: { top: "Personal Care", sub: "Hair & Beauty" },
-  PERSONAL_CARE_PHARMACY: { top: "Personal Care", sub: "Pharmacy" },
-  PERSONAL_CARE_DENTIST: { top: "Personal Care", sub: "Healthcare" },
-  PERSONAL_CARE_DOCTOR: { top: "Personal Care", sub: "Healthcare" },
-  
-  // Other categories
-  HOME_IMPROVEMENT_HARDWARE: { top: "Other", sub: "Home" },
-  GENERAL_SERVICES_OTHER_GENERAL_SERVICES: { top: "Other", sub: "General Services" },
-  GOVERNMENT_AND_NON_PROFIT_GOVERNMENT_DEPARTMENTS_AND_AGENCIES: { top: "Other", sub: "Government" },
-  TRANSFER_IN_ACCOUNT_TRANSFER: { top: "Other", sub: "Transfers" },
-  TRANSFER_OUT_ACCOUNT_TRANSFER: { top: "Other", sub: "Transfers" },
-  BANK_FEES: { top: "Other", sub: "Bank Fees" },
-  FINANCIAL_ADVISOR: { top: "Other", sub: "Financial Services" },
-};
+// Cache for categories to avoid repeated DB calls during sync
+let categoriesCache: Category[] | null = null;
 
-function mapPlaidCategory(plaidCategory: string | null | undefined): SimplifiedCategory {
+/**
+ * Fetch categories from database
+ */
+async function getCategories(): Promise<Category[]> {
+  if (categoriesCache) {
+    return categoriesCache;
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('categories')
+      .select('*')
+      .is('user_id', null) // Only get default categories for sync
+      .eq('is_active', true)
+      .order('rank', { ascending: true });
+
+    if (error) {
+      console.error('Error fetching categories:', error);
+      return getDefaultCategories();
+    }
+
+    categoriesCache = data || [];
+    return categoriesCache;
+  } catch (error) {
+    console.error('Category fetch error:', error);
+    return getDefaultCategories();
+  }
+}
+
+/**
+ * Map Plaid category to database category name
+ */
+async function mapPlaidCategory(plaidCategory: string | null | undefined): Promise<string> {
   if (!plaidCategory) {
-    return { top: "Other", sub: "Other" };
+    return 'Other';
   }
-  
-  // Direct mapping lookup
-  const mapped = categoryMap[plaidCategory];
-  if (mapped) {
-    return mapped;
-  }
-  
-  // Fallback: try to match partial categories
+
+  const categories = await getCategories();
   const upperCategory = plaidCategory.toUpperCase();
   
-  // Food-related fallbacks
+  // Food-related mappings
   if (upperCategory.includes('FOOD') || upperCategory.includes('RESTAURANT') || upperCategory.includes('COFFEE')) {
-    return { top: "Food", sub: "Eating Out" };
+    if (upperCategory.includes('GROCERY') || upperCategory.includes('SUPERMARKET')) {
+      return findCategoryByName(categories, 'Groceries') || 'Groceries';
+    }
+    return findCategoryByName(categories, 'Food') || findCategoryByName(categories, 'Dining Out') || 'Food';
   }
+  
+  // Grocery specific
   if (upperCategory.includes('GROCERY') || upperCategory.includes('SUPERMARKET')) {
-    return { top: "Food", sub: "Groceries" };
+    return findCategoryByName(categories, 'Groceries') || 'Groceries';
   }
   
-  // Transportation fallbacks
+  // Transportation
   if (upperCategory.includes('TRANSPORT') || upperCategory.includes('GAS') || upperCategory.includes('UBER') || upperCategory.includes('LYFT')) {
-    return { top: "Transportation", sub: "Local Transport" };
+    return findCategoryByName(categories, 'Transportation') || 'Transportation';
   }
   
-  // Shopping fallbacks
+  // Shopping
   if (upperCategory.includes('SHOPPING') || upperCategory.includes('MERCHANDISE') || upperCategory.includes('AMAZON')) {
-    return { top: "Shopping", sub: "Online Shopping" };
+    return findCategoryByName(categories, 'Shopping') || 'Shopping';
   }
   
-  // Entertainment fallbacks
+  // Entertainment
   if (upperCategory.includes('ENTERTAINMENT') || upperCategory.includes('MOVIE') || upperCategory.includes('GAME')) {
-    return { top: "Entertainment", sub: "Events & Museums" };
+    return findCategoryByName(categories, 'Entertainment') || 'Entertainment';
   }
   
-  // Income fallbacks
+  // Travel
+  if (upperCategory.includes('TRAVEL') || upperCategory.includes('FLIGHT') || upperCategory.includes('HOTEL')) {
+    return findCategoryByName(categories, 'Travel') || 'Travel';
+  }
+  
+  // Income
   if (upperCategory.includes('INCOME') || upperCategory.includes('WAGE') || upperCategory.includes('SALARY')) {
-    return { top: "Income", sub: "Wages" };
+    return findCategoryByName(categories, 'Income') || 'Income';
+  }
+  
+  // Housing
+  if (upperCategory.includes('RENT') || upperCategory.includes('MORTGAGE') || upperCategory.includes('UTILITIES')) {
+    return findCategoryByName(categories, 'Housing') || 'Housing';
+  }
+  
+  // Health & Fitness
+  if (upperCategory.includes('HEALTH') || upperCategory.includes('MEDICAL') || upperCategory.includes('PHARMACY') || upperCategory.includes('FITNESS')) {
+    return findCategoryByName(categories, 'Health & Fitness') || 'Health & Fitness';
+  }
+  
+  // Personal Care
+  if (upperCategory.includes('PERSONAL_CARE') || upperCategory.includes('BEAUTY') || upperCategory.includes('HAIR')) {
+    return findCategoryByName(categories, 'Personal Care') || 'Personal Care';
+  }
+  
+  // Bills & Utilities
+  if (upperCategory.includes('UTILITIES') || upperCategory.includes('PHONE') || upperCategory.includes('INTERNET')) {
+    return findCategoryByName(categories, 'Bills & Utilities') || 'Bills & Utilities';
+  }
+  
+  // Subscriptions
+  if (upperCategory.includes('SUBSCRIPTION') || upperCategory.includes('STREAMING')) {
+    return findCategoryByName(categories, 'Subscriptions') || 'Subscriptions';
+  }
+  
+  // Education
+  if (upperCategory.includes('EDUCATION') || upperCategory.includes('STUDENT') || upperCategory.includes('SCHOOL')) {
+    return findCategoryByName(categories, 'Education') || 'Education';
+  }
+  
+  // Savings & Investments
+  if (upperCategory.includes('INVESTMENT') || upperCategory.includes('SAVINGS') || upperCategory.includes('TRANSFER')) {
+    return findCategoryByName(categories, 'Savings & Investments') || 'Savings & Investments';
   }
   
   // Default fallback
-  return { top: "Other", sub: "Other" };
+  return findCategoryByName(categories, 'Other') || 'Other';
+}
+
+/**
+ * Helper function to find category by name
+ */
+function findCategoryByName(categories: Category[], name: string): string | null {
+  const category = categories.find(cat => 
+    cat.name.toLowerCase() === name.toLowerCase() ||
+    cat.slug === name.toLowerCase().replace(/\s+/g, '-')
+  );
+  return category?.name || null;
+}
+
+/**
+ * Fallback categories if database is unavailable
+ */
+function getDefaultCategories(): Category[] {
+  return [
+    { id: '1', user_id: null, name: 'Groceries', slug: 'groceries', icon: 'basket', color: '#4CAF50', rank: 1, is_active: true },
+    { id: '2', user_id: null, name: 'Food', slug: 'food', icon: 'restaurant', color: '#FF6B6B', rank: 2, is_active: true },
+    { id: '3', user_id: null, name: 'Housing', slug: 'housing', icon: 'home', color: '#8E44AD', rank: 3, is_active: true },
+    { id: '4', user_id: null, name: 'Transportation', slug: 'transportation', icon: 'car', color: '#45B7D1', rank: 4, is_active: true },
+    { id: '5', user_id: null, name: 'Shopping', slug: 'shopping', icon: 'storefront', color: '#4ECDC4', rank: 5, is_active: true },
+    { id: '6', user_id: null, name: 'Entertainment', slug: 'entertainment', icon: 'game-controller', color: '#96CEB4', rank: 6, is_active: true },
+    { id: '7', user_id: null, name: 'Other', slug: 'other', icon: 'apps', color: '#607D8B', rank: 15, is_active: true },
+  ];
 }
 
 // Helper function to call Plaid API using fetch
@@ -276,15 +316,15 @@ serve(async (req: Request) => {
     if (added.length || modified.length) {
       console.log(`💽 Saving ${added.length + modified.length} transactions to database...`);
       
-      const rows = [...added, ...modified].map((txn) => {
+      const rows = await Promise.all([...added, ...modified].map(async (txn) => {
         const category = txn.personal_finance_category?.primary || null;
         
-        // Apply category mapping to get simplified categories
-        const simplifiedCategory = mapPlaidCategory(category);
+        // Apply category mapping to get database category
+        const mappedCategory = await mapPlaidCategory(category);
         
         // Debug log for categories
         if (added.length <= 5) { // Only log first few to avoid spam
-          console.log(`🏷️ Transaction: "${txn.name}" → Original: "${category}" → Simplified: "${simplifiedCategory.top} > ${simplifiedCategory.sub}"`);
+          console.log(`🏷️ Transaction: "${txn.name}" → Original: "${category}" → Mapped: "${mappedCategory}"`);
         }
         
         return {
@@ -297,12 +337,12 @@ serve(async (req: Request) => {
           name: txn.name || null,
           merchant_name: txn.merchant_name || null,
           category: category, // Keep original Plaid category
-          top_category: simplifiedCategory.top, // New simplified top category
-          sub_category: simplifiedCategory.sub, // New simplified sub category
+          top_category: mappedCategory, // Use database category name
+          sub_category: null, // We'll implement sub-categories later
           transaction_type: txn.transaction_type || null,
           pending: txn.pending ?? false,
         };
-      });
+      }));
 
       const { error: upsertErr } = await supabase
         .from("transactions")

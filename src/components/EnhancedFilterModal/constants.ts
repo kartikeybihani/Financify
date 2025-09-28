@@ -85,47 +85,5 @@ const generateMonthlyPeriods = (): TimePeriod[] => {
 export const MONTHLY_PERIODS = generateMonthlyPeriods();
 export const ALL_TIME_PERIODS = [...QUICK_TIME_PERIODS, ...MONTHLY_PERIODS];
 
-// Default categories if none provided
-export const DEFAULT_CATEGORIES: Category[] = [
-  {
-    id: "FOOD_AND_DRINK",
-    name: "Food & Drink",
-    icon: "restaurant",
-    color: "#FF6B6B",
-  },
-  {
-    id: "GENERAL_MERCHANDISE",
-    name: "Shopping",
-    icon: "storefront",
-    color: "#751b10",
-  },
-  {
-    id: "TRANSPORTATION",
-    name: "Transportation",
-    icon: "car",
-    color: "#45B7D1",
-  },
-  {
-    id: "ENTERTAINMENT",
-    name: "Entertainment",
-    icon: "game-controller",
-    color: "#88948e",
-  },
-  { id: "TRAVEL", name: "Travel", icon: "airplane", color: "#4A90E2" },
-  {
-    id: "PERSONAL_CARE",
-    name: "Personal Care",
-    icon: "fitness",
-    color: "#d47777",
-  },
-  { id: "HOME_IMPROVEMENT", name: "Home", icon: "construct", color: "#8E44AD" },
-  { id: "LOAN_PAYMENTS", name: "Payments", icon: "card", color: "#041747" },
-  {
-    id: "GENERAL_SERVICES",
-    name: "Services",
-    icon: "briefcase",
-    color: "#9B786F",
-  },
-  { id: "INCOME", name: "Income", icon: "trending-up", color: "#27AE60" },
-  { id: "Other", name: "Other", icon: "apps", color: "#4A90E2" },
-];
+// Removed DEFAULT_CATEGORIES - now using database categories via useCategories hook
+// Categories are now fetched from the database and managed centrally

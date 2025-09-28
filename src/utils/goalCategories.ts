@@ -97,6 +97,10 @@ export const getCategoryColor = (category: GoalCategory): string => {
   return GOAL_CATEGORIES[category]?.color || '#48CAE4';
 };
 
+export const getCategoryEmoji = (category: GoalCategory): string => {
+  return GOAL_CATEGORIES[category]?.emoji || '🎯';
+};
+
 export const getCategoryOptions = (): Array<{ value: GoalCategory; label: string; icon: string; color: string; emoji: string; backgroundColor: string }> => {
   return Object.entries(GOAL_CATEGORIES).map(([value, config]) => ({
     value: value as GoalCategory,

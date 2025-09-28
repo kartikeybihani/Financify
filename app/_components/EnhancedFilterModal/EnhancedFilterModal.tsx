@@ -7,7 +7,7 @@ import {
   EnhancedFilterModalProps,
   FilterOptions,
 } from "../../../src/components/EnhancedFilterModal/types";
-import { DEFAULT_CATEGORIES } from "../../../src/components/EnhancedFilterModal/constants";
+import { useCategories } from "../../_hooks/useCategories";
 import { styles } from "../../../src/components/EnhancedFilterModal/styles";
 import {
   getSelectedAccountsDescription,
@@ -23,10 +23,20 @@ const EnhancedFilterModal: React.FC<EnhancedFilterModalProps> = ({
   visible,
   onClose,
   accounts,
-  categories = DEFAULT_CATEGORIES,
+  categories: propCategories,
   selectedFilters,
   onFiltersChange,
 }) => {
+  // Use database categories if no categories provided via props
+  const { categories: dbCategories } = useCategories();
+  const categories =
+    propCategories ||
+    dbCategories.map((cat) => ({
+      id: cat.id,
+      name: cat.name,
+      icon: cat.icon,
+      color: cat.color,
+    }));
   const [localFilters, setLocalFilters] =
     useState<FilterOptions>(selectedFilters);
 

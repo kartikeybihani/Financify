@@ -1,6 +1,5 @@
 import React from "react";
 import { View, Text, TouchableOpacity } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
 import { styles } from "../../_styles/insightsStyles";
 
 interface CategoryData {
@@ -13,7 +12,7 @@ interface CategoryGridProps {
   categoryBreakdown: [string, CategoryData][];
   onCategoryPress: (category: string, data: CategoryData) => void;
   formatCategoryName: (category: string) => string;
-  getCategoryIcon: (category: string) => keyof typeof Ionicons.glyphMap;
+  getCategoryIcon: (category: string) => string;
 }
 
 const CategoryGrid: React.FC<CategoryGridProps> = ({
@@ -48,11 +47,9 @@ const CategoryGrid: React.FC<CategoryGridProps> = ({
               <View
                 style={[styles.categoryIcon, { backgroundColor: data.color }]}
               >
-                <Ionicons
-                  name={getCategoryIcon(category)}
-                  size={20}
-                  color="#fff"
-                />
+                <Text style={{ fontSize: 20 }}>
+                  {getCategoryIcon(category)}
+                </Text>
               </View>
               <Text style={styles.gridCategoryPercentage}>
                 {data.percentage.toFixed(0)}%

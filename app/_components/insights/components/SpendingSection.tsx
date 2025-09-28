@@ -13,7 +13,7 @@ interface Props {
     data: { amount: number; percentage: number; color: string }
   ) => void;
   formatCategoryName: (cat: string) => string;
-  getCategoryIcon: (cat: string) => any;
+  getCategoryIcon: (cat: string) => string;
 }
 
 export default function SpendingSection({

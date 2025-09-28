@@ -1,6 +1,5 @@
 import React from "react";
 import { Modal, View, Text, TouchableOpacity } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import {
   ModalBlurOverlay,
@@ -19,28 +18,28 @@ const categories = [
   {
     id: "cash_deposit",
     name: "Cash Deposit",
-    icon: "wallet-outline" as keyof typeof Ionicons.glyphMap,
+    icon: "💰",
     color: "#4A90E2",
     description: "Checking & Savings",
   },
   {
     id: "liabilities",
     name: "Liabilities",
-    icon: "card-outline" as keyof typeof Ionicons.glyphMap,
+    icon: "💳",
     color: "#9B59B6",
     description: "Credit Cards & Loans",
   },
   {
     id: "investments",
     name: "Investments",
-    icon: "trending-up" as keyof typeof Ionicons.glyphMap,
+    icon: "📈",
     color: "#4ECDC4",
     description: "Investment Accounts",
   },
   {
     id: "retirement",
     name: "Retirement",
-    icon: "heart-outline" as keyof typeof Ionicons.glyphMap,
+    icon: "🏖️",
     color: "#FFA726",
     description: "401k & IRAs",
   },
@@ -77,7 +76,7 @@ export default function CategorySelectionModal({
                 { backgroundColor: `${category.color}20` },
               ]}
             >
-              <Ionicons name={category.icon} size={28} color={category.color} />
+              <Text style={{ fontSize: 28 }}>{category.icon}</Text>
             </View>
             <Text style={styles.categoryTitle}>{category.name}</Text>
             <Text style={styles.categoryDescription}>
