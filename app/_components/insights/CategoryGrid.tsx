@@ -1,5 +1,6 @@
 import React from "react";
 import { View, Text, TouchableOpacity } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import { styles } from "../../_styles/insightsStyles";
 
 interface CategoryData {
@@ -12,15 +13,41 @@ interface CategoryGridProps {
   categoryBreakdown: [string, CategoryData][];
   onCategoryPress: (category: string, data: CategoryData) => void;
   formatCategoryName: (category: string) => string;
-  getCategoryIcon: (category: string) => string;
 }
 
 const CategoryGrid: React.FC<CategoryGridProps> = ({
   categoryBreakdown,
   onCategoryPress,
   formatCategoryName,
-  getCategoryIcon,
 }) => {
+  // Map category names to Ionicons
+  const getCategoryIcon = (
+    categoryName: string
+  ): keyof typeof Ionicons.glyphMap => {
+    const iconMap: { [key: string]: keyof typeof Ionicons.glyphMap } = {
+      Groceries: "storefront-outline",
+      Food: "restaurant-outline",
+      "Food & Dining": "restaurant-outline",
+      "Dining Out": "restaurant-outline",
+      Housing: "home-outline",
+      Transportation: "car-outline",
+      Shopping: "bag-outline",
+      Entertainment: "film-outline",
+      Subscriptions: "phone-portrait-outline",
+      "Health & Fitness": "fitness-outline",
+      Health: "medical-outline",
+      "Bills & Utilities": "flash-outline",
+      "Personal Care": "person-outline",
+      Travel: "airplane-outline",
+      Education: "school-outline",
+      "Savings & Investments": "diamond-outline",
+      Savings: "diamond-outline",
+      Income: "cash-outline",
+      Other: "cube-outline",
+    };
+
+    return iconMap[categoryName] || "cube-outline";
+  };
   return (
     <View style={styles.categoryGridContainer}>
       <View style={styles.totalSpendingCard}>
@@ -47,9 +74,11 @@ const CategoryGrid: React.FC<CategoryGridProps> = ({
               <View
                 style={[styles.categoryIcon, { backgroundColor: data.color }]}
               >
-                <Text style={{ fontSize: 20 }}>
-                  {getCategoryIcon(category)}
-                </Text>
+                <Ionicons
+                  name={getCategoryIcon(category)}
+                  size={20}
+                  color="white"
+                />
               </View>
               <Text style={styles.gridCategoryPercentage}>
                 {data.percentage.toFixed(0)}%

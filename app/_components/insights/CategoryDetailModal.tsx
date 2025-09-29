@@ -1,5 +1,6 @@
 import React from "react";
 import { Modal, View, Text, TouchableOpacity, ScrollView } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import { styles } from "../../_styles/insightsStyles";
 
 interface CategoryData {
@@ -28,7 +29,6 @@ interface CategoryDetailModalProps {
   data: CategoryData;
   transactions: Transaction[];
   formatCategoryName: (category: string) => string;
-  getCategoryIcon: (category: string) => string;
   formatDate: (date: string) => string;
 }
 
@@ -39,9 +39,36 @@ const CategoryDetailModal: React.FC<CategoryDetailModalProps> = ({
   data,
   transactions,
   formatCategoryName,
-  getCategoryIcon,
   formatDate,
 }) => {
+  // Map category names to Ionicons
+  const getCategoryIcon = (
+    categoryName: string
+  ): keyof typeof Ionicons.glyphMap => {
+    const iconMap: { [key: string]: keyof typeof Ionicons.glyphMap } = {
+      Groceries: "storefront-outline",
+      Food: "restaurant-outline",
+      "Food & Dining": "restaurant-outline",
+      "Dining Out": "restaurant-outline",
+      Housing: "home-outline",
+      Transportation: "car-outline",
+      Shopping: "bag-outline",
+      Entertainment: "film-outline",
+      Subscriptions: "phone-portrait-outline",
+      "Health & Fitness": "fitness-outline",
+      Health: "medical-outline",
+      "Bills & Utilities": "flash-outline",
+      "Personal Care": "person-outline",
+      Travel: "airplane-outline",
+      Education: "school-outline",
+      "Savings & Investments": "diamond-outline",
+      Savings: "diamond-outline",
+      Income: "cash-outline",
+      Other: "cube-outline",
+    };
+
+    return iconMap[categoryName] || "cube-outline";
+  };
   const categoryTransactions = transactions.filter(
     (tx) => (tx.new_category || tx.top_category || "Other") === category
   );
@@ -71,9 +98,11 @@ const CategoryDetailModal: React.FC<CategoryDetailModalProps> = ({
                 { backgroundColor: data.color },
               ]}
             >
-              <Text style={{ fontSize: 24, color: "#fff" }}>
-                {getCategoryIcon(category)}
-              </Text>
+              <Ionicons
+                name={getCategoryIcon(category)}
+                size={24}
+                color="white"
+              />
             </View>
             <View>
               <Text style={styles.categoryDetailTitle}>

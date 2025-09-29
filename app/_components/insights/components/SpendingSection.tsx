@@ -13,7 +13,6 @@ interface Props {
     data: { amount: number; percentage: number; color: string }
   ) => void;
   formatCategoryName: (cat: string) => string;
-  getCategoryIcon: (cat: string) => string;
 }
 
 export default function SpendingSection({
@@ -21,7 +20,6 @@ export default function SpendingSection({
   categoryBreakdown,
   onCategoryPress,
   formatCategoryName,
-  getCategoryIcon,
 }: Props) {
   return (
     <View>
@@ -30,7 +28,6 @@ export default function SpendingSection({
         categoryBreakdown={categoryBreakdown}
         onCategoryPress={onCategoryPress}
         formatCategoryName={formatCategoryName}
-        getCategoryIcon={getCategoryIcon}
       />
     </View>
   );

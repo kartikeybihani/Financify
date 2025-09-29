@@ -242,12 +242,12 @@ export default function SettingsScreen() {
                 }),
               true
             )}
-            {renderSettingsItem(
+            {/* {renderSettingsItem(
               <Ionicons name="card-outline" size={24} color="#4A90E2" />,
               "Connected Accounts",
               () => {},
               true
-            )}
+            )} */}
             {renderSwitchItem(
               <Ionicons
                 name="notifications-outline"

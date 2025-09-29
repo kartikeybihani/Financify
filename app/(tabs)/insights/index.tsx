@@ -1541,7 +1541,6 @@ export default function InsightsScreen() {
                     categoryBreakdown={categoryBreakdown}
                     onCategoryPress={handleCategoryPress}
                     formatCategoryName={formatCategoryFromHook}
-                    getCategoryIcon={getCategoryIcon}
                   />
                   <Text style={[styles.sectionLabel, { marginTop: 32 }]}>
                     Smart Insights
@@ -1645,7 +1644,6 @@ export default function InsightsScreen() {
               data={selectedCategoryDetail.data}
               transactions={currentMonthTransactions}
               formatCategoryName={formatCategoryFromHook}
-              getCategoryIcon={getCategoryIcon}
               formatDate={formatDate}
             />
           )}

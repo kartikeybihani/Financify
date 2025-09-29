@@ -75,6 +75,12 @@ export const INVESTMENT_INSTITUTIONS: Institution[] = [
     initials: "CS",
   },
   {
+    id: "robinhood",
+    name: "Robinhood",
+    color: "#00C805",
+    initials: "RH",
+  },
+  {
     id: "coinbase",
     name: "Coinbase",
     color: "#0052FF",
@@ -97,12 +103,6 @@ export const INVESTMENT_INSTITUTIONS: Institution[] = [
     name: "Public",
     color: "#212121",
     initials: "PU",
-  },
-  {
-    id: "robinhood",
-    name: "Robinhood",
-    color: "#00C805",
-    initials: "RH",
   },
   {
     id: "wealthfront",
