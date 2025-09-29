@@ -77,12 +77,19 @@ function getBubbleRadii({
   const isUser = sender === "user";
 
   if (isFirstInGroup && isLastInGroup) {
-    return {
-      borderTopLeftRadius: r,
-      borderTopRightRadius: r,
-      borderBottomLeftRadius: r,
-      borderBottomRightRadius: r,
-    } as const;
+    return isUser
+      ? {
+          borderTopLeftRadius: r,
+          borderTopRightRadius: 3, // Sharp edge for user messages
+          borderBottomLeftRadius: r,
+          borderBottomRightRadius: r,
+        }
+      : {
+          borderTopLeftRadius: r,
+          borderTopRightRadius: r,
+          borderBottomLeftRadius: r,
+          borderBottomRightRadius: r,
+        };
   }
 
   if (isFirstInGroup) {
@@ -105,7 +112,7 @@ function getBubbleRadii({
     return isUser
       ? {
           borderTopLeftRadius: r,
-          borderTopRightRadius: mid,
+          borderTopRightRadius: 3, // Sharp edge for user messages
           borderBottomLeftRadius: r,
           borderBottomRightRadius: r,
         }
@@ -211,6 +218,7 @@ export const ChatMessageComponent = ({
           >
             {message.text}
           </Text>
+          {isLastInGroup && <View style={styles.userMessageTail} />}
         </LinearGradient>
       </Animated.View>
     );
@@ -469,6 +477,20 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 2,
     elevation: 2,
+    position: "relative",
+  },
+  userMessageTail: {
+    position: "absolute",
+    right: -6,
+    bottom: 8,
+    width: 0,
+    height: 0,
+    borderLeftWidth: 6,
+    borderLeftColor: "#1A2A3A",
+    borderTopWidth: 6,
+    borderTopColor: "transparent",
+    borderBottomWidth: 6,
+    borderBottomColor: "transparent",
   },
   finnyMessageRow: {
     flexDirection: "row",
