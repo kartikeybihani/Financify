@@ -21,12 +21,20 @@ import {
   Animated,
   Platform,
 } from "react-native";
+import { InteractionManager } from "react-native";
 import * as Haptics from "expo-haptics";
 import TopChips from "../../_components/insights/components/TopChips";
 import RecurringSection from "../../_components/insights/components/RecurringSection";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { styles } from "../../_styles/insightsStyles";
+import {
+  headerRefreshStyles,
+  updateModalStyles,
+  transactionInfoStyles,
+  loadMoreStyles,
+  sectionContentStyles,
+} from "./insightsStyles";
 import CategoryDetailModal from "../../_components/insights/CategoryDetailModal";
 import EnhancedFilterModal, {
   FilterOptions,
@@ -207,23 +215,10 @@ export default function InsightsScreen() {
   >(new Map());
   const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
-  // Cache for auth user to avoid repeated calls
-  const authUserCache = useRef<{
-    user: any;
-    timestamp: number;
-  } | null>(null);
-  const AUTH_CACHE_DURATION = 30 * 1000; // 30 seconds
-
-  // Cached auth user helper
-  const getCachedAuthUser = useCallback(async () => {
-    const now = Date.now();
-    if (
-      authUserCache.current &&
-      now - authUserCache.current.timestamp < AUTH_CACHE_DURATION
-    ) {
-      return authUserCache.current.user;
-    }
-
+  // Cached userId to avoid repeated supabase.auth.getUser() calls
+  const userIdRef = useRef<string | null>(null);
+  const getUserId = useCallback(async (): Promise<string | null> => {
+    if (userIdRef.current) return userIdRef.current;
     const {
       data: { user },
       error,
@@ -232,9 +227,8 @@ export default function InsightsScreen() {
       logger.error("Auth error:", error.message);
       return null;
     }
-
-    authUserCache.current = { user, timestamp: now };
-    return user;
+    userIdRef.current = user?.id || null;
+    return userIdRef.current;
   }, []);
 
   // Listen for transaction category updates
@@ -301,32 +295,21 @@ export default function InsightsScreen() {
     return () => subscription.remove();
   }, []);
 
-  // Initialize data and check for update flags on mount
+  // Initialize minimal data on mount: recent transactions + accounts only
   useEffect(() => {
     const initializeScreen = async () => {
       setIsInitialLoad(true);
 
       try {
-        // Parallelize independent API calls for faster loading
-        const [hasStoredData] = await Promise.all([
-          loadData(), // Load stored data first
-          loadUserAccounts(false), // Load accounts for filter modal
-        ]);
+        const hasStoredData = await loadData();
+        // Load accounts for filter modal (non-blocking for first paint)
+        loadUserAccounts(false);
 
-        // If no stored data, fetch fresh data (sequential dependency)
         if (!hasStoredData) {
           setIsLoading(true);
           await fetchFreshData();
           setIsLoading(false);
         }
-
-        // Parallelize remaining independent operations
-        await Promise.all([
-          loadFilteredTransactions(filterOptions, true), // Load filtered transactions
-          checkForReAuthNeeds(), // Check for update flags and re-auth needs
-          loadRecurringTransactions(), // Load recurring transactions from database
-          loadInvestmentData(), // Load investment data from database
-        ]);
       } catch (error) {
         logger.error("Error during initialization:", error);
       } finally {
@@ -335,27 +318,53 @@ export default function InsightsScreen() {
     };
 
     initializeScreen();
-  }, [getCachedAuthUser]);
+  }, [getUserId]);
 
-  // Load filtered transactions when filter options change
+  // Post-first-frame: check re-auth needs without blocking initial render
   useEffect(() => {
-    if (hasData.current && !showEnhancedFilterModal) {
+    const task = InteractionManager.runAfterInteractions(() => {
+      checkForReAuthNeeds();
+    });
+    return () => {
+      // @ts-ignore cancel may not exist in some RN versions
+      if (task && typeof task.cancel === "function") task.cancel();
+    };
+  }, []);
+
+  // Load filtered transactions when filter options change (only in Transactions section)
+  useEffect(() => {
+    if (
+      activeSection === "transactions" &&
+      hasData.current &&
+      !showEnhancedFilterModal
+    ) {
       loadFilteredTransactions(filterOptions, true);
     }
-  }, [filterOptions]);
+  }, [filterOptions, activeSection, showEnhancedFilterModal]);
+
+  // Gate data loads by active section
+  useEffect(() => {
+    if (activeSection === "transactions") {
+      loadFilteredTransactions(filterOptions, true);
+    } else if (activeSection === "recurring") {
+      loadRecurringTransactions();
+    } else if (activeSection === "investments") {
+      loadInvestmentData();
+    }
+  }, [activeSection]);
 
   const loadData = async () => {
     try {
       logger.info("Insights: Loading data from Supabase...");
 
-      const user = await getCachedAuthUser();
-      if (!user?.id) {
+      const userId = await getUserId();
+      if (!userId) {
         logger.error("No authenticated user");
         return false;
       }
 
       // Fetch recent transactions using the new plaid utils
-      const transactions = await getRecentTransactions(user.id, 100);
+      const transactions = await getRecentTransactions(userId, 100);
 
       if (transactions && transactions.length > 0) {
         logger.info(
@@ -381,14 +390,14 @@ export default function InsightsScreen() {
       setIsLoading(true);
       logger.info("Insights: Fetching fresh data from Supabase...");
 
-      const user = await getCachedAuthUser();
-      if (!user?.id) {
+      const userId = await getUserId();
+      if (!userId) {
         logger.error("No authenticated user");
         return;
       }
 
       // Fetch latest transactions using the new plaid utils
-      const transactions = await getRecentTransactions(user.id, 100);
+      const transactions = await getRecentTransactions(userId, 100);
 
       if (transactions && transactions.length > 0) {
         logger.info(
@@ -410,13 +419,13 @@ export default function InsightsScreen() {
   // Load user accounts for filter modal
   const loadUserAccounts = async (debug: boolean = false) => {
     try {
-      const user = await getCachedAuthUser();
-      if (!user?.id) {
+      const userId = await getUserId();
+      if (!userId) {
         if (debug) logger.error("No authenticated user loading accounts");
         return;
       }
 
-      const userAccounts = await getUserAccountsForFilter(user.id);
+      const userAccounts = await getUserAccountsForFilter(userId);
       setAccounts(userAccounts);
 
       if (debug) {
@@ -490,8 +499,8 @@ export default function InsightsScreen() {
     reset: boolean = false
   ) => {
     try {
-      const user = await getCachedAuthUser();
-      if (!user?.id) {
+      const userId = await getUserId();
+      if (!userId) {
         logger.info("❌ No authenticated user loading filtered transactions");
         return;
       }
@@ -522,7 +531,7 @@ export default function InsightsScreen() {
         accountIdsLength: filters.accountIds?.length || 0,
       });
 
-      const newTransactions = await getFilteredTransactions(user.id, {
+      const newTransactions = await getFilteredTransactions(userId, {
         accountIds: filters.accountIds,
         timePeriod: filters.timePeriod,
         limit,
@@ -536,7 +545,7 @@ export default function InsightsScreen() {
       // Get total count for pagination (only on initial load)
       let totalCount = totalFilteredCount;
       if (reset) {
-        totalCount = await getFilteredTransactionsCount(user.id, {
+        totalCount = await getFilteredTransactionsCount(userId, {
           accountIds: filters.accountIds,
           timePeriod: filters.timePeriod,
         });
@@ -785,8 +794,10 @@ export default function InsightsScreen() {
       // Clear cache when refreshing
       clearCache();
       await fetchFreshData();
-      // Reload current filters after refresh
-      await loadFilteredTransactions(filterOptions, true);
+      // Only reload filtered transactions if on Transactions section
+      if (activeSection === "transactions") {
+        await loadFilteredTransactions(filterOptions, true);
+      }
     } finally {
       setRefreshing(false);
     }
@@ -840,8 +851,8 @@ export default function InsightsScreen() {
     try {
       logger.info("Insights: Loading investment data from Supabase...");
 
-      const user = await getCachedAuthUser();
-      if (!user?.id) {
+      const userId = await getUserId();
+      if (!userId) {
         logger.error("No authenticated user loading investment data");
         return false;
       }
@@ -889,15 +900,15 @@ export default function InsightsScreen() {
   // Check for re-auth needs (both database flags and API errors)
   const checkForReAuthNeeds = async () => {
     try {
-      const user = await getCachedAuthUser();
-      if (!user?.id) return;
+      const userId = await getUserId();
+      if (!userId) return;
 
       const { data: userItems, error } = await supabase
         .from("user_items")
         .select(
           "item_id, has_new_accounts, requires_update_mode, institution_name"
         )
-        .eq("user_id", user.id);
+        .eq("user_id", userId);
 
       if (error) {
         logger.error("Error checking update flags:", error);
@@ -942,8 +953,8 @@ export default function InsightsScreen() {
   // Debug function to diagnose database state
   const debugDatabaseState = async () => {
     try {
-      const user = await getCachedAuthUser();
-      if (!user?.id) return;
+      const userId = await getUserId();
+      if (!userId) return;
 
       logger.info("🔍 DEBUG: Checking database state...");
 
@@ -951,7 +962,7 @@ export default function InsightsScreen() {
       const { data: userItems, error: itemsError } = await supabase
         .from("user_items")
         .select("*")
-        .eq("user_id", user.id);
+        .eq("user_id", userId);
 
       if (itemsError) {
         logger.error("❌ Error fetching user items:", itemsError);
@@ -1134,8 +1145,8 @@ export default function InsightsScreen() {
     try {
       logger.info("🔄 MANUAL REFRESH: Syncing from stored cursors...");
 
-      const user = await getCachedAuthUser();
-      if (!user?.id) {
+      const userId = await getUserId();
+      if (!userId) {
         logger.error("❌ No authenticated user in refresh");
         setRefreshStatus({ type: "manual", message: "Authentication error" });
         return;
@@ -1196,8 +1207,8 @@ export default function InsightsScreen() {
     try {
       logger.info("🔧 CATEGORY FIX: Starting full resync...");
 
-      const user = await getCachedAuthUser();
-      if (!user?.id) {
+      const userId = await getUserId();
+      if (!userId) {
         logger.error("❌ No authenticated user in full resync");
         setRefreshStatus({
           type: "category_fix",
@@ -1211,7 +1222,7 @@ export default function InsightsScreen() {
         type: "category_fix",
         message: "Resetting sync cursors...",
       });
-      const success = await forceFullResync(user.id);
+      const success = await forceFullResync(userId);
 
       if (!success) {
         logger.error("❌ Failed to reset cursors for full resync");
@@ -1457,12 +1468,11 @@ export default function InsightsScreen() {
         </View>
       </View>
 
-      {!isInitialLoad && (
-        <TopChips
-          activeSection={activeSection as any}
-          onChange={handleSectionChange as any}
-        />
-      )}
+      {/* Render chips immediately so first paint is instant */}
+      <TopChips
+        activeSection={activeSection as any}
+        onChange={handleSectionChange as any}
+      />
 
       {isInitialLoad ? (
         <InsightsLoadingSkeleton />
@@ -1705,169 +1715,3 @@ export default function InsightsScreen() {
     </SafeAreaView>
   );
 }
-
-// Header Refresh Icons Styles
-const headerRefreshStyles = StyleSheet.create({
-  container: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  iconButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: "rgba(74, 144, 226, 0.1)",
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: "rgba(74, 144, 226, 0.2)",
-  },
-  iconButtonDisabled: {
-    opacity: 0.5,
-  },
-});
-
-// Update Modal Styles
-const updateModalStyles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.7)",
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 20,
-  },
-  container: {
-    backgroundColor: "#1A1A2E",
-    borderRadius: 16,
-    padding: 24,
-    width: "100%",
-    maxWidth: 340,
-    borderWidth: 1,
-    borderColor: "#333",
-  },
-  iconContainer: {
-    alignItems: "center",
-    marginBottom: 16,
-  },
-  title: {
-    fontSize: 20,
-    fontWeight: "700",
-    color: "#fff",
-    textAlign: "center",
-    marginBottom: 12,
-  },
-  message: {
-    fontSize: 16,
-    color: "#A0A0A0",
-    textAlign: "center",
-    lineHeight: 22,
-    marginBottom: 24,
-  },
-  buttonContainer: {
-    flexDirection: "row",
-    gap: 12,
-  },
-  button: {
-    flex: 1,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    alignItems: "center",
-  },
-  cancelButton: {
-    backgroundColor: "#333",
-  },
-  updateButton: {
-    backgroundColor: "#4A90E2",
-  },
-  cancelButtonText: {
-    color: "#A0A0A0",
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  updateButtonText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "600",
-  },
-});
-
-// Transaction Info Styles
-const transactionInfoStyles = StyleSheet.create({
-  container: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    backgroundColor: "#16213E",
-    borderRadius: 8,
-    marginBottom: 16,
-  },
-  text: {
-    fontSize: 14,
-    color: "#A0A0A0",
-    textAlign: "center",
-  },
-});
-
-// Load More Button Styles
-const loadMoreStyles = StyleSheet.create({
-  container: {
-    paddingVertical: 16,
-    paddingHorizontal: 16,
-    alignItems: "center",
-  },
-  indicator: {
-    marginVertical: 8,
-  },
-  button: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    backgroundColor: "#16213E",
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#4A90E2",
-    gap: 8,
-  },
-  buttonText: {
-    color: "#4A90E2",
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  endText: {
-    color: "#666",
-    fontSize: 14,
-    fontStyle: "italic",
-    marginTop: 8,
-  },
-});
-
-// Section Content Styles
-const sectionContentStyles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  placeholderContainer: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 60,
-    paddingHorizontal: 40,
-  },
-  placeholderTitle: {
-    fontSize: 20,
-    fontWeight: "600",
-    color: "#fff",
-    marginTop: 16,
-    marginBottom: 12,
-    textAlign: "center",
-  },
-  placeholderText: {
-    fontSize: 16,
-    color: "#888",
-    textAlign: "center",
-    lineHeight: 24,
-    maxWidth: 300,
-  },
-});
