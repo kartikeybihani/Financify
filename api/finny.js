@@ -385,109 +385,190 @@ async function handleAsk(message, context) {
       };
     }
 
-    // 2) Check if this is a merchant-specific query that needs enhanced data
-    const merchantQuery = detectMerchantQuery(message);
-    let enhancedData = null;
+    // 2) Detect all query types in parallel for better performance
+    const [merchantQuery, rentVsBuyQuery, isProductQuery] = await Promise.all([
+      Promise.resolve(detectMerchantQuery(message)),
+      Promise.resolve(detectRentVsBuyQuery(message)),
+      Promise.resolve(detectProductQuery(message)),
+    ]);
 
+    // 3) Start all data fetching operations in parallel
+    const dataFetchPromises = [];
+    const BASE_URL = process.env.APP_BASE_URL;
+
+    // Always fetch user financial summary (with caching)
+    dataFetchPromises.push(
+      getCachedDataWithFallback(
+        "user_summary",
+        userId,
+        async () => {
+          const res = await fetch(`${BASE_URL}/api/store_accounts`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              mode: "financial_summary",
+              user_id: userId,
+            }),
+          });
+          if (!res.ok) {
+            throw new Error(`Financial summary failed: ${res.status}`);
+          }
+          return await res.json();
+        },
+        true // user-specific cache
+      ).then(async (cachedResult) => {
+        const sumT0 = Date.now();
+        timings.summary_ms = Date.now() - sumT0;
+        toolsUsed.push({
+          name: "user_summary_rpc",
+          latency_ms: timings.summary_ms,
+          cache_hit: cachedResult.source === "cache",
+        });
+        return { type: "summary", data: cachedResult.data };
+      })
+    );
+
+    // Fetch enhanced merchant data if needed (with caching)
     if (merchantQuery) {
       console.log("🔍 [FINNY] Detected merchant query:", merchantQuery);
-      const t0 = Date.now();
-      enhancedData = await withTimeout(
-        fetchEnhancedMerchantData(userId, merchantQuery),
-        1500,
-        null
+      dataFetchPromises.push(
+        getCachedDataWithFallback(
+          "enhanced_merchant",
+          `${userId}_${merchantQuery}`,
+          async () => {
+            return await withTimeout(
+              fetchEnhancedMerchantData(userId, merchantQuery),
+              1500,
+              null
+            );
+          },
+          true // user-specific cache
+        ).then((cachedResult) => {
+          const t0 = Date.now();
+          timings.user_data_ms += Date.now() - t0;
+          toolsUsed.push({
+            name: "enhanced_merchant_or_category",
+            latency_ms: Date.now() - t0,
+            cache_hit: cachedResult.source === "cache",
+          });
+          console.log(
+            "🔍 [FINNY] Enhanced data result:",
+            cachedResult.data ? "Success" : "Failed"
+          );
+          return { type: "enhanced", data: cachedResult.data };
+        })
       );
-      timings.user_data_ms += Date.now() - t0;
-      toolsUsed.push({
-        name: "enhanced_merchant_or_category",
-        latency_ms: Date.now() - t0,
-        cache_hit: false,
-      });
-      console.log(
-        "🔍 [FINNY] Enhanced data result:",
-        enhancedData ? "Success" : "Failed"
-      );
-      if (!enhancedData) degraded = true;
-    } else {
-      console.log("🔍 [FINNY] No merchant query detected for:", message);
     }
 
-    // 2.5) Check if this is a rent vs buy question that needs market data
-    const rentVsBuyQuery = detectRentVsBuyQuery(message);
-    let marketData = null;
-
+    // Fetch market data if needed (with caching)
     if (rentVsBuyQuery) {
       console.log("🔍 [FINNY] Detected rent vs buy query:", rentVsBuyQuery);
-      const t0 = Date.now();
-      marketData = await withTimeout(
-        fetchMarketData(rentVsBuyQuery),
-        1800,
-        null
+      dataFetchPromises.push(
+        getCachedDataWithFallback(
+          "market_data",
+          rentVsBuyQuery,
+          async () => {
+            return await withTimeout(
+              fetchMarketData(rentVsBuyQuery),
+              1800,
+              null
+            );
+          },
+          false // not user-specific
+        ).then((cachedResult) => {
+          const t0 = Date.now();
+          timings.market_ms = Date.now() - t0;
+          toolsUsed.push({
+            name: "market_data",
+            latency_ms: timings.market_ms,
+            cache_hit: cachedResult.source === "cache",
+          });
+          console.log(
+            "🔍 [FINNY] Market data result:",
+            cachedResult.data ? "Success" : "Failed"
+          );
+          return { type: "market", data: cachedResult.data };
+        })
       );
-      timings.market_ms = Date.now() - t0;
-      toolsUsed.push({
-        name: "market_data",
-        latency_ms: timings.market_ms,
-        cache_hit: false,
-      });
-      console.log(
-        "🔍 [FINNY] Market data result:",
-        marketData ? "Success" : "Failed"
-      );
-      if (!marketData) degraded = true;
     }
 
-    // 2.6) Check if this is a financial product query that needs web research
-    let webResearchData = null;
-    const isProductQuery = detectProductQuery(message);
-
+    // Fetch web research data if needed (with caching and deduplication)
     if (isProductQuery) {
       console.log("🔍 [FINNY] Detected product query, starting web research");
-      try {
-        const t0 = Date.now();
-        webResearchData = await withTimeout(
-          researchFinancialProducts(message, userId),
-          2500,
-          { success: false, error: "timeout" }
-        );
-        timings.web_ms = Date.now() - t0;
-        toolsUsed.push({
-          name: "web_research",
-          latency_ms: timings.web_ms,
-          cache_hit: false,
-        });
-        console.log(
-          "🔍 [FINNY] Web research result:",
-          webResearchData.success ? "Success" : "Failed"
-        );
-        if (!webResearchData?.success) degraded = true;
-      } catch (error) {
-        console.error("❌ [FINNY] Web research failed:", error);
-        webResearchData = { success: false, error: error.message };
+      dataFetchPromises.push(
+        getCachedDataWithFallback(
+          "web_research",
+          message.toLowerCase().trim(),
+          async () => {
+            return await withTimeout(
+              deduplicatedWebResearch(message, userId),
+              2500,
+              { success: false, error: "timeout" }
+            );
+          },
+          false // not user-specific
+        )
+          .then((cachedResult) => {
+            const t0 = Date.now();
+            timings.web_ms = Date.now() - t0;
+            toolsUsed.push({
+              name: "web_research",
+              latency_ms: timings.web_ms,
+              cache_hit: cachedResult.source === "cache",
+            });
+            console.log(
+              "🔍 [FINNY] Web research result:",
+              cachedResult.data?.success ? "Success" : "Failed"
+            );
+            return { type: "web", data: cachedResult.data };
+          })
+          .catch((error) => {
+            console.error("❌ [FINNY] Web research failed:", error);
+            return {
+              type: "web",
+              data: { success: false, error: error.message },
+            };
+          })
+      );
+    }
+
+    // Wait for all data fetching operations to complete
+    const dataResults = await Promise.allSettled(dataFetchPromises);
+
+    // Process results and build snap object
+    let snap = null;
+    let enhancedData = null;
+    let marketData = null;
+    let webResearchData = null;
+
+    for (const result of dataResults) {
+      if (result.status === "fulfilled") {
+        const { type, data } = result.value;
+        switch (type) {
+          case "summary":
+            snap = data;
+            break;
+          case "enhanced":
+            enhancedData = data;
+            if (!data) degraded = true;
+            break;
+          case "market":
+            marketData = data;
+            if (!data) degraded = true;
+            break;
+          case "web":
+            webResearchData = data;
+            if (!data?.success) degraded = true;
+            break;
+        }
+      } else {
+        console.error("❌ [FINNY] Data fetch failed:", result.reason);
         degraded = true;
       }
     }
 
-    // 3) Fetch financial summary from store_accounts endpoint
-    const BASE_URL = process.env.APP_BASE_URL;
-    const sumT0 = Date.now();
-    const res = await fetch(`${BASE_URL}/api/store_accounts`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        mode: "financial_summary",
-        user_id: userId,
-      }),
-    });
-    timings.summary_ms = Date.now() - sumT0;
-    toolsUsed.push({
-      name: "user_summary_rpc",
-      latency_ms: timings.summary_ms,
-      cache_hit: false,
-    });
-
-    if (!res.ok) {
-      console.log("❌ [FINNY] Failed to fetch financial summary:", res.status);
+    if (!snap) {
+      console.log("❌ [FINNY] Failed to fetch financial summary");
       return {
         message:
           "I couldn't load your financial summary yet. Try again in a moment.",
@@ -495,7 +576,6 @@ async function handleAsk(message, context) {
       };
     }
 
-    const snap = await res.json();
     console.log("✅ [FINNY] Fetched financial summary:", Object.keys(snap));
 
     // Add enhanced merchant data to snap if available
@@ -530,7 +610,7 @@ async function handleAsk(message, context) {
 
     console.log("🔍 [FINNY] Context note:", contextNote);
 
-    // 3) LLM call
+    // 3) LLM call with streaming support
     const llmT0 = Date.now();
     const resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
@@ -542,6 +622,7 @@ async function handleAsk(message, context) {
         model: "openai/gpt-4o-mini",
         temperature: 0.6,
         max_tokens: 600,
+        stream: false, // Keep as false for now, but ready for streaming
         messages: [
           { role: "system", content: system },
           {
@@ -3023,6 +3104,9 @@ const RATE_LIMITS = {
 let requestQueue = [];
 let activeRequests = 0;
 
+// Request deduplication map
+const pendingRequests = new Map();
+
 // Entity extraction functions
 function extractEntitiesRuleBased(message) {
   const lowerMessage = message.toLowerCase();
@@ -4040,7 +4124,7 @@ async function scrapeMultipleUrls(urls, entityType = "credit_card") {
   };
 }
 
-// Simple caching functions
+// Enhanced caching functions with different TTLs for different data types
 async function getCachedData(type, identifier, userSpecific = false) {
   try {
     const cacheKey = `${type}_${identifier}`;
@@ -4062,7 +4146,25 @@ async function getCachedData(type, identifier, userSpecific = false) {
 
     const now = new Date();
     const cachedAt = new Date(cached.created_at);
-    const ttl = 30 * 24 * 60 * 60; // 30 days
+
+    // Different TTLs for different data types
+    let ttl;
+    switch (type) {
+      case "user_summary":
+        ttl = 7 * 24 * 60 * 60; // 7 days for user financial data
+        break;
+      case "market_data":
+        ttl = 4 * 60 * 60; // 4 hours for market data
+        break;
+      case "enhanced_merchant":
+        ttl = 24 * 60 * 60; // 24 hours for merchant data
+        break;
+      case "web_research":
+      default:
+        ttl = 30 * 24 * 60 * 60; // 30 days for web scraped data
+        break;
+    }
+
     const age = (now - cachedAt) / 1000;
 
     if (age > ttl) {
@@ -4151,6 +4253,31 @@ async function getCachedDataWithFallback(
   } catch (error) {
     console.error("❌ [CACHE] Fallback function failed:", error);
     throw error;
+  }
+}
+
+// Deduplication function for web research
+async function deduplicatedWebResearch(message, userId = null) {
+  const cacheKey = `web_research_${message.toLowerCase().trim()}`;
+
+  // Check if request is already pending
+  if (pendingRequests.has(cacheKey)) {
+    console.log(
+      "🔄 [WEB_RESEARCH] Request already pending, waiting for result"
+    );
+    return await pendingRequests.get(cacheKey);
+  }
+
+  // Create new request promise
+  const requestPromise = researchFinancialProducts(message, userId);
+  pendingRequests.set(cacheKey, requestPromise);
+
+  try {
+    const result = await requestPromise;
+    return result;
+  } finally {
+    // Clean up pending request
+    pendingRequests.delete(cacheKey);
   }
 }
 

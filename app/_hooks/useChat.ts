@@ -12,6 +12,7 @@ export const useChat = () => {
   const [isTyping, setIsTyping] = useState(false);
   const [showNudges, setShowNudges] = useState(true);
   const [goalFlow, setGoalFlow] = useState<any | null>(null);
+  const [progressStatus, setProgressStatus] = useState<string>("");
 
   useEffect(() => {
     loadChatMessages();
@@ -117,6 +118,9 @@ export const useChat = () => {
         return;
       }
 
+      // Show initial progress
+      setProgressStatus("Analyzing your question...");
+
       // Fetch session once and reuse the access token for all requests in this flow
       const { data: sessionData } = await supabase.auth.getSession();
       const accessToken = sessionData?.session?.access_token || '';
@@ -139,6 +143,15 @@ export const useChat = () => {
 
       const classifyData = classifyRes ? await classifyRes.json() : { intent: "goal" };
       if (classifyRes) logger.info("🎯 [CHAT] Classification result:", classifyData);
+
+      // Update progress based on intent
+      if (classifyData.intent === "ask_personalized") {
+        setProgressStatus("Taking a peek at your finances...");
+      } else if (classifyData.intent === "goal") {
+        setProgressStatus("Setting up your goal...");
+      } else {
+        setProgressStatus("Processing your request...");
+      }
 
       // 2) Route to appropriate handler based on classification
       let res;
@@ -173,6 +186,7 @@ export const useChat = () => {
       }
 
       // Response status: ${res.status}
+      setProgressStatus("Generating your personalized response...");
       const data = await res.json();
       // Finny response received
       logger.info("🤖 [CHAT] API Response:", data);
@@ -223,9 +237,11 @@ export const useChat = () => {
       }
       
       // logger.info("messages", message);
+      setProgressStatus(""); // Clear progress status
       await pushChatWithDelay("finny", message);
     } catch (error) {
       logger.error("AI error:", error);
+      setProgressStatus(""); // Clear progress status
       pushChat("finny", "Something went wrong. Try again later.");
     }
   };
@@ -235,6 +251,7 @@ export const useChat = () => {
     isTyping,
     showNudges,
     goalFlow,
+    progressStatus,
     clearChat,
     pushChat,
     pushChatWithDelay,

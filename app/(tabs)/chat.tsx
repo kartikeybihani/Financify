@@ -12,6 +12,7 @@ import {
   Keyboard,
   ListRenderItem,
   Dimensions,
+  ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -116,6 +117,7 @@ export default function ChatScreen() {
     chatMessages,
     showNudges,
     goalFlow,
+    progressStatus,
     clearChat,
     pushChat,
     handleUserMessage,
@@ -140,13 +142,13 @@ export default function ChatScreen() {
       });
     });
 
-    // Add typing indicator if needed
+    // Add typing indicator if needed (now includes progress status)
     if (isTyping) {
       data.push({ type: "typing", id: "typing" });
     }
 
     return data;
-  }, [chatMessages, showNudges, isTyping]);
+  }, [chatMessages, showNudges, isTyping, progressStatus]);
 
   // Auto-scroll to bottom when new messages are added (not on initial load)
   useEffect(() => {
@@ -170,7 +172,7 @@ export default function ChatScreen() {
     if (item?.type === "nudges") {
       estimatedHeight = 120; // Nudge grid height
     } else if (item?.type === "typing") {
-      estimatedHeight = 40; // Typing indicator height
+      estimatedHeight = 60; // Typing indicator height (increased for progress messages)
     } else if (item?.type === "message") {
       // Estimate based on message text length
       const textLength = item.message?.text?.length || 0;
@@ -348,7 +350,7 @@ export default function ChatScreen() {
       }
 
       if (item.type === "typing") {
-        return <TypingIndicator />;
+        return <TypingIndicator progressStatus={progressStatus} />;
       }
 
       if (item.type === "message") {
