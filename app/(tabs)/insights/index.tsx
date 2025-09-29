@@ -1603,7 +1603,6 @@ export default function InsightsScreen() {
                   ]}
                 >
                   <InvestmentsScreen
-                    embedded={true}
                     preloadedData={{
                       holdings: investmentHoldings,
                       options: investmentOptions,

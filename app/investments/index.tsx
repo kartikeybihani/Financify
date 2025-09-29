@@ -68,10 +68,8 @@ const getCompanyLogoUrl = (symbol: string): string => {
 };
 
 export default function InvestmentsScreen({
-  embedded = false,
   preloadedData,
 }: {
-  embedded?: boolean;
   preloadedData?: {
     holdings?: any[];
     options?: any[];
@@ -160,32 +158,27 @@ export default function InvestmentsScreen({
         return; // Skip all database loading/logic when using preloaded data
       }
 
-      // Only perform database loading when NOT embedded (standalone mode)
-      if (!embedded) {
-        try {
-          // Load stored data first (like transaction screens)
-          const hasStoredData = await loadFromDb();
+      try {
+        // Load stored data first (like transaction screens)
+        const hasStoredData = await loadFromDb();
 
-          // If no stored data, we could potentially trigger a sync here
-          // but for now, we'll just show the empty state
-          if (!hasStoredData) {
-            logger.info(
-              "Investments: No stored data found, showing empty state"
-            );
-          }
-
-          // Populate investment accounts in main accounts table (non-blocking)
-          populateInvestmentAccountsInDB().catch((err) =>
-            logger.error("Failed to populate investment accounts:", err)
-          );
-        } catch (error) {
-          logger.error("Error during investment initialization:", error);
+        // If no stored data, we could potentially trigger a sync here
+        // but for now, we'll just show the empty state
+        if (!hasStoredData) {
+          logger.info("Investments: No stored data found, showing empty state");
         }
+
+        // Populate investment accounts in main accounts table (non-blocking)
+        populateInvestmentAccountsInDB().catch((err) =>
+          logger.error("Failed to populate investment accounts:", err)
+        );
+      } catch (error) {
+        logger.error("Error during investment initialization:", error);
       }
     };
 
     initializeScreen();
-  }, [preloadedData, embedded]);
+  }, [preloadedData]);
 
   const handleSync = async () => {
     setIsSyncing(true);
@@ -276,6 +269,12 @@ export default function InvestmentsScreen({
     (sum, h) => sum + (h.unrealized_pl || 0),
     0
   );
+
+  // Percentage of total portfolio represented by total unrealized P&L
+  const totalUnrealizedPLPercent =
+    totalPortfolioValue > 0
+      ? (totalUnrealizedPL / totalPortfolioValue) * 100
+      : 0;
 
   // Calculate today's portfolio performance using the day_change fields from Supabase first
   // Step 1: Check Supabase investment_holdings table for day_change and day_change_percent
@@ -399,6 +398,13 @@ export default function InvestmentsScreen({
 
     return (
       <View style={styles.portfolioSummaryContainer}>
+        <TouchableOpacity
+          accessibilityLabel="Add investment account"
+          onPress={handleAddInvestmentAccount}
+          style={[styles.syncButton, styles.addAccountTopRight]}
+        >
+          <Ionicons name="add-outline" size={18} color="#4A90E2" />
+        </TouchableOpacity>
         <View style={styles.portfolioSummaryContent}>
           <View style={styles.portfolioInfo}>
             <Text style={styles.portfolioLabel}>Total Portfolio Value</Text>
@@ -414,15 +420,6 @@ export default function InvestmentsScreen({
             {Math.abs(todayPerformance.amount) > 0 && (
               <View style={styles.todayPerformanceContainer}>
                 <View style={styles.profitLossIndicator}>
-                  <Ionicons
-                    name={
-                      todayPerformance.amount >= 0
-                        ? "trending-up"
-                        : "trending-down"
-                    }
-                    size={14}
-                    color={todayPerformance.amount >= 0 ? "#4ECDC4" : "#FF6B6B"}
-                  />
                   <Text
                     style={[
                       styles.todayPerformanceText,
@@ -437,6 +434,16 @@ export default function InvestmentsScreen({
                     {todayPerformance.amount >= 0 ? "+" : ""}
                     {todayPerformance.percentage.toFixed(2)}%)
                   </Text>
+                  <Ionicons
+                    name={
+                      todayPerformance.amount >= 0
+                        ? "trending-up"
+                        : "trending-down"
+                    }
+                    size={14}
+                    color={todayPerformance.amount >= 0 ? "#4ECDC4" : "#FF6B6B"}
+                    style={{ marginLeft: 4 }}
+                  />
                 </View>
               </View>
             )}
@@ -445,13 +452,6 @@ export default function InvestmentsScreen({
             {Math.abs(totalUnrealizedPL) > 0 && (
               <View style={styles.todayPerformanceContainer}>
                 <View style={styles.profitLossIndicator}>
-                  <Ionicons
-                    name={
-                      totalUnrealizedPL >= 0 ? "trending-up" : "trending-down"
-                    }
-                    size={14}
-                    color={totalUnrealizedPL >= 0 ? "#4ECDC4" : "#FF6B6B"}
-                  />
                   <Text
                     style={[
                       styles.todayPerformanceText,
@@ -461,8 +461,18 @@ export default function InvestmentsScreen({
                     ]}
                   >
                     Total: {totalUnrealizedPL >= 0 ? "+" : ""}$
-                    {Math.abs(totalUnrealizedPL).toFixed(2)}
+                    {Math.abs(totalUnrealizedPL).toFixed(2)} (
+                    {totalUnrealizedPL >= 0 ? "+" : ""}
+                    {Math.abs(totalUnrealizedPLPercent).toFixed(2)}%)
                   </Text>
+                  <Ionicons
+                    name={
+                      totalUnrealizedPL >= 0 ? "trending-up" : "trending-down"
+                    }
+                    size={14}
+                    color={totalUnrealizedPL >= 0 ? "#4ECDC4" : "#FF6B6B"}
+                    style={{ marginLeft: 4 }}
+                  />
                 </View>
               </View>
             )}
@@ -507,13 +517,6 @@ export default function InvestmentsScreen({
                   size={18}
                   color="#4A90E2"
                 />
-              </TouchableOpacity>
-              {/* Add Account Button */}
-              <TouchableOpacity
-                style={styles.syncButton}
-                onPress={handleAddInvestmentAccount}
-              >
-                <Ionicons name="add-outline" size={18} color="#4A90E2" />
               </TouchableOpacity>
             </View>
           </View>
@@ -577,7 +580,34 @@ export default function InvestmentsScreen({
                     <Text style={styles.stockDescription} numberOfLines={1}>
                       {h.description}
                     </Text>
-                    <Text style={styles.stockQuantity}>QTY: {h.units}</Text>
+                    <View style={styles.stockMetaRow}>
+                      <Text style={styles.stockQuantity}>QTY: {h.units} |</Text>
+                      {(h.day_change_percent !== null &&
+                        h.day_change_percent !== undefined &&
+                        !isNaN(h.day_change_percent)) ||
+                      (h.day_change !== null &&
+                        h.day_change !== undefined &&
+                        !isNaN(h.day_change)) ? (
+                        <Text
+                          style={[
+                            styles.stockQuantity,
+                            (h.day_change_percent ?? h.day_change ?? 0) >= 0
+                              ? styles.pnlPositive
+                              : styles.pnlNegative,
+                          ]}
+                        >
+                          Today:{" "}
+                          {(h.day_change_percent ?? h.day_change ?? 0) >= 0
+                            ? "+"
+                            : ""}
+                          {h.day_change_percent !== null &&
+                          h.day_change_percent !== undefined &&
+                          !isNaN(h.day_change_percent)
+                            ? `${Math.abs(h.day_change_percent).toFixed(2)}%`
+                            : `$${Math.abs(h.day_change || 0).toFixed(2)}`}
+                        </Text>
+                      ) : null}
+                    </View>
                   </View>
                 </View>
                 <View style={styles.holdingRight}>
@@ -592,7 +622,6 @@ export default function InvestmentsScreen({
                     <Text style={styles.stockDetail}>
                       ${h.price?.toFixed(2) || "0.00"}
                     </Text>
-                    {/* Total Change (Unrealized P&L) - Lifetime gains/losses */}
                     {h.unrealized_pl !== null && (
                       <Text
                         style={[
@@ -602,42 +631,10 @@ export default function InvestmentsScreen({
                             : styles.pnlNegative,
                         ]}
                       >
-                        {(h.unrealized_pl || 0) >= 0 ? "+" : ""}$
+                        Total: {(h.unrealized_pl || 0) >= 0 ? "+" : ""}$
                         {Math.abs(h.unrealized_pl).toFixed(2)}
                       </Text>
                     )}
-                    {/* Day Change Display from Supabase */}
-                    {h.day_change !== null &&
-                      h.day_change !== undefined &&
-                      !isNaN(h.day_change) && (
-                        <Text
-                          style={[
-                            styles.pnlText,
-                            (h.day_change || 0) >= 0
-                              ? styles.pnlPositive
-                              : styles.pnlNegative,
-                          ]}
-                        >
-                          Today: {(h.day_change || 0) >= 0 ? "+" : ""}$
-                          {Math.abs(h.day_change).toFixed(2)}
-                        </Text>
-                      )}
-                    {/* Day Change Percent Display from Supabase */}
-                    {h.day_change_percent !== null &&
-                      h.day_change_percent !== undefined &&
-                      !isNaN(h.day_change_percent) && (
-                        <Text
-                          style={[
-                            styles.pnlText,
-                            (h.day_change_percent || 0) >= 0
-                              ? styles.pnlPositive
-                              : styles.pnlNegative,
-                          ]}
-                        >
-                          Today: {(h.day_change_percent || 0) >= 0 ? "+" : ""}
-                          {Math.abs(h.day_change_percent).toFixed(2)}%
-                        </Text>
-                      )}
                   </View>
                 </View>
               </View>
@@ -706,12 +703,19 @@ export default function InvestmentsScreen({
 
   return (
     <>
-      {embedded ? (
+      <SafeAreaView style={styles.safeArea} edges={["left", "right", "bottom"]}>
         <View style={styles.container}>
           <ScrollView
             style={{ flex: 1 }}
-            contentContainerStyle={styles.embeddedContent}
+            contentContainerStyle={[
+              styles.content,
+              { paddingTop: 0, marginTop: 0 },
+            ]}
             showsVerticalScrollIndicator={false}
+            overScrollMode="never"
+            contentInsetAdjustmentBehavior="never"
+            contentInset={{ top: 0, left: 0, bottom: 0, right: 0 }}
+            scrollIndicatorInsets={{ top: 0, left: 0, bottom: 0, right: 0 }}
           >
             {renderPortfolioSummary()}
 
@@ -726,56 +730,7 @@ export default function InvestmentsScreen({
             {renderOptions()}
           </ScrollView>
         </View>
-      ) : (
-        <SafeAreaView style={styles.safeArea}>
-          <View style={styles.container}>
-            <View style={styles.header}>
-              <TouchableOpacity
-                style={styles.backBtn}
-                onPress={() => router.back()}
-              >
-                <Ionicons name="chevron-back" size={24} color="#4A90E2" />
-              </TouchableOpacity>
-              <View style={styles.headerTextContainer}>
-                <Text style={styles.greetingText}>Investment Portfolio</Text>
-                <Text style={styles.subGreeting}>Track your wealth</Text>
-              </View>
-              <TouchableOpacity
-                style={[
-                  styles.syncButton,
-                  isSyncing && styles.syncButtonDisabled,
-                ]}
-                onPress={handleSync}
-                disabled={isSyncing}
-              >
-                <Ionicons
-                  name={isSyncing ? "hourglass" : "refresh"}
-                  size={18}
-                  color="#4A90E2"
-                />
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView
-              style={{ flex: 1 }}
-              contentContainerStyle={styles.content}
-              showsVerticalScrollIndicator={false}
-            >
-              {renderPortfolioSummary()}
-
-              {syncError && (
-                <View style={styles.errorContainer}>
-                  <Ionicons name="warning" size={16} color="#F44336" />
-                  <Text style={styles.errorText}>{syncError}</Text>
-                </View>
-              )}
-
-              {renderHoldings()}
-              {renderOptions()}
-            </ScrollView>
-          </View>
-        </SafeAreaView>
-      )}
+      </SafeAreaView>
 
       {/* Institution Selection Modal */}
       <InstitutionSelectionModal

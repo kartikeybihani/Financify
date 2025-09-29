@@ -11,7 +11,7 @@ export default function InvestmentsLayout() {
         gestureDirection: "vertical",
       }}
     >
-      <Stack.Screen name="index" />
+      <Stack.Screen name="index" options={{ headerShown: false }} />
     </Stack>
   );
 }

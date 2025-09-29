@@ -7,7 +7,7 @@ const FONTS = {
   xs: 10,
   sm: 13,
   base: 14,
-  lg: 17,
+  lg: 16,
   xl: 20,
   xxl: 24,
   xxxl: 32,
@@ -22,62 +22,25 @@ export const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#121212",
   },
-  // Embedded content styles
-  embeddedContent: {
-    paddingBottom: 32,
-    paddingHorizontal: 4,
-  },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 16,
-    paddingTop: Platform.OS === "ios" ? 8 : 16,
-    paddingBottom: 12,
-    backgroundColor: "#121212",
-    borderBottomWidth: 1,
-    borderBottomColor: "rgba(255, 255, 255, 0.1)",
-  },
-  backBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.2)",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  headerTextContainer: {
-    flex: 1,
-    marginLeft: 12,
-  },
-  greetingText: {
-    fontSize: FONTS.lg,
-    marginBottom: 2,
-    fontWeight: "600",
-    color: "#fff",
-    fontFamily: Platform.OS === "ios" ? "System" : "sans-serif",
-  },
-  subGreeting: {
-    fontSize: FONTS.sm,
-    color: "rgba(255, 255, 255, 0.6)",
-    fontFamily: Platform.OS === "ios" ? "System" : "sans-serif",
-    letterSpacing: 0.2,
-  },
   content: {
+    paddingTop: 0,
+    marginTop: 0,
     paddingBottom: 32,
     paddingHorizontal: 0,
+  },
+  
+  // Sticky Header Container
+  stickyHeaderContainer: {
+    backgroundColor: "#121212",
+    paddingTop: 0,
+    zIndex: 10,
+    elevation: 4,
   },
   
   // Portfolio Summary Section
   portfolioSummaryContainer: {
     marginBottom: 24,
+    position: "relative",
   },
   portfolioSummaryContent: {
     marginBottom: 24,
@@ -102,7 +65,7 @@ export const styles = StyleSheet.create({
   profitLossIndicator: {
     flexDirection: "row",
     alignItems: "center",
-    marginTop: 6,
+    marginTop: 2,
   },
   profitLossText: {
     fontSize: FONTS.base,
@@ -116,6 +79,11 @@ export const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+  },
+  addAccountTopRight: {
+    position: "absolute",
+    top: 10,
+    right: 0
   },
   brokerageInfo: {
     flexDirection: "row",
@@ -153,7 +121,7 @@ export const styles = StyleSheet.create({
   todayPerformanceText: {
     fontSize: FONTS.sm,
     fontWeight: "600",
-    marginLeft: 4,
+    marginLeft: 2,
   },
   portfolioContent: {
     flexDirection: "row",
@@ -210,12 +178,13 @@ export const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 3.84,
     elevation: 5,
+    paddingVertical: 10,
   },
   flexRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingVertical: 16,
+    paddingVertical: 10,
     paddingHorizontal: 16,
   },
   iconContainer: {
@@ -244,10 +213,10 @@ export const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingVertical: 12,
-    paddingHorizontal: 16,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
   },
-  holdingLeft: {
+  holdingLeft: {  
     flexDirection: "row",
     alignItems: "center",
     flex: 1,
@@ -290,6 +259,28 @@ export const styles = StyleSheet.create({
     fontSize: FONTS.xs,
     color: "rgba(255, 255, 255, 0.5)",
     marginTop: 2,
+  },
+  stockMetaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: 6,
+    marginTop: 2,
+  },
+  todayPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    backgroundColor: "rgba(255, 255, 255, 0.06)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.12)",
+  },
+  todayPillText: {
+    fontSize: FONTS.xs,
+    fontWeight: "600",
+    color: "rgba(255, 255, 255, 0.85)",
   },
   stockValue: {
     fontSize: FONTS.lg,
