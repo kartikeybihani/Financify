@@ -1576,8 +1576,21 @@ function isObviousNonFinancial(message) {
   // General greetings and small talk
   if (
     lowerMessage.match(
-      /^(hi|hello|hey|good morning|good afternoon|good evening|how are you|what's up|how's it going)$/
+      /^(hi|hello|hey|good morning|good afternoon|good evening|how are you|what's up|how's it going|what's the vibe|how's the vibe|what's good|how are things|how's everything)$/
     )
+  ) {
+    return { isOffTopic: true, category: "greeting" };
+  }
+
+  // Casual conversation and vibe check
+  if (
+    lowerMessage.includes("vibe") ||
+    lowerMessage.includes("what's good") ||
+    lowerMessage.includes("how are things") ||
+    lowerMessage.includes("how's everything") ||
+    lowerMessage.includes("how's it going") ||
+    lowerMessage.includes("what's happening") ||
+    lowerMessage.includes("how's your day")
   ) {
     return { isOffTopic: true, category: "greeting" };
   }
@@ -1616,7 +1629,6 @@ function isObviousNonFinancial(message) {
     lowerMessage.includes("purpose") ||
     lowerMessage.includes("love") ||
     lowerMessage.includes("relationship") ||
-    lowerMessage.includes("career advice") ||
     lowerMessage.includes("job interview")
   ) {
     return { isOffTopic: true, category: "philosophical" };
