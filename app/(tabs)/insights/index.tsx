@@ -114,6 +114,7 @@ export default function InsightsScreen() {
 
   // Use the categories hook for database-driven categories
   const {
+    categories: dbCategories,
     getCategoryColor,
     formatCategoryName: formatCategoryFromHook,
     getCategoryIcon,
@@ -466,7 +467,11 @@ export default function InsightsScreen() {
       (filters.accountIds || []).length === 0
         ? "all"
         : (filters.accountIds || []).sort().join(",");
-    return `${accountsKey}_${filters.timePeriod}_${offset}`;
+    const categoriesKey =
+      (filters.categoryIds || []).length === 0
+        ? "all"
+        : (filters.categoryIds || []).sort().join(",");
+    return `${accountsKey}_${filters.timePeriod}_${categoriesKey}_${offset}`;
   };
 
   const getCachedData = (cacheKey: string) => {
@@ -526,14 +531,17 @@ export default function InsightsScreen() {
       logger.info(`🔍 Loading filtered transactions with:`, {
         accountIds: filters.accountIds,
         timePeriod: filters.timePeriod,
+        categoryIds: filters.categoryIds,
         limit,
         offset,
         accountIdsLength: filters.accountIds?.length || 0,
+        categoryIdsLength: filters.categoryIds?.length || 0,
       });
 
       const newTransactions = await getFilteredTransactions(userId, {
         accountIds: filters.accountIds,
         timePeriod: filters.timePeriod,
+        categoryIds: filters.categoryIds,
         limit,
         offset,
       });
@@ -548,6 +556,7 @@ export default function InsightsScreen() {
         totalCount = await getFilteredTransactionsCount(userId, {
           accountIds: filters.accountIds,
           timePeriod: filters.timePeriod,
+          categoryIds: filters.categoryIds,
         });
       }
 
@@ -784,7 +793,15 @@ export default function InsightsScreen() {
 
     const timePeriodName = timePeriodMap[filterOptions.timePeriod] || "7 days";
 
-    return `${accountName} • ${timePeriodName}`;
+    const categoryIds = filterOptions.categoryIds || [];
+    const categoryName =
+      categoryIds.length === 0
+        ? "All Categories"
+        : categoryIds.length === 1
+        ? "1 category"
+        : `${categoryIds.length} categories`;
+
+    return `${accountName} • ${timePeriodName} • ${categoryName}`;
   };
 
   const onRefresh = async () => {
@@ -1557,6 +1574,7 @@ export default function InsightsScreen() {
                   ]}
                 >
                   <TransactionsSection
+                    key={`transactions-${filteredTransactions.length}`}
                     titleStyle={styles.sectionLabel}
                     sectionHeaderStyle={styles.sectionHeader}
                     headerButtonsContainerStyle={styles.headerButtonsContainer}
@@ -1629,8 +1647,11 @@ export default function InsightsScreen() {
             visible={showEnhancedFilterModal}
             onClose={() => setShowEnhancedFilterModal(false)}
             accounts={accounts}
+            categories={dbCategories}
             selectedFilters={filterOptions}
             onFiltersChange={(newFilters) => {
+              // Clear cache when filters change to ensure fresh data
+              clearCache();
               setFilterOptions(newFilters);
             }}
           />

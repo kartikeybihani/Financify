@@ -992,6 +992,7 @@ export const getFilteredTransactions = async (
   options: {
     accountIds?: string[]; // empty array means all accounts
     timePeriod?: string;
+    categoryIds?: string[]; // empty array means all categories
     limit?: number;
     offset?: number;
   } = {}
@@ -1000,12 +1001,31 @@ export const getFilteredTransactions = async (
     const {
       accountIds = [],
       timePeriod = "7days",
+      categoryIds = [],
       limit = 50,
       offset = 0
     } = options;
 
+    // Convert category IDs to category names for database filtering
+    let categoryNames: string[] = [];
+    if (categoryIds.length > 0) {
+      // Get category names from the categories table
+      const { data: categories, error: categoryError } = await supabase
+        .from('categories')
+        .select('id, name')
+        .in('id', categoryIds);
+      
+      if (categoryError) {
+        console.error("❌ Error fetching category names:", categoryError);
+      } else {
+        categoryNames = categories?.map(cat => cat.name) || [];
+      }
+    }
+
+
     // Get date range
     const { startDate, endDate } = getDateRangeFromTimePeriod(timePeriod);
+    
 
     // Build query
     let query = supabase
@@ -1037,18 +1057,38 @@ export const getFilteredTransactions = async (
       logger.info(`🔍 No account filter - showing transactions from ALL accounts`);
     }
 
+    // Add category filter if specified (multiple categories)
+    if (categoryNames.length > 0) {
+      logger.info(`🔍 Filtering by ${categoryNames.length} specific categories:`, categoryNames);
+      
+      // Use COALESCE to fallback from new_category to top_category
+      // This handles the case where new_category is null and we need to use top_category
+      query = query.or(
+        categoryNames.map(cat => 
+          `new_category.eq.${cat},and(new_category.is.null,top_category.eq.${cat})`
+        ).join(',')
+      );
+    } else {
+      logger.info(`🔍 No category filter - showing transactions from ALL categories`);
+    }
+
     logger.info(`🔍 Query parameters:`, {
       userId,
       startDate,
       endDate,
       accountIdsLength: accountIds.length,
+      categoryIdsLength: categoryIds.length,
       limit,
       offset
     });
 
     const { data: transactions, error } = await query;
 
-    if (error) throw error;
+    if (error) {
+      console.error("❌ DATABASE QUERY ERROR:", error);
+      throw error;
+    }
+
 
     // Transform transactions to include institution info
     const transformedTransactions = (transactions || []).map(tx => ({
@@ -1057,6 +1097,7 @@ export const getFilteredTransactions = async (
       account_name: tx.accounts?.name || "Unknown Account",
       account_mask: tx.accounts?.mask,
     }));
+
 
     logger.info(`📊 Found ${transformedTransactions.length} filtered transactions`);
     return transformedTransactions;
@@ -1072,13 +1113,31 @@ export const getFilteredTransactionsCount = async (
   options: {
     accountIds?: string[];
     timePeriod?: string;
+    categoryIds?: string[];
   } = {}
 ) => {
   try {
     const {
       accountIds = [],
-      timePeriod = "7days"
+      timePeriod = "7days",
+      categoryIds = []
     } = options;
+
+    // Convert category IDs to category names for database filtering
+    let categoryNames: string[] = [];
+    if (categoryIds.length > 0) {
+      // Get category names from the categories table
+      const { data: categories, error: categoryError } = await supabase
+        .from('categories')
+        .select('id, name')
+        .in('id', categoryIds);
+      
+      if (categoryError) {
+        console.error("❌ Error fetching category names for count:", categoryError);
+      } else {
+        categoryNames = categories?.map(cat => cat.name) || [];
+      }
+    }
 
     // Get date range
     const { startDate, endDate } = getDateRangeFromTimePeriod(timePeriod);
@@ -1094,6 +1153,16 @@ export const getFilteredTransactionsCount = async (
     // Add account filter if specified (multiple accounts)
     if (accountIds.length > 0) {
       query = query.in("account_id", accountIds);
+    }
+
+    // Add category filter if specified (multiple categories)
+    if (categoryNames.length > 0) {
+      // Use COALESCE to fallback from new_category to top_category
+      query = query.or(
+        categoryNames.map(cat => 
+          `new_category.eq.${cat},and(new_category.is.null,top_category.eq.${cat})`
+        ).join(',')
+      );
     }
 
     const { count, error } = await query;

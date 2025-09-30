@@ -384,38 +384,42 @@ export default function CategorySelectorScreen() {
         Alert.alert("Success", `Category updated to ${selectedCategory.name}`);
       } else {
         // Similar transactions: Update new_category for all similar + create rules
-        const { data, error } = await supabase.rpc(
-          "update_similar_transactions_by_name",
-          {
-            p_merchant_name: Array.isArray(params.merchantName)
-              ? params.merchantName[0]
-              : params.merchantName,
-            p_new_category: selectedCategory.name,
-            p_user_id: (await supabase.auth.getUser()).data.user?.id,
-          }
-        );
+        const userResponse = await supabase.auth.getUser();
+        const userId = userResponse.data.user?.id;
 
-        if (error) throw error;
+        if (!userId) {
+          throw new Error("User not authenticated");
+        }
 
-        // Get the affected transaction IDs and details
+        // Update all transactions with the same merchant name
         const merchantName = Array.isArray(params.merchantName)
           ? params.merchantName[0]
           : params.merchantName;
 
+        const { data: updateResult, error } = await supabase
+          .from("transactions")
+          .update({ new_category: selectedCategory.name })
+          .eq("user_id", userId)
+          .eq("merchant_name", merchantName)
+          .select("id");
+
+        if (error) throw error;
+
+        const data = updateResult?.length || 0;
+
+        // Get the affected transaction IDs and details
         console.log("🔍 Getting affected transactions for:", {
           merchantName,
           newCategory: selectedCategory.name,
           updatedCount: data,
         });
 
-        const { data: affectedData, error: affectedError } = await supabase.rpc(
-          "get_affected_transaction_ids",
-          {
-            p_user_id: (await supabase.auth.getUser()).data.user?.id,
-            p_merchant_name: merchantName,
-            p_new_category: selectedCategory.name,
-          }
-        );
+        const { data: affectedData, error: affectedError } = await supabase
+          .from("transactions")
+          .select("id, name, amount, date")
+          .eq("user_id", userId)
+          .eq("merchant_name", merchantName)
+          .eq("new_category", selectedCategory.name);
 
         console.log("📊 Affected transactions result:", {
           affectedData,
@@ -425,8 +429,8 @@ export default function CategorySelectorScreen() {
 
         if (!affectedError && affectedData) {
           affectedTransactions = affectedData.map((tx: any) => ({
-            transactionId: tx.transaction_id,
-            transactionName: tx.transaction_name,
+            transactionId: tx.id,
+            transactionName: tx.name,
             amount: tx.amount,
             date: tx.date,
           }));
