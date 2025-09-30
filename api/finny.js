@@ -1637,6 +1637,44 @@ function isObviousNonFinancial(message) {
   return { isOffTopic: false, category: null };
 }
 
+// Heuristic: detect clearly in-scope financial concept questions to avoid false off-topic
+function financialConceptHeuristic(raw) {
+  const text = (raw || "").toLowerCase();
+  if (!text) return null;
+
+  // If contains these finance keywords, treat as in-scope concept unless it's about app/tech
+  const financeKeywords = [
+    "credit", "debit", "card", "apr", "interest", "loan", "mortgage",
+    "budget", "budgeting", "saving", "savings", "checking", "account",
+    "fico", "credit score", "bnpl", "tax", "ira", "401k", "roth",
+    "brokerage", "stock", "stocks", "etf", "mutual fund", "dividend",
+    "net worth", "cashflow", "cash flow"
+  ];
+
+  const hasFinanceKeyword = financeKeywords.some((k) => text.includes(k));
+
+  // Specific: credit vs debit concept
+  const creditAndDebit = text.includes("credit") && text.includes("debit");
+  const vsOrDifference =
+    creditAndDebit && (text.includes(" vs ") || text.includes("difference") || text.includes("b/w") || text.includes("between"));
+
+  if (vsOrDifference || hasFinanceKeyword) {
+    // Classify generic concept questions as in-scope, not needing user data or web
+    return {
+      intent: "ask_personalized",
+      needs_web: false,
+      needs_user_data: false,
+      needs_calc: false,
+      state: null,
+      entities: [],
+      confidence: 0.85,
+      heuristic: true,
+    };
+  }
+
+  return null;
+}
+
 async function handleClassify(message, context) {
   console.log(
     "🔍 [FINNY] Starting classification in handleClassify for message:",
@@ -1679,6 +1717,29 @@ async function handleClassify(message, context) {
     };
   }
 
+  // Positive heuristic for common financial concept questions
+  const heuristic = financialConceptHeuristic(text);
+  if (heuristic) {
+    console.log("✅ [FINNY] Heuristic classified as financial concept in-scope");
+    // Log lightweight classification
+    setImmediate(() =>
+      logConversation({
+        user_message: message,
+        finny_response: `Heuristic classification: ${heuristic.intent} (confidence: ${heuristic.confidence})`,
+        timestamp: new Date().toISOString(),
+        user_id: context?.user_id || "unknown",
+        intent: "classify",
+        entities: heuristic.entities,
+        confidence: heuristic.confidence,
+        response_time_ms: Date.now() - startTime,
+        sources_used: [],
+        cached: false,
+        classification_result: heuristic,
+      })
+    );
+    return heuristic;
+  }
+
   try {
     const r = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
@@ -1707,6 +1768,7 @@ async function handleClassify(message, context) {
               "- **SCOPE BOUNDARIES**: Only handle financial topics. Non-financial queries (weather, recipes, movies, sports, general chat, technical support) should be classified as `off_topic`.",
               "- **Intents are primary; flags can combine.** Return exactly one `intent`, but `needs_user_data`, `needs_calc`, and `needs_web` may be **true** together.",
               "- **OFF-TOPIC DETECTION**: If message is clearly non-financial (weather, cooking, entertainment, sports, general greetings, technical issues), use `intent=off_topic`.",
+              "- **CONCEPT EXPLANATIONS ARE IN-SCOPE**: General finance concepts (e.g., 'difference between credit and debit card') are financial. Do not mark them off_topic.",
               "- If message asks for this year current latest updated 2025 etc then ask_fact_fresh",
               "- If asking about specific financial products (cards, banks, rates, benefits, offers) that change over time then ask_fact_fresh",
               "- If comparing specific products/services by name (e.g., 'Chase vs Amex', 'Vanguard vs Fidelity') then ask_fact_fresh",
@@ -1729,6 +1791,7 @@ async function handleClassify(message, context) {
               '"How do I cook pasta?" → off_topic',
               '"What movie should I watch?" → off_topic',
               '"Difference between Roth and traditional IRA" → ask_personalized',
+              '"Difference between credit and debit card?" → ask_personalized, needs_user_data:false, needs_web:false',
               '"What is the 2025 estate tax exemption" → ask_fact_fresh',
               '"Which card has better benefits Chase Rewards or Bolt?" → ask_fact_fresh',
               '"Which card is better for groceries, Amex Gold or SavorOne?" → ask_fact_fresh, needs_web:true, entities:["Amex Gold","SavorOne"]',
