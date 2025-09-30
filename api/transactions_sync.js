@@ -1,12 +1,156 @@
 // /api/transactions_sync.js
 import { client } from "../app/plaidClient.js";
 import { createClient } from "@supabase/supabase-js";
-import { mapPlaidCategory } from "../src/utils/categoryMapping.js";
+// Removed categoryMapping import - using database categories instead
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
+
+// Simple category mapping function
+function getSimplifiedCategory(plaidCategory) {
+  if (!plaidCategory) {
+    return { top: "Other", sub: "Other" };
+  }
+
+  const upperCategory = plaidCategory.toUpperCase();
+
+  // Food-related mappings
+  if (
+    upperCategory.includes("FOOD") ||
+    upperCategory.includes("RESTAURANT") ||
+    upperCategory.includes("COFFEE")
+  ) {
+    if (
+      upperCategory.includes("GROCERY") ||
+      upperCategory.includes("SUPERMARKET")
+    ) {
+      return { top: "Groceries", sub: "Groceries" };
+    }
+    return { top: "Food", sub: "Dining Out" };
+  }
+
+  // Grocery specific
+  if (
+    upperCategory.includes("GROCERY") ||
+    upperCategory.includes("SUPERMARKET")
+  ) {
+    return { top: "Groceries", sub: "Groceries" };
+  }
+
+  // Transportation
+  if (
+    upperCategory.includes("TRANSPORT") ||
+    upperCategory.includes("GAS") ||
+    upperCategory.includes("UBER") ||
+    upperCategory.includes("LYFT")
+  ) {
+    return { top: "Transportation", sub: "Transportation" };
+  }
+
+  // Shopping
+  if (
+    upperCategory.includes("SHOPPING") ||
+    upperCategory.includes("MERCHANDISE") ||
+    upperCategory.includes("AMAZON")
+  ) {
+    return { top: "Shopping", sub: "Shopping" };
+  }
+
+  // Entertainment
+  if (
+    upperCategory.includes("ENTERTAINMENT") ||
+    upperCategory.includes("MOVIE") ||
+    upperCategory.includes("GAME")
+  ) {
+    return { top: "Entertainment", sub: "Entertainment" };
+  }
+
+  // Travel
+  if (
+    upperCategory.includes("TRAVEL") ||
+    upperCategory.includes("FLIGHT") ||
+    upperCategory.includes("HOTEL")
+  ) {
+    return { top: "Travel", sub: "Travel" };
+  }
+
+  // Income
+  if (
+    upperCategory.includes("INCOME") ||
+    upperCategory.includes("WAGE") ||
+    upperCategory.includes("SALARY")
+  ) {
+    return { top: "Income", sub: "Income" };
+  }
+
+  // Housing
+  if (
+    upperCategory.includes("RENT") ||
+    upperCategory.includes("MORTGAGE") ||
+    upperCategory.includes("UTILITIES")
+  ) {
+    return { top: "Housing", sub: "Housing" };
+  }
+
+  // Health & Fitness
+  if (
+    upperCategory.includes("HEALTH") ||
+    upperCategory.includes("MEDICAL") ||
+    upperCategory.includes("PHARMACY") ||
+    upperCategory.includes("FITNESS")
+  ) {
+    return { top: "Health", sub: "Health" };
+  }
+
+  // Personal Care
+  if (
+    upperCategory.includes("PERSONAL_CARE") ||
+    upperCategory.includes("BEAUTY") ||
+    upperCategory.includes("HAIR")
+  ) {
+    return { top: "Personal Care", sub: "Personal Care" };
+  }
+
+  // Bills & Utilities
+  if (
+    upperCategory.includes("UTILITIES") ||
+    upperCategory.includes("PHONE") ||
+    upperCategory.includes("INTERNET")
+  ) {
+    return { top: "Bills & Utilities", sub: "Bills & Utilities" };
+  }
+
+  // Subscriptions
+  if (
+    upperCategory.includes("SUBSCRIPTION") ||
+    upperCategory.includes("STREAMING")
+  ) {
+    return { top: "Subscriptions", sub: "Subscriptions" };
+  }
+
+  // Education
+  if (
+    upperCategory.includes("EDUCATION") ||
+    upperCategory.includes("STUDENT") ||
+    upperCategory.includes("SCHOOL")
+  ) {
+    return { top: "Education", sub: "Education" };
+  }
+
+  // Savings & Investments
+  if (
+    upperCategory.includes("INVESTMENT") ||
+    upperCategory.includes("SAVINGS") ||
+    upperCategory.includes("TRANSFER")
+  ) {
+    return { top: "Savings", sub: "Savings" };
+  }
+
+  // Default fallback
+  return { top: "Other", sub: "Other" };
+}
 
 export default async function handler(req, res) {
   if (req.method !== "POST")
@@ -124,8 +268,8 @@ export default async function handler(req, res) {
             category = "TRANSPORTATION_GAS";
         }
 
-        // Apply category mapping to get simplified categories
-        const simplifiedCategory = mapPlaidCategory(category);
+        // Apply simple category mapping
+        const simplifiedCategory = getSimplifiedCategory(category);
 
         // Debug log for first few transactions with enhanced info
         if (added.length <= 3 || modified.length <= 3) {

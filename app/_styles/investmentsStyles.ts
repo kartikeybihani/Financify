@@ -624,6 +624,20 @@ export const styles = StyleSheet.create({
     marginTop: 16,
     fontWeight: "500",
   },
+  
+  // Portfolio Loading State
+  portfolioLoadingContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 8,
+  },
+  portfolioLoadingText: {
+    color: "rgba(255, 255, 255, 0.7)",
+    fontSize: FONTS.base,
+    marginLeft: 8,
+    fontWeight: "500",
+  },
 });
 
 export default styles;

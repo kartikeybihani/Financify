@@ -607,7 +607,7 @@ async function handleAsk(message, context) {
       snap.webResearch = webResearchData;
     }
 
-    // 3) Build a comprehensive prompt using the complete RPC data
+    // 3) Build a focused prompt using the relevant RPC data
     const system = [
       "You are Finny: a warm, encouraging, and empowering financial advisor who is blunt when needed.",
       "",
@@ -619,14 +619,12 @@ async function handleAsk(message, context) {
       "- Use the user's name when available to create personal connection",
       "- Focus on financial empowerment and positive outcomes",
       "",
-      "SCOPE BOUNDARIES:",
-      "- ONLY discuss financial topics: budgeting, saving, investing, debt, credit, taxes, financial planning",
-      "- If users ask non-financial questions, politely redirect to financial topics",
-      "- Stay focused on actionable financial advice and insights",
-      "",
       "RESPONSE GUIDELINES:",
-      "- Use the complete financial data provided. Give accurate, detailed responses based on all available information.",
-      "- Do not show net worth calculations or mathematical formulas - just state the facts clearly.",
+      "- Be CONCISE and focused - only answer what the user is asking for",
+      "- Don't overwhelm users with too much information at once",
+      "- If user asks about 'accounts', show account balances and types, NOT individual holdings",
+      "- If user asks about 'investments' or 'holdings', then show the detailed holdings",
+      "- Keep responses conversational and encouraging, not overwhelming",
       "- Provide actionable advice that users can implement immediately",
       "- Explain financial concepts in simple, understandable terms",
       "- Connect advice to the user's specific financial situation when possible",
@@ -657,7 +655,7 @@ async function handleAsk(message, context) {
       body: JSON.stringify({
         model: "openai/gpt-4o-mini",
         temperature: 0.6,
-        max_tokens: 600,
+        max_tokens: 400, // Reduced for more concise responses
         stream: false, // Keep as false for now, but ready for streaming
         messages: [
           { role: "system", content: system },
@@ -777,14 +775,16 @@ function createSmartContext(message, snap) {
     }
   }
 
-  // Investment holdings questions
+  // Investment holdings questions - only show detailed holdings if specifically asked
   if (
     lowerMessage.includes("holdings") ||
     lowerMessage.includes("stocks") ||
     lowerMessage.includes("shares") ||
     lowerMessage.includes("equity") ||
     lowerMessage.includes("portfolio") ||
-    lowerMessage.includes("investment")
+    lowerMessage.includes("investment") ||
+    lowerMessage.includes("what stocks") ||
+    lowerMessage.includes("what shares")
   ) {
     if (snap.holdings && snap.holdings.length > 0) {
       context.push("Your investment holdings:");
@@ -915,40 +915,47 @@ function createSmartContext(message, snap) {
     }
   }
 
-  // Always include comprehensive account overview for better context
-  if (snap.bankAccounts && snap.bankAccounts.length > 0) {
-    context.push("All your accounts:");
-    snap.bankAccounts.forEach((account) => {
-      const balance = account.current_balance || 0;
-      const available = account.available_balance || 0;
-      const accountType = account.type || "unknown";
-      const subtype = account.subtype || "";
+  // Include account overview for account-related questions
+  if (
+    lowerMessage.includes("account") ||
+    lowerMessage.includes("balance") ||
+    lowerMessage.includes("bank") ||
+    lowerMessage.includes("credit")
+  ) {
+    if (snap.bankAccounts && snap.bankAccounts.length > 0) {
+      context.push("Your accounts:");
+      snap.bankAccounts.forEach((account) => {
+        const balance = account.current_balance || 0;
+        const available = account.available_balance || 0;
+        const accountType = account.type || "unknown";
+        const subtype = account.subtype || "";
 
-      if (accountType.toLowerCase().includes("credit")) {
-        // For credit cards: current_balance is debt, available_balance is credit limit
-        const debt = balance;
-        const creditLimit = available;
-        const availableCredit = creditLimit - debt;
-        context.push(
-          `${account.institution_name} ${account.name} (${
-            account.mask || "****"
-          }): $${accountType} - Debt: $${debt.toFixed(
-            2
-          )}, Credit Limit: $${creditLimit.toFixed(
-            2
-          )}, Available Credit: $${availableCredit.toFixed(2)}`
-        );
-      } else {
-        // For regular accounts
-        context.push(
-          `${account.institution_name} ${account.name} (${
-            account.mask || "****"
-          }): $${accountType} ${
-            subtype ? `(${subtype})` : ""
-          } - Balance: $${balance.toFixed(2)}`
-        );
-      }
-    });
+        if (accountType.toLowerCase().includes("credit")) {
+          // For credit cards: current_balance is debt, available_balance is credit limit
+          const debt = balance;
+          const creditLimit = available;
+          const availableCredit = creditLimit - debt;
+          context.push(
+            `${account.institution_name} ${account.name} (${
+              account.mask || "****"
+            }): $${accountType} - Debt: $${debt.toFixed(
+              2
+            )}, Credit Limit: $${creditLimit.toFixed(
+              2
+            )}, Available Credit: $${availableCredit.toFixed(2)}`
+          );
+        } else {
+          // For regular accounts
+          context.push(
+            `${account.institution_name} ${account.name} (${
+              account.mask || "****"
+            }): $${accountType} ${
+              subtype ? `(${subtype})` : ""
+            } - Balance: $${balance.toFixed(2)}`
+          );
+        }
+      });
+    }
   }
 
   // Cashflow questions
@@ -1082,28 +1089,42 @@ function createSmartContext(message, snap) {
     }
   }
 
-  // Always include basic financial summary for comprehensive context
-  if (snap.summary) {
-    context.push("Financial Summary:");
-    context.push(`Net Worth: $${snap.summary.netWorth}`);
-    context.push(`Liquid Assets: $${snap.summary.liquidAssets}`);
-    context.push(`Investments Total: $${snap.summary.investmentsTotal}`);
-    context.push(`Total Liabilities: $${snap.summary.totalLiabilities}`);
+  // Only include financial summary for specific questions
+  if (
+    lowerMessage.includes("net worth") ||
+    lowerMessage.includes("summary") ||
+    lowerMessage.includes("overview") ||
+    lowerMessage.includes("financial position")
+  ) {
+    if (snap.summary) {
+      context.push("Financial Summary:");
+      context.push(`Net Worth: $${snap.summary.netWorth}`);
+      context.push(`Liquid Assets: $${snap.summary.liquidAssets}`);
+      context.push(`Investments Total: $${snap.summary.investmentsTotal}`);
+      context.push(`Total Liabilities: $${snap.summary.totalLiabilities}`);
+    }
   }
 
-  // Always include recent transactions for better context
-  if (snap.transactions?.recent?.length > 0) {
-    context.push("Recent Activity (last 10 transactions):");
-    snap.transactions.recent.slice(0, 10).forEach((txn) => {
-      const amount = Math.abs(txn.amount);
-      const transactionType = txn.amount < 0 ? "INCOME" : "EXPENSE";
-      const sign = txn.amount < 0 ? "-" : "+";
-      context.push(
-        `${txn.date}: ${sign}$${amount.toFixed(2)} (${transactionType}) - ${
-          txn.merchant || txn.name
-        }`
-      );
-    });
+  // Only include recent transactions for specific questions
+  if (
+    lowerMessage.includes("recent") ||
+    lowerMessage.includes("transactions") ||
+    lowerMessage.includes("activity") ||
+    lowerMessage.includes("spending")
+  ) {
+    if (snap.transactions?.recent?.length > 0) {
+      context.push("Recent Activity (last 5 transactions):");
+      snap.transactions.recent.slice(0, 5).forEach((txn) => {
+        const amount = Math.abs(txn.amount);
+        const transactionType = txn.amount < 0 ? "INCOME" : "EXPENSE";
+        const sign = txn.amount < 0 ? "-" : "+";
+        context.push(
+          `${txn.date}: ${sign}$${amount.toFixed(2)} (${transactionType}) - ${
+            txn.merchant || txn.name
+          }`
+        );
+      });
+    }
   }
 
   // Web research data for financial products

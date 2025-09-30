@@ -78,6 +78,7 @@ export default async function handler(req, res) {
 
           const balanceUpdates = accounts.map((account) => ({
             account_id: account.account_id,
+            item_id: item_id, // Add missing item_id
             current_balance: account.balances.current,
             available_balance: account.balances.available,
           }));

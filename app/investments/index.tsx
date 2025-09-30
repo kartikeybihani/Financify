@@ -85,6 +85,7 @@ export default function InvestmentsScreen({
   const [balances, setBalances] = useState<BalanceRow[]>([]);
   const [connections, setConnections] = useState<ConnectionRow[]>([]);
   const [showInstitutionModal, setShowInstitutionModal] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const hasData = useRef(false);
 
   const loadFromDb = async () => {
@@ -117,6 +118,7 @@ export default function InvestmentsScreen({
         setBalances(b || []);
         setConnections(c || []);
         hasData.current = true;
+        setIsLoading(false);
         return true;
       }
 
@@ -125,9 +127,11 @@ export default function InvestmentsScreen({
       setOptions([]);
       setBalances([]);
       setConnections([]);
+      setIsLoading(false);
       return false;
     } catch (err) {
       logger.error("Failed to load investments from DB", err);
+      setIsLoading(false);
       return false;
     }
   };
@@ -155,6 +159,7 @@ export default function InvestmentsScreen({
           (preloadedData.connections && preloadedData.connections.length > 0);
 
         hasData.current = !!hasAnyData;
+        setIsLoading(false);
         return; // Skip all database loading/logic when using preloaded data
       }
 
@@ -182,6 +187,7 @@ export default function InvestmentsScreen({
 
   const handleSync = async () => {
     setIsSyncing(true);
+    setIsLoading(true);
     setSyncError(null);
 
     try {
@@ -236,6 +242,7 @@ export default function InvestmentsScreen({
       setSyncError(errorMsg);
     } finally {
       setIsSyncing(false);
+      setIsLoading(false);
     }
   };
 
@@ -408,16 +415,25 @@ export default function InvestmentsScreen({
         <View style={styles.portfolioSummaryContent}>
           <View style={styles.portfolioInfo}>
             <Text style={styles.portfolioLabel}>Total Portfolio Value</Text>
-            <Text style={styles.portfolioValue}>
-              $
-              {totalPortfolioValue.toLocaleString("en-US", {
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2,
-              })}
-            </Text>
+            {isLoading ? (
+              <View style={styles.portfolioLoadingContainer}>
+                <ActivityIndicator size="small" color="#4A90E2" />
+                <Text style={styles.portfolioLoadingText}>
+                  Loading portfolio...
+                </Text>
+              </View>
+            ) : (
+              <Text style={styles.portfolioValue}>
+                $
+                {totalPortfolioValue.toLocaleString("en-US", {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                })}
+              </Text>
+            )}
 
             {/* Today's Performance - only show actual daily gains/losses */}
-            {Math.abs(todayPerformance.amount) > 0 && (
+            {!isLoading && Math.abs(todayPerformance.amount) > 0 && (
               <View style={styles.todayPerformanceContainer}>
                 <View style={styles.profitLossIndicator}>
                   <Text
@@ -449,7 +465,7 @@ export default function InvestmentsScreen({
             )}
 
             {/* Total Change (Unrealized P&L) - Lifetime gains/losses */}
-            {Math.abs(totalUnrealizedPL) > 0 && (
+            {!isLoading && Math.abs(totalUnrealizedPL) > 0 && (
               <View style={styles.todayPerformanceContainer}>
                 <View style={styles.profitLossIndicator}>
                   <Text
@@ -477,7 +493,7 @@ export default function InvestmentsScreen({
               </View>
             )}
 
-            {totalCash > 0 && (
+            {!isLoading && totalCash > 0 && (
               <Text style={styles.availableCash}>
                 Available Cash: $
                 {totalCash.toLocaleString("en-US", {
@@ -526,6 +542,8 @@ export default function InvestmentsScreen({
   };
 
   const renderHoldings = () => {
+    if (isLoading) return null;
+
     // Filter out cash holdings - we already show available cash separately
     const nonCashHoldings = holdings.filter((holding) => {
       // Filter out holdings that are cash or cash equivalents
@@ -649,7 +667,7 @@ export default function InvestmentsScreen({
   };
 
   const renderOptions = () => {
-    if (options.length === 0) return null;
+    if (isLoading || options.length === 0) return null;
 
     return (
       <View style={styles.investmentGroup}>
