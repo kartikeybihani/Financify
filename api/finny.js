@@ -655,7 +655,7 @@ async function handleAsk(message, context) {
       body: JSON.stringify({
         model: "openai/gpt-4o-mini",
         temperature: 0.6,
-        max_tokens: 500, // Reduced for more concise responses
+        max_tokens: 700,
         stream: false, // Keep as false for now, but ready for streaming
         messages: [
           { role: "system", content: system },
