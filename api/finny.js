@@ -234,6 +234,9 @@ export default async function handler(req, res) {
       case "ask_fact_fresh":
         response = await handleAskFactFresh(message, safeContext);
         break;
+      case "off_topic":
+        response = await handleOffTopic(message, safeContext);
+        break;
       default:
         return res.status(400).json({ error: "Invalid action" });
     }
@@ -595,14 +598,36 @@ async function handleAsk(message, context) {
 
     // 3) Build a comprehensive prompt using the complete RPC data
     const system = [
-      "You are Finny: warm, encouraging, blunt when needed.",
-      "Use the complete financial data provided. Give accurate, detailed responses based on all available information.",
-      "Do not show net worth calculations or mathematical formulas - just state the facts clearly.",
-      "IMPORTANT: In transaction data, EXPENSE means money spent (going out), INCOME means money received (coming in).",
-      "CREDIT CARD DATA STRUCTURE: For credit cards, 'current_balance' is the debt amount (what you owe), and 'available_balance' is the credit limit. Available credit = credit limit - debt.",
-      "For rent vs buy questions: Use the user's financial data (income, savings, debt) and market data (home prices, rent costs, mortgage rates) to provide personalized analysis. Consider their financial capacity, timeline, and local market conditions.",
-      "For financial product questions: Use web research data to provide current, accurate information about credit cards, banks, and investment platforms. Combine this with the user's financial data to give personalized recommendations.",
-      "Only add investment disclaimer ('Note: This response is for informational purposes and does not constitute financial advice.') when the user asks specifically about investments, investing advice, or investment-related recommendations.",
+      "You are Finny: a warm, encouraging, and empowering financial advisor who is blunt when needed.",
+      "",
+      "PERSONALITY & APPROACH:",
+      "- Be warm and encouraging while maintaining professional expertise",
+      "- Show enthusiasm for helping users achieve their financial goals",
+      "- Be blunt and direct when users need to hear hard truths about their finances",
+      "- Celebrate wins and progress, no matter how small",
+      "- Use the user's name when available to create personal connection",
+      "- Focus on financial empowerment and positive outcomes",
+      "",
+      "SCOPE BOUNDARIES:",
+      "- ONLY discuss financial topics: budgeting, saving, investing, debt, credit, taxes, financial planning",
+      "- If users ask non-financial questions, politely redirect to financial topics",
+      "- Stay focused on actionable financial advice and insights",
+      "",
+      "RESPONSE GUIDELINES:",
+      "- Use the complete financial data provided. Give accurate, detailed responses based on all available information.",
+      "- Do not show net worth calculations or mathematical formulas - just state the facts clearly.",
+      "- Provide actionable advice that users can implement immediately",
+      "- Explain financial concepts in simple, understandable terms",
+      "- Connect advice to the user's specific financial situation when possible",
+      "",
+      "DATA INTERPRETATION:",
+      "- IMPORTANT: In transaction data, EXPENSE means money spent (going out), INCOME means money received (coming in).",
+      "- CREDIT CARD DATA STRUCTURE: For credit cards, 'current_balance' is the debt amount (what you owe), and 'available_balance' is the credit limit. Available credit = credit limit - debt.",
+      "- For rent vs buy questions: Use the user's financial data (income, savings, debt) and market data (home prices, rent costs, mortgage rates) to provide personalized analysis. Consider their financial capacity, timeline, and local market conditions.",
+      "- For financial product questions: Use web research data to provide current, accurate information about credit cards, banks, and investment platforms. Combine this with the user's financial data to give personalized recommendations.",
+      "",
+      "DISCLAIMERS:",
+      "- Only add investment disclaimer ('Note: This response is for informational purposes and does not constitute financial advice.') when the user asks specifically about investments, investing advice, or investment-related recommendations.",
     ].join("\n");
 
     // Create smart context based on the question
@@ -1533,6 +1558,73 @@ function calculateDateRange(timePeriod) {
   };
 }
 
+// Pre-classification filtering for obvious non-financial queries
+function isObviousNonFinancial(message) {
+  const lowerMessage = message.toLowerCase().trim();
+
+  // Weather queries
+  if (
+    lowerMessage.includes("weather") ||
+    lowerMessage.includes("temperature") ||
+    lowerMessage.includes("rain") ||
+    lowerMessage.includes("sunny") ||
+    lowerMessage.includes("forecast")
+  ) {
+    return { isOffTopic: true, category: "weather" };
+  }
+
+  // General greetings and small talk
+  if (
+    lowerMessage.match(
+      /^(hi|hello|hey|good morning|good afternoon|good evening|how are you|what's up|how's it going)$/
+    )
+  ) {
+    return { isOffTopic: true, category: "greeting" };
+  }
+
+  // Non-financial questions
+  if (
+    lowerMessage.includes("recipe") ||
+    lowerMessage.includes("cooking") ||
+    lowerMessage.includes("movie") ||
+    lowerMessage.includes("book") ||
+    lowerMessage.includes("music") ||
+    lowerMessage.includes("sports") ||
+    lowerMessage.includes("travel") ||
+    lowerMessage.includes("vacation") ||
+    lowerMessage.includes("game") ||
+    lowerMessage.includes("hobby")
+  ) {
+    return { isOffTopic: true, category: "lifestyle" };
+  }
+
+  // Technical support (non-financial)
+  if (
+    lowerMessage.includes("how to use") ||
+    lowerMessage.includes("app not working") ||
+    lowerMessage.includes("bug") ||
+    lowerMessage.includes("error") ||
+    lowerMessage.includes("login") ||
+    lowerMessage.includes("password")
+  ) {
+    return { isOffTopic: true, category: "technical" };
+  }
+
+  // Philosophical or general questions
+  if (
+    lowerMessage.includes("meaning of life") ||
+    lowerMessage.includes("purpose") ||
+    lowerMessage.includes("love") ||
+    lowerMessage.includes("relationship") ||
+    lowerMessage.includes("career advice") ||
+    lowerMessage.includes("job interview")
+  ) {
+    return { isOffTopic: true, category: "philosophical" };
+  }
+
+  return { isOffTopic: false, category: null };
+}
+
 async function handleClassify(message, context) {
   console.log(
     "🔍 [FINNY] Starting classification in handleClassify for message:",
@@ -1555,6 +1647,26 @@ async function handleClassify(message, context) {
     };
   }
 
+  // Pre-filter for obvious non-financial queries
+  const preFilter = isObviousNonFinancial(text);
+  if (preFilter.isOffTopic) {
+    console.log(
+      "🚫 [FINNY] Pre-filtered as non-financial query:",
+      preFilter.category
+    );
+    return {
+      intent: "off_topic",
+      needs_web: false,
+      needs_user_data: false,
+      needs_calc: false,
+      state: null,
+      entities: [],
+      confidence: 0.9,
+      category: preFilter.category,
+      preFiltered: true,
+    };
+  }
+
   try {
     const r = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
@@ -1569,7 +1681,7 @@ async function handleClassify(message, context) {
           {
             role: "system",
             content: [
-              "You are Financify's intent router.",
+              "You are Financify's intent router with strict financial scope boundaries.",
               "Classify one user message into exactly one intent.",
               "Intents:",
               "- goal  set or modify a savings or payoff goal",
@@ -1577,9 +1689,12 @@ async function handleClassify(message, context) {
               "- ask_fact_fresh  current year numbers or facts that change",
               "- ask_state_rule  state specific rules or taxes",
               "- calc_projection  what if or plan math",
+              "- off_topic  non-financial queries that should be redirected",
               "",
               "Rules:",
+              "- **SCOPE BOUNDARIES**: Only handle financial topics. Non-financial queries (weather, recipes, movies, sports, general chat, technical support) should be classified as `off_topic`.",
               "- **Intents are primary; flags can combine.** Return exactly one `intent`, but `needs_user_data`, `needs_calc`, and `needs_web` may be **true** together.",
+              "- **OFF-TOPIC DETECTION**: If message is clearly non-financial (weather, cooking, entertainment, sports, general greetings, technical issues), use `intent=off_topic`.",
               "- If message asks for this year current latest updated 2025 etc then ask_fact_fresh",
               "- If asking about specific financial products (cards, banks, rates, benefits, offers) that change over time then ask_fact_fresh",
               "- If comparing specific products/services by name (e.g., 'Chase vs Amex', 'Vanguard vs Fidelity') then ask_fact_fresh",
@@ -1591,11 +1706,16 @@ async function handleClassify(message, context) {
               "- If it clearly sets a goal choose goal",
               "- If it needs the user's actual data choose ask_personalized",
               "- If purely personal (spend, net worth, goals) → `ask_personalized` (needs_user_data=true, needs_web=false).",
-              "- Otherwise choose ask_personalized",
+              "- If ambiguous but potentially financial, choose ask_personalized",
+              "- **DEFAULT TO FINANCIAL**: When in doubt between financial and non-financial, prefer financial intent.",
               "",
               "Sample inputs and expected intent:",
               '"Set a 2000 emergency fund by March" → goal',
-              '"How much did I spend on Uber last month" or "How are you" or "Whats up" or "Am I normal?" → ask_personalized',
+              '"How much did I spend on Uber last month" → ask_personalized',
+              '"How are you" or "What\'s up" or "Am I normal?" → ask_personalized (financial wellness)',
+              '"What\'s the weather like?" → off_topic',
+              '"How do I cook pasta?" → off_topic',
+              '"What movie should I watch?" → off_topic',
               '"Difference between Roth and traditional IRA" → ask_personalized',
               '"What is the 2025 estate tax exemption" → ask_fact_fresh',
               '"Which card has better benefits Chase Rewards or Bolt?" → ask_fact_fresh',
@@ -1632,6 +1752,7 @@ async function handleClassify(message, context) {
                     "ask_fact_fresh",
                     "ask_state_rule",
                     "calc_projection",
+                    "off_topic",
                   ],
                   description: "Single best intent",
                 },
@@ -1721,6 +1842,152 @@ async function handleClassify(message, context) {
       fallback: true,
     };
   }
+}
+
+async function handleOffTopic(message, context) {
+  console.log("🚫 [FINNY] Handling off-topic query:", message);
+
+  const category = context?.category || "general";
+  const userProfile = context?.profile || {};
+
+  // Generate context-aware financial redirection suggestions
+  const redirectionSuggestions = generateFinancialRedirectionSuggestions(
+    category,
+    userProfile
+  );
+
+  const systemPrompt = [
+    "You are Finny, a warm and encouraging financial advisor.",
+    "The user asked a non-financial question that's outside your scope.",
+    "Respond with warmth and redirect them to relevant financial topics.",
+    "Be encouraging and show enthusiasm for helping with their finances.",
+    "Use their name if available, and make the redirection feel natural.",
+    "Keep responses concise but engaging.",
+    "Focus on financial empowerment and positive outcomes.",
+  ].join("\n");
+
+  try {
+    const response = await fetch(
+      "https://openrouter.ai/api/v1/chat/completions",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "openai/gpt-4o-mini",
+          temperature: 0.7,
+          messages: [
+            {
+              role: "system",
+              content: systemPrompt,
+            },
+            {
+              role: "user",
+              content: `User asked: "${message}"\n\nCategory: ${category}\n\nRedirection suggestions: ${redirectionSuggestions.join(
+                ", "
+              )}\n\nUser name: ${
+                userProfile.name || "there"
+              }\n\nRespond with a warm redirection to financial topics.`,
+            },
+          ],
+        }),
+      }
+    );
+
+    const data = await response.json();
+    const content =
+      data.choices?.[0]?.message?.content ||
+      "I'd love to help you with your finances! What financial questions can I answer for you today?";
+
+    // Log the off-topic interaction
+    const conversationData = {
+      user_message: message,
+      finny_response: content,
+      timestamp: new Date().toISOString(),
+      user_id: context?.user_id || "unknown",
+      intent: "off_topic",
+      entities: [],
+      confidence: 1.0,
+      response_time_ms: Date.now(),
+      sources_used: [],
+      cached: false,
+      category: category,
+      redirection_suggestions: redirectionSuggestions,
+    };
+
+    // Log conversation asynchronously
+    setImmediate(() => logConversation(conversationData));
+
+    return {
+      text: content,
+      type: "assistant",
+      intent: "off_topic",
+      category: category,
+      redirection_suggestions: redirectionSuggestions,
+    };
+  } catch (error) {
+    console.error("❌ [FINNY] Off-topic handler error:", error);
+
+    // Fallback response
+    const fallbackResponse = generateFallbackRedirection(category, userProfile);
+
+    return {
+      text: fallbackResponse,
+      type: "assistant",
+      intent: "off_topic",
+      category: category,
+      fallback: true,
+    };
+  }
+}
+
+function generateFinancialRedirectionSuggestions(category, userProfile) {
+  const suggestions = {
+    weather: [
+      "budgeting for seasonal expenses",
+      "planning for weather-related financial impacts",
+      "emergency fund for weather emergencies",
+    ],
+    greeting: [
+      "your financial goals",
+      "budgeting strategies",
+      "investment planning",
+    ],
+    lifestyle: [
+      "budgeting for hobbies",
+      "financial planning for lifestyle goals",
+      "saving strategies for entertainment",
+    ],
+    technical: [
+      "financial app features",
+      "budgeting tools",
+      "investment tracking",
+    ],
+    philosophical: [
+      "financial independence goals",
+      "long-term financial planning",
+      "building wealth over time",
+    ],
+    general: [
+      "your financial situation",
+      "budgeting and saving",
+      "investment opportunities",
+    ],
+  };
+
+  return suggestions[category] || suggestions.general;
+}
+
+function generateFallbackRedirection(category, userProfile) {
+  const name = userProfile.name || "there";
+  const suggestions = generateFinancialRedirectionSuggestions(
+    category,
+    userProfile
+  );
+
+  return `Hi ${name}! I can't help with that, but I'd love to help you with your finances! How about we discuss ${suggestions[0]} or ${suggestions[1]}? What financial questions do you have?`;
 }
 
 async function handleAskStateRule(message, context) {
@@ -2063,8 +2330,28 @@ async function llmFallbackFacts(message) {
         messages: [
           {
             role: "system",
-            content:
-              "You are a precise financial assistant. If live data is unavailable, give a concise, helpful answer based on general knowledge. Include definitions, typical ranges, and decision factors. Do not invent exact current numbers.",
+            content: [
+              "You are Finny, a warm and precise financial advisor specializing in current financial facts and information.",
+              "",
+              "PERSONALITY & APPROACH:",
+              "- Be warm and encouraging while providing accurate, up-to-date information",
+              "- Show enthusiasm for helping users stay informed about current financial trends",
+              "- Be precise and factual in your responses",
+              "- Use the user's name when available",
+              "",
+              "SCOPE BOUNDARIES:",
+              "- ONLY discuss current financial facts, rates, limits, and market information",
+              "- Stay focused on actionable, current information users can use",
+              "- Redirect non-financial questions to financial topics",
+              "",
+              "RESPONSE GUIDELINES:",
+              "- If live data is unavailable, give a concise, helpful answer based on general knowledge",
+              "- Include definitions, typical ranges, and decision factors when relevant",
+              "- Do not invent exact current numbers - be transparent about data limitations",
+              "- Provide actionable insights based on current information",
+              "- Explain financial concepts in simple terms",
+              "- Connect current facts to user's potential financial impact",
+            ].join("\n"),
           },
           { role: "user", content: message },
         ],
@@ -2092,8 +2379,27 @@ async function llmStateRuleAnswer(message, state) {
         messages: [
           {
             role: "system",
-            content:
-              "You are a state tax guide. If specific current-year numbers are unavailable, provide a clear overview of the rule for the state, typical limits, and how to check the official source. Avoid fabricating exact numbers.",
+            content: [
+              "You are Finny, a warm and knowledgeable financial advisor specializing in state-specific rules and taxes.",
+              "",
+              "PERSONALITY & APPROACH:",
+              "- Be warm and encouraging while providing accurate information",
+              "- Show enthusiasm for helping users understand complex state rules",
+              "- Be direct and clear when explaining tax implications",
+              "- Use the user's name when available",
+              "",
+              "SCOPE BOUNDARIES:",
+              "- ONLY discuss state-specific financial rules, taxes, and benefits",
+              "- Stay focused on actionable information users can use",
+              "- Redirect non-financial questions to financial topics",
+              "",
+              "RESPONSE GUIDELINES:",
+              "- If specific current-year numbers are unavailable, provide a clear overview of the rule for the state, typical limits, and how to check the official source",
+              "- Avoid fabricating exact numbers - be transparent about data limitations",
+              "- Provide actionable next steps for users",
+              "- Explain complex rules in simple terms",
+              "- Connect rules to the user's potential financial impact",
+            ].join("\n"),
           },
           {
             role: "user",

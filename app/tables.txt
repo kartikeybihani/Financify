@@ -207,21 +207,13 @@ CREATE TABLE public.snaptrade_connections (
   account_name text,
   account_type text,
   is_active boolean NOT NULL DEFAULT true,
-  connection_status text DEFAULT 'active'::text CHECK (connection_status = ANY (ARRAY['active'::text, 'disabled'::text, 'error'::text, 'pending'::text])),
   last_synced_at timestamp with time zone,
   created_at timestamp with time zone DEFAULT now(),
   updated_at timestamp with time zone DEFAULT now(),
   user_secret text,
+  connection_status text DEFAULT 'active'::text CHECK (connection_status = ANY (ARRAY['active'::text, 'disabled'::text, 'error'::text, 'pending'::text])),
   CONSTRAINT snaptrade_connections_pkey PRIMARY KEY (id),
   CONSTRAINT snaptrade_connections_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
-);
-CREATE TABLE public.transaction_category_overrides (
-  user_id uuid NOT NULL,
-  transaction_id uuid NOT NULL,
-  top_category_id uuid NOT NULL,
-  sub_category_id uuid NOT NULL,
-  created_at timestamp with time zone DEFAULT now(),
-  CONSTRAINT transaction_category_overrides_pkey PRIMARY KEY (transaction_id)
 );
 CREATE TABLE public.transactions (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -239,6 +231,7 @@ CREATE TABLE public.transactions (
   inserted_at timestamp with time zone DEFAULT now(),
   top_category text,
   sub_category text,
+  new_category text,
   CONSTRAINT transactions_pkey PRIMARY KEY (id),
   CONSTRAINT transactions_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id),
   CONSTRAINT transactions_account_id_fkey FOREIGN KEY (account_id) REFERENCES public.accounts(account_id)

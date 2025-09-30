@@ -1,25 +1,13 @@
-import React from "react";
+import React, { useState } from "react";
 import { Modal, View, Text, TouchableOpacity, ScrollView } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { styles } from "../../_styles/insightsStyles";
+import TransactionDetailModal from "../../_components/modals/TransactionDetailModal";
 
 interface CategoryData {
   amount: number;
   percentage: number;
   color: string;
-}
-
-interface Transaction {
-  amount: number;
-  date: string;
-  name: string;
-  category?: string; // Original Plaid category stored as string
-  top_category?: string; // Simplified top-level category (e.g., "Food", "Transportation")
-  new_category?: string; // User-updated category
-  sub_category?: string; // Simplified sub-category (e.g., "Eating Out", "Groceries")
-  personal_finance_category?: {
-    primary: string;
-  };
 }
 
 interface CategoryDetailModalProps {
@@ -30,6 +18,21 @@ interface CategoryDetailModalProps {
   transactions: Transaction[];
   formatCategoryName: (category: string) => string;
   formatDate: (date: string) => string;
+}
+
+interface Transaction {
+  id?: string;
+  amount: number;
+  date: string;
+  name: string;
+  category?: string; // Original Plaid category stored as string
+  top_category?: string; // Simplified top-level category (e.g., "Food", "Transportation")
+  new_category?: string; // User-updated category
+  sub_category?: string; // Simplified sub-category (e.g., "Eating Out", "Groceries")
+  personal_finance_category?: {
+    primary: string;
+  };
+  plaid_transaction_id?: string;
 }
 
 const CategoryDetailModal: React.FC<CategoryDetailModalProps> = ({
@@ -72,6 +75,12 @@ const CategoryDetailModal: React.FC<CategoryDetailModalProps> = ({
   const categoryTransactions = transactions.filter(
     (tx) => (tx.new_category || tx.top_category || "Other") === category
   );
+
+  const [selectedTransactionId, setSelectedTransactionId] = useState<
+    string | null
+  >(null);
+  const [showDetailModal, setShowDetailModal] = useState(false);
+  const [isModalTransitioning, setIsModalTransitioning] = useState(false);
 
   const averageTransaction =
     categoryTransactions.length > 0
@@ -139,7 +148,31 @@ const CategoryDetailModal: React.FC<CategoryDetailModalProps> = ({
             {categoryTransactions.length > 0 ? (
               <ScrollView>
                 {categoryTransactions.map((tx, idx) => (
-                  <View key={idx} style={styles.categoryTransactionItem}>
+                  <TouchableOpacity
+                    key={tx.plaid_transaction_id || tx.id || idx}
+                    style={styles.categoryTransactionItem}
+                    onPress={() => {
+                      if (isModalTransitioning) return;
+                      setIsModalTransitioning(true);
+
+                      if (showDetailModal) {
+                        setShowDetailModal(false);
+                        setSelectedTransactionId(null);
+                        requestAnimationFrame(() => {
+                          setSelectedTransactionId(tx.id || null);
+                          setShowDetailModal(true);
+                          setIsModalTransitioning(false);
+                        });
+                      } else {
+                        setSelectedTransactionId(tx.id || null);
+                        setShowDetailModal(true);
+                        setIsModalTransitioning(false);
+                      }
+                    }}
+                    activeOpacity={0.7}
+                    delayPressIn={0}
+                    delayPressOut={0}
+                  >
                     <View style={styles.categoryTransactionInfo}>
                       <View style={styles.categoryTransactionHeader}>
                         <Text style={styles.categoryTransactionName}>
@@ -153,7 +186,7 @@ const CategoryDetailModal: React.FC<CategoryDetailModalProps> = ({
                     <Text style={styles.categoryTransactionAmount}>
                       -${tx.amount.toFixed(2)}
                     </Text>
-                  </View>
+                  </TouchableOpacity>
                 ))}
               </ScrollView>
             ) : (
@@ -166,6 +199,17 @@ const CategoryDetailModal: React.FC<CategoryDetailModalProps> = ({
           </View>
         </View>
       </TouchableOpacity>
+      {/* // Transaction Detail Modal (opens when a transaction is tapped) */}
+      <TransactionDetailModal
+        key={`modal-${selectedTransactionId || "closed"}`}
+        visible={showDetailModal}
+        transactionId={selectedTransactionId}
+        onClose={() => {
+          setShowDetailModal(false);
+          setSelectedTransactionId(null);
+          setIsModalTransitioning(false);
+        }}
+      />
     </Modal>
   );
 };

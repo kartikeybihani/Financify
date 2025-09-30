@@ -10,6 +10,7 @@ import {
   Alert,
   TouchableWithoutFeedback,
 } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
@@ -168,6 +169,7 @@ export default function TransactionDetailModal({
   const [transaction, setTransaction] = useState<Transaction | null>(null);
   const [updatedCategory, setUpdatedCategory] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isInternalTransfer, setIsInternalTransfer] = useState<boolean>(false);
 
   const {
     categories,
@@ -225,6 +227,9 @@ export default function TransactionDetailModal({
           };
 
           setTransaction(transformedTransaction);
+
+          // Check if transaction is already marked as internal transfer
+          setIsInternalTransfer(data.new_category === "INTERNAL_TRANSFER");
         }
       } catch (error) {
         console.error("Error loading transaction:", error);
@@ -276,6 +281,7 @@ export default function TransactionDetailModal({
     if (!visible) {
       setTransaction(null);
       setUpdatedCategory(null);
+      setIsInternalTransfer(false);
       setLoading(true);
     }
   }, [visible]);
@@ -284,6 +290,7 @@ export default function TransactionDetailModal({
     // Reset state immediately without delay to prevent race conditions
     setTransaction(null);
     setUpdatedCategory(null);
+    setIsInternalTransfer(false);
     setLoading(true);
     onClose();
   };
@@ -298,6 +305,64 @@ export default function TransactionDetailModal({
         merchantName: transaction?.merchant_name,
       },
     });
+  };
+
+  const handleInternalTransferToggle = () => {
+    const action = isInternalTransfer ? "Yes" : "mark";
+    const message = isInternalTransfer
+      ? "Mark this transaction as Regular Transaction?"
+      : "Mark this transaction as Internal Transfer?";
+
+    Alert.alert("Internal Transfer", message, [
+      {
+        text: "Cancel",
+        style: "cancel",
+      },
+      {
+        text: action === "mark" ? "Mark" : "Yes",
+        style: "default",
+        onPress: async () => {
+          try {
+            const newCategoryValue = isInternalTransfer
+              ? null
+              : "INTERNAL_TRANSFER";
+
+            // Update the database
+            const { error } = await supabase
+              .from("transactions")
+              .update({ new_category: newCategoryValue })
+              .eq("id", transaction?.id);
+
+            if (error) {
+              console.error("Error updating transaction category:", error);
+              Alert.alert(
+                "Error",
+                "Failed to update transaction. Please try again."
+              );
+              return;
+            }
+
+            // Update local state
+            setIsInternalTransfer(!isInternalTransfer);
+            setUpdatedCategory(newCategoryValue);
+
+            // Emit event to notify other components
+            DeviceEventEmitter.emit("transactionCategoryUpdated", {
+              transactionId: transaction?.id,
+              newCategory: newCategoryValue,
+            });
+
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+          } catch (error) {
+            console.error("Error updating transaction:", error);
+            Alert.alert(
+              "Error",
+              "Failed to update transaction. Please try again."
+            );
+          }
+        },
+      },
+    ]);
   };
 
   const formatDate = (dateStr: string) => {
@@ -327,8 +392,23 @@ export default function TransactionDetailModal({
               {/* Drag Handle */}
               <View style={styles.dragHandle} />
 
-              {/* Transaction Label */}
-              <Text style={styles.transactionLabel}>Transaction</Text>
+              {/* Header with Transaction Label and Menu */}
+              <View style={styles.headerContainer}>
+                <Text style={styles.transactionLabel}>
+                  {isInternalTransfer ? "Internal Transfer" : "Transaction"}
+                </Text>
+                <TouchableOpacity
+                  style={styles.menuButton}
+                  onPress={handleInternalTransferToggle}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons
+                    name="filter"
+                    size={20}
+                    color="rgba(255, 255, 255, 0.8)"
+                  />
+                </TouchableOpacity>
+              </View>
 
               {loading ? (
                 <View style={styles.loadingContainer}>
@@ -374,79 +454,81 @@ export default function TransactionDetailModal({
                       {formatDate(transaction.date)}
                     </Text>
 
-                    {/* Category Pill */}
-                    <TouchableOpacity
-                      style={[
-                        styles.categoryPill,
-                        {
-                          backgroundColor: getCategoryBackgroundColorForName(
+                    {/* Category Pill - Only show if not internal transfer */}
+                    {!isInternalTransfer && (
+                      <TouchableOpacity
+                        style={[
+                          styles.categoryPill,
+                          {
+                            backgroundColor: getCategoryBackgroundColorForName(
+                              updatedCategory ||
+                                transaction.new_category ||
+                                transaction.top_category ||
+                                transaction.category ||
+                                "Other"
+                            ),
+                            borderColor:
+                              getCategoryColor(
+                                updatedCategory ||
+                                  transaction.new_category ||
+                                  transaction.top_category ||
+                                  transaction.category ||
+                                  "Other"
+                              ) + "40",
+                          },
+                        ]}
+                        onPress={handleCategoryPress}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={styles.categoryEmojiText}>
+                          {getCategoryEmojiForName(
                             updatedCategory ||
                               transaction.new_category ||
                               transaction.top_category ||
                               transaction.category ||
                               "Other"
-                          ),
-                          borderColor:
-                            getCategoryColor(
-                              updatedCategory ||
-                                transaction.new_category ||
-                                transaction.top_category ||
-                                transaction.category ||
-                                "Other"
-                            ) + "40",
-                        },
-                      ]}
-                      onPress={handleCategoryPress}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={styles.categoryEmojiText}>
-                        {getCategoryEmojiForName(
-                          updatedCategory ||
-                            transaction.new_category ||
-                            transaction.top_category ||
-                            transaction.category ||
-                            "Other"
-                        )}
-                      </Text>
-                      <Text
-                        style={[
-                          styles.categoryPillText,
-                          {
-                            color: getCategoryColor(
-                              updatedCategory ||
-                                transaction.new_category ||
-                                transaction.top_category ||
-                                transaction.category ||
-                                "Other"
-                            ),
-                          },
-                        ]}
-                      >
-                        {formatCategoryFromHook(
-                          updatedCategory ||
-                            transaction.new_category ||
-                            transaction.top_category ||
-                            transaction.category ||
-                            "Other"
-                        )}
-                      </Text>
-                      <Text
-                        style={[
-                          styles.categoryArrow,
-                          {
-                            color: getCategoryColor(
-                              updatedCategory ||
-                                transaction.new_category ||
-                                transaction.top_category ||
-                                transaction.category ||
-                                "Other"
-                            ),
-                          },
-                        ]}
-                      >
-                        ▼
-                      </Text>
-                    </TouchableOpacity>
+                          )}
+                        </Text>
+                        <Text
+                          style={[
+                            styles.categoryPillText,
+                            {
+                              color: getCategoryColor(
+                                updatedCategory ||
+                                  transaction.new_category ||
+                                  transaction.top_category ||
+                                  transaction.category ||
+                                  "Other"
+                              ),
+                            },
+                          ]}
+                        >
+                          {formatCategoryFromHook(
+                            updatedCategory ||
+                              transaction.new_category ||
+                              transaction.top_category ||
+                              transaction.category ||
+                              "Other"
+                          )}
+                        </Text>
+                        <Text
+                          style={[
+                            styles.categoryArrow,
+                            {
+                              color: getCategoryColor(
+                                updatedCategory ||
+                                  transaction.new_category ||
+                                  transaction.top_category ||
+                                  transaction.category ||
+                                  "Other"
+                              ),
+                            },
+                          ]}
+                        >
+                          ▼
+                        </Text>
+                      </TouchableOpacity>
+                    )}
                   </View>
 
                   {/* Account Card */}
@@ -543,15 +625,29 @@ const styles = StyleSheet.create({
     marginTop: 8,
     marginBottom: 8,
   },
+  headerContainer: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 20,
+    marginBottom: 16,
+    marginTop: 5,
+    position: "relative",
+  },
   transactionLabel: {
     fontSize: 12,
     fontWeight: "800",
     color: "rgba(255, 255, 255, 0.8)",
-    textAlign: "center",
-    marginBottom: 16,
     letterSpacing: 0.6,
     textTransform: "uppercase",
-    marginTop: 5,
+    textAlign: "center",
+  },
+  menuButton: {
+    position: "absolute",
+    right: 20,
+    padding: 8,
+    alignItems: "center",
+    justifyContent: "center",
   },
   loadingContainer: {
     padding: 40,
