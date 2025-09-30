@@ -95,37 +95,102 @@ This report analyzes the complete Finny flow from user input to response, docume
 - **State Persistence**: Maintains goal flow across messages
 - **Smart Parsing**: Extracts amounts, dates, and categories from natural language
 
-## ❌ Weaknesses & Issues (RESOLVED)
+## ❌ Critical Issues & Limitations
 
-### 1. **Performance Bottlenecks** ✅ **RESOLVED**
+### 1. **Missing Guardrails & Scope Control** 🚨 **CRITICAL**
+- **No Non-Financial Query Detection**: System has no mechanism to detect or handle off-topic questions
+- **Classification Always Routes**: Every query gets classified into financial intents, even non-financial ones
+- **No Scope Boundaries**: No system prompts or logic to redirect users back to financial topics
+- **Fallback to Financial Context**: Non-financial queries get forced into financial frameworks
+
+### 2. **Weak Prompt Engineering** 🚨 **CRITICAL**
+- **Generic System Prompt**: "You are Finny: warm, encouraging, blunt when needed" - lacks specific guidance
+- **No Personality Definition**: Vague instructions don't create consistent, compelling persona
+- **Missing Encouragement Framework**: No structured approach to user motivation and engagement
+- **Insufficient Context Instructions**: Limited guidance on how to use financial data effectively
+
+### 3. **Performance Bottlenecks** ✅ **RESOLVED**
 - ~~**Sequential API Calls**: Multiple round-trips for data gathering~~ → **FIXED**: Parallel processing with `Promise.allSettled()`
 - ~~**No Request Batching**: Each data source fetched separately~~ → **FIXED**: Concurrent data fetching
 - **Heavy LLM Usage**: Classification + response generation for every query (acceptable for quality)
 - ~~**Web Scraping Delays**: 2.5s timeout for web research can slow responses~~ → **IMPROVED**: Request deduplication and caching
 
-### 2. **Error Handling Issues** ✅ **IMPROVED**
+### 4. **Error Handling Issues** ✅ **IMPROVED**
 - **Inconsistent Fallbacks**: Some handlers lack proper error recovery (partially addressed)
 - ~~**Silent Failures**: Web research failures may not be communicated to user~~ → **IMPROVED**: Better error handling with `Promise.allSettled()`
 - ~~**Timeout Management**: Hard timeouts without retry logic~~ → **IMPROVED**: Better timeout handling in parallel processing
 - **Database Errors**: Conversation logging failures don't break flow but aren't handled gracefully (acceptable)
 
-### 3. **Architectural Limitations** ✅ **PARTIALLY RESOLVED**
+### 5. **Architectural Limitations** ✅ **PARTIALLY RESOLVED**
 - **Monolithic API**: Single large `finny.js` file (4500+ lines) (acceptable for current scale)
 - **Tight Coupling**: Classification and data gathering tightly coupled (acceptable for current scale)
 - ~~**Limited Caching**: Only web scraped data cached, not user summaries~~ → **FIXED**: Comprehensive caching for all data sources
 - ~~**No Request Queuing**: No mechanism to handle concurrent requests~~ → **FIXED**: Request deduplication implemented
 
-### 4. **User Experience Issues** ✅ **RESOLVED**
+### 6. **User Experience Issues** ✅ **RESOLVED**
 - ~~**Slow Responses**: Multiple API calls create noticeable delays~~ → **FIXED**: Parallel processing reduces response time by 50-70%
 - ~~**No Progress Indicators**: Users don't know what's happening during data gathering~~ → **FIXED**: Real-time progress indicators implemented
 - **Limited Context**: No conversation memory beyond current session (acceptable for current design)
 - **Rigid Classification**: Some queries misclassified due to strict intent rules (acceptable for current design)
 
-### 5. **Data Quality Concerns**
+### 7. **Data Quality Concerns**
 - **Web Scraping Reliability**: Dependent on external site structure
 - **Cache Invalidation**: No mechanism to refresh stale data
 - **Data Consistency**: No validation of scraped data quality
 - **Limited Sources**: Only searches predefined domains
+
+## 🔍 Deep Dive Analysis Findings
+
+### Prompt Engineering Assessment
+
+**Current System Prompt Analysis:**
+```
+"You are Finny: warm, encouraging, blunt when needed."
+```
+
+**Issues Identified:**
+- **Vague Personality**: "Warm, encouraging, blunt when needed" provides no actionable guidance
+- **No Context Framework**: Missing instructions on how to use financial data effectively
+- **No Encouragement Strategy**: No structured approach to motivate users
+- **No Scope Boundaries**: No guidance on handling non-financial queries
+
+**Classification Prompt Analysis:**
+The classification system routes ALL queries into financial intents:
+- `goal` - set or modify a savings or payoff goal
+- `ask_personalized` - question about the user's money that needs their data  
+- `ask_fact_fresh` - current year numbers or facts that change
+- `ask_state_rule` - state specific rules or taxes
+- `calc_projection` - what if or plan math
+
+**Critical Gap**: No intent for "non-financial" or "off-topic" queries.
+
+### Guardrail Assessment
+
+**Missing Mechanisms:**
+1. **No Non-Financial Detection**: Classification always routes to financial intents
+2. **No Scope Redirection**: No prompts to guide users back to financial topics
+3. **No Boundary Enforcement**: System attempts to answer any query within financial context
+4. **No Fallback for Irrelevant Queries**: No graceful handling of off-topic questions
+
+**Example Problematic Flow:**
+- User asks: "What's the weather like?"
+- System classifies as `ask_personalized` (financial intent)
+- System attempts to provide financial advice about weather-related expenses
+- Results in forced, irrelevant financial responses
+
+### User Encouragement Assessment
+
+**Current State:**
+- No structured encouragement framework
+- No personality consistency guidelines
+- No motivation strategies
+- No compelling response templates
+
+**Impact:**
+- Responses lack personality and engagement
+- No systematic approach to user motivation
+- Inconsistent user experience
+- Missed opportunities for financial empowerment
 
 ## 🚀 Implemented Optimizations
 
@@ -164,17 +229,20 @@ This report analyzes the complete Finny flow from user input to response, docume
 
 ## 📊 Technical Debt (UPDATED)
 
-### High Priority ✅ **RESOLVED**
-1. ~~**Monolithic API**: Break down 4500-line file into modules~~ → **ACCEPTABLE**: Current scale doesn't require microservices
+### High Priority 🚨 **CRITICAL - NEW**
+1. **Missing Guardrails**: Implement non-financial query detection and scope boundaries
+2. **Prompt Engineering**: Develop comprehensive system prompts with personality and encouragement framework
+3. **Scope Control**: Add mechanisms to redirect off-topic conversations back to financial topics
+
+### Medium Priority 🔄 **PARTIALLY ADDRESSED**
+1. **Monolithic API**: Break down 4500-line file into modules (acceptable for current scale)
 2. ✅ **Error Handling**: Comprehensive error recovery implemented
 3. ✅ **Performance**: Sequential API calls optimized with parallel processing
 4. ✅ **Caching**: Comprehensive caching implemented for all data sources
-
-### Medium Priority 🔄 **PARTIALLY ADDRESSED**
-1. 🔄 **Testing**: Add comprehensive test coverage (future enhancement)
-2. 🔄 **Documentation**: API documentation and code comments (future enhancement)
-3. ✅ **Monitoring**: Performance and error tracking implemented
-4. ✅ **Security**: Enhanced PII protection and audit logging implemented
+5. 🔄 **Testing**: Add comprehensive test coverage (future enhancement)
+6. 🔄 **Documentation**: API documentation and code comments (future enhancement)
+7. ✅ **Monitoring**: Performance and error tracking implemented
+8. ✅ **Security**: Enhanced PII protection and audit logging implemented
 
 ### Low Priority
 1. **Code Style**: Consistent formatting and linting
@@ -201,7 +269,7 @@ This report analyzes the complete Finny flow from user input to response, docume
 
 ## 📝 Conclusion (UPDATED)
 
-The Finny system has been significantly optimized and now demonstrates a sophisticated approach to financial AI assistance with enhanced performance, comprehensive data integration, and excellent user experience. The major performance bottlenecks have been resolved through parallel processing, smart caching, and real-time progress indicators.
+The Finny system demonstrates a sophisticated technical foundation with excellent performance optimizations, but faces critical gaps in user experience and scope control that must be addressed for a compelling AI advisor.
 
 **✅ Completed Optimizations:**
 1. ✅ **Performance**: Parallel data fetching reduces response time by 50-70%
@@ -209,10 +277,17 @@ The Finny system has been significantly optimized and now demonstrates a sophist
 3. ✅ **User Experience**: Real-time progress indicators and better error handling
 4. ✅ **Reliability**: Request deduplication and improved timeout management
 
-**🔄 Future Enhancements:**
-1. **Microservices**: Consider when scaling beyond current requirements
-2. **Advanced Analytics**: Enhanced user behavior tracking
-3. **Response Streaming**: Real-time response delivery
-4. **Offline Support**: Cached responses for offline viewing
+**🚨 Critical Issues Requiring Immediate Attention:**
+1. **Missing Guardrails**: No mechanism to handle non-financial queries or redirect conversations
+2. **Weak Prompt Engineering**: Generic system prompts lack personality and encouragement framework
+3. **Scope Boundaries**: System attempts to answer all queries within financial context, regardless of relevance
 
-The system now meets production-scale requirements with significantly improved performance, reliability, and user experience. The foundation is solid and ready for further enhancements as the user base grows.
+**🔄 Future Enhancements:**
+1. **Scope Control**: Implement non-financial query detection and redirection
+2. **Enhanced Prompting**: Develop compelling personality and encouragement framework
+3. **Microservices**: Consider when scaling beyond current requirements
+4. **Advanced Analytics**: Enhanced user behavior tracking
+5. **Response Streaming**: Real-time response delivery
+6. **Offline Support**: Cached responses for offline viewing
+
+**Assessment**: While the technical foundation is solid with excellent performance characteristics, the system lacks the essential guardrails and prompting sophistication needed for a compelling financial AI advisor. The missing scope control and weak personality definition are critical gaps that prevent Finny from being truly engaging and trustworthy for users.
