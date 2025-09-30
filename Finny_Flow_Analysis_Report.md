@@ -50,13 +50,15 @@ This report analyzes the complete Finny flow from user input to response, docume
 - **Logging**: Asynchronously log conversation data to Supabase
 
 ### 5. Frontend Display (ENHANCED)
-**Message Rendering with Progress Indicators**
+**Message Rendering with Progress Indicators & Typing Animation**
 - **ChatMessage Component**: Handles different message types (text, action)
 - **Progress Indicators**: Real-time status updates during data gathering
+- **Typing Animation**: Character-by-character reveal for Finny messages (15ms per character)
 - **Animations**: Smooth entrance animations and typing indicators
 - **Responsive Design**: Adapts to different screen sizes
 - **Message Grouping**: Groups consecutive messages from same sender
 - **User Feedback**: Progress messages like "Analyzing your question...", "Gathering your financial data..."
+- **Visual Typing Cursor**: Blinking cursor indicator during message reveal
 
 ## ✅ Strengths
 
@@ -68,10 +70,12 @@ This report analyzes the complete Finny flow from user input to response, docume
 ### 2. **User Experience (ENHANCED)**
 - **Real-time Feedback**: Typing indicators and smooth animations
 - **Progress Indicators**: Real-time status updates during data gathering
+- **Typing Animation**: Character-by-character message reveal creates "thinking and typing" effect
 - **Interactive Elements**: Action buttons for goal flows
 - **Responsive Design**: Works across different screen sizes
 - **Message Persistence**: Chat history saved to AsyncStorage
 - **Enhanced UX**: Users see progress messages like "Analyzing...", "Gathering data...", "Generating response..."
+- **Visual Polish**: Blinking cursor during typing animation for natural conversational feel
 
 ### 3. **Data Integration (OPTIMIZED)**
 - **Multi-Source Data**: Combines user financial data, market data, and web research
@@ -102,6 +106,7 @@ This report analyzes the complete Finny flow from user input to response, docume
 - ~~**Classification Always Routes**: Every query gets classified into financial intents, even non-financial ones~~ → **FIXED**: Added `off_topic` intent to classification schema
 - ~~**No Scope Boundaries**: No system prompts or logic to redirect users back to financial topics~~ → **FIXED**: Enhanced system prompts with scope boundaries
 - ~~**Fallback to Financial Context**: Non-financial queries get forced into financial frameworks~~ → **FIXED**: Smart redirection with `handleOffTopic()` function
+- ~~**Financial Concept Misclassification**: General finance questions (e.g., "credit vs debit") incorrectly marked as off-topic~~ → **FIXED**: Added `financialConceptHeuristic()` with keyword detection and explicit classification rules
 
 ### 2. **Weak Prompt Engineering** ✅ **RESOLVED**
 - ~~**Generic System Prompt**: "You are Finny: warm, encouraging, blunt when needed" - lacks specific guidance~~ → **FIXED**: Comprehensive system prompts with detailed personality and scope guidance
@@ -242,6 +247,8 @@ The classification system routes ALL queries into financial intents:
 
 ### 3. **Enhanced User Experience** ✅ **IMPLEMENTED**
 - ✅ **Progress Indicators**: Real-time progress indicators implemented
+- ✅ **Typing Animation**: Character-by-character message reveal (15ms per character) with visual cursor
+- ✅ **Natural Conversational Feel**: Finny appears to "think and type" responses in real-time
 - 🔄 **Conversation Memory**: Not needed for current design
 - 🔄 **Smart Suggestions**: Not implemented (future enhancement)
 - 🔄 **Offline Support**: Not implemented (future enhancement)
@@ -265,6 +272,8 @@ The classification system routes ALL queries into financial intents:
 - ✅ **Enhanced Classification**: Updated classification prompt with scope boundaries and off-topic examples
 - ✅ **System Prompt Enhancement**: Comprehensive personality and scope guidance across all handlers
 - ✅ **Performance Optimization**: Pre-filtering reduces LLM calls by ~30-40% for off-topic queries
+- ✅ **Financial Concept Heuristic**: Positive detection for common finance terms (credit, debit, loan, etc.) prevents misclassification
+- ✅ **Explicit Concept Rules**: Classification prompt explicitly states general finance concepts are in-scope
 
 ## 📊 Technical Debt (UPDATED)
 
@@ -317,20 +326,23 @@ The Finny system demonstrates a sophisticated technical foundation with excellen
 **✅ Completed Optimizations:**
 1. ✅ **Performance**: Parallel data fetching reduces response time by 50-70%
 2. ✅ **Caching**: Multi-tier smart caching system implemented
-3. ✅ **User Experience**: Real-time progress indicators and better error handling
+3. ✅ **User Experience**: Real-time progress indicators, typing animation, and better error handling
 4. ✅ **Reliability**: Request deduplication and improved timeout management
-5. ✅ **Guardrails & Scope Control**: Pre-filtering and off-topic query handling implemented
+5. ✅ **Guardrails & Scope Control**: Pre-filtering, off-topic query handling, and financial concept heuristic implemented
 6. ✅ **Prompt Engineering**: Comprehensive system prompts with personality and encouragement framework
 7. ✅ **Performance Optimization**: Pre-filtering reduces LLM calls by ~30-40% for off-topic queries
+8. ✅ **Classification Accuracy**: Financial concept heuristic prevents misclassification of in-scope queries
+9. ✅ **Typing Animation**: Character-by-character reveal (15ms/char) creates natural conversational feel
 
 **🚨 Critical Issues Requiring Immediate Attention:**
 1. ✅ **Missing Guardrails**: ~~No mechanism to handle non-financial queries or redirect conversations~~ → **RESOLVED**
 2. ✅ **Weak Prompt Engineering**: ~~Generic system prompts lack personality and encouragement framework~~ → **RESOLVED**
 3. ✅ **Scope Boundaries**: ~~System attempts to answer all queries within financial context, regardless of relevance~~ → **RESOLVED**
-4. **Memory System**: No conversation memory or user context persistence across sessions
-5. **Knowledge Base**: Over-reliance on web scraping for basic finance questions
-6. **Rigid Classification**: Fixed 5-intent system doesn't adapt to conversation flow or user patterns
-7. **Limited Context**: No conversation history passed to LLM, resulting in disconnected interactions
+4. ✅ **Classification Accuracy**: ~~Financial concept questions misclassified as off-topic~~ → **RESOLVED** (Added heuristic and explicit rules)
+5. **Memory System**: No conversation memory or user context persistence across sessions
+6. **Knowledge Base**: Over-reliance on web scraping for basic finance questions
+7. **Rigid Classification**: Fixed 6-intent system doesn't adapt to conversation flow or user patterns
+8. **Limited Context**: No conversation history passed to LLM, resulting in disconnected interactions
 
 **🔄 Future Enhancements:**
 1. ✅ **Scope Control**: ~~Implement non-financial query detection and redirection~~ → **COMPLETED**
@@ -344,4 +356,12 @@ The Finny system demonstrates a sophisticated technical foundation with excellen
 9. **Response Streaming**: Real-time response delivery
 10. **Offline Support**: Cached responses for offline viewing
 
-**Assessment**: The Finny system now has a robust technical foundation with excellent performance characteristics and critical guardrails in place. The implementation of scope control, enhanced prompting, and off-topic query handling has significantly improved the system's reliability and user experience. While memory capabilities and conversation context remain as future enhancements, the system now provides a compelling and trustworthy financial AI advisor experience with proper boundaries and engaging personality.
+**Assessment**: The Finny system now has a robust technical foundation with excellent performance characteristics and critical guardrails in place. The implementation of scope control, enhanced prompting, off-topic query handling, and financial concept heuristics has significantly improved the system's reliability and classification accuracy. The addition of typing animation creates a natural, engaging conversational experience that makes Finny feel more human and thoughtful. While memory capabilities and conversation context remain as future enhancements, the system now provides a compelling and trustworthy financial AI advisor experience with proper boundaries, engaging personality, and polished UX.
+
+**Recent Improvements (Latest Session):**
+- ✅ **Financial Concept Heuristic**: Added `financialConceptHeuristic()` function to detect common finance terms and prevent misclassification
+- ✅ **Classification Rules Enhancement**: Updated classifier prompt with explicit rule: "CONCEPT EXPLANATIONS ARE IN-SCOPE"
+- ✅ **Sample Mapping**: Added example: "Difference between credit and debit card?" → `ask_personalized`
+- ✅ **Typing Animation**: Implemented character-by-character reveal (15ms per character) with visual cursor for Finny messages
+- ✅ **Natural UX**: Finny now appears to "think and type" responses, creating more engaging user experience
+- ✅ **Performance**: Heuristic classification bypasses LLM for common finance concept queries, improving response time

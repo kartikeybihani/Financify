@@ -143,6 +143,11 @@ export const ChatMessageComponent = ({
   const scaleAnim = useRef(new Animated.Value(0.8)).current;
   const slideAnim = useRef(new Animated.Value(20)).current;
   const [lineCount, setLineCount] = useState(1);
+  
+  // Typing animation state for Finny messages
+  const [displayedText, setDisplayedText] = useState("");
+  const [isTypingComplete, setIsTypingComplete] = useState(false);
+  const typingIntervalRef = useRef<any>(null);
 
   useEffect(() => {
     // Enhanced entrance animation
@@ -175,6 +180,42 @@ export const ChatMessageComponent = ({
       )
     );
   }, []);
+ 
+  // Typing animation effect for Finny messages
+  useEffect(() => {
+    if (message.sender === "finny" && message.text) {
+      setDisplayedText("");
+      setIsTypingComplete(false);
+      
+      let currentIndex = 0;
+      const fullText = message.text;
+      
+      // Typing speed: ~30ms per character (adjustable)
+      const typingSpeed = 15;
+      
+      typingIntervalRef.current = setInterval(() => {
+        if (currentIndex < fullText.length) {
+          setDisplayedText(fullText.substring(0, currentIndex + 1));
+          currentIndex++;
+        } else {
+          setIsTypingComplete(true);
+          if (typingIntervalRef.current) {
+            clearInterval(typingIntervalRef.current);
+          }
+        }
+      }, typingSpeed);
+      
+      return () => {
+        if (typingIntervalRef.current) {
+          clearInterval(typingIntervalRef.current);
+        }
+      };
+    } else {
+      // For user messages, show immediately
+      setDisplayedText(message.text);
+      setIsTypingComplete(true);
+    }
+  }, [message.text, message.sender]);
 
   const isUser = message.sender === "user";
   const isFirstInGroup = prevSender !== message.sender;
@@ -393,7 +434,8 @@ export const ChatMessageComponent = ({
   }
 
   // Display message as single string (no splitting)
-  const messageText = message.text;
+  // Use displayedText for Finny messages to show typing animation
+  const messageText = message.sender === "finny" ? displayedText : message.text;
 
   return (
     <Animated.View
@@ -444,6 +486,9 @@ export const ChatMessageComponent = ({
                     </Text>
                   </React.Fragment>
                 ))}
+                {!isTypingComplete && message.sender === "finny" && (
+                  <Text style={styles.typingCursor}>▊</Text>
+                )}
               </Text>
             </LinearGradient>
           </View>
@@ -545,6 +590,11 @@ const styles = StyleSheet.create({
     fontWeight: "500",
     letterSpacing: -0.1,
     fontFamily: Platform.OS === "ios" ? "SF Pro Text" : "System",
+  },
+  typingCursor: {
+    color: "#FFFFFF",
+    opacity: 0.8,
+    marginLeft: 2,
   },
 });
 
