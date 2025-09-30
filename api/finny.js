@@ -399,6 +399,17 @@ async function handleAsk(message, context) {
     const dataFetchPromises = [];
     const BASE_URL = process.env.APP_BASE_URL;
 
+    // Check if user wants to force refresh their data
+    const forceRefresh =
+      message.toLowerCase().includes("refresh") ||
+      message.toLowerCase().includes("update") ||
+      message.toLowerCase().includes("latest");
+
+    if (forceRefresh) {
+      console.log("🔄 [FINNY] Force refresh requested, clearing cache...");
+      await forceRefreshUserData(userId);
+    }
+
     // Always fetch user financial summary (with caching)
     dataFetchPromises.push(
       getCachedDataWithFallback(
@@ -879,7 +890,7 @@ function createSmartContext(message, snap) {
     // Add recent transactions
     if (snap.transactions?.recent?.length > 0) {
       context.push("Recent transactions:");
-      snap.transactions.recent.slice(0, 5).forEach((txn) => {
+      snap.transactions.recent.slice(0, 10).forEach((txn) => {
         const amount = Math.abs(txn.amount);
         const transactionType = txn.amount < 0 ? "INCOME" : "EXPENSE";
         const sign = txn.amount < 0 ? "-" : "+";
@@ -894,7 +905,7 @@ function createSmartContext(message, snap) {
     // Add spend by category
     if (snap.transactions?.spendByCategory?.length > 0) {
       context.push("This month's spending by category:");
-      snap.transactions.spendByCategory.slice(0, 5).forEach((cat) => {
+      snap.transactions.spendByCategory.slice(0, 10).forEach((cat) => {
         context.push(
           `${cat.category}: $${cat.total_spend.toFixed(2)} (${
             cat.txn_count
@@ -902,6 +913,42 @@ function createSmartContext(message, snap) {
         );
       });
     }
+  }
+
+  // Always include comprehensive account overview for better context
+  if (snap.bankAccounts && snap.bankAccounts.length > 0) {
+    context.push("All your accounts:");
+    snap.bankAccounts.forEach((account) => {
+      const balance = account.current_balance || 0;
+      const available = account.available_balance || 0;
+      const accountType = account.type || "unknown";
+      const subtype = account.subtype || "";
+
+      if (accountType.toLowerCase().includes("credit")) {
+        // For credit cards: current_balance is debt, available_balance is credit limit
+        const debt = balance;
+        const creditLimit = available;
+        const availableCredit = creditLimit - debt;
+        context.push(
+          `${account.institution_name} ${account.name} (${
+            account.mask || "****"
+          }): $${accountType} - Debt: $${debt.toFixed(
+            2
+          )}, Credit Limit: $${creditLimit.toFixed(
+            2
+          )}, Available Credit: $${availableCredit.toFixed(2)}`
+        );
+      } else {
+        // For regular accounts
+        context.push(
+          `${account.institution_name} ${account.name} (${
+            account.mask || "****"
+          }): $${accountType} ${
+            subtype ? `(${subtype})` : ""
+          } - Balance: $${balance.toFixed(2)}`
+        );
+      }
+    });
   }
 
   // Cashflow questions
@@ -1033,6 +1080,30 @@ function createSmartContext(message, snap) {
         );
       });
     }
+  }
+
+  // Always include basic financial summary for comprehensive context
+  if (snap.summary) {
+    context.push("Financial Summary:");
+    context.push(`Net Worth: $${snap.summary.netWorth}`);
+    context.push(`Liquid Assets: $${snap.summary.liquidAssets}`);
+    context.push(`Investments Total: $${snap.summary.investmentsTotal}`);
+    context.push(`Total Liabilities: $${snap.summary.totalLiabilities}`);
+  }
+
+  // Always include recent transactions for better context
+  if (snap.transactions?.recent?.length > 0) {
+    context.push("Recent Activity (last 10 transactions):");
+    snap.transactions.recent.slice(0, 10).forEach((txn) => {
+      const amount = Math.abs(txn.amount);
+      const transactionType = txn.amount < 0 ? "INCOME" : "EXPENSE";
+      const sign = txn.amount < 0 ? "-" : "+";
+      context.push(
+        `${txn.date}: ${sign}$${amount.toFixed(2)} (${transactionType}) - ${
+          txn.merchant || txn.name
+        }`
+      );
+    });
   }
 
   // Web research data for financial products
@@ -1644,11 +1715,35 @@ function financialConceptHeuristic(raw) {
 
   // If contains these finance keywords, treat as in-scope concept unless it's about app/tech
   const financeKeywords = [
-    "credit", "debit", "card", "apr", "interest", "loan", "mortgage",
-    "budget", "budgeting", "saving", "savings", "checking", "account",
-    "fico", "credit score", "bnpl", "tax", "ira", "401k", "roth",
-    "brokerage", "stock", "stocks", "etf", "mutual fund", "dividend",
-    "net worth", "cashflow", "cash flow"
+    "credit",
+    "debit",
+    "card",
+    "apr",
+    "interest",
+    "loan",
+    "mortgage",
+    "budget",
+    "budgeting",
+    "saving",
+    "savings",
+    "checking",
+    "account",
+    "fico",
+    "credit score",
+    "bnpl",
+    "tax",
+    "ira",
+    "401k",
+    "roth",
+    "brokerage",
+    "stock",
+    "stocks",
+    "etf",
+    "mutual fund",
+    "dividend",
+    "net worth",
+    "cashflow",
+    "cash flow",
   ];
 
   const hasFinanceKeyword = financeKeywords.some((k) => text.includes(k));
@@ -1656,7 +1751,11 @@ function financialConceptHeuristic(raw) {
   // Specific: credit vs debit concept
   const creditAndDebit = text.includes("credit") && text.includes("debit");
   const vsOrDifference =
-    creditAndDebit && (text.includes(" vs ") || text.includes("difference") || text.includes("b/w") || text.includes("between"));
+    creditAndDebit &&
+    (text.includes(" vs ") ||
+      text.includes("difference") ||
+      text.includes("b/w") ||
+      text.includes("between"));
 
   if (vsOrDifference || hasFinanceKeyword) {
     // Classify generic concept questions as in-scope, not needing user data or web
@@ -1720,7 +1819,9 @@ async function handleClassify(message, context) {
   // Positive heuristic for common financial concept questions
   const heuristic = financialConceptHeuristic(text);
   if (heuristic) {
-    console.log("✅ [FINNY] Heuristic classified as financial concept in-scope");
+    console.log(
+      "✅ [FINNY] Heuristic classified as financial concept in-scope"
+    );
     // Log lightweight classification
     setImmediate(() =>
       logConversation({
@@ -4532,13 +4633,13 @@ async function getCachedData(type, identifier, userSpecific = false) {
     let ttl;
     switch (type) {
       case "user_summary":
-        ttl = 7 * 24 * 60 * 60; // 7 days for user financial data
+        ttl = 30 * 60; // 30 minutes for user financial data (goals, accounts, transactions)
         break;
       case "market_data":
         ttl = 4 * 60 * 60; // 4 hours for market data
         break;
       case "enhanced_merchant":
-        ttl = 24 * 60 * 60; // 24 hours for merchant data
+        ttl = 2 * 60 * 60; // 2 hours for merchant data
         break;
       case "web_research":
       default:
@@ -4634,6 +4735,79 @@ async function getCachedDataWithFallback(
   } catch (error) {
     console.error("❌ [CACHE] Fallback function failed:", error);
     throw error;
+  }
+}
+
+// Cache clearing functions
+async function clearUserCache(userId) {
+  try {
+    console.log(`🗑️ [CACHE] Clearing all cache for user: ${userId}`);
+
+    // Clear user-specific cache entries
+    const { error } = await supabase
+      .from("web_scrape_cache")
+      .delete()
+      .eq("user_specific", true)
+      .like("cache_key", `%_${userId}`);
+
+    if (error) {
+      console.error("❌ [CACHE] Error clearing user cache:", error);
+      return false;
+    }
+
+    console.log(`✅ [CACHE] Cleared cache for user: ${userId}`);
+    return true;
+  } catch (error) {
+    console.error("❌ [CACHE] Error in clearUserCache:", error);
+    return false;
+  }
+}
+
+async function clearCacheByType(type, identifier = null) {
+  try {
+    console.log(
+      `🗑️ [CACHE] Clearing cache for type: ${type}, identifier: ${identifier}`
+    );
+
+    let query = supabase
+      .from("web_scrape_cache")
+      .delete()
+      .eq("data_type", type);
+
+    if (identifier) {
+      query = query.like("cache_key", `%_${identifier}`);
+    }
+
+    const { error } = await query;
+
+    if (error) {
+      console.error("❌ [CACHE] Error clearing cache by type:", error);
+      return false;
+    }
+
+    console.log(`✅ [CACHE] Cleared cache for type: ${type}`);
+    return true;
+  } catch (error) {
+    console.error("❌ [CACHE] Error in clearCacheByType:", error);
+    return false;
+  }
+}
+
+async function forceRefreshUserData(userId) {
+  try {
+    console.log(`🔄 [CACHE] Force refreshing user data for: ${userId}`);
+
+    // Clear user summary cache specifically
+    await clearCacheByType("user_summary", userId);
+
+    // Clear enhanced merchant cache for this user
+    await clearCacheByType("enhanced_merchant", userId);
+
+    console.log(`✅ [CACHE] Force refresh completed for user: ${userId}`);
+    return true;
+  } catch (error) {
+    console.error("❌ [CACHE] Error in forceRefreshUserData:", error);
+    return false;
   }
 }
 

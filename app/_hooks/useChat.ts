@@ -118,6 +118,39 @@ export const useChat = () => {
         return;
       }
 
+      // Check if user wants to clear cache
+      if (messageText.toLowerCase().includes("clear cache") || 
+          messageText.toLowerCase().includes("refresh data")) {
+        setProgressStatus("Clearing cache and refreshing data...");
+        
+        try {
+          const { data: sessionData } = await supabase.auth.getSession();
+          const accessToken = sessionData?.session?.access_token || '';
+          
+          const clearRes = await fetch(`${BASE_URL}/api/store_accounts`, {
+            method: "POST",
+            headers: { 
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${accessToken}`
+            },
+            body: JSON.stringify({
+              mode: "clear_cache",
+              user_id: user.id,
+            }),
+          });
+
+          if (clearRes.ok) {
+            pushChat("finny", "✅ Cache cleared! Your data has been refreshed. Ask me anything about your finances now.");
+            return;
+          } else {
+            pushChat("finny", "⚠️ Cache clearing failed, but I'll still try to get fresh data for you.");
+          }
+        } catch (error) {
+          logger.error("Cache clearing error:", error);
+          pushChat("finny", "⚠️ Cache clearing failed, but I'll still try to get fresh data for you.");
+        }
+      }
+
       // Show initial progress
       setProgressStatus("Analyzing your question...");
 

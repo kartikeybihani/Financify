@@ -25,6 +25,11 @@ export default async function handler(req, res) {
     return handleFinancialSummary(req, res, user_id);
   }
 
+  // Handle cache clearing
+  if (mode === "clear_cache") {
+    return handleClearCache(req, res, user_id);
+  }
+
   // Handle regular Plaid account storage
   if (!item_id) {
     return res.status(400).json({ error: "Missing item_id" });
@@ -420,10 +425,10 @@ async function handleFinancialSummary(req, res, user_id) {
       return res.status(500).json({ error: invErr.message });
     }
 
-    // Get recent transactions (last 10)
+    // Get recent transactions (last 50 for better context)
     const { data: recentTxns, error: txnErr } = await supabase.rpc(
       "get_recent_transactions",
-      { p_user_id: user_id, p_limit: 10 }
+      { p_user_id: user_id, p_limit: 50 }
     );
 
     if (txnErr) {
@@ -517,6 +522,17 @@ async function handleFinancialSummary(req, res, user_id) {
     console.log("Goals:", goalsOverview?.length || 0);
     console.log("Investment holdings:", investmentHoldings?.length || 0);
 
+    // Log any missing data for debugging
+    if (!netWorthData || netWorthData.length === 0) {
+      console.warn("⚠️ No net worth data found for user:", user_id);
+    }
+    if (!recentTxns || recentTxns.length === 0) {
+      console.warn("⚠️ No recent transactions found for user:", user_id);
+    }
+    if (!spendByCategory || spendByCategory.length === 0) {
+      console.warn("⚠️ No spending category data found for user:", user_id);
+    }
+
     // Return complete RPC data for Finny to use
     const netWorthRecord = netWorthData?.[0];
     const investmentRecord = invSnap?.[0];
@@ -560,6 +576,45 @@ async function handleFinancialSummary(req, res, user_id) {
     console.error("❌ Failed to generate financial summary:", error);
     return res.status(500).json({
       error: "Failed to generate financial summary",
+      details: error.message,
+    });
+  }
+}
+
+// === Cache Clearing Handler ===
+async function handleClearCache(req, res, user_id) {
+  if (!user_id) {
+    return res.status(400).json({ error: "user_id required" });
+  }
+
+  try {
+    console.log("🗑️ Clearing cache for user:", user_id);
+
+    // Clear user-specific cache entries
+    const { error: cacheError } = await supabase
+      .from("web_scrape_cache")
+      .delete()
+      .eq("user_specific", true)
+      .like("cache_key", `%_${user_id}`);
+
+    if (cacheError) {
+      console.error("Error clearing cache:", cacheError);
+      return res.status(500).json({
+        error: "Failed to clear cache",
+        details: cacheError.message,
+      });
+    }
+
+    console.log("✅ Cache cleared successfully for user:", user_id);
+    return res.status(200).json({
+      success: true,
+      message: "Cache cleared successfully",
+      user_id: user_id,
+    });
+  } catch (error) {
+    console.error("❌ Failed to clear cache:", error);
+    return res.status(500).json({
+      error: "Failed to clear cache",
       details: error.message,
     });
   }
