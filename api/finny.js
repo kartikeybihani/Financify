@@ -412,6 +412,9 @@ async function handleAsk(message, context) {
       Promise.resolve(detectProductQuery(message)),
     ]);
 
+    // Detect time-period-only spending queries (no merchant/category present)
+    const periodQuery = !merchantQuery ? detectTimePeriodOnly(message) : null;
+
     // 3) Start all data fetching operations in parallel
     const dataFetchPromises = [];
     const BASE_URL = process.env.APP_BASE_URL;
@@ -563,6 +566,23 @@ async function handleAsk(message, context) {
       );
     }
 
+    // If time-period-only spending query, fetch summarized period data in parallel
+    if (periodQuery) {
+      dataFetchPromises.push(
+        getCachedDataWithFallback(
+          "period_spend",
+          `${userId}_${periodQuery.key}`,
+          async () =>
+            await withTimeout(
+              fetchPeriodSpendData(userId, periodQuery),
+              2000,
+              null
+            ),
+          true
+        ).then((cachedResult) => ({ type: "period", data: cachedResult.data }))
+      );
+    }
+
     // Wait for all data fetching operations to complete
     const dataResults = await Promise.allSettled(dataFetchPromises);
 
@@ -571,6 +591,7 @@ async function handleAsk(message, context) {
     let enhancedData = null;
     let marketData = null;
     let webResearchData = null;
+    let periodData = null;
 
     for (const result of dataResults) {
       if (result.status === "fulfilled") {
@@ -590,6 +611,13 @@ async function handleAsk(message, context) {
           case "web":
             webResearchData = data;
             if (!data?.success) degraded = true;
+            break;
+          case "period":
+            // Handle period spend data
+            // This should be implemented based on your specific requirements
+            // For now, we'll just log it
+            console.log("🔍 [FINNY] Period spend data:", data);
+            periodData = data;
             break;
         }
       } else {
@@ -622,6 +650,22 @@ async function handleAsk(message, context) {
     // Add web research data to snap if available
     if (webResearchData && webResearchData.success) {
       snap.webResearch = webResearchData;
+    }
+
+    // Merge period spend data into snapshot when available
+    if (typeof periodData !== "undefined" && periodData) {
+      snap.transactions = {
+        ...(snap.transactions || {}),
+        spendByMonth:
+          periodData.spendByMonth || snap.transactions?.spendByMonth,
+        periodSummary:
+          periodData.periodSummary || snap.transactions?.periodSummary,
+        spendByCategoryPeriods:
+          periodData.spendByCategoryPeriods ||
+          snap.transactions?.spendByCategoryPeriods,
+        spendByCategory:
+          periodData.spendByCategory || snap.transactions?.spendByCategory,
+      };
     }
 
     // 3) Build a focused prompt using the relevant RPC data
@@ -1418,6 +1462,47 @@ function createSmartContext(message, snap) {
     context.push(`Net Worth: $${snap.summary.netWorth}`);
   }
 
+  // Period-only spend summaries and trends (if present)
+  if (
+    lowerMessage.includes("spend") ||
+    lowerMessage.includes("spent") ||
+    lowerMessage.includes("spending")
+  ) {
+    // Period summary (e.g., last month)
+    if (snap.transactions?.periodSummary) {
+      const ps = snap.transactions.periodSummary;
+      context.push(
+        `Selected period total spent: $${Number(ps.total_spend || 0).toFixed(
+          2
+        )} (${ps.txn_count || 0} transactions)`
+      );
+    }
+
+    // Last 3 months trend
+    if (
+      Array.isArray(snap.transactions?.spendByMonth) &&
+      snap.transactions.spendByMonth.length > 0
+    ) {
+      const trend = snap.transactions.spendByMonth
+        .slice(0, 3)
+        .map((m) => `${m.month}: $${Number(m.total_spend).toFixed(2)}`)
+        .join(", ");
+      context.push(`Recent trend (last months): ${trend}`);
+    }
+
+    // Top categories for the selected period
+    if (
+      Array.isArray(snap.transactions?.spendByCategory) &&
+      snap.transactions.spendByCategory.length > 0
+    ) {
+      const topCats = snap.transactions.spendByCategory
+        .slice(0, 3)
+        .map((c) => `${c.category}: $${Number(c.total_spend).toFixed(2)}`)
+        .join(", ");
+      context.push(`Top categories this period: ${topCats}`);
+    }
+  }
+
   return context.join("\n");
 }
 
@@ -1675,6 +1760,99 @@ function calculateDateRange(timePeriod) {
     start: start.toISOString().split("T")[0],
     end: end.toISOString().split("T")[0],
   };
+}
+
+// Detect time-period-only spending queries
+function detectTimePeriodOnly(message) {
+  const lower = message.toLowerCase();
+  const spendTerms = ["spend", "spending", "spent"];
+  const timeTerms = [
+    "this month",
+    "last month",
+    "this week",
+    "last week",
+    "today",
+    "yesterday",
+    "this year",
+    "last year",
+    "last 3 months",
+    "last three months",
+  ];
+
+  const mentionsSpend = spendTerms.some((t) => lower.includes(t));
+  const mentionsTime = timeTerms.some((t) => lower.includes(t));
+  if (!mentionsSpend || !mentionsTime) return null;
+
+  // extract period key
+  let key = null;
+  if (lower.includes("last 3 months") || lower.includes("last three months")) {
+    key = "last_3_months";
+  } else if (timeTerms.some((t) => lower.includes(t))) {
+    key = timeTerms.find((t) => lower.includes(t));
+  }
+  if (!key) return null;
+
+  return { key, timePeriod: key };
+}
+
+// Fetch summarized period spend data using new RPCs
+async function fetchPeriodSpendData(userId, periodQuery) {
+  const { createClient } = await import("@supabase/supabase-js");
+  const supabase = createClient(
+    process.env.SUPABASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+      process.env.EXPO_PUBLIC_SUPABASE_SERVICE_ROLE_KEY
+  );
+
+  try {
+    // Handle last 3 months specially via monthly RPCs
+    if (periodQuery.key === "last_3_months") {
+      const { data: byMonth, error: byMonthErr } = await supabase.rpc(
+        "get_spend_by_month",
+        { p_user_id: userId, p_months: 3 }
+      );
+      if (byMonthErr) throw byMonthErr;
+
+      const { data: byCatPeriods, error: byCatErr } = await supabase.rpc(
+        "get_spend_by_category_periods",
+        { p_user_id: userId, p_months: 3 }
+      );
+      if (byCatErr) throw byCatErr;
+
+      return {
+        spendByMonth: byMonth || [],
+        spendByCategoryPeriods: byCatPeriods || [],
+      };
+    }
+
+    // Else single-period summary via date range
+    const { start, end } = calculateDateRange(periodQuery.timePeriod);
+    const { data: summary, error: sumErr } = await supabase.rpc(
+      "get_spend_summary",
+      { p_user_id: userId, p_start: start, p_end: end }
+    );
+    if (sumErr) throw sumErr;
+
+    const { data: byCat, error: catErr } = await supabase.rpc(
+      "get_spend_by_category",
+      { p_user_id: userId, p_start: start, p_end: end }
+    );
+    if (catErr) throw catErr;
+
+    return {
+      periodSummary: (summary && summary[0]) || {
+        total_spend: 0,
+        txn_count: 0,
+      },
+      spendByCategoryPeriods: [],
+      spendByMonth: [],
+      spendByCategory: byCat || [],
+      dateRange: { start, end },
+    };
+  } catch (e) {
+    console.error("❌ [FINNY] fetchPeriodSpendData error:", e?.message);
+    return null;
+  }
 }
 
 // Pre-classification filtering for obvious non-financial queries
