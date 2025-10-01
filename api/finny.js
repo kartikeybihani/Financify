@@ -539,6 +539,23 @@ async function handleAsk(message, context) {
       }
     }
 
+    // Add detailed category transactions when available
+    if (packs.categoryDetails) {
+      contextLines.push(
+        `${packs.categoryDetails.category} transactions (${packs.categoryDetails.period}):`
+      );
+      packs.categoryDetails.transactions.forEach((txn) => {
+        const amount = Math.abs(txn.amount);
+        const transactionType = txn.amount < 0 ? "INCOME" : "EXPENSE";
+        const sign = txn.amount < 0 ? "-" : "+";
+        contextLines.push(
+          `${txn.date}: ${sign}$${amount.toFixed(2)} (${transactionType}) - ${
+            txn.merchant || txn.name
+          }`
+        );
+      });
+    }
+
     if (packs.invest?.holdings?.length > 0) {
       contextLines.push("Investment holdings:");
       packs.invest.holdings.forEach((holding) => {
@@ -774,9 +791,25 @@ function extractSlots(message) {
     "internet",
     "phone",
   ];
+
+  // Map detected patterns to actual database categories
+  const categoryMapping = {
+    food: "Food",
+    groceries: "Groceries",
+    shopping: "Shopping",
+    entertainment: "Entertainment",
+    transportation: "Transportation",
+    travel: "Travel",
+    rent: "Housing",
+    mortgage: "Housing",
+    utilities: "Utilities",
+    internet: "Utilities",
+    phone: "Utilities",
+  };
+
   for (const pattern of categoryPatterns) {
     if (lowerMessage.includes(pattern)) {
-      category = pattern;
+      category = categoryMapping[pattern] || pattern;
       break;
     }
   }
@@ -901,6 +934,39 @@ async function buildContextPacks(userId, needs, slots) {
       } catch (error) {
         console.error("❌ [FINNY] Spend summary fetch failed:", error);
         gaps.push("spend_total");
+      }
+    }
+
+    // Fetch detailed transactions for specific categories when user asks about them
+    if (slots.category && slots.period) {
+      try {
+        const categoryTxnsRes = await withTimeout(
+          supabase.rpc("get_transactions_by_category", {
+            p_user_id: userId,
+            p_category: slots.category,
+            p_start: slots.period.start,
+            p_end: slots.period.end,
+          }),
+          2000,
+          null
+        );
+
+        if (categoryTxnsRes?.data && categoryTxnsRes.data.length > 0) {
+          packs.categoryDetails = {
+            category: slots.category,
+            transactions: categoryTxnsRes.data.map((txn) => ({
+              date: txn.date,
+              amount: txn.amount,
+              name: txn.name,
+              merchant: txn.merchant_name || txn.name,
+              category: txn.category,
+            })),
+            period: `${slots.period.start} to ${slots.period.end}`,
+          };
+        }
+      } catch (error) {
+        console.error("❌ [FINNY] Category transactions fetch failed:", error);
+        // Don't add to gaps - this is optional detail data
       }
     }
 
