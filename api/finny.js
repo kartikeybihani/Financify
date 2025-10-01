@@ -649,13 +649,13 @@ async function handleAsk(message, context) {
     const resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+        Authorization: `Bearer ${process.env.OPENROUTER_GROK_KEY}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "openai/gpt-4o-mini",
+        model: "x-ai/grok-4-fast:free",
         temperature: 0.6,
-        max_tokens: 700,
+        max_tokens: 650,
         stream: false, // Keep as false for now, but ready for streaming
         messages: [
           { role: "system", content: system },
@@ -718,7 +718,7 @@ async function handleAsk(message, context) {
           market: timings.market_ms,
         },
         tools_used: toolsUsed,
-        model: "openai/gpt-4o-mini",
+        model: "openai/x-ai/grok-4-fast:free",
         cache_hits: {
           web_research: false,
           summary: false,
@@ -1866,11 +1866,11 @@ async function handleClassify(message, context) {
     const r = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+        Authorization: `Bearer ${process.env.OPENROUTER_GROK_KEY}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "openai/gpt-4o-mini",
+        model: "openai/x-ai/grok-4-fast:free",
         temperature: 0.2,
         messages: [
           {
@@ -2069,11 +2069,11 @@ async function handleOffTopic(message, context) {
       {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+          Authorization: `Bearer ${process.env.OPENROUTER_GROK_KEY}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: "openai/gpt-4o-mini",
+          model: "openai/x-ai/grok-4-fast:free",
           temperature: 0.7,
           messages: [
             {
@@ -2518,11 +2518,11 @@ async function llmFallbackFacts(message) {
     const r = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+        Authorization: `Bearer ${process.env.OPENROUTER_GROK_KEY}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "openai/gpt-4o-mini",
+        model: "openai/x-ai/grok-4-fast:free",
         temperature: 0.4,
         messages: [
           {
@@ -2567,11 +2567,11 @@ async function llmStateRuleAnswer(message, state) {
     const r = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+        Authorization: `Bearer ${process.env.OPENROUTER_GROK_KEY}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "openai/gpt-4o-mini",
+        model: "openai/x-ai/grok-4-fast:free",
         temperature: 0.4,
         messages: [
           {
@@ -3673,11 +3673,11 @@ async function extractEntitiesLLM(message, entities) {
       {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+          Authorization: `Bearer ${process.env.OPENROUTER_GROK_KEY}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: "openai/gpt-4o-mini",
+          model: "openai/x-ai/grok-4-fast:free",
           temperature: 0.1,
           max_tokens: 500,
           messages: [
@@ -3951,11 +3951,11 @@ async function planStockRequest(message) {
     const r = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+        Authorization: `Bearer ${process.env.OPENROUTER_GROK_KEY}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "openai/gpt-4o-mini",
+        model: "openai/x-ai/grok-4-fast:free",
         temperature: 0.1,
         messages: [
           {

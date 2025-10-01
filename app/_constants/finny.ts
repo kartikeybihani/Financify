@@ -1,4 +1,4 @@
-import { ChatMessage, TimelineItem } from '../types/finny';
+import { ChatMessage, TimelineItem } from '../_types/finny';
 
 export const INITIAL_CHAT_MESSAGES: ChatMessage[] = [
   {

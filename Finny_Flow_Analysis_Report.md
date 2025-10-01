@@ -16,7 +16,7 @@ This report analyzes the complete Finny flow from user input to response, docume
 ### 2. Message Classification & Routing
 **API Handler (`api/finny.js`)**
 - **Step 1**: Intent classification via `handleClassify()`
-  - Uses OpenRouter GPT-4o-mini for intent detection
+  - Uses OpenRouter x-ai/grok-4-fast:free for intent detection
   - Classifies into: `goal`, `ask_personalized`, `ask_fact_fresh`, `ask_state_rule`, `calc_projection`
   - Returns confidence score and required data sources
 
