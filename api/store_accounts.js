@@ -435,25 +435,17 @@ async function handleFinancialSummary(req, res, user_id) {
       console.error("Error fetching recent transactions:", txnErr);
     }
 
-    // Get spend by category for current month
+    // Get spend by category for last 30 days (more dynamic than current month)
     const currentDate = new Date();
-    const firstDayOfMonth = new Date(
-      currentDate.getFullYear(),
-      currentDate.getMonth(),
-      1
-    );
-    const lastDayOfMonth = new Date(
-      currentDate.getFullYear(),
-      currentDate.getMonth() + 1,
-      0
-    );
+    const thirtyDaysAgo = new Date(currentDate);
+    thirtyDaysAgo.setDate(currentDate.getDate() - 30);
 
     const { data: spendByCategory, error: catErr } = await supabase.rpc(
       "get_spend_by_category",
       {
         p_user_id: user_id,
-        p_start: firstDayOfMonth.toISOString().split("T")[0],
-        p_end: lastDayOfMonth.toISOString().split("T")[0],
+        p_start: thirtyDaysAgo.toISOString().split("T")[0],
+        p_end: currentDate.toISOString().split("T")[0],
       }
     );
 
