@@ -465,10 +465,18 @@ async function handleAsk(message, context) {
     // Fetch enhanced merchant data if needed (with caching)
     if (merchantQuery) {
       console.log("🔍 [FINNY] Detected merchant query:", merchantQuery);
+      console.log(
+        "🔍 [FINNY] Query type:",
+        merchantQuery.type,
+        "Category:",
+        merchantQuery.category,
+        "TimePeriod:",
+        merchantQuery.timePeriod
+      );
       dataFetchPromises.push(
         getCachedDataWithFallback(
           "enhanced_merchant",
-          `${userId}_${merchantQuery}`,
+          `${userId}_${JSON.stringify(merchantQuery)}`,
           async () => {
             return await withTimeout(
               fetchEnhancedMerchantData(userId, merchantQuery),
@@ -1178,6 +1186,14 @@ function createSmartContext(message, snap) {
     lowerMessage.includes("activity") ||
     lowerMessage.includes("spending")
   ) {
+    const hasSpecificData =
+      !!snap.enhanced ||
+      !!snap.transactions?.periodSummary ||
+      (Array.isArray(snap.transactions?.spendByMonth) &&
+        snap.transactions.spendByMonth.length > 0) ||
+      (Array.isArray(snap.transactions?.spendByCategory) &&
+        snap.transactions.spendByCategory.length > 0);
+
     if (
       Array.isArray(snap.transactions?.recent) &&
       snap.transactions.recent.length > 0
@@ -1193,7 +1209,7 @@ function createSmartContext(message, snap) {
           }`
         );
       });
-    } else {
+    } else if (!hasSpecificData) {
       context.push("No recent transactions found in your linked accounts.");
     }
   }
@@ -1528,12 +1544,14 @@ function detectMerchantQuery(message) {
     "restaurant",
     "coffee",
     "grocery",
+    "groceries",
     "pharmacy",
   ];
 
-  // Category patterns
+  // Category patterns (expanded)
   const categoryPatterns = [
     "food",
+    "groceries",
     "transportation",
     "shopping",
     "entertainment",
@@ -1544,7 +1562,7 @@ function detectMerchantQuery(message) {
     "other",
   ];
 
-  // Time period patterns
+  // Time period patterns (static)
   const timePatterns = [
     "this month",
     "last month",
@@ -1556,22 +1574,30 @@ function detectMerchantQuery(message) {
     "last year",
   ];
 
-  // Check if message contains merchant and time period
+  // Dynamic last N months
+  const nMonthsMatch = lowerMessage.match(/last\s+(\d+)\s+months?/);
+  const dynamicPeriod = nMonthsMatch
+    ? `last_${parseInt(nMonthsMatch[1], 10)}_months`
+    : null;
+
+  // Check if message contains merchant/category
   const hasMerchant = merchantPatterns.some((pattern) =>
     lowerMessage.includes(pattern)
   );
   const hasCategory = categoryPatterns.some((pattern) =>
     lowerMessage.includes(pattern)
   );
-  const hasTimePeriod = timePatterns.some((pattern) =>
-    lowerMessage.includes(pattern)
-  );
+  const hasTimePeriod =
+    timePatterns.some((pattern) => lowerMessage.includes(pattern)) ||
+    !!dynamicPeriod;
 
-  if (hasTimePeriod) {
-    const timePeriod = timePatterns.find((pattern) =>
-      lowerMessage.includes(pattern)
-    );
+  // Default to "last month" if no time period specified but category/merchant detected
+  const timePeriod =
+    dynamicPeriod ||
+    timePatterns.find((pattern) => lowerMessage.includes(pattern)) ||
+    (hasCategory || hasMerchant ? "last month" : null);
 
+  if (timePeriod) {
     if (hasMerchant) {
       // Extract merchant name
       const merchant = merchantPatterns.find((pattern) =>
@@ -1590,9 +1616,15 @@ function detectMerchantQuery(message) {
         lowerMessage.includes(pattern)
       );
 
+      // Detect exclusion like "non-food"
+      const exclude = /non[-\s]?food/.test(lowerMessage)
+        ? ["food", "groceries"]
+        : [];
+
       return {
         type: "category",
         category: category,
+        exclude,
         timePeriod: timePeriod,
         originalMessage: message,
       };
