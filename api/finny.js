@@ -499,6 +499,17 @@ async function handleAsk(message, context) {
           );
         });
       }
+
+      if (packs.base.spendByCategory?.length > 0) {
+        contextLines.push("Spending by category:");
+        packs.base.spendByCategory.forEach((category) => {
+          contextLines.push(
+            `${category.category}: $${Number(category.total_spend).toFixed(
+              2
+            )} (${category.txn_count} transactions)`
+          );
+        });
+      }
     }
 
     if (packs.spend) {
@@ -858,6 +869,7 @@ async function buildContextPacks(userId, needs, slots) {
               amount: txn.amount,
               merchant: txn.merchant || txn.name,
             })),
+          spendByCategory: summaryData.transactions?.spendByCategory || [],
         };
       } else {
         gaps.push("summary_min");
