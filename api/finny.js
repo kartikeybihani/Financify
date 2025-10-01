@@ -405,19 +405,13 @@ async function handleAsk(message, context) {
       };
     }
 
-    // 2) Detect all query types in parallel for better performance
-    const [merchantQuery, rentVsBuyQuery, isProductQuery] = await Promise.all([
-      Promise.resolve(detectMerchantQuery(message)),
-      Promise.resolve(detectRentVsBuyQuery(message)),
-      Promise.resolve(detectProductQuery(message)),
-    ]);
+    // 2) NEW: Use deterministic context planner
+    console.log("🎯 [FINNY] Using deterministic context planner");
+    const slots = extractSlots(message);
+    const needs = planNeeds(slots, message);
 
-    // Detect time-period-only spending queries (no merchant/category present)
-    const periodQuery = !merchantQuery ? detectTimePeriodOnly(message) : null;
-
-    // 3) Start all data fetching operations in parallel
-    const dataFetchPromises = [];
-    const BASE_URL = process.env.APP_BASE_URL;
+    console.log("🎯 [FINNY] Extracted slots:", slots);
+    console.log("🎯 [FINNY] Planned needs:", needs);
 
     // Check if user wants to force refresh their data
     const forceRefresh =
@@ -430,262 +424,17 @@ async function handleAsk(message, context) {
       await forceRefreshUserData(userId);
     }
 
-    // Always fetch user financial summary (with caching)
-    dataFetchPromises.push(
-      getCachedDataWithFallback(
-        "user_summary",
-        userId,
-        async () => {
-          const res = await fetch(`${BASE_URL}/api/store_accounts`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              mode: "financial_summary",
-              user_id: userId,
-            }),
-          });
-          if (!res.ok) {
-            throw new Error(`Financial summary failed: ${res.status}`);
-          }
-          return await res.json();
-        },
-        true // user-specific cache
-      ).then(async (cachedResult) => {
-        const sumT0 = Date.now();
-        timings.summary_ms = Date.now() - sumT0;
-        toolsUsed.push({
-          name: "user_summary_rpc",
-          latency_ms: timings.summary_ms,
-          cache_hit: cachedResult.source === "cache",
-        });
-        return { type: "summary", data: cachedResult.data };
-      })
+    // 3) Build targeted context packs
+    const { packs, gaps, contextHeader } = await buildContextPacks(
+      userId,
+      needs,
+      slots
     );
 
-    // Fetch enhanced merchant data if needed (with caching)
-    if (merchantQuery) {
-      console.log("🔍 [FINNY] Detected merchant query:", merchantQuery);
-      console.log(
-        "🔍 [FINNY] Query type:",
-        merchantQuery.type,
-        "Category:",
-        merchantQuery.category,
-        "TimePeriod:",
-        merchantQuery.timePeriod
-      );
-      dataFetchPromises.push(
-        getCachedDataWithFallback(
-          "enhanced_merchant",
-          `${userId}_${JSON.stringify(merchantQuery)}`,
-          async () => {
-            return await withTimeout(
-              fetchEnhancedMerchantData(userId, merchantQuery),
-              1500,
-              null
-            );
-          },
-          true // user-specific cache
-        ).then((cachedResult) => {
-          const t0 = Date.now();
-          timings.user_data_ms += Date.now() - t0;
-          toolsUsed.push({
-            name: "enhanced_merchant_or_category",
-            latency_ms: Date.now() - t0,
-            cache_hit: cachedResult.source === "cache",
-          });
-          console.log(
-            "🔍 [FINNY] Enhanced data result:",
-            cachedResult.data ? "Success" : "Failed"
-          );
-          return { type: "enhanced", data: cachedResult.data };
-        })
-      );
-    }
+    console.log("📦 [FINNY] Context packs built:", Object.keys(packs));
+    console.log("⚠️ [FINNY] Data gaps:", gaps);
 
-    // Fetch market data if needed (with caching)
-    if (rentVsBuyQuery) {
-      console.log("🔍 [FINNY] Detected rent vs buy query:", rentVsBuyQuery);
-      dataFetchPromises.push(
-        getCachedDataWithFallback(
-          "market_data",
-          rentVsBuyQuery,
-          async () => {
-            return await withTimeout(
-              fetchMarketData(rentVsBuyQuery),
-              1800,
-              null
-            );
-          },
-          false // not user-specific
-        ).then((cachedResult) => {
-          const t0 = Date.now();
-          timings.market_ms = Date.now() - t0;
-          toolsUsed.push({
-            name: "market_data",
-            latency_ms: timings.market_ms,
-            cache_hit: cachedResult.source === "cache",
-          });
-          console.log(
-            "🔍 [FINNY] Market data result:",
-            cachedResult.data ? "Success" : "Failed"
-          );
-          return { type: "market", data: cachedResult.data };
-        })
-      );
-    }
-
-    // Fetch web research data if needed (with caching and deduplication)
-    if (isProductQuery) {
-      console.log("🔍 [FINNY] Detected product query, starting web research");
-      dataFetchPromises.push(
-        getCachedDataWithFallback(
-          "web_research",
-          message.toLowerCase().trim(),
-          async () => {
-            return await withTimeout(
-              deduplicatedWebResearch(message, userId),
-              2500,
-              { success: false, error: "timeout" }
-            );
-          },
-          false // not user-specific
-        )
-          .then((cachedResult) => {
-            const t0 = Date.now();
-            timings.web_ms = Date.now() - t0;
-            toolsUsed.push({
-              name: "web_research",
-              latency_ms: timings.web_ms,
-              cache_hit: cachedResult.source === "cache",
-            });
-            console.log(
-              "🔍 [FINNY] Web research result:",
-              cachedResult.data?.success ? "Success" : "Failed"
-            );
-            return { type: "web", data: cachedResult.data };
-          })
-          .catch((error) => {
-            console.error("❌ [FINNY] Web research failed:", error);
-            return {
-              type: "web",
-              data: { success: false, error: error.message },
-            };
-          })
-      );
-    }
-
-    // If time-period-only spending query, fetch summarized period data in parallel
-    if (periodQuery) {
-      dataFetchPromises.push(
-        getCachedDataWithFallback(
-          "period_spend",
-          `${userId}_${periodQuery.key}`,
-          async () => {
-            const result = await withTimeout(
-              fetchPeriodSpendData(userId, periodQuery),
-              2000,
-              null
-            );
-            // Don't cache null results
-            return result || { error: "No data available" };
-          },
-          true
-        ).then((cachedResult) => {
-          console.log("🔍 [FINNY] Period spend data:", cachedResult.data);
-          return { type: "period", data: cachedResult.data };
-        })
-      );
-    }
-
-    // Wait for all data fetching operations to complete
-    const dataResults = await Promise.allSettled(dataFetchPromises);
-
-    // Process results and build snap object
-    let snap = null;
-    let enhancedData = null;
-    let marketData = null;
-    let webResearchData = null;
-    let periodData = null;
-
-    for (const result of dataResults) {
-      if (result.status === "fulfilled") {
-        const { type, data } = result.value;
-        switch (type) {
-          case "summary":
-            snap = data;
-            break;
-          case "enhanced":
-            enhancedData = data;
-            if (!data) degraded = true;
-            break;
-          case "market":
-            marketData = data;
-            if (!data) degraded = true;
-            break;
-          case "web":
-            webResearchData = data;
-            if (!data?.success) degraded = true;
-            break;
-          case "period":
-            // Handle period spend data
-            // This should be implemented based on your specific requirements
-            // For now, we'll just log it
-            console.log("🔍 [FINNY] Period spend data:", data);
-            periodData = data;
-            break;
-        }
-      } else {
-        console.error("❌ [FINNY] Data fetch failed:", result.reason);
-        degraded = true;
-      }
-    }
-
-    if (!snap) {
-      console.log("❌ [FINNY] Failed to fetch financial summary");
-      return {
-        message:
-          "I couldn't load your financial summary yet. Try again in a moment.",
-        type: "assistant",
-      };
-    }
-
-    console.log("✅ [FINNY] Fetched financial summary:", Object.keys(snap));
-
-    // Add enhanced merchant data to snap if available
-    if (enhancedData) {
-      snap.enhanced = enhancedData;
-    }
-
-    // Add market data to snap if available
-    if (marketData) {
-      snap.market = marketData;
-    }
-
-    // Add web research data to snap if available
-    if (webResearchData && webResearchData.success) {
-      snap.webResearch = webResearchData;
-    }
-
-    // Merge period spend data into snapshot when available
-    if (typeof periodData !== "undefined" && periodData && !periodData.error) {
-      snap.transactions = {
-        ...(snap.transactions || {}),
-        spendByMonth:
-          periodData.spendByMonth || snap.transactions?.spendByMonth,
-        periodSummary:
-          periodData.periodSummary || snap.transactions?.periodSummary,
-        spendByCategoryPeriods:
-          periodData.spendByCategoryPeriods ||
-          snap.transactions?.spendByCategoryPeriods,
-        spendByCategory:
-          periodData.spendByCategory || snap.transactions?.spendByCategory,
-      };
-      console.log("🔍 [FINNY] Merged period data into snap.transactions");
-    } else if (periodData?.error) {
-      console.log("⚠️ [FINNY] Period data had error, using fallback context");
-    }
-
-    // 3) Build a focused prompt using the relevant RPC data
+    // 4) Build focused prompt using context packs
     const system = [
       "You are Finny: a warm, encouraging, and empowering financial advisor who is blunt when needed.",
       "",
@@ -713,8 +462,6 @@ async function handleAsk(message, context) {
       "DATA INTERPRETATION:",
       "- IMPORTANT: In transaction data, EXPENSE means money spent (going out), INCOME means money received (coming in).",
       "- CREDIT CARD DATA STRUCTURE: For credit cards, 'current_balance' is the debt amount (what you owe), and 'available_balance' is the credit limit. Available credit = credit limit - debt.",
-      "- For rent vs buy questions: Use the user's financial data (income, savings, debt) and market data (home prices, rent costs, mortgage rates) to provide personalized analysis. Consider their financial capacity, timeline, and local market conditions.",
-      "- For financial product questions: Use web research data to provide current, accurate information about credit cards, banks, and investment platforms. Combine this with the user's financial data to give personalized recommendations.",
       "",
       "FINANCIAL PROJECTIONS & CALCULATIONS:",
       "- When users ask about retirement, FIRE, or financial goals, perform compound growth calculations using their actual data",
@@ -729,12 +476,97 @@ async function handleAsk(message, context) {
       "- Only add investment disclaimer ('Note: This response is for informational purposes and does not constitute financial advice.') when the user asks specifically about investments, investing advice, or investment-related recommendations.",
     ].join("\n");
 
-    // Create smart context based on the question
-    const contextNote = createSmartContext(message, snap);
+    // Build context from packs
+    const contextLines = [contextHeader];
 
+    if (packs.base) {
+      contextLines.push("Financial Summary:");
+      contextLines.push(`Net Worth: $${packs.base.netWorth}`);
+      contextLines.push(`Liquid Assets: $${packs.base.liquidAssets}`);
+      contextLines.push(`Investments Total: $${packs.base.investmentsTotal}`);
+      contextLines.push(`Total Liabilities: $${packs.base.totalLiabilities}`);
+
+      if (packs.base.recentTransactions?.length > 0) {
+        contextLines.push("Recent transactions:");
+        packs.base.recentTransactions.forEach((txn) => {
+          const amount = Math.abs(txn.amount);
+          const transactionType = txn.amount < 0 ? "INCOME" : "EXPENSE";
+          const sign = txn.amount < 0 ? "-" : "+";
+          contextLines.push(
+            `${txn.date}: ${sign}$${amount.toFixed(2)} (${transactionType}) - ${
+              txn.merchant
+            }`
+          );
+        });
+      }
+    }
+
+    if (packs.spend) {
+      contextLines.push(
+        `Spending for ${packs.spend.period || "selected period"}:`
+      );
+      contextLines.push(
+        `Total: $${packs.spend.total} (${packs.spend.count} transactions)`
+      );
+
+      if (packs.spend.category) {
+        contextLines.push(`Category: ${packs.spend.category}`);
+      }
+
+      if (packs.spend.transactions?.length > 0) {
+        contextLines.push("Transactions:");
+        packs.spend.transactions.forEach((txn) => {
+          const amount = Math.abs(txn.amount);
+          const transactionType = txn.amount < 0 ? "INCOME" : "EXPENSE";
+          const sign = txn.amount < 0 ? "-" : "+";
+          contextLines.push(
+            `${txn.date}: ${sign}$${amount.toFixed(2)} (${transactionType}) - ${
+              txn.merchant
+            }`
+          );
+        });
+      }
+    }
+
+    if (packs.invest?.holdings?.length > 0) {
+      contextLines.push("Investment holdings:");
+      packs.invest.holdings.forEach((holding) => {
+        contextLines.push(
+          `${holding.symbol} (${holding.description}): ${
+            holding.units
+          } shares, $${holding.market_value.toFixed(2)}`
+        );
+      });
+    }
+
+    if (packs.goals?.goals?.length > 0) {
+      contextLines.push("Current goals:");
+      packs.goals.goals.forEach((goal) => {
+        contextLines.push(
+          `${goal.label}: $${goal.current_amount.toFixed(
+            2
+          )} / $${goal.target_amount.toFixed(2)} (${
+            goal.progress_pct
+          }%) - Due ${goal.target_date}`
+        );
+      });
+    }
+
+    if (packs.goals?.cashflow?.length > 0) {
+      contextLines.push("Recent cashflow:");
+      packs.goals.cashflow.forEach((cf) => {
+        contextLines.push(
+          `${cf.month}: Income $${cf.income.toFixed(
+            2
+          )}, Expenses $${cf.expense.toFixed(2)}, Net $${cf.net.toFixed(2)}`
+        );
+      });
+    }
+
+    const contextNote = contextLines.join("\n");
     console.log("🔍 [FINNY] Context note:", contextNote);
 
-    // 3) LLM call with streaming support
+    // 5) LLM call with focused context
     const llmT0 = Date.now();
     const resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
@@ -746,7 +578,7 @@ async function handleAsk(message, context) {
         model: OPENROUTER_MODEL,
         temperature: 0.6,
         max_tokens: 650,
-        stream: false, // Keep as false for now, but ready for streaming
+        stream: false,
         messages: [
           { role: "system", content: system },
           {
@@ -776,7 +608,10 @@ async function handleAsk(message, context) {
       data.choices?.[0]?.message?.content ?? "I'm not sure yet. Ask me again?";
 
     const response = {
-      message: degraded ? `${text}\n\n(Using available data.)` : text,
+      message:
+        gaps.length > 0
+          ? `${text}\n\n(Using available data - some data may be incomplete.)`
+          : text,
       type: "assistant",
     };
 
@@ -792,9 +627,8 @@ async function handleAsk(message, context) {
       response_time_ms: Date.now() - startTime,
       sources_used: [],
       cached: false,
-      enhanced_data: enhancedData ? true : false,
-      market_data: marketData ? true : false,
-      web_research: webResearchData?.success || false,
+      context_packs: Object.keys(packs),
+      data_gaps: gaps,
       request_id: generateRequestId(),
       metrics: {
         intent: "ask_personalized",
@@ -802,17 +636,12 @@ async function handleAsk(message, context) {
           total: Date.now() - startTime,
           llm: timings.llm_ms,
           data_fetch: timings.summary_ms + timings.user_data_ms,
-          web_research: timings.web_ms,
-          market: timings.market_ms,
         },
         tools_used: toolsUsed,
         model: OPENROUTER_MODEL,
-        cache_hits: {
-          web_research: false,
-          summary: false,
-        },
+        cache_hits: {},
         tokens: null,
-        result: degraded ? "degraded" : "success",
+        result: gaps.length > 0 ? "degraded" : "success",
       },
     };
 
@@ -828,6 +657,377 @@ async function handleAsk(message, context) {
       type: "assistant",
     };
   }
+}
+
+// === CONTEXT PLANNER ===
+// Deterministic context planning to fix "sometimes it works" issue
+
+function planNeeds(slots, message) {
+  const needs = ["summary_min"];
+
+  switch (slots.topic) {
+    case "spend":
+      // HARD GUARDRAIL: For spend questions, ALWAYS include both spend_total and txns_by_category
+      needs.push("spend_total", "txns_by_category");
+      break;
+    case "merchant":
+      needs.push("merchant_breakdown");
+      break;
+    case "accounts":
+      // summary_min already covers basic account info
+      break;
+    case "invest":
+    case "retirement":
+      // HARD GUARDRAIL: For invest/retirement questions, ALWAYS include both summary_min and invest_holdings
+      needs.push("invest_holdings");
+      break;
+    case "goals":
+      // HARD GUARDRAIL: For goals questions, ALWAYS include both goals_overview and cashflow_monthly
+      needs.push("goals_overview", "cashflow_monthly");
+      break;
+  }
+
+  // ADDITIONAL GUARDRAILS: Force critical data combinations
+  if (slots.topic === "spend" && slots.category) {
+    // If asking about specific category spending, ensure we have both total and category breakdown
+    if (!needs.includes("spend_total")) needs.push("spend_total");
+    if (!needs.includes("txns_by_category")) needs.push("txns_by_category");
+  }
+
+  if (slots.topic === "retirement" || slots.topic === "invest") {
+    // For any investment/retirement question, ensure we have holdings data
+    if (!needs.includes("invest_holdings")) needs.push("invest_holdings");
+  }
+
+  if (slots.topic === "goals" || message.toLowerCase().includes("goal")) {
+    // For any goals question, ensure we have both goals and cashflow
+    if (!needs.includes("goals_overview")) needs.push("goals_overview");
+    if (!needs.includes("cashflow_monthly")) needs.push("cashflow_monthly");
+  }
+
+  return needs;
+}
+
+function extractSlots(message) {
+  const lowerMessage = message.toLowerCase();
+
+  // Detect topic
+  let topic;
+  if (
+    lowerMessage.includes("spend") ||
+    lowerMessage.includes("expense") ||
+    lowerMessage.includes("food") ||
+    lowerMessage.includes("shopping")
+  ) {
+    topic = "spend";
+  } else if (
+    lowerMessage.includes("merchant") ||
+    lowerMessage.includes("chipotle") ||
+    lowerMessage.includes("starbucks") ||
+    lowerMessage.includes("amazon")
+  ) {
+    topic = "merchant";
+  } else if (
+    lowerMessage.includes("account") ||
+    lowerMessage.includes("balance") ||
+    lowerMessage.includes("bank")
+  ) {
+    topic = "accounts";
+  } else if (
+    lowerMessage.includes("invest") ||
+    lowerMessage.includes("portfolio") ||
+    lowerMessage.includes("stock") ||
+    lowerMessage.includes("retirement")
+  ) {
+    topic = lowerMessage.includes("retirement") ? "retirement" : "invest";
+  } else if (
+    lowerMessage.includes("goal") ||
+    lowerMessage.includes("save") ||
+    lowerMessage.includes("target")
+  ) {
+    topic = "goals";
+  }
+
+  // Detect category
+  let category;
+  const categoryPatterns = [
+    "food",
+    "groceries",
+    "shopping",
+    "entertainment",
+    "transportation",
+    "travel",
+    "rent",
+    "mortgage",
+    "utilities",
+    "internet",
+    "phone",
+  ];
+  for (const pattern of categoryPatterns) {
+    if (lowerMessage.includes(pattern)) {
+      category = pattern;
+      break;
+    }
+  }
+
+  // Detect merchant
+  let merchant;
+  const merchantPatterns = [
+    "chipotle",
+    "starbucks",
+    "mcdonalds",
+    "uber",
+    "lyft",
+    "amazon",
+    "target",
+    "walmart",
+    "netflix",
+    "spotify",
+  ];
+  for (const pattern of merchantPatterns) {
+    if (lowerMessage.includes(pattern)) {
+      merchant = pattern;
+      break;
+    }
+  }
+
+  // Detect period
+  let period;
+  const now = new Date();
+
+  if (lowerMessage.includes("last month")) {
+    const firstOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const lastOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0);
+    period = {
+      start: firstOfLastMonth.toISOString().split("T")[0],
+      end: lastOfLastMonth.toISOString().split("T")[0],
+    };
+  } else if (lowerMessage.includes("this month")) {
+    const firstOfThisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    period = {
+      start: firstOfThisMonth.toISOString().split("T")[0],
+      end: now.toISOString().split("T")[0],
+    };
+  } else if (lowerMessage.includes("last week")) {
+    const lastWeek = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    period = {
+      start: lastWeek.toISOString().split("T")[0],
+      end: now.toISOString().split("T")[0],
+    };
+  }
+
+  return {
+    intent: "ask",
+    topic,
+    category,
+    merchant,
+    period,
+  };
+}
+
+async function buildContextPacks(userId, needs, slots) {
+  const packs = {};
+  const gaps = [];
+
+  try {
+    // Always fetch financial summary first
+    if (needs.includes("summary_min")) {
+      const summaryRes = await fetch(
+        `${process.env.APP_BASE_URL}/api/store_accounts`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            mode: "financial_summary",
+            user_id: userId,
+          }),
+        }
+      );
+
+      if (summaryRes.ok) {
+        const summaryData = await summaryRes.json();
+        packs.base = {
+          netWorth: summaryData.summary?.netWorth || 0,
+          liquidAssets: summaryData.summary?.liquidAssets || 0,
+          investmentsTotal: summaryData.summary?.investmentsTotal || 0,
+          totalLiabilities: summaryData.summary?.totalLiabilities || 0,
+          recentTransactions: (summaryData.transactions?.recent || [])
+            .slice(0, 5)
+            .map((txn) => ({
+              date: txn.date,
+              amount: txn.amount,
+              merchant: txn.merchant || txn.name,
+            })),
+        };
+      } else {
+        gaps.push("summary_min");
+      }
+    }
+
+    // Fetch spend data if needed
+    if (needs.includes("spend_total") && slots.period) {
+      try {
+        const spendRes = await withTimeout(
+          supabase.rpc("get_spend_summary", {
+            p_user_id: userId,
+            p_start: slots.period.start,
+            p_end: slots.period.end,
+          }),
+          2000,
+          null
+        );
+
+        if (spendRes?.data) {
+          packs.spend = {
+            total: spendRes.data.total_spend || 0,
+            count: spendRes.data.txn_count || 0,
+            period: `${slots.period.start} to ${slots.period.end}`,
+          };
+        } else {
+          gaps.push("spend_total");
+        }
+      } catch (error) {
+        console.error("❌ [FINNY] Spend summary fetch failed:", error);
+        gaps.push("spend_total");
+      }
+    }
+
+    // Fetch transactions by category if needed
+    if (needs.includes("txns_by_category") && slots.category && slots.period) {
+      try {
+        const txnRes = await withTimeout(
+          supabase.rpc("get_transactions_by_category", {
+            p_user_id: userId,
+            p_category: slots.category,
+            p_start: slots.period.start,
+            p_end: slots.period.end,
+          }),
+          2000,
+          null
+        );
+
+        if (txnRes?.data) {
+          packs.spend = {
+            ...packs.spend,
+            category: slots.category,
+            transactions: (txnRes.data || []).slice(0, 20).map((txn) => ({
+              date: txn.date,
+              amount: txn.amount,
+              merchant: txn.merchant_name || txn.name,
+            })),
+          };
+        } else {
+          gaps.push("txns_by_category");
+        }
+      } catch (error) {
+        console.error(
+          "❌ [FINNY] Transactions by category fetch failed:",
+          error
+        );
+        gaps.push("txns_by_category");
+      }
+    }
+
+    // Fetch investment holdings if needed
+    if (needs.includes("invest_holdings")) {
+      try {
+        const holdingsRes = await withTimeout(
+          supabase.rpc("get_investment_holdings_detailed", {
+            p_user_id: userId,
+          }),
+          2000,
+          null
+        );
+
+        if (holdingsRes?.data) {
+          packs.invest = {
+            holdings: (holdingsRes.data || []).map((holding) => ({
+              symbol: holding.symbol,
+              description: holding.description,
+              units: holding.units,
+              market_value: holding.market_value,
+            })),
+          };
+        } else {
+          gaps.push("invest_holdings");
+        }
+      } catch (error) {
+        console.error("❌ [FINNY] Investment holdings fetch failed:", error);
+        gaps.push("invest_holdings");
+      }
+    }
+
+    // Fetch goals if needed
+    if (needs.includes("goals_overview")) {
+      try {
+        const goalsRes = await withTimeout(
+          supabase.rpc("get_goals_overview", {
+            p_user_id: userId,
+            p_limit: 10,
+          }),
+          2000,
+          null
+        );
+
+        if (goalsRes?.data) {
+          packs.goals = {
+            goals: (goalsRes.data || []).map((goal) => ({
+              label: goal.label,
+              current_amount: goal.current_amount,
+              target_amount: goal.target_amount,
+              progress_pct: goal.progress_pct,
+              target_date: goal.target_date,
+            })),
+          };
+        } else {
+          gaps.push("goals_overview");
+        }
+      } catch (error) {
+        console.error("❌ [FINNY] Goals overview fetch failed:", error);
+        gaps.push("goals_overview");
+      }
+    }
+
+    // Fetch cashflow if needed
+    if (needs.includes("cashflow_monthly")) {
+      try {
+        const cashflowRes = await withTimeout(
+          supabase.rpc("get_cashflow_monthly", {
+            p_user_id: userId,
+            p_months: 3,
+          }),
+          2000,
+          null
+        );
+
+        if (cashflowRes?.data) {
+          packs.goals = {
+            ...packs.goals,
+            cashflow: (cashflowRes.data || []).map((cf) => ({
+              month: cf.month,
+              income: cf.income,
+              expense: cf.expense,
+              net: cf.net,
+            })),
+          };
+        } else {
+          gaps.push("cashflow_monthly");
+        }
+      } catch (error) {
+        console.error("❌ [FINNY] Cashflow monthly fetch failed:", error);
+        gaps.push("cashflow_monthly");
+      }
+    }
+  } catch (error) {
+    console.error("Error building context packs:", error);
+  }
+
+  const includedPacks = Object.keys(packs);
+  const contextHeader = `CONTEXT_PACKS_INCLUDED: [${includedPacks
+    .map((p) => `"${p}"`)
+    .join(", ")}]\nDATA_GAPS: [${gaps.map((g) => `"${g}"`).join(", ")}]`;
+
+  return { packs, gaps, contextHeader };
 }
 
 // Smart context creation based on the question type
