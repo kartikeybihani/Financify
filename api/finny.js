@@ -254,9 +254,6 @@ export default async function handler(req, res) {
       case "off_topic":
         response = await handleOffTopic(message, safeContext);
         break;
-      case "calc_projection":
-        response = await handleCalcProjection(message, safeContext);
-        break;
       default:
         return res.status(400).json({ error: "Invalid action" });
     }
@@ -718,6 +715,15 @@ async function handleAsk(message, context) {
       "- CREDIT CARD DATA STRUCTURE: For credit cards, 'current_balance' is the debt amount (what you owe), and 'available_balance' is the credit limit. Available credit = credit limit - debt.",
       "- For rent vs buy questions: Use the user's financial data (income, savings, debt) and market data (home prices, rent costs, mortgage rates) to provide personalized analysis. Consider their financial capacity, timeline, and local market conditions.",
       "- For financial product questions: Use web research data to provide current, accurate information about credit cards, banks, and investment platforms. Combine this with the user's financial data to give personalized recommendations.",
+      "",
+      "FINANCIAL PROJECTIONS & CALCULATIONS:",
+      "- When users ask about retirement, FIRE, or financial goals, perform compound growth calculations using their actual data",
+      "- Use realistic assumptions: 7% annual return for investments, 3% inflation for long-term projections",
+      "- For retirement projections: Target 25x annual expenses (4% rule) unless user specifies different amount",
+      "- Calculate monthly savings needed to reach goals and provide specific, actionable recommendations",
+      "- Show both optimistic and conservative scenarios when appropriate",
+      "- Always explain the math behind your projections in simple terms",
+      "- If user asks 'can I achieve X goal', provide a clear yes/no with supporting calculations",
       "",
       "DISCLAIMERS:",
       "- Only add investment disclaimer ('Note: This response is for informational purposes and does not constitute financial advice.') when the user asks specifically about investments, investing advice, or investment-related recommendations.",
@@ -2276,7 +2282,7 @@ async function handleClassify(message, context) {
               "- If the message mentions a **US state** by name or postal code and asks about **rules/benefits/taxes**, set `intent=ask_state_rule`, `needs_web=true`, and fill `state` (use `user_hint_state` only if no state in text).",
               "- If the message asks 'rent vs buy in <city/state>' → `ask_personalized` (needs_web=true, needs_user_data=true) - this is a personal financial decision requiring user data.",
               "- If the message asks about **BNPL reporting/risks** or **current APRs** → `ask_fact_fresh` (needs_web).",
-              "- If affordability or FIRE by age or projection choose calc_projection (but set needs_calc=true)",
+              "- If affordability, FIRE, retirement planning, or financial projections choose ask_personalized (set needs_calc=true)",
               "- If it clearly sets a goal choose goal",
               "- If it needs the user's actual data choose ask_personalized",
               "- If purely personal (spend, net worth, goals) → `ask_personalized` (needs_user_data=true, needs_web=false).",
@@ -2298,7 +2304,10 @@ async function handleClassify(message, context) {
               '"Rent vs buy in Phoenix at 7%" → ask_personalized, needs_web:true, needs_user_data:true, state:"AZ"',
               '"Is BNPL hurting my credit?" → ask_fact_fresh, needs_web:true, entities:["BNPL"]',
               '"Does New Jersey have inheritance tax" → ask_state_rule with state NJ',
-              '"Can I hit FIRE by 35" → calc_projection',
+              '"Can I hit FIRE by 35" → ask_personalized, needs_calc:true',
+              '"Can I retire by 45" → ask_personalized, needs_calc:true',
+              '"Will I have enough to retire" → ask_personalized, needs_calc:true',
+              '"Can I achieve my financial goals" → ask_personalized, needs_calc:true',
               "Return JSON only. No extra text.",
             ].join("\n"),
           },
@@ -2326,7 +2335,6 @@ async function handleClassify(message, context) {
                     "ask_personalized",
                     "ask_fact_fresh",
                     "ask_state_rule",
-                    "calc_projection",
                     "off_topic",
                   ],
                   description: "Single best intent",
@@ -3574,233 +3582,6 @@ You're officially on your financial journey now. This is such a great step forwa
       intent: "goal",
       message: "Hit an error while saving your goal. Please try again.",
     };
-  }
-}
-
-// === Financial Projection Handler ===
-async function handleCalcProjection(message, context) {
-  try {
-    console.log("🧮 [CALC_PROJECTION] Processing:", message);
-
-    // Extract user data from context
-    const userData = context?.user_summary;
-    if (!userData) {
-      return {
-        intent: "calc_projection",
-        message:
-          "I need access to your financial data to make projections. Please ensure your accounts are connected and try again.",
-      };
-    }
-
-    // Parse the user's financial situation
-    const netWorth = userData.netWorth || 0;
-    const annualIncome = userData.annualIncome || 0;
-    const monthlySpend = userData.monthlySpend || 0;
-    const age = userData.age || 30; // Default age if not provided
-
-    // Extract projection parameters from the message
-    const lowerMessage = message.toLowerCase();
-
-    // Default projection parameters
-    let targetAge = 65; // Default retirement age
-    let targetAmount = null;
-    let timeHorizon = null;
-
-    // Try to extract target age (e.g., "retire by 40", "FIRE by 35")
-    const ageMatch = lowerMessage.match(
-      /(?:retire|fire|financial independence).*?(?:by|at|age)\s*(\d+)/
-    );
-    if (ageMatch) {
-      targetAge = parseInt(ageMatch[1]);
-    }
-
-    // Try to extract target amount (e.g., "$1M", "million", "500k")
-    const amountMatch = lowerMessage.match(
-      /\$?(\d+(?:\.\d+)?)\s*(m|million|k|thousand)/i
-    );
-    if (amountMatch) {
-      const num = parseFloat(amountMatch[1]);
-      const unit = amountMatch[2].toLowerCase();
-      if (unit === "m" || unit === "million") {
-        targetAmount = num * 1000000;
-      } else if (unit === "k" || unit === "thousand") {
-        targetAmount = num * 1000;
-      }
-    }
-
-    // Try to extract time horizon (e.g., "in 10 years", "by 2030")
-    const timeMatch = lowerMessage.match(
-      /(?:in|by)\s*(\d+)\s*(?:years?|yrs?)/i
-    );
-    if (timeMatch) {
-      timeHorizon = parseInt(timeMatch[1]);
-      targetAge = age + timeHorizon;
-    }
-
-    // Calculate projections
-    const yearsToTarget = Math.max(1, targetAge - age);
-    const annualSpend = monthlySpend * 12;
-    const targetNetWorth = targetAmount || annualSpend * 25; // 4% rule default
-
-    // Simple compound growth calculation
-    const annualReturn = 0.07; // 7% assumed return
-    const monthlyContribution = Math.max(0, (annualIncome - annualSpend) / 12);
-
-    // Calculate future value with contributions
-    const futureValue = calculateFutureValue(
-      netWorth,
-      monthlyContribution,
-      annualReturn,
-      yearsToTarget
-    );
-
-    // Calculate if goal is achievable
-    const isAchievable = futureValue >= targetNetWorth;
-    const gap = targetNetWorth - futureValue;
-    const gapPercent = targetNetWorth > 0 ? (gap / targetNetWorth) * 100 : 0;
-
-    // Generate insights and recommendations
-    const insights = [];
-
-    if (isAchievable) {
-      insights.push(`🎉 Great news! You're on track to reach your goal.`);
-      insights.push(
-        `At your current savings rate, you'll have $${formatCurrency(
-          futureValue
-        )} by age ${targetAge}.`
-      );
-    } else {
-      insights.push(
-        `📊 You'll need to adjust your strategy to reach your goal.`
-      );
-      insights.push(
-        `Current projection: $${formatCurrency(
-          futureValue
-        )} (need $${formatCurrency(targetNetWorth)})`
-      );
-      insights.push(
-        `Gap: $${formatCurrency(gap)} (${gapPercent.toFixed(1)}% short)`
-      );
-    }
-
-    // Add specific recommendations
-    if (gap > 0) {
-      const requiredMonthlyContribution = calculateRequiredContribution(
-        netWorth,
-        targetNetWorth,
-        annualReturn,
-        yearsToTarget
-      );
-      const additionalMonthly = Math.max(
-        0,
-        requiredMonthlyContribution - monthlyContribution
-      );
-
-      if (additionalMonthly > 0) {
-        insights.push(
-          `💡 To reach your goal, consider saving an additional $${formatCurrency(
-            additionalMonthly
-          )} per month.`
-        );
-      }
-    }
-
-    // Add general financial advice
-    if (annualSpend > annualIncome * 0.8) {
-      insights.push(
-        `⚠️ Your spending is high relative to income. Consider reducing expenses to boost savings.`
-      );
-    }
-
-    if (netWorth < 0) {
-      insights.push(
-        `🚨 You have negative net worth. Focus on paying down debt first.`
-      );
-    }
-
-    const response = {
-      intent: "calc_projection",
-      projection: {
-        swr_target: targetNetWorth,
-        projected_nest_egg: futureValue,
-        readiness_gap: gap,
-        years_to_target: yearsToTarget,
-        notes: insights,
-      },
-      message: insights.join("\n\n"),
-    };
-
-    console.log("🧮 [CALC_PROJECTION] Response:", response);
-    return response;
-  } catch (error) {
-    console.error("❌ [CALC_PROJECTION] Error:", error);
-    return {
-      intent: "calc_projection",
-      message:
-        "I encountered an error while calculating your financial projection. Please try rephrasing your question or check that your financial data is up to date.",
-    };
-  }
-}
-
-// Helper function to calculate future value with monthly contributions
-function calculateFutureValue(
-  currentValue,
-  monthlyContribution,
-  annualReturn,
-  years
-) {
-  const monthlyReturn = annualReturn / 12;
-  const months = years * 12;
-
-  // Future value of current amount
-  const futureValueOfCurrent =
-    currentValue * Math.pow(1 + monthlyReturn, months);
-
-  // Future value of monthly contributions (annuity)
-  const futureValueOfContributions =
-    monthlyContribution *
-    ((Math.pow(1 + monthlyReturn, months) - 1) / monthlyReturn);
-
-  return futureValueOfCurrent + futureValueOfContributions;
-}
-
-// Helper function to calculate required monthly contribution
-function calculateRequiredContribution(
-  currentValue,
-  targetValue,
-  annualReturn,
-  years
-) {
-  const monthlyReturn = annualReturn / 12;
-  const months = years * 12;
-
-  // Future value of current amount
-  const futureValueOfCurrent =
-    currentValue * Math.pow(1 + monthlyReturn, months);
-
-  // Required future value of contributions
-  const requiredContributionsValue = targetValue - futureValueOfCurrent;
-
-  if (requiredContributionsValue <= 0) {
-    return 0; // Goal already achievable
-  }
-
-  // Calculate required monthly contribution
-  const monthlyContribution =
-    requiredContributionsValue /
-    ((Math.pow(1 + monthlyReturn, months) - 1) / monthlyReturn);
-
-  return monthlyContribution;
-}
-
-// Helper function to format currency for projections
-function formatCurrency(num) {
-  if (num >= 1000000) {
-    return (num / 1000000).toFixed(1) + "M";
-  } else if (num >= 1000) {
-    return (num / 1000).toFixed(0) + "K";
-  } else {
-    return num.toFixed(0);
   }
 }
 
