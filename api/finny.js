@@ -1706,6 +1706,21 @@ function calculateDateRange(timePeriod) {
   const now = new Date();
   let start, end;
 
+  // Dynamic: last_N_months
+  const dynMatch =
+    typeof timePeriod === "string" && timePeriod.match(/^last_(\d+)_months$/);
+  if (dynMatch) {
+    const n = Math.max(1, parseInt(dynMatch[1], 10));
+    const firstOfThisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    start = new Date(firstOfThisMonth);
+    start.setMonth(start.getMonth() - n);
+    end = now;
+    return {
+      start: start.toISOString().split("T")[0],
+      end: end.toISOString().split("T")[0],
+    };
+  }
+
   switch (timePeriod) {
     case "this month":
       start = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -1765,7 +1780,19 @@ function calculateDateRange(timePeriod) {
 // Detect time-period-only spending queries
 function detectTimePeriodOnly(message) {
   const lower = message.toLowerCase();
-  const spendTerms = ["spend", "spending", "spent"];
+  const spendTerms = ["spend", "spending", "spent", "transactions"]; // include transactions
+  const mentionsSpend = spendTerms.some((t) => lower.includes(t));
+  if (!mentionsSpend) return null;
+
+  // Parse "last N months"
+  const nMonths = lower.match(/last\s+(\d+)\s+months?/);
+  if (nMonths) {
+    const n = parseInt(nMonths[1], 10);
+    if (!isNaN(n) && n > 0) {
+      return { key: `last_${n}_months`, timePeriod: `last_${n}_months` };
+    }
+  }
+
   const timeTerms = [
     "this month",
     "last month",
@@ -1775,23 +1802,10 @@ function detectTimePeriodOnly(message) {
     "yesterday",
     "this year",
     "last year",
-    "last 3 months",
-    "last three months",
   ];
 
-  const mentionsSpend = spendTerms.some((t) => lower.includes(t));
-  const mentionsTime = timeTerms.some((t) => lower.includes(t));
-  if (!mentionsSpend || !mentionsTime) return null;
-
-  // extract period key
-  let key = null;
-  if (lower.includes("last 3 months") || lower.includes("last three months")) {
-    key = "last_3_months";
-  } else if (timeTerms.some((t) => lower.includes(t))) {
-    key = timeTerms.find((t) => lower.includes(t));
-  }
+  const key = timeTerms.find((t) => lower.includes(t));
   if (!key) return null;
-
   return { key, timePeriod: key };
 }
 
@@ -1859,6 +1873,30 @@ async function fetchPeriodSpendData(userId, periodQuery) {
 function isObviousNonFinancial(message) {
   const lowerMessage = message.toLowerCase().trim();
 
+  // Finance override: if message mentions common financial terms, skip off-topic filter
+  const financeTerms = [
+    "spend",
+    "spent",
+    "spending",
+    "transaction",
+    "transactions",
+    "budget",
+    "savings",
+    "income",
+    "expense",
+    "expenses",
+    "category",
+    "categories",
+    "food",
+    "travel",
+    "groceries",
+    "rent",
+    "uber",
+  ];
+  if (financeTerms.some((t) => lowerMessage.includes(t))) {
+    return { isOffTopic: false };
+  }
+
   // Weather queries
   if (
     lowerMessage.includes("weather") ||
@@ -1897,13 +1935,7 @@ function isObviousNonFinancial(message) {
     lowerMessage.includes("recipe") ||
     lowerMessage.includes("cooking") ||
     lowerMessage.includes("movie") ||
-    lowerMessage.includes("book") ||
-    lowerMessage.includes("music") ||
-    lowerMessage.includes("sports") ||
-    lowerMessage.includes("travel") ||
-    lowerMessage.includes("vacation") ||
-    lowerMessage.includes("game") ||
-    lowerMessage.includes("hobby")
+    lowerMessage.includes("travel guide")
   ) {
     return { isOffTopic: true, category: "lifestyle" };
   }
@@ -1925,13 +1957,12 @@ function isObviousNonFinancial(message) {
     lowerMessage.includes("meaning of life") ||
     lowerMessage.includes("purpose") ||
     lowerMessage.includes("love") ||
-    lowerMessage.includes("relationship") ||
-    lowerMessage.includes("job interview")
+    lowerMessage.includes("happiness")
   ) {
-    return { isOffTopic: true, category: "philosophical" };
+    return { isOffTopic: true, category: "philosophy" };
   }
 
-  return { isOffTopic: false, category: null };
+  return { isOffTopic: false };
 }
 
 // Heuristic: detect clearly in-scope financial concept questions to avoid false off-topic
