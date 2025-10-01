@@ -262,3 +262,6 @@ export const TEXT_STYLES = {
     borderColor: "rgba(255, 255, 255, 0.2)",
   },
 };
+
+// Prevent Expo Router from treating this as a route by providing a no-op default export
+export default function ModalConstantsPlaceholder() { return null; }

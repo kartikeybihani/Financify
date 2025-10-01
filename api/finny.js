@@ -57,6 +57,11 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
+// Centralized OpenRouter model selection. Override via OPENROUTER_MODEL env.
+// Default to a widely available Grok model to avoid invalid ID errors.
+const OPENROUTER_MODEL =
+  process.env.OPENROUTER_MODEL || "x-ai/grok-4-fast:free";
+
 // Conversation logging functionality with retry logic
 async function logConversation(conversationData) {
   console.log(
@@ -122,8 +127,20 @@ async function logConversation(conversationData) {
             );
             return; // Success
           }
+        } else if (
+          msg.includes("timeout") ||
+          msg.includes("too many requests") ||
+          error.code === "ETIMEDOUT"
+        ) {
+          // Transient error: allow retry loop to continue
+          throw new Error(error.message || "Transient insert error");
         } else {
-          throw error; // Will trigger retry
+          // Non-retryable: log and bail to avoid noisy retries
+          console.error(
+            "❌ [CONVERSATION_LOG] Non-retryable error:",
+            error.message
+          );
+          return;
         }
       } else {
         console.log(
@@ -628,6 +645,9 @@ async function handleAsk(message, context) {
       "- Provide actionable advice that users can implement immediately",
       "- Explain financial concepts in simple, understandable terms",
       "- Connect advice to the user's specific financial situation when possible",
+      "- If required data is missing (e.g., no transactions or summary), explicitly say so and ask the user to refresh or connect accounts. Do NOT fabricate data.",
+      "- When listing transactions, ONLY use transactions present in the provided context. If none exist, say you couldn't find recent transactions.",
+      "- For amounts like net worth, ONLY use values from the context. If missing, state that it's unavailable.",
       "",
       "DATA INTERPRETATION:",
       "- IMPORTANT: In transaction data, EXPENSE means money spent (going out), INCOME means money received (coming in).",
@@ -653,7 +673,7 @@ async function handleAsk(message, context) {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "x-ai/grok-4-fast:free",
+        model: OPENROUTER_MODEL,
         temperature: 0.6,
         max_tokens: 650,
         stream: false, // Keep as false for now, but ready for streaming
@@ -718,7 +738,7 @@ async function handleAsk(message, context) {
           market: timings.market_ms,
         },
         tools_used: toolsUsed,
-        model: "openai/x-ai/grok-4-fast:free",
+        model: OPENROUTER_MODEL,
         cache_hits: {
           web_research: false,
           summary: false,
@@ -1096,12 +1116,14 @@ function createSmartContext(message, snap) {
     lowerMessage.includes("overview") ||
     lowerMessage.includes("financial position")
   ) {
-    if (snap.summary) {
+    if (snap.summary && typeof snap.summary.netWorth !== "undefined") {
       context.push("Financial Summary:");
       context.push(`Net Worth: $${snap.summary.netWorth}`);
       context.push(`Liquid Assets: $${snap.summary.liquidAssets}`);
       context.push(`Investments Total: $${snap.summary.investmentsTotal}`);
       context.push(`Total Liabilities: $${snap.summary.totalLiabilities}`);
+    } else {
+      context.push("Net worth summary is not available right now.");
     }
   }
 
@@ -1112,7 +1134,10 @@ function createSmartContext(message, snap) {
     lowerMessage.includes("activity") ||
     lowerMessage.includes("spending")
   ) {
-    if (snap.transactions?.recent?.length > 0) {
+    if (
+      Array.isArray(snap.transactions?.recent) &&
+      snap.transactions.recent.length > 0
+    ) {
       context.push("Recent Activity (last 5 transactions):");
       snap.transactions.recent.slice(0, 5).forEach((txn) => {
         const amount = Math.abs(txn.amount);
@@ -1124,6 +1149,8 @@ function createSmartContext(message, snap) {
           }`
         );
       });
+    } else {
+      context.push("No recent transactions found in your linked accounts.");
     }
   }
 
@@ -1870,7 +1897,7 @@ async function handleClassify(message, context) {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "openai/x-ai/grok-4-fast:free",
+        model: OPENROUTER_MODEL,
         temperature: 0.2,
         messages: [
           {
@@ -1992,6 +2019,10 @@ async function handleClassify(message, context) {
       }),
     });
 
+    if (!r.ok) {
+      const errText = await r.text();
+      throw new Error(`OpenRouter error ${r.status}: ${errText}`);
+    }
     const data = await r.json();
     console.log("🔍 [FINNY] Classification data inside handleClassify:", data);
     const content = data.choices?.[0]?.message?.content;
@@ -2028,6 +2059,11 @@ async function handleClassify(message, context) {
     return out;
   } catch (e) {
     console.error("❌ [FINNY] Classification error:", e?.message);
+    // Heuristic fallback if available
+    const heuristic = financialConceptHeuristic(message);
+    if (heuristic) {
+      return heuristic;
+    }
     return {
       intent: "ask_personalized",
       needs_web: false,
@@ -2073,7 +2109,7 @@ async function handleOffTopic(message, context) {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: "openai/x-ai/grok-4-fast:free",
+          model: OPENROUTER_MODEL,
           temperature: 0.7,
           messages: [
             {
@@ -2522,7 +2558,7 @@ async function llmFallbackFacts(message) {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "openai/x-ai/grok-4-fast:free",
+        model: OPENROUTER_MODEL,
         temperature: 0.4,
         messages: [
           {
@@ -2571,7 +2607,7 @@ async function llmStateRuleAnswer(message, state) {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "openai/x-ai/grok-4-fast:free",
+        model: OPENROUTER_MODEL,
         temperature: 0.4,
         messages: [
           {
@@ -3677,7 +3713,7 @@ async function extractEntitiesLLM(message, entities) {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: "openai/x-ai/grok-4-fast:free",
+          model: OPENROUTER_MODEL,
           temperature: 0.1,
           max_tokens: 500,
           messages: [
@@ -3955,7 +3991,7 @@ async function planStockRequest(message) {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "openai/x-ai/grok-4-fast:free",
+        model: OPENROUTER_MODEL,
         temperature: 0.1,
         messages: [
           {

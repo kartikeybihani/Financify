@@ -165,3 +165,6 @@ export const sectionContentStyles = StyleSheet.create({
     maxWidth: 300,
   },
 });
+
+// Prevent Expo Router from treating this as a route by providing a no-op default export
+export default function InsightsStylesPlaceholder() { return null; }

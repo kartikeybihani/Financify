@@ -160,6 +160,9 @@ export function useCategories(userId?: string) {
   };
 }
 
+// Prevent Expo Router from treating this as a route by providing a no-op default export
+export default function UseCategoriesPlaceholder() { return null; }
+
 /**
  * Fallback categories if database is unavailable
  */

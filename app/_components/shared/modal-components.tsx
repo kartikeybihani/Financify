@@ -168,3 +168,8 @@ const styles = StyleSheet.create({
     fontFamily: Platform.OS === "ios" ? "System" : "sans-serif",
   },
 });
+
+// Prevent Expo Router from treating this as a route by providing a no-op default export
+export default function ModalComponentsPlaceholder() {
+  return null;
+}
