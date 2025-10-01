@@ -580,14 +580,20 @@ async function handleAsk(message, context) {
         getCachedDataWithFallback(
           "period_spend",
           `${userId}_${periodQuery.key}`,
-          async () =>
-            await withTimeout(
+          async () => {
+            const result = await withTimeout(
               fetchPeriodSpendData(userId, periodQuery),
               2000,
               null
-            ),
+            );
+            // Don't cache null results
+            return result || { error: "No data available" };
+          },
           true
-        ).then((cachedResult) => ({ type: "period", data: cachedResult.data }))
+        ).then((cachedResult) => {
+          console.log("🔍 [FINNY] Period spend data:", cachedResult.data);
+          return { type: "period", data: cachedResult.data };
+        })
       );
     }
 
@@ -661,7 +667,7 @@ async function handleAsk(message, context) {
     }
 
     // Merge period spend data into snapshot when available
-    if (typeof periodData !== "undefined" && periodData) {
+    if (typeof periodData !== "undefined" && periodData && !periodData.error) {
       snap.transactions = {
         ...(snap.transactions || {}),
         spendByMonth:
@@ -674,6 +680,9 @@ async function handleAsk(message, context) {
         spendByCategory:
           periodData.spendByCategory || snap.transactions?.spendByCategory,
       };
+      console.log("🔍 [FINNY] Merged period data into snap.transactions");
+    } else if (periodData?.error) {
+      console.log("⚠️ [FINNY] Period data had error, using fallback context");
     }
 
     // 3) Build a focused prompt using the relevant RPC data
@@ -758,9 +767,7 @@ async function handleAsk(message, context) {
       data.choices?.[0]?.message?.content ?? "I'm not sure yet. Ask me again?";
 
     const response = {
-      message: degraded
-        ? `${text}\n\n(Using available data; some live sources timed out.)`
-        : text,
+      message: degraded ? `${text}\n\n(Using available data.)` : text,
       type: "assistant",
     };
 
@@ -1482,7 +1489,9 @@ function createSmartContext(message, snap) {
   if (
     lowerMessage.includes("spend") ||
     lowerMessage.includes("spent") ||
-    lowerMessage.includes("spending")
+    lowerMessage.includes("spending") ||
+    lowerMessage.includes("biggest") ||
+    lowerMessage.includes("largest")
   ) {
     // Period summary (e.g., last month)
     if (snap.transactions?.periodSummary) {
@@ -1516,6 +1525,30 @@ function createSmartContext(message, snap) {
         .map((c) => `${c.category}: $${Number(c.total_spend).toFixed(2)}`)
         .join(", ");
       context.push(`Top categories this period: ${topCats}`);
+    }
+
+    // For "biggest transactions" queries, show recent transactions sorted by amount
+    if (lowerMessage.includes("biggest") || lowerMessage.includes("largest")) {
+      if (
+        Array.isArray(snap.transactions?.recent) &&
+        snap.transactions.recent.length > 0
+      ) {
+        const sortedByAmount = [...snap.transactions.recent]
+          .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount))
+          .slice(0, 5);
+
+        context.push("Largest transactions (by amount):");
+        sortedByAmount.forEach((txn) => {
+          const amount = Math.abs(txn.amount);
+          const transactionType = txn.amount < 0 ? "INCOME" : "EXPENSE";
+          const sign = txn.amount < 0 ? "-" : "+";
+          context.push(
+            `${txn.date}: ${sign}$${amount.toFixed(2)} (${transactionType}) - ${
+              txn.merchant || txn.name
+            }`
+          );
+        });
+      }
     }
   }
 
@@ -1851,19 +1884,31 @@ async function fetchPeriodSpendData(userId, periodQuery) {
   );
 
   try {
+    console.log("🔍 [FINNY] fetchPeriodSpendData called with:", periodQuery);
+
     // Handle last 3 months specially via monthly RPCs
     if (periodQuery.key === "last_3_months") {
+      console.log("🔍 [FINNY] Fetching last 3 months data");
       const { data: byMonth, error: byMonthErr } = await supabase.rpc(
         "get_spend_by_month",
         { p_user_id: userId, p_months: 3 }
       );
-      if (byMonthErr) throw byMonthErr;
+      if (byMonthErr) {
+        console.error("❌ [FINNY] get_spend_by_month error:", byMonthErr);
+        throw byMonthErr;
+      }
 
       const { data: byCatPeriods, error: byCatErr } = await supabase.rpc(
         "get_spend_by_category_periods",
         { p_user_id: userId, p_months: 3 }
       );
-      if (byCatErr) throw byCatErr;
+      if (byCatErr) {
+        console.error(
+          "❌ [FINNY] get_spend_by_category_periods error:",
+          byCatErr
+        );
+        throw byCatErr;
+      }
 
       return {
         spendByMonth: byMonth || [],
@@ -1873,19 +1918,69 @@ async function fetchPeriodSpendData(userId, periodQuery) {
 
     // Else single-period summary via date range
     const { start, end } = calculateDateRange(periodQuery.timePeriod);
-    const { data: summary, error: sumErr } = await supabase.rpc(
-      "get_spend_summary",
-      { p_user_id: userId, p_start: start, p_end: end }
-    );
-    if (sumErr) throw sumErr;
+    console.log("🔍 [FINNY] Fetching period data for:", { start, end });
 
-    const { data: byCat, error: catErr } = await supabase.rpc(
-      "get_spend_by_category",
-      { p_user_id: userId, p_start: start, p_end: end }
-    );
-    if (catErr) throw catErr;
+    // Try new RPCs first, fallback to existing ones if they don't exist
+    let summary, byCat;
 
-    return {
+    try {
+      const { data: summaryData, error: sumErr } = await supabase.rpc(
+        "get_spend_summary",
+        { p_user_id: userId, p_start: start, p_end: end }
+      );
+      if (sumErr) {
+        console.warn(
+          "⚠️ [FINNY] get_spend_summary not available, using fallback"
+        );
+        summary = null;
+      } else {
+        summary = summaryData;
+      }
+    } catch (e) {
+      console.warn(
+        "⚠️ [FINNY] get_spend_summary RPC not found, using fallback"
+      );
+      summary = null;
+    }
+
+    try {
+      const { data: byCatData, error: catErr } = await supabase.rpc(
+        "get_spend_by_category",
+        { p_user_id: userId, p_start: start, p_end: end }
+      );
+      if (catErr) {
+        console.warn(
+          "⚠️ [FINNY] get_spend_by_category not available, using fallback"
+        );
+        byCat = null;
+      } else {
+        byCat = byCatData;
+      }
+    } catch (e) {
+      console.warn(
+        "⚠️ [FINNY] get_spend_by_category RPC not found, using fallback"
+      );
+      byCat = null;
+    }
+
+    // Fallback: use existing RPCs if new ones don't exist
+    if (!summary || !byCat) {
+      console.log("🔄 [FINNY] Using fallback RPCs for period data");
+      try {
+        const { data: fallbackSummary } = await supabase.rpc(
+          "get_cashflow_monthly",
+          { p_user_id: userId, p_months: 1 }
+        );
+        if (fallbackSummary && fallbackSummary.length > 0) {
+          const lastMonth = fallbackSummary[0];
+          summary = [{ total_spend: lastMonth.expense || 0, txn_count: 0 }];
+        }
+      } catch (e) {
+        console.warn("⚠️ [FINNY] Fallback RPC also failed:", e.message);
+      }
+    }
+
+    const result = {
       periodSummary: (summary && summary[0]) || {
         total_spend: 0,
         txn_count: 0,
@@ -1895,9 +1990,21 @@ async function fetchPeriodSpendData(userId, periodQuery) {
       spendByCategory: byCat || [],
       dateRange: { start, end },
     };
+
+    console.log("🔍 [FINNY] fetchPeriodSpendData result:", result);
+    return result;
   } catch (e) {
     console.error("❌ [FINNY] fetchPeriodSpendData error:", e?.message);
-    return null;
+    console.error("❌ [FINNY] Full error:", e);
+    // Return empty structure instead of null to avoid cache issues
+    return {
+      periodSummary: { total_spend: 0, txn_count: 0 },
+      spendByCategoryPeriods: [],
+      spendByMonth: [],
+      spendByCategory: [],
+      dateRange: { start: null, end: null },
+      error: e?.message || "Unknown error",
+    };
   }
 }
 
