@@ -85,7 +85,7 @@ export const callSnapTradeAPI = async (mode: string, params: any = {}) => {
   try {
     logger.info(`🔄 Calling SnapTrade API with mode: ${mode}`, params);
     
-    const res = await fetch(`${BASE_URL}/api/link_tokens`, {
+    const res = await fetch(`${BASE_URL}/api/plaid_management`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ 
@@ -154,7 +154,7 @@ export const registerSnaptradeUser = async () => {
 
 // === Fetch SnapTrade Accounts ===
 export const fetchSnaptradeAccounts = async (userId: string, userSecret: string) => {
-  const res = await fetch(`${BASE_URL}/api/link_tokens`, {
+  const res = await fetch(`${BASE_URL}/api/plaid_management`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ 

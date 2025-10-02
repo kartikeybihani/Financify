@@ -419,7 +419,7 @@ async function handleSnapTradeSync(res, userId, accountId) {
       snaptrade_user_id: connection.snaptrade_user_id,
     });
 
-    // Import SnapTrade SDK (same as link_tokens.js)
+    // Import SnapTrade SDK (same as plaid_management.js)
 
     const isSandbox = process.env.SNAPTRADE_ENVIRONMENT === "sandbox";
 

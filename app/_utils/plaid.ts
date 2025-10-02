@@ -78,7 +78,7 @@ export async function getPrimaryItemId(): Promise<string | null> {
 // === Create Link Token ===
 export const fetchLinkToken = async () => {
   const { data: { user } } = await supabase.auth.getUser();
-  const res = await fetch(`${BASE_URL}/api/link_tokens`, {
+  const res = await fetch(`${BASE_URL}/api/plaid_management`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ mode: "create", user_id: user?.id }),
@@ -198,7 +198,7 @@ export const addNewBankAccount = async (
 // === Update Mode ===
 export const getUpdateLinkToken = async (item_id: string) => {
   const { data: { user } } = await supabase.auth.getUser();
-  const res = await fetch(`${BASE_URL}/api/link_tokens`, {
+  const res = await fetch(`${BASE_URL}/api/plaid_management`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ mode: "update", item_id, user_id: user?.id }),
@@ -239,10 +239,10 @@ export const handleDisconnect = async (item_id: string) => {
     throw new Error("Item ID is required for disconnection");
   }
 
-  const res = await fetch(`${BASE_URL}/api/remove_item`, {
+  const res = await fetch(`${BASE_URL}/api/plaid_management`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ item_id }),
+    body: JSON.stringify({ mode: "remove_item", item_id }),
   });
   
   const payload = await res.json();

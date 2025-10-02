@@ -143,7 +143,7 @@ SECURITY & CREDENTIAL MANAGEMENT
     - Parameters: p_item_id (text), p_user_id (uuid)
     - Returns: text
     - Purpose: Secure access to encrypted Plaid tokens
-    - Used in: transactions_sync.js, plaid.js, refresh_data.js, store_accounts.js, link_tokens.js, refresh_recurring_transactions.js, remove_item.js, sync-transactions function
+    - Used in: transactions_sync.js, plaid.js, refresh_data.js, store_accounts.js, plaid_management.js, refresh_recurring_transactions.js, sync-transactions function
 
 16. secure_store_plaid_token ⭐ ACTIVE
     - Securely stores Plaid access token in Vault
