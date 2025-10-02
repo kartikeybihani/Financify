@@ -243,9 +243,18 @@ export const useChat = () => {
       // Handle different response types based on intent
       let message;
       if (data.intent === "ask_fact_fresh" && data.fact) {
-        // Format fact response for display
+        // Format fact response for display - handle both old and new response formats
         const fact = data.fact;
-        message = `**${fact.topic.replace(/_/g, ' ').toUpperCase()}**\n\n${fact.value}\n\n*Source: ${fact.source_title} (${fact.as_of})*`;
+        if (fact.message) {
+          // New format with direct message
+          message = fact.message;
+        } else if (fact.value && fact.source_title) {
+          // Old format with structured data
+          message = `**${fact.topic.replace(/_/g, ' ').toUpperCase()}**\n\n${fact.value}\n\n*Source: ${fact.source_title} (${fact.as_of})*`;
+        } else {
+          // Fallback to any available text
+          message = fact.message || fact.text || "Financial information retrieved successfully.";
+        }
       } else if (data.intent === "ask_state_rule" && data.rule) {
         // Format state rule response for display
         const rule = data.rule;
