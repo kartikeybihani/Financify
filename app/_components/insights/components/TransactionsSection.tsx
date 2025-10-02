@@ -353,6 +353,13 @@ export default function TransactionsSection(props: Props) {
         key={`modal-${selectedTransactionId || "closed"}`}
         visible={showDetailModal}
         transactionId={selectedTransactionId}
+        transaction={
+          selectedTransactionId
+            ? displayedTransactions.find(
+                (tx) => tx.id === selectedTransactionId
+              ) || null
+            : null
+        }
         onClose={() => {
           // Reset state immediately without delay to prevent race conditions
           setShowDetailModal(false);

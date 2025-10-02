@@ -16,16 +16,6 @@ export default function InsightsStackLayout() {
           title: "Insights",
         }}
       />
-      <Stack.Screen
-        name="CategorySelector"
-        options={{
-          title: "Select Category",
-          presentation: "transparentModal",
-          animation: "ios_from_right",
-          gestureEnabled: true,
-          gestureDirection: "horizontal",
-        }}
-      />
     </Stack>
   );
 }

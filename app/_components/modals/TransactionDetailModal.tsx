@@ -9,6 +9,7 @@ import {
   Modal,
   Alert,
   TouchableWithoutFeedback,
+  ActivityIndicator,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -17,7 +18,7 @@ import * as Haptics from "expo-haptics";
 import { useCategories } from "../../_hooks/useCategories";
 import { supabase } from "../../_lib/supabase/supabase";
 import { DeviceEventEmitter } from "react-native";
-import { router } from "expo-router";
+import CategorySelectorModal from "./CategorySelectorModal";
 
 interface Transaction {
   id?: string;
@@ -37,6 +38,7 @@ interface Transaction {
 interface TransactionDetailModalProps {
   visible: boolean;
   transactionId: string | null;
+  transaction?: Transaction | null; // Pass transaction data directly to avoid DB call
   onClose: () => void;
 }
 
@@ -162,6 +164,7 @@ const getCategoryBackgroundColorForName = (categoryName: string): string => {
 export default function TransactionDetailModal({
   visible,
   transactionId,
+  transaction: initialTransaction,
   onClose,
 }: TransactionDetailModalProps) {
   const insets = useSafeAreaInsets();
@@ -170,6 +173,7 @@ export default function TransactionDetailModal({
   const [updatedCategory, setUpdatedCategory] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [isInternalTransfer, setIsInternalTransfer] = useState<boolean>(false);
+  const [showCategorySelector, setShowCategorySelector] = useState(false);
 
   const {
     categories,
@@ -183,14 +187,25 @@ export default function TransactionDetailModal({
   const isSmallPhone = height < 700;
   const isTallPhone = height >= 840;
 
-  // Load transaction data
+  // Load transaction data - use passed data or fallback to database call
   useEffect(() => {
     const loadTransaction = async () => {
       if (!transactionId || !visible) return;
 
+      // If we have transaction data passed as prop, use it immediately
+      if (initialTransaction && initialTransaction.id === transactionId) {
+        setLoading(false);
+        setTransaction(initialTransaction);
+        setIsInternalTransfer(
+          initialTransaction.new_category === "INTERNAL_TRANSFER"
+        );
+        return;
+      }
+
+      // Fallback to database call if no transaction data provided
       try {
         setLoading(true);
-        setTransaction(null); // Clear previous transaction data
+        setTransaction(null);
 
         const { data, error } = await supabase
           .from("transactions")
@@ -214,9 +229,7 @@ export default function TransactionDetailModal({
 
         if (error) throw error;
 
-        // Only set transaction if modal is still visible and transactionId hasn't changed
         if (visible && transactionId === data?.id) {
-          // Transform the data to include account information
           const transformedTransaction = {
             ...data,
             account_name: data.accounts?.name || "Unknown Account",
@@ -227,18 +240,14 @@ export default function TransactionDetailModal({
           };
 
           setTransaction(transformedTransaction);
-
-          // Check if transaction is already marked as internal transfer
           setIsInternalTransfer(data.new_category === "INTERNAL_TRANSFER");
         }
       } catch (error) {
         console.error("Error loading transaction:", error);
-        // Only clear loading if modal is still visible
         if (visible) {
           setTransaction(null);
         }
       } finally {
-        // Only clear loading if modal is still visible
         if (visible) {
           setLoading(false);
         }
@@ -248,7 +257,7 @@ export default function TransactionDetailModal({
     if (visible && transactionId) {
       loadTransaction();
     }
-  }, [transactionId, visible]);
+  }, [transactionId, visible, initialTransaction]);
 
   // Listen for category updates
   useEffect(() => {
@@ -283,6 +292,7 @@ export default function TransactionDetailModal({
       setUpdatedCategory(null);
       setIsInternalTransfer(false);
       setLoading(true);
+      setShowCategorySelector(false);
     }
   }, [visible]);
 
@@ -292,19 +302,13 @@ export default function TransactionDetailModal({
     setUpdatedCategory(null);
     setIsInternalTransfer(false);
     setLoading(true);
+    setShowCategorySelector(false);
     onClose();
   };
 
   const handleCategoryPress = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    onClose();
-    router.push({
-      pathname: "/insights/CategorySelector" as any,
-      params: {
-        transactionId: transaction?.id,
-        merchantName: transaction?.merchant_name,
-      },
-    });
+    setShowCategorySelector(true);
   };
 
   const handleInternalTransferToggle = () => {
@@ -411,9 +415,39 @@ export default function TransactionDetailModal({
               </View>
 
               {loading ? (
-                <View style={styles.loadingContainer}>
-                  <Text style={styles.loadingText}>Loading transaction...</Text>
-                </View>
+                <ScrollView
+                  style={styles.scrollContainer}
+                  contentContainerStyle={[
+                    styles.scrollContent,
+                    { paddingBottom: insets.bottom + 20 },
+                  ]}
+                  showsVerticalScrollIndicator={false}
+                >
+                  {/* Core Details - Loading State */}
+                  <View style={styles.coreDetailsContainer}>
+                    <View style={styles.loadingTransactionName} />
+                    <View style={styles.loadingAmountValue} />
+                    <View style={styles.loadingDate} />
+                    <View style={styles.loadingCategoryPill} />
+                  </View>
+
+                  {/* Account Card - Loading State */}
+                  <View style={styles.accountSection}>
+                    <View style={styles.accountCardContainer}>
+                      <View style={styles.accountCard}>
+                        <View style={styles.loadingAccountCard} />
+                      </View>
+                    </View>
+                  </View>
+
+                  {/* Loading Indicator */}
+                  <View style={styles.loadingIndicatorContainer}>
+                    <ActivityIndicator size="large" color="#4A90E2" />
+                    <Text style={styles.loadingText}>
+                      Loading transaction...
+                    </Text>
+                  </View>
+                </ScrollView>
               ) : !transaction ? (
                 <View style={styles.errorContainer}>
                   <Text style={styles.errorText}>Transaction not found</Text>
@@ -595,6 +629,14 @@ export default function TransactionDetailModal({
           </TouchableWithoutFeedback>
         </View>
       </TouchableWithoutFeedback>
+
+      {/* Category Selector Modal */}
+      <CategorySelectorModal
+        visible={showCategorySelector}
+        transactionId={transaction?.id || null}
+        merchantName={transaction?.merchant_name}
+        onClose={() => setShowCategorySelector(false)}
+      />
     </Modal>
   );
 }
@@ -657,6 +699,46 @@ const styles = StyleSheet.create({
   loadingText: {
     color: "#fff",
     fontSize: 16,
+    marginTop: 16,
+    opacity: 0.8,
+  },
+  loadingIndicatorContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 40,
+  },
+  loadingTransactionName: {
+    width: "80%",
+    height: 24,
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    borderRadius: 4,
+    marginBottom: 8,
+  },
+  loadingAmountValue: {
+    width: "60%",
+    height: 32,
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    borderRadius: 4,
+    marginBottom: 8,
+  },
+  loadingDate: {
+    width: "50%",
+    height: 16,
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    borderRadius: 4,
+    marginBottom: 20,
+  },
+  loadingCategoryPill: {
+    width: "40%",
+    height: 40,
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    borderRadius: 24,
+  },
+  loadingAccountCard: {
+    width: "100%",
+    height: 65,
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
+    borderRadius: 16,
   },
   errorContainer: {
     padding: 40,

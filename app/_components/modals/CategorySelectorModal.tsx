@@ -10,18 +10,30 @@ import {
   TextInput,
   Animated,
   Keyboard,
+  Modal,
+  TouchableWithoutFeedback,
 } from "react-native";
 import { BlurView } from "expo-blur";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useLocalSearchParams, router } from "expo-router";
 import * as Haptics from "expo-haptics";
 import { useCategories } from "../../_hooks/useCategories";
 import { supabase } from "../../_lib/supabase/supabase";
 import { DeviceEventEmitter } from "react-native";
 
-export default function CategorySelectorScreen() {
-  const params = useLocalSearchParams();
+interface CategorySelectorModalProps {
+  visible: boolean;
+  transactionId: string | null;
+  merchantName?: string;
+  onClose: () => void;
+}
+
+export default function CategorySelectorModal({
+  visible,
+  transactionId,
+  merchantName,
+  onClose,
+}: CategorySelectorModalProps) {
   const insets = useSafeAreaInsets();
   const { height, width } = useWindowDimensions();
   const [loading, setLoading] = useState(false);
@@ -46,6 +58,20 @@ export default function CategorySelectorScreen() {
     getUser();
   }, []);
 
+  // Reset modal state when it becomes visible
+  useEffect(() => {
+    if (visible) {
+      // Reset form state
+      setShowAddCategory(false);
+      setNewCategoryName("");
+      setNewCategoryIcon("📦");
+      setAddCategoryLoading(false);
+      // Reset animations
+      slideAnim.setValue(0);
+      heightAnim.setValue(0);
+    }
+  }, [visible]);
+
   const {
     categories,
     getCategoryIcon,
@@ -60,7 +86,15 @@ export default function CategorySelectorScreen() {
   const isTallPhone = height >= 840;
 
   const handleClose = () => {
-    router.back();
+    // Reset form state when closing
+    setShowAddCategory(false);
+    setNewCategoryName("");
+    setNewCategoryIcon("📦");
+    setAddCategoryLoading(false);
+    // Reset animations
+    slideAnim.setValue(0);
+    heightAnim.setValue(0);
+    onClose();
   };
 
   const handleAddNewCategory = () => {
@@ -296,7 +330,7 @@ export default function CategorySelectorScreen() {
   };
 
   const handleCategorySelect = async (categoryId: string) => {
-    if (!params.transactionId) return;
+    if (!transactionId) return;
 
     let selectedCategory;
     if (categoryId === "all") {
@@ -337,7 +371,7 @@ export default function CategorySelectorScreen() {
     updateType: "single" | "similar",
     categoryId: string
   ) => {
-    if (!params.transactionId) return;
+    if (!transactionId) return;
 
     const selectedCategory = categories.find((cat) => cat.id === categoryId);
     if (!selectedCategory) return;
@@ -358,9 +392,7 @@ export default function CategorySelectorScreen() {
         const { error } = await supabase.rpc(
           "update_transaction_category_by_name",
           {
-            p_transaction_id: Array.isArray(params.transactionId)
-              ? params.transactionId[0]
-              : params.transactionId,
+            p_transaction_id: transactionId,
             p_new_category: selectedCategory.name,
           }
         );
@@ -370,12 +402,8 @@ export default function CategorySelectorScreen() {
         // For single transaction, we only have one affected transaction
         affectedTransactions = [
           {
-            transactionId: Array.isArray(params.transactionId)
-              ? params.transactionId[0]
-              : params.transactionId,
-            transactionName: Array.isArray(params.transactionName)
-              ? params.transactionName[0]
-              : params.transactionName || "Transaction",
+            transactionId: transactionId,
+            transactionName: "Transaction", // We'll get this from the UI state
             amount: 0, // We'll get this from the UI state
             date: new Date().toISOString(),
           },
@@ -392,9 +420,13 @@ export default function CategorySelectorScreen() {
         }
 
         // Update all transactions with the same merchant name
-        const merchantName = Array.isArray(params.merchantName)
-          ? params.merchantName[0]
-          : params.merchantName;
+        if (!merchantName) {
+          Alert.alert(
+            "Error",
+            "Cannot update similar transactions without merchant name"
+          );
+          return;
+        }
 
         const { data: updateResult, error } = await supabase
           .from("transactions")
@@ -448,22 +480,18 @@ export default function CategorySelectorScreen() {
 
       // Emit enhanced global event with affected transaction data
       const eventData = {
-        transactionId: Array.isArray(params.transactionId)
-          ? params.transactionId[0]
-          : params.transactionId,
+        transactionId: transactionId,
         newCategory: selectedCategory.name,
         updateType,
         affectedTransactions,
-        merchantName: Array.isArray(params.merchantName)
-          ? params.merchantName[0]
-          : params.merchantName,
+        merchantName: merchantName,
       };
 
       console.log("📡 Emitting transactionCategoryUpdated event:", eventData);
       DeviceEventEmitter.emit("transactionCategoryUpdated", eventData);
 
-      // Go back to transaction detail
-      router.back();
+      // Close the modal and return to transaction detail
+      handleClose();
     } catch (error) {
       console.error("Error updating category:", error);
       Alert.alert("Error", "Failed to update category. Please try again.");
@@ -545,247 +573,253 @@ export default function CategorySelectorScreen() {
     return "#f8f9fa"; // Very light gray
   };
 
+  if (!visible) return null;
+
   return (
-    <View style={styles.overlay}>
-      {/* Very subtle blur overlay */}
-      <BlurView intensity={10} tint="dark" style={styles.blurOverlay} />
-      <TouchableOpacity
-        style={styles.overlayTouchable}
-        activeOpacity={1}
-        onPress={handleClose}
-      />
-      <Animated.View
-        style={[
-          styles.container,
-          {
-            height: heightAnim.interpolate({
-              inputRange: [0, 1],
-              outputRange: ["40%", "70%"], // Expand from 40% to 70% of screen height
-            }),
-          },
-        ]}
-      >
-        {/* Header with back button */}
-        <View style={styles.header}>
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={handleClose}
-            activeOpacity={0.7}
-          >
-            <BlurView intensity={20} tint="light" style={styles.backButtonBlur}>
-              <Ionicons name="chevron-back" size={24} color="#ffffff" />
-            </BlurView>
-          </TouchableOpacity>
-        </View>
-
-        {/* Content */}
-        <ScrollView
-          style={styles.scrollContainer}
-          contentContainerStyle={[
-            styles.scrollContent,
-            { paddingBottom: insets.bottom + 20 },
-          ]}
-          showsVerticalScrollIndicator={false}
-        >
-          {/* Category Chips Grid */}
-          <View style={styles.categoryChipsContainer}>
-            {/* All Categories as first chip */}
-            <TouchableOpacity
-              style={[
-                styles.categoryChip,
-                {
-                  backgroundColor: "#e8f4fd", // Light blue background
-                  borderColor: "#4A90E2",
-                },
-              ]}
-              onPress={() => handleCategorySelect("all")}
-              activeOpacity={0.7}
-              disabled={loading}
-            >
-              <Text style={styles.chipIcon}>🏷️</Text>
-              <Text
-                style={[
-                  styles.chipText,
-                  {
-                    color: "#4A90E2",
-                    fontWeight: "600",
-                  },
-                ]}
-                numberOfLines={1}
-              >
-                All Categories
-              </Text>
-            </TouchableOpacity>
-
-            {/* Regular Categories */}
-            {categories?.map((category) => {
-              // console.log("Rendering category:", category);
-              return (
-                <TouchableOpacity
-                  key={category.id}
-                  style={[
-                    styles.categoryChip,
-                    {
-                      backgroundColor: getCategoryBackgroundColor(
-                        category.name
-                      ),
-                      borderColor: category.color + "40",
-                    },
-                  ]}
-                  onPress={() => handleCategorySelect(category.id)}
-                  onLongPress={() => handleCategoryLongPress(category.id)}
-                  activeOpacity={0.7}
-                  disabled={loading}
-                >
-                  <Text style={styles.chipIcon}>{category.icon}</Text>
-                  <Text
-                    style={[
-                      styles.chipText,
-                      {
-                        color: "#000000",
-                      },
-                    ]}
-                    numberOfLines={1}
-                  >
-                    {formatCategoryFromHook(category.name)}
-                  </Text>
-                  {/* Show delete indicator for user-created categories */}
-                  {category.user_id && (
-                    <View style={styles.deleteIndicator}>
-                      <Text style={styles.deleteIndicatorText}>⋯</Text>
-                    </View>
-                  )}
-                </TouchableOpacity>
-              );
-            })}
-
-            {/* Add New Category Button */}
-            <TouchableOpacity
-              style={styles.addNewChip}
-              onPress={handleAddNewCategory}
-              activeOpacity={0.7}
-              disabled={loading || showAddCategory}
-            >
-              <Text style={styles.chipIcon}>➕</Text>
-              <Text style={styles.addNewChipText}>Add New</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Add Category Input Form */}
-          {showAddCategory && (
+    <Modal
+      visible={visible}
+      transparent={true}
+      animationType="slide"
+      onRequestClose={handleClose}
+      statusBarTranslucent={true}
+      presentationStyle="overFullScreen"
+    >
+      <TouchableWithoutFeedback onPress={handleClose}>
+        <View style={styles.overlay}>
+          <TouchableWithoutFeedback onPress={() => {}}>
             <Animated.View
               style={[
-                styles.addCategoryForm,
+                styles.container,
                 {
-                  transform: [
-                    {
-                      translateY: slideAnim.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: [100, 0],
-                      }),
-                    },
-                  ],
-                  opacity: slideAnim,
+                  height: heightAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: ["40%", "70%"], // Expand from 40% to 70% of screen height
+                  }),
                 },
               ]}
             >
-              <View style={styles.addCategoryContainer}>
-                <Text style={styles.addCategoryTitle}>Add New Category</Text>
+              {/* Drag Handle */}
+              <View style={styles.dragHandle} />
 
-                <View style={styles.addCategoryInputContainer}>
-                  {/* Emoji Input */}
-                  <View style={styles.emojiInputContainer}>
-                    <Text style={styles.emojiLabel}>Icon</Text>
-                    <TextInput
-                      ref={categoryIconInputRef}
-                      style={styles.emojiInput}
-                      value={newCategoryIcon}
-                      onChangeText={setNewCategoryIcon}
-                      maxLength={2}
-                      placeholder="📦"
-                      placeholderTextColor="rgba(255, 255, 255, 0.5)"
-                      returnKeyType="next"
-                      onSubmitEditing={() => {
-                        categoryNameInputRef.current?.focus();
-                      }}
-                    />
-                  </View>
+              {/* Header with Categories Label and Back Button */}
+              <View style={styles.headerContainer}>
+                <Text style={styles.categoriesLabel}>Categories</Text>
+                <TouchableOpacity
+                  style={styles.backButton}
+                  onPress={handleClose}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="chevron-back" size={24} color="#ffffff" />
+                  {/* </BlurView> */}
+                </TouchableOpacity>
+              </View>
 
-                  {/* Category Name Input */}
-                  <View style={styles.nameInputContainer}>
-                    <Text style={styles.nameLabel}>Name</Text>
-                    <TextInput
-                      ref={categoryNameInputRef}
-                      style={styles.nameInput}
-                      value={newCategoryName}
-                      onChangeText={setNewCategoryName}
-                      maxLength={25}
-                      placeholder="Enter category name"
-                      placeholderTextColor="rgba(255, 255, 255, 0.5)"
-                      returnKeyType="done"
-                      onSubmitEditing={() => {
-                        if (newCategoryName.trim()) {
-                          handleSaveCategory();
-                        }
-                      }}
-                    />
-                    <Text style={styles.characterCount}>
-                      {newCategoryName.length}/25
-                    </Text>
-                  </View>
-                </View>
-
-                {/* Action Buttons */}
-                <View style={styles.addCategoryButtons}>
-                  <TouchableOpacity
-                    style={styles.cancelButton}
-                    onPress={handleCancelAddCategory}
-                    activeOpacity={0.7}
-                    disabled={addCategoryLoading}
-                  >
-                    <Text style={styles.cancelButtonText}>Cancel</Text>
-                  </TouchableOpacity>
-
+              {/* Content */}
+              <ScrollView
+                style={styles.scrollContainer}
+                contentContainerStyle={[
+                  styles.scrollContent,
+                  { paddingBottom: insets.bottom + 20 },
+                ]}
+                showsVerticalScrollIndicator={false}
+              >
+                {/* Category Chips Grid */}
+                <View style={styles.categoryChipsContainer}>
+                  {/* All Categories as first chip */}
                   <TouchableOpacity
                     style={[
-                      styles.saveButton,
-                      (!newCategoryName.trim() || addCategoryLoading) &&
-                        styles.saveButtonDisabled,
+                      styles.categoryChip,
+                      {
+                        backgroundColor: "#e8f4fd", // Light blue background
+                        borderColor: "#4A90E2",
+                      },
                     ]}
-                    onPress={handleSaveCategory}
+                    onPress={() => handleCategorySelect("all")}
                     activeOpacity={0.7}
-                    disabled={!newCategoryName.trim() || addCategoryLoading}
+                    disabled={loading}
                   >
-                    {addCategoryLoading ? (
-                      <Text style={styles.saveButtonText}>Saving...</Text>
-                    ) : (
-                      <Text style={styles.saveButtonText}>Save</Text>
-                    )}
+                    <Text style={styles.chipIcon}>🏷️</Text>
+                    <Text
+                      style={[
+                        styles.chipText,
+                        {
+                          color: "#4A90E2",
+                          fontWeight: "600",
+                        },
+                      ]}
+                      numberOfLines={1}
+                    >
+                      All Categories
+                    </Text>
+                  </TouchableOpacity>
+
+                  {/* Regular Categories */}
+                  {categories?.map((category) => {
+                    // console.log("Rendering category:", category);
+                    return (
+                      <TouchableOpacity
+                        key={category.id}
+                        style={[
+                          styles.categoryChip,
+                          {
+                            backgroundColor: getCategoryBackgroundColor(
+                              category.name
+                            ),
+                            borderColor: category.color + "40",
+                          },
+                        ]}
+                        onPress={() => handleCategorySelect(category.id)}
+                        onLongPress={() => handleCategoryLongPress(category.id)}
+                        activeOpacity={0.7}
+                        disabled={loading}
+                      >
+                        <Text style={styles.chipIcon}>{category.icon}</Text>
+                        <Text
+                          style={[
+                            styles.chipText,
+                            {
+                              color: "#000000",
+                            },
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {formatCategoryFromHook(category.name)}
+                        </Text>
+                        {/* Show delete indicator for user-created categories */}
+                        {category.user_id && (
+                          <View style={styles.deleteIndicator}>
+                            <Text style={styles.deleteIndicatorText}>⋯</Text>
+                          </View>
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })}
+
+                  {/* Add New Category Button */}
+                  <TouchableOpacity
+                    style={styles.addNewChip}
+                    onPress={handleAddNewCategory}
+                    activeOpacity={0.7}
+                    disabled={loading || showAddCategory}
+                  >
+                    <Text style={styles.chipIcon}>➕</Text>
+                    <Text style={styles.addNewChipText}>Add New</Text>
                   </TouchableOpacity>
                 </View>
-              </View>
+
+                {/* Add Category Input Form */}
+                {showAddCategory && (
+                  <Animated.View
+                    style={[
+                      styles.addCategoryForm,
+                      {
+                        transform: [
+                          {
+                            translateY: slideAnim.interpolate({
+                              inputRange: [0, 1],
+                              outputRange: [100, 0],
+                            }),
+                          },
+                        ],
+                        opacity: slideAnim,
+                      },
+                    ]}
+                  >
+                    <View style={styles.addCategoryContainer}>
+                      <Text style={styles.addCategoryTitle}>
+                        Add New Category
+                      </Text>
+
+                      <View style={styles.addCategoryInputContainer}>
+                        {/* Emoji Input */}
+                        <View style={styles.emojiInputContainer}>
+                          <Text style={styles.emojiLabel}>Icon</Text>
+                          <TextInput
+                            ref={categoryIconInputRef}
+                            style={styles.emojiInput}
+                            value={newCategoryIcon}
+                            onChangeText={setNewCategoryIcon}
+                            maxLength={2}
+                            placeholder="📦"
+                            placeholderTextColor="rgba(255, 255, 255, 0.5)"
+                            returnKeyType="next"
+                            onSubmitEditing={() => {
+                              categoryNameInputRef.current?.focus();
+                            }}
+                          />
+                        </View>
+
+                        {/* Category Name Input */}
+                        <View style={styles.nameInputContainer}>
+                          <Text style={styles.nameLabel}>Name</Text>
+                          <TextInput
+                            ref={categoryNameInputRef}
+                            style={styles.nameInput}
+                            value={newCategoryName}
+                            onChangeText={setNewCategoryName}
+                            maxLength={25}
+                            placeholder="Enter category name"
+                            placeholderTextColor="rgba(255, 255, 255, 0.5)"
+                            returnKeyType="done"
+                            onSubmitEditing={() => {
+                              if (newCategoryName.trim()) {
+                                handleSaveCategory();
+                              }
+                            }}
+                          />
+                          <Text style={styles.characterCount}>
+                            {newCategoryName.length}/25
+                          </Text>
+                        </View>
+                      </View>
+
+                      {/* Action Buttons */}
+                      <View style={styles.addCategoryButtons}>
+                        <TouchableOpacity
+                          style={styles.cancelButton}
+                          onPress={handleCancelAddCategory}
+                          activeOpacity={0.7}
+                          disabled={addCategoryLoading}
+                        >
+                          <Text style={styles.cancelButtonText}>Cancel</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          style={[
+                            styles.saveButton,
+                            (!newCategoryName.trim() || addCategoryLoading) &&
+                              styles.saveButtonDisabled,
+                          ]}
+                          onPress={handleSaveCategory}
+                          activeOpacity={0.7}
+                          disabled={
+                            !newCategoryName.trim() || addCategoryLoading
+                          }
+                        >
+                          {addCategoryLoading ? (
+                            <Text style={styles.saveButtonText}>Saving...</Text>
+                          ) : (
+                            <Text style={styles.saveButtonText}>Save</Text>
+                          )}
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  </Animated.View>
+                )}
+              </ScrollView>
             </Animated.View>
-          )}
-        </ScrollView>
-      </Animated.View>
-    </View>
+          </TouchableWithoutFeedback>
+        </View>
+      </TouchableWithoutFeedback>
+    </Modal>
   );
 }
 
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
     justifyContent: "flex-end",
-  },
-  blurOverlay: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-  },
-  overlayTouchable: {
-    flex: 1,
   },
   container: {
     backgroundColor: "#1a1a1a",
@@ -797,21 +831,43 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 10,
   },
-  header: {
-    paddingTop: 12,
-    paddingBottom: 8,
-    paddingHorizontal: 20,
+  dragHandle: {
+    width: 40,
+    height: 4,
+    backgroundColor: "rgba(255, 255, 255, 0.3)",
+    borderRadius: 2,
+    alignSelf: "center",
+    marginTop: 8,
+    marginBottom: 8,
+  },
+  headerContainer: {
     flexDirection: "row",
+    justifyContent: "center",
     alignItems: "center",
+    paddingHorizontal: 20,
+    marginBottom: 16,
+    marginTop: 5,
+    position: "relative",
+  },
+  categoriesLabel: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: "rgba(255, 255, 255, 0.8)",
+    letterSpacing: 0.6,
+    textTransform: "uppercase",
+    textAlign: "center",
   },
   backButton: {
+    position: "absolute",
+    left: 20,
     borderRadius: 20,
     overflow: "hidden",
-  },
-  backButtonBlur: {
-    padding: 8,
-    borderRadius: 20,
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    padding: 6,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.15)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.2)",
   },
   scrollContainer: {
     flex: 1,
