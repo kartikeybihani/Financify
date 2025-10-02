@@ -135,8 +135,8 @@ const TypingIndicator = ({ progressStatus }: TypingIndicatorProps) => {
         <Text style={styles.senderName}>Finny</Text>
       </View>
 
-      {progressStatus ? (
-        // Progress Indicator
+      {progressStatus && (
+        // Progress Status - shown above thinking indicator
         <LinearGradient
           colors={["#1A3A5A", "#2E5A8A", "#4A90E2"]}
           start={{ x: 0, y: 0 }}
@@ -150,124 +150,122 @@ const TypingIndicator = ({ progressStatus }: TypingIndicatorProps) => {
             </View>
           </View>
         </LinearGradient>
-      ) : (
-        // Traditional Typing Indicator
-        <>
-          <LinearGradient
-            colors={["#1A3A5A", "#2E5A8A", "#4A90E2"]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={[styles.messageContainer, styles.finnyMessageContainer]}
-          >
-            <View style={styles.messageContent}>
-              <View style={styles.dotsContainer}>
-                {dots.map((dot, index) => (
-                  <Animated.View
-                    key={index}
-                    style={[
-                      styles.dot,
-                      {
-                        transform: [
-                          {
-                            scale: dot.interpolate({
-                              inputRange: [0, 1],
-                              outputRange: [0.8, 1.2],
-                            }),
-                          },
-                        ],
-                        opacity: dot.interpolate({
-                          inputRange: [0, 1],
-                          outputRange: [0.4, 1],
-                        }),
-                      },
-                    ]}
-                  />
-                ))}
-                <Text style={styles.thinkingText}>Thinking...</Text>
-              </View>
-            </View>
-          </LinearGradient>
-
-          {/* Skeleton Message Bubble */}
-          <View style={styles.skeletonContainer}>
-            <LinearGradient
-              colors={["#1A3A5A", "#2E5A8A", "#4A90E2"]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={[
-                styles.messageContainer,
-                styles.finnyMessageContainer,
-                styles.skeletonBubble,
-              ]}
-            >
-              <View style={styles.messageContent}>
-                <View style={styles.skeletonContent}>
-                  <Animated.View
-                    style={[
-                      styles.skeletonLine,
-                      styles.skeletonLine1,
-                      {
-                        opacity: skeletonAnim.interpolate({
-                          inputRange: [0, 1],
-                          outputRange: [0.2, 0.8],
-                        }),
-                        transform: [
-                          {
-                            scaleX: skeletonAnim.interpolate({
-                              inputRange: [0, 1],
-                              outputRange: [0.95, 1.05],
-                            }),
-                          },
-                        ],
-                      },
-                    ]}
-                  />
-                  <Animated.View
-                    style={[
-                      styles.skeletonLine,
-                      styles.skeletonLine2,
-                      {
-                        opacity: skeletonAnim2.interpolate({
-                          inputRange: [0, 1],
-                          outputRange: [0.3, 0.9],
-                        }),
-                        transform: [
-                          {
-                            scaleX: skeletonAnim2.interpolate({
-                              inputRange: [0, 1],
-                              outputRange: [0.9, 1.1],
-                            }),
-                          },
-                        ],
-                      },
-                    ]}
-                  />
-                  <Animated.View
-                    style={[
-                      styles.skeletonLine,
-                      styles.skeletonLine3,
-                      {
-                        opacity: skeletonAnim3.interpolate({
-                          inputRange: [0, 1],
-                          outputRange: [0.25, 0.75],
-                        }),
-                        transform: [
-                          {
-                            scaleX: skeletonAnim3.interpolate({
-                              inputRange: [0, 1],
-                              outputRange: [0.85, 1.15],
-                            }),
-                          },
-                        ],
-                      },
-                    ]}
-                  />
-                </View>
-              </View>
-            </LinearGradient>
-          </View>
-        </>
       )}
+
+      {/* Traditional Typing Indicator - always shown */}
+      <LinearGradient
+        colors={["#1A3A5A", "#2E5A8A", "#4A90E2"]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={[styles.messageContainer, styles.finnyMessageContainer]}
+      >
+        <View style={styles.messageContent}>
+          <View style={styles.dotsContainer}>
+            {dots.map((dot, index) => (
+              <Animated.View
+                key={index}
+                style={[
+                  styles.dot,
+                  {
+                    transform: [
+                      {
+                        scale: dot.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [0.8, 1.2],
+                        }),
+                      },
+                    ],
+                    opacity: dot.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0.4, 1],
+                    }),
+                  },
+                ]}
+              />
+            ))}
+            <Text style={styles.thinkingText}>Thinking...</Text>
+          </View>
+        </View>
+      </LinearGradient>
+
+      {/* Skeleton Message Bubble */}
+      <View style={styles.skeletonContainer}>
+        <LinearGradient
+          colors={["#1A3A5A", "#2E5A8A", "#4A90E2"]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={[
+            styles.messageContainer,
+            styles.finnyMessageContainer,
+            styles.skeletonBubble,
+          ]}
+        >
+          <View style={styles.messageContent}>
+            <View style={styles.skeletonContent}>
+              <Animated.View
+                style={[
+                  styles.skeletonLine,
+                  styles.skeletonLine1,
+                  {
+                    opacity: skeletonAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0.2, 0.8],
+                    }),
+                    transform: [
+                      {
+                        scaleX: skeletonAnim.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [0.95, 1.05],
+                        }),
+                      },
+                    ],
+                  },
+                ]}
+              />
+              <Animated.View
+                style={[
+                  styles.skeletonLine,
+                  styles.skeletonLine2,
+                  {
+                    opacity: skeletonAnim2.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0.3, 0.9],
+                    }),
+                    transform: [
+                      {
+                        scaleX: skeletonAnim2.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [0.9, 1.1],
+                        }),
+                      },
+                    ],
+                  },
+                ]}
+              />
+              <Animated.View
+                style={[
+                  styles.skeletonLine,
+                  styles.skeletonLine3,
+                  {
+                    opacity: skeletonAnim3.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0.25, 0.75],
+                    }),
+                    transform: [
+                      {
+                        scaleX: skeletonAnim3.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [0.85, 1.15],
+                        }),
+                      },
+                    ],
+                  },
+                ]}
+              />
+            </View>
+          </View>
+        </LinearGradient>
+      </View>
     </Animated.View>
   );
 };

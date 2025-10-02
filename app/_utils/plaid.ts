@@ -763,12 +763,13 @@ export const refreshRecurringTransactions = async (item_id?: string) => {
     // Refresh recurring transactions for each account
     const recurringPromises = userItems.map(async (item) => {
       try {
-        const res = await fetch(`${BASE_URL}/api/refresh_recurring_transactions`, {
+        const res = await fetch(`${BASE_URL}/api/refresh_financial_data`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ 
             item_id: item.item_id,
-            user_id: user.id 
+            user_id: user.id,
+            refresh_type: "recurring"
           }),
         });
         
@@ -880,7 +881,7 @@ export const refreshBothBalancesAndTransactions = async (item_id?: string) => {
     // Refresh both balances and transactions for each account
     const refreshPromises = userItems.map(async (item) => {
       try {
-        const res = await fetch(`${BASE_URL}/api/refresh_data`, {
+        const res = await fetch(`${BASE_URL}/api/refresh_financial_data`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ 
