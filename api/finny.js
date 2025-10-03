@@ -244,9 +244,6 @@ export default async function handler(req, res) {
       case "ask":
         response = await handleAsk(message, safeContext);
         break;
-      case "goal":
-        response = await handleGoal(message, safeContext);
-        break;
       case "ask_state_rule":
         response = await handleAskStateRule(message, safeContext);
         break;
@@ -777,7 +774,11 @@ function planNeeds(slots, message) {
     if (!needs.includes("invest_holdings")) needs.push("invest_holdings");
   }
 
-  if (slots.topic === "goals" || message.toLowerCase().includes("goal")) {
+  if (
+    message.toLowerCase().includes("goal") ||
+    message.toLowerCase().includes("save") ||
+    message.toLowerCase().includes("target")
+  ) {
     // For any goals question, ensure we have both goals and cashflow
     if (!needs.includes("goals_overview")) needs.push("goals_overview");
     if (!needs.includes("cashflow_monthly")) needs.push("cashflow_monthly");
@@ -2591,7 +2592,6 @@ async function handleClassify(message, context) {
               "You are Financify's intent router with strict financial scope boundaries.",
               "Classify one user message into exactly one intent.",
               "Intents:",
-              "- goal  set or modify a savings or payoff goal",
               "- ask_personalized  question about the user's money that needs their data",
               "- ask_fact_fresh  current year numbers or facts that change",
               "- ask_state_rule  state specific rules or taxes",
@@ -2611,14 +2611,13 @@ async function handleClassify(message, context) {
               "- If the message asks 'rent vs buy in <city/state>' → `ask_personalized` (needs_web=true, needs_user_data=true) - this is a personal financial decision requiring user data.",
               "- If the message asks about **BNPL reporting/risks** or **current APRs** → `ask_fact_fresh` (needs_web).",
               "- If affordability, FIRE, retirement planning, or financial projections choose ask_personalized (set needs_calc=true)",
-              "- If it clearly sets a goal choose goal",
               "- If it needs the user's actual data choose ask_personalized",
               "- If purely personal (spend, net worth, goals) → `ask_personalized` (needs_user_data=true, needs_web=false).",
               "- If ambiguous but potentially financial, choose ask_personalized",
               "- **DEFAULT TO FINANCIAL**: When in doubt between financial and non-financial, prefer financial intent.",
               "",
               "Sample inputs and expected intent:",
-              '"Set a 2000 emergency fund by March" → goal',
+              '"Set a 2000 emergency fund by March" → ask_personalized',
               '"How much did I spend on Uber last month" → ask_personalized',
               '"How are you" or "What\'s up" or "Am I normal?" → ask_personalized (financial wellness)',
               '"What\'s the weather like?" → off_topic',
@@ -2659,7 +2658,6 @@ async function handleClassify(message, context) {
                 intent: {
                   type: "string",
                   enum: [
-                    "goal",
                     "ask_personalized",
                     "ask_fact_fresh",
                     "ask_state_rule",
