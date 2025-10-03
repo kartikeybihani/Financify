@@ -105,6 +105,8 @@ export default function HomeScreen() {
     null
   );
   const [selectedAccountData, setSelectedAccountData] = useState<any>(null);
+  const [selectedAccountPerformance, setSelectedAccountPerformance] =
+    useState<any>(null);
   const [showAccountDetailModal, setShowAccountDetailModal] = useState(false);
 
   const [activeSlide, setActiveSlide] = useState(0);
@@ -123,44 +125,82 @@ export default function HomeScreen() {
     setActiveSlide(slideIndex);
   };
 
-  const handleAccountPress = (account: any) => {
+  const handleAccountPress = async (account: any) => {
     // Close the FinancialBottomSheet first
     setActiveModal(null);
-    // Then open the AccountDetailModal
+
+    // Set account data immediately
     setSelectedAccountData(account);
     setSelectedAccountId(account.account_id);
+
+    // Fetch performance data for investment accounts
+    if (account?.type === "investment") {
+      const performanceData = await getInvestmentPerformance(account);
+      setSelectedAccountPerformance(performanceData);
+    } else {
+      setSelectedAccountPerformance(null);
+    }
+
+    // Open the AccountDetailModal
     setShowAccountDetailModal(true);
   };
 
-  // Generate dummy investment performance data for investment accounts
-  const getDummyInvestmentPerformance = (account: any) => {
+  // Fetch real investment performance data from Supabase
+  const getInvestmentPerformance = async (account: any) => {
     if (account?.type !== "investment") return null;
 
-    // Generate some realistic-looking dummy data
-    const baseValue = account.balances?.current || 10000;
+    try {
+      // First, get the snaptrade connection for this account
+      const { data: connection, error: connectionError } = await supabase
+        .from("snaptrade_connections")
+        .select("snaptrade_user_id, account_id")
+        .eq("user_id", userData?.id)
+        .eq("account_id", account.account_id)
+        .eq("is_active", true)
+        .single();
 
-    // Ensure we always get non-zero values
-    let todayChange = (Math.random() - 0.5) * baseValue * 0.05; // ±5% of base value
-    let totalChange = (Math.random() - 0.3) * baseValue * 0.15; // -30% to +15% of base value
+      if (connectionError || !connection) {
+        console.log(
+          "No Snaptrade connection found for account:",
+          account.account_id
+        );
+        return null;
+      }
 
-    // If values are too close to zero, add some minimum change
-    if (Math.abs(todayChange) < baseValue * 0.001) {
-      todayChange = (Math.random() - 0.5) * baseValue * 0.02; // ±2% minimum
+      // Fetch the latest investment balance data
+      const { data: balanceData, error: balanceError } = await supabase
+        .from("investment_balances")
+        .select(
+          "day_change, day_change_percent, total_change, total_change_percent, total_equity"
+        )
+        .eq("user_id", userData?.id)
+        .eq("snaptrade_user_id", connection.snaptrade_user_id)
+        .eq("account_id", connection.account_id)
+        .eq("is_current", true)
+        .single();
+
+      if (balanceError || !balanceData) {
+        console.log(
+          "No investment balance data found for account:",
+          account.account_id
+        );
+        return null;
+      }
+
+      return {
+        todayPerformance: {
+          amount: balanceData.day_change || 0,
+          percentage: balanceData.day_change_percent || 0,
+        },
+        totalPerformance: {
+          amount: balanceData.total_change || 0,
+          percentage: balanceData.total_change_percent || 0,
+        },
+      };
+    } catch (error) {
+      console.error("Error fetching investment performance:", error);
+      return null;
     }
-    if (Math.abs(totalChange) < baseValue * 0.01) {
-      totalChange = (Math.random() - 0.2) * baseValue * 0.05; // -20% to +5% minimum
-    }
-
-    return {
-      todayPerformance: {
-        amount: todayChange,
-        percentage: (todayChange / baseValue) * 100,
-      },
-      totalPerformance: {
-        amount: totalChange,
-        percentage: (totalChange / baseValue) * 100,
-      },
-    };
   };
 
   // Load data directly from Supabase database (secure method)
@@ -1061,13 +1101,12 @@ export default function HomeScreen() {
             visible={showAccountDetailModal}
             accountId={selectedAccountId}
             account={selectedAccountData}
-            investmentPerformance={getDummyInvestmentPerformance(
-              selectedAccountData
-            )}
+            investmentPerformance={selectedAccountPerformance}
             onClose={() => {
               setShowAccountDetailModal(false);
               setSelectedAccountId(null);
               setSelectedAccountData(null);
+              setSelectedAccountPerformance(null);
             }}
           />
         </ScrollView>

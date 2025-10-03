@@ -281,11 +281,12 @@ export default function InvestmentsScreen({
     if (balances.length > 0) {
       const balance = balances[0]; // Use the most recent balance record
 
-      // Check if we have total_change data in the balances table
+      // Check if we have valid total_change data in the balances table (not 0, not null, not undefined)
       if (
         balance.total_change !== null &&
         balance.total_change !== undefined &&
-        !isNaN(balance.total_change)
+        !isNaN(balance.total_change) &&
+        balance.total_change !== 0 // Skip if it's 0 (indicating no data yet)
       ) {
         console.log(
           `✅ Using pre-calculated total_change from investment_balances: $${balance.total_change}`
@@ -294,7 +295,8 @@ export default function InvestmentsScreen({
         const percentage =
           balance.total_change_percent !== null &&
           balance.total_change_percent !== undefined &&
-          !isNaN(balance.total_change_percent)
+          !isNaN(balance.total_change_percent) &&
+          balance.total_change_percent !== 0 // Skip if it's 0 (indicating no data yet)
             ? balance.total_change_percent
             : totalPortfolioValue > 0
             ? (balance.total_change / totalPortfolioValue) * 100
@@ -336,11 +338,12 @@ export default function InvestmentsScreen({
     if (balances.length > 0) {
       const balance = balances[0]; // Use the most recent balance record
 
-      // Check if we have day_change data in the balances table
+      // Check if we have valid day_change data in the balances table (not 0, not null, not undefined)
       if (
         balance.day_change !== null &&
         balance.day_change !== undefined &&
-        !isNaN(balance.day_change)
+        !isNaN(balance.day_change) &&
+        balance.day_change !== 0 // Skip if it's 0 (indicating no data yet)
       ) {
         console.log(
           `✅ Using pre-calculated day_change from investment_balances: $${balance.day_change}`
@@ -349,7 +352,8 @@ export default function InvestmentsScreen({
         const percentage =
           balance.day_change_percent !== null &&
           balance.day_change_percent !== undefined &&
-          !isNaN(balance.day_change_percent)
+          !isNaN(balance.day_change_percent) &&
+          balance.day_change_percent !== 0 // Skip if it's 0 (indicating no data yet)
             ? balance.day_change_percent
             : totalPortfolioValue > 0
             ? (balance.day_change / totalPortfolioValue) * 100

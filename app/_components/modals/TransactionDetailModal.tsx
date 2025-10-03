@@ -20,6 +20,7 @@ import { supabase } from "../../_lib/supabase/supabase";
 import { DeviceEventEmitter } from "react-native";
 import CategorySelectorModal from "./CategorySelectorModal";
 import AccountDetailModal from "./AccountDetailModal";
+import AccountCard from "../shared/AccountCard";
 
 interface Transaction {
   id?: string;
@@ -31,6 +32,7 @@ interface Transaction {
   name: string;
   account_id?: string;
   account_name?: string;
+  account_type?: string;
   institution_name?: string;
   account_mask?: string;
   plaid_transaction_id?: string;
@@ -43,18 +45,6 @@ interface TransactionDetailModalProps {
   transaction?: Transaction | null; // Pass transaction data directly to avoid DB call
   onClose: () => void;
 }
-
-const getAccountGradient = (accountName?: string) => {
-  if (!accountName) return ["#4a5568", "#2d3748"] as const;
-  if (accountName.toLowerCase().includes("checking")) {
-    return ["#4a5568", "#2d3748"] as const;
-  } else if (accountName.toLowerCase().includes("savings")) {
-    return ["#9333ea", "#7c2d12"] as const;
-  } else if (accountName.toLowerCase().includes("credit")) {
-    return ["#1e40af", "#0f172a"] as const;
-  }
-  return ["#374151", "#1f2937"] as const;
-};
 
 const getCategoryEmojiForName = (categoryName: string): string => {
   const name = categoryName || "";
@@ -183,6 +173,8 @@ export default function TransactionDetailModal({
     null
   );
   const [selectedAccountData, setSelectedAccountData] = useState<any>(null);
+  const [selectedAccountPerformance, setSelectedAccountPerformance] =
+    useState<any>(null);
   const [accountDataLoading, setAccountDataLoading] = useState(false);
 
   const {
@@ -243,6 +235,7 @@ export default function TransactionDetailModal({
           const transformedTransaction = {
             ...data,
             account_name: data.accounts?.name || "Unknown Account",
+            account_type: data.accounts?.type || "depository",
             institution_name:
               data.accounts?.user_items?.institution_name ||
               "Unknown Institution",
@@ -329,6 +322,74 @@ export default function TransactionDetailModal({
     setShowCategorySelector(true);
   };
 
+  // Fetch real investment performance data from Supabase
+  const getInvestmentPerformance = async (account: any) => {
+    if (account?.type !== "investment") return null;
+
+    try {
+      // Get current user
+      const {
+        data: { user },
+        error: authError,
+      } = await supabase.auth.getUser();
+      if (authError || !user?.id) {
+        console.log("No authenticated user found");
+        return null;
+      }
+
+      // First, get the snaptrade connection for this account
+      const { data: connection, error: connectionError } = await supabase
+        .from("snaptrade_connections")
+        .select("snaptrade_user_id, account_id")
+        .eq("user_id", user.id)
+        .eq("account_id", account.account_id)
+        .eq("is_active", true)
+        .single();
+
+      if (connectionError || !connection) {
+        console.log(
+          "No Snaptrade connection found for account:",
+          account.account_id
+        );
+        return null;
+      }
+
+      // Fetch the latest investment balance data
+      const { data: balanceData, error: balanceError } = await supabase
+        .from("investment_balances")
+        .select(
+          "day_change, day_change_percent, total_change, total_change_percent, total_equity"
+        )
+        .eq("user_id", user.id)
+        .eq("snaptrade_user_id", connection.snaptrade_user_id)
+        .eq("account_id", connection.account_id)
+        .eq("is_current", true)
+        .single();
+
+      if (balanceError || !balanceData) {
+        console.log(
+          "No investment balance data found for account:",
+          account.account_id
+        );
+        return null;
+      }
+
+      return {
+        todayPerformance: {
+          amount: balanceData.day_change || 0,
+          percentage: balanceData.day_change_percent || 0,
+        },
+        totalPerformance: {
+          amount: balanceData.total_change || 0,
+          percentage: balanceData.total_change_percent || 0,
+        },
+      };
+    } catch (error) {
+      console.error("Error fetching investment performance:", error);
+      return null;
+    }
+  };
+
   const handleAccountPress = async () => {
     if (transaction?.account_id) {
       setSelectedAccountId(transaction.account_id);
@@ -364,8 +425,18 @@ export default function TransactionDetailModal({
               available: accountData.available_balance || 0,
             },
           };
-          console.log("Account data fetched:", transformedAccount);
+          // console.log("Account data fetched:", transformedAccount);
           setSelectedAccountData(transformedAccount);
+
+          // Fetch performance data for investment accounts
+          if (transformedAccount?.type === "investment") {
+            const performanceData = await getInvestmentPerformance(
+              transformedAccount
+            );
+            setSelectedAccountPerformance(performanceData);
+          } else {
+            setSelectedAccountPerformance(null);
+          }
         }
       } catch (error) {
         console.error("Error fetching account data:", error);
@@ -510,11 +581,7 @@ export default function TransactionDetailModal({
 
                   {/* Account Card - Loading State */}
                   <View style={styles.accountSection}>
-                    <View style={styles.accountCardContainer}>
-                      <View style={styles.accountCard}>
-                        <View style={styles.loadingAccountCard} />
-                      </View>
-                    </View>
+                    <View style={styles.loadingAccountCard} />
                   </View>
 
                   {/* Loading Indicator */}
@@ -647,61 +714,17 @@ export default function TransactionDetailModal({
                     transaction.institution_name ||
                     transaction.account_mask) && (
                     <View style={styles.accountSection}>
-                      <View style={styles.accountCardContainer}>
-                        <TouchableOpacity
-                          style={styles.accountCard}
-                          onPress={handleAccountPress}
-                          activeOpacity={0.8}
-                        >
-                          <LinearGradient
-                            colors={getAccountGradient(
-                              transaction.account_name
-                            )}
-                            start={{ x: 0, y: 0 }}
-                            end={{ x: 1, y: 1 }}
-                            style={[
-                              styles.accountCardGradient,
-                              {
-                                height: isSmallPhone
-                                  ? 45
-                                  : isTallPhone
-                                  ? 85
-                                  : 65,
-                              },
-                            ]}
-                          >
-                            <View style={styles.accountCardOverlay} />
-                            <View
-                              style={[
-                                styles.accountCardContent,
-                                { height: "100%" },
-                              ]}
-                            >
-                              <View style={styles.accountCardHeader}>
-                                <Text style={styles.bankName}>
-                                  {transaction.institution_name || "Bank"}
-                                </Text>
-                                <Text style={styles.cardIcon}>💳</Text>
-                              </View>
-                              <View style={styles.accountCardFooter}>
-                                <Text
-                                  style={styles.accountName}
-                                  numberOfLines={1}
-                                >
-                                  {transaction.account_name ||
-                                    transaction.institution_name ||
-                                    "Account"}
-                                </Text>
-                                {transaction.account_mask && (
-                                  <Text style={styles.accountMask}>
-                                    •••{transaction.account_mask}
-                                  </Text>
-                                )}
-                              </View>
-                            </View>
-                          </LinearGradient>
-                        </TouchableOpacity>
-                      </View>
+                      <AccountCard
+                        account={{
+                          account_id: transaction.account_id,
+                          name: transaction.account_name,
+                          mask: transaction.account_mask,
+                          type: transaction.account_type,
+                          institution_name: transaction.institution_name,
+                        }}
+                        onPress={handleAccountPress}
+                        height={isSmallPhone ? 65 : isLandscape ? 105 : 85}
+                      />
                     </View>
                   )}
                 </ScrollView>
@@ -914,75 +937,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   accountSection: {
-    marginBottom: 24,
-    paddingHorizontal: 8,
-  },
-  accountCardContainer: {
-    alignItems: "center",
-  },
-  accountCard: {
-    borderRadius: 16,
-    overflow: "hidden",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 6,
-    width: "90%",
-    maxWidth: 320,
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.1)",
-  },
-  accountCardGradient: {
-    padding: 16,
-    position: "relative",
-  },
-  accountCardOverlay: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: "rgba(255, 255, 255, 0.08)",
-  },
-  accountCardContent: {
-    position: "relative",
-    zIndex: 2,
-    flex: 1,
-    justifyContent: "space-between",
-  },
-  accountCardHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 8,
-  },
-  bankName: {
-    fontSize: 11,
-    fontWeight: "700",
-    color: "rgba(255, 255, 255, 0.9)",
-    textTransform: "uppercase",
-    letterSpacing: 0.8,
-  },
-  cardIcon: {
-    fontSize: 18,
-    color: "rgba(255,255,255,0.9)",
-  },
-  accountCardFooter: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-end",
-  },
-  accountName: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#ffffff",
-    flex: 1,
-    marginRight: 8,
-  },
-  accountMask: {
-    fontSize: 11,
-    fontWeight: "600",
-    color: "rgba(255, 255, 255, 0.8)",
+    marginBottom: 20,
   },
 });

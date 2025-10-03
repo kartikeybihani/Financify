@@ -528,15 +528,15 @@ export default function InsightsScreen() {
       const limit = 50;
 
       // Get filtered transactions
-      logger.info(`🔍 Loading filtered transactions with:`, {
-        accountIds: filters.accountIds,
-        timePeriod: filters.timePeriod,
-        categoryIds: filters.categoryIds,
-        limit,
-        offset,
-        accountIdsLength: filters.accountIds?.length || 0,
-        categoryIdsLength: filters.categoryIds?.length || 0,
-      });
+      // logger.info(`🔍 Loading filtered transactions with:`, {
+      //   accountIds: filters.accountIds,
+      //   timePeriod: filters.timePeriod,
+      //   categoryIds: filters.categoryIds,
+      //   limit,
+      //   offset,
+      //   accountIdsLength: filters.accountIds?.length || 0,
+      //   categoryIdsLength: filters.categoryIds?.length || 0,
+      // });
 
       const newTransactions = await getFilteredTransactions(userId, {
         accountIds: filters.accountIds,
@@ -546,9 +546,9 @@ export default function InsightsScreen() {
         offset,
       });
 
-      logger.info(
-        `📊 getFilteredTransactions returned ${newTransactions.length} transactions`
-      );
+      // logger.info(
+      //   `📊 getFilteredTransactions returned ${newTransactions.length} transactions`
+      // );
 
       // Get total count for pagination (only on initial load)
       let totalCount = totalFilteredCount;

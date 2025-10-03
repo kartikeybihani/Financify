@@ -16,6 +16,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
 import { supabase } from "../../_lib/supabase/supabase";
 import { FontAwesome } from "@expo/vector-icons";
+import AccountCard from "../shared/AccountCard";
 
 interface Account {
   account_id: string;
@@ -59,37 +60,6 @@ interface AccountDetailModalProps {
     };
   } | null;
 }
-
-const getAccountGradient = (accountName?: string, accountType?: string) => {
-  const normalizedType = (accountType || "").toLowerCase();
-  const normalizedName = (accountName || "").toLowerCase();
-
-  // Credit cards
-  if (normalizedType.includes("credit") || normalizedName.includes("credit")) {
-    return ["#151f59", "#343d70"] as const;
-  }
-
-  // Savings accounts
-  if (normalizedType.includes("saving") || normalizedName.includes("saving")) {
-    return ["#0d7377", "#2bb5a0"] as const;
-  }
-
-  // Investment accounts
-  if (
-    normalizedType.includes("investment") ||
-    normalizedName.includes("investment")
-  ) {
-    return ["#04780d", "#02ab10"] as const;
-  }
-
-  // Loan accounts
-  if (normalizedType.includes("loan") || normalizedName.includes("loan")) {
-    return ["#3b82db", "#0091c7"] as const;
-  }
-
-  // Default gradient for checking/depository accounts
-  return ["#1a759f", "#5aa3c7"] as const;
-};
 
 const formatCurrency = (amount: number) => {
   return new Intl.NumberFormat("en-US", {
@@ -293,70 +263,16 @@ export default function AccountDetailModal({
                   >
                     {/* Account Card */}
                     <View style={styles.accountSection}>
-                      <View style={styles.accountCardContainer}>
-                        <View style={styles.accountCard}>
-                          <LinearGradient
-                            colors={getAccountGradient(
-                              account.name,
-                              account.type
-                            )}
-                            start={{ x: 0, y: 0 }}
-                            end={{ x: 1, y: 1 }}
-                            style={[
-                              styles.accountCardGradient,
-                              {
-                                height: isSmallPhone
-                                  ? 65
-                                  : isLandscape
-                                  ? 105
-                                  : 85,
-                              },
-                            ]}
-                          >
-                            <View style={styles.accountCardOverlay} />
-                            <View
-                              style={[
-                                styles.accountCardContent,
-                                { height: "100%" },
-                              ]}
-                            >
-                              <View style={styles.accountCardHeader}>
-                                <Text style={styles.bankName}>
-                                  {account.institution_name || "Bank"}
-                                </Text>
-                                <FontAwesome
-                                  name={
-                                    account.type === "investment"
-                                      ? "money"
-                                      : account.type
-                                          ?.toLowerCase()
-                                          .includes("credit")
-                                      ? "credit-card"
-                                      : "credit-card"
-                                  }
-                                  size={20}
-                                  color="rgba(255,255,255,0.9)"
-                                />
-                              </View>
-                              <View style={styles.accountCardFooter}>
-                                <Text
-                                  style={styles.accountName}
-                                  numberOfLines={1}
-                                >
-                                  {account.name ||
-                                    account.official_name ||
-                                    "Account"}
-                                </Text>
-                                {account.mask && (
-                                  <Text style={styles.accountMask}>
-                                    •••{account.mask}
-                                  </Text>
-                                )}
-                              </View>
-                            </View>
-                          </LinearGradient>
-                        </View>
-                      </View>
+                      <AccountCard
+                        account={{
+                          account_id: account.account_id,
+                          name: account.name || account.official_name,
+                          mask: account.mask,
+                          type: account.type,
+                          institution_name: account.institution_name,
+                        }}
+                        height={isSmallPhone ? 65 : isLandscape ? 105 : 85}
+                      />
                     </View>
 
                     {/* Account Name */}
@@ -410,67 +326,110 @@ export default function AccountDetailModal({
                       )}
 
                       {/* Investment Performance - Only show for investment accounts */}
-                      {account?.type === "investment" && (
-                        <>
-                          {console.log(
-                            "Rendering investment performance for account:",
-                            account.name,
-                            "Type:",
-                            account.type
-                          )}
-                          <View style={styles.performanceRow}>
-                            {/* Today's Performance */}
-                            <View style={styles.performanceItem}>
-                              <Text
-                                style={[
-                                  styles.performanceValue,
-                                  {
-                                    color: "#4ECDC4", // Green for positive
-                                  },
-                                ]}
-                              >
-                                +{formatCurrency(4000)}
-                              </Text>
-                              <Text
-                                style={[
-                                  styles.performancePercentage,
-                                  {
-                                    color: "#4ECDC4", // Green for positive
-                                  },
-                                ]}
-                              >
-                                +3.00%
-                              </Text>
-                              <Text style={styles.performanceLabel}>Today</Text>
-                            </View>
+                      {account?.type === "investment" &&
+                        investmentPerformance && (
+                          <>
+                            <View style={styles.performanceRow}>
+                              {/* Today's Performance */}
+                              <View style={styles.performanceItem}>
+                                <Text
+                                  style={[
+                                    styles.performanceValue,
+                                    {
+                                      color:
+                                        investmentPerformance.todayPerformance
+                                          .amount >= 0
+                                          ? "#4ECDC4"
+                                          : "#ff6b6b",
+                                    },
+                                  ]}
+                                >
+                                  {investmentPerformance.todayPerformance
+                                    .amount >= 0
+                                    ? "+"
+                                    : ""}
+                                  {formatCurrency(
+                                    investmentPerformance.todayPerformance
+                                      .amount
+                                  )}
+                                </Text>
+                                <Text
+                                  style={[
+                                    styles.performancePercentage,
+                                    {
+                                      color:
+                                        investmentPerformance.todayPerformance
+                                          .amount >= 0
+                                          ? "#4ECDC4"
+                                          : "#ff6b6b",
+                                    },
+                                  ]}
+                                >
+                                  {investmentPerformance.todayPerformance
+                                    .percentage >= 0
+                                    ? "+"
+                                    : ""}
+                                  {investmentPerformance.todayPerformance.percentage.toFixed(
+                                    2
+                                  )}
+                                  %
+                                </Text>
+                                <Text style={styles.performanceLabel}>
+                                  Today
+                                </Text>
+                              </View>
 
-                            {/* Total Performance */}
-                            <View style={styles.performanceItem}>
-                              <Text
-                                style={[
-                                  styles.performanceValue,
-                                  {
-                                    color: "#4ECDC4", // Green for positive
-                                  },
-                                ]}
-                              >
-                                +{formatCurrency(25000)}
-                              </Text>
-                              <Text
-                                style={[
-                                  styles.performancePercentage,
-                                  {
-                                    color: "#4ECDC4", // Green for positive
-                                  },
-                                ]}
-                              >
-                                +80.00%
-                              </Text>
-                              <Text style={styles.performanceLabel}>Total</Text>
+                              {/* Total Performance */}
+                              <View style={styles.performanceItem}>
+                                <Text
+                                  style={[
+                                    styles.performanceValue,
+                                    {
+                                      color:
+                                        investmentPerformance.totalPerformance
+                                          .amount >= 0
+                                          ? "#4ECDC4"
+                                          : "#ff6b6b",
+                                    },
+                                  ]}
+                                >
+                                  {investmentPerformance.totalPerformance
+                                    .amount >= 0
+                                    ? "+"
+                                    : ""}
+                                  {formatCurrency(
+                                    investmentPerformance.totalPerformance
+                                      .amount
+                                  )}
+                                </Text>
+                                <Text
+                                  style={[
+                                    styles.performancePercentage,
+                                    {
+                                      color:
+                                        investmentPerformance.totalPerformance
+                                          .amount >= 0
+                                          ? "#4ECDC4"
+                                          : "#ff6b6b",
+                                    },
+                                  ]}
+                                >
+                                  {investmentPerformance.totalPerformance
+                                    .percentage >= 0
+                                    ? "+"
+                                    : ""}
+                                  {investmentPerformance.totalPerformance.percentage.toFixed(
+                                    2
+                                  )}
+                                  %
+                                </Text>
+                                <Text style={styles.performanceLabel}>
+                                  Total
+                                </Text>
+                              </View>
                             </View>
-                          </View>
-                        </>
-                      )}
+                          </>
+                        )}
                     </View>
 
                     {/* Recent Transactions - Only show for non-investment accounts */}
@@ -645,70 +604,6 @@ const styles = StyleSheet.create({
   },
   accountSection: {
     marginBottom: 20,
-  },
-  accountCardContainer: {
-    alignItems: "center",
-  },
-  accountCard: {
-    borderRadius: 16,
-    overflow: "hidden",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 6,
-    width: "90%",
-    maxWidth: 320,
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.1)",
-  },
-  accountCardGradient: {
-    padding: 12,
-    position: "relative",
-  },
-  accountCardOverlay: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: "rgba(255, 255, 255, 0.08)",
-  },
-  accountCardContent: {
-    position: "relative",
-    zIndex: 2,
-    flex: 1,
-    justifyContent: "space-between",
-  },
-  accountCardHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 8,
-  },
-  bankName: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: "rgba(255, 255, 255, 0.9)",
-    textTransform: "uppercase",
-    letterSpacing: 0.8,
-  },
-  accountCardFooter: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-end",
-  },
-  accountName: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#ffffff",
-    flex: 1,
-    marginRight: 8,
-  },
-  accountMask: {
-    fontSize: 11,
-    fontWeight: "600",
-    color: "rgba(255, 255, 255, 0.8)",
   },
   accountNameSection: {
     alignItems: "center",

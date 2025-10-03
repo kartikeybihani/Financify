@@ -487,7 +487,8 @@ async function handleSnapTradeSync(res, userId, accountId) {
             ? (totalUnrealizedPL / totalPortfolioValue) * 100
             : 0;
 
-        console.log(`📈 Portfolio metrics calculated:`, {
+        console.log(`📈 Portfolio metrics calculated from holdings:`, {
+          holdingsCount: holdingsData.length,
           totalPortfolioValue: totalPortfolioValue.toFixed(2),
           totalDayChange: totalDayChange.toFixed(2),
           dayChangePercent: dayChangePercent.toFixed(2),
@@ -514,22 +515,21 @@ async function handleSnapTradeSync(res, userId, accountId) {
           last_updated: new Date().toISOString(),
         }));
 
-        // Mark all previous balances as not current
-        await supabase
-          .from("investment_balances")
-          .update({ is_current: false })
-          .eq("snaptrade_user_id", connection.snaptrade_user_id)
-          .eq("account_id", accountId);
-
-        // Insert new balances (using insert instead of upsert since we marked old ones as inactive)
+        // Update existing current balance row instead of creating new ones
         const { error: balanceErr } = await supabase
           .from("investment_balances")
-          .insert(balanceRows);
+          .update(balanceRows[0]) // Update with the first (and only) balance row
+          .eq("user_id", connection.user_id)
+          .eq("snaptrade_user_id", connection.snaptrade_user_id)
+          .eq("account_id", accountId)
+          .eq("is_current", true);
 
         if (balanceErr) {
-          console.error("❌ Balance upsert error:", balanceErr);
+          console.error("❌ Balance update error:", balanceErr);
         } else {
-          console.log("✅ Balances synced successfully:", balanceRows.length);
+          console.log(
+            "✅ Balance updated successfully with new performance metrics"
+          );
         }
       } else {
         console.log("ℹ️ No balance data to sync");

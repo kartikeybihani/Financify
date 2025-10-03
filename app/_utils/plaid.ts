@@ -1052,15 +1052,15 @@ export const getFilteredTransactions = async (
 
     // Add account filter if specified (multiple accounts)
     if (accountIds.length > 0) {
-      logger.info(`🔍 Filtering by ${accountIds.length} specific accounts:`, accountIds);
+      // logger.info(`🔍 Filtering by ${accountIds.length} specific accounts:`, accountIds);
       query = query.in("account_id", accountIds);
     } else {
-      logger.info(`🔍 No account filter - showing transactions from ALL accounts`);
+      // logger.info(`🔍 No account filter - showing transactions from ALL accounts`);
     }
 
     // Add category filter if specified (multiple categories)
     if (categoryNames.length > 0) {
-      logger.info(`🔍 Filtering by ${categoryNames.length} specific categories:`, categoryNames);
+      // logger.info(`🔍 Filtering by ${categoryNames.length} specific categories:`, categoryNames);
       
       // Use COALESCE to fallback from new_category to top_category
       // This handles the case where new_category is null and we need to use top_category
@@ -1070,7 +1070,7 @@ export const getFilteredTransactions = async (
         ).join(',')
       );
     } else {
-      logger.info(`🔍 No category filter - showing transactions from ALL categories`);
+      // logger.info(`🔍 No category filter - showing transactions from ALL categories`);
     }
 
     logger.info(`🔍 Query parameters:`, {
