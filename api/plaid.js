@@ -449,6 +449,52 @@ async function handleSnapTradeSync(res, userId, accountId) {
       );
 
       if (balanceData && Array.isArray(balanceData) && balanceData.length > 0) {
+        // Get current holdings to calculate performance metrics
+        const holdingsResponse =
+          await snaptrade.accountInformation.getUserHoldings({
+            accountId: accountId,
+            userId: connection.snaptrade_user_id,
+            userSecret: connection.user_secret,
+          });
+
+        const holdingsData = holdingsResponse.data || [];
+        console.log(
+          `📊 Got ${holdingsData.length} holdings for performance calculation`
+        );
+
+        // Calculate portfolio performance metrics
+        let totalDayChange = 0;
+        let totalUnrealizedPL = 0;
+        let totalPortfolioValue = 0;
+
+        holdingsData.forEach((holding) => {
+          const marketValue = holding.market_value || 0;
+          const dayChange = holding.day_change || 0;
+          const unrealizedPL = holding.unrealized_pl || 0;
+
+          totalDayChange += dayChange;
+          totalUnrealizedPL += unrealizedPL;
+          totalPortfolioValue += marketValue;
+        });
+
+        // Calculate percentages
+        const dayChangePercent =
+          totalPortfolioValue > 0
+            ? (totalDayChange / totalPortfolioValue) * 100
+            : 0;
+        const totalChangePercent =
+          totalPortfolioValue > 0
+            ? (totalUnrealizedPL / totalPortfolioValue) * 100
+            : 0;
+
+        console.log(`📈 Portfolio metrics calculated:`, {
+          totalPortfolioValue: totalPortfolioValue.toFixed(2),
+          totalDayChange: totalDayChange.toFixed(2),
+          dayChangePercent: dayChangePercent.toFixed(2),
+          totalUnrealizedPL: totalUnrealizedPL.toFixed(2),
+          totalChangePercent: totalChangePercent.toFixed(2),
+        });
+
         const balanceRows = balanceData.map((balance) => ({
           user_id: connection.user_id,
           snaptrade_user_id: connection.snaptrade_user_id,
@@ -459,6 +505,11 @@ async function handleSnapTradeSync(res, userId, accountId) {
           total_equity: balance.cash || 0,
           total_margin_used: 0,
           total_margin_available: 0,
+          // New performance columns
+          day_change: totalDayChange,
+          day_change_percent: dayChangePercent,
+          total_change: totalUnrealizedPL,
+          total_change_percent: totalChangePercent,
           is_current: true,
           last_updated: new Date().toISOString(),
         }));

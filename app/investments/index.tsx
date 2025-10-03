@@ -52,6 +52,10 @@ interface BalanceRow {
   cash: number;
   buying_power: number;
   currency_code: string;
+  day_change?: number | null;
+  day_change_percent?: number | null;
+  total_change?: number | null;
+  total_change_percent?: number | null;
 }
 
 interface ConnectionRow {
@@ -271,46 +275,109 @@ export default function InvestmentsScreen({
   const totalPortfolioValue = totalHoldingsValue + totalOptionsValue;
   const totalCash = balances.reduce((sum, b) => sum + (b.cash || 0), 0);
 
-  // Calculate total unrealized P&L for gamification
-  const totalUnrealizedPL = holdings.reduce(
-    (sum, h) => sum + (h.unrealized_pl || 0),
-    0
-  );
+  // Calculate total unrealized P&L using new investment_balances columns first, then fallback to holdings
+  const calculateTotalUnrealizedPL = () => {
+    // First priority: Use pre-calculated values from investment_balances table
+    if (balances.length > 0) {
+      const balance = balances[0]; // Use the most recent balance record
 
-  // Percentage of total portfolio represented by total unrealized P&L
-  const totalUnrealizedPLPercent =
-    totalPortfolioValue > 0
-      ? (totalUnrealizedPL / totalPortfolioValue) * 100
-      : 0;
+      // Check if we have total_change data in the balances table
+      if (
+        balance.total_change !== null &&
+        balance.total_change !== undefined &&
+        !isNaN(balance.total_change)
+      ) {
+        console.log(
+          `✅ Using pre-calculated total_change from investment_balances: $${balance.total_change}`
+        );
 
-  // Calculate today's portfolio performance using the day_change fields from Supabase first
-  // Step 1: Check Supabase investment_holdings table for day_change and day_change_percent
-  // Step 2: If not available, fall back to calculation logic
+        const percentage =
+          balance.total_change_percent !== null &&
+          balance.total_change_percent !== undefined &&
+          !isNaN(balance.total_change_percent)
+            ? balance.total_change_percent
+            : totalPortfolioValue > 0
+            ? (balance.total_change / totalPortfolioValue) * 100
+            : 0;
+
+        return {
+          amount: balance.total_change,
+          percentage: percentage,
+        };
+      }
+    }
+
+    // Fallback: Calculate from holdings (legacy method)
+    console.log("🔍 Fallback: Calculating total unrealized P&L from holdings");
+    const totalUnrealizedPL = holdings.reduce(
+      (sum, h) => sum + (h.unrealized_pl || 0),
+      0
+    );
+
+    // Percentage of total portfolio represented by total unrealized P&L
+    const totalUnrealizedPLPercent =
+      totalPortfolioValue > 0
+        ? (totalUnrealizedPL / totalPortfolioValue) * 100
+        : 0;
+
+    return {
+      amount: totalUnrealizedPL,
+      percentage: totalUnrealizedPLPercent,
+    };
+  };
+
+  const totalUnrealizedPLData = calculateTotalUnrealizedPL();
+  const totalUnrealizedPL = totalUnrealizedPLData.amount;
+  const totalUnrealizedPLPercent = totalUnrealizedPLData.percentage;
+
+  // Calculate today's portfolio performance using the new investment_balances columns
   const calculateTodayPerformance = () => {
+    // First priority: Use pre-calculated values from investment_balances table
+    if (balances.length > 0) {
+      const balance = balances[0]; // Use the most recent balance record
+
+      // Check if we have day_change data in the balances table
+      if (
+        balance.day_change !== null &&
+        balance.day_change !== undefined &&
+        !isNaN(balance.day_change)
+      ) {
+        console.log(
+          `✅ Using pre-calculated day_change from investment_balances: $${balance.day_change}`
+        );
+
+        const percentage =
+          balance.day_change_percent !== null &&
+          balance.day_change_percent !== undefined &&
+          !isNaN(balance.day_change_percent)
+            ? balance.day_change_percent
+            : totalPortfolioValue > 0
+            ? (balance.day_change / totalPortfolioValue) * 100
+            : 0;
+
+        return {
+          amount: balance.day_change,
+          percentage: percentage,
+        };
+      }
+    }
+
+    // Fallback: Calculate from holdings (legacy method)
     let totalDailyPerformance = 0;
     let hasValidDayData = false;
 
     console.log(
-      "🔍 Calculating today's performance with holdings:",
+      "🔍 Fallback: Calculating today's performance from holdings:",
       holdings.length
     );
 
     for (const holding of holdings) {
-      // console.log(`🔍 Processing ${holding.symbol}:`, {
-      //   day_change: holding.day_change,
-      //   day_change_percent: holding.day_change_percent,
-      //   market_value: holding.market_value,
-      // });
-
       // STEP 1: First priority - use day_change field from Supabase database if available
       if (
         holding.day_change !== null &&
         holding.day_change !== undefined &&
         !isNaN(holding.day_change)
       ) {
-        // console.log(
-        //   `✅ Using day_change from Supabase for ${holding.symbol}: ${holding.day_change}`
-        // );
         totalDailyPerformance += holding.day_change;
         hasValidDayData = true;
         continue;
@@ -325,30 +392,18 @@ export default function InvestmentsScreen({
       ) {
         const dailyChange =
           (holding.market_value * holding.day_change_percent) / 100;
-        // console.log(
-        //   `✅ Using day_change_percent from Supabase for ${holding.symbol}: ${dailyChange} (${holding.day_change_percent}% of ${holding.market_value})`
-        // );
         totalDailyPerformance += dailyChange;
         hasValidDayData = true;
         continue;
       }
-
-      // STEP 3: Fallback calculation (for first-time users when database fields are null)
-      // This is a simplified calculation - in production, you'd want more sophisticated logic
-      // console.log(
-      //   `⚠️ No day change data in Supabase for ${holding.symbol}, skipping fallback calculation for now`
-      // );
     }
 
     console.log(
-      `📊 Total daily performance calculated: $${totalDailyPerformance}, hasValidDayData: ${hasValidDayData}`
+      `📊 Fallback total daily performance calculated: $${totalDailyPerformance}, hasValidDayData: ${hasValidDayData}`
     );
 
     // If we don't have day change data from Supabase, we can't accurately show today's performance
     if (!hasValidDayData) {
-      // console.log(
-      //   "⚠️ No day change data found in Supabase database, setting performance to 0"
-      // );
       return {
         amount: 0,
         percentage: 0,
@@ -362,7 +417,7 @@ export default function InvestmentsScreen({
         : 0;
 
     console.log(
-      `✅ Final performance: $${totalDailyPerformance.toFixed(
+      `✅ Fallback final performance: $${totalDailyPerformance.toFixed(
         2
       )}, ${todayPortfolioPercentage.toFixed(2)}%`
     );
