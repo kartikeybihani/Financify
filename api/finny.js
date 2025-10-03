@@ -2784,6 +2784,31 @@ async function handleOffTopic(message, context) {
     "Use their name if available, and make the redirection feel natural.",
     "Keep responses concise but engaging.",
     "Focus on financial empowerment and positive outcomes.",
+    "",
+    // Add memory context
+    ...(context.memory?.summary
+      ? [`User context: ${context.memory.summary}`]
+      : []),
+    ...(context.memory?.memories?.length
+      ? [
+          `Traits: ${context.memory.memories
+            .filter((m) => m.memory_type === "profile_trait")
+            .map((m) => `${m.key}: ${m.value}`)
+            .join(", ")}`,
+          `Constraints: ${context.memory.memories
+            .filter((m) => m.memory_type === "constraint")
+            .map((m) => `${m.key}: ${m.value}`)
+            .join(", ")}`,
+          `Preferences: ${context.memory.memories
+            .filter((m) => m.memory_type === "preference")
+            .map((m) => `${m.key}: ${m.value}`)
+            .join(", ")}`,
+          `Future plans: ${context.memory.memories
+            .filter((m) => m.memory_type === "future_plan")
+            .map((m) => `${m.key}: ${m.value}`)
+            .join(", ")}`,
+        ]
+      : []),
   ].join("\n");
 
   try {
@@ -2809,7 +2834,7 @@ async function handleOffTopic(message, context) {
                 ", "
               )}\n\nUser name: ${
                 userProfile.name || "there"
-              }\n\nRespond with a warm redirection to financial topics.`,
+              }\n\nUse the user's memory context to make the redirection more personal and relevant to their situation.`,
             },
           ],
         }),
@@ -6050,6 +6075,12 @@ function removeMemoryCandidatesFromText(text) {
 
   // Remove simple array format memory candidates
   cleanText = cleanText.replace(/memory_candidates[:\s]*\[.*?\]/s, "");
+
+  // Remove any leftover JSON code blocks
+  cleanText = cleanText.replace(/```json\s*```/g, "");
+  cleanText = cleanText.replace(/```json.*?```/gs, "");
+  cleanText = cleanText.replace(/```\s*```/g, "");
+  cleanText = cleanText.replace(/```.*?```/gs, "");
 
   // Clean up any trailing whitespace or newlines
   cleanText = cleanText.trim();
