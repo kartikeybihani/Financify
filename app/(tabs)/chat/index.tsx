@@ -19,12 +19,13 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import { Ionicons } from "@expo/vector-icons";
 import { AntDesign } from "@expo/vector-icons";
-import { ChatMessageComponent } from "../_components/chat/ChatMessage";
-import { NudgeGrid } from "../_components/chat/NudgeGrid";
-import { useChat } from "../_hooks/useChat";
-import styles from "../_styles/chatStyles";
-import TypingIndicator from "../_components/chat/TypingIndicator";
-import ConversationStartersModal from "../_components/chat/ConversationStartersModal";
+import { useRouter } from "expo-router";
+import { ChatMessageComponent } from "../../_components/chat/ChatMessage";
+import { NudgeGrid } from "../../_components/chat/NudgeGrid";
+import { useChat } from "../../_hooks/useChat";
+import styles from "../../_styles/chatStyles";
+import TypingIndicator from "../../_components/chat/TypingIndicator";
+import ConversationStartersModal from "../../_components/chat/ConversationStartersModal";
 
 interface Suggestion {
   text: string;
@@ -49,6 +50,7 @@ const responsiveHeight = (percentage: number) =>
 
 export default function ChatScreen() {
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const [userInput, setUserInput] = useState("");
   const [showScrollButton, setShowScrollButton] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
@@ -391,7 +393,7 @@ export default function ChatScreen() {
           <View style={styles.titleContainer}>
             <View style={styles.mascotContainer}>
               <Animated.Image
-                source={require("../assets/mascot1.jpg")}
+                source={require("../../assets/mascot1.jpg")}
                 style={[
                   styles.mascotImage,
                   {
@@ -413,11 +415,11 @@ export default function ChatScreen() {
             </View>
           </View>
           <TouchableOpacity
-            style={styles.clearButton}
-            onPress={clearChat}
+            style={styles.filterButton}
+            onPress={() => router.push("/(tabs)/chat/finny-settings")}
             activeOpacity={0.7}
           >
-            <Ionicons name="trash-outline" size={20} color="#FF3B30" />
+            <Ionicons name="filter" size={20} color="#4A90E2" />
           </TouchableOpacity>
         </View>
         <KeyboardAvoidingView
