@@ -679,7 +679,7 @@ async function handleAsk(message, context) {
         `🧠 [FINNY] Saving ${memoryCandidates.length} memory candidates:`,
         memoryCandidates
       );
-      await saveMemoryCandidates(serverUserId, memoryCandidates);
+      await saveMemoryCandidates(context?.user_id, memoryCandidates);
     } else {
       console.log("🧠 [FINNY] No memory candidates found in response");
     }
@@ -697,7 +697,7 @@ async function handleAsk(message, context) {
       user_message: redactPII(message),
       finny_response: redactPII(cleanText),
       timestamp: new Date().toISOString(),
-      user_id: userId,
+      user_id: context?.user_id || "unknown",
       intent: "ask_personalized",
       entities: [],
       confidence: 1.0,
