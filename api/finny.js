@@ -646,7 +646,7 @@ async function handleAsk(message, context) {
           { role: "system", content: system },
           {
             role: "user",
-            content: `User: ${message}\n\nContext:\n${contextNote}\n\nIMPORTANT: Also return memory_candidates as JSON array with type, key, value, and confidence_score for any user traits, preferences, constraints, or future plans you detect.`,
+            content: `User: ${message}\n\nContext:\n${contextNote}\n\nIMPORTANT: After your main response, include a separate memory_candidates JSON object with type, key, value, and confidence_score for any user traits, preferences, constraints, or future plans you detect. Put this at the very end of your response.`,
           },
         ],
       }),
@@ -667,11 +667,13 @@ async function handleAsk(message, context) {
     }
 
     const data = await resp.json();
-    const text =
+    const rawText =
       data.choices?.[0]?.message?.content ?? "I'm not sure yet. Ask me again?";
 
-    // NEW: Extract memory candidates from response
-    const memoryCandidates = extractMemoryCandidates(text);
+    // NEW: Extract memory candidates from response and clean the text
+    const memoryCandidates = extractMemoryCandidates(rawText);
+    const cleanText = removeMemoryCandidatesFromText(rawText);
+
     if (memoryCandidates.length > 0) {
       console.log(
         `🧠 [FINNY] Saving ${memoryCandidates.length} memory candidates:`,
@@ -685,15 +687,15 @@ async function handleAsk(message, context) {
     const response = {
       message:
         gaps.length > 0
-          ? `${text}\n\n(Using available data - some data may be incomplete.)`
-          : text,
+          ? `${cleanText}\n\n(Using available data - some data may be incomplete.)`
+          : cleanText,
       type: "assistant",
     };
 
     // Log the conversation
     const conversationData = {
       user_message: redactPII(message),
-      finny_response: redactPII(text),
+      finny_response: redactPII(cleanText),
       timestamp: new Date().toISOString(),
       user_id: userId,
       intent: "ask_personalized",
@@ -6010,11 +6012,25 @@ async function loadUserMemory(userId) {
 function extractMemoryCandidates(text) {
   const candidates = [];
 
-  // Look for memory_candidates JSON in response
-  const jsonMatch = text.match(/memory_candidates[:\s]*\[(.*?)\]/s);
+  // Look for memory_candidates JSON object in response
+  const jsonMatch = text.match(
+    /\{\s*"memory_candidates"\s*:\s*\[(.*?)\]\s*\}/s
+  );
   if (jsonMatch) {
     try {
-      const candidatesText = `[${jsonMatch[1]}]`;
+      const candidatesText = `{"memory_candidates":[${jsonMatch[1]}]}`;
+      const parsed = JSON.parse(candidatesText);
+      return parsed.memory_candidates.filter((c) => c.confidence_score >= 0.85);
+    } catch (e) {
+      console.log("Memory extraction failed:", e);
+    }
+  }
+
+  // Fallback: look for simple array format
+  const arrayMatch = text.match(/memory_candidates[:\s]*\[(.*?)\]/s);
+  if (arrayMatch) {
+    try {
+      const candidatesText = `[${arrayMatch[1]}]`;
       const parsed = JSON.parse(candidatesText);
       return parsed.filter((c) => c.confidence_score >= 0.85);
     } catch (e) {
@@ -6025,6 +6041,22 @@ function extractMemoryCandidates(text) {
   return candidates;
 }
 
+function removeMemoryCandidatesFromText(text) {
+  // Remove JSON object format memory candidates
+  let cleanText = text.replace(
+    /\{\s*"memory_candidates"\s*:\s*\[.*?\]\s*\}/s,
+    ""
+  );
+
+  // Remove simple array format memory candidates
+  cleanText = cleanText.replace(/memory_candidates[:\s]*\[.*?\]/s, "");
+
+  // Clean up any trailing whitespace or newlines
+  cleanText = cleanText.trim();
+
+  return cleanText;
+}
+
 async function saveMemoryCandidates(userId, candidates) {
   if (!userId || !candidates.length) return;
 
@@ -6033,6 +6065,16 @@ async function saveMemoryCandidates(userId, candidates) {
     let skippedCount = 0;
 
     for (const candidate of candidates) {
+      // Map memory types to database format
+      const memoryTypeMap = {
+        trait: "profile_trait",
+        constraint: "constraint",
+        preference: "preference",
+        future_plan: "future_plan",
+      };
+
+      const memoryType = memoryTypeMap[candidate.type] || candidate.type;
+
       // Redact sensitive data
       const redactedValue = redactPII(candidate.value);
 
@@ -6052,11 +6094,11 @@ async function saveMemoryCandidates(userId, candidates) {
       const { error } = await supabase.from("user_memories").upsert(
         {
           user_id: userId,
-          memory_type: candidate.type,
+          memory_type: memoryType,
           key: candidate.key,
           value: redactedValue,
           confidence_score: candidate.confidence_score,
-          expires_at: getExpiryDate(candidate.type),
+          expires_at: getExpiryDate(memoryType),
         },
         {
           onConflict: "user_id,memory_type,key",
@@ -6070,7 +6112,7 @@ async function saveMemoryCandidates(userId, candidates) {
         );
       } else {
         console.log(
-          `🧠 [FINNY] ✅ Saved memory: ${candidate.type}.${candidate.key} = "${redactedValue}" (confidence: ${candidate.confidence_score})`
+          `🧠 [FINNY] ✅ Saved memory: ${memoryType}.${candidate.key} = "${redactedValue}" (confidence: ${candidate.confidence_score})`
         );
         savedCount++;
       }
