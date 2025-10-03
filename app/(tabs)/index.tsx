@@ -40,6 +40,7 @@ import CategorySelectionModal from "../_components/modals/CategorySelectionModal
 import CashDepositInstitutionModal from "../_components/modals/CashDepositInstitutionModal";
 import CreditCardInstitutionModal from "../_components/modals/CreditCardInstitutionModal";
 import InstitutionSelectionModal from "../_components/modals/InstitutionSelectionModal";
+import AccountDetailModal from "../_components/modals/AccountDetailModal";
 import { LoadingSkeleton } from "../../src/components/LoadingSkeleton";
 import { Goal } from "../_types/finny";
 import { useGoals } from "../_hooks/useGoals";
@@ -99,6 +100,13 @@ export default function HomeScreen() {
   const hasLoadedOnce = useRef(false);
   const [userData, setUserData] = useState<any>(null);
 
+  // Account Detail Modal state
+  const [selectedAccountId, setSelectedAccountId] = useState<string | null>(
+    null
+  );
+  const [selectedAccountData, setSelectedAccountData] = useState<any>(null);
+  const [showAccountDetailModal, setShowAccountDetailModal] = useState(false);
+
   const [activeSlide, setActiveSlide] = useState(0);
   const screenWidth = Dimensions.get("window").width;
 
@@ -113,6 +121,12 @@ export default function HomeScreen() {
       event.nativeEvent.contentOffset.x / screenWidth
     );
     setActiveSlide(slideIndex);
+  };
+
+  const handleAccountPress = (account: any) => {
+    setSelectedAccountData(account);
+    setSelectedAccountId(account.account_id);
+    setShowAccountDetailModal(true);
   };
 
   // Load data directly from Supabase database (secure method)
@@ -816,6 +830,9 @@ export default function HomeScreen() {
                     )}
                     icon="wallet-outline"
                     bankName={account.institution_name || "Unknown Bank"}
+                    accountId={account.account_id}
+                    accountData={account}
+                    onPress={() => handleAccountPress(account)}
                   />
                 )),
               },
@@ -835,12 +852,9 @@ export default function HomeScreen() {
                     )}
                     icon="trending-up"
                     bankName={account.institution_name || "Investment Broker"}
-                    onPress={() => {
-                      setActiveModal(null);
-                      setTimeout(() => {
-                        router.push("/(tabs)/insights" as any);
-                      }, 150);
-                    }}
+                    accountId={account.account_id}
+                    accountData={account}
+                    onPress={() => handleAccountPress(account)}
                   />
                 )),
               },
@@ -866,6 +880,9 @@ export default function HomeScreen() {
                       )}
                       icon="card-outline"
                       bankName={account.institution_name || "Unknown Bank"}
+                      accountId={account.account_id}
+                      accountData={account}
+                      onPress={() => handleAccountPress(account)}
                     />
                   )),
               },
@@ -891,6 +908,9 @@ export default function HomeScreen() {
                       )}
                       icon="receipt-outline"
                       bankName={account.institution_name || "Unknown Bank"}
+                      accountId={account.account_id}
+                      accountData={account}
+                      onPress={() => handleAccountPress(account)}
                     />
                   )),
               },
@@ -999,6 +1019,18 @@ export default function HomeScreen() {
               logger.info("Investment institution selected:", institutionId);
               // Investment institutions are handled by the InstitutionSelectionModal itself
               // which calls the Snaptrade connection logic
+            }}
+          />
+
+          {/* Account Detail Modal */}
+          <AccountDetailModal
+            visible={showAccountDetailModal}
+            accountId={selectedAccountId}
+            account={selectedAccountData}
+            onClose={() => {
+              setShowAccountDetailModal(false);
+              setSelectedAccountId(null);
+              setSelectedAccountData(null);
             }}
           />
         </ScrollView>

@@ -29,6 +29,8 @@ interface AccountItemProps {
   iconColor?: string;
   bankName?: string;
   onPress?: () => void;
+  accountId?: string;
+  accountData?: any;
 }
 
 // Card gradient schemes based on account type
@@ -83,6 +85,8 @@ export default function AccountItem({
   iconColor = "#4A90E2",
   bankName,
   onPress,
+  accountId,
+  accountData,
 }: AccountItemProps) {
   const gradient = getCardGradient(type);
 

@@ -29,8 +29,7 @@
       <dict>
         <key>CFBundleURLSchemes</key>
         <array>
-          <string>myapp</string>
-          <string>com.kartikey08.financify</string>
+          <string>financify</string>
         </array>
       </dict>
       <dict>

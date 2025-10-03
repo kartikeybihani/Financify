@@ -1,9 +1,11 @@
 // Basic interfaces
 export interface Account {
+  account_id: string;
   name: string;
   subtype: string;
   balances: {
     current: number;
+    available?: number;
   };
   type: string;
   institution_name?: string;

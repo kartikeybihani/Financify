@@ -19,6 +19,7 @@ import { useCategories } from "../../_hooks/useCategories";
 import { supabase } from "../../_lib/supabase/supabase";
 import { DeviceEventEmitter } from "react-native";
 import CategorySelectorModal from "./CategorySelectorModal";
+import AccountDetailModal from "./AccountDetailModal";
 
 interface Transaction {
   id?: string;
@@ -28,6 +29,7 @@ interface Transaction {
   new_category?: string;
   date: string;
   name: string;
+  account_id?: string;
   account_name?: string;
   institution_name?: string;
   account_mask?: string;
@@ -175,6 +177,14 @@ export default function TransactionDetailModal({
   const [isInternalTransfer, setIsInternalTransfer] = useState<boolean>(false);
   const [showCategorySelector, setShowCategorySelector] = useState(false);
 
+  // Account Detail Modal state
+  const [showAccountDetailModal, setShowAccountDetailModal] = useState(false);
+  const [selectedAccountId, setSelectedAccountId] = useState<string | null>(
+    null
+  );
+  const [selectedAccountData, setSelectedAccountData] = useState<any>(null);
+  const [accountDataLoading, setAccountDataLoading] = useState(false);
+
   const {
     categories,
     getCategoryIcon,
@@ -293,6 +303,10 @@ export default function TransactionDetailModal({
       setIsInternalTransfer(false);
       setLoading(true);
       setShowCategorySelector(false);
+      setShowAccountDetailModal(false);
+      setSelectedAccountId(null);
+      setSelectedAccountData(null);
+      setAccountDataLoading(false);
     }
   }, [visible]);
 
@@ -303,12 +317,75 @@ export default function TransactionDetailModal({
     setIsInternalTransfer(false);
     setLoading(true);
     setShowCategorySelector(false);
+    setShowAccountDetailModal(false);
+    setSelectedAccountId(null);
+    setSelectedAccountData(null);
+    setAccountDataLoading(false);
     onClose();
   };
 
   const handleCategoryPress = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setShowCategorySelector(true);
+  };
+
+  const handleAccountPress = async () => {
+    if (transaction?.account_id) {
+      setSelectedAccountId(transaction.account_id);
+      setShowAccountDetailModal(true);
+      setAccountDataLoading(true);
+
+      // Fetch full account data from database
+      try {
+        const { data: accountData, error } = await supabase
+          .from("accounts")
+          .select(
+            `
+            *,
+            user_items:item_id (
+              institution_name
+            )
+          `
+          )
+          .eq("account_id", transaction.account_id)
+          .single();
+
+        if (error) throw error;
+
+        if (accountData) {
+          const transformedAccount = {
+            ...accountData,
+            institution_name:
+              accountData.user_items?.institution_name ||
+              transaction.institution_name ||
+              "Unknown Institution",
+            balances: {
+              current: accountData.current_balance || 0,
+              available: accountData.available_balance || 0,
+            },
+          };
+          console.log("Account data fetched:", transformedAccount);
+          setSelectedAccountData(transformedAccount);
+        }
+      } catch (error) {
+        console.error("Error fetching account data:", error);
+        // Fallback to basic account data from transaction
+        setSelectedAccountData({
+          account_id: transaction.account_id,
+          name: transaction.account_name || "Unknown Account",
+          type: "depository",
+          subtype: "checking",
+          institution_name:
+            transaction.institution_name || "Unknown Institution",
+          balances: {
+            current: 0,
+            available: 0,
+          },
+        });
+      } finally {
+        setAccountDataLoading(false);
+      }
+    }
   };
 
   const handleInternalTransferToggle = () => {
@@ -571,7 +648,11 @@ export default function TransactionDetailModal({
                     transaction.account_mask) && (
                     <View style={styles.accountSection}>
                       <View style={styles.accountCardContainer}>
-                        <View style={styles.accountCard}>
+                        <TouchableOpacity
+                          style={styles.accountCard}
+                          onPress={handleAccountPress}
+                          activeOpacity={0.8}
+                        >
                           <LinearGradient
                             colors={getAccountGradient(
                               transaction.account_name
@@ -619,7 +700,7 @@ export default function TransactionDetailModal({
                               </View>
                             </View>
                           </LinearGradient>
-                        </View>
+                        </TouchableOpacity>
                       </View>
                     </View>
                   )}
@@ -636,6 +717,22 @@ export default function TransactionDetailModal({
         transactionId={transaction?.id || null}
         merchantName={transaction?.merchant_name}
         onClose={() => setShowCategorySelector(false)}
+      />
+
+      {/* Account Detail Modal */}
+      <AccountDetailModal
+        visible={showAccountDetailModal}
+        accountId={selectedAccountId}
+        account={selectedAccountData}
+        loading={accountDataLoading}
+        onClose={() => {
+          setShowAccountDetailModal(false);
+          setSelectedAccountId(null);
+          setSelectedAccountData(null);
+          setAccountDataLoading(false);
+          // Close the parent TransactionDetailModal when AccountDetailModal is closed
+          handleClose();
+        }}
       />
     </Modal>
   );

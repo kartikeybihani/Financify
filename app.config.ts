@@ -7,7 +7,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   version: "1.0.0",
   orientation: "portrait",
   icon: "./assets/images/appicon.png",
-  scheme: "myapp",
+  scheme: "financify",
   userInterfaceStyle: "automatic",
   newArchEnabled: true,
   splash: {
@@ -23,7 +23,6 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     supportsTablet: true,
     usesAppleSignIn: true,
     bundleIdentifier: "com.kartikey08.financify",
-    scheme: "financify",
     infoPlist: {
       "ITSAppUsesNonExemptEncryption": false
     }
