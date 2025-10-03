@@ -5,7 +5,6 @@ import {
   ScrollView,
   TouchableOpacity,
   Platform,
-  SafeAreaView,
   ActivityIndicator,
   Alert,
 } from "react-native";
@@ -16,6 +15,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { Dimensions } from "react-native";
 import { useAuth } from "../../_contexts/AuthContext";
 import { createClient } from "@supabase/supabase-js";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
 
@@ -152,24 +152,54 @@ const styles = {
     marginTop: responsivePadding(6),
     fontStyle: "italic" as const,
   },
+  dateLabel: {
+    fontSize: responsiveFontSize(10),
+    color: "rgba(255, 255, 255, 0.5)",
+    marginBottom: 0,
+    marginLeft: 4,
+  },
   summaryCard: {
-    backgroundColor: "rgba(74, 144, 226, 0.1)",
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
     borderRadius: 12,
-    padding: responsivePadding(16),
+    paddingVertical: responsivePadding(12),
+    paddingHorizontal: responsivePadding(14),
     marginBottom: responsivePadding(20),
     borderWidth: 1,
-    borderColor: "rgba(74, 144, 226, 0.2)",
+    borderColor: "rgba(255, 255, 255, 0.15)",
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  summaryHeader: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+  },
+  summaryLeft: {
+    flex: 1,
+    marginRight: responsivePadding(12),
+  },
+  summaryRight: {
+    justifyContent: "center" as const,
+    alignItems: "center" as const,
   },
   summaryTitle: {
     fontSize: responsiveFontSize(16),
     fontWeight: "600" as const,
-    color: "#4A90E2",
-    marginBottom: responsivePadding(8),
+    color: "#fff",
+  },
+  trashButton: {
+    padding: 8,
   },
   summaryText: {
-    fontSize: responsiveFontSize(14),
+    fontSize: responsiveFontSize(12),
     color: "rgba(255, 255, 255, 0.9)",
-    lineHeight: responsiveFontSize(20),
+    lineHeight: responsiveFontSize(16),
+    fontWeight: "600" as const,
   },
   clearMemoriesButton: {
     backgroundColor: "rgba(255, 68, 68, 0.15)",
@@ -202,6 +232,11 @@ interface MemorySummary {
   last_updated: string;
 }
 
+interface MemoriesScreenProps {
+  onBack?: () => void;
+  preloadedData?: MemorySummary | null;
+}
+
 const getMemoryTypeDisplayName = (type: string) => {
   switch (type) {
     case "profile_trait":
@@ -232,21 +267,32 @@ const getMemoryTypeIcon = (type: string) => {
   }
 };
 
-export default function MemoriesScreen() {
+export default function MemoriesScreen({
+  onBack,
+  preloadedData,
+}: MemoriesScreenProps = {}) {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { session } = useAuth();
+
+  const handleBack = () => {
+    if (onBack) {
+      onBack();
+    } else {
+      router.back();
+    }
+  };
   const [memories, setMemories] = useState<Memory[]>([]);
   const [memorySummary, setMemorySummary] = useState<MemorySummary | null>(
-    null
+    preloadedData || null
   );
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!preloadedData);
 
   useEffect(() => {
-    if (session?.user?.id) {
+    if (session?.user?.id && !preloadedData) {
       fetchMemories();
     }
-  }, [session]);
+  }, [session, preloadedData]);
 
   const fetchMemories = async () => {
     try {
@@ -259,19 +305,7 @@ export default function MemoriesScreen() {
         .eq("user_id", session?.user?.id)
         .single();
 
-      // Fetch recent memories
-      const { data: memoriesData } = await supabase
-        .from("user_memories")
-        .select(
-          "memory_type, key, value, confidence_score, created_at, updated_at"
-        )
-        .eq("user_id", session?.user?.id)
-        .or("expires_at.is.null,expires_at.gt.now()")
-        .order("updated_at", { ascending: false })
-        .limit(20);
-
       setMemorySummary(summaryData);
-      setMemories(memoriesData || []);
     } catch (error) {
       console.error("Error fetching memories:", error);
     } finally {
@@ -323,6 +357,15 @@ export default function MemoriesScreen() {
     }
   };
 
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+  };
+
   if (loading) {
     return (
       <View style={styles.container}>
@@ -340,18 +383,16 @@ export default function MemoriesScreen() {
     );
   }
 
-  const hasMemories = memories.length > 0 || memorySummary?.summary_text;
+  const hasMemories = memorySummary?.summary_text;
 
   return (
     <View style={styles.container}>
       <SafeAreaView style={{ flex: 1, marginBottom: insets.bottom - 10 }}>
         {/* Header */}
         <View style={styles.header}>
-          <View style={{ width: 40 }} />
-          <Text style={styles.headerTitle}>Memories</Text>
           <TouchableOpacity
             style={styles.closeButton}
-            onPress={() => router.back()}
+            onPress={handleBack}
             activeOpacity={0.7}
           >
             <LinearGradient
@@ -363,9 +404,11 @@ export default function MemoriesScreen() {
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
             >
-              <Ionicons name="close" size={22} color="#fff" />
+              <Ionicons name="chevron-back" size={22} color="#fff" />
             </LinearGradient>
           </TouchableOpacity>
+          <Text style={styles.headerTitle}>Memories</Text>
+          <View style={{ width: 40 }} />
         </View>
 
         {/* Content */}
@@ -386,58 +429,34 @@ export default function MemoriesScreen() {
               </Text>
             </View>
           ) : (
-            <>
+            <View style={styles.memorySection}>
               {/* Memory Summary */}
-              {memorySummary?.summary_text && (
-                <View style={styles.memorySection}>
-                  <View style={styles.summaryCard}>
-                    <Text style={styles.summaryTitle}>Memory Summary</Text>
+              <View style={styles.summaryCard}>
+                <View style={styles.summaryHeader}>
+                  <View style={styles.summaryLeft}>
+                    <Text style={styles.dateLabel}>
+                      {formatDate(memorySummary.last_updated)}
+                    </Text>
                     <Text style={styles.summaryText}>
                       {memorySummary.summary_text}
                     </Text>
                   </View>
+                  <View style={styles.summaryRight}>
+                    <TouchableOpacity
+                      style={styles.trashButton}
+                      onPress={handleClearMemories}
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons
+                        name="trash-outline"
+                        size={28}
+                        color="#FF4444"
+                      />
+                    </TouchableOpacity>
+                  </View>
                 </View>
-              )}
-
-              {/* Individual Memories */}
-              {memories.length > 0 && (
-                <View style={styles.memorySection}>
-                  {memories.map((memory, index) => (
-                    <View key={index} style={styles.memoryCard}>
-                      <View style={styles.memoryHeader}>
-                        <Text style={styles.memoryType}>
-                          {getMemoryTypeDisplayName(memory.memory_type)}
-                        </Text>
-                        <Ionicons
-                          name={getMemoryTypeIcon(memory.memory_type) as any}
-                          size={16}
-                          color="#4A90E2"
-                        />
-                      </View>
-                      <Text style={styles.memoryKey}>{memory.key}</Text>
-                      <Text style={styles.memoryValue}>{memory.value}</Text>
-                      {memory.confidence_score > 0 && (
-                        <Text style={styles.memoryConfidence}>
-                          Confidence:{" "}
-                          {Math.round(memory.confidence_score * 100)}%
-                        </Text>
-                      )}
-                    </View>
-                  ))}
-                </View>
-              )}
-
-              {/* Clear Memories Button */}
-              <TouchableOpacity
-                style={styles.clearMemoriesButton}
-                onPress={handleClearMemories}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.clearMemoriesButtonText}>
-                  Clear All Memories
-                </Text>
-              </TouchableOpacity>
-            </>
+              </View>
+            </View>
           )}
 
           {/* Bottom padding */}

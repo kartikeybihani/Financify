@@ -327,23 +327,6 @@ export default function ChatScreen() {
     });
   }, []);
 
-  const scrollToBottom = useCallback(() => {
-    const list = flatListRef.current as any;
-    if (!list) return;
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        try {
-          list.scrollToEnd({ animated: true });
-        } catch {}
-        setTimeout(() => {
-          try {
-            list.scrollToEnd({ animated: true });
-          } catch {}
-        }, 0);
-      });
-    });
-  }, []);
-
   // FlatList render item function
   const renderItem: ListRenderItem<any> = useCallback(
     ({ item, index }) => {
@@ -410,7 +393,7 @@ export default function ChatScreen() {
             <View style={styles.headerContent}>
               <Text style={styles.headerTitle}>Finny</Text>
               <Text style={styles.headerSubtitle}>
-                Your AI Financial Assistant
+                Your AI Financial Advisor
               </Text>
             </View>
           </View>

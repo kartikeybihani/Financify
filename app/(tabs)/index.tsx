@@ -124,9 +124,43 @@ export default function HomeScreen() {
   };
 
   const handleAccountPress = (account: any) => {
+    // Close the FinancialBottomSheet first
+    setActiveModal(null);
+    // Then open the AccountDetailModal
     setSelectedAccountData(account);
     setSelectedAccountId(account.account_id);
     setShowAccountDetailModal(true);
+  };
+
+  // Generate dummy investment performance data for investment accounts
+  const getDummyInvestmentPerformance = (account: any) => {
+    if (account?.type !== "investment") return null;
+
+    // Generate some realistic-looking dummy data
+    const baseValue = account.balances?.current || 10000;
+
+    // Ensure we always get non-zero values
+    let todayChange = (Math.random() - 0.5) * baseValue * 0.05; // ±5% of base value
+    let totalChange = (Math.random() - 0.3) * baseValue * 0.15; // -30% to +15% of base value
+
+    // If values are too close to zero, add some minimum change
+    if (Math.abs(todayChange) < baseValue * 0.001) {
+      todayChange = (Math.random() - 0.5) * baseValue * 0.02; // ±2% minimum
+    }
+    if (Math.abs(totalChange) < baseValue * 0.01) {
+      totalChange = (Math.random() - 0.2) * baseValue * 0.05; // -20% to +5% minimum
+    }
+
+    return {
+      todayPerformance: {
+        amount: todayChange,
+        percentage: (todayChange / baseValue) * 100,
+      },
+      totalPerformance: {
+        amount: totalChange,
+        percentage: (totalChange / baseValue) * 100,
+      },
+    };
   };
 
   // Load data directly from Supabase database (secure method)
@@ -1027,6 +1061,9 @@ export default function HomeScreen() {
             visible={showAccountDetailModal}
             accountId={selectedAccountId}
             account={selectedAccountData}
+            investmentPerformance={getDummyInvestmentPerformance(
+              selectedAccountData
+            )}
             onClose={() => {
               setShowAccountDetailModal(false);
               setSelectedAccountId(null);

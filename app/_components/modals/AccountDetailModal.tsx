@@ -48,18 +48,47 @@ interface AccountDetailModalProps {
   account?: Account | null;
   onClose: () => void;
   loading?: boolean;
+  investmentPerformance?: {
+    todayPerformance: {
+      amount: number;
+      percentage: number;
+    };
+    totalPerformance: {
+      amount: number;
+      percentage: number;
+    };
+  } | null;
 }
 
-const getAccountGradient = (accountName?: string) => {
-  if (!accountName) return ["#4a5568", "#2d3748"] as const;
-  if (accountName.toLowerCase().includes("checking")) {
-    return ["#4a5568", "#2d3748"] as const;
-  } else if (accountName.toLowerCase().includes("savings")) {
-    return ["#9333ea", "#7c2d12"] as const;
-  } else if (accountName.toLowerCase().includes("credit")) {
-    return ["#1e40af", "#0f172a"] as const;
+const getAccountGradient = (accountName?: string, accountType?: string) => {
+  const normalizedType = (accountType || "").toLowerCase();
+  const normalizedName = (accountName || "").toLowerCase();
+
+  // Credit cards
+  if (normalizedType.includes("credit") || normalizedName.includes("credit")) {
+    return ["#151f59", "#343d70"] as const;
   }
-  return ["#374151", "#1f2937"] as const;
+
+  // Savings accounts
+  if (normalizedType.includes("saving") || normalizedName.includes("saving")) {
+    return ["#0d7377", "#2bb5a0"] as const;
+  }
+
+  // Investment accounts
+  if (
+    normalizedType.includes("investment") ||
+    normalizedName.includes("investment")
+  ) {
+    return ["#04780d", "#02ab10"] as const;
+  }
+
+  // Loan accounts
+  if (normalizedType.includes("loan") || normalizedName.includes("loan")) {
+    return ["#3b82db", "#0091c7"] as const;
+  }
+
+  // Default gradient for checking/depository accounts
+  return ["#1a759f", "#5aa3c7"] as const;
 };
 
 const formatCurrency = (amount: number) => {
@@ -84,6 +113,7 @@ export default function AccountDetailModal({
   account: initialAccount,
   onClose,
   loading: externalLoading = false,
+  investmentPerformance,
 }: AccountDetailModalProps) {
   const insets = useSafeAreaInsets();
   const { height, width } = useWindowDimensions();
@@ -107,7 +137,10 @@ export default function AccountDetailModal({
       if (initialAccount) {
         setAccount(initialAccount);
         setLoading(false);
-        loadRecentTransactions(initialAccount.account_id);
+        // Only load transactions for non-investment accounts
+        if (initialAccount.type !== "investment") {
+          loadRecentTransactions(initialAccount.account_id);
+        }
         return;
       }
 
@@ -139,7 +172,10 @@ export default function AccountDetailModal({
           };
 
           setAccount(transformedAccount);
-          loadRecentTransactions(data.account_id);
+          // Only load transactions for non-investment accounts
+          if (data.type !== "investment") {
+            loadRecentTransactions(data.account_id);
+          }
         }
       } catch (error) {
         console.error("Error loading account:", error);
@@ -216,6 +252,7 @@ export default function AccountDetailModal({
       onRequestClose={handleClose}
       statusBarTranslucent={true}
       presentationStyle="overFullScreen"
+      style={{ zIndex: 10000 }}
     >
       <TouchableWithoutFeedback onPress={handleClose}>
         <View style={styles.overlay}>
@@ -251,13 +288,18 @@ export default function AccountDetailModal({
                       { paddingBottom: insets.bottom + 20 },
                     ]}
                     showsVerticalScrollIndicator={false}
+                    bounces={false}
+                    alwaysBounceVertical={false}
                   >
                     {/* Account Card */}
                     <View style={styles.accountSection}>
                       <View style={styles.accountCardContainer}>
                         <View style={styles.accountCard}>
                           <LinearGradient
-                            colors={getAccountGradient(account.name)}
+                            colors={getAccountGradient(
+                              account.name,
+                              account.type
+                            )}
                             start={{ x: 0, y: 0 }}
                             end={{ x: 1, y: 1 }}
                             style={[
@@ -282,7 +324,19 @@ export default function AccountDetailModal({
                                 <Text style={styles.bankName}>
                                   {account.institution_name || "Bank"}
                                 </Text>
-                                <Text style={styles.cardIcon}>💳</Text>
+                                <FontAwesome
+                                  name={
+                                    account.type === "investment"
+                                      ? "money"
+                                      : account.type
+                                          ?.toLowerCase()
+                                          .includes("credit")
+                                      ? "credit-card"
+                                      : "credit-card"
+                                  }
+                                  size={20}
+                                  color="rgba(255,255,255,0.9)"
+                                />
                               </View>
                               <View style={styles.accountCardFooter}>
                                 <Text
@@ -323,7 +377,11 @@ export default function AccountDetailModal({
                         {formatCurrency(Math.abs(currentBalance))}
                       </Text>
                       <Text style={styles.mainBalanceLabel}>
-                        {isCreditCard ? "Current Balance" : "Available Balance"}
+                        {isCreditCard
+                          ? "Current Balance"
+                          : account?.type === "investment"
+                          ? "Portfolio Value"
+                          : "Available Balance"}
                       </Text>
 
                       {isCreditCard && (
@@ -350,86 +408,153 @@ export default function AccountDetailModal({
                           </View>
                         </View>
                       )}
-                    </View>
 
-                    {/* Recent Transactions */}
-                    <View style={styles.transactionsSection}>
-                      <Text style={styles.sectionTitle}>
-                        Recent Transactions
-                      </Text>
-
-                      {transactionsLoading ? (
-                        <View style={styles.transactionsLoading}>
-                          <ActivityIndicator size="small" color="#4A90E2" />
-                          <Text style={styles.transactionsLoadingText}>
-                            Loading transactions...
-                          </Text>
-                        </View>
-                      ) : recentTransactions.length > 0 ? (
-                        <View style={styles.transactionsList}>
-                          {recentTransactions.slice(0, 5).map((transaction) => (
-                            <View
-                              key={transaction.id}
-                              style={styles.transactionItem}
-                            >
-                              <View style={styles.transactionLeft}>
-                                <View style={styles.transactionIcon}>
-                                  <Ionicons
-                                    name={
-                                      transaction.amount < 0
-                                        ? "arrow-up"
-                                        : "arrow-down"
-                                    }
-                                    size={16}
-                                    color={
-                                      transaction.amount < 0
-                                        ? "#4ade80"
-                                        : "#ff6b6b"
-                                    }
-                                  />
-                                </View>
-                                <View style={styles.transactionDetails}>
-                                  <Text
-                                    style={styles.transactionName}
-                                    numberOfLines={1}
-                                  >
-                                    {transaction.name}
-                                  </Text>
-                                  <Text style={styles.transactionDate}>
-                                    {formatDate(transaction.date)}
-                                  </Text>
-                                </View>
-                              </View>
+                      {/* Investment Performance - Only show for investment accounts */}
+                      {account?.type === "investment" && (
+                        <>
+                          {console.log(
+                            "Rendering investment performance for account:",
+                            account.name,
+                            "Type:",
+                            account.type
+                          )}
+                          <View style={styles.performanceRow}>
+                            {/* Today's Performance */}
+                            <View style={styles.performanceItem}>
                               <Text
                                 style={[
-                                  styles.transactionAmount,
+                                  styles.performanceValue,
                                   {
-                                    color:
-                                      transaction.amount < 0
-                                        ? "#4ade80"
-                                        : "#ff6b6b",
+                                    color: "#4ECDC4", // Green for positive
                                   },
                                 ]}
                               >
-                                {transaction.amount < 0
-                                  ? `+$${Math.abs(transaction.amount).toFixed(
-                                      2
-                                    )}`
-                                  : `-$${Math.abs(transaction.amount).toFixed(
-                                      2
-                                    )}`}
+                                +{formatCurrency(4000)}
                               </Text>
+                              <Text
+                                style={[
+                                  styles.performancePercentage,
+                                  {
+                                    color: "#4ECDC4", // Green for positive
+                                  },
+                                ]}
+                              >
+                                +3.00%
+                              </Text>
+                              <Text style={styles.performanceLabel}>Today</Text>
                             </View>
-                          ))}
-                        </View>
-                      ) : (
-                        <View style={styles.noTransactions}>
-                          <Text style={styles.noTransactionsText}>
-                            No recent transactions
-                          </Text>
-                        </View>
+
+                            {/* Total Performance */}
+                            <View style={styles.performanceItem}>
+                              <Text
+                                style={[
+                                  styles.performanceValue,
+                                  {
+                                    color: "#4ECDC4", // Green for positive
+                                  },
+                                ]}
+                              >
+                                +{formatCurrency(25000)}
+                              </Text>
+                              <Text
+                                style={[
+                                  styles.performancePercentage,
+                                  {
+                                    color: "#4ECDC4", // Green for positive
+                                  },
+                                ]}
+                              >
+                                +80.00%
+                              </Text>
+                              <Text style={styles.performanceLabel}>Total</Text>
+                            </View>
+                          </View>
+                        </>
                       )}
                     </View>
+
+                    {/* Recent Transactions - Only show for non-investment accounts */}
+                    {account?.type !== "investment" && (
+                      <View style={styles.transactionsSection}>
+                        <Text style={styles.sectionTitle}>
+                          Recent Transactions
+                        </Text>
+
+                        {transactionsLoading ? (
+                          <View style={styles.transactionsLoading}>
+                            <ActivityIndicator size="small" color="#4A90E2" />
+                            <Text style={styles.transactionsLoadingText}>
+                              Loading transactions...
+                            </Text>
+                          </View>
+                        ) : recentTransactions.length > 0 ? (
+                          <View style={styles.transactionsList}>
+                            {recentTransactions
+                              .slice(0, 5)
+                              .map((transaction) => (
+                                <View
+                                  key={transaction.id}
+                                  style={styles.transactionItem}
+                                >
+                                  <View style={styles.transactionLeft}>
+                                    <View style={styles.transactionIcon}>
+                                      <Ionicons
+                                        name={
+                                          transaction.amount < 0
+                                            ? "arrow-up"
+                                            : "arrow-down"
+                                        }
+                                        size={16}
+                                        color={
+                                          transaction.amount < 0
+                                            ? "#4ade80"
+                                            : "#ff6b6b"
+                                        }
+                                      />
+                                    </View>
+                                    <View style={styles.transactionDetails}>
+                                      <Text
+                                        style={styles.transactionName}
+                                        numberOfLines={1}
+                                      >
+                                        {transaction.name}
+                                      </Text>
+                                      <Text style={styles.transactionDate}>
+                                        {formatDate(transaction.date)}
+                                      </Text>
+                                    </View>
+                                  </View>
+                                  <Text
+                                    style={[
+                                      styles.transactionAmount,
+                                      {
+                                        color:
+                                          transaction.amount < 0
+                                            ? "#4ade80"
+                                            : "#ff6b6b",
+                                      },
+                                    ]}
+                                  >
+                                    {transaction.amount < 0
+                                      ? `+$${Math.abs(
+                                          transaction.amount
+                                        ).toFixed(2)}`
+                                      : `-$${Math.abs(
+                                          transaction.amount
+                                        ).toFixed(2)}`}
+                                  </Text>
+                                </View>
+                              ))}
+                          </View>
+                        ) : (
+                          <View style={styles.noTransactions}>
+                            <Text style={styles.noTransactionsText}>
+                              No recent transactions
+                            </Text>
+                          </View>
+                        )}
+                      </View>
+                    )}
                   </ScrollView>
                 </>
               )}
@@ -446,6 +571,8 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "rgba(0, 0, 0, 0.5)",
     justifyContent: "flex-end",
+    zIndex: 9999,
+    elevation: 9999,
   },
   container: {
     backgroundColor: "#1a1a1a",
@@ -456,9 +583,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 10,
     elevation: 10,
-    maxHeight: "85%",
-    minHeight: "60%",
-    flex: 1,
+    maxHeight: "90%",
+    zIndex: 10000,
+    alignSelf: "stretch",
   },
   dragHandle: {
     width: 40,
@@ -507,11 +634,14 @@ const styles = StyleSheet.create({
     fontSize: 18,
   },
   scrollContainer: {
-    flex: 1,
+    flexGrow: 1,
+    flexShrink: 1,
   },
   scrollContent: {
     paddingHorizontal: 20,
     paddingTop: 20,
+    paddingBottom: 20,
+    flexGrow: 1,
   },
   accountSection: {
     marginBottom: 20,
@@ -557,15 +687,11 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   bankName: {
-    fontSize: 11,
+    fontSize: 14,
     fontWeight: "700",
     color: "rgba(255, 255, 255, 0.9)",
     textTransform: "uppercase",
     letterSpacing: 0.8,
-  },
-  cardIcon: {
-    fontSize: 18,
-    color: "rgba(255,255,255,0.9)",
   },
   accountCardFooter: {
     flexDirection: "row",
@@ -688,6 +814,42 @@ const styles = StyleSheet.create({
   additionalBalanceValue: {
     fontSize: 16,
     fontWeight: "600",
+  },
+  performanceRow: {
+    flexDirection: "row",
+    justifyContent: "space-around",
+    width: "100%",
+    paddingHorizontal: 20,
+    marginTop: 20,
+  },
+  performanceItem: {
+    alignItems: "center",
+  },
+  performanceValue: {
+    fontSize: 17,
+    fontWeight: "700",
+    color: "#4ECDC4",
+    marginBottom: 4,
+  },
+  performancePercentage: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#4ECDC4",
+    marginBottom: 4,
+  },
+  performanceLabel: {
+    fontSize: 14,
+    color: "rgba(255, 255, 255, 0.6)",
+    textAlign: "center",
+    marginTop: 6,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    backgroundColor: "rgba(255, 255, 255, 0.05)",
+    paddingHorizontal: 12,
+    paddingVertical: 2,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.1)",
   },
   transactionsSection: {
     marginBottom: 24,
