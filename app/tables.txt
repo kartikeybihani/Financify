@@ -170,6 +170,13 @@ CREATE TABLE public.investment_options (
   CONSTRAINT fk_io_pair FOREIGN KEY (snaptrade_user_id) REFERENCES public.snaptrade_connections(account_id),
   CONSTRAINT fk_io_pair FOREIGN KEY (account_id) REFERENCES public.snaptrade_connections(account_id)
 );
+CREATE TABLE public.memory_summary (
+  user_id uuid NOT NULL,
+  summary_text text NOT NULL,
+  last_updated timestamp with time zone DEFAULT now(),
+  CONSTRAINT memory_summary_pkey PRIMARY KEY (user_id),
+  CONSTRAINT memory_summary_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
+);
 CREATE TABLE public.recurring_streams (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL,
@@ -251,6 +258,19 @@ CREATE TABLE public.user_items (
   last_synced_at timestamp with time zone,
   CONSTRAINT user_items_pkey PRIMARY KEY (id),
   CONSTRAINT user_items_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
+);
+CREATE TABLE public.user_memories (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL,
+  memory_type text NOT NULL CHECK (memory_type = ANY (ARRAY['profile_trait'::text, 'constraint'::text, 'preference'::text, 'future_plan'::text])),
+  key text NOT NULL,
+  value text NOT NULL,
+  confidence_score numeric DEFAULT 0.0 CHECK (confidence_score >= 0::numeric AND confidence_score <= 1::numeric),
+  expires_at timestamp with time zone,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT user_memories_pkey PRIMARY KEY (id),
+  CONSTRAINT user_memories_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
 );
 CREATE TABLE public.web_scrape_cache (
   id uuid NOT NULL DEFAULT gen_random_uuid(),

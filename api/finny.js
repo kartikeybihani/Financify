@@ -224,6 +224,8 @@ export default async function handler(req, res) {
     ...(context || {}),
     user_id: serverUserId || null,
     profile: userProfile,
+    // NEW: Add memory reading
+    memory: await loadUserMemory(serverUserId),
   };
 
   if (!action) {
@@ -446,6 +448,31 @@ async function handleAsk(message, context) {
       "- Use the user's name when available to create personal connection",
       "- Focus on financial empowerment and positive outcomes",
       "",
+      // NEW: Add memory context
+      ...(safeContext.memory?.summary
+        ? [`User context: ${safeContext.memory.summary}`]
+        : []),
+      ...(safeContext.memory?.memories?.length
+        ? [
+            `Traits: ${safeContext.memory.memories
+              .filter((m) => m.memory_type === "profile_trait")
+              .map((m) => `${m.key}: ${m.value}`)
+              .join(", ")}`,
+            `Constraints: ${safeContext.memory.memories
+              .filter((m) => m.memory_type === "constraint")
+              .map((m) => `${m.key}: ${m.value}`)
+              .join(", ")}`,
+            `Preferences: ${safeContext.memory.memories
+              .filter((m) => m.memory_type === "preference")
+              .map((m) => `${m.key}: ${m.value}`)
+              .join(", ")}`,
+            `Future plans: ${safeContext.memory.memories
+              .filter((m) => m.memory_type === "future_plan")
+              .map((m) => `${m.key}: ${m.value}`)
+              .join(", ")}`,
+          ]
+        : []),
+      "",
       "RESPONSE GUIDELINES:",
       "- Be CONCISE and focused - only answer what the user is asking for",
       "- Don't overwhelm users with too much information at once",
@@ -622,7 +649,7 @@ async function handleAsk(message, context) {
           { role: "system", content: system },
           {
             role: "user",
-            content: `User: ${message}\n\nContext:\n${contextNote}`,
+            content: `User: ${message}\n\nContext:\n${contextNote}\n\nIMPORTANT: Also return memory_candidates as JSON array with type, key, value, and confidence_score for any user traits, preferences, constraints, or future plans you detect.`,
           },
         ],
       }),
@@ -645,6 +672,18 @@ async function handleAsk(message, context) {
     const data = await resp.json();
     const text =
       data.choices?.[0]?.message?.content ?? "I'm not sure yet. Ask me again?";
+
+    // NEW: Extract memory candidates from response
+    const memoryCandidates = extractMemoryCandidates(text);
+    if (memoryCandidates.length > 0) {
+      console.log(
+        `🧠 [FINNY] Saving ${memoryCandidates.length} memory candidates:`,
+        memoryCandidates
+      );
+      await saveMemoryCandidates(serverUserId, memoryCandidates);
+    } else {
+      console.log("🧠 [FINNY] No memory candidates found in response");
+    }
 
     const response = {
       message:
@@ -5924,4 +5963,217 @@ function extractKeyMetricsAcrossProducts(products) {
     ranges: metrics,
     averages,
   };
+}
+
+// === MEMORY MANAGEMENT FUNCTIONS ===
+
+async function loadUserMemory(userId) {
+  if (!userId) return { summary: "", memories: [] };
+
+  try {
+    // Get memory summary
+    const { data: summary } = await supabase
+      .from("memory_summary")
+      .select("summary_text")
+      .eq("user_id", userId)
+      .single();
+
+    // Get top 3 freshest non-expired memories
+    const { data: memories } = await supabase
+      .from("user_memories")
+      .select("memory_type, key, value, confidence_score")
+      .eq("user_id", userId)
+      .or("expires_at.is.null,expires_at.gt.now()")
+      .order("updated_at", { ascending: false })
+      .limit(3);
+
+    const result = {
+      summary: summary?.summary_text || "",
+      memories: memories || [],
+    };
+
+    if (result.summary || result.memories.length > 0) {
+      console.log(`🧠 [FINNY] Loaded memory for user ${userId}:`, {
+        summary: result.summary,
+        memoryCount: result.memories.length,
+        memories: result.memories.map(
+          (m) => `${m.memory_type}.${m.key}: ${m.value}`
+        ),
+      });
+    }
+
+    return result;
+  } catch (error) {
+    console.error("Memory load failed:", error);
+    return { summary: "", memories: [] };
+  }
+}
+
+function extractMemoryCandidates(text) {
+  const candidates = [];
+
+  // Look for memory_candidates JSON in response
+  const jsonMatch = text.match(/memory_candidates[:\s]*\[(.*?)\]/s);
+  if (jsonMatch) {
+    try {
+      const candidatesText = `[${jsonMatch[1]}]`;
+      const parsed = JSON.parse(candidatesText);
+      return parsed.filter((c) => c.confidence_score >= 0.85);
+    } catch (e) {
+      console.log("Memory extraction failed:", e);
+    }
+  }
+
+  return candidates;
+}
+
+async function saveMemoryCandidates(userId, candidates) {
+  if (!userId || !candidates.length) return;
+
+  try {
+    let savedCount = 0;
+    let skippedCount = 0;
+
+    for (const candidate of candidates) {
+      // Redact sensitive data
+      const redactedValue = redactPII(candidate.value);
+
+      // Skip if redacted or sensitive
+      if (
+        redactedValue !== candidate.value ||
+        isSensitiveData(candidate.value)
+      ) {
+        console.log(
+          `🧠 [FINNY] Skipping sensitive memory: ${candidate.key} = ${candidate.value}`
+        );
+        skippedCount++;
+        continue;
+      }
+
+      // Upsert memory
+      const { error } = await supabase.from("user_memories").upsert(
+        {
+          user_id: userId,
+          memory_type: candidate.type,
+          key: candidate.key,
+          value: redactedValue,
+          confidence_score: candidate.confidence_score,
+          expires_at: getExpiryDate(candidate.type),
+        },
+        {
+          onConflict: "user_id,memory_type,key",
+        }
+      );
+
+      if (error) {
+        console.error(
+          `🧠 [FINNY] Failed to save memory ${candidate.key}:`,
+          error
+        );
+      } else {
+        console.log(
+          `🧠 [FINNY] ✅ Saved memory: ${candidate.type}.${candidate.key} = "${redactedValue}" (confidence: ${candidate.confidence_score})`
+        );
+        savedCount++;
+      }
+    }
+
+    console.log(
+      `🧠 [FINNY] Memory save complete: ${savedCount} saved, ${skippedCount} skipped`
+    );
+
+    // Update memory summary
+    await updateMemorySummary(userId);
+  } catch (error) {
+    console.error("Memory save failed:", error);
+  }
+}
+
+function isSensitiveData(value) {
+  const sensitivePatterns = [
+    /\b\d{3}-\d{2}-\d{4}\b/, // SSN
+    /\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b/, // Credit card
+    /\b\d{9,}\b/, // Long numbers
+    /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/, // Email
+  ];
+
+  return sensitivePatterns.some((pattern) => pattern.test(value));
+}
+
+function getExpiryDate(memoryType) {
+  const now = new Date();
+  const expiryDays = {
+    profile_trait: 365, // 1 year
+    constraint: 180, // 6 months
+    preference: 90, // 3 months
+    future_plan: 180, // 6 months
+  };
+
+  const days = expiryDays[memoryType] || 90;
+  return new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
+}
+
+async function updateMemorySummary(userId) {
+  try {
+    const { data: memories } = await supabase
+      .from("user_memories")
+      .select("memory_type, key, value")
+      .eq("user_id", userId)
+      .or("expires_at.is.null,expires_at.gt.now()")
+      .order("updated_at", { ascending: false })
+      .limit(10);
+
+    if (!memories?.length) return;
+
+    const summary = generateMemorySummary(memories);
+
+    await supabase.from("memory_summary").upsert({
+      user_id: userId,
+      summary_text: summary,
+      last_updated: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error("Memory summary update failed:", error);
+  }
+}
+
+function generateMemorySummary(memories) {
+  const traits = memories.filter((m) => m.memory_type === "profile_trait");
+  const constraints = memories.filter((m) => m.memory_type === "constraint");
+  const preferences = memories.filter((m) => m.memory_type === "preference");
+  const futurePlans = memories.filter((m) => m.memory_type === "future_plan");
+
+  const parts = [];
+
+  if (traits.length) {
+    parts.push(
+      `Profile: ${traits.map((t) => `${t.key} (${t.value})`).join(", ")}`
+    );
+  }
+
+  if (constraints.length) {
+    parts.push(
+      `Constraints: ${constraints
+        .map((c) => `${c.key} (${c.value})`)
+        .join(", ")}`
+    );
+  }
+
+  if (preferences.length) {
+    parts.push(
+      `Preferences: ${preferences
+        .map((p) => `${p.key} (${p.value})`)
+        .join(", ")}`
+    );
+  }
+
+  if (futurePlans.length) {
+    parts.push(
+      `Future plans: ${futurePlans
+        .map((f) => `${f.key} (${f.value})`)
+        .join(", ")}`
+    );
+  }
+
+  return parts.join(". ");
 }
