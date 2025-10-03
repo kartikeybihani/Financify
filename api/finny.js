@@ -446,24 +446,24 @@ async function handleAsk(message, context) {
       "- Focus on financial empowerment and positive outcomes",
       "",
       // NEW: Add memory context
-      ...(safeContext.memory?.summary
-        ? [`User context: ${safeContext.memory.summary}`]
+      ...(context.memory?.summary
+        ? [`User context: ${context.memory.summary}`]
         : []),
-      ...(safeContext.memory?.memories?.length
+      ...(context.memory?.memories?.length
         ? [
-            `Traits: ${safeContext.memory.memories
+            `Traits: ${context.memory.memories
               .filter((m) => m.memory_type === "profile_trait")
               .map((m) => `${m.key}: ${m.value}`)
               .join(", ")}`,
-            `Constraints: ${safeContext.memory.memories
+            `Constraints: ${context.memory.memories
               .filter((m) => m.memory_type === "constraint")
               .map((m) => `${m.key}: ${m.value}`)
               .join(", ")}`,
-            `Preferences: ${safeContext.memory.memories
+            `Preferences: ${context.memory.memories
               .filter((m) => m.memory_type === "preference")
               .map((m) => `${m.key}: ${m.value}`)
               .join(", ")}`,
-            `Future plans: ${safeContext.memory.memories
+            `Future plans: ${context.memory.memories
               .filter((m) => m.memory_type === "future_plan")
               .map((m) => `${m.key}: ${m.value}`)
               .join(", ")}`,
