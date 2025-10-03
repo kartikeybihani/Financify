@@ -640,7 +640,7 @@ async function handleAsk(message, context) {
       body: JSON.stringify({
         model: OPENROUTER_MODEL,
         temperature: 0.6,
-        max_tokens: 650,
+        max_tokens: 1200,
         stream: false,
         messages: [
           { role: "system", content: system },
