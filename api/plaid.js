@@ -457,44 +457,81 @@ async function handleSnapTradeSync(res, userId, accountId) {
             userSecret: connection.user_secret,
           });
 
-        const holdingsData = holdingsResponse.data || [];
+        const holdingsData = holdingsResponse?.data || [];
         console.log(
-          `📊 Got ${holdingsData.length} holdings for performance calculation`
+          `📊 Got ${
+            holdingsData ? holdingsData.length : 0
+          } holdings for performance calculation`
         );
 
+        // Get existing balance data to preserve day change values if no new data available
+        const { data: existingBalance } = await supabase
+          .from("investment_balances")
+          .select(
+            "day_change, day_change_percent, total_change, total_change_percent"
+          )
+          .eq("user_id", connection.user_id)
+          .eq("snaptrade_user_id", connection.snaptrade_user_id)
+          .eq("account_id", accountId)
+          .eq("is_current", true)
+          .single();
+
         // Calculate portfolio performance metrics
-        let totalDayChange = 0;
-        let totalUnrealizedPL = 0;
+        let totalDayChange = existingBalance?.day_change || 0;
+        let totalUnrealizedPL = existingBalance?.total_change || 0;
         let totalPortfolioValue = 0;
 
-        holdingsData.forEach((holding) => {
-          const marketValue = holding.market_value || 0;
-          const dayChange = holding.day_change || 0;
-          const unrealizedPL = holding.unrealized_pl || 0;
+        if (
+          holdingsData &&
+          Array.isArray(holdingsData) &&
+          holdingsData.length > 0
+        ) {
+          // Reset to 0 only when we have new data to calculate from
+          totalDayChange = 0;
+          totalUnrealizedPL = 0;
 
-          totalDayChange += dayChange;
-          totalUnrealizedPL += unrealizedPL;
-          totalPortfolioValue += marketValue;
-        });
+          holdingsData.forEach((holding) => {
+            const marketValue = holding.market_value || 0;
+            const dayChange = holding.day_change || 0;
+            const unrealizedPL = holding.unrealized_pl || 0;
+
+            totalDayChange += dayChange;
+            totalUnrealizedPL += unrealizedPL;
+            totalPortfolioValue += marketValue;
+          });
+        }
 
         // Calculate percentages
         const dayChangePercent =
-          totalPortfolioValue > 0
-            ? (totalDayChange / totalPortfolioValue) * 100
-            : 0;
+          holdingsData && Array.isArray(holdingsData) && holdingsData.length > 0
+            ? totalPortfolioValue > 0
+              ? (totalDayChange / totalPortfolioValue) * 100
+              : 0
+            : existingBalance?.day_change_percent || 0;
         const totalChangePercent =
-          totalPortfolioValue > 0
-            ? (totalUnrealizedPL / totalPortfolioValue) * 100
-            : 0;
+          holdingsData && Array.isArray(holdingsData) && holdingsData.length > 0
+            ? totalPortfolioValue > 0
+              ? (totalUnrealizedPL / totalPortfolioValue) * 100
+              : 0
+            : existingBalance?.total_change_percent || 0;
 
-        console.log(`📈 Portfolio metrics calculated from holdings:`, {
-          holdingsCount: holdingsData.length,
-          totalPortfolioValue: totalPortfolioValue.toFixed(2),
-          totalDayChange: totalDayChange.toFixed(2),
-          dayChangePercent: dayChangePercent.toFixed(2),
-          totalUnrealizedPL: totalUnrealizedPL.toFixed(2),
-          totalChangePercent: totalChangePercent.toFixed(2),
-        });
+        console.log(
+          `📈 Portfolio metrics ${
+            holdingsData &&
+            Array.isArray(holdingsData) &&
+            holdingsData.length > 0
+              ? "calculated from holdings"
+              : "preserved from existing data"
+          }:`,
+          {
+            holdingsCount: holdingsData?.length || 0,
+            totalPortfolioValue: totalPortfolioValue.toFixed(2),
+            totalDayChange: totalDayChange.toFixed(2),
+            dayChangePercent: dayChangePercent.toFixed(2),
+            totalUnrealizedPL: totalUnrealizedPL.toFixed(2),
+            totalChangePercent: totalChangePercent.toFixed(2),
+          }
+        );
 
         const balanceRows = balanceData.map((balance) => ({
           user_id: connection.user_id,
