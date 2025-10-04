@@ -266,7 +266,7 @@ CREATE TABLE public.user_items (
 CREATE TABLE public.user_memories (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL,
-  memory_type text NOT NULL CHECK (memory_type = ANY (ARRAY['profile_trait'::text, 'constraint'::text, 'preference'::text, 'future_plan'::text])),
+  memory_type text NOT NULL,
   key text NOT NULL,
   value text NOT NULL,
   confidence_score numeric DEFAULT 0.0 CHECK (confidence_score >= 0::numeric AND confidence_score <= 1::numeric),

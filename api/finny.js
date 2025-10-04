@@ -649,7 +649,19 @@ async function handleAsk(message, context) {
           { role: "system", content: system },
           {
             role: "user",
-            content: `User: ${message}\n\nContext:\n${contextNote}\n\nIMPORTANT: After your main response, include a separate memory_candidates JSON object with type, key, value, and confidence_score for any user traits, preferences, constraints, or future plans you detect. Put this at the very end of your response.`,
+            content: `User: ${message}\n\nContext:\n${contextNote}\n\nMEMORY EXTRACTION: After your main response, extract any personal, family, financial, or life information the user mentioned. Use this exact format:
+
+{"memory_candidates": [
+  {"type": "personal_info", "key": "age", "value": "25", "confidence_score": 0.95},
+  {"type": "family_situation", "key": "marital_status", "value": "married", "confidence_score": 0.9},
+  {"type": "family_situation", "key": "spouse_employment", "value": "housewife", "confidence_score": 0.9},
+  {"type": "financial_goals", "key": "family_planning", "value": "planning to have children", "confidence_score": 0.85},
+  {"type": "financial_constraints", "key": "household_income", "value": "single_income", "confidence_score": 0.8}
+]}
+
+EXTRACT: Age, location, occupation, marital status, family situation, employment, financial goals, concerns, constraints, preferences, life stage, spending habits, saving behavior, or any other personal/financial information mentioned.
+
+Put this JSON at the very end of your response.`,
           },
         ],
       }),
@@ -6048,7 +6060,7 @@ function extractMemoryCandidates(text) {
     try {
       const candidatesText = `{"memory_candidates":[${jsonMatch[1]}]}`;
       const parsed = JSON.parse(candidatesText);
-      return parsed.memory_candidates.filter((c) => c.confidence_score >= 0.85);
+      return parsed.memory_candidates.filter((c) => c.confidence_score >= 0.7);
     } catch (e) {
       console.log("Memory extraction failed:", e);
     }
@@ -6060,7 +6072,7 @@ function extractMemoryCandidates(text) {
     try {
       const candidatesText = `[${arrayMatch[1]}]`;
       const parsed = JSON.parse(candidatesText);
-      return parsed.filter((c) => c.confidence_score >= 0.85);
+      return parsed.filter((c) => c.confidence_score >= 0.7);
     } catch (e) {
       console.log("Memory extraction failed:", e);
     }
@@ -6099,12 +6111,23 @@ async function saveMemoryCandidates(userId, candidates) {
     let skippedCount = 0;
 
     for (const candidate of candidates) {
-      // Map memory types to database format
+      // Map memory types to database format (support both old and new categories)
       const memoryTypeMap = {
         trait: "profile_trait",
         constraint: "constraint",
         preference: "preference",
         future_plan: "future_plan",
+        // New flexible categories
+        personal_info: "personal_info",
+        family_situation: "family_situation",
+        financial_goals: "financial_goals",
+        financial_constraints: "financial_constraints",
+        employment_status: "employment_status",
+        life_stage: "life_stage",
+        spending_habits: "spending_habits",
+        saving_behavior: "saving_behavior",
+        financial_concerns: "financial_concerns",
+        financial_obligations: "financial_obligations",
       };
 
       const memoryType = memoryTypeMap[candidate.type] || candidate.type;
