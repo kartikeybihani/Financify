@@ -117,12 +117,18 @@ const KEY_SYNONYMS = {
       "consultant",
       "freelancer",
       "entrepreneur",
+      "ai engineer",
+      "data scientist",
+      "machine learning",
+      "tech lead",
     ],
     examples: [
       "I'm a software engineer",
       "work in marketing",
       "freelance designer",
       "startup founder",
+      "ai engineer",
+      "data scientist",
     ],
   },
 
@@ -845,6 +851,30 @@ function quickExtract(message) {
     });
   }
 
+  // Generic interest/hobby detection (let LLM handle specifics)
+  const interestPatterns = [
+    /(love|like|enjoy|into|passionate about|interested in)\s+([a-z\s]+)/i,
+    /(hobby|hobbies)\s+(is|are)\s+([a-z\s]+)/i,
+    /(i'm a|i am a)\s+([a-z\s]+)\s+(geek|nerd|enthusiast|fan)/i,
+  ];
+
+  for (const pattern of interestPatterns) {
+    const match = lower.match(pattern);
+    if (match) {
+      const interest = match[2] || match[3];
+      if (interest && interest.length > 2 && interest.length < 20) {
+        hints.push({
+          type: "profile_trait",
+          key: `profile_trait.interests.${interest
+            .trim()
+            .replace(/\s+/g, "_")}`,
+          value: interest.trim(),
+          confidence: 0.8,
+        });
+      }
+    }
+  }
+
   return hints;
 }
 
@@ -858,12 +888,19 @@ ${JSON.stringify(KEY_SYNONYMS, null, 2)}
 User message: "${message}"
 Pre-detected hints: ${JSON.stringify(hints)}
 
-Return JSON only:
+Return ONLY valid JSON (no markdown, no code blocks, no explanations):
 {"memories": [
   {"type": "profile_trait", "key": "profile_trait.family.marital_status", "value": "married", "confidence": 0.9}
 ]}
 
-Use only the provided keys. If unsure, use context_signal.unmapped for review.
+RULES:
+1. Use the provided keys when possible
+2. For interests, hobbies, or traits not in the list, create new keys using this pattern:
+   - profile_trait.interests.{interest_name} (e.g., "profile_trait.interests.art", "profile_trait.interests.soccer")
+   - profile_trait.hobbies.{hobby_name} (e.g., "profile_trait.hobbies.pottery", "profile_trait.hobbies.dancing")
+   - profile_trait.skills.{skill_name} (e.g., "profile_trait.skills.cooking", "profile_trait.skills.photography")
+3. For unmapped information, use context_signal.unmapped
+4. Only extract information with confidence >= 0.7
 `;
 
     const response = await fetch(
@@ -899,7 +936,21 @@ Use only the provided keys. If unsure, use context_signal.unmapped for review.
     }
 
     try {
-      const parsed = JSON.parse(content);
+      // Clean the content to handle markdown code blocks
+      let cleanContent = content.trim();
+
+      // Remove markdown code blocks if present
+      if (cleanContent.startsWith("```json")) {
+        cleanContent = cleanContent
+          .replace(/^```json\s*/, "")
+          .replace(/\s*```$/, "");
+      } else if (cleanContent.startsWith("```")) {
+        cleanContent = cleanContent
+          .replace(/^```\s*/, "")
+          .replace(/\s*```$/, "");
+      }
+
+      const parsed = JSON.parse(cleanContent);
       const extractedMemories = parsed.memories || [];
 
       // Combine hints with extracted memories
@@ -921,6 +972,8 @@ Use only the provided keys. If unsure, use context_signal.unmapped for review.
       return uniqueMemories;
     } catch (parseError) {
       console.log("🧠 [MEMORY] JSON parse error:", parseError);
+      console.log("🧠 [MEMORY] Raw content that failed to parse:", content);
+      console.log("🧠 [MEMORY] Cleaned content:", cleanContent);
       return hints; // Fallback to hints
     }
   } catch (error) {
