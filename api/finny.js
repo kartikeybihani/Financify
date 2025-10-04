@@ -6926,6 +6926,8 @@ async function saveMemoryCandidates(userId, candidates) {
     let skippedCount = 0;
 
     for (const candidate of candidates) {
+      console.log(`🧠 [FINNY] Processing candidate:`, candidate);
+
       // Map memory types to database format (support both old and new categories)
       const memoryTypeMap = {
         trait: "profile_trait",
@@ -6941,6 +6943,9 @@ async function saveMemoryCandidates(userId, candidates) {
       };
 
       const memoryType = memoryTypeMap[candidate.type] || candidate.type;
+      console.log(
+        `🧠 [FINNY] Mapped memory type: ${candidate.type} -> ${memoryType}`
+      );
 
       // Redact sensitive data
       const redactedValue = redactPII(candidate.value);
@@ -6958,19 +6963,22 @@ async function saveMemoryCandidates(userId, candidates) {
       }
 
       // Upsert memory
-      const { error } = await supabase.from("user_memories").upsert(
-        {
-          user_id: userId,
-          memory_type: memoryType,
-          key: candidate.key,
-          value: redactedValue,
-          confidence_score: candidate.confidence_score || candidate.confidence,
-          expires_at: getExpiryDate(memoryType),
-        },
-        {
+      const memoryData = {
+        user_id: userId,
+        memory_type: memoryType,
+        key: candidate.key,
+        value: redactedValue,
+        confidence_score: candidate.confidence_score || candidate.confidence,
+        expires_at: getExpiryDate(memoryType),
+      };
+
+      console.log(`🧠 [FINNY] Upserting memory data:`, memoryData);
+
+      const { error } = await supabase
+        .from("user_memories")
+        .upsert(memoryData, {
           onConflict: "user_id,memory_type,key",
-        }
-      );
+        });
 
       if (error) {
         console.error(
@@ -6990,13 +6998,20 @@ async function saveMemoryCandidates(userId, candidates) {
     }
 
     console.log(
+      `🧠 [FINNY] Finished processing ${candidates.length} candidates`
+    );
+
+    console.log(
       `🧠 [FINNY] Memory save complete: ${savedCount} saved, ${skippedCount} skipped`
     );
 
     // Update memory summary
+    console.log(`🧠 [FINNY] Updating memory summary for user ${userId}`);
     await updateMemorySummary(userId);
+    console.log(`🧠 [FINNY] Memory summary updated successfully`);
   } catch (error) {
-    console.error("Memory save failed:", error);
+    console.error("🧠 [FINNY] Memory save failed:", error);
+    console.error("🧠 [FINNY] Error stack:", error.stack);
   }
 }
 
@@ -7018,6 +7033,8 @@ function getExpiryDate(memoryType) {
     constraint: 180, // 6 months
     preference: 90, // 3 months
     future_plan: 180, // 6 months
+    context_signal: 30, // 1 month
+    goal: 180, // 6 months
   };
 
   const days = expiryDays[memoryType] || 90;
