@@ -65,6 +65,870 @@ const OPENROUTER_MODEL =
   "openai/gpt-4o-mini:free" ||
   "x-ai/grok-4-fast:free";
 
+// Memory extraction model - small, fast, free
+const MEMORY_EXTRACTION_MODEL = "meta-llama/llama-3.3-8b-instruct:free";
+
+// Fixed top-level memory types (5 categories)
+const MEMORY_TYPES = {
+  profile_trait: "Personal characteristics, demographics, identity",
+  constraint: "Financial limitations, obligations, barriers",
+  goal: "Future plans, aspirations, targets, dreams",
+  preference: "Choices, priorities, risk tolerance, values",
+  context_signal: "Life events, situational info, temporary states",
+};
+
+// Comprehensive synonyms map for 18-35 US users
+const KEY_SYNONYMS = {
+  // === PROFILE TRAITS ===
+  "profile_trait.age": {
+    synonyms: ["age", "years old", "turning", "birthday", "young", "old"],
+    examples: ["I'm 25", "turning 30", "young professional", "fresh grad"],
+  },
+
+  "profile_trait.location": {
+    synonyms: [
+      "live in",
+      "from",
+      "based in",
+      "located",
+      "city",
+      "state",
+      "moved to",
+    ],
+    examples: [
+      "I live in Austin",
+      "from California",
+      "based in NYC",
+      "moved to Seattle",
+    ],
+  },
+
+  "profile_trait.occupation": {
+    synonyms: [
+      "work as",
+      "job",
+      "career",
+      "profession",
+      "engineer",
+      "teacher",
+      "nurse",
+      "manager",
+      "developer",
+      "consultant",
+      "freelancer",
+      "entrepreneur",
+    ],
+    examples: [
+      "I'm a software engineer",
+      "work in marketing",
+      "freelance designer",
+      "startup founder",
+    ],
+  },
+
+  "profile_trait.education": {
+    synonyms: [
+      "graduated",
+      "degree",
+      "college",
+      "university",
+      "masters",
+      "phd",
+      "studying",
+      "student",
+      "dropout",
+    ],
+    examples: [
+      "graduated from UCLA",
+      "have a business degree",
+      "studying computer science",
+      "college dropout",
+    ],
+  },
+
+  "profile_trait.family.marital_status": {
+    synonyms: [
+      "married",
+      "wife",
+      "husband",
+      "spouse",
+      "partner",
+      "single",
+      "divorced",
+      "widowed",
+      "engaged",
+      "dating",
+      "relationship",
+    ],
+    examples: [
+      "my wife",
+      "husband and I",
+      "married to",
+      "single",
+      "in a relationship",
+      "my partner",
+    ],
+  },
+
+  "profile_trait.family.relationship_status": {
+    synonyms: [
+      "girlfriend",
+      "boyfriend",
+      "dating",
+      "seeing someone",
+      "exclusive",
+      "casual",
+      "long distance",
+      "living together",
+    ],
+    examples: [
+      "my girlfriend",
+      "dating someone",
+      "seeing this person",
+      "long distance relationship",
+    ],
+  },
+
+  "profile_trait.family.children": {
+    synonyms: [
+      "kids",
+      "children",
+      "baby",
+      "babies",
+      "toddler",
+      "teenager",
+      "son",
+      "daughter",
+      "parent",
+      "mom",
+      "dad",
+    ],
+    examples: [
+      "have kids",
+      "my son",
+      "parent of two",
+      "expecting a baby",
+      "new mom",
+    ],
+  },
+
+  "profile_trait.family.living_situation": {
+    synonyms: [
+      "live with",
+      "roommate",
+      "roommates",
+      "parents",
+      "alone",
+      "by myself",
+      "with friends",
+      "renting",
+      "owning",
+      "apartment",
+      "house",
+    ],
+    examples: [
+      "live with my parents",
+      "have roommates",
+      "live alone",
+      "renting an apartment",
+      "own my house",
+    ],
+  },
+
+  // === CONSTRAINTS ===
+  "constraint.income.household_type": {
+    synonyms: [
+      "single income",
+      "dual income",
+      "unemployed",
+      "jobless",
+      "between jobs",
+      "part time",
+      "full time",
+      "freelance",
+      "gig work",
+    ],
+    examples: [
+      "only I work",
+      "both of us work",
+      "lost my job",
+      "between jobs",
+      "part time job",
+    ],
+  },
+
+  "constraint.income.salary_range": {
+    synonyms: [
+      "make",
+      "earn",
+      "salary",
+      "income",
+      "pay",
+      "wage",
+      "hourly",
+      "annual",
+      "six figures",
+      "minimum wage",
+    ],
+    examples: [
+      "make $50k",
+      "earn six figures",
+      "minimum wage job",
+      "hourly worker",
+      "annual salary",
+    ],
+  },
+
+  "constraint.debt.student_loans": {
+    synonyms: [
+      "student loans",
+      "student debt",
+      "college debt",
+      "education loans",
+      "federal loans",
+      "private loans",
+      "paying off loans",
+    ],
+    examples: [
+      "have student loans",
+      "student debt",
+      "paying off college",
+      "federal student loans",
+    ],
+  },
+
+  "constraint.debt.credit_card": {
+    synonyms: [
+      "credit card debt",
+      "credit cards",
+      "high interest",
+      "paying minimum",
+      "credit score",
+      "debt",
+    ],
+    examples: [
+      "credit card debt",
+      "high interest debt",
+      "paying minimums",
+      "bad credit",
+    ],
+  },
+
+  "constraint.debt.other": {
+    synonyms: [
+      "car loan",
+      "auto loan",
+      "mortgage",
+      "personal loan",
+      "medical debt",
+      "hospital bills",
+    ],
+    examples: ["car payment", "mortgage", "medical bills", "personal loan"],
+  },
+
+  "constraint.family_obligation.parents_support": {
+    synonyms: [
+      "support my parents",
+      "help my parents",
+      "parents need help",
+      "taking care of parents",
+      "family support",
+      "send money home",
+    ],
+    examples: [
+      "helping my parents",
+      "supporting my family",
+      "send money home",
+      "taking care of parents",
+    ],
+  },
+
+  "constraint.family_obligation.siblings": {
+    synonyms: [
+      "help my siblings",
+      "support my brother",
+      "sister needs help",
+      "family member",
+      "relative",
+    ],
+    examples: [
+      "helping my brother",
+      "supporting my sister",
+      "family member needs help",
+    ],
+  },
+
+  "constraint.health.medical": {
+    synonyms: [
+      "medical bills",
+      "health insurance",
+      "doctor visits",
+      "prescription",
+      "therapy",
+      "mental health",
+    ],
+    examples: [
+      "medical expenses",
+      "health insurance costs",
+      "therapy bills",
+      "prescription costs",
+    ],
+  },
+
+  // === GOALS ===
+  "goal.financial.emergency_fund": {
+    synonyms: [
+      "emergency fund",
+      "savings",
+      "rainy day fund",
+      "safety net",
+      "cushion",
+      "backup money",
+    ],
+    examples: [
+      "build an emergency fund",
+      "save for emergencies",
+      "rainy day savings",
+      "safety net",
+    ],
+  },
+
+  "goal.financial.house_down_payment": {
+    synonyms: [
+      "down payment",
+      "buy a house",
+      "home purchase",
+      "first home",
+      "starter home",
+      "house hunting",
+    ],
+    examples: [
+      "save for a house",
+      "down payment",
+      "buying a home",
+      "first time buyer",
+    ],
+  },
+
+  "goal.financial.debt_payoff": {
+    synonyms: [
+      "pay off debt",
+      "debt free",
+      "eliminate debt",
+      "debt payoff",
+      "get out of debt",
+    ],
+    examples: [
+      "pay off my loans",
+      "become debt free",
+      "eliminate credit card debt",
+    ],
+  },
+
+  "goal.financial.retirement": {
+    synonyms: [
+      "retirement",
+      "401k",
+      "roth ira",
+      "retirement savings",
+      "pension",
+      "retire early",
+      "fire",
+    ],
+    examples: [
+      "save for retirement",
+      "max out 401k",
+      "retire early",
+      "financial independence",
+    ],
+  },
+
+  "goal.financial.investment": {
+    synonyms: [
+      "invest",
+      "investment",
+      "stocks",
+      "crypto",
+      "portfolio",
+      "wealth building",
+      "passive income",
+    ],
+    examples: [
+      "start investing",
+      "build wealth",
+      "stock market",
+      "cryptocurrency",
+      "passive income",
+    ],
+  },
+
+  "goal.career.job_change": {
+    synonyms: [
+      "new job",
+      "career change",
+      "switch jobs",
+      "better job",
+      "promotion",
+      "raise",
+      "quit",
+    ],
+    examples: [
+      "find a new job",
+      "career change",
+      "get promoted",
+      "quit my job",
+    ],
+  },
+
+  "goal.career.education": {
+    synonyms: [
+      "go back to school",
+      "masters degree",
+      "certification",
+      "learn new skills",
+      "online course",
+    ],
+    examples: [
+      "get my masters",
+      "learn coding",
+      "online course",
+      "certification program",
+    ],
+  },
+
+  "goal.family.marriage": {
+    synonyms: [
+      "get married",
+      "wedding",
+      "propose",
+      "engagement",
+      "marriage",
+      "tie the knot",
+    ],
+    examples: [
+      "planning to get married",
+      "save for wedding",
+      "propose soon",
+      "engagement ring",
+    ],
+  },
+
+  "goal.family.children": {
+    synonyms: [
+      "have kids",
+      "start a family",
+      "baby",
+      "pregnant",
+      "family planning",
+      "kids",
+      "children",
+    ],
+    examples: [
+      "want to have kids",
+      "start a family",
+      "planning for a baby",
+      "family planning",
+    ],
+  },
+
+  "goal.lifestyle.travel": {
+    synonyms: [
+      "travel",
+      "vacation",
+      "trip",
+      "backpacking",
+      "europe",
+      "travel the world",
+      "sabbatical",
+    ],
+    examples: ["travel more", "europe trip", "backpacking", "travel the world"],
+  },
+
+  "goal.lifestyle.moving": {
+    synonyms: [
+      "move",
+      "relocate",
+      "new city",
+      "move out",
+      "get my own place",
+      "apartment",
+      "house",
+    ],
+    examples: [
+      "move to a new city",
+      "get my own place",
+      "move out of parents",
+      "relocate",
+    ],
+  },
+
+  // === PREFERENCES ===
+  "preference.risk_tolerance": {
+    synonyms: [
+      "risk",
+      "conservative",
+      "aggressive",
+      "safe",
+      "risky",
+      "cautious",
+      "bold",
+    ],
+    examples: [
+      "I'm conservative with money",
+      "take risks",
+      "play it safe",
+      "aggressive investor",
+    ],
+  },
+
+  "preference.spending.lifestyle": {
+    synonyms: [
+      "frugal",
+      "cheap",
+      "splurge",
+      "treat myself",
+      "budget",
+      "save money",
+      "spend money",
+    ],
+    examples: [
+      "I'm frugal",
+      "like to splurge",
+      "budget everything",
+      "treat myself",
+    ],
+  },
+
+  "preference.investment.style": {
+    synonyms: [
+      "hands on",
+      "hands off",
+      "set it and forget it",
+      "active",
+      "passive",
+      "diy",
+      "robo advisor",
+    ],
+    examples: [
+      "hands on investor",
+      "set and forget",
+      "diy investing",
+      "robo advisor",
+    ],
+  },
+
+  // === CONTEXT SIGNALS ===
+  "context_signal.life_event.job_change": {
+    synonyms: [
+      "new job",
+      "started",
+      "got hired",
+      "first day",
+      "promotion",
+      "laid off",
+      "fired",
+    ],
+    examples: [
+      "started new job",
+      "got promoted",
+      "laid off",
+      "first day at work",
+    ],
+  },
+
+  "context_signal.life_event.moving": {
+    synonyms: [
+      "moved",
+      "relocated",
+      "new apartment",
+      "new house",
+      "packing",
+      "unpacking",
+    ],
+    examples: ["just moved", "new apartment", "relocated to", "packing up"],
+  },
+
+  "context_signal.life_event.relationship": {
+    synonyms: [
+      "broke up",
+      "got together",
+      "moved in",
+      "engaged",
+      "married",
+      "divorced",
+    ],
+    examples: [
+      "broke up with",
+      "started dating",
+      "moved in together",
+      "got engaged",
+    ],
+  },
+
+  "context_signal.life_event.family": {
+    synonyms: [
+      "pregnant",
+      "had a baby",
+      "family member died",
+      "parents divorced",
+      "sibling got married",
+    ],
+    examples: [
+      "expecting a baby",
+      "had a baby",
+      "family member passed",
+      "parents divorced",
+    ],
+  },
+
+  "context_signal.financial_stress": {
+    synonyms: [
+      "stressed",
+      "worried",
+      "anxious",
+      "overwhelmed",
+      "drowning",
+      "struggling",
+      "can't afford",
+    ],
+    examples: [
+      "stressed about money",
+      "worried about bills",
+      "can't afford",
+      "struggling financially",
+    ],
+  },
+
+  "context_signal.financial_win": {
+    synonyms: [
+      "got a raise",
+      "bonus",
+      "tax refund",
+      "sold something",
+      "inheritance",
+      "lottery",
+    ],
+    examples: ["got a raise", "tax refund", "sold my car", "inherited money"],
+  },
+};
+
+// Heuristic pre-pass for quick memory extraction (1ms)
+function quickExtract(message) {
+  const hints = [];
+  const lower = message.toLowerCase();
+
+  // Family status
+  if (
+    lower.includes("wife") ||
+    lower.includes("husband") ||
+    lower.includes("married")
+  ) {
+    hints.push({
+      type: "profile_trait",
+      key: "profile_trait.family.marital_status",
+      value: "married",
+      confidence: 0.9,
+    });
+  }
+
+  if (
+    lower.includes("girlfriend") ||
+    lower.includes("boyfriend") ||
+    lower.includes("dating")
+  ) {
+    hints.push({
+      type: "profile_trait",
+      key: "profile_trait.family.relationship_status",
+      value: "dating",
+      confidence: 0.9,
+    });
+  }
+
+  // Living situation
+  if (lower.includes("live with") && lower.includes("parents")) {
+    hints.push({
+      type: "profile_trait",
+      key: "profile_trait.family.living_situation",
+      value: "with parents",
+      confidence: 0.9,
+    });
+  }
+
+  if (lower.includes("roommate") || lower.includes("roommates")) {
+    hints.push({
+      type: "profile_trait",
+      key: "profile_trait.family.living_situation",
+      value: "with roommates",
+      confidence: 0.9,
+    });
+  }
+
+  // Financial constraints
+  if (lower.includes("student loan") || lower.includes("student debt")) {
+    hints.push({
+      type: "constraint",
+      key: "constraint.debt.student_loans",
+      value: "has student loan debt",
+      confidence: 0.9,
+    });
+  }
+
+  if (lower.includes("credit card") && lower.includes("debt")) {
+    hints.push({
+      type: "constraint",
+      key: "constraint.debt.credit_card",
+      value: "has credit card debt",
+      confidence: 0.9,
+    });
+  }
+
+  // Goals
+  if (
+    lower.includes("kid") ||
+    lower.includes("baby") ||
+    lower.includes("children")
+  ) {
+    hints.push({
+      type: "goal",
+      key: "goal.family.children",
+      value: "planning to have children",
+      confidence: 0.9,
+    });
+  }
+
+  if (
+    lower.includes("house") ||
+    lower.includes("home") ||
+    lower.includes("buy")
+  ) {
+    hints.push({
+      type: "goal",
+      key: "goal.financial.house_down_payment",
+      value: "planning to buy a house",
+      confidence: 0.8,
+    });
+  }
+
+  // Context signals
+  if (
+    lower.includes("stressed") ||
+    lower.includes("worried") ||
+    lower.includes("anxious")
+  ) {
+    hints.push({
+      type: "context_signal",
+      key: "context_signal.financial_stress",
+      value: "experiencing financial stress",
+      confidence: 0.9,
+    });
+  }
+
+  // Age detection
+  const ageMatch = lower.match(/(\d+)\s*(years?\s*old|yo)/);
+  if (ageMatch) {
+    hints.push({
+      type: "profile_trait",
+      key: "profile_trait.age",
+      value: ageMatch[1],
+      confidence: 0.95,
+    });
+  }
+
+  // Location detection
+  const locationMatch = lower.match(/(live in|from|based in)\s+([a-z\s]+)/i);
+  if (locationMatch) {
+    hints.push({
+      type: "profile_trait",
+      key: "profile_trait.location",
+      value: locationMatch[2].trim(),
+      confidence: 0.8,
+    });
+  }
+
+  return hints;
+}
+
+// Memory extraction using small model (parallel processing)
+async function extractMemoriesWithSmallModel(message, hints) {
+  try {
+    const extractionPrompt = `
+Extract user information and map to these exact keys:
+${JSON.stringify(KEY_SYNONYMS, null, 2)}
+
+User message: "${message}"
+Pre-detected hints: ${JSON.stringify(hints)}
+
+Return JSON only:
+{"memories": [
+  {"type": "profile_trait", "key": "profile_trait.family.marital_status", "value": "married", "confidence": 0.9}
+]}
+
+Use only the provided keys. If unsure, use context_signal.unmapped for review.
+`;
+
+    const response = await fetch(
+      "https://openrouter.ai/api/v1/chat/completions",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${process.env.OPENROUTER_GROK_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: MEMORY_EXTRACTION_MODEL,
+          temperature: 0.1, // Low for consistent extraction
+          max_tokens: 500, // Small response
+          messages: [
+            {
+              role: "system",
+              content:
+                "You are a memory extraction specialist. Return only valid JSON.",
+            },
+            { role: "user", content: extractionPrompt },
+          ],
+        }),
+      }
+    );
+
+    const data = await response.json();
+    const content = data.choices?.[0]?.message?.content;
+
+    if (!content) {
+      console.log("🧠 [MEMORY] No content from extraction model");
+      return hints; // Fallback to hints
+    }
+
+    try {
+      const parsed = JSON.parse(content);
+      const extractedMemories = parsed.memories || [];
+
+      // Combine hints with extracted memories
+      const allMemories = [...hints, ...extractedMemories];
+
+      // Filter by confidence and remove duplicates
+      const uniqueMemories = allMemories.filter(
+        (memory, index, self) =>
+          memory.confidence >= 0.7 &&
+          index ===
+            self.findIndex(
+              (m) => m.key === memory.key && m.type === memory.type
+            )
+      );
+
+      console.log(
+        `🧠 [MEMORY] Extracted ${uniqueMemories.length} memories (${hints.length} hints + ${extractedMemories.length} extracted)`
+      );
+      return uniqueMemories;
+    } catch (parseError) {
+      console.log("🧠 [MEMORY] JSON parse error:", parseError);
+      return hints; // Fallback to hints
+    }
+  } catch (error) {
+    console.error("🧠 [MEMORY] Extraction error:", error);
+    return hints; // Fallback to hints
+  }
+}
+
 // Conversation logging functionality with retry logic
 async function logConversation(conversationData) {
   console.log(
@@ -632,40 +1496,41 @@ async function handleAsk(message, context) {
     const contextNote = contextLines.join("\n");
     console.log("🔍 [FINNY] Context note:", contextNote);
 
-    // 5) LLM call with focused context
+    // 5) Parallel processing: Main response + Memory extraction
     const llmT0 = Date.now();
-    const resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${process.env.OPENROUTER_GROK_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: OPENROUTER_MODEL,
-        temperature: 0.6,
-        max_tokens: 1200,
-        stream: false,
-        messages: [
-          { role: "system", content: system },
-          {
-            role: "user",
-            content: `User: ${message}\n\nContext:\n${contextNote}\n\nMEMORY EXTRACTION: After your main response, extract any personal, family, financial, or life information the user mentioned. Use this exact format:
 
-{"memory_candidates": [
-  {"type": "personal_info", "key": "age", "value": "25", "confidence_score": 0.95},
-  {"type": "family_situation", "key": "marital_status", "value": "married", "confidence_score": 0.9},
-  {"type": "family_situation", "key": "spouse_employment", "value": "housewife", "confidence_score": 0.9},
-  {"type": "financial_goals", "key": "family_planning", "value": "planning to have children", "confidence_score": 0.85},
-  {"type": "financial_constraints", "key": "household_income", "value": "single_income", "confidence_score": 0.8}
-]}
+    // Quick heuristic pre-pass (1ms)
+    const hints = quickExtract(message);
+    console.log("⚡ [MEMORY] Quick hints:", hints);
 
-EXTRACT: Age, location, occupation, marital status, family situation, employment, financial goals, concerns, constraints, preferences, life stage, spending habits, saving behavior, or any other personal/financial information mentioned.
-
-Put this JSON at the very end of your response.`,
-          },
-        ],
+    // Parallel execution
+    const [resp, memoryExtraction] = await Promise.all([
+      // Main response (existing LLM)
+      fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${process.env.OPENROUTER_GROK_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: OPENROUTER_MODEL,
+          temperature: 0.6,
+          max_tokens: 1200,
+          stream: false,
+          messages: [
+            { role: "system", content: system },
+            {
+              role: "user",
+              content: `User: ${message}\n\nContext:\n${contextNote}`,
+            },
+          ],
+        }),
       }),
-    });
+
+      // Memory extraction (small model)
+      extractMemoriesWithSmallModel(message, hints),
+    ]);
+
     timings.llm_ms = Date.now() - llmT0;
     toolsUsed.push({
       name: "llm",
@@ -682,21 +1547,20 @@ Put this JSON at the very end of your response.`,
     }
 
     const data = await resp.json();
-    const rawText =
+    const cleanText =
       data.choices?.[0]?.message?.content ?? "I'm not sure yet. Ask me again?";
 
-    // NEW: Extract memory candidates from response and clean the text
-    const memoryCandidates = extractMemoryCandidates(rawText);
-    const cleanText = removeMemoryCandidatesFromText(rawText);
-
-    if (memoryCandidates.length > 0) {
+    // Background memory save (non-blocking)
+    if (memoryExtraction.length > 0) {
       console.log(
-        `🧠 [FINNY] Saving ${memoryCandidates.length} memory candidates:`,
-        memoryCandidates
+        `🧠 [FINNY] Saving ${memoryExtraction.length} memories in background:`,
+        memoryExtraction
       );
-      await saveMemoryCandidates(context?.user_id, memoryCandidates);
+      setImmediate(() =>
+        saveMemoryCandidates(context?.user_id, memoryExtraction)
+      );
     } else {
-      console.log("🧠 [FINNY] No memory candidates found in response");
+      console.log("🧠 [FINNY] No memories to save");
     }
 
     const response = {
@@ -3953,123 +4817,6 @@ You're officially on your financial journey now. This is such a great step forwa
   }
 }
 
-// Detect if the message is asking about financial products
-function detectProductQuery(message) {
-  const lowerMessage = message.toLowerCase();
-
-  // Check for product comparison patterns
-  const comparisonPatterns = [
-    "vs",
-    "versus",
-    "compare",
-    "which",
-    "better",
-    "best",
-    "chase",
-    "amex",
-    "american express",
-    "capital one",
-    "citi",
-    "discover",
-    "wells fargo",
-    "bank of america",
-    "credit card",
-    "sapphire",
-    "gold",
-    "platinum",
-    "freedom",
-    "venture",
-    "robinhood",
-    "fidelity",
-    "vanguard",
-    "schwab",
-    "etrade",
-  ];
-
-  const hasProductQuery = comparisonPatterns.some((pattern) =>
-    lowerMessage.includes(pattern)
-  );
-
-  return hasProductQuery;
-}
-
-// Detect if the message is asking about rent vs buy
-function detectRentVsBuyQuery(message) {
-  const lowerMessage = message.toLowerCase();
-
-  const rentVsBuyPatterns = [
-    "rent vs buy",
-    "rent versus buy",
-    "rent or buy",
-    "should i rent or buy",
-    "renting vs buying",
-    "renting versus buying",
-    "renting or buying",
-    "home buying",
-    "buy a house",
-    "buy a home",
-    "purchase a home",
-    "purchase a house",
-  ];
-
-  const hasRentVsBuy = rentVsBuyPatterns.some((pattern) =>
-    lowerMessage.includes(pattern)
-  );
-
-  if (hasRentVsBuy) {
-    // Extract location if mentioned
-    const locationPatterns = [
-      /in\s+([a-zA-Z\s]+)/i,
-      /at\s+([a-zA-Z\s]+)/i,
-      /([a-zA-Z\s]+)\s+rent/i,
-      /([a-zA-Z\s]+)\s+buy/i,
-    ];
-
-    let location = null;
-    for (const pattern of locationPatterns) {
-      const match = lowerMessage.match(pattern);
-      if (match && match[1]) {
-        location = match[1].trim();
-        break;
-      }
-    }
-
-    return {
-      type: "rent_vs_buy",
-      location: location,
-      originalMessage: message,
-    };
-  }
-
-  return null;
-}
-
-// Fetch market data for rent vs buy analysis
-async function fetchMarketData(query) {
-  try {
-    // For now, return mock data - in production you'd fetch from real estate APIs
-    // like Zillow, Realtor.com, or Census data
-    const mockMarketData = {
-      location: query.location || "Arizona",
-      median_home_price: 450000,
-      median_rent: 1800,
-      mortgage_rate: 7.2,
-      property_tax_rate: 0.006,
-      home_insurance_rate: 0.003,
-      hoa_fees: 200,
-      market_trend: "stable",
-      price_to_rent_ratio: 20.8,
-      affordability_index: 0.65,
-    };
-
-    console.log("🔍 [FINNY] Returning mock market data for:", query.location);
-    return mockMarketData;
-  } catch (error) {
-    console.error("Error in fetchMarketData:", error);
-    return null;
-  }
-}
-
 // ============================================================================
 // WEB RESEARCH SYSTEM - CONSOLIDATED UTILITIES
 // ============================================================================
@@ -6117,17 +6864,12 @@ async function saveMemoryCandidates(userId, candidates) {
         constraint: "constraint",
         preference: "preference",
         future_plan: "future_plan",
-        // New flexible categories
-        personal_info: "personal_info",
-        family_situation: "family_situation",
-        financial_goals: "financial_goals",
-        financial_constraints: "financial_constraints",
-        employment_status: "employment_status",
-        life_stage: "life_stage",
-        spending_habits: "spending_habits",
-        saving_behavior: "saving_behavior",
-        financial_concerns: "financial_concerns",
-        financial_obligations: "financial_obligations",
+        // New hybrid categories
+        profile_trait: "profile_trait",
+        constraint: "constraint",
+        goal: "goal",
+        preference: "preference",
+        context_signal: "context_signal",
       };
 
       const memoryType = memoryTypeMap[candidate.type] || candidate.type;
@@ -6235,42 +6977,58 @@ async function updateMemorySummary(userId) {
 }
 
 function generateMemorySummary(memories) {
-  const traits = memories.filter((m) => m.memory_type === "profile_trait");
-  const constraints = memories.filter((m) => m.memory_type === "constraint");
-  const preferences = memories.filter((m) => m.memory_type === "preference");
-  const futurePlans = memories.filter((m) => m.memory_type === "future_plan");
+  if (!memories || memories.length === 0) {
+    return "No user information available.";
+  }
+
+  // Group by memory type
+  const grouped = memories.reduce((acc, memory) => {
+    if (!acc[memory.memory_type]) acc[memory.memory_type] = [];
+    acc[memory.memory_type].push(memory);
+    return acc;
+  }, {});
 
   const parts = [];
 
-  if (traits.length) {
-    parts.push(
-      `Profile: ${traits.map((t) => `${t.key} (${t.value})`).join(", ")}`
-    );
+  // Profile traits (most important - show first)
+  if (grouped.profile_trait && grouped.profile_trait.length > 0) {
+    const traits = grouped.profile_trait
+      .map((m) => `${m.key.replace("profile_trait.", "")}: ${m.value}`)
+      .join(", ");
+    parts.push(`Profile: ${traits}`);
   }
 
-  if (constraints.length) {
-    parts.push(
-      `Constraints: ${constraints
-        .map((c) => `${c.key} (${c.value})`)
-        .join(", ")}`
-    );
+  // Goals (future plans)
+  if (grouped.goal && grouped.goal.length > 0) {
+    const goals = grouped.goal
+      .map((m) => `${m.key.replace("goal.", "")}: ${m.value}`)
+      .join(", ");
+    parts.push(`Future plans: ${goals}`);
   }
 
-  if (preferences.length) {
-    parts.push(
-      `Preferences: ${preferences
-        .map((p) => `${p.key} (${p.value})`)
-        .join(", ")}`
-    );
+  // Constraints (limitations)
+  if (grouped.constraint && grouped.constraint.length > 0) {
+    const constraints = grouped.constraint
+      .map((m) => `${m.key.replace("constraint.", "")}: ${m.value}`)
+      .join(", ");
+    parts.push(`Constraints: ${constraints}`);
   }
 
-  if (futurePlans.length) {
-    parts.push(
-      `Future plans: ${futurePlans
-        .map((f) => `${f.key} (${f.value})`)
-        .join(", ")}`
-    );
+  // Preferences (choices/priorities)
+  if (grouped.preference && grouped.preference.length > 0) {
+    const preferences = grouped.preference
+      .map((m) => `${m.key.replace("preference.", "")}: ${m.value}`)
+      .join(", ");
+    parts.push(`Preferences: ${preferences}`);
   }
 
-  return parts.join(". ");
+  // Context signals (life events/situations)
+  if (grouped.context_signal && grouped.context_signal.length > 0) {
+    const signals = grouped.context_signal
+      .map((m) => `${m.key.replace("context_signal.", "")}: ${m.value}`)
+      .join(", ");
+    parts.push(`Recent context: ${signals}`);
+  }
+
+  return parts.length > 0 ? parts.join(". ") : "No user information available.";
 }
