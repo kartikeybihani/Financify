@@ -638,6 +638,48 @@ export const styles = StyleSheet.create({
     marginLeft: 8,
     fontWeight: "500",
   },
+  
+  // Security Type Filter Chips
+  securityTypeChipsContainer: {
+    marginBottom: 16,
+    paddingHorizontal: 4,
+    marginTop: -20, // Remove space between brokerage info and chips
+    marginLeft: -2,
+  },
+  securityTypeChipsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  securityTypeChip: {
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.15)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+    minWidth: 60,
+    alignItems: "center",
+  },
+  securityTypeChipSelected: {
+    backgroundColor: "rgba(74, 144, 226, 0.2)",
+    borderColor: "rgba(74, 144, 226, 0.4)",
+  },
+  securityTypeChipText: {
+    fontSize: FONTS.sm - 1,
+    color: "rgba(255, 255, 255, 0.8)",
+    fontWeight: "500",
+    letterSpacing: 0.3,
+  },
+  securityTypeChipTextSelected: {
+    color: "#4A90E2",
+    fontWeight: "600",
+  },
 });
 
 export default styles;

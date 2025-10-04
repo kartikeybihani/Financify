@@ -90,6 +90,9 @@ export default function InvestmentsScreen({
   const [connections, setConnections] = useState<ConnectionRow[]>([]);
   const [showInstitutionModal, setShowInstitutionModal] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [selectedSecurityType, setSelectedSecurityType] = useState<
+    string | null
+  >(null);
   const hasData = useRef(false);
 
   const loadFromDb = async () => {
@@ -281,12 +284,11 @@ export default function InvestmentsScreen({
     if (balances.length > 0) {
       const balance = balances[0]; // Use the most recent balance record
 
-      // Check if we have valid total_change data in the balances table (not 0, not null, not undefined)
+      // Check if we have valid total_change data in the balances table (not null, not undefined)
       if (
         balance.total_change !== null &&
         balance.total_change !== undefined &&
-        !isNaN(balance.total_change) &&
-        balance.total_change !== 0 // Skip if it's 0 (indicating no data yet)
+        !isNaN(balance.total_change)
       ) {
         console.log(
           `✅ Using pre-calculated total_change from investment_balances: $${balance.total_change}`
@@ -295,8 +297,7 @@ export default function InvestmentsScreen({
         const percentage =
           balance.total_change_percent !== null &&
           balance.total_change_percent !== undefined &&
-          !isNaN(balance.total_change_percent) &&
-          balance.total_change_percent !== 0 // Skip if it's 0 (indicating no data yet)
+          !isNaN(balance.total_change_percent)
             ? balance.total_change_percent
             : totalPortfolioValue > 0
             ? (balance.total_change / totalPortfolioValue) * 100
@@ -332,18 +333,33 @@ export default function InvestmentsScreen({
   const totalUnrealizedPL = totalUnrealizedPLData.amount;
   const totalUnrealizedPLPercent = totalUnrealizedPLData.percentage;
 
+  // Get unique security types from holdings
+  const getUniqueSecurityTypes = () => {
+    const securityTypes = new Set<string>();
+    holdings.forEach((holding) => {
+      if (
+        holding.security_type &&
+        holding.security_type !== "Open Ended Fund"
+      ) {
+        securityTypes.add(holding.security_type);
+      }
+    });
+    return Array.from(securityTypes).sort();
+  };
+
+  const uniqueSecurityTypes = getUniqueSecurityTypes();
+
   // Calculate today's portfolio performance using the new investment_balances columns
   const calculateTodayPerformance = () => {
     // First priority: Use pre-calculated values from investment_balances table
     if (balances.length > 0) {
       const balance = balances[0]; // Use the most recent balance record
 
-      // Check if we have valid day_change data in the balances table (not 0, not null, not undefined)
+      // Check if we have valid day_change data in the balances table (not null, not undefined)
       if (
         balance.day_change !== null &&
         balance.day_change !== undefined &&
-        !isNaN(balance.day_change) &&
-        balance.day_change !== 0 // Skip if it's 0 (indicating no data yet)
+        !isNaN(balance.day_change)
       ) {
         console.log(
           `✅ Using pre-calculated day_change from investment_balances: $${balance.day_change}`
@@ -352,8 +368,7 @@ export default function InvestmentsScreen({
         const percentage =
           balance.day_change_percent !== null &&
           balance.day_change_percent !== undefined &&
-          !isNaN(balance.day_change_percent) &&
-          balance.day_change_percent !== 0 // Skip if it's 0 (indicating no data yet)
+          !isNaN(balance.day_change_percent)
             ? balance.day_change_percent
             : totalPortfolioValue > 0
             ? (balance.day_change / totalPortfolioValue) * 100
@@ -600,11 +615,48 @@ export default function InvestmentsScreen({
     );
   };
 
+  const renderSecurityTypeChips = () => {
+    if (uniqueSecurityTypes.length <= 1) return null;
+
+    const allChips = [
+      { label: "All", value: null },
+      ...uniqueSecurityTypes.map((type) => ({ label: type, value: type })),
+    ];
+
+    return (
+      <View style={styles.securityTypeChipsContainer}>
+        <View style={styles.securityTypeChipsGrid}>
+          {allChips.map((chip) => (
+            <TouchableOpacity
+              key={chip.value || "all"}
+              style={[
+                styles.securityTypeChip,
+                selectedSecurityType === chip.value &&
+                  styles.securityTypeChipSelected,
+              ]}
+              onPress={() => setSelectedSecurityType(chip.value)}
+            >
+              <Text
+                style={[
+                  styles.securityTypeChipText,
+                  selectedSecurityType === chip.value &&
+                    styles.securityTypeChipTextSelected,
+                ]}
+              >
+                {chip.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </View>
+    );
+  };
+
   const renderHoldings = () => {
     if (isLoading) return null;
 
     // Filter out cash holdings - we already show available cash separately
-    const nonCashHoldings = holdings.filter((holding) => {
+    let filteredHoldings = holdings.filter((holding) => {
       // Filter out holdings that are cash or cash equivalents
       const symbol = holding.symbol?.toLowerCase() || "";
       const description = holding.description?.toLowerCase() || "";
@@ -630,6 +682,20 @@ export default function InvestmentsScreen({
 
       return !isCash;
     });
+
+    // Apply security type filter
+    if (selectedSecurityType) {
+      filteredHoldings = filteredHoldings.filter(
+        (holding) => holding.security_type === selectedSecurityType
+      );
+    }
+
+    // Also filter out Open Ended Fund from holdings display
+    filteredHoldings = filteredHoldings.filter(
+      (holding) => holding.security_type !== "Open Ended Fund"
+    );
+
+    const nonCashHoldings = filteredHoldings;
 
     console.log(
       `📊 Holdings: ${holdings.length} total, ${nonCashHoldings.length} non-cash`
@@ -803,6 +869,7 @@ export default function InvestmentsScreen({
               </View>
             )}
 
+            {renderSecurityTypeChips()}
             {renderHoldings()}
             {renderOptions()}
           </ScrollView>
