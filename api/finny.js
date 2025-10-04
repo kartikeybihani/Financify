@@ -6921,6 +6921,24 @@ async function saveMemoryCandidates(userId, candidates) {
     `🧠 [FINNY] Starting to save ${candidates.length} memories for user ${userId}`
   );
 
+  // Test Supabase connection first
+  try {
+    const { data: testData, error: testError } = await supabase
+      .from("user_memories")
+      .select("count")
+      .limit(1);
+
+    if (testError) {
+      console.error("🧠 [FINNY] Supabase connection test failed:", testError);
+      return;
+    } else {
+      console.log("🧠 [FINNY] Supabase connection test successful");
+    }
+  } catch (connectionError) {
+    console.error("🧠 [FINNY] Supabase connection exception:", connectionError);
+    return;
+  }
+
   try {
     let savedCount = 0;
     let skippedCount = 0;
@@ -6974,23 +6992,47 @@ async function saveMemoryCandidates(userId, candidates) {
 
       console.log(`🧠 [FINNY] Upserting memory data:`, memoryData);
 
-      // Simple insert with timeout protection
-      const insertPromise = supabase.from("user_memories").insert(memoryData);
+      // Use upsert with shorter timeout
+      const upsertPromise = supabase.from("user_memories").upsert(memoryData, {
+        onConflict: "user_id,memory_type,key",
+      });
 
       const timeoutPromise = new Promise((_, reject) =>
         setTimeout(
-          () => reject(new Error("Insert timeout after 10 seconds")),
-          10000
+          () => reject(new Error("Upsert timeout after 5 seconds")),
+          5000
         )
       );
 
-      const { error } = await Promise.race([insertPromise, timeoutPromise]);
+      const { error } = await Promise.race([upsertPromise, timeoutPromise]);
 
       if (error) {
         console.error(
           `🧠 [FINNY] Failed to save memory ${candidate.key}:`,
           error
         );
+
+        // Try fallback insert without upsert
+        console.log(`🧠 [FINNY] Trying fallback insert for ${candidate.key}`);
+        try {
+          const { error: fallbackError } = await supabase
+            .from("user_memories")
+            .insert(memoryData);
+
+          if (fallbackError) {
+            console.error(
+              `🧠 [FINNY] Fallback insert also failed:`,
+              fallbackError
+            );
+          } else {
+            console.log(
+              `🧠 [FINNY] ✅ Fallback insert succeeded for ${candidate.key}`
+            );
+            savedCount++;
+          }
+        } catch (fallbackErr) {
+          console.error(`🧠 [FINNY] Fallback insert exception:`, fallbackErr);
+        }
       } else {
         console.log(
           `🧠 [FINNY] ✅ Saved memory: ${memoryType}.${
