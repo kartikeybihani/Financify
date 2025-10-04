@@ -6921,12 +6921,31 @@ async function saveMemoryCandidates(userId, candidates) {
     `🧠 [FINNY] Starting to save ${candidates.length} memories for user ${userId}`
   );
 
+  // Debug environment variables
+  console.log("🧠 [FINNY] Environment check:", {
+    hasSupabaseUrl: !!process.env.SUPABASE_URL,
+    hasServiceRoleKey: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
+    supabaseUrlLength: process.env.SUPABASE_URL?.length || 0,
+    serviceRoleKeyLength: process.env.SUPABASE_SERVICE_ROLE_KEY?.length || 0,
+  });
+
   // Test Supabase connection first
   try {
-    const { data: testData, error: testError } = await supabase
-      .from("user_memories")
-      .select("count")
-      .limit(1);
+    console.log("🧠 [FINNY] Testing Supabase connection...");
+
+    const testPromise = supabase.from("user_memories").select("id").limit(1);
+
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(
+        () => reject(new Error("Connection test timeout after 3 seconds")),
+        3000
+      )
+    );
+
+    const { data: testData, error: testError } = await Promise.race([
+      testPromise,
+      timeoutPromise,
+    ]);
 
     if (testError) {
       console.error("🧠 [FINNY] Supabase connection test failed:", testError);
