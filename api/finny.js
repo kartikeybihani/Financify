@@ -1609,9 +1609,14 @@ async function handleAsk(message, context) {
         `🧠 [FINNY] Saving ${memoryExtraction.length} memories in background:`,
         memoryExtraction
       );
-      setImmediate(() =>
-        saveMemoryCandidates(context?.user_id, memoryExtraction)
-      );
+      setImmediate(async () => {
+        try {
+          await saveMemoryCandidates(context?.user_id, memoryExtraction);
+          console.log("🧠 [FINNY] Memory save completed successfully");
+        } catch (error) {
+          console.error("🧠 [FINNY] Memory save failed:", error);
+        }
+      });
     } else {
       console.log("🧠 [FINNY] No memories to save");
     }
@@ -6904,7 +6909,17 @@ function removeMemoryCandidatesFromText(text) {
 }
 
 async function saveMemoryCandidates(userId, candidates) {
-  if (!userId || !candidates.length) return;
+  if (!userId || !candidates.length) {
+    console.log("🧠 [FINNY] No userId or candidates to save:", {
+      userId,
+      candidatesLength: candidates?.length,
+    });
+    return;
+  }
+
+  console.log(
+    `🧠 [FINNY] Starting to save ${candidates.length} memories for user ${userId}`
+  );
 
   try {
     let savedCount = 0;
@@ -6949,7 +6964,7 @@ async function saveMemoryCandidates(userId, candidates) {
           memory_type: memoryType,
           key: candidate.key,
           value: redactedValue,
-          confidence_score: candidate.confidence_score,
+          confidence_score: candidate.confidence_score || candidate.confidence,
           expires_at: getExpiryDate(memoryType),
         },
         {
@@ -6964,7 +6979,11 @@ async function saveMemoryCandidates(userId, candidates) {
         );
       } else {
         console.log(
-          `🧠 [FINNY] ✅ Saved memory: ${memoryType}.${candidate.key} = "${redactedValue}" (confidence: ${candidate.confidence_score})`
+          `🧠 [FINNY] ✅ Saved memory: ${memoryType}.${
+            candidate.key
+          } = "${redactedValue}" (confidence: ${
+            candidate.confidence_score || candidate.confidence
+          })`
         );
         savedCount++;
       }
