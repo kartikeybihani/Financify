@@ -6929,34 +6929,10 @@ async function saveMemoryCandidates(userId, candidates) {
     serviceRoleKeyLength: process.env.SUPABASE_SERVICE_ROLE_KEY?.length || 0,
   });
 
-  // Test Supabase connection first
-  try {
-    console.log("🧠 [FINNY] Testing Supabase connection...");
-
-    const testPromise = supabase.from("user_memories").select("id").limit(1);
-
-    const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(
-        () => reject(new Error("Connection test timeout after 3 seconds")),
-        3000
-      )
-    );
-
-    const { data: testData, error: testError } = await Promise.race([
-      testPromise,
-      timeoutPromise,
-    ]);
-
-    if (testError) {
-      console.error("🧠 [FINNY] Supabase connection test failed:", testError);
-      return;
-    } else {
-      console.log("🧠 [FINNY] Supabase connection test successful");
-    }
-  } catch (connectionError) {
-    console.error("🧠 [FINNY] Supabase connection exception:", connectionError);
-    return;
-  }
+  // Skip connection test and go straight to saving memories
+  console.log(
+    "🧠 [FINNY] Skipping connection test, proceeding to save memories..."
+  );
 
   try {
     let savedCount = 0;
@@ -7012,6 +6988,7 @@ async function saveMemoryCandidates(userId, candidates) {
       console.log(`🧠 [FINNY] Upserting memory data:`, memoryData);
 
       // Use upsert with shorter timeout
+      console.log(`🧠 [FINNY] Starting upsert for ${candidate.key}...`);
       const upsertPromise = supabase.from("user_memories").upsert(memoryData, {
         onConflict: "user_id,memory_type,key",
       });
@@ -7023,7 +7000,11 @@ async function saveMemoryCandidates(userId, candidates) {
         )
       );
 
+      console.log(
+        `🧠 [FINNY] Racing upsert vs timeout for ${candidate.key}...`
+      );
       const { error } = await Promise.race([upsertPromise, timeoutPromise]);
+      console.log(`🧠 [FINNY] Upsert race completed for ${candidate.key}`);
 
       if (error) {
         console.error(
