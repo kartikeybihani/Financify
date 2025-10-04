@@ -22,7 +22,7 @@ import { AntDesign } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { ChatMessageComponent } from "../../_components/chat/ChatMessage";
 import { NudgeGrid } from "../../_components/chat/NudgeGrid";
-import { useChat } from "../../_hooks/useChat";
+import { useChatContext } from "../../_contexts/ChatContext";
 import styles from "../../_styles/chatStyles";
 import TypingIndicator from "../../_components/chat/TypingIndicator";
 import ConversationStartersModal from "../../_components/chat/ConversationStartersModal";
@@ -123,7 +123,7 @@ export default function ChatScreen() {
     clearChat,
     pushChat,
     handleUserMessage,
-  } = useChat();
+  } = useChatContext();
 
   // Prepare FlatList data with nudges and messages
   const flatListData = React.useMemo(() => {

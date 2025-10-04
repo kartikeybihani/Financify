@@ -19,6 +19,7 @@ import FinnyStyleScreen from "./finny-style";
 import FinnyCheckinScreen from "./finny-checkin";
 import { useAuth } from "../../_contexts/AuthContext";
 import { createClient } from "@supabase/supabase-js";
+import { useChatContext } from "../../_contexts/ChatContext";
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
 
@@ -238,6 +239,7 @@ export default function FinnySettingsScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { session } = useAuth();
+  const { clearChat } = useChatContext();
   const [showMemories, setShowMemories] = useState(false);
   const [showStyle, setShowStyle] = useState(false);
   const [showCheckin, setShowCheckin] = useState(false);
@@ -337,9 +339,21 @@ export default function FinnySettingsScreen() {
         {
           text: "Delete",
           style: "destructive",
-          onPress: () => {
-            // TODO: Implement clear chat functionality
-            console.log("Clear chat history");
+          onPress: async () => {
+            try {
+              await clearChat();
+              router.replace("/(tabs)/chat");
+              // Alert.alert(
+              //   "Success",
+              //   "Chat history has been cleared successfully."
+              // );
+            } catch (error) {
+              console.error("Error clearing chat:", error);
+              Alert.alert(
+                "Error",
+                "Failed to clear chat history. Please try again."
+              );
+            }
           },
         },
       ]

@@ -35,6 +35,9 @@ export const useChat = () => {
           setChatMessages(finnyConstants.INITIAL_CHAT_MESSAGES);
           setShowNudges(true);
         }
+      } else {
+        setChatMessages(finnyConstants.INITIAL_CHAT_MESSAGES);
+        setShowNudges(true);
       }
     } catch (error) {
       logger.error("Error loading chat messages:", error);
@@ -60,6 +63,7 @@ export const useChat = () => {
       logger.error("Error clearing chat:", error);
     }
   };
+
 
   const pushChat = (
     senderOrMsg: "user" | "finny" | ChatMessage,
