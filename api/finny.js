@@ -6974,11 +6974,17 @@ async function saveMemoryCandidates(userId, candidates) {
 
       console.log(`🧠 [FINNY] Upserting memory data:`, memoryData);
 
-      const { error } = await supabase
-        .from("user_memories")
-        .upsert(memoryData, {
-          onConflict: "user_id,memory_type,key",
-        });
+      // Simple insert with timeout protection
+      const insertPromise = supabase.from("user_memories").insert(memoryData);
+
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(
+          () => reject(new Error("Insert timeout after 10 seconds")),
+          10000
+        )
+      );
+
+      const { error } = await Promise.race([insertPromise, timeoutPromise]);
 
       if (error) {
         console.error(
