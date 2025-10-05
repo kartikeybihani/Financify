@@ -17,8 +17,8 @@ import { useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import * as AppleAuthentication from "expo-apple-authentication";
-import { supabase } from "../_lib/supabase/supabase";
-import logger from "../_utils/logger";
+import { supabase } from "@/app/_lib/supabase/supabase";
+import logger from "@/app/_utils/logger";
 
 const { width } = Dimensions.get("window");
 

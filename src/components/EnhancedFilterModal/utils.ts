@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
-import { Account, Category, FilterOptions } from './types';
-import { ALL_TIME_PERIODS } from './constants';
+import { Account, Category, FilterOptions } from '@/src/components/EnhancedFilterModal/types';
+import { ALL_TIME_PERIODS } from '@/src/components/EnhancedFilterModal/constants';
 
 // Get card gradient based on account type
 export const getAccountGradient = (subtype: string) => {

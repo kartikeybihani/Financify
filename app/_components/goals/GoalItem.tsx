@@ -1,7 +1,7 @@
 import React from "react";
 import { View, Text, TouchableOpacity, Animated } from "react-native";
-import { styles } from "../../_styles/goalsStyles";
-import { GoalItemProps } from "../../_types/goalsTypes";
+import { styles } from "@/app/_styles/goalsStyles";
+import { GoalItemProps } from "@/app/_types/goalsTypes";
 import {
   getCategoryEmoji,
   getCategoryColor,

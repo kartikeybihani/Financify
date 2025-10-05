@@ -1,5 +1,5 @@
 // Utility functions to debug and fix transaction category issues
-import { supabase } from "../../app/_lib/supabase/supabase";
+import { supabase } from "@/app/_lib/supabase/supabase";
 
 /**
  * Debug function to check transaction categories in the database

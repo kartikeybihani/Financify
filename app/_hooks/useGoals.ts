@@ -2,10 +2,10 @@
 
 import { useState, useEffect } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { Goal } from "../_types/finny";
-import { GoalInput } from "../_types/addGoalModalTypes";
-import { supabase } from "../_lib/supabase/supabase";
-import logger from "../_utils/logger";
+import { Goal } from "@/app/_types/finny";
+import { GoalInput } from "@/app/_types/addGoalModalTypes";
+import { supabase } from "@/app/_lib/supabase/supabase";
+import logger from "@/app/_utils/logger";
 
 const GOALS_CACHE_KEY = "cached_goals";
 const GOALS_CACHE_TIMESTAMP_KEY = "cached_goals_timestamp";

@@ -3,8 +3,8 @@ import { Modal, View, Text, TouchableOpacity, ScrollView } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 
-import { FilterOptions } from "./types";
-import { styles } from "./styles";
+import { FilterOptions } from "@/src/components/EnhancedFilterModal/types";
+import { styles } from "@/src/components/EnhancedFilterModal/styles";
 import {
   QUICK_TIME_PERIODS,
   ALL_TIME_PERIODS,

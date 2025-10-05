@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { ChatMessage, Goal } from '../_types/finny';
-import finnyConstants from '../_constants/finny';
-import logger from '../_utils/logger';
-import { supabase } from '../_lib/supabase/supabase';
+import { ChatMessage, Goal } from '@/app/_types/finny';
+import finnyConstants from '@/app/_constants/finny';
+import logger from '@/app/_utils/logger';
+import { supabase } from '@/app/_lib/supabase/supabase';
 
 // Message splitting removed - display messages as single strings
 

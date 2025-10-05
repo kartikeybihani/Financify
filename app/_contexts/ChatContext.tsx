@@ -1,5 +1,5 @@
 import React, { createContext, useContext, ReactNode } from "react";
-import { useChat } from "../_hooks/useChat";
+import { useChat } from "@/app/_hooks/useChat";
 
 interface ChatContextType {
   chatMessages: any[];

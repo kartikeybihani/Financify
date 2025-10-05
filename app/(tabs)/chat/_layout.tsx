@@ -1,6 +1,6 @@
 import React from "react";
 import { Stack } from "expo-router";
-import { ChatProvider } from "../../_contexts/ChatContext";
+import { ChatProvider } from "@/app/_contexts/ChatContext";
 
 export default function ChatLayout() {
   return (

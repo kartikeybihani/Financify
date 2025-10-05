@@ -7,17 +7,17 @@ import {
   EnhancedFilterModalProps,
   FilterOptions,
 } from "../../../src/components/EnhancedFilterModal/types";
-import { useCategories } from "../../_hooks/useCategories";
-import { styles } from "../../../src/components/EnhancedFilterModal/styles";
+import { useCategories } from "@/app/_hooks/useCategories";
+import { styles } from "@/src/components/EnhancedFilterModal/styles";
 import {
   getSelectedAccountsDescription,
   getSelectedCategoriesDescription,
   getSelectedTimePeriodDescription,
   getResetFilters,
 } from "../../../src/components/EnhancedFilterModal/utils";
-import { AccountSelector } from "../../../src/components/EnhancedFilterModal/AccountSelector";
-import { TimePeriodSelector } from "../../../src/components/EnhancedFilterModal/TimePeriodSelector";
-import { CategorySelector } from "../../../src/components/EnhancedFilterModal/CategorySelector";
+import { AccountSelector } from "@/src/components/EnhancedFilterModal/AccountSelector";
+import { TimePeriodSelector } from "@/src/components/EnhancedFilterModal/TimePeriodSelector";
+import { CategorySelector } from "@/src/components/EnhancedFilterModal/CategorySelector";
 
 const EnhancedFilterModal: React.FC<EnhancedFilterModalProps> = ({
   visible,

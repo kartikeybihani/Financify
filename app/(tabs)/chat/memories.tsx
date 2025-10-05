@@ -13,9 +13,10 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import { Dimensions } from "react-native";
-import { useAuth } from "../../_contexts/AuthContext";
+import { useAuth } from "@/app/_contexts/AuthContext";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { supabase } from "../../_lib/supabase/supabase";
+import { supabase } from "@/app/_lib/supabase/supabase";
+import { MemorySummary, MemoriesScreenProps } from "@/app/_types/plaid";
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
 
@@ -211,25 +212,6 @@ const styles = {
     fontWeight: "600" as const,
   },
 };
-
-interface Memory {
-  memory_type: string;
-  key: string;
-  value: string;
-  confidence_score: number;
-  created_at: string;
-  updated_at: string;
-}
-
-interface MemorySummary {
-  summary_text: string;
-  last_updated: string;
-}
-
-interface MemoriesScreenProps {
-  onBack?: () => void;
-  preloadedData?: MemorySummary | null;
-}
 
 export default function MemoriesScreen({
   onBack,

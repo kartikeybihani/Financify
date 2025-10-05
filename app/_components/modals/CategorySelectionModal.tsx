@@ -6,7 +6,7 @@ import {
   ModalHandle,
   ModalHeader,
 } from "../shared/modal-components";
-import { MODAL_SHARED_STYLES as styles } from "../shared/modal-styles";
+import { MODAL_SHARED_STYLES as styles } from "@/app/_components/shared/modal-styles";
 
 interface CategorySelectionModalProps {
   visible: boolean;

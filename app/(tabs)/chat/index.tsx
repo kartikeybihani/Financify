@@ -20,12 +20,12 @@ import { StatusBar } from "expo-status-bar";
 import { Ionicons } from "@expo/vector-icons";
 import { AntDesign } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { ChatMessageComponent } from "../../_components/chat/ChatMessage";
-import { NudgeGrid } from "../../_components/chat/NudgeGrid";
-import { useChatContext } from "../../_contexts/ChatContext";
-import styles from "../../_styles/chatStyles";
-import TypingIndicator from "../../_components/chat/TypingIndicator";
-import ConversationStartersModal from "../../_components/chat/ConversationStartersModal";
+import { ChatMessageComponent } from "@/app/_components/chat/ChatMessage";
+import { NudgeGrid } from "@/app/_components/chat/NudgeGrid";
+import { useChatContext } from "@/app/_contexts/ChatContext";
+import styles from "@/app/_styles/chatStyles";
+import TypingIndicator from "@/app/_components/chat/TypingIndicator";
+import ConversationStartersModal from "@/app/_components/chat/ConversationStartersModal";
 
 interface Suggestion {
   text: string;

@@ -10,8 +10,8 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 
-import { Account, FilterOptions } from "./types";
-import { styles } from "./styles";
+import { Account, FilterOptions } from "@/src/components/EnhancedFilterModal/types";
+import { styles } from "@/src/components/EnhancedFilterModal/styles";
 import {
   getAccountGradient,
   formatAccountName,

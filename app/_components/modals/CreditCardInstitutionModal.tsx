@@ -6,12 +6,12 @@ import {
   ModalHandle,
   ModalHeader,
   ModalLogoContainer,
-} from "../shared/modal-components";
-import { MODAL_SHARED_STYLES as styles } from "../shared/modal-styles";
+} from "@/app/_components/shared/modal-components";
+import { MODAL_SHARED_STYLES as styles } from "@/app/_components/shared/modal-styles";
 import {
   CREDIT_CARD_INSTITUTIONS,
   type Institution,
-} from "../shared/modal-constants";
+} from "@/app/_components/shared/modal-constants";
 
 interface CreditCardInstitutionModalProps {
   visible: boolean;

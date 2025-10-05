@@ -1,13 +1,13 @@
 // /app/utils/plaid.ts
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { open, create } from "react-native-plaid-link-sdk";
-import {supabase} from "../_lib/supabase/supabase";
-import logger from "./logger";
+import {supabase} from "@/app/_lib/supabase/supabase";
+import logger from "@/app/_utils/logger";
 
 const BASE_URL = process.env.EXPO_PUBLIC_APP_BASE_URL || "https://financify-rose.vercel.app";
 
 // === Last Used Item Management ===
-import { setLastUsedItemId, getLastUsedItemId } from "../../src/utils/lastUsedItem";
+import { setLastUsedItemId, getLastUsedItemId } from "@/src/utils/lastUsedItem";
 
 // === Get User Items from Supabase ===
 export async function getUserItems() {

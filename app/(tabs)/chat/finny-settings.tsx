@@ -14,12 +14,13 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
-import MemoriesScreen from "./memories";
-import FinnyStyleScreen from "./finny-style";
-import FinnyCheckinScreen from "./finny-checkin";
-import { useAuth } from "../../_contexts/AuthContext";
-import { supabase } from "../../_lib/supabase/supabase";
-import { useChatContext } from "../../_contexts/ChatContext";
+import MemoriesScreen from "@/app/(tabs)/chat/memories";
+import FinnyStyleScreen from "@/app/(tabs)/chat/finny-style";
+import FinnyCheckinScreen from "@/app/(tabs)/chat/finny-checkin";
+import { useAuth } from "@/app/_contexts/AuthContext";
+import { supabase } from "@/app/_lib/supabase/supabase";
+import { useChatContext } from "@/app/_contexts/ChatContext";
+import { SettingItemProps, MemorySummary } from "@/app/_types/plaid";
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
 
@@ -190,15 +191,6 @@ const styles = {
   },
 };
 
-interface SettingItemProps {
-  icon: keyof typeof Ionicons.glyphMap;
-  title: string;
-  description?: string;
-  onPress?: () => void;
-  rightElement?: React.ReactNode;
-  showBorder?: boolean;
-}
-
 const SettingItem: React.FC<SettingItemProps> = ({
   icon,
   title,
@@ -223,11 +215,6 @@ const SettingItem: React.FC<SettingItemProps> = ({
     {rightElement && <View style={styles.switchContainer}>{rightElement}</View>}
   </TouchableOpacity>
 );
-
-interface MemorySummary {
-  summary_text: string;
-  last_updated: string;
-}
 
 export default function FinnySettingsScreen() {
   const insets = useSafeAreaInsets();

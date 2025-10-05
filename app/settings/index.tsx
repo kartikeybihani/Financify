@@ -15,10 +15,10 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter, useLocalSearchParams } from "expo-router";
-import { supabase } from "../_lib/supabase/supabase";
-import FeedbackModal from "../_components/modals/FeedbackModal";
-import { handleDisconnect, getPrimaryItemId } from "../_utils/plaid";
-import logger from "../_utils/logger";
+import { supabase } from "@/app/_lib/supabase/supabase";
+import FeedbackModal from "@/app/_components/modals/FeedbackModal";
+import { handleDisconnect, getPrimaryItemId } from "@/app/_utils/plaid";
+import logger from "@/app/_utils/logger";
 
 export default function SettingsScreen() {
   const router = useRouter();

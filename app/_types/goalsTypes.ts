@@ -1,7 +1,7 @@
 // types/goalsTypes.ts
 
 import { Animated } from "react-native";
-import { Goal } from "./finny";
+import { Goal } from "@/app/_types/finny";
 
 export interface GoalsProps {
   deleteGoal: (id: string) => Promise<void>;

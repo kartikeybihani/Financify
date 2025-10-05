@@ -11,8 +11,8 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { supabase } from "../_lib/supabase/supabase";
-import logger from "../_utils/logger";
+import { supabase } from "@/app/_lib/supabase/supabase";
+import logger from "@/app/_utils/logger";
 import {
   getSnaptradeHoldingsFromDB,
   getSnaptradeOptionsFromDB,
@@ -23,8 +23,8 @@ import {
   syncSnaptradeInvestments,
   populateInvestmentAccountsInDB,
 } from "../_utils/snaptrade";
-import { styles } from "../_styles/investmentsStyles";
-import InstitutionSelectionModal from "../_components/modals/InstitutionSelectionModal";
+import { styles } from "@/app/_styles/investmentsStyles";
+import InstitutionSelectionModal from "@/app/_components/modals/InstitutionSelectionModal";
 
 interface Holding {
   symbol: string;

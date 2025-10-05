@@ -1,11 +1,4 @@
-export interface Account {
-  account_id: string;
-  name: string;
-  mask?: string;
-  institution_name: string;
-  type: string;
-  subtype: string;
-}
+import { Account } from "@/app/_types/plaid";
 
 export interface Category {
   id: string;

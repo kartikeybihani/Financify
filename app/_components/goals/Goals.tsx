@@ -15,18 +15,18 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import GoalNotification from "./GoalNotification";
-import AddGoalModal from "./AddGoalModal";
-import GoalItem from "./GoalItem";
-import GoalDetailModal from "./GoalDetailModal";
-import { styles } from "../../_styles/goalsStyles";
-import { useGoals } from "../../_hooks/useGoals";
-import { Goal } from "../../_types/finny";
-import { GoalInput } from "../../_types/addGoalModalTypes";
-import { GoalsProps, GoalsState } from "../../_types/goalsTypes";
+import GoalNotification from "@/app/_components/goals/GoalNotification";
+import AddGoalModal from "@/app/_components/goals/AddGoalModal";
+import GoalItem from "@/app/_components/goals/GoalItem";
+import GoalDetailModal from "@/app/_components/goals/GoalDetailModal";
+import { styles } from "@/app/_styles/goalsStyles";
+import { useGoals } from "@/app/_hooks/useGoals";
+import { Goal } from "@/app/_types/finny";
+import { GoalInput } from "@/app/_types/addGoalModalTypes";
+import { GoalsProps, GoalsState } from "@/app/_types/goalsTypes";
 import { useRouter } from "expo-router";
-import logger from "../../_utils/logger";
-import { supabase } from "../../_lib/supabase/supabase";
+import logger from "@/app/_utils/logger";
+import { supabase } from "@/app/_lib/supabase/supabase";
 
 // UUID generator for temporary IDs
 const generateId = () => {

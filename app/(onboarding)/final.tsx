@@ -18,9 +18,9 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { supabase } from "../_lib/supabase/supabase";
+import { supabase } from "@/app/_lib/supabase/supabase";
 import type { ComponentProps } from "react";
-import logger from "../_utils/logger";
+import logger from "@/app/_utils/logger";
 
 const { width, height } = Dimensions.get("window");
 

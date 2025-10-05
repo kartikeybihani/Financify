@@ -15,38 +15,14 @@ import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
-import { useCategories } from "../../_hooks/useCategories";
-import { supabase } from "../../_lib/supabase/supabase";
+import { useCategories } from "@/app/_hooks/useCategories";
+import { supabase } from "@/app/_lib/supabase/supabase";
 import { DeviceEventEmitter } from "react-native";
-import CategorySelectorModal from "./CategorySelectorModal";
-import AccountDetailModal from "./AccountDetailModal";
-import AccountCard from "../shared/AccountCard";
-import TransactionActionAlert from "../shared/TransactionActionAlert";
-
-interface Transaction {
-  id?: string;
-  amount: number;
-  category?: string;
-  top_category?: string;
-  new_category?: string;
-  date: string;
-  name: string;
-  account_id?: string;
-  account_name?: string;
-  account_type?: string;
-  institution_name?: string;
-  account_mask?: string;
-  plaid_transaction_id?: string;
-  merchant_name?: string;
-  if_recurring?: string;
-}
-
-interface TransactionDetailModalProps {
-  visible: boolean;
-  transactionId: string | null;
-  transaction?: Transaction | null; // Pass transaction data directly to avoid DB call
-  onClose: () => void;
-}
+import CategorySelectorModal from "@/app/_components/modals/CategorySelectorModal";
+import AccountDetailModal from "@/app/_components/modals/AccountDetailModal";
+import AccountCard from "@/app/_components/shared/AccountCard";
+import TransactionActionAlert from "@/app/_components/shared/TransactionActionAlert";
+import { Transaction, TransactionDetailModalProps } from "@/app/_types/plaid";
 
 const getCategoryEmojiForName = (categoryName: string): string => {
   const name = categoryName || "";
@@ -798,10 +774,11 @@ export default function TransactionDetailModal({
                     <View style={styles.accountSection}>
                       <AccountCard
                         account={{
-                          account_id: transaction.account_id,
-                          name: transaction.account_name,
+                          account_id: transaction.account_id || "unknown",
+                          name: transaction.account_name || "Unknown Account",
                           mask: transaction.account_mask,
-                          type: transaction.account_type,
+                          type: transaction.account_type || "depository",
+                          subtype: "checking", // Default subtype since it's required
                           institution_name: transaction.institution_name,
                         }}
                         onPress={handleAccountPress}

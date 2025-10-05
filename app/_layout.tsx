@@ -9,9 +9,9 @@ import { StatusBar } from "expo-status-bar";
 import { useFonts } from "expo-font";
 import { useEffect, useState } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import AuthProvider, { useAuth } from "./_contexts/AuthContext";
-import { runStorageMigrationV2 } from "../src/utils/migrate";
-import logger from "./_utils/logger";
+import AuthProvider, { useAuth } from "@/app/_contexts/AuthContext";
+import { runStorageMigrationV2 } from "@/src/utils/migrate";
+import logger from "@/app/_utils/logger";
 
 SplashScreen.preventAutoHideAsync();
 

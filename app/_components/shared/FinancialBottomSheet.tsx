@@ -18,9 +18,9 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons, AntDesign } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { BlurView } from "expo-blur";
-import { addNewBankAccount } from "../../_utils/plaid";
-import InstitutionSelectionModal from "../modals/InstitutionSelectionModal";
-import logger from "../../_utils/logger";
+import { addNewBankAccount } from "@/app/_utils/plaid";
+import InstitutionSelectionModal from "@/app/_components/modals/InstitutionSelectionModal";
+import logger from "@/app/_utils/logger";
 
 interface CategoryData {
   title: string;

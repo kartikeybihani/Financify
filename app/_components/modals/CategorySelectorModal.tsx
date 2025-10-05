@@ -17,8 +17,8 @@ import { BlurView } from "expo-blur";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
-import { useCategories } from "../../_hooks/useCategories";
-import { supabase } from "../../_lib/supabase/supabase";
+import { useCategories } from "@/app/_hooks/useCategories";
+import { supabase } from "@/app/_lib/supabase/supabase";
 import { DeviceEventEmitter } from "react-native";
 
 interface CategorySelectorModalProps {

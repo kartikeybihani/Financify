@@ -1,12 +1,13 @@
 import React from "react";
 import { View, Text, TouchableOpacity } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { styles } from "../../_styles/insightsStyles";
+import { styles } from "@/app/_styles/insightsStyles";
 
 interface CategoryData {
   amount: number;
   percentage: number;
   color: string;
+  hasRecurringTransactions: boolean;
 }
 
 interface CategoryGridProps {

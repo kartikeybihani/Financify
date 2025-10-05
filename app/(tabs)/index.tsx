@@ -13,8 +13,8 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Feather, Ionicons } from "@expo/vector-icons";
-import { styles } from "../_styles/homeStyles";
-import { supabase } from "../_lib/supabase/supabase";
+import { styles } from "@/app/_styles/homeStyles";
+import { supabase } from "@/app/_lib/supabase/supabase";
 import {
   getUpdateLinkToken,
   openPlaidLink,
@@ -24,7 +24,7 @@ import {
   getItemIds,
   addNewBankAccount,
 } from "../_utils/plaid";
-import { populateInvestmentAccountsInDB } from "../_utils/snaptrade";
+import { populateInvestmentAccountsInDB } from "@/app/_utils/snaptrade";
 import {
   Account,
   Identity,
@@ -33,18 +33,18 @@ import {
   Security,
 } from "../_types/plaid";
 import { useRouter } from "expo-router";
-import FinancialBottomSheet from "../_components/shared/FinancialBottomSheet";
-import FinancialCard from "../_components/shared/FinancialCard";
-import AccountItem from "../_components/shared/AccountItem";
-import CategorySelectionModal from "../_components/modals/CategorySelectionModal";
-import CashDepositInstitutionModal from "../_components/modals/CashDepositInstitutionModal";
-import CreditCardInstitutionModal from "../_components/modals/CreditCardInstitutionModal";
-import InstitutionSelectionModal from "../_components/modals/InstitutionSelectionModal";
-import AccountDetailModal from "../_components/modals/AccountDetailModal";
-import { LoadingSkeleton } from "../../src/components/LoadingSkeleton";
-import { Goal } from "../_types/finny";
-import { useGoals } from "../_hooks/useGoals";
-import logger from "../_utils/logger";
+import FinancialBottomSheet from "@/app/_components/shared/FinancialBottomSheet";
+import FinancialCard from "@/app/_components/shared/FinancialCard";
+import AccountItem from "@/app/_components/shared/AccountItem";
+import CategorySelectionModal from "@/app/_components/modals/CategorySelectionModal";
+import CashDepositInstitutionModal from "@/app/_components/modals/CashDepositInstitutionModal";
+import CreditCardInstitutionModal from "@/app/_components/modals/CreditCardInstitutionModal";
+import InstitutionSelectionModal from "@/app/_components/modals/InstitutionSelectionModal";
+import AccountDetailModal from "@/app/_components/modals/AccountDetailModal";
+import { LoadingSkeleton } from "@/src/components/LoadingSkeleton";
+import { Goal } from "@/app/_types/finny";
+import { useGoals } from "@/app/_hooks/useGoals";
+import logger from "@/app/_utils/logger";
 
 if (Platform.OS === "android") {
   UIManager.setLayoutAnimationEnabledExperimental?.(true);

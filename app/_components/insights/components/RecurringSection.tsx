@@ -14,42 +14,12 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { GlassView } from "expo-glass-effect";
 import { LinearGradient } from "expo-linear-gradient";
-import { getTransactionsForRecurringStream } from "../../../_utils/plaid";
-
-interface RecurringStream {
-  stream_id: string;
-  description: string;
-  merchant_name?: string;
-  category: string;
-  frequency: string;
-  average_amount: number; // negative for inflow per Plaid
-  last_amount: number;
-  last_date: string;
-  first_date: string;
-  is_active: boolean;
-  account_id: string;
-  transaction_ids: string[];
-  iso_currency_code: string;
-}
-
-interface Transaction {
-  id: string;
-  plaid_transaction_id: string;
-  date: string;
-  amount: number;
-  name: string;
-  merchant_name?: string;
-  category?: string;
-  accounts?: {
-    name: string;
-    mask?: string;
-    type: string;
-    subtype: string;
-    user_items?: {
-      institution_name: string;
-    };
-  };
-}
+import { getTransactionsForRecurringStream } from "@/app/_utils/plaid";
+import {
+  Transaction,
+  RecurringStream,
+  RecurringTransaction,
+} from "@/app/_types/plaid";
 
 interface Props {
   recurringData: {
@@ -73,9 +43,9 @@ export default function RecurringSection({
   const [selectedStream, setSelectedStream] = useState<RecurringStream | null>(
     null
   );
-  const [streamTransactions, setStreamTransactions] = useState<Transaction[]>(
-    []
-  );
+  const [streamTransactions, setStreamTransactions] = useState<
+    RecurringTransaction[]
+  >([]);
   const [loadingTransactions, setLoadingTransactions] = useState(false);
   const [showTransactionHistory, setShowTransactionHistory] = useState(false);
 

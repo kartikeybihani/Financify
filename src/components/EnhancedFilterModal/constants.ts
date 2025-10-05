@@ -1,4 +1,4 @@
-import { TimePeriod, Category, MonthData } from './types';
+import { TimePeriod, Category, MonthData } from '@/src/components/EnhancedFilterModal/types';
 
 export const QUICK_TIME_PERIODS: TimePeriod[] = [
   {

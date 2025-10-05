@@ -20,13 +20,13 @@ import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Goal } from "../../_types/finny";
-import logger from "../../_utils/logger";
+import { Goal } from "@/app/_types/finny";
+import logger from "@/app/_utils/logger";
 import {
   getCategoryDisplayName,
   getCategoryOptions,
 } from "../../../src/utils/goalCategories";
-import CategoryPickerModal from "../shared/CategoryPickerModal";
+import CategoryPickerModal from "@/app/_components/shared/CategoryPickerModal";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 

@@ -1,5 +1,5 @@
 import { StyleSheet, Platform } from "react-native";
-import { MODAL_CONFIG } from "./modal-constants";
+import { MODAL_CONFIG } from "@/app/_components/shared/modal-constants";
 
 export const MODAL_SHARED_STYLES = StyleSheet.create({
   overlay: {

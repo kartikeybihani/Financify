@@ -14,52 +14,14 @@ import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
-import { supabase } from "../../_lib/supabase/supabase";
+import { supabase } from "@/app/_lib/supabase/supabase";
 import { FontAwesome } from "@expo/vector-icons";
-import AccountCard from "../shared/AccountCard";
-
-interface Account {
-  account_id: string;
-  name: string;
-  mask?: string;
-  type: string;
-  subtype: string;
-  official_name?: string;
-  current_balance?: number;
-  available_balance?: number;
-  institution_name?: string;
-  balances?: {
-    current: number;
-    available: number;
-  };
-}
-
-interface Transaction {
-  id: string;
-  amount: number;
-  name: string;
-  date: string;
-  category?: string;
-  merchant_name?: string;
-}
-
-interface AccountDetailModalProps {
-  visible: boolean;
-  accountId: string | null;
-  account?: Account | null;
-  onClose: () => void;
-  loading?: boolean;
-  investmentPerformance?: {
-    todayPerformance: {
-      amount: number;
-      percentage: number;
-    };
-    totalPerformance: {
-      amount: number;
-      percentage: number;
-    };
-  } | null;
-}
+import AccountCard from "@/app/_components/shared/AccountCard";
+import {
+  Transaction,
+  Account,
+  AccountDetailModalProps,
+} from "@/app/_types/plaid";
 
 const formatCurrency = (amount: number) => {
   return new Intl.NumberFormat("en-US", {
@@ -266,9 +228,13 @@ export default function AccountDetailModal({
                       <AccountCard
                         account={{
                           account_id: account.account_id,
-                          name: account.name || account.official_name,
+                          name:
+                            account.name ||
+                            account.official_name ||
+                            "Unknown Account",
                           mask: account.mask,
                           type: account.type,
+                          subtype: account.subtype,
                           institution_name: account.institution_name,
                         }}
                         height={isSmallPhone ? 65 : isLandscape ? 105 : 85}

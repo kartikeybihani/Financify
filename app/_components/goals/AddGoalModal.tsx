@@ -17,14 +17,14 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
-import { AddGoalModalProps, GoalInput } from "../../_types/addGoalModalTypes";
+import { AddGoalModalProps, GoalInput } from "@/app/_types/addGoalModalTypes";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   getCategoryOptions,
   GoalCategory,
 } from "../../../src/utils/goalCategories";
-import CategoryPickerModal from "../shared/CategoryPickerModal";
+import CategoryPickerModal from "@/app/_components/shared/CategoryPickerModal";
 
 const initialGoalState: Omit<GoalInput, "target_date" | "category"> = {
   label: "",

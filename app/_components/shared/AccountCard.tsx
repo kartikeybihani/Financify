@@ -8,15 +8,7 @@ import {
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { FontAwesome } from "@expo/vector-icons";
-
-interface Account {
-  account_id?: string;
-  name?: string;
-  mask?: string;
-  type?: string;
-  subtype?: string;
-  institution_name?: string;
-}
+import { Account } from "@/app/_types/plaid";
 
 interface AccountCardProps {
   account: Account;

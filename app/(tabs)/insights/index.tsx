@@ -23,11 +23,11 @@ import {
 } from "react-native";
 import { InteractionManager } from "react-native";
 import * as Haptics from "expo-haptics";
-import TopChips from "../../_components/insights/components/TopChips";
-import RecurringSection from "../../_components/insights/components/RecurringSection";
+import TopChips from "@/app/_components/insights/components/TopChips";
+import RecurringSection from "@/app/_components/insights/components/RecurringSection";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { styles } from "../../_styles/insightsStyles";
+import { styles } from "@/app/_styles/insightsStyles";
 import {
   headerRefreshStyles,
   updateModalStyles,
@@ -35,19 +35,19 @@ import {
   loadMoreStyles,
   sectionContentStyles,
 } from "./insightsStyles";
-import CategoryDetailModal from "../../_components/insights/CategoryDetailModal";
+import CategoryDetailModal from "@/app/_components/insights/CategoryDetailModal";
 import EnhancedFilterModal, {
   FilterOptions,
   Account,
 } from "../../_components/EnhancedFilterModal";
-import ReAuthBanner from "../../_components/ui/ReAuthBanner";
-import InsightsLoadingSkeleton from "../../_components/insights/InsightsLoadingSkeleton";
-import SpendingSection from "../../_components/insights/components/SpendingSection";
-import TransactionsSection from "../../_components/insights/components/TransactionsSection";
-import CashFlowSection from "../../_components/insights/components/CashFlowSection";
-import RefreshStatus from "../../_components/insights/components/RefreshStatus";
-import { supabase } from "../../_lib/supabase/supabase";
-import InvestmentsScreen from "../../investments";
+import ReAuthBanner from "@/app/_components/ui/ReAuthBanner";
+import InsightsLoadingSkeleton from "@/app/_components/insights/InsightsLoadingSkeleton";
+import SpendingSection from "@/app/_components/insights/components/SpendingSection";
+import TransactionsSection from "@/app/_components/insights/components/TransactionsSection";
+import CashFlowSection from "@/app/_components/insights/components/CashFlowSection";
+import RefreshStatus from "@/app/_components/insights/components/RefreshStatus";
+import { supabase } from "@/app/_lib/supabase/supabase";
+import InvestmentsScreen from "@/app/investments";
 import {
   syncAllUserTransactions,
   refreshBothBalancesAndTransactions,
@@ -66,51 +66,22 @@ import {
   getSnaptradeBalancesFromDB,
   getSnaptradeConnectionsFromDB,
 } from "../../_utils/snaptrade";
-import { forceFullResync } from "../../../src/utils/categoryFix";
-import logger from "../../_utils/logger";
-import { useCategories } from "../../_hooks/useCategories";
+import { forceFullResync } from "@/src/utils/categoryFix";
+import logger from "@/app/_utils/logger";
+import { useCategories } from "@/app/_hooks/useCategories";
+import {
+  Transaction,
+  RecurringStream,
+  CategoryBreakdown,
+  Insight,
+} from "../../_types/plaid";
 
 // Define types
-interface Transaction {
-  id?: string;
-  amount: number;
-  category?: string; // This is the original Plaid category stored as string
-  top_category?: string; // Simplified top-level category (e.g., "Food", "Transportation")
-  sub_category?: string; // Simplified sub-category (e.g., "Eating Out", "Groceries")
-  new_category?: string; // User-overridden category (highest priority)
-  date: string;
-  name: string;
-  personal_finance_category?: {
-    primary: string;
-  };
-  plaid_transaction_id?: string;
-  account_name?: string;
-  institution_name?: string;
-  account_mask?: string;
-  if_recurring?: string;
-}
-
-interface CategoryBreakdown {
-  [key: string]: {
-    amount: number;
-    percentage: number;
-    color: string;
-    hasRecurringTransactions: boolean;
-  };
-}
-
-interface Insight {
-  icon: keyof typeof Ionicons.glyphMap;
-  title: string;
-  description: string;
-  details: string;
-}
 
 // Add some nice colors for categories
 // Removed hardcoded category colors and formatCategoryName - now using database via useCategories hook
 
 export default function InsightsScreen() {
-  const [selectedCard, setSelectedCard] = useState<number | null>(null);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [realInsights, setRealInsights] = useState<Insight[]>([]);
 
@@ -166,10 +137,10 @@ export default function InsightsScreen() {
 
   // Recurring transactions state
   const [recurringData, setRecurringData] = useState<{
-    subscriptions: any[];
-    income: any[];
-    bills: any[];
-    other: any[];
+    subscriptions: RecurringStream[];
+    income: RecurringStream[];
+    bills: RecurringStream[];
+    other: RecurringStream[];
     summary: {
       subscriptions: number;
       income: number;

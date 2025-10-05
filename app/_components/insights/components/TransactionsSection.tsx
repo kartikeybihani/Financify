@@ -8,18 +8,9 @@ import {
   TextInput,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { useCategories } from "../../../_hooks/useCategories";
-import TransactionDetailModal from "../../../_components/modals/TransactionDetailModal";
-
-interface Transaction {
-  id?: string;
-  amount: number;
-  top_category?: string;
-  new_category?: string;
-  date: string;
-  name: string;
-  plaid_transaction_id?: string;
-}
+import { useCategories } from "@/app/_hooks/useCategories";
+import TransactionDetailModal from "@/app/_components/modals/TransactionDetailModal";
+import { Transaction } from "@/app/_types/plaid";
 
 interface Props {
   titleStyle: any;
@@ -293,7 +284,8 @@ export default function TransactionsSection(props: Props) {
                 >
                   {formatCategoryFromHook(
                     tx.new_category || tx.top_category || "Other"
-                  )}
+                  )}{" "}
+                  {tx.if_recurring === "yes" ? "• Recurring" : ""}
                 </Text>
               </View>
               <View

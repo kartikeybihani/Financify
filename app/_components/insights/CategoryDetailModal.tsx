@@ -1,8 +1,9 @@
 import React, { useState } from "react";
 import { Modal, View, Text, TouchableOpacity, ScrollView } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { styles } from "../../_styles/insightsStyles";
-import TransactionDetailModal from "../../_components/modals/TransactionDetailModal";
+import { styles } from "@/app/_styles/insightsStyles";
+import TransactionDetailModal from "@/app/_components/modals/TransactionDetailModal";
+import { Transaction } from "@/app/_types/plaid";
 
 interface CategoryData {
   amount: number;
@@ -18,22 +19,6 @@ interface CategoryDetailModalProps {
   transactions: Transaction[];
   formatCategoryName: (category: string) => string;
   formatDate: (date: string) => string;
-}
-
-interface Transaction {
-  id?: string;
-  amount: number;
-  date: string;
-  name: string;
-  category?: string; // Original Plaid category stored as string
-  top_category?: string; // Simplified top-level category (e.g., "Food", "Transportation")
-  new_category?: string; // User-updated category
-  sub_category?: string; // Simplified sub-category (e.g., "Eating Out", "Groceries")
-  personal_finance_category?: {
-    primary: string;
-  };
-  plaid_transaction_id?: string;
-  if_recurring?: string;
 }
 
 const CategoryDetailModal: React.FC<CategoryDetailModalProps> = ({

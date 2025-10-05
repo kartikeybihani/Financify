@@ -10,11 +10,11 @@ import {
   Easing,
 } from "react-native";
 import { useRouter } from "expo-router";
-import { supabase } from "../_lib/supabase/supabase";
-import logger from "../_utils/logger";
-import AuthTemplate from "../_components/auth/AuthTemplate";
-import AuthInput from "../_components/auth/AuthInput";
-import AuthButton from "../_components/auth/AuthButton";
+import { supabase } from "@/app/_lib/supabase/supabase";
+import logger from "@/app/_utils/logger";
+import AuthTemplate from "@/app/_components/auth/AuthTemplate";
+import AuthInput from "@/app/_components/auth/AuthInput";
+import AuthButton from "@/app/_components/auth/AuthButton";
 import { LinearGradient } from "expo-linear-gradient";
 
 const { width } = Dimensions.get("window");

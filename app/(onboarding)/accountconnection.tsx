@@ -11,11 +11,11 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { supabase } from "../_lib/supabase/supabase";
+import { supabase } from "@/app/_lib/supabase/supabase";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
-import { fetchLinkToken, handlePlaidConnect } from "../_utils/plaid";
+import { fetchLinkToken, handlePlaidConnect } from "@/app/_utils/plaid";
 import { BlurView } from "expo-blur";
-import logger from "../_utils/logger";
+import logger from "@/app/_utils/logger";
 
 export default function AccountConnectionScreen() {
   const params = useLocalSearchParams();

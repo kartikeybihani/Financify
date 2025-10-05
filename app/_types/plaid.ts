@@ -1,14 +1,143 @@
+import { Ionicons } from "@expo/vector-icons";
+
 // Basic interfaces
 export interface Account {
   account_id: string;
   name: string;
   subtype: string;
-  balances: {
-    current: number;
-    available?: number;
-  };
   type: string;
+  mask?: string;
+  official_name?: string;
   institution_name?: string;
+  current_balance?: number;
+  available_balance?: number;
+  balances?: {
+    current: number;
+    available: number;
+  };
+}
+
+// Transaction interface - shared across all components
+export interface Transaction {
+  id?: string;
+  amount: number;
+  category?: string; // Original Plaid category stored as string
+  top_category?: string; // Simplified top-level category (e.g., "Food", "Transportation")
+  sub_category?: string; // Simplified sub-category (e.g., "Eating Out", "Groceries")
+  new_category?: string; // User-overridden category (highest priority)
+  date: string;
+  name: string;
+  personal_finance_category?: {
+    primary: string;
+  };
+  plaid_transaction_id?: string;
+  account_id?: string;
+  account_name?: string;
+  institution_name?: string;
+  account_mask?: string;
+  account_type?: string;
+  if_recurring?: string;
+  merchant_name?: string;
+}
+
+// RecurringStream interface - shared across all components
+export interface RecurringStream {
+  stream_id: string;
+  description: string;
+  merchant_name?: string;
+  category: string;
+  frequency: string;
+  average_amount: number; // negative for inflow per Plaid
+  last_amount: number;
+  last_date: string;
+  first_date: string;
+  is_active: boolean;
+  account_id: string;
+  transaction_ids: string[];
+  iso_currency_code: string;
+}
+
+// Extended Transaction interface for recurring streams with account details
+export interface RecurringTransaction extends Transaction {
+  accounts?: {
+    name: string;
+    mask?: string;
+    type: string;
+    subtype: string;
+    user_items?: {
+      institution_name: string;
+    };
+  };
+}
+
+// Investment Performance interface
+export interface InvestmentPerformance {
+  todayPerformance: {
+    amount: number;
+    percentage: number;
+  };
+  totalPerformance: {
+    amount: number;
+    percentage: number;
+  };
+}
+
+// Account Detail Modal Props interface
+export interface AccountDetailModalProps {
+  visible: boolean;
+  accountId: string | null;
+  account?: Account | null;
+  onClose: () => void;
+  loading?: boolean;
+  investmentPerformance?: InvestmentPerformance | null;
+}
+
+// Transaction Detail Modal Props interface
+export interface TransactionDetailModalProps {
+  visible: boolean;
+  transactionId: string | null;
+  transaction?: Transaction | null; // Pass transaction data directly to avoid DB call
+  onClose: () => void;
+}
+
+// Memory Summary interface
+export interface MemorySummary {
+  summary_text: string;
+  last_updated: string;
+}
+
+// Memories Screen Props interface
+export interface MemoriesScreenProps {
+  onBack?: () => void;
+  preloadedData?: MemorySummary | null;
+}
+
+// Setting Item Props interface
+export interface SettingItemProps {
+  icon: keyof typeof Ionicons.glyphMap;
+  title: string;
+  description?: string;
+  onPress?: () => void;
+  rightElement?: React.ReactNode;
+  showBorder?: boolean;
+}
+
+// Category Breakdown interface
+export interface CategoryBreakdown {
+  [key: string]: {
+    amount: number;
+    percentage: number;
+    color: string;
+    hasRecurringTransactions: boolean;
+  };
+}
+
+// Insight interface
+export interface Insight {
+  icon: keyof typeof Ionicons.glyphMap;
+  title: string;
+  description: string;
+  details: string;
 }
 
 export interface Identity {
