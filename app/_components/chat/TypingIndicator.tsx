@@ -1,12 +1,5 @@
 import React, { useEffect, useRef } from "react";
-import {
-  View,
-  Text,
-  Animated,
-  StyleSheet,
-  Image,
-  ActivityIndicator,
-} from "react-native";
+import { View, Text, Animated, StyleSheet, Image } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 
 interface TypingIndicatorProps {
@@ -135,24 +128,7 @@ const TypingIndicator = ({ progressStatus }: TypingIndicatorProps) => {
         <Text style={styles.senderName}>Finny</Text>
       </View>
 
-      {progressStatus && (
-        // Progress Status - shown above thinking indicator
-        <LinearGradient
-          colors={["#1A3A5A", "#2E5A8A", "#4A90E2"]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={[styles.messageContainer, styles.finnyMessageContainer]}
-        >
-          <View style={styles.messageContent}>
-            <View style={styles.progressContainer}>
-              <ActivityIndicator size="small" color="#fff" />
-              <Text style={styles.progressText}>{progressStatus}</Text>
-            </View>
-          </View>
-        </LinearGradient>
-      )}
-
-      {/* Traditional Typing Indicator - always shown */}
+      {/* Combined Typing Indicator - shows either progress or thinking */}
       <LinearGradient
         colors={["#1A3A5A", "#2E5A8A", "#4A90E2"]}
         start={{ x: 0, y: 0 }}
@@ -183,7 +159,9 @@ const TypingIndicator = ({ progressStatus }: TypingIndicatorProps) => {
                 ]}
               />
             ))}
-            <Text style={styles.thinkingText}>Thinking...</Text>
+            <Text style={styles.thinkingText}>
+              {progressStatus || "Thinking..."}
+            </Text>
           </View>
         </View>
       </LinearGradient>
@@ -383,19 +361,6 @@ const styles = StyleSheet.create({
   },
   skeletonLine3: {
     width: "65%",
-  },
-  progressContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-  },
-  progressText: {
-    color: "#fff",
-    fontSize: 14,
-    fontWeight: "500",
-    marginLeft: 12,
-    letterSpacing: 0.2,
   },
 });
 

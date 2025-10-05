@@ -43,11 +43,27 @@ export interface GoalItemProps {
   onPress: (goal: Goal) => void;
 }
 
+export interface GoalDetailModalProps {
+  goal: Goal | null;
+  visible: boolean;
+  onClose: () => void;
+  onDelete: (goal: Goal) => void;
+  onEdit?: (id: string, updates: Partial<Goal>) => void;
+  onOptimisticUpdate?: (updatedGoal: Goal) => void;
+}
+
+export interface GoalNotificationProps {
+  message: string;
+  onClose: () => void;
+}
+
 export const types = {
   GoalsProps: {} as GoalsProps,
   GoalsState: {} as GoalsState,
   NotificationState: {} as NotificationState,
   GoalItemProps: {} as GoalItemProps,
+  GoalDetailModalProps: {} as GoalDetailModalProps,
+  GoalNotificationProps: {} as GoalNotificationProps,
 } as const;
 
 export default types; 

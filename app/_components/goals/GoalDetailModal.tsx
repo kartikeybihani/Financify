@@ -21,6 +21,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Goal } from "@/app/_types/finny";
+import { GoalDetailModalProps } from "@/app/_types/goalsTypes";
 import logger from "@/app/_utils/logger";
 import {
   getCategoryDisplayName,
@@ -29,15 +30,6 @@ import {
 import CategoryPickerModal from "@/app/_components/shared/CategoryPickerModal";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
-
-interface GoalDetailModalProps {
-  goal: Goal | null;
-  visible: boolean;
-  onClose: () => void;
-  onDelete: (goal: Goal) => void;
-  onEdit?: (id: string, updates: Partial<Goal>) => void;
-  onOptimisticUpdate?: (updatedGoal: Goal) => void;
-}
 
 const GoalDetailModal = ({
   goal,

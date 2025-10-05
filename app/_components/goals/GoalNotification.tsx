@@ -10,11 +10,7 @@ import {
 import { BlurView } from "expo-blur";
 import { LinearGradient } from "expo-linear-gradient";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-
-interface GoalNotificationProps {
-  message: string; // This will now be just the goal label
-  onClose: () => void;
-}
+import { GoalNotificationProps } from "@/app/_types/goalsTypes";
 
 const { width } = Dimensions.get("window");
 

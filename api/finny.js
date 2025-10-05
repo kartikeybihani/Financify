@@ -1,9 +1,6 @@
 // api/finny.js
 import { createClient } from "@supabase/supabase-js";
 import fetch from "node-fetch";
-import * as cheerio from "cheerio";
-import fs from "fs";
-import path from "path";
 import crypto from "crypto";
 
 // Utilities
@@ -869,6 +866,569 @@ function quickExtract(message) {
   return hints;
 }
 
+// Goal extraction using small model
+async function extractGoalIntent(message, context) {
+  try {
+    const userGoals = context?.goals || [];
+    const userIncome = context?.summary?.netWorth || 0;
+    const userSpending = context?.transactions?.spendByCategory || [];
+
+    const extractionPrompt = `
+Analyze this message for goal-related intent and extract information:
+
+User message: "${message}"
+User context: 
+- Current goals: ${JSON.stringify(
+      userGoals.map((g) => ({
+        label: g.label,
+        amount: g.target_amount,
+        date: g.target_date,
+      }))
+    )}
+- Net worth: $${userIncome}
+- Recent spending categories: ${JSON.stringify(userSpending.slice(0, 5))}
+
+Return ONLY valid JSON (no markdown, no code blocks, no explanations):
+{
+  "intent": "goal_create|goal_advice|goal_question|goal_manage|not_goal",
+  "confidence": 0.0-1.0,
+  "extracted": {
+    "label": "extracted goal name or null",
+    "target_amount": number or null,
+    "target_date": "YYYY-MM-DD" or null,
+    "category": "emergency_fund|vacation|car|house_down_payment|education|retirement|wedding|debt_payoff|investment|other" or null,
+    "goal_id": "for edit/delete operations" or null
+  },
+  "needs_advice": true/false,
+  "needs_encouragement": true/false,
+  "context_hints": ["relevant user context strings"]
+}
+
+RULES:
+1. If message mentions saving, goals, targets, aspirations, or asks about goal feasibility → goal intent
+2. Extract amounts in dollars (e.g., "$5000", "5k", "five thousand")
+3. Extract dates (e.g., "by March", "in 6 months", "next year", "2025-12-31")
+4. Guess category from goal name if not specified
+5. Set needs_advice=true if asking for financial advice about goals
+6. Set needs_encouragement=true if user seems uncertain or needs motivation
+`;
+
+    const response = await fetch(
+      "https://openrouter.ai/api/v1/chat/completions",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${process.env.OPENROUTER_GROK_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: MEMORY_EXTRACTION_MODEL,
+          temperature: 0.1,
+          messages: [
+            {
+              role: "user",
+              content: extractionPrompt,
+            },
+          ],
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(`OpenRouter error ${response.status}`);
+    }
+
+    const data = await response.json();
+    const content = data.choices[0]?.message?.content?.trim();
+
+    if (!content) {
+      throw new Error("No content in response");
+    }
+
+    const result = JSON.parse(content);
+    console.log("🎯 [GOAL EXTRACTION] Result:", result);
+    return result;
+  } catch (error) {
+    console.error("❌ [GOAL EXTRACTION] Error:", error);
+    return {
+      intent: "not_goal",
+      confidence: 0.0,
+      extracted: {
+        label: null,
+        target_amount: null,
+        target_date: null,
+        category: null,
+        goal_id: null,
+      },
+      needs_advice: false,
+      needs_encouragement: false,
+      context_hints: [],
+    };
+  }
+}
+
+// Goal feasibility analysis with financial advisor tone
+async function analyzeGoalFeasibility(goalData, userContext) {
+  try {
+    const userGoals = userContext?.goals || [];
+    const netWorth = userContext?.summary?.netWorth || 0;
+    const monthlySpending = userContext?.transactions?.spendByCategory || [];
+    const totalMonthlySpend = monthlySpending.reduce(
+      (sum, cat) => sum + (cat.total_spend || 0),
+      0
+    );
+    const estimatedMonthlyIncome = totalMonthlySpend * 1.2; // Rough estimate
+
+    const analysisPrompt = `
+You are a Gen Z financial advisor analyzing a goal for a user. Be encouraging, relatable, and practical.
+
+Goal data: ${JSON.stringify(goalData)}
+User context:
+- Net worth: $${netWorth}
+- Estimated monthly income: $${estimatedMonthlyIncome}
+- Current goals: ${JSON.stringify(
+      userGoals.map((g) => ({
+        label: g.label,
+        amount: g.target_amount,
+        date: g.target_date,
+      }))
+    )}
+- Monthly spending: $${totalMonthlySpend}
+
+Return ONLY valid JSON (no markdown, no code blocks, no explanations):
+{
+  "feasibility": "high|medium|low",
+  "monthly_savings_needed": number,
+  "percentage_of_income": number,
+  "timeline_realistic": true/false,
+  "conflicts_with_existing": ["list of conflicting goals"],
+  "advice": "practical advice string",
+  "encouragement": "motivational message string",
+  "suggestions": ["alternative approaches"],
+  "red_flags": ["any concerns"],
+  "tone": "supportive|concerned|excited"
+}
+
+RULES:
+1. Be a Gen Z financial advisor - use emojis, be relatable, not just numbers
+2. If monthly savings > 50% of income, mark as low feasibility
+3. If conflicts with existing goals, mention them
+4. Give practical, actionable advice
+5. Be encouraging but realistic
+6. Consider the user's financial situation
+`;
+
+    const response = await fetch(
+      "https://openrouter.ai/api/v1/chat/completions",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${process.env.OPENROUTER_GROK_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: MEMORY_EXTRACTION_MODEL,
+          temperature: 0.3,
+          messages: [
+            {
+              role: "user",
+              content: analysisPrompt,
+            },
+          ],
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(`OpenRouter error ${response.status}`);
+    }
+
+    const data = await response.json();
+    const content = data.choices[0]?.message?.content?.trim();
+
+    if (!content) {
+      throw new Error("No content in response");
+    }
+
+    const result = JSON.parse(content);
+    console.log("📊 [GOAL ANALYSIS] Result:", result);
+    return result;
+  } catch (error) {
+    console.error("❌ [GOAL ANALYSIS] Error:", error);
+    return {
+      feasibility: "medium",
+      monthly_savings_needed: 0,
+      percentage_of_income: 0,
+      timeline_realistic: true,
+      conflicts_with_existing: [],
+      advice: "This looks like a solid goal! Let's make it happen.",
+      encouragement: "You've got this! Every goal starts with a decision.",
+      suggestions: [],
+      red_flags: [],
+      tone: "supportive",
+    };
+  }
+}
+
+// Conversational goal handler with goal_flow parameter
+async function handleGoalConversation(message, context) {
+  const startTime = Date.now();
+  const userId = context?.user_id;
+
+  if (!userId) {
+    return {
+      message: "Please log in to work with your goals! 🔐",
+      type: "assistant",
+      intent: "goal_conversation",
+    };
+  }
+
+  try {
+    // 1. Extract goal intent with small model
+    const extraction = await extractGoalIntent(message, context);
+
+    if (extraction.intent === "not_goal" || extraction.confidence < 0.5) {
+      return {
+        message:
+          "I'm not sure what you're asking about goals. Could you clarify? 🤔",
+        type: "assistant",
+        intent: "goal_conversation",
+      };
+    }
+
+    // 2. Handle different goal intents
+    switch (extraction.intent) {
+      case "goal_create":
+        return await handleGoalCreation(extraction, context, message);
+
+      case "goal_advice":
+        return await handleGoalAdvice(extraction, context, message);
+
+      case "goal_question":
+        return await handleGoalQuestion(extraction, context, message);
+
+      case "goal_manage":
+        return await handleGoalManagement(extraction, context, message);
+
+      default:
+        return {
+          message:
+            "I'm not sure how to help with that goal request. Can you be more specific? 🤷‍♀️",
+          type: "assistant",
+          intent: "goal_conversation",
+        };
+    }
+  } catch (error) {
+    console.error("❌ [GOAL CONVERSATION] Error:", error);
+    return {
+      message:
+        "Sorry, I hit a snag while processing your goal request. Try again? 🔄",
+      type: "assistant",
+      intent: "goal_conversation",
+    };
+  }
+}
+
+// Handle goal creation with conversation flow
+async function handleGoalCreation(extraction, context, message) {
+  const priorFlow = context?.goal_flow || {};
+  const priorSlots = priorFlow.slots || {};
+
+  // Merge extracted data with prior slots
+  const slots = {
+    label: priorSlots.label || extraction.extracted.label || null,
+    target_amount:
+      priorSlots.target_amount || extraction.extracted.target_amount || null,
+    target_date:
+      priorSlots.target_date || extraction.extracted.target_date || null,
+    category: priorSlots.category || extraction.extracted.category || null,
+  };
+
+  // Check what's missing
+  const missing = [];
+  if (!slots.label) missing.push("label");
+  if (!slots.target_amount) missing.push("target_amount");
+  if (!slots.target_date) missing.push("target_date");
+  if (!slots.category) missing.push("category");
+
+  // If we have all the data, analyze feasibility and create goal
+  if (missing.length === 0) {
+    const analysis = await analyzeGoalFeasibility(slots, context);
+
+    // Check for conflicts with existing goals
+    if (analysis.conflicts_with_existing.length > 0) {
+      return {
+        message: `⚠️ Heads up! This goal might conflict with your existing goals: ${analysis.conflicts_with_existing.join(
+          ", "
+        )}. ${analysis.advice}`,
+        type: "assistant",
+        intent: "goal_conversation",
+        goal_flow: {
+          action: "create",
+          slots: slots,
+          stage: "conflict_warning",
+          active: true,
+        },
+        actions: [
+          {
+            label: "Continue Anyway",
+            action: "create_anyway",
+            style: "primary",
+          },
+          {
+            label: "Modify Goal",
+            action: "modify",
+            style: "secondary",
+          },
+        ],
+      };
+    }
+
+    // If feasibility is low, warn user
+    if (analysis.feasibility === "low") {
+      return {
+        message: `🚨 ${analysis.encouragement} But I'm a bit concerned - you'd need to save $${analysis.monthly_savings_needed}/month (${analysis.percentage_of_income}% of your income). ${analysis.advice}`,
+        type: "assistant",
+        intent: "goal_conversation",
+        goal_flow: {
+          action: "create",
+          slots: slots,
+          stage: "feasibility_warning",
+          active: true,
+        },
+        actions: [
+          {
+            label: "Create Goal",
+            action: "create_anyway",
+            style: "primary",
+          },
+          {
+            label: "Adjust Timeline",
+            action: "modify",
+            style: "secondary",
+          },
+        ],
+      };
+    }
+
+    // All good - create the goal
+    return await createGoalFromSlots(slots, context, analysis);
+  }
+
+  // Missing information - ask for it
+  const prompts = {
+    label:
+      "🎯 What should we call this goal? (e.g., Emergency fund, Dream vacation, New car)",
+    target_amount: `💰 How much do you want to save for your ${
+      slots.label || "goal"
+    }? (e.g., $5000)`,
+    target_date: `⏰ When do you want to reach your ${
+      slots.label || "goal"
+    }? (e.g., by January 2026 or in 2 years)`,
+    category:
+      "📂 Which category fits best? (emergency_fund, vacation, car, house_down_payment, education, retirement, wedding, debt_payoff, investment, other)",
+  };
+
+  const nextKey = missing[0];
+  return {
+    message: prompts[nextKey],
+    type: "assistant",
+    intent: "goal_conversation",
+    goal_flow: {
+      action: "create",
+      slots: slots,
+      stage: "collecting",
+      active: true,
+    },
+  };
+}
+
+// Handle goal advice requests
+async function handleGoalAdvice(extraction, context, message) {
+  if (extraction.extracted.target_amount && extraction.extracted.target_date) {
+    const analysis = await analyzeGoalFeasibility(
+      extraction.extracted,
+      context
+    );
+
+    let response = `${analysis.encouragement} `;
+
+    if (analysis.feasibility === "high") {
+      response += `This goal looks totally doable! You'd need to save about $${analysis.monthly_savings_needed}/month. ${analysis.advice}`;
+    } else if (analysis.feasibility === "medium") {
+      response += `This is ambitious but possible! You'd need $${analysis.monthly_savings_needed}/month (${analysis.percentage_of_income}% of your income). ${analysis.advice}`;
+    } else {
+      response += `This is a stretch goal - you'd need $${analysis.monthly_savings_needed}/month. ${analysis.advice}`;
+    }
+
+    if (analysis.suggestions.length > 0) {
+      response += `\n\n💡 Here are some alternatives: ${analysis.suggestions.join(
+        ", "
+      )}`;
+    }
+
+    return {
+      message: response,
+      type: "assistant",
+      intent: "goal_conversation",
+      goal_flow: {
+        action: "advice",
+        slots: extraction.extracted,
+        stage: "completed",
+        active: false,
+      },
+      actions: [
+        {
+          label: "Create This Goal",
+          action: "create_from_advice",
+          style: "primary",
+        },
+      ],
+    };
+  }
+
+  return {
+    message:
+      "I'd love to help with goal advice! Could you tell me more about what you're trying to save for and by when? 🤔",
+    type: "assistant",
+    intent: "goal_conversation",
+  };
+}
+
+// Handle goal questions
+async function handleGoalQuestion(extraction, context, message) {
+  const userGoals = context?.goals || [];
+
+  if (userGoals.length === 0) {
+    return {
+      message:
+        "You don't have any goals set up yet! Want to create your first one? 🎯",
+      type: "assistant",
+      intent: "goal_conversation",
+      actions: [
+        {
+          label: "Create Goal",
+          action: "create_new",
+          style: "primary",
+        },
+      ],
+    };
+  }
+
+  // Simple goal listing
+  let response = "Here are your current goals: 📋\n\n";
+  userGoals.forEach((goal, index) => {
+    const progress = (
+      ((goal.current_amount || 0) / goal.target_amount) *
+      100
+    ).toFixed(1);
+    response += `${index + 1}. **${goal.label}**: $${
+      goal.current_amount || 0
+    } / $${goal.target_amount} (${progress}%) - Due ${goal.target_date}\n`;
+  });
+
+  response += "\nWant to add a new goal or modify an existing one? 🚀";
+
+  return {
+    message: response,
+    type: "assistant",
+    intent: "goal_conversation",
+    actions: [
+      {
+        label: "Add New Goal",
+        action: "create_new",
+        style: "primary",
+      },
+      {
+        label: "View Details",
+        action: "view_details",
+        style: "secondary",
+      },
+    ],
+  };
+}
+
+// Handle goal management (edit/delete)
+async function handleGoalManagement(extraction, context, message) {
+  // This would handle editing/deleting existing goals
+  // For now, return a simple response
+  return {
+    message: "I can help you manage your goals! What would you like to do? ✏️",
+    type: "assistant",
+    intent: "goal_conversation",
+    actions: [
+      {
+        label: "Edit Goal",
+        action: "edit_goal",
+        style: "primary",
+      },
+      {
+        label: "Delete Goal",
+        action: "delete_goal",
+        style: "secondary",
+      },
+    ],
+  };
+}
+
+// Create goal from slots
+async function createGoalFromSlots(slots, context, analysis) {
+  const userId = context?.user_id;
+
+  const goalRow = {
+    user_id: userId,
+    label: String(slots.label),
+    description: null,
+    note: null,
+    target_amount: Math.round(Number(slots.target_amount)),
+    current_amount: 0,
+    target_date: String(slots.target_date),
+    category: String(slots.category || "other"),
+    status: "active",
+  };
+
+  try {
+    const { data, error } = await supabase
+      .from("goals")
+      .insert([goalRow])
+      .select()
+      .single();
+
+    if (error) {
+      console.error("❌ [GOAL] Insert failed:", error);
+      return {
+        message:
+          "I couldn't save that goal right now. Please try again shortly. 😅",
+        type: "assistant",
+        intent: "goal_conversation",
+      };
+    }
+
+    const niceAmt = `$${Number(goalRow.target_amount).toLocaleString()}`;
+    const response = `🎉 ${analysis.encouragement} Your "${goalRow.label}" goal is all set for ${niceAmt} by ${goalRow.target_date}!\n\n${analysis.advice}`;
+
+    return {
+      message: response,
+      type: "assistant",
+      intent: "goal_conversation",
+      goal: data,
+      goal_flow: {
+        action: "create",
+        slots: slots,
+        stage: "completed",
+        active: false,
+      },
+    };
+  } catch (e) {
+    console.error("❌ [GOAL] Unexpected error:", e);
+    return {
+      message: "Hit an error while saving your goal. Please try again. 🔄",
+      type: "assistant",
+      intent: "goal_conversation",
+    };
+  }
+}
+
 // Memory extraction using small model (parallel processing)
 async function extractMemoriesWithSmallModel(message, hints) {
   try {
@@ -1165,6 +1725,9 @@ export default async function handler(req, res) {
         break;
       case "off_topic":
         response = await handleOffTopic(message, safeContext);
+        break;
+      case "goal_conversation":
+        response = await handleGoalConversation(message, safeContext);
         break;
       default:
         return res.status(400).json({ error: "Invalid action" });
@@ -3523,6 +4086,7 @@ async function handleClassify(message, context) {
               "- ask_fact_fresh  current year numbers or facts that change",
               "- ask_state_rule  state specific rules or taxes",
               "- calc_projection  what if or plan math",
+              "- goal_conversation  goal creation, advice, or management",
               "- off_topic  non-financial queries that should be redirected",
               "",
               "Rules:",
@@ -3540,11 +4104,14 @@ async function handleClassify(message, context) {
               "- If affordability, FIRE, retirement planning, or financial projections choose ask_personalized (set needs_calc=true)",
               "- If it needs the user's actual data choose ask_personalized",
               "- If purely personal (spend, net worth, goals) → `ask_personalized` (needs_user_data=true, needs_web=false).",
+              "- **GOAL CONVERSATIONS**: If message mentions saving, goals, targets, aspirations, or asks about goal feasibility → `goal_conversation` (needs_user_data=true, needs_calc=true)",
               "- If ambiguous but potentially financial, choose ask_personalized",
               "- **DEFAULT TO FINANCIAL**: When in doubt between financial and non-financial, prefer financial intent.",
               "",
               "Sample inputs and expected intent:",
-              '"Set a 2000 emergency fund by March" → ask_personalized',
+              '"Set a 2000 emergency fund by March" → goal_conversation',
+              '"I want to save $5000 for a house down payment" → goal_conversation',
+              '"Should I buy a Rolex or save for a house?" → goal_conversation',
               '"How much did I spend on Uber last month" → ask_personalized',
               '"How are you" or "What\'s up" or "Am I normal?" → ask_personalized (financial wellness)',
               '"What\'s the weather like?" → off_topic',
@@ -3561,7 +4128,7 @@ async function handleClassify(message, context) {
               '"Can I hit FIRE by 35" → ask_personalized, needs_calc:true',
               '"Can I retire by 45" → ask_personalized, needs_calc:true',
               '"Will I have enough to retire" → ask_personalized, needs_calc:true',
-              '"Can I achieve my financial goals" → ask_personalized, needs_calc:true',
+              '"Can I achieve my financial goals" → goal_conversation',
               "Return JSON only. No extra text.",
             ].join("\n"),
           },
@@ -3588,6 +4155,7 @@ async function handleClassify(message, context) {
                     "ask_personalized",
                     "ask_fact_fresh",
                     "ask_state_rule",
+                    "goal_conversation",
                     "off_topic",
                   ],
                   description: "Single best intent",
