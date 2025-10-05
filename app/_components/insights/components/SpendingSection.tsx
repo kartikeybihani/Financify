@@ -6,11 +6,21 @@ interface Props {
   titleStyle: any;
   categoryBreakdown: [
     string,
-    { amount: number; percentage: number; color: string }
+    {
+      amount: number;
+      percentage: number;
+      color: string;
+      hasRecurringTransactions: boolean;
+    }
   ][];
   onCategoryPress: (
     category: string,
-    data: { amount: number; percentage: number; color: string }
+    data: {
+      amount: number;
+      percentage: number;
+      color: string;
+      hasRecurringTransactions: boolean;
+    }
   ) => void;
   formatCategoryName: (cat: string) => string;
 }

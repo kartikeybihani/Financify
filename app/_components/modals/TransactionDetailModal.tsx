@@ -21,6 +21,7 @@ import { DeviceEventEmitter } from "react-native";
 import CategorySelectorModal from "./CategorySelectorModal";
 import AccountDetailModal from "./AccountDetailModal";
 import AccountCard from "../shared/AccountCard";
+import TransactionActionAlert from "../shared/TransactionActionAlert";
 
 interface Transaction {
   id?: string;
@@ -37,6 +38,7 @@ interface Transaction {
   account_mask?: string;
   plaid_transaction_id?: string;
   merchant_name?: string;
+  if_recurring?: string;
 }
 
 interface TransactionDetailModalProps {
@@ -153,6 +155,27 @@ const getCategoryBackgroundColorForName = (categoryName: string): string => {
   return "#f8f9fa";
 };
 
+// Helper function to get the display category based on the new logic
+const getDisplayCategory = (
+  updatedCategory: string | null | undefined,
+  transaction: Transaction | null
+): string => {
+  if (!transaction) return "Other";
+
+  const currentNewCategory =
+    (updatedCategory !== null ? updatedCategory : undefined) ||
+    transaction.new_category;
+
+  if (
+    currentNewCategory === "INTERNAL_TRANSFER" ||
+    currentNewCategory === null
+  ) {
+    return transaction.top_category || transaction.category || "Other";
+  }
+
+  return currentNewCategory || "Other";
+};
+
 export default function TransactionDetailModal({
   visible,
   transactionId,
@@ -162,10 +185,15 @@ export default function TransactionDetailModal({
   const insets = useSafeAreaInsets();
   const { height, width } = useWindowDimensions();
   const [transaction, setTransaction] = useState<Transaction | null>(null);
-  const [updatedCategory, setUpdatedCategory] = useState<string | null>(null);
+  const [updatedCategory, setUpdatedCategory] = useState<
+    string | null | undefined
+  >(undefined);
   const [loading, setLoading] = useState(true);
   const [isInternalTransfer, setIsInternalTransfer] = useState<boolean>(false);
+  const [isRecurring, setIsRecurring] = useState<boolean>(false);
   const [showCategorySelector, setShowCategorySelector] = useState(false);
+  const [showTransactionActionAlert, setShowTransactionActionAlert] =
+    useState(false);
 
   // Account Detail Modal state
   const [showAccountDetailModal, setShowAccountDetailModal] = useState(false);
@@ -201,6 +229,7 @@ export default function TransactionDetailModal({
         setIsInternalTransfer(
           initialTransaction.new_category === "INTERNAL_TRANSFER"
         );
+        setIsRecurring(initialTransaction.if_recurring === "yes");
         return;
       }
 
@@ -223,6 +252,9 @@ export default function TransactionDetailModal({
               user_items:item_id (
                 institution_name
               )
+            ),
+            recurring_streams:recurring_stream_id (
+              stream_id
             )
           `
           )
@@ -244,6 +276,7 @@ export default function TransactionDetailModal({
 
           setTransaction(transformedTransaction);
           setIsInternalTransfer(data.new_category === "INTERNAL_TRANSFER");
+          setIsRecurring(data.if_recurring === "yes");
         }
       } catch (error) {
         console.error("Error loading transaction:", error);
@@ -264,7 +297,7 @@ export default function TransactionDetailModal({
 
   // Listen for category updates
   useEffect(() => {
-    const subscription = DeviceEventEmitter.addListener(
+    const categorySubscription = DeviceEventEmitter.addListener(
       "transactionCategoryUpdated",
       (data) => {
         if (data.transactionId === transaction?.id) {
@@ -285,17 +318,31 @@ export default function TransactionDetailModal({
       }
     );
 
-    return () => subscription.remove();
+    const recurringSubscription = DeviceEventEmitter.addListener(
+      "transactionRecurringUpdated",
+      (data) => {
+        if (data.transactionId === transaction?.id) {
+          setIsRecurring(data.isRecurring);
+        }
+      }
+    );
+
+    return () => {
+      categorySubscription.remove();
+      recurringSubscription.remove();
+    };
   }, [transaction?.id]);
 
   // Reset modal state when it becomes invisible
   useEffect(() => {
     if (!visible) {
       setTransaction(null);
-      setUpdatedCategory(null);
+      setUpdatedCategory(undefined);
       setIsInternalTransfer(false);
+      setIsRecurring(false);
       setLoading(true);
       setShowCategorySelector(false);
+      setShowTransactionActionAlert(false);
       setShowAccountDetailModal(false);
       setSelectedAccountId(null);
       setSelectedAccountData(null);
@@ -308,8 +355,10 @@ export default function TransactionDetailModal({
     setTransaction(null);
     setUpdatedCategory(null);
     setIsInternalTransfer(false);
+    setIsRecurring(false);
     setLoading(true);
     setShowCategorySelector(false);
+    setShowTransactionActionAlert(false);
     setShowAccountDetailModal(false);
     setSelectedAccountId(null);
     setSelectedAccountData(null);
@@ -459,62 +508,88 @@ export default function TransactionDetailModal({
     }
   };
 
-  const handleInternalTransferToggle = () => {
-    const action = isInternalTransfer ? "Yes" : "mark";
-    const message = isInternalTransfer
-      ? "Mark this transaction as Regular Transaction?"
-      : "Mark this transaction as Internal Transfer?";
+  const handleFilterPress = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setShowTransactionActionAlert(true);
+  };
 
-    Alert.alert("Internal Transfer", message, [
-      {
-        text: "Cancel",
-        style: "cancel",
-      },
-      {
-        text: action === "mark" ? "Mark" : "Yes",
-        style: "default",
-        onPress: async () => {
-          try {
-            const newCategoryValue = isInternalTransfer
-              ? null
-              : "INTERNAL_TRANSFER";
+  const handleInternalTransferToggle = async () => {
+    try {
+      // Use the same logic as the UI to determine current state
+      const currentlyInternalTransfer =
+        updatedCategory === "INTERNAL_TRANSFER" ||
+        (updatedCategory === undefined &&
+          transaction?.new_category === "INTERNAL_TRANSFER");
+      const newCategoryValue = currentlyInternalTransfer
+        ? null
+        : "INTERNAL_TRANSFER";
 
-            // Update the database
-            const { error } = await supabase
-              .from("transactions")
-              .update({ new_category: newCategoryValue })
-              .eq("id", transaction?.id);
+      // Update the database
+      const { error } = await supabase
+        .from("transactions")
+        .update({ new_category: newCategoryValue })
+        .eq("id", transaction?.id);
 
-            if (error) {
-              console.error("Error updating transaction category:", error);
-              Alert.alert(
-                "Error",
-                "Failed to update transaction. Please try again."
-              );
-              return;
-            }
+      if (error) {
+        console.error("Error updating transaction category:", error);
+        Alert.alert("Error", "Failed to update transaction. Please try again.");
+        return;
+      }
 
-            // Update local state
-            setIsInternalTransfer(!isInternalTransfer);
-            setUpdatedCategory(newCategoryValue);
+      // Update local state
+      setIsInternalTransfer(!currentlyInternalTransfer);
+      setUpdatedCategory(newCategoryValue);
 
-            // Emit event to notify other components
-            DeviceEventEmitter.emit("transactionCategoryUpdated", {
-              transactionId: transaction?.id,
-              newCategory: newCategoryValue,
-            });
+      // Emit event to notify other components
+      DeviceEventEmitter.emit("transactionCategoryUpdated", {
+        transactionId: transaction?.id,
+        newCategory: newCategoryValue,
+      });
 
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-          } catch (error) {
-            console.error("Error updating transaction:", error);
-            Alert.alert(
-              "Error",
-              "Failed to update transaction. Please try again."
-            );
-          }
-        },
-      },
-    ]);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    } catch (error) {
+      console.error("Error updating transaction:", error);
+      Alert.alert("Error", "Failed to update transaction. Please try again.");
+    }
+  };
+
+  const handleRecurringToggle = async () => {
+    try {
+      const currentIsRecurring = transaction?.if_recurring === "yes";
+      const newRecurringValue = currentIsRecurring ? "no" : "yes";
+      // Update the database
+      const { error } = await supabase
+        .from("transactions")
+        .update({ if_recurring: newRecurringValue })
+        .eq("id", transaction?.id);
+
+      if (error) {
+        console.error("Error updating transaction recurring status:", error);
+        Alert.alert("Error", "Failed to update transaction. Please try again.");
+        return;
+      }
+
+      // Update the transaction object directly
+      if (transaction) {
+        setTransaction({
+          ...transaction,
+          if_recurring: newRecurringValue,
+        });
+      }
+
+      // Update local state for consistency
+      setIsRecurring(!currentIsRecurring);
+      // Emit event to notify other components
+      DeviceEventEmitter.emit("transactionRecurringUpdated", {
+        transactionId: transaction?.id,
+        isRecurring: !currentIsRecurring,
+      });
+
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    } catch (error) {
+      console.error("Error updating transaction:", error);
+      Alert.alert("Error", "Failed to update transaction. Please try again.");
+    }
   };
 
   const formatDate = (dateStr: string) => {
@@ -547,11 +622,15 @@ export default function TransactionDetailModal({
               {/* Header with Transaction Label and Menu */}
               <View style={styles.headerContainer}>
                 <Text style={styles.transactionLabel}>
-                  {isInternalTransfer ? "Internal Transfer" : "Transaction"}
+                  {updatedCategory === "INTERNAL_TRANSFER" ||
+                  (updatedCategory === undefined &&
+                    transaction?.new_category === "INTERNAL_TRANSFER")
+                    ? "Internal Transfer"
+                    : "Transaction"}
                 </Text>
                 <TouchableOpacity
                   style={styles.menuButton}
-                  onPress={handleInternalTransferToggle}
+                  onPress={handleFilterPress}
                   activeOpacity={0.7}
                 >
                   <Ionicons
@@ -632,81 +711,84 @@ export default function TransactionDetailModal({
                       {formatDate(transaction.date)}
                     </Text>
 
-                    {/* Category Pill - Only show if not internal transfer */}
-                    {!isInternalTransfer && (
-                      <TouchableOpacity
-                        style={[
-                          styles.categoryPill,
-                          {
-                            backgroundColor: getCategoryBackgroundColorForName(
-                              updatedCategory ||
-                                transaction.new_category ||
-                                transaction.top_category ||
-                                transaction.category ||
-                                "Other"
-                            ),
-                            borderColor:
-                              getCategoryColor(
-                                updatedCategory ||
-                                  transaction.new_category ||
-                                  transaction.top_category ||
-                                  transaction.category ||
-                                  "Other"
-                              ) + "40",
-                          },
-                        ]}
-                        onPress={handleCategoryPress}
-                        activeOpacity={0.7}
-                      >
-                        <Text style={styles.categoryEmojiText}>
-                          {getCategoryEmojiForName(
-                            updatedCategory ||
-                              transaction.new_category ||
-                              transaction.top_category ||
-                              transaction.category ||
-                              "Other"
-                          )}
-                        </Text>
-                        <Text
+                    {/* Category and Recurring Tags Container */}
+                    <View style={styles.tagsContainer}>
+                      {/* Category Pill - Only show when NOT an internal transfer */}
+                      {!(
+                        updatedCategory === "INTERNAL_TRANSFER" ||
+                        (updatedCategory === undefined &&
+                          transaction.new_category === "INTERNAL_TRANSFER")
+                      ) && (
+                        <TouchableOpacity
                           style={[
-                            styles.categoryPillText,
+                            styles.categoryPill,
                             {
-                              color: getCategoryColor(
-                                updatedCategory ||
-                                  transaction.new_category ||
-                                  transaction.top_category ||
-                                  transaction.category ||
-                                  "Other"
-                              ),
+                              backgroundColor:
+                                getCategoryBackgroundColorForName(
+                                  getDisplayCategory(
+                                    updatedCategory,
+                                    transaction
+                                  )
+                                ),
+                              borderColor:
+                                getCategoryColor(
+                                  getDisplayCategory(
+                                    updatedCategory,
+                                    transaction
+                                  )
+                                ) + "40",
                             },
                           ]}
+                          onPress={handleCategoryPress}
+                          activeOpacity={0.7}
                         >
-                          {formatCategoryFromHook(
-                            updatedCategory ||
-                              transaction.new_category ||
-                              transaction.top_category ||
-                              transaction.category ||
-                              "Other"
-                          )}
-                        </Text>
-                        <Text
-                          style={[
-                            styles.categoryArrow,
-                            {
-                              color: getCategoryColor(
-                                updatedCategory ||
-                                  transaction.new_category ||
-                                  transaction.top_category ||
-                                  transaction.category ||
-                                  "Other"
-                              ),
-                            },
-                          ]}
-                        >
-                          ▼
-                        </Text>
-                      </TouchableOpacity>
-                    )}
+                          <Text style={styles.categoryEmojiText}>
+                            {getCategoryEmojiForName(
+                              getDisplayCategory(updatedCategory, transaction)
+                            )}
+                          </Text>
+                          <Text
+                            style={[
+                              styles.categoryPillText,
+                              {
+                                color: getCategoryColor(
+                                  getDisplayCategory(
+                                    updatedCategory,
+                                    transaction
+                                  )
+                                ),
+                              },
+                            ]}
+                          >
+                            {formatCategoryFromHook(
+                              getDisplayCategory(updatedCategory, transaction)
+                            )}
+                          </Text>
+                          <Text
+                            style={[
+                              styles.categoryArrow,
+                              {
+                                color: getCategoryColor(
+                                  getDisplayCategory(
+                                    updatedCategory,
+                                    transaction
+                                  )
+                                ),
+                              },
+                            ]}
+                          >
+                            ▼
+                          </Text>
+                        </TouchableOpacity>
+                      )}
+
+                      {/* Recurring Tag - Show based on transaction.if_recurring regardless of internal transfer status */}
+                      {transaction?.if_recurring === "yes" && (
+                        <View style={styles.recurringTag}>
+                          <Text style={styles.recurringText}>RECURRING</Text>
+                        </View>
+                      )}
+                    </View>
                   </View>
 
                   {/* Account Card */}
@@ -740,6 +822,20 @@ export default function TransactionDetailModal({
         transactionId={transaction?.id || null}
         merchantName={transaction?.merchant_name}
         onClose={() => setShowCategorySelector(false)}
+      />
+
+      {/* Transaction Action Alert */}
+      <TransactionActionAlert
+        visible={showTransactionActionAlert}
+        onClose={() => setShowTransactionActionAlert(false)}
+        onInternalTransfer={handleInternalTransferToggle}
+        onSetRecurring={handleRecurringToggle}
+        isInternalTransfer={
+          updatedCategory === "INTERNAL_TRANSFER" ||
+          (updatedCategory === undefined &&
+            transaction?.new_category === "INTERNAL_TRANSFER")
+        }
+        isRecurring={transaction?.if_recurring === "yes"}
       />
 
       {/* Account Detail Modal */}
@@ -914,6 +1010,13 @@ const styles = StyleSheet.create({
     fontWeight: "500",
     marginBottom: 20,
   },
+  tagsContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    flexWrap: "wrap",
+    gap: 8,
+  },
   categoryPill: {
     flexDirection: "row",
     alignItems: "center",
@@ -935,6 +1038,22 @@ const styles = StyleSheet.create({
     marginLeft: 6,
     opacity: 0.7,
     fontSize: 14,
+  },
+  recurringTag: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: "rgba(74, 144, 226, 0.15)",
+    borderWidth: 1,
+    borderColor: "rgba(74, 144, 226, 0.3)",
+  },
+  recurringText: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: "#4A90E2",
+    letterSpacing: 0.2,
   },
   accountSection: {
     marginBottom: 20,

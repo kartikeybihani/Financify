@@ -243,9 +243,12 @@ CREATE TABLE public.transactions (
   top_category text,
   sub_category text,
   new_category text,
+  recurring_stream_id text,
+  if_recurring text DEFAULT 'unknown'::text CHECK (if_recurring = ANY (ARRAY['yes'::text, 'no'::text, 'unknown'::text])),
   CONSTRAINT transactions_pkey PRIMARY KEY (id),
   CONSTRAINT transactions_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id),
-  CONSTRAINT transactions_account_id_fkey FOREIGN KEY (account_id) REFERENCES public.accounts(account_id)
+  CONSTRAINT transactions_account_id_fkey FOREIGN KEY (account_id) REFERENCES public.accounts(account_id),
+  CONSTRAINT fk_transactions_recurring_stream FOREIGN KEY (recurring_stream_id) REFERENCES public.recurring_streams(stream_id)
 );
 CREATE TABLE public.user_items (
   id uuid NOT NULL DEFAULT gen_random_uuid(),

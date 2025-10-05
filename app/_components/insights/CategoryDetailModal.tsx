@@ -33,6 +33,7 @@ interface Transaction {
     primary: string;
   };
   plaid_transaction_id?: string;
+  if_recurring?: string;
 }
 
 const CategoryDetailModal: React.FC<CategoryDetailModalProps> = ({
@@ -178,6 +179,13 @@ const CategoryDetailModal: React.FC<CategoryDetailModalProps> = ({
                         <Text style={styles.categoryTransactionName}>
                           {tx.name}
                         </Text>
+                        {tx.if_recurring === "yes" && (
+                          <View style={styles.recurringChip}>
+                            <Text style={styles.recurringChipText}>
+                              RECURRING
+                            </Text>
+                          </View>
+                        )}
                       </View>
                       <Text style={styles.categoryTransactionDate}>
                         {formatDate(tx.date)}

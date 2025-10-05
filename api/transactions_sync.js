@@ -209,7 +209,30 @@ export default async function handler(req, res) {
       cursor = data.next_cursor;
     }
 
-    // 4) Store transactions in database
+    // 4) Get existing recurring streams for this account to check if transactions are recurring
+    const { data: recurringStreams, error: streamsError } = await supabase
+      .from("recurring_streams")
+      .select("stream_id, transaction_ids, account_id")
+      .eq("user_id", item.user_id)
+      .eq("is_active", true);
+
+    if (streamsError) {
+      console.error("Error fetching recurring streams:", streamsError);
+    }
+
+    // Create a map for quick lookup of transaction_id -> stream_id
+    const transactionToStreamMap = new Map();
+    if (recurringStreams) {
+      recurringStreams.forEach((stream) => {
+        if (stream.transaction_ids && Array.isArray(stream.transaction_ids)) {
+          stream.transaction_ids.forEach((transactionId) => {
+            transactionToStreamMap.set(transactionId, stream.stream_id);
+          });
+        }
+      });
+    }
+
+    // 5) Store transactions in database
     if (added.length || modified.length) {
       const rows = [...added, ...modified].map((txn) => {
         // Enhanced category extraction with fallbacks
@@ -271,6 +294,10 @@ export default async function handler(req, res) {
         // Apply simple category mapping
         const simplifiedCategory = getSimplifiedCategory(category);
 
+        // Check if this transaction is part of a recurring stream
+        const recurringStreamId =
+          transactionToStreamMap.get(txn.transaction_id) || null;
+
         // Debug log for first few transactions with enhanced info
         if (added.length <= 3 || modified.length <= 3) {
           console.log(
@@ -280,7 +307,7 @@ export default async function handler(req, res) {
               simplifiedCategory.top
             } > ${simplifiedCategory.sub}" (Merchant: "${
               txn.merchant_name || "N/A"
-            }")`
+            }") ${recurringStreamId ? "🔄 RECURRING" : ""}`
           );
         }
 
@@ -298,6 +325,7 @@ export default async function handler(req, res) {
           sub_category: simplifiedCategory.sub, // New simplified sub category
           transaction_type: txn.payment_channel || null,
           pending: txn.pending ?? false,
+          recurring_stream_id: recurringStreamId, // NEW: Link to recurring stream if applicable
         };
       });
 
@@ -311,7 +339,7 @@ export default async function handler(req, res) {
       }
     }
 
-    // 5) Delete removed transactions
+    // 6) Delete removed transactions
     if (removed.length) {
       await supabase
         .from("transactions")
@@ -322,7 +350,7 @@ export default async function handler(req, res) {
         );
     }
 
-    // 6) Save the new cursor and timestamp
+    // 7) Save the new cursor and timestamp
     await supabase
       .from("user_items")
       .update({
@@ -335,7 +363,7 @@ export default async function handler(req, res) {
       `✅ Sync complete: ${added.length} added, ${modified.length} modified, ${removed.length} removed`
     );
 
-    // 7) Return transaction sync summary
+    // 8) Return transaction sync summary
     return res.status(200).json({
       message: "Sync complete",
       added: added.length,

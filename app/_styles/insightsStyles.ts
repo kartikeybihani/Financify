@@ -335,7 +335,20 @@ export const styles = StyleSheet.create({
       color: "#fff",
       fontSize: 15,
       fontWeight: "500",
-      marginBottom: 8,
+    },
+    recurringChip: {
+      paddingHorizontal: 6,
+      paddingVertical: 2,
+      borderRadius: 12,
+      backgroundColor: "rgba(74, 144, 226, 0.15)",
+      borderWidth: 1,
+      borderColor: "rgba(74, 144, 226, 0.3)",
+    },
+    recurringChipText: {
+      fontSize: 8,
+      fontWeight: "700",
+      color: "#4A90E2",
+      letterSpacing: 0.2,
     },
     gridCategoryAmount: {
       color: "#888",

@@ -87,6 +87,7 @@ interface Transaction {
   account_name?: string;
   institution_name?: string;
   account_mask?: string;
+  if_recurring?: string;
 }
 
 interface CategoryBreakdown {
@@ -94,6 +95,7 @@ interface CategoryBreakdown {
     amount: number;
     percentage: number;
     color: string;
+    hasRecurringTransactions: boolean;
   };
 }
 
@@ -120,7 +122,15 @@ export default function InsightsScreen() {
     getCategoryIcon,
   } = useCategories();
   const [categoryBreakdown, setCategoryBreakdown] = useState<
-    [string, { amount: number; percentage: number; color: string }][]
+    [
+      string,
+      {
+        amount: number;
+        percentage: number;
+        color: string;
+        hasRecurringTransactions: boolean;
+      }
+    ][]
   >([]);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
@@ -681,9 +691,15 @@ export default function InsightsScreen() {
             amount: 0,
             percentage: 0,
             color: getCategoryColor(category),
+            hasRecurringTransactions: false,
           };
         }
         categoriesObj[category].amount += tx.amount;
+
+        // Check if this transaction is recurring
+        if (tx.if_recurring === "yes") {
+          categoriesObj[category].hasRecurringTransactions = true;
+        }
       }
 
       // Calculate percentages
