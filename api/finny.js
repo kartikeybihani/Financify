@@ -922,7 +922,6 @@ RULES:
     const content = data.choices?.[0]?.message?.content;
 
     if (!content) {
-      console.log("🧠 [MEMORY] No content from extraction model");
       return hints; // Fallback to hints
     }
 
@@ -957,18 +956,21 @@ RULES:
             )
       );
 
+      // Log what memories were extracted (major console log #1)
       console.log(
-        `🧠 [MEMORY] Extracted ${uniqueMemories.length} memories (${hints.length} hints + ${extractedMemories.length} extracted)`
+        `🧠 [MEMORY] Extracted ${uniqueMemories.length} memories:`,
+        uniqueMemories.map(
+          (m) =>
+            `${m.type}.${m.key}: ${m.value?.substring(0, 50)}${
+              m.value?.length > 50 ? "..." : ""
+            }`
+        )
       );
       return uniqueMemories;
     } catch (parseError) {
-      console.log("🧠 [MEMORY] JSON parse error:", parseError);
-      console.log("🧠 [MEMORY] Raw content that failed to parse:", content);
-      console.log("🧠 [MEMORY] Cleaned content:", cleanContent);
       return hints; // Fallback to hints
     }
   } catch (error) {
-    console.error("🧠 [MEMORY] Extraction error:", error);
     return hints; // Fallback to hints
   }
 }
@@ -1545,7 +1547,6 @@ async function handleAsk(message, context) {
 
     // Quick heuristic pre-pass (1ms)
     const hints = quickExtract(message);
-    console.log("⚡ [MEMORY] Quick hints:", hints);
 
     // Parallel execution
     const [resp, memoryExtraction] = await Promise.all([
@@ -1603,9 +1604,7 @@ async function handleAsk(message, context) {
       try {
         await saveMemoryCandidates(context?.user_id, memoryExtraction);
         console.log("🧠 [FINNY] Memory save completed successfully");
-      } catch (error) {
-        console.error("🧠 [FINNY] Memory save failed:", error);
-      }
+      } catch (error) {}
     } else {
       console.log("🧠 [FINNY] No memories to save");
     }
@@ -5167,312 +5166,6 @@ let activeRequests = 0;
 // Request deduplication map
 const pendingRequests = new Map();
 
-// Entity extraction functions
-function extractEntitiesRuleBased(message) {
-  const lowerMessage = message.toLowerCase();
-  const entities = {
-    creditCardIssuers: [],
-    creditCardNames: [],
-    banks: [],
-    investmentPlatforms: [],
-    financialProducts: [],
-    comparisonWords: [],
-    states: [],
-    rawEntities: [],
-  };
-
-  // Extract each type of entity
-  for (const [category, patterns] of Object.entries(ENTITY_PATTERNS)) {
-    for (const pattern of patterns) {
-      if (lowerMessage.includes(pattern)) {
-        // Special handling for states - only match if there's context
-        if (category === "states") {
-          const stateContext = [
-            "tax",
-            "rule",
-            "benefit",
-            "in",
-            "state",
-            "law",
-            "regulation",
-          ];
-          const hasStateContext = stateContext.some((ctx) =>
-            lowerMessage.includes(ctx)
-          );
-
-          if (hasStateContext || pattern.length > 2) {
-            entities[category].push(pattern);
-            entities.rawEntities.push(pattern);
-          }
-        } else {
-          entities[category].push(pattern);
-          entities.rawEntities.push(pattern);
-        }
-      }
-    }
-  }
-
-  // Remove duplicates
-  for (const category in entities) {
-    if (Array.isArray(entities[category])) {
-      entities[category] = [...new Set(entities[category])];
-    }
-  }
-  entities.rawEntities = [...new Set(entities.rawEntities)];
-
-  return entities;
-}
-
-async function extractEntitiesLLM(message, entities) {
-  try {
-    const response = await fetch(
-      "https://openrouter.ai/api/v1/chat/completions",
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${process.env.OPENROUTER_GROK_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: OPENROUTER_MODEL,
-          temperature: 0.1,
-          max_tokens: 500,
-          messages: [
-            {
-              role: "system",
-              content: [
-                "You are a financial entity extractor. Extract relevant financial entities from user queries.",
-                "Focus on: credit card issuers, card names, banks, investment platforms, financial products, states.",
-                "Return only valid JSON with the extracted entities.",
-                "",
-                "Example input: 'Chase Sapphire vs Amex Gold'",
-                "Example output: {",
-                '  "creditCardIssuers": ["chase", "amex"],',
-                '  "creditCardNames": ["sapphire", "gold"],',
-                '  "comparisonWords": ["vs"],',
-                '  "rawEntities": ["chase", "sapphire", "amex", "gold", "vs"]',
-                "}",
-              ].join("\n"),
-            },
-            {
-              role: "user",
-              content: `Extract entities from: "${message}"`,
-            },
-          ],
-          response_format: {
-            type: "json_schema",
-            json_schema: {
-              name: "entity_extraction",
-              strict: true,
-              schema: {
-                type: "object",
-                additionalProperties: false,
-                properties: {
-                  creditCardIssuers: {
-                    type: "array",
-                    items: { type: "string" },
-                  },
-                  creditCardNames: { type: "array", items: { type: "string" } },
-                  banks: { type: "array", items: { type: "string" } },
-                  investmentPlatforms: {
-                    type: "array",
-                    items: { type: "string" },
-                  },
-                  financialProducts: {
-                    type: "array",
-                    items: { type: "string" },
-                  },
-                  comparisonWords: { type: "array", items: { type: "string" } },
-                  states: { type: "array", items: { type: "string" } },
-                  rawEntities: { type: "array", items: { type: "string" } },
-                },
-                required: [
-                  "creditCardIssuers",
-                  "creditCardNames",
-                  "banks",
-                  "investmentPlatforms",
-                  "financialProducts",
-                  "comparisonWords",
-                  "states",
-                  "rawEntities",
-                ],
-              },
-            },
-          },
-        }),
-      }
-    );
-
-    if (!response.ok) {
-      console.error("❌ [ENTITY_EXTRACTOR] LLM API error:", response.status);
-      return entities;
-    }
-
-    const data = await response.json();
-    const content = data.choices?.[0]?.message?.content;
-
-    if (!content) {
-      return entities;
-    }
-
-    const llmEntities = JSON.parse(content);
-
-    // Merge LLM results with rule-based results
-    const mergedEntities = {
-      creditCardIssuers: [
-        ...new Set([
-          ...entities.creditCardIssuers,
-          ...llmEntities.creditCardIssuers,
-        ]),
-      ],
-      creditCardNames: [
-        ...new Set([
-          ...entities.creditCardNames,
-          ...llmEntities.creditCardNames,
-        ]),
-      ],
-      banks: [...new Set([...entities.banks, ...llmEntities.banks])],
-      investmentPlatforms: [
-        ...new Set([
-          ...entities.investmentPlatforms,
-          ...llmEntities.investmentPlatforms,
-        ]),
-      ],
-      financialProducts: [
-        ...new Set([
-          ...entities.financialProducts,
-          ...llmEntities.financialProducts,
-        ]),
-      ],
-      comparisonWords: [
-        ...new Set([
-          ...entities.comparisonWords,
-          ...llmEntities.comparisonWords,
-        ]),
-      ],
-      states: [...new Set([...entities.states, ...llmEntities.states])],
-      rawEntities: [
-        ...new Set([...entities.rawEntities, ...llmEntities.rawEntities]),
-      ],
-    };
-
-    return mergedEntities;
-  } catch (error) {
-    console.error("❌ [ENTITY_EXTRACTOR] LLM extraction error:", error);
-    return entities;
-  }
-}
-
-async function extractEntities(message) {
-  console.log("🔍 [ENTITY_EXTRACTOR] Extracting entities from:", message);
-
-  const ruleBasedEntities = extractEntitiesRuleBased(message);
-  console.log("🔍 [ENTITY_EXTRACTOR] Rule-based entities:", ruleBasedEntities);
-
-  const shouldUseLLM =
-    ruleBasedEntities.rawEntities.length < 2 ||
-    message.toLowerCase().includes("vs") ||
-    message.toLowerCase().includes("compare") ||
-    message.toLowerCase().includes("which");
-
-  if (shouldUseLLM) {
-    console.log("🔍 [ENTITY_EXTRACTOR] Using LLM fallback");
-    const finalEntities = await extractEntitiesLLM(message, ruleBasedEntities);
-    console.log("🔍 [ENTITY_EXTRACTOR] Final entities:", finalEntities);
-    return finalEntities;
-  }
-
-  return ruleBasedEntities;
-}
-
-function determineIntent(entities, message) {
-  const lowerMessage = message.toLowerCase();
-
-  if (
-    entities.comparisonWords.length > 0 ||
-    lowerMessage.includes("vs") ||
-    lowerMessage.includes("compare") ||
-    lowerMessage.includes("which")
-  ) {
-    return {
-      intent: "ask_personalized",
-      needs_web: true,
-      needs_user_data: true,
-      reasoning: "Comparison query requires user data + web research",
-    };
-  }
-
-  if (
-    entities.creditCardIssuers.length > 0 ||
-    entities.creditCardNames.length > 0
-  ) {
-    return {
-      intent: "ask_personalized",
-      needs_web: true,
-      needs_user_data: true,
-      reasoning: "Specific product query requires user data + web research",
-    };
-  }
-
-  if (
-    entities.states.length > 0 &&
-    (lowerMessage.includes("tax") ||
-      lowerMessage.includes("rule") ||
-      lowerMessage.includes("benefit"))
-  ) {
-    return {
-      intent: "ask_state_rule",
-      needs_web: true,
-      needs_user_data: false,
-      reasoning: "State-specific rule query",
-    };
-  }
-
-  if (
-    lowerMessage.includes("2025") ||
-    lowerMessage.includes("current") ||
-    lowerMessage.includes("latest")
-  ) {
-    return {
-      intent: "ask_fact_fresh",
-      needs_web: true,
-      needs_user_data: false,
-      reasoning: "Current year facts query",
-    };
-  }
-
-  return {
-    intent: "ask_personalized",
-    needs_web: false,
-    needs_user_data: true,
-    reasoning: "Default to personalized query",
-  };
-}
-
-// Domain mapping functions
-function getDomainMapping(entity) {
-  const lowerEntity = entity.toLowerCase();
-  return DOMAIN_MAPPINGS[lowerEntity] || null;
-}
-
-function getRelevantDomains(entities) {
-  const domains = new Set();
-
-  for (const entity of entities.rawEntities) {
-    const mapping = getDomainMapping(entity);
-    if (mapping) {
-      domains.add(mapping.primary);
-    }
-  }
-
-  if (domains.size === 0) {
-    domains.add("consumerfinance.gov");
-    domains.add("nerdwallet.com");
-  }
-
-  return Array.from(domains);
-}
-
 // === Stocks via Finnhub ===
 function looksLikeStockQuery(message) {
   const m = message.toLowerCase();
@@ -5881,309 +5574,6 @@ async function fetchJson(url) {
   }
 }
 
-function buildSearchUrls(domain, entity, searchPaths = []) {
-  const urls = [];
-
-  const mapping = getDomainMapping(entity);
-  if (mapping) {
-    mapping.searchPaths.forEach((path) => {
-      urls.push(`https://${mapping.primary}${path}`);
-    });
-  } else {
-    searchPaths.forEach((path) => {
-      urls.push(`https://${domain}${path}`);
-    });
-  }
-
-  if (urls.length === 0) {
-    urls.push(`https://${domain}`);
-  }
-
-  return urls;
-}
-
-function getSearchStrategy(entities, message) {
-  const lowerMessage = message.toLowerCase();
-
-  const isComparison =
-    entities.comparisonWords.length > 0 ||
-    lowerMessage.includes("vs") ||
-    lowerMessage.includes("compare");
-
-  const domains = getRelevantDomains(entities);
-
-  const searchUrls = [];
-  for (const domain of domains) {
-    const urls = buildSearchUrls(domain, entities.rawEntities[0] || "", []);
-    searchUrls.push(...urls);
-  }
-
-  return {
-    isComparison,
-    domains,
-    searchUrls,
-    strategy: isComparison ? "comparison" : "product_info",
-  };
-}
-
-// Web scraping functions
-async function rateLimitedFetch(url, options = {}) {
-  return new Promise((resolve, reject) => {
-    const request = {
-      url,
-      options: {
-        ...options,
-        timeout: RATE_LIMITS.timeout,
-        headers: {
-          "User-Agent": "Mozilla/5.0 (compatible; FinancifyBot/1.0)",
-          Accept:
-            "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-          "Accept-Language": "en-US,en;q=0.5",
-          "Accept-Encoding": "gzip, deflate",
-          Connection: "keep-alive",
-          "Upgrade-Insecure-Requests": "1",
-          ...options.headers,
-        },
-      },
-      resolve,
-      reject,
-      retries: 0,
-    };
-
-    requestQueue.push(request);
-    processQueue();
-  });
-}
-
-async function processQueue() {
-  if (
-    activeRequests >= RATE_LIMITS.maxConcurrent ||
-    requestQueue.length === 0
-  ) {
-    return;
-  }
-
-  const request = requestQueue.shift();
-  activeRequests++;
-
-  try {
-    const result = await executeRequest(request);
-    request.resolve(result);
-  } catch (error) {
-    if (request.retries < RATE_LIMITS.maxRetries) {
-      request.retries++;
-      requestQueue.unshift(request);
-    } else {
-      request.reject(error);
-    }
-  } finally {
-    activeRequests--;
-    setTimeout(() => processQueue(), RATE_LIMITS.delayBetweenRequests);
-  }
-}
-
-async function executeRequest(request) {
-  const { url, options } = request;
-
-  console.log(`🌐 [WEB_SCRAPER] Fetching: ${url}`);
-
-  const response = await fetch(url, options);
-
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-  }
-
-  const html = await response.text();
-  return {
-    url,
-    html,
-    status: response.status,
-    headers: Object.fromEntries(response.headers.entries()),
-  };
-}
-
-function extractDataFromHTML(html, url, entityType = "credit_card") {
-  const $ = cheerio.load(html);
-  const extractedData = {
-    url,
-    entityType,
-    title: $("title").text().trim(),
-    description: $('meta[name="description"]').attr("content") || "",
-    extractedAt: new Date().toISOString(),
-    data: {},
-  };
-
-  switch (entityType) {
-    case "credit_card":
-      extractedData.data = extractCreditCardData($);
-      break;
-    case "bank":
-      extractedData.data = extractBankData($);
-      break;
-    case "investment":
-      extractedData.data = extractInvestmentData($);
-      break;
-    default:
-      extractedData.data = extractGenericData($);
-  }
-
-  return extractedData;
-}
-
-function extractCreditCardData($) {
-  const data = {
-    apr: [],
-    annualFee: [],
-    rewards: [],
-    benefits: [],
-    features: [],
-  };
-
-  $("*").each((i, element) => {
-    const text = $(element).text();
-    const aprMatch = text.match(/(\d+\.?\d*)\s*%\s*APR/i);
-    if (aprMatch) {
-      data.apr.push({
-        value: parseFloat(aprMatch[1]),
-        text: text.trim(),
-        context: $(element).parent().text().trim(),
-      });
-    }
-
-    const feeMatch = text.match(/\$(\d+)\s*annual\s*fee/i);
-    if (feeMatch) {
-      data.annualFee.push({
-        value: parseFloat(feeMatch[1]),
-        text: text.trim(),
-        context: $(element).parent().text().trim(),
-      });
-    }
-
-    if (
-      text.toLowerCase().includes("rewards") ||
-      text.toLowerCase().includes("cash back")
-    ) {
-      data.rewards.push({
-        text: text.trim(),
-        context: $(element).parent().text().trim(),
-      });
-    }
-  });
-
-  $(
-    '.benefits, .features, .perks, [class*="benefit"], [class*="feature"]'
-  ).each((i, element) => {
-    const benefitText = $(element).text().trim();
-    if (benefitText) {
-      data.benefits.push(benefitText);
-    }
-  });
-
-  return data;
-}
-
-function extractBankData($) {
-  const data = {
-    interestRates: [],
-    fees: [],
-    features: [],
-  };
-
-  $("*").each((i, element) => {
-    const text = $(element).text();
-    const rateMatch = text.match(/(\d+\.?\d*)\s*%\s*APY/i);
-    if (rateMatch) {
-      data.interestRates.push({
-        value: parseFloat(rateMatch[1]),
-        text: text.trim(),
-        context: $(element).parent().text().trim(),
-      });
-    }
-  });
-
-  return data;
-}
-
-function extractInvestmentData($) {
-  const data = {
-    fees: [],
-    features: [],
-    accountTypes: [],
-  };
-
-  $("*").each((i, element) => {
-    const text = $(element).text();
-    const feeMatch = text.match(/\$(\d+\.?\d*)\s*per\s*trade/i);
-    if (feeMatch) {
-      data.fees.push({
-        value: parseFloat(feeMatch[1]),
-        text: text.trim(),
-        context: $(element).parent().text().trim(),
-      });
-    }
-  });
-
-  return data;
-}
-
-function extractGenericData($) {
-  const data = {
-    keyNumbers: [],
-    features: [],
-    benefits: [],
-  };
-
-  $("*").each((i, element) => {
-    const text = $(element).text();
-
-    const rateMatch = text.match(/(\d+\.?\d*)\s*%/);
-    if (rateMatch) {
-      data.keyNumbers.push({
-        type: "percentage",
-        value: parseFloat(rateMatch[1]),
-        text: text.trim(),
-      });
-    }
-
-    const dollarMatch = text.match(/\$(\d+(?:,\d{3})*(?:\.\d{2})?)/);
-    if (dollarMatch) {
-      data.keyNumbers.push({
-        type: "dollar",
-        value: parseFloat(dollarMatch[1].replace(/,/g, "")),
-        text: text.trim(),
-      });
-    }
-  });
-
-  return data;
-}
-
-async function scrapeMultipleUrls(urls, entityType = "credit_card") {
-  console.log(`🌐 [WEB_SCRAPER] Starting scrape of ${urls.length} URLs`);
-
-  const results = [];
-  const errors = [];
-
-  for (const url of urls) {
-    try {
-      const response = await rateLimitedFetch(url);
-      const extractedData = extractDataFromHTML(response.html, url, entityType);
-      results.push(extractedData);
-      console.log(`✅ [WEB_SCRAPER] Successfully scraped: ${url}`);
-    } catch (error) {
-      console.error(`❌ [WEB_SCRAPER] Failed to scrape ${url}:`, error.message);
-      errors.push({ url, error: error.message });
-    }
-  }
-
-  return {
-    results,
-    errors,
-    successCount: results.length,
-    errorCount: errors.length,
-  };
-}
-
 // Enhanced caching functions with different TTLs for different data types
 async function getCachedData(type, identifier, userSpecific = false) {
   try {
@@ -6317,59 +5707,6 @@ async function getCachedDataWithFallback(
 }
 
 // Cache clearing functions
-async function clearUserCache(userId) {
-  try {
-    console.log(`🗑️ [CACHE] Clearing all cache for user: ${userId}`);
-
-    // Clear user-specific cache entries
-    const { error } = await supabase
-      .from("web_scrape_cache")
-      .delete()
-      .eq("user_specific", true)
-      .like("cache_key", `%_${userId}`);
-
-    if (error) {
-      console.error("❌ [CACHE] Error clearing user cache:", error);
-      return false;
-    }
-
-    console.log(`✅ [CACHE] Cleared cache for user: ${userId}`);
-    return true;
-  } catch (error) {
-    console.error("❌ [CACHE] Error in clearUserCache:", error);
-    return false;
-  }
-}
-
-async function clearCacheByType(type, identifier = null) {
-  try {
-    console.log(
-      `🗑️ [CACHE] Clearing cache for type: ${type}, identifier: ${identifier}`
-    );
-
-    let query = supabase
-      .from("web_scrape_cache")
-      .delete()
-      .eq("data_type", type);
-
-    if (identifier) {
-      query = query.like("cache_key", `%_${identifier}`);
-    }
-
-    const { error } = await query;
-
-    if (error) {
-      console.error("❌ [CACHE] Error clearing cache by type:", error);
-      return false;
-    }
-
-    console.log(`✅ [CACHE] Cleared cache for type: ${type}`);
-    return true;
-  } catch (error) {
-    console.error("❌ [CACHE] Error in clearCacheByType:", error);
-    return false;
-  }
-}
 
 async function forceRefreshUserData(userId) {
   try {
@@ -6387,416 +5724,6 @@ async function forceRefreshUserData(userId) {
     console.error("❌ [CACHE] Error in forceRefreshUserData:", error);
     return false;
   }
-}
-
-// Deduplication function for web research
-async function deduplicatedWebResearch(message, userId = null) {
-  const cacheKey = `web_research_${message.toLowerCase().trim()}`;
-
-  // Check if request is already pending
-  if (pendingRequests.has(cacheKey)) {
-    console.log(
-      "🔄 [WEB_RESEARCH] Request already pending, waiting for result"
-    );
-    return await pendingRequests.get(cacheKey);
-  }
-
-  // Create new request promise
-  const requestPromise = researchFinancialProducts(message, userId);
-  pendingRequests.set(cacheKey, requestPromise);
-
-  try {
-    const result = await requestPromise;
-    return result;
-  } finally {
-    // Clean up pending request
-    pendingRequests.delete(cacheKey);
-  }
-}
-
-// Main web research function
-async function researchFinancialProducts(message, userId = null) {
-  console.log("🔍 [WEB_RESEARCH] Starting research for:", message);
-
-  try {
-    const entities = await extractEntities(message);
-    console.log("🔍 [WEB_RESEARCH] Extracted entities:", entities);
-
-    const intent = determineIntent(entities, message);
-    console.log("🔍 [WEB_RESEARCH] Determined intent:", intent);
-
-    const searchStrategy = getSearchStrategy(entities, message);
-    console.log("🔍 [WEB_RESEARCH] Search strategy:", searchStrategy);
-
-    const researchResults = await researchDomains(
-      searchStrategy,
-      entities,
-      userId
-    );
-    const combinedResults = combineResearchResults(
-      researchResults,
-      entities,
-      intent
-    );
-
-    return {
-      success: true,
-      entities,
-      intent,
-      searchStrategy,
-      results: combinedResults,
-      timestamp: new Date().toISOString(),
-    };
-  } catch (error) {
-    console.error("❌ [WEB_RESEARCH] Research failed:", error);
-    return {
-      success: false,
-      error: error.message,
-      timestamp: new Date().toISOString(),
-    };
-  }
-}
-
-async function researchDomains(searchStrategy, entities, userId) {
-  const results = [];
-
-  for (const url of searchStrategy.searchUrls) {
-    try {
-      const entityType = determineEntityType(entities, url);
-
-      const cachedResult = await getCachedDataWithFallback(
-        entityType,
-        url,
-        async () => {
-          console.log(`🌐 [WEB_RESEARCH] Scraping ${url}`);
-          return await scrapeMultipleUrls([url], entityType);
-        },
-        false
-      );
-
-      if (cachedResult && cachedResult.data.results.length > 0) {
-        results.push({
-          url,
-          entityType,
-          data: cachedResult.data.results[0],
-          source: cachedResult.source,
-          cachedAt: cachedResult.cachedAt,
-        });
-      }
-    } catch (error) {
-      console.error(`❌ [WEB_RESEARCH] Failed to research ${url}:`, error);
-      results.push({
-        url,
-        error: error.message,
-        failed: true,
-      });
-    }
-  }
-
-  return results;
-}
-
-function determineEntityType(entities, url) {
-  if (
-    entities.creditCardIssuers.length > 0 ||
-    entities.creditCardNames.length > 0
-  ) {
-    return "creditCard";
-  }
-  if (entities.banks.length > 0) {
-    return "bank";
-  }
-  if (entities.investmentPlatforms.length > 0) {
-    return "investment";
-  }
-  return "generic";
-}
-
-function combineResearchResults(researchResults, entities, intent) {
-  const combined = {
-    summary: {
-      totalSources: researchResults.length,
-      successfulSources: researchResults.filter((r) => !r.failed).length,
-      failedSources: researchResults.filter((r) => r.failed).length,
-    },
-    products: [],
-    comparisons: [],
-    keyMetrics: {},
-    recommendations: [],
-  };
-
-  for (const result of researchResults) {
-    if (result.failed) continue;
-
-    const product = {
-      source: result.url,
-      title: result.data.title,
-      description: result.data.description,
-      metrics: extractKeyMetrics(result.data.data),
-      benefits: extractBenefits(result.data.data),
-      features: extractFeatures(result.data.data),
-    };
-
-    combined.products.push(product);
-  }
-
-  if (intent.intent === "ask_personalized" && intent.needs_web) {
-    combined.comparisons = generateComparisons(combined.products, entities);
-  }
-
-  combined.keyMetrics = extractKeyMetricsAcrossProducts(combined.products);
-
-  return combined;
-}
-
-function extractKeyMetrics(data) {
-  const metrics = {};
-
-  if (data.apr && data.apr.length > 0) {
-    metrics.apr = data.apr.map((apr) => apr.value);
-  }
-
-  if (data.annualFee && data.annualFee.length > 0) {
-    metrics.annualFee = data.annualFee.map((fee) => fee.value);
-  }
-
-  if (data.interestRates && data.interestRates.length > 0) {
-    metrics.interestRates = data.interestRates.map((rate) => rate.value);
-  }
-
-  if (data.fees && data.fees.length > 0) {
-    metrics.fees = data.fees.map((fee) => fee.value);
-  }
-
-  return metrics;
-}
-
-function extractBenefits(data) {
-  const benefits = [];
-
-  if (data.benefits && data.benefits.length > 0) {
-    benefits.push(...data.benefits);
-  }
-
-  if (data.rewards && data.rewards.length > 0) {
-    benefits.push(...data.rewards.map((r) => r.text));
-  }
-
-  return benefits;
-}
-
-function extractFeatures(data) {
-  const features = [];
-
-  if (data.features && data.features.length > 0) {
-    features.push(...data.features);
-  }
-
-  if (data.keyNumbers && data.keyNumbers.length > 0) {
-    features.push(...data.keyNumbers.map((kn) => kn.text));
-  }
-
-  return features;
-}
-
-function generateComparisons(products, entities) {
-  const comparisons = [];
-
-  if (products.length < 2) {
-    return comparisons;
-  }
-
-  // Optional capping to reduce O(n^2) blowup
-  const options = (entities && entities.comparisonOptions) || {};
-  const envTopN = parseInt(process.env.FINNY_COMPARISON_TOP_N || "", 10);
-  const envMaxPairs = parseInt(
-    process.env.FINNY_COMPARISON_MAX_PAIRS || "",
-    10
-  );
-  const topN = Number.isFinite(options.topN)
-    ? options.topN
-    : Number.isFinite(envTopN)
-    ? envTopN
-    : undefined;
-  const maxPairs = Number.isFinite(options.maxPairs)
-    ? options.maxPairs
-    : Number.isFinite(envMaxPairs)
-    ? envMaxPairs
-    : undefined;
-
-  let workingProducts = products;
-  if (topN && products.length > topN) {
-    // Rank products by a simple composite of key metrics.
-    // Lower APR and Annual Fee are better; higher Interest Rates are better.
-    // We convert to a score where lower is better: apr + annualFee - interestRates
-    const scored = products.map((p) => {
-      const aprAvg =
-        Array.isArray(p.metrics?.apr) && p.metrics.apr.length
-          ? p.metrics.apr.reduce((s, v) => s + v, 0) / p.metrics.apr.length
-          : undefined;
-      const feeAvg =
-        Array.isArray(p.metrics?.annualFee) && p.metrics.annualFee.length
-          ? p.metrics.annualFee.reduce((s, v) => s + v, 0) /
-            p.metrics.annualFee.length
-          : undefined;
-      const irAvg =
-        Array.isArray(p.metrics?.interestRates) &&
-        p.metrics.interestRates.length
-          ? p.metrics.interestRates.reduce((s, v) => s + v, 0) /
-            p.metrics.interestRates.length
-          : undefined;
-
-      const parts = [];
-      if (typeof aprAvg === "number") parts.push(aprAvg);
-      if (typeof feeAvg === "number") parts.push(feeAvg);
-      if (typeof irAvg === "number") parts.push(-irAvg); // invert so higher IR helps lower score
-
-      const score = parts.length
-        ? parts.reduce((s, v) => s + v, 0) / parts.length
-        : Number.POSITIVE_INFINITY; // deprioritize when no metrics
-
-      return { product: p, score };
-    });
-
-    scored.sort((a, b) => a.score - b.score);
-    workingProducts = scored.slice(0, topN).map((s) => s.product);
-  }
-
-  let pairCount = 0;
-  for (let i = 0; i < workingProducts.length; i++) {
-    for (let j = i + 1; j < workingProducts.length; j++) {
-      if (typeof maxPairs === "number" && pairCount >= maxPairs) {
-        return comparisons;
-      }
-      const product1 = workingProducts[i];
-      const product2 = workingProducts[j];
-      pairCount++;
-
-      const comparison = {
-        product1: product1.title,
-        product2: product2.title,
-        metrics: {
-          apr: compareMetrics(
-            product1.metrics.apr,
-            product2.metrics.apr,
-            "lower"
-          ),
-          annualFee: compareMetrics(
-            product1.metrics.annualFee,
-            product2.metrics.annualFee,
-            "lower"
-          ),
-          interestRates: compareMetrics(
-            product1.metrics.interestRates,
-            product2.metrics.interestRates,
-            "higher"
-          ),
-        },
-        winner: determineWinner(product1, product2),
-      };
-
-      comparisons.push(comparison);
-    }
-  }
-
-  return comparisons;
-}
-
-function compareMetrics(metrics1, metrics2, betterDirection) {
-  if (
-    !metrics1 ||
-    !metrics2 ||
-    metrics1.length === 0 ||
-    metrics2.length === 0
-  ) {
-    return { result: "insufficient_data" };
-  }
-
-  const avg1 = metrics1.reduce((sum, val) => sum + val, 0) / metrics1.length;
-  const avg2 = metrics2.reduce((sum, val) => sum + val, 0) / metrics2.length;
-
-  if (betterDirection === "lower") {
-    return {
-      result:
-        avg1 < avg2
-          ? "product1_better"
-          : avg2 < avg1
-          ? "product2_better"
-          : "tie",
-      product1: avg1,
-      product2: avg2,
-    };
-  } else {
-    return {
-      result:
-        avg1 > avg2
-          ? "product1_better"
-          : avg2 > avg1
-          ? "product2_better"
-          : "tie",
-      product1: avg1,
-      product2: avg2,
-    };
-  }
-}
-
-function determineWinner(product1, product2) {
-  let score1 = 0;
-  let score2 = 0;
-
-  if (product1.metrics.apr && product2.metrics.apr) {
-    const aprComparison = compareMetrics(
-      product1.metrics.apr,
-      product2.metrics.apr,
-      "lower"
-    );
-    if (aprComparison.result === "product1_better") score1++;
-    else if (aprComparison.result === "product2_better") score2++;
-  }
-
-  if (product1.metrics.annualFee && product2.metrics.annualFee) {
-    const feeComparison = compareMetrics(
-      product1.metrics.annualFee,
-      product2.metrics.annualFee,
-      "lower"
-    );
-    if (feeComparison.result === "product1_better") score1++;
-    else if (feeComparison.result === "product2_better") score2++;
-  }
-
-  if (score1 > score2) return "product1";
-  if (score2 > score1) return "product2";
-  return "tie";
-}
-
-function extractKeyMetricsAcrossProducts(products) {
-  const metrics = {
-    apr: [],
-    annualFee: [],
-    interestRates: [],
-    fees: [],
-  };
-
-  for (const product of products) {
-    if (product.metrics.apr) metrics.apr.push(...product.metrics.apr);
-    if (product.metrics.annualFee)
-      metrics.annualFee.push(...product.metrics.annualFee);
-    if (product.metrics.interestRates)
-      metrics.interestRates.push(...product.metrics.interestRates);
-    if (product.metrics.fees) metrics.fees.push(...product.metrics.fees);
-  }
-
-  const averages = {};
-  for (const [key, values] of Object.entries(metrics)) {
-    if (values.length > 0) {
-      averages[key] = values.reduce((sum, val) => sum + val, 0) / values.length;
-    }
-  }
-
-  return {
-    ranges: metrics,
-    averages,
-  };
 }
 
 // === MEMORY MANAGEMENT FUNCTIONS ===
@@ -6827,18 +5754,10 @@ async function loadUserMemory(userId) {
     };
 
     if (result.summary || result.memories.length > 0) {
-      console.log(`🧠 [FINNY] Loaded memory for user ${userId}:`, {
-        summary: result.summary,
-        memoryCount: result.memories.length,
-        memories: result.memories.map(
-          (m) => `${m.memory_type}.${m.key}: ${m.value}`
-        ),
-      });
     }
 
     return result;
   } catch (error) {
-    console.error("Memory load failed:", error);
     return { summary: "", memories: [] };
   }
 }
@@ -6855,9 +5774,7 @@ function extractMemoryCandidates(text) {
       const candidatesText = `{"memory_candidates":[${jsonMatch[1]}]}`;
       const parsed = JSON.parse(candidatesText);
       return parsed.memory_candidates.filter((c) => c.confidence_score >= 0.7);
-    } catch (e) {
-      console.log("Memory extraction failed:", e);
-    }
+    } catch (e) {}
   }
 
   // Fallback: look for simple array format
@@ -6867,34 +5784,10 @@ function extractMemoryCandidates(text) {
       const candidatesText = `[${arrayMatch[1]}]`;
       const parsed = JSON.parse(candidatesText);
       return parsed.filter((c) => c.confidence_score >= 0.7);
-    } catch (e) {
-      console.log("Memory extraction failed:", e);
-    }
+    } catch (e) {}
   }
 
   return candidates;
-}
-
-function removeMemoryCandidatesFromText(text) {
-  // Remove JSON object format memory candidates
-  let cleanText = text.replace(
-    /\{\s*"memory_candidates"\s*:\s*\[.*?\]\s*\}/s,
-    ""
-  );
-
-  // Remove simple array format memory candidates
-  cleanText = cleanText.replace(/memory_candidates[:\s]*\[.*?\]/s, "");
-
-  // Remove any leftover JSON code blocks
-  cleanText = cleanText.replace(/```json\s*```/g, "");
-  cleanText = cleanText.replace(/```json.*?```/gs, "");
-  cleanText = cleanText.replace(/```\s*```/g, "");
-  cleanText = cleanText.replace(/```.*?```/gs, "");
-
-  // Clean up any trailing whitespace or newlines
-  cleanText = cleanText.trim();
-
-  return cleanText;
 }
 
 async function saveMemoryCandidates(userId, candidates) {
@@ -6906,30 +5799,11 @@ async function saveMemoryCandidates(userId, candidates) {
     return;
   }
 
-  console.log(
-    `🧠 [FINNY] Starting to save ${candidates.length} memories for user ${userId}`
-  );
-
-  // Debug environment variables
-  console.log("🧠 [FINNY] Environment check:", {
-    hasSupabaseUrl: !!process.env.SUPABASE_URL,
-    hasServiceRoleKey: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
-    supabaseUrlLength: process.env.SUPABASE_URL?.length || 0,
-    serviceRoleKeyLength: process.env.SUPABASE_SERVICE_ROLE_KEY?.length || 0,
-  });
-
-  // Use service role key with original Supabase client
-  console.log(
-    "🧠 [FINNY] Using service role key with original Supabase client..."
-  );
-
   try {
     let savedCount = 0;
     let skippedCount = 0;
 
     for (const candidate of candidates) {
-      console.log(`🧠 [FINNY] Processing candidate:`, candidate);
-
       // Map memory types to database format (support both old and new categories)
       const memoryTypeMap = {
         trait: "profile_trait",
@@ -6945,9 +5819,6 @@ async function saveMemoryCandidates(userId, candidates) {
       };
 
       const memoryType = memoryTypeMap[candidate.type] || candidate.type;
-      console.log(
-        `🧠 [FINNY] Mapped memory type: ${candidate.type} -> ${memoryType}`
-      );
 
       // Redact sensitive data
       const redactedValue = redactPII(candidate.value);
@@ -6957,9 +5828,6 @@ async function saveMemoryCandidates(userId, candidates) {
         redactedValue !== candidate.value ||
         isSensitiveData(candidate.value)
       ) {
-        console.log(
-          `🧠 [FINNY] Skipping sensitive memory: ${candidate.key} = ${candidate.value}`
-        );
         skippedCount++;
         continue;
       }
@@ -6974,13 +5842,6 @@ async function saveMemoryCandidates(userId, candidates) {
         expires_at: getExpiryDate(memoryType),
       };
 
-      console.log(`🧠 [FINNY] Upserting memory data:`, memoryData);
-
-      // Use original Supabase client with service role key
-      console.log(
-        `🧠 [FINNY] Starting Supabase upsert for ${candidate.key}...`
-      );
-
       try {
         const { error } = await supabase
           .from("user_memories")
@@ -6992,16 +5853,8 @@ async function saveMemoryCandidates(userId, candidates) {
           throw error;
         }
 
-        console.log(
-          `🧠 [FINNY] ✅ Supabase upsert successful for ${candidate.key}`
-        );
         savedCount++;
       } catch (supabaseError) {
-        console.error(
-          `🧠 [FINNY] Supabase upsert failed for ${candidate.key}:`,
-          supabaseError
-        );
-
         // Try fallback insert
         try {
           const { error: insertError } = await supabase
@@ -7012,63 +5865,16 @@ async function saveMemoryCandidates(userId, candidates) {
             throw insertError;
           }
 
-          console.log(
-            `🧠 [FINNY] ✅ Fallback insert successful for ${candidate.key}`
-          );
           savedCount++;
-        } catch (fallbackError) {
-          console.error(
-            `🧠 [FINNY] Fallback insert failed for ${candidate.key}:`,
-            fallbackError
-          );
-        }
+        } catch (fallbackError) {}
       }
 
       // Error handling is now done in the try/catch above
     }
 
-    console.log(
-      `🧠 [FINNY] Finished processing ${candidates.length} candidates`
-    );
-
-    console.log(
-      `🧠 [FINNY] Memory save complete: ${savedCount} saved, ${skippedCount} skipped`
-    );
-
     // Update memory summary
-    console.log(`🧠 [FINNY] Updating memory summary for user ${userId}`);
     await updateMemorySummary(userId);
-    console.log(`🧠 [FINNY] Memory summary updated successfully`);
-  } catch (error) {
-    console.error("🧠 [FINNY] Memory save failed:", error);
-    console.error("🧠 [FINNY] Error stack:", error.stack);
-  }
-}
-
-function isSensitiveData(value) {
-  const sensitivePatterns = [
-    /\b\d{3}-\d{2}-\d{4}\b/, // SSN
-    /\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b/, // Credit card
-    /\b\d{9,}\b/, // Long numbers
-    /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/, // Email
-  ];
-
-  return sensitivePatterns.some((pattern) => pattern.test(value));
-}
-
-function getExpiryDate(memoryType) {
-  const now = new Date();
-  const expiryDays = {
-    profile_trait: 365, // 1 year
-    constraint: 180, // 6 months
-    preference: 90, // 3 months
-    future_plan: 180, // 6 months
-    context_signal: 30, // 1 month
-    goal: 180, // 6 months
-  };
-
-  const days = expiryDays[memoryType] || 90;
-  return new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
+  } catch (error) {}
 }
 
 async function updateMemorySummary(userId) {
@@ -7090,9 +5896,7 @@ async function updateMemorySummary(userId) {
       summary_text: summary,
       last_updated: new Date().toISOString(),
     });
-  } catch (error) {
-    console.error("Memory summary update failed:", error);
-  }
+  } catch (error) {}
 }
 
 function generateMemorySummary(memories) {
