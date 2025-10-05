@@ -847,6 +847,65 @@ export const getAllRecurringTransactions = async () => {
   }
 };
 
+// === Get Transactions for a Specific Recurring Stream ===
+export const getTransactionsForRecurringStream = async (streamId: string) => {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user?.id) throw new Error("User not authenticated");
+    
+    logger.info(`🔄 Fetching transactions for recurring stream: ${streamId}`);
+    
+    // Get the recurring stream to find its transaction IDs
+    const { data: stream, error: streamError } = await supabase
+      .from("recurring_streams")
+      .select("transaction_ids, stream_id, description, merchant_name")
+      .eq("user_id", user.id)
+      .eq("stream_id", streamId)
+      .single();
+    
+    if (streamError) {
+      logger.error("Error fetching recurring stream:", streamError);
+      return [];
+    }
+    
+    if (!stream || !stream.transaction_ids || stream.transaction_ids.length === 0) {
+      logger.info(`No transaction IDs found for stream: ${streamId}`);
+      return [];
+    }
+    
+    // Get all transactions that match the transaction IDs from the stream
+    const { data: transactions, error: transactionsError } = await supabase
+      .from("transactions")
+      .select(`
+        *,
+        accounts:account_id (
+          name,
+          mask,
+          type,
+          subtype,
+          item_id,
+          user_items:item_id (
+            institution_name
+          )
+        )
+      `)
+      .eq("user_id", user.id)
+      .in("plaid_transaction_id", stream.transaction_ids)
+      .order("date", { ascending: false });
+    
+    if (transactionsError) {
+      logger.error("Error fetching transactions for stream:", transactionsError);
+      return [];
+    }
+    
+    logger.info(`✅ Found ${transactions?.length || 0} transactions for stream: ${streamId}`);
+    return transactions || [];
+  } catch (err) {
+    logger.error("Error fetching transactions for recurring stream:", err);
+    return [];
+  }
+};
+
 // === Refresh Both Balances and Transactions ===
 export const refreshBothBalancesAndTransactions = async (item_id?: string) => {
   try {

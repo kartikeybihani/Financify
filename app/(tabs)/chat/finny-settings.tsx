@@ -18,16 +18,10 @@ import MemoriesScreen from "./memories";
 import FinnyStyleScreen from "./finny-style";
 import FinnyCheckinScreen from "./finny-checkin";
 import { useAuth } from "../../_contexts/AuthContext";
-import { createClient } from "@supabase/supabase-js";
+import { supabase } from "../../_lib/supabase/supabase";
 import { useChatContext } from "../../_contexts/ChatContext";
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
-
-// Initialize Supabase client
-const supabase = createClient(
-  process.env.EXPO_PUBLIC_SUPABASE_URL!,
-  process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!
-);
 
 // Responsive calculations
 const isSmallScreen = screenWidth < 375;

@@ -14,7 +14,6 @@ import { useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import { Dimensions } from "react-native";
 import { useAuth } from "../../_contexts/AuthContext";
-import { createClient } from "@supabase/supabase-js";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { supabase } from "../../_lib/supabase/supabase";
 
@@ -247,41 +246,10 @@ export default function MemoriesScreen({
       router.back();
     }
   };
-  const [memories, setMemories] = useState<Memory[]>([]);
   const [memorySummary, setMemorySummary] = useState<MemorySummary | null>(
     preloadedData || null
   );
   const [loading, setLoading] = useState(!preloadedData);
-
-  useEffect(() => {
-    if (session?.user?.id && !preloadedData) {
-      fetchMemories();
-    }
-  }, [session, preloadedData]);
-
-  const fetchMemories = async () => {
-    try {
-      setLoading(true);
-
-      // Fetch memory summary
-      const { data: summaryData, error: summaryError } = await supabase
-        .from("memory_summary")
-        .select("summary_text, last_updated")
-        .eq("user_id", session?.user?.id)
-        .maybeSingle();
-
-      if (summaryError) {
-        console.error("Error fetching memory summary:", summaryError);
-        setMemorySummary(null);
-      } else {
-        setMemorySummary(summaryData);
-      }
-    } catch (error) {
-      console.error("Error fetching memories:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleClearMemories = () => {
     Alert.alert(

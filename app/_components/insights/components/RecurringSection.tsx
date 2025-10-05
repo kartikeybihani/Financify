@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState, useRef } from "react";
 import {
   View,
   Text,
@@ -6,12 +6,15 @@ import {
   StyleSheet,
   Platform,
   useWindowDimensions,
-  FlatList,
   Dimensions,
+  ActivityIndicator,
+  Animated,
+  ScrollView,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { GlassView } from "expo-glass-effect";
 import { LinearGradient } from "expo-linear-gradient";
+import { getTransactionsForRecurringStream } from "../../../_utils/plaid";
 
 interface RecurringStream {
   stream_id: string;
@@ -27,6 +30,25 @@ interface RecurringStream {
   account_id: string;
   transaction_ids: string[];
   iso_currency_code: string;
+}
+
+interface Transaction {
+  id: string;
+  plaid_transaction_id: string;
+  date: string;
+  amount: number;
+  name: string;
+  merchant_name?: string;
+  category?: string;
+  accounts?: {
+    name: string;
+    mask?: string;
+    type: string;
+    subtype: string;
+    user_items?: {
+      institution_name: string;
+    };
+  };
 }
 
 interface Props {
@@ -48,6 +70,20 @@ export default function RecurringSection({
   isLoading,
   titleStyle,
 }: Props) {
+  const [selectedStream, setSelectedStream] = useState<RecurringStream | null>(
+    null
+  );
+  const [streamTransactions, setStreamTransactions] = useState<Transaction[]>(
+    []
+  );
+  const [loadingTransactions, setLoadingTransactions] = useState(false);
+  const [showTransactionHistory, setShowTransactionHistory] = useState(false);
+
+  // Animation values
+  const fadeAnim = useRef(new Animated.Value(1)).current;
+  const slideAnim = useRef(new Animated.Value(0)).current;
+  const scaleAnim = useRef(new Animated.Value(1)).current;
+
   const isIOS = Platform.OS === "ios";
   const iosVersion = isIOS
     ? parseInt(String(Platform.Version).split(".")[0] || "0", 10)
@@ -151,6 +187,75 @@ export default function RecurringSection({
     // If you want the year too, add year: "numeric"
   };
 
+  const formatDate = (dateStr: string) => {
+    const options: Intl.DateTimeFormatOptions = {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    };
+    return new Date(dateStr).toLocaleDateString("en-US", options);
+  };
+
+  const handleCardPress = async (stream: RecurringStream) => {
+    setSelectedStream(stream);
+    setLoadingTransactions(true);
+
+    // Start animations
+    Animated.parallel([
+      // Fade out the grid
+      Animated.timing(fadeAnim, {
+        toValue: 0,
+        duration: 200,
+        useNativeDriver: true,
+      }),
+      // Slide in from right
+      Animated.timing(slideAnim, {
+        toValue: 1,
+        duration: 300,
+        useNativeDriver: true,
+      }),
+      // Scale up slightly
+      Animated.timing(scaleAnim, {
+        toValue: 1.02,
+        duration: 300,
+        useNativeDriver: true,
+      }),
+    ]).start(() => {
+      // Show transaction history after grid fades out
+      setShowTransactionHistory(true);
+      // Reset fade for the history view
+      fadeAnim.setValue(1);
+    });
+
+    try {
+      const transactions = await getTransactionsForRecurringStream(
+        stream.stream_id
+      );
+      setStreamTransactions(transactions);
+    } catch (error) {
+      console.error("Error loading stream transactions:", error);
+      setStreamTransactions([]);
+    } finally {
+      setLoadingTransactions(false);
+    }
+  };
+
+  const handleBackToGrid = () => {
+    // Simple fade out animation
+    Animated.timing(fadeAnim, {
+      toValue: 0,
+      duration: 200,
+      useNativeDriver: true,
+    }).start(() => {
+      // Reset state after fade completes
+      setShowTransactionHistory(false);
+      setSelectedStream(null);
+      setStreamTransactions([]);
+      // Reset fade for the grid view
+      fadeAnim.setValue(1);
+    });
+  };
+
   const renderCard = ({ item }: { item: ListItem }) => {
     if ((item as SpacerItem).spacer) {
       return (
@@ -177,7 +282,12 @@ export default function RecurringSection({
     const CardShell = shouldUseLiquidGlass ? GlassView : View;
 
     return (
-      <TouchableOpacity key={stream.stream_id} activeOpacity={0.85}>
+      <TouchableOpacity
+        key={stream.stream_id}
+        activeOpacity={0.7}
+        onPress={() => handleCardPress(stream)}
+        style={styles.cardTouchable}
+      >
         <CardShell
           {...(shouldUseLiquidGlass
             ? {
@@ -185,7 +295,13 @@ export default function RecurringSection({
                 tintColor: "rgba(20, 20, 25, 0.9)",
               }
             : {})}
-          style={[styles.transactionBox, { width: cardWidth, height: 120 }]}
+          style={[
+            styles.transactionBox,
+            {
+              width: cardWidth,
+              height: 120,
+            },
+          ]}
         >
           {!shouldUseLiquidGlass && (
             <LinearGradient
@@ -209,6 +325,12 @@ export default function RecurringSection({
             <Text style={styles.merchantName} numberOfLines={1}>
               {stream.merchant_name || stream.description}
             </Text>
+            <Ionicons
+              name="chevron-forward"
+              size={16}
+              color="#888"
+              style={styles.chevronIcon}
+            />
           </View>
 
           <View style={styles.boxContent}>
@@ -228,6 +350,146 @@ export default function RecurringSection({
       </TouchableOpacity>
     );
   };
+
+  const renderTransactionHistoryView = () => {
+    if (!selectedStream) return null;
+
+    const color = getStreamTypeColor(selectedStream);
+    const iconName = getStreamTypeIcon(
+      selectedStream
+    ) as keyof typeof Ionicons.glyphMap;
+
+    return (
+      <Animated.View
+        style={[
+          styles.fullWidthContainer,
+          {
+            opacity: fadeAnim,
+            transform: [
+              {
+                translateX: slideAnim.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [300, 0],
+                }),
+              },
+              {
+                scale: scaleAnim,
+              },
+            ],
+          },
+        ]}
+      >
+        {/* Header with cross button */}
+        <View style={styles.historyHeader}>
+          <View style={styles.headerInfo}>
+            <View style={styles.headerText}>
+              <Text style={styles.headerTitle}>
+                {selectedStream.merchant_name || selectedStream.description}
+              </Text>
+              <Text style={styles.headerSubtitle}>
+                {selectedStream.frequency || ""} •{" "}
+                {selectedStream.transaction_ids?.length || 0} transactions
+              </Text>
+            </View>
+          </View>
+          <TouchableOpacity
+            style={styles.closeButton}
+            onPress={handleBackToGrid}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="close" size={24} color="#fff" />
+          </TouchableOpacity>
+        </View>
+
+        {/* Transaction History */}
+        <View style={styles.historyContent}>
+          {loadingTransactions ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color="#4A90E2" />
+              <Text style={styles.loadingText}>
+                Loading transaction history...
+              </Text>
+            </View>
+          ) : streamTransactions.length > 0 ? (
+            <View style={styles.transactionsContainer}>
+              <ScrollView
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={styles.scrollContent}
+              >
+                {streamTransactions.map((transaction, index) => (
+                  <View key={transaction.id}>
+                    <View style={styles.historyTransactionItem}>
+                      <View style={styles.transactionLeft}>
+                        <View style={styles.transactionIcon}>
+                          <Ionicons
+                            name={
+                              transaction.amount < 0 ? "arrow-down" : "arrow-up"
+                            }
+                            size={16}
+                            color={
+                              transaction.amount < 0 ? "#4CAF50" : "#FF6B6B"
+                            }
+                          />
+                        </View>
+                        <View style={styles.transactionDetails}>
+                          <Text
+                            style={styles.historyTransactionName}
+                            numberOfLines={1}
+                          >
+                            {transaction.name}
+                          </Text>
+                          <Text style={styles.historyTransactionDate}>
+                            {formatDate(transaction.date)}
+                          </Text>
+                          {transaction.accounts?.user_items
+                            ?.institution_name && (
+                            <Text style={styles.historyTransactionAccount}>
+                              {transaction.accounts.user_items.institution_name}
+                            </Text>
+                          )}
+                        </View>
+                      </View>
+                      <View style={styles.transactionRight}>
+                        <Text
+                          style={[
+                            styles.historyTransactionAmount,
+                            {
+                              color:
+                                transaction.amount < 0 ? "#4CAF50" : "#FF6B6B",
+                            },
+                          ]}
+                        >
+                          {transaction.amount < 0 ? "+" : "-"}$
+                          {Math.abs(transaction.amount).toFixed(2)}
+                        </Text>
+                      </View>
+                    </View>
+                    {index < streamTransactions.length - 1 && (
+                      <View style={styles.transactionDivider} />
+                    )}
+                  </View>
+                ))}
+              </ScrollView>
+            </View>
+          ) : (
+            <View style={styles.noTransactionsContainer}>
+              <Ionicons name="receipt-outline" size={48} color="#666" />
+              <Text style={styles.noTransactionsText}>
+                No transactions found
+              </Text>
+              <Text style={styles.noTransactionsSubtext}>
+                This recurring stream doesn't have any transaction history yet.
+              </Text>
+            </View>
+          )}
+        </View>
+      </Animated.View>
+    );
+  };
+
+  if (showTransactionHistory) {
+    return renderTransactionHistoryView();
+  }
 
   if (isLoading) {
     // Skeleton that matches the real grid
@@ -281,7 +543,16 @@ export default function RecurringSection({
   }
 
   return (
-    <View>
+    <Animated.View
+      style={{
+        opacity: fadeAnim,
+        transform: [
+          {
+            scale: scaleAnim,
+          },
+        ],
+      }}
+    >
       <Text style={titleStyle}>Recurring Transactions</Text>
       <View
         style={{
@@ -310,11 +581,14 @@ export default function RecurringSection({
           ))}
         </View>
       </View>
-    </View>
+    </Animated.View>
   );
 }
 
 const styles = StyleSheet.create({
+  cardTouchable: {
+    transform: [{ scale: 1 }],
+  },
   transactionBox: {
     backgroundColor: "rgba(20, 20, 25, 0.95)",
     borderRadius: 16,
@@ -406,5 +680,157 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 8,
     elevation: 3,
+  },
+  chevronIcon: {
+    marginLeft: 8,
+  },
+  loadingContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 16,
+  },
+  loadingText: {
+    fontSize: 12,
+    color: "#888",
+    marginLeft: 8,
+  },
+  noTransactionsText: {
+    fontSize: 12,
+    color: "#888",
+    textAlign: "center",
+    paddingVertical: 16,
+    fontStyle: "italic",
+  },
+  // Full-width transaction history styles
+  fullWidthContainer: {
+    flex: 1,
+    backgroundColor: "transparent",
+  },
+  historyHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    backgroundColor: "rgba(20, 20, 25, 0.95)",
+    borderRadius: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.1)",
+  },
+  closeButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  headerInfo: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  headerIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 16,
+  },
+  headerText: {
+    flex: 1,
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#fff",
+    marginBottom: 4,
+  },
+  headerSubtitle: {
+    fontSize: 14,
+    color: "#888",
+    opacity: 0.8,
+  },
+  historyContent: {
+    flex: 1,
+  },
+  transactionsContainer: {
+    backgroundColor: "rgba(40, 40, 45, 0.95)",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.05)",
+    maxHeight: 500,
+    overflow: "hidden",
+  },
+  scrollContent: {
+    paddingBottom: 8,
+  },
+  historyTransactionItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+  },
+  transactionDivider: {
+    height: 1,
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
+    marginHorizontal: 20,
+  },
+  transactionLeft: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  transactionIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 12,
+  },
+  transactionDetails: {
+    flex: 1,
+  },
+  historyTransactionName: {
+    fontSize: 14,
+    fontWeight: "500",
+    color: "#fff",
+    marginBottom: 4,
+  },
+  historyTransactionDate: {
+    fontSize: 12,
+    color: "#888",
+    marginBottom: 2,
+  },
+  historyTransactionAccount: {
+    fontSize: 12,
+    color: "#666",
+    opacity: 0.8,
+  },
+  transactionRight: {
+    alignItems: "flex-end",
+  },
+  historyTransactionAmount: {
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  noTransactionsContainer: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 60,
+  },
+  noTransactionsSubtext: {
+    fontSize: 14,
+    color: "#666",
+    textAlign: "center",
+    marginTop: 8,
+    opacity: 0.8,
   },
 });
