@@ -56,11 +56,7 @@ const supabase = createClient(
 
 // Centralized OpenRouter model selection. Override via OPENROUTER_MODEL env.
 // Default to a widely available Grok model to avoid invalid ID errors.
-const OPENROUTER_MODEL =
-  process.env.OPENROUTER_MODEL ||
-  "openai/gpt-oss-20b:free" ||
-  "openai/gpt-4o-mini:free" ||
-  "x-ai/grok-4-fast:free";
+const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL;
 
 // Memory extraction model - small, fast, free
 const MEMORY_EXTRACTION_MODEL = "meta-llama/llama-3.3-8b-instruct:free";
