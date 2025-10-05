@@ -6920,47 +6920,10 @@ async function saveMemoryCandidates(userId, candidates) {
     serviceRoleKeyLength: process.env.SUPABASE_SERVICE_ROLE_KEY?.length || 0,
   });
 
-  // Test Supabase connection with isolated test
-  console.log("🧠 [FINNY] Testing Supabase connection with isolated test...");
-
-  try {
-    // Create a completely new Supabase client instance
-    const { createClient } = await import("@supabase/supabase-js");
-    const testSupabase = createClient(
-      process.env.SUPABASE_URL,
-      process.env.SUPABASE_SERVICE_ROLE_KEY
-    );
-
-    console.log(
-      "🧠 [FINNY] New Supabase client created, testing simple query..."
-    );
-
-    // Test with a simple query that should always work
-    const { data, error } = await testSupabase
-      .from("user_memories")
-      .select("id")
-      .limit(1)
-      .abortSignal(AbortSignal.timeout(2000)); // 2 second timeout
-
-    if (error) {
-      console.error("🧠 [FINNY] Isolated test failed:", error);
-      console.error("🧠 [FINNY] Error details:", {
-        message: error.message,
-        details: error.details,
-        hint: error.hint,
-        code: error.code,
-      });
-      return;
-    }
-
-    console.log(
-      "🧠 [FINNY] Isolated test successful, proceeding to save memories..."
-    );
-  } catch (testError) {
-    console.error("🧠 [FINNY] Isolated test exception:", testError);
-    console.error("🧠 [FINNY] Test error stack:", testError.stack);
-    return;
-  }
+  // Skip Supabase entirely and use direct HTTP requests
+  console.log(
+    "🧠 [FINNY] Bypassing Supabase client, using direct HTTP requests..."
+  );
 
   try {
     let savedCount = 0;
@@ -7015,72 +6978,73 @@ async function saveMemoryCandidates(userId, candidates) {
 
       console.log(`🧠 [FINNY] Upserting memory data:`, memoryData);
 
-      // Use upsert with shorter timeout and fallback client
-      console.log(`🧠 [FINNY] Starting upsert for ${candidate.key}...`);
-
-      // Create a fresh client for this operation
-      const { createClient } = await import("@supabase/supabase-js");
-      const freshSupabase = createClient(
-        process.env.SUPABASE_URL,
-        process.env.SUPABASE_SERVICE_ROLE_KEY
-      );
-
-      const upsertPromise = freshSupabase
-        .from("user_memories")
-        .upsert(memoryData, {
-          onConflict: "user_id,memory_type,key",
-        });
-
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(
-          () => reject(new Error("Upsert timeout after 5 seconds")),
-          5000
-        )
-      );
-
+      // Use direct HTTP request instead of Supabase client
       console.log(
-        `🧠 [FINNY] Racing upsert vs timeout for ${candidate.key}...`
+        `🧠 [FINNY] Starting direct HTTP upsert for ${candidate.key}...`
       );
-      const { error } = await Promise.race([upsertPromise, timeoutPromise]);
-      console.log(`🧠 [FINNY] Upsert race completed for ${candidate.key}`);
 
-      if (error) {
-        console.error(
-          `🧠 [FINNY] Failed to save memory ${candidate.key}:`,
-          error
+      try {
+        const response = await fetch(
+          `${process.env.SUPABASE_URL}/rest/v1/user_memories`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+              apikey: process.env.SUPABASE_SERVICE_ROLE_KEY,
+              Prefer: "resolution=merge-duplicates",
+            },
+            body: JSON.stringify(memoryData),
+            signal: AbortSignal.timeout(5000), // 5 second timeout
+          }
         );
 
-        // Try fallback insert without upsert
-        console.log(`🧠 [FINNY] Trying fallback insert for ${candidate.key}`);
-        try {
-          const { error: fallbackError } = await supabase
-            .from("user_memories")
-            .insert(memoryData);
-
-          if (fallbackError) {
-            console.error(
-              `🧠 [FINNY] Fallback insert also failed:`,
-              fallbackError
-            );
-          } else {
-            console.log(
-              `🧠 [FINNY] ✅ Fallback insert succeeded for ${candidate.key}`
-            );
-            savedCount++;
-          }
-        } catch (fallbackErr) {
-          console.error(`🧠 [FINNY] Fallback insert exception:`, fallbackErr);
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`HTTP ${response.status}: ${errorText}`);
         }
-      } else {
+
         console.log(
-          `🧠 [FINNY] ✅ Saved memory: ${memoryType}.${
-            candidate.key
-          } = "${redactedValue}" (confidence: ${
-            candidate.confidence_score || candidate.confidence
-          })`
+          `🧠 [FINNY] ✅ Direct HTTP upsert successful for ${candidate.key}`
         );
         savedCount++;
+      } catch (httpError) {
+        console.error(
+          `🧠 [FINNY] Direct HTTP upsert failed for ${candidate.key}:`,
+          httpError
+        );
+
+        // Try fallback insert
+        try {
+          const insertResponse = await fetch(
+            `${process.env.SUPABASE_URL}/rest/v1/user_memories`,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+                apikey: process.env.SUPABASE_SERVICE_ROLE_KEY,
+              },
+              body: JSON.stringify(memoryData),
+              signal: AbortSignal.timeout(5000),
+            }
+          );
+
+          if (insertResponse.ok) {
+            console.log(
+              `🧠 [FINNY] ✅ Fallback insert successful for ${candidate.key}`
+            );
+            savedCount++;
+          } else {
+            const errorText = await insertResponse.text();
+            console.error(`🧠 [FINNY] Fallback insert failed:`, errorText);
+          }
+        } catch (fallbackError) {
+          console.error(`🧠 [FINNY] Fallback insert exception:`, fallbackError);
+        }
       }
+
+      // Error handling is now done in the try/catch above
     }
 
     console.log(
