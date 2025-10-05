@@ -7097,7 +7097,7 @@ async function updateMemorySummary(userId) {
 
 function generateMemorySummary(memories) {
   if (!memories || memories.length === 0) {
-    return "No user information available.";
+    return "I haven't learned much about you yet. Keep chatting with me so I can better understand your financial situation and goals!";
   }
 
   // Group by memory type
@@ -7107,47 +7107,250 @@ function generateMemorySummary(memories) {
     return acc;
   }, {});
 
-  const parts = [];
+  const sentences = [];
 
-  // Profile traits (most important - show first)
+  // Profile traits - create natural sentences
   if (grouped.profile_trait && grouped.profile_trait.length > 0) {
-    const traits = grouped.profile_trait
-      .map((m) => `${m.key.replace("profile_trait.", "")}: ${m.value}`)
-      .join(", ");
-    parts.push(`Profile: ${traits}`);
+    const profileInfo = {};
+
+    // Organize profile traits by category
+    grouped.profile_trait.forEach((m) => {
+      const key = m.key.replace("profile_trait.", "");
+      const value = m.value;
+
+      if (key === "age") {
+        profileInfo.age = value;
+      } else if (key === "location") {
+        profileInfo.location = value;
+      } else if (key === "occupation") {
+        profileInfo.occupation = value;
+      } else if (key === "education") {
+        profileInfo.education = value;
+      } else if (key.startsWith("family.")) {
+        const familyKey = key.replace("family.", "");
+        if (!profileInfo.family) profileInfo.family = {};
+        profileInfo.family[familyKey] = value;
+      } else if (key.startsWith("interests.")) {
+        const interest = key.replace("interests.", "").replace(/_/g, " ");
+        if (!profileInfo.interests) profileInfo.interests = [];
+        profileInfo.interests.push(interest);
+      } else if (key.startsWith("hobbies.")) {
+        const hobby = key.replace("hobbies.", "").replace(/_/g, " ");
+        if (!profileInfo.hobbies) profileInfo.hobbies = [];
+        profileInfo.hobbies.push(hobby);
+      }
+    });
+
+    // Build natural sentences from profile info
+    const profileParts = [];
+
+    if (profileInfo.age) {
+      profileParts.push(`a ${profileInfo.age}-year-old`);
+    }
+
+    if (profileInfo.occupation) {
+      profileParts.push(profileInfo.occupation);
+    }
+
+    if (profileInfo.education) {
+      profileParts.push(`with ${profileInfo.education}`);
+    }
+
+    if (profileInfo.location) {
+      profileParts.push(`living in ${profileInfo.location}`);
+    }
+
+    if (profileInfo.interests && profileInfo.interests.length > 0) {
+      if (profileInfo.interests.length === 1) {
+        profileParts.push(`interested in ${profileInfo.interests[0]}`);
+      } else if (profileInfo.interests.length === 2) {
+        profileParts.push(
+          `interested in ${profileInfo.interests.join(" and ")}`
+        );
+      } else {
+        const lastInterest = profileInfo.interests.pop();
+        profileParts.push(
+          `interested in ${profileInfo.interests.join(
+            ", "
+          )}, and ${lastInterest}`
+        );
+      }
+    }
+
+    if (profileInfo.hobbies && profileInfo.hobbies.length > 0) {
+      if (profileInfo.hobbies.length === 1) {
+        profileParts.push(`enjoys ${profileInfo.hobbies[0]}`);
+      } else if (profileInfo.hobbies.length === 2) {
+        profileParts.push(`enjoys ${profileInfo.hobbies.join(" and ")}`);
+      } else {
+        const lastHobby = profileInfo.hobbies.pop();
+        profileParts.push(
+          `enjoys ${profileInfo.hobbies.join(", ")}, and ${lastHobby}`
+        );
+      }
+    }
+
+    if (profileInfo.family) {
+      if (profileInfo.family.marital_status) {
+        profileParts.push(profileInfo.family.marital_status);
+      }
+      if (profileInfo.family.children) {
+        profileParts.push(profileInfo.family.children);
+      }
+      if (profileInfo.family.living_situation) {
+        profileParts.push(profileInfo.family.living_situation);
+      }
+    }
+
+    if (profileParts.length > 0) {
+      sentences.push(`User is ${profileParts.join(", ")}.`);
+    }
   }
 
-  // Goals (future plans)
+  // Goals - create natural sentences
   if (grouped.goal && grouped.goal.length > 0) {
-    const goals = grouped.goal
-      .map((m) => `${m.key.replace("goal.", "")}: ${m.value}`)
-      .join(", ");
-    parts.push(`Future plans: ${goals}`);
+    const goalCategories = {};
+
+    grouped.goal.forEach((m) => {
+      const key = m.key.replace("goal.", "");
+      const value = m.value;
+
+      if (key.startsWith("financial.")) {
+        const goalType = key.replace("financial.", "").replace(/_/g, " ");
+        if (!goalCategories.financial) goalCategories.financial = [];
+        goalCategories.financial.push(goalType);
+      } else if (key.startsWith("career.")) {
+        const goalType = key.replace("career.", "").replace(/_/g, " ");
+        if (!goalCategories.career) goalCategories.career = [];
+        goalCategories.career.push(goalType);
+      } else if (key.startsWith("family.")) {
+        const goalType = key.replace("family.", "").replace(/_/g, " ");
+        if (!goalCategories.family) goalCategories.family = [];
+        goalCategories.family.push(goalType);
+      } else if (key.startsWith("lifestyle.")) {
+        const goalType = key.replace("lifestyle.", "").replace(/_/g, " ");
+        if (!goalCategories.lifestyle) goalCategories.lifestyle = [];
+        goalCategories.lifestyle.push(goalType);
+      }
+    });
+
+    const goalParts = [];
+    if (goalCategories.financial && goalCategories.financial.length > 0) {
+      goalParts.push(
+        `financial goals like ${goalCategories.financial.join(", ")}`
+      );
+    }
+    if (goalCategories.career && goalCategories.career.length > 0) {
+      goalParts.push(
+        `career goals including ${goalCategories.career.join(", ")}`
+      );
+    }
+    if (goalCategories.family && goalCategories.family.length > 0) {
+      goalParts.push(
+        `family goals such as ${goalCategories.family.join(", ")}`
+      );
+    }
+    if (goalCategories.lifestyle && goalCategories.lifestyle.length > 0) {
+      goalParts.push(
+        `lifestyle goals like ${goalCategories.lifestyle.join(", ")}`
+      );
+    }
+
+    if (goalParts.length > 0) {
+      sentences.push(`Has ${goalParts.join(", ")}.`);
+    }
   }
 
-  // Constraints (limitations)
+  // Constraints - create natural sentences
   if (grouped.constraint && grouped.constraint.length > 0) {
-    const constraints = grouped.constraint
-      .map((m) => `${m.key.replace("constraint.", "")}: ${m.value}`)
-      .join(", ");
-    parts.push(`Constraints: ${constraints}`);
+    const constraintParts = [];
+
+    grouped.constraint.forEach((m) => {
+      const key = m.key.replace("constraint.", "");
+      const value = m.value;
+
+      if (key.startsWith("income.")) {
+        const constraintType = key.replace("income.", "").replace(/_/g, " ");
+        constraintParts.push(`${constraintType} situation`);
+      } else if (key.startsWith("debt.")) {
+        const debtType = key.replace("debt.", "").replace(/_/g, " ");
+        constraintParts.push(`${debtType} debt`);
+      } else if (key.startsWith("family_obligation.")) {
+        const obligation = key
+          .replace("family_obligation.", "")
+          .replace(/_/g, " ");
+        constraintParts.push(`family obligations for ${obligation}`);
+      } else if (key.startsWith("health.")) {
+        const healthIssue = key.replace("health.", "").replace(/_/g, " ");
+        constraintParts.push(`${healthIssue} concerns`);
+      }
+    });
+
+    if (constraintParts.length > 0) {
+      sentences.push(
+        `Faces constraints including ${constraintParts.join(", ")}.`
+      );
+    }
   }
 
-  // Preferences (choices/priorities)
+  // Preferences - create natural sentences
   if (grouped.preference && grouped.preference.length > 0) {
-    const preferences = grouped.preference
-      .map((m) => `${m.key.replace("preference.", "")}: ${m.value}`)
-      .join(", ");
-    parts.push(`Preferences: ${preferences}`);
+    const preferenceParts = [];
+
+    grouped.preference.forEach((m) => {
+      const key = m.key.replace("preference.", "");
+      const value = m.value;
+
+      if (key === "risk_tolerance") {
+        preferenceParts.push(`${value} risk tolerance`);
+      } else if (key.startsWith("spending.")) {
+        const spendingStyle = key.replace("spending.", "").replace(/_/g, " ");
+        preferenceParts.push(`${spendingStyle} spending style`);
+      } else if (key.startsWith("investment.")) {
+        const investmentStyle = key
+          .replace("investment.", "")
+          .replace(/_/g, " ");
+        preferenceParts.push(`${investmentStyle} investment approach`);
+      }
+    });
+
+    if (preferenceParts.length > 0) {
+      sentences.push(`Prefers ${preferenceParts.join(", ")}.`);
+    }
   }
 
-  // Context signals (life events/situations)
+  // Context signals - create natural sentences
   if (grouped.context_signal && grouped.context_signal.length > 0) {
-    const signals = grouped.context_signal
-      .map((m) => `${m.key.replace("context_signal.", "")}: ${m.value}`)
-      .join(", ");
-    parts.push(`Recent context: ${signals}`);
+    const signalParts = [];
+
+    grouped.context_signal.forEach((m) => {
+      const key = m.key.replace("context_signal.", "");
+      const value = m.value;
+
+      if (key.startsWith("life_event.")) {
+        const eventType = key.replace("life_event.", "").replace(/_/g, " ");
+        signalParts.push(`recent ${eventType}`);
+      } else if (key === "financial_stress") {
+        signalParts.push("financial stress");
+      } else if (key === "financial_win") {
+        signalParts.push("recent financial success");
+      }
+    });
+
+    if (signalParts.length > 0) {
+      sentences.push(`Recently experienced ${signalParts.join(", ")}.`);
+    }
   }
 
-  return parts.length > 0 ? parts.join(". ") : "No user information available.";
+  // Join sentences naturally
+  if (sentences.length === 0) {
+    return "I'm still getting to know you. Share more about your financial situation and I'll remember it for our future conversations!";
+  } else if (sentences.length === 1) {
+    return sentences[0];
+  } else if (sentences.length === 2) {
+    return sentences.join(" ");
+  } else {
+    const lastSentence = sentences.pop();
+    return sentences.join(" ") + " " + lastSentence;
+  }
 }

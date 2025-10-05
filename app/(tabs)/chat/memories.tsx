@@ -16,14 +16,9 @@ import { Dimensions } from "react-native";
 import { useAuth } from "../../_contexts/AuthContext";
 import { createClient } from "@supabase/supabase-js";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { supabase } from "../../_lib/supabase/supabase";
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
-
-// Initialize Supabase client
-const supabase = createClient(
-  process.env.EXPO_PUBLIC_SUPABASE_URL!,
-  process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!
-);
 
 // Responsive calculations
 const isSmallScreen = screenWidth < 375;
@@ -237,36 +232,6 @@ interface MemoriesScreenProps {
   preloadedData?: MemorySummary | null;
 }
 
-const getMemoryTypeDisplayName = (type: string) => {
-  switch (type) {
-    case "profile_trait":
-      return "Profile";
-    case "constraint":
-      return "Constraint";
-    case "preference":
-      return "Preference";
-    case "future_plan":
-      return "Future Plan";
-    default:
-      return type;
-  }
-};
-
-const getMemoryTypeIcon = (type: string) => {
-  switch (type) {
-    case "profile_trait":
-      return "person-outline";
-    case "constraint":
-      return "warning-outline";
-    case "preference":
-      return "heart-outline";
-    case "future_plan":
-      return "calendar-outline";
-    default:
-      return "information-circle-outline";
-  }
-};
-
 export default function MemoriesScreen({
   onBack,
   preloadedData,
@@ -299,13 +264,18 @@ export default function MemoriesScreen({
       setLoading(true);
 
       // Fetch memory summary
-      const { data: summaryData } = await supabase
+      const { data: summaryData, error: summaryError } = await supabase
         .from("memory_summary")
         .select("summary_text, last_updated")
         .eq("user_id", session?.user?.id)
-        .single();
+        .maybeSingle();
 
-      setMemorySummary(summaryData);
+      if (summaryError) {
+        console.error("Error fetching memory summary:", summaryError);
+        setMemorySummary(null);
+      } else {
+        setMemorySummary(summaryData);
+      }
     } catch (error) {
       console.error("Error fetching memories:", error);
     } finally {
@@ -348,9 +318,6 @@ export default function MemoriesScreen({
         .eq("user_id", session?.user?.id);
 
       if (summaryError) throw summaryError;
-
-      // Refresh the data
-      await fetchMemories();
     } catch (error) {
       console.error("Error clearing memories:", error);
       Alert.alert("Error", "Failed to clear memories. Please try again.");
@@ -383,7 +350,8 @@ export default function MemoriesScreen({
     );
   }
 
-  const hasMemories = memorySummary?.summary_text;
+  const hasMemories =
+    memorySummary?.summary_text && memorySummary.summary_text.trim().length > 0;
 
   return (
     <View style={styles.container}>

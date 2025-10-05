@@ -258,13 +258,21 @@ export default function FinnySettingsScreen() {
 
   const fetchMemoriesData = async () => {
     try {
-      const { data: summaryData } = await supabase
+      const { data: summaryData, error: summaryError } = await supabase
         .from("memory_summary")
         .select("summary_text, last_updated")
         .eq("user_id", session?.user?.id)
-        .single();
+        .maybeSingle();
 
-      setPreloadedMemorySummary(summaryData);
+      if (summaryError) {
+        console.error(
+          "Settings - Error fetching memory summary:",
+          summaryError
+        );
+        setPreloadedMemorySummary(null);
+      } else {
+        setPreloadedMemorySummary(summaryData);
+      }
     } catch (error) {
       console.error("Error pre-loading memories:", error);
     }
