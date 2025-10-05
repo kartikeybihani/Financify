@@ -6920,10 +6920,47 @@ async function saveMemoryCandidates(userId, candidates) {
     serviceRoleKeyLength: process.env.SUPABASE_SERVICE_ROLE_KEY?.length || 0,
   });
 
-  // Skip connection test and go straight to saving memories
-  console.log(
-    "🧠 [FINNY] Skipping connection test, proceeding to save memories..."
-  );
+  // Test Supabase connection with isolated test
+  console.log("🧠 [FINNY] Testing Supabase connection with isolated test...");
+
+  try {
+    // Create a completely new Supabase client instance
+    const { createClient } = await import("@supabase/supabase-js");
+    const testSupabase = createClient(
+      process.env.SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_ROLE_KEY
+    );
+
+    console.log(
+      "🧠 [FINNY] New Supabase client created, testing simple query..."
+    );
+
+    // Test with a simple query that should always work
+    const { data, error } = await testSupabase
+      .from("user_memories")
+      .select("id")
+      .limit(1)
+      .abortSignal(AbortSignal.timeout(2000)); // 2 second timeout
+
+    if (error) {
+      console.error("🧠 [FINNY] Isolated test failed:", error);
+      console.error("🧠 [FINNY] Error details:", {
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        code: error.code,
+      });
+      return;
+    }
+
+    console.log(
+      "🧠 [FINNY] Isolated test successful, proceeding to save memories..."
+    );
+  } catch (testError) {
+    console.error("🧠 [FINNY] Isolated test exception:", testError);
+    console.error("🧠 [FINNY] Test error stack:", testError.stack);
+    return;
+  }
 
   try {
     let savedCount = 0;
@@ -6978,11 +7015,21 @@ async function saveMemoryCandidates(userId, candidates) {
 
       console.log(`🧠 [FINNY] Upserting memory data:`, memoryData);
 
-      // Use upsert with shorter timeout
+      // Use upsert with shorter timeout and fallback client
       console.log(`🧠 [FINNY] Starting upsert for ${candidate.key}...`);
-      const upsertPromise = supabase.from("user_memories").upsert(memoryData, {
-        onConflict: "user_id,memory_type,key",
-      });
+
+      // Create a fresh client for this operation
+      const { createClient } = await import("@supabase/supabase-js");
+      const freshSupabase = createClient(
+        process.env.SUPABASE_URL,
+        process.env.SUPABASE_SERVICE_ROLE_KEY
+      );
+
+      const upsertPromise = freshSupabase
+        .from("user_memories")
+        .upsert(memoryData, {
+          onConflict: "user_id,memory_type,key",
+        });
 
       const timeoutPromise = new Promise((_, reject) =>
         setTimeout(
