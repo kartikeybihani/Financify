@@ -6920,16 +6920,61 @@ async function saveMemoryCandidates(userId, candidates) {
     serviceRoleKeyLength: process.env.SUPABASE_SERVICE_ROLE_KEY?.length || 0,
   });
 
-  // Use anon key instead of service role key
-  console.log("🧠 [FINNY] Using anon key for memory saving...");
+  // Debug environment variables thoroughly
+  console.log("🧠 [FINNY] DEBUGGING ENVIRONMENT VARIABLES...");
 
   const anonKey = process.env.SUPABASE_ANON_KEY;
+  const supabaseUrl = process.env.SUPABASE_URL;
+
+  console.log("🧠 [FINNY] Environment debug:", {
+    hasAnonKey: !!anonKey,
+    anonKeyLength: anonKey?.length || 0,
+    anonKeyStart: anonKey?.substring(0, 20) + "...",
+    anonKeyEnd: "..." + anonKey?.substring(anonKey?.length - 10),
+    hasSupabaseUrl: !!supabaseUrl,
+    supabaseUrl: supabaseUrl,
+    fullEndpoint: `${supabaseUrl}/rest/v1/user_memories`,
+  });
+
   if (!anonKey) {
     console.error("🧠 [FINNY] No anon key found! Cannot save memories.");
     return;
   }
 
-  console.log("🧠 [FINNY] Anon key found, proceeding with memory saving...");
+  if (!supabaseUrl) {
+    console.error("🧠 [FINNY] No Supabase URL found! Cannot save memories.");
+    return;
+  }
+
+  // Test basic connectivity first
+  console.log("🧠 [FINNY] Testing basic connectivity...");
+  try {
+    const testResponse = await fetch(`${supabaseUrl}/rest/v1/`, {
+      method: "GET",
+      headers: {
+        apikey: anonKey,
+      },
+      signal: AbortSignal.timeout(3000),
+    });
+
+    console.log(
+      `🧠 [FINNY] Connectivity test result: ${testResponse.status} ${testResponse.statusText}`
+    );
+
+    if (!testResponse.ok) {
+      const errorText = await testResponse.text();
+      console.error("🧠 [FINNY] Connectivity test failed:", errorText);
+      return;
+    }
+
+    console.log("🧠 [FINNY] ✅ Basic connectivity works!");
+  } catch (connectError) {
+    console.error(
+      "🧠 [FINNY] ❌ Connectivity test failed:",
+      connectError.message
+    );
+    return;
+  }
 
   try {
     let savedCount = 0;
@@ -6990,19 +7035,36 @@ async function saveMemoryCandidates(userId, candidates) {
       );
 
       try {
-        const response = await fetch(
-          `${process.env.SUPABASE_URL}/rest/v1/user_memories`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${anonKey}`,
-              apikey: anonKey,
-              Prefer: "resolution=merge-duplicates",
-            },
-            body: JSON.stringify(memoryData),
-            signal: AbortSignal.timeout(5000), // 5 second timeout
-          }
+        console.log(
+          `🧠 [FINNY] Making HTTP request to: ${supabaseUrl}/rest/v1/user_memories`
+        );
+        console.log(`🧠 [FINNY] Request headers:`, {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${anonKey.substring(0, 20)}...`,
+          apikey: `${anonKey.substring(0, 20)}...`,
+          Prefer: "resolution=merge-duplicates",
+        });
+        console.log(`🧠 [FINNY] Request body:`, JSON.stringify(memoryData));
+
+        const startTime = Date.now();
+        const response = await fetch(`${supabaseUrl}/rest/v1/user_memories`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${anonKey}`,
+            apikey: anonKey,
+            Prefer: "resolution=merge-duplicates",
+          },
+          body: JSON.stringify(memoryData),
+          signal: AbortSignal.timeout(5000), // 5 second timeout
+        });
+
+        const endTime = Date.now();
+        console.log(
+          `🧠 [FINNY] HTTP request completed in ${endTime - startTime}ms`
+        );
+        console.log(
+          `🧠 [FINNY] Response status: ${response.status} ${response.statusText}`
         );
 
         if (!response.ok) {
