@@ -6920,10 +6920,16 @@ async function saveMemoryCandidates(userId, candidates) {
     serviceRoleKeyLength: process.env.SUPABASE_SERVICE_ROLE_KEY?.length || 0,
   });
 
-  // Skip Supabase entirely and use direct HTTP requests
-  console.log(
-    "🧠 [FINNY] Bypassing Supabase client, using direct HTTP requests..."
-  );
+  // Use anon key instead of service role key
+  console.log("🧠 [FINNY] Using anon key for memory saving...");
+
+  const anonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+  if (!anonKey) {
+    console.error("🧠 [FINNY] No anon key found! Cannot save memories.");
+    return;
+  }
+
+  console.log("🧠 [FINNY] Anon key found, proceeding with memory saving...");
 
   try {
     let savedCount = 0;
@@ -6990,8 +6996,8 @@ async function saveMemoryCandidates(userId, candidates) {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
-              Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
-              apikey: process.env.SUPABASE_SERVICE_ROLE_KEY,
+              Authorization: `Bearer ${anonKey}`,
+              apikey: anonKey,
               Prefer: "resolution=merge-duplicates",
             },
             body: JSON.stringify(memoryData),
@@ -7022,8 +7028,8 @@ async function saveMemoryCandidates(userId, candidates) {
               method: "POST",
               headers: {
                 "Content-Type": "application/json",
-                Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
-                apikey: process.env.SUPABASE_SERVICE_ROLE_KEY,
+                Authorization: `Bearer ${anonKey}`,
+                apikey: anonKey,
               },
               body: JSON.stringify(memoryData),
               signal: AbortSignal.timeout(5000),
