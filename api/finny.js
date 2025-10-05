@@ -1597,17 +1597,15 @@ async function handleAsk(message, context) {
     // Background memory save (non-blocking)
     if (memoryExtraction.length > 0) {
       console.log(
-        `🧠 [FINNY] Saving ${memoryExtraction.length} memories in background:`,
+        `🧠 [FINNY] Saving ${memoryExtraction.length} memories synchronously:`,
         memoryExtraction
       );
-      setImmediate(async () => {
-        try {
-          await saveMemoryCandidates(context?.user_id, memoryExtraction);
-          console.log("🧠 [FINNY] Memory save completed successfully");
-        } catch (error) {
-          console.error("🧠 [FINNY] Memory save failed:", error);
-        }
-      });
+      try {
+        await saveMemoryCandidates(context?.user_id, memoryExtraction);
+        console.log("🧠 [FINNY] Memory save completed successfully");
+      } catch (error) {
+        console.error("🧠 [FINNY] Memory save failed:", error);
+      }
     } else {
       console.log("🧠 [FINNY] No memories to save");
     }
@@ -1650,8 +1648,8 @@ async function handleAsk(message, context) {
       },
     };
 
-    // Log conversation asynchronously (don't wait for it)
-    setImmediate(() => logConversation(conversationData));
+    // Log conversation synchronously (wait for it)
+    await logConversation(conversationData);
 
     return response;
   } catch (error) {
@@ -3668,8 +3666,8 @@ async function handleClassify(message, context) {
       classification_result: out,
     };
 
-    // Log conversation asynchronously
-    setImmediate(() => logConversation(conversationData));
+    // Log conversation synchronously
+    await logConversation(conversationData);
 
     return out;
   } catch (e) {
@@ -3790,8 +3788,8 @@ async function handleOffTopic(message, context) {
       redirection_suggestions: redirectionSuggestions,
     };
 
-    // Log conversation asynchronously
-    setImmediate(() => logConversation(conversationData));
+    // Log conversation synchronously
+    await logConversation(conversationData);
 
     return {
       text: content,
@@ -4101,8 +4099,8 @@ async function handleAskFactFresh(message, context) {
       topic: data.topic,
     };
 
-    // Log conversation asynchronously
-    setImmediate(() => logConversation(conversationData));
+    // Log conversation synchronously
+    await logConversation(conversationData);
 
     return response;
   } catch (error) {
@@ -6920,61 +6918,10 @@ async function saveMemoryCandidates(userId, candidates) {
     serviceRoleKeyLength: process.env.SUPABASE_SERVICE_ROLE_KEY?.length || 0,
   });
 
-  // Debug environment variables thoroughly
-  console.log("🧠 [FINNY] DEBUGGING ENVIRONMENT VARIABLES...");
-
-  const anonKey = process.env.SUPABASE_ANON_KEY;
-  const supabaseUrl = process.env.SUPABASE_URL;
-
-  console.log("🧠 [FINNY] Environment debug:", {
-    hasAnonKey: !!anonKey,
-    anonKeyLength: anonKey?.length || 0,
-    anonKeyStart: anonKey?.substring(0, 20) + "...",
-    anonKeyEnd: "..." + anonKey?.substring(anonKey?.length - 10),
-    hasSupabaseUrl: !!supabaseUrl,
-    supabaseUrl: supabaseUrl,
-    fullEndpoint: `${supabaseUrl}/rest/v1/user_memories`,
-  });
-
-  if (!anonKey) {
-    console.error("🧠 [FINNY] No anon key found! Cannot save memories.");
-    return;
-  }
-
-  if (!supabaseUrl) {
-    console.error("🧠 [FINNY] No Supabase URL found! Cannot save memories.");
-    return;
-  }
-
-  // Test basic connectivity first
-  console.log("🧠 [FINNY] Testing basic connectivity...");
-  try {
-    const testResponse = await fetch(`${supabaseUrl}/rest/v1/`, {
-      method: "GET",
-      headers: {
-        apikey: anonKey,
-      },
-      signal: AbortSignal.timeout(3000),
-    });
-
-    console.log(
-      `🧠 [FINNY] Connectivity test result: ${testResponse.status} ${testResponse.statusText}`
-    );
-
-    if (!testResponse.ok) {
-      const errorText = await testResponse.text();
-      console.error("🧠 [FINNY] Connectivity test failed:", errorText);
-      return;
-    }
-
-    console.log("🧠 [FINNY] ✅ Basic connectivity works!");
-  } catch (connectError) {
-    console.error(
-      "🧠 [FINNY] ❌ Connectivity test failed:",
-      connectError.message
-    );
-    return;
-  }
+  // Use service role key with original Supabase client
+  console.log(
+    "🧠 [FINNY] Using service role key with original Supabase client..."
+  );
 
   try {
     let savedCount = 0;
@@ -7029,86 +6976,51 @@ async function saveMemoryCandidates(userId, candidates) {
 
       console.log(`🧠 [FINNY] Upserting memory data:`, memoryData);
 
-      // Use direct HTTP request instead of Supabase client
+      // Use original Supabase client with service role key
       console.log(
-        `🧠 [FINNY] Starting direct HTTP upsert for ${candidate.key}...`
+        `🧠 [FINNY] Starting Supabase upsert for ${candidate.key}...`
       );
 
       try {
-        console.log(
-          `🧠 [FINNY] Making HTTP request to: ${supabaseUrl}/rest/v1/user_memories`
-        );
-        console.log(`🧠 [FINNY] Request headers:`, {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${anonKey.substring(0, 20)}...`,
-          apikey: `${anonKey.substring(0, 20)}...`,
-          Prefer: "resolution=merge-duplicates",
-        });
-        console.log(`🧠 [FINNY] Request body:`, JSON.stringify(memoryData));
+        const { error } = await supabase
+          .from("user_memories")
+          .upsert(memoryData, {
+            onConflict: "user_id,memory_type,key",
+          });
 
-        const startTime = Date.now();
-        const response = await fetch(`${supabaseUrl}/rest/v1/user_memories`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${anonKey}`,
-            apikey: anonKey,
-            Prefer: "resolution=merge-duplicates",
-          },
-          body: JSON.stringify(memoryData),
-          signal: AbortSignal.timeout(5000), // 5 second timeout
-        });
-
-        const endTime = Date.now();
-        console.log(
-          `🧠 [FINNY] HTTP request completed in ${endTime - startTime}ms`
-        );
-        console.log(
-          `🧠 [FINNY] Response status: ${response.status} ${response.statusText}`
-        );
-
-        if (!response.ok) {
-          const errorText = await response.text();
-          throw new Error(`HTTP ${response.status}: ${errorText}`);
+        if (error) {
+          throw error;
         }
 
         console.log(
-          `🧠 [FINNY] ✅ Direct HTTP upsert successful for ${candidate.key}`
+          `🧠 [FINNY] ✅ Supabase upsert successful for ${candidate.key}`
         );
         savedCount++;
-      } catch (httpError) {
+      } catch (supabaseError) {
         console.error(
-          `🧠 [FINNY] Direct HTTP upsert failed for ${candidate.key}:`,
-          httpError
+          `🧠 [FINNY] Supabase upsert failed for ${candidate.key}:`,
+          supabaseError
         );
 
         // Try fallback insert
         try {
-          const insertResponse = await fetch(
-            `${process.env.SUPABASE_URL}/rest/v1/user_memories`,
-            {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${anonKey}`,
-                apikey: anonKey,
-              },
-              body: JSON.stringify(memoryData),
-              signal: AbortSignal.timeout(5000),
-            }
-          );
+          const { error: insertError } = await supabase
+            .from("user_memories")
+            .insert(memoryData);
 
-          if (insertResponse.ok) {
-            console.log(
-              `🧠 [FINNY] ✅ Fallback insert successful for ${candidate.key}`
-            );
-            savedCount++;
-          } else {
-            const errorText = await insertResponse.text();
-            console.error(`🧠 [FINNY] Fallback insert failed:`, errorText);
+          if (insertError) {
+            throw insertError;
           }
+
+          console.log(
+            `🧠 [FINNY] ✅ Fallback insert successful for ${candidate.key}`
+          );
+          savedCount++;
         } catch (fallbackError) {
-          console.error(`🧠 [FINNY] Fallback insert exception:`, fallbackError);
+          console.error(
+            `🧠 [FINNY] Fallback insert failed for ${candidate.key}:`,
+            fallbackError
+          );
         }
       }
 
