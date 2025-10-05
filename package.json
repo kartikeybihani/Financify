@@ -13,6 +13,7 @@
     "test-finny": "node test_finny.js",
     "test-finny-simple": "node test_finny_simple.js",
     "test-finny-all": "node test_finny.js",
+    "test-finny-enhanced": "node test_finny_enhanced.js",
     "lint": "expo lint",
     "postinstall": "patch-package"
   },

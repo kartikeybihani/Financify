@@ -227,8 +227,9 @@ export default function FinnySettingsScreen() {
   const [slideAnimation] = useState(new Animated.Value(0));
   const [styleSlideAnimation] = useState(new Animated.Value(0));
   const [checkinSlideAnimation] = useState(new Animated.Value(0));
-  const [preloadedMemorySummary, setPreloadedMemorySummary] =
-    useState<MemorySummary | null>(null);
+  const [preloadedMemorySummary, setPreloadedMemorySummary] = useState<
+    MemorySummary[] | null
+  >(null);
 
   // Pre-load memories data when component mounts
   useEffect(() => {
@@ -241,9 +242,9 @@ export default function FinnySettingsScreen() {
     try {
       const { data: summaryData, error: summaryError } = await supabase
         .from("memory_summary")
-        .select("summary_text, last_updated")
+        .select("summary_text, created_at")
         .eq("user_id", session?.user?.id)
-        .maybeSingle();
+        .order("created_at", { ascending: false });
 
       if (summaryError) {
         console.error(
@@ -252,7 +253,8 @@ export default function FinnySettingsScreen() {
         );
         setPreloadedMemorySummary(null);
       } else {
-        setPreloadedMemorySummary(summaryData);
+        // Pass all memory summaries to the component
+        setPreloadedMemorySummary(summaryData || null);
       }
     } catch (error) {
       console.error("Error pre-loading memories:", error);

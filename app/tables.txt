@@ -175,11 +175,13 @@ CREATE TABLE public.investment_options (
   CONSTRAINT fk_io_pair FOREIGN KEY (account_id) REFERENCES public.snaptrade_connections(account_id)
 );
 CREATE TABLE public.memory_summary (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL,
   summary_text text NOT NULL,
-  last_updated timestamp with time zone DEFAULT now(),
-  CONSTRAINT memory_summary_pkey PRIMARY KEY (user_id),
-  CONSTRAINT memory_summary_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
+  memory_count integer NOT NULL DEFAULT 0,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT memory_summary_pkey PRIMARY KEY (id),
+  CONSTRAINT memory_summary_history_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
 );
 CREATE TABLE public.recurring_streams (
   id uuid NOT NULL DEFAULT gen_random_uuid(),

@@ -103,13 +103,13 @@ export interface TransactionDetailModalProps {
 // Memory Summary interface
 export interface MemorySummary {
   summary_text: string;
-  last_updated: string;
+  created_at: string;
 }
 
 // Memories Screen Props interface
 export interface MemoriesScreenProps {
   onBack?: () => void;
-  preloadedData?: MemorySummary | null;
+  preloadedData?: MemorySummary[] | null;
 }
 
 // Setting Item Props interface

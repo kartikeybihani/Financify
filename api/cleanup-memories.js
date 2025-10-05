@@ -57,7 +57,6 @@ async function updateMemorySummary(userId) {
     await supabase.from("memory_summary").upsert({
       user_id: userId,
       summary_text: summary,
-      last_updated: new Date().toISOString(),
     });
   } catch (error) {
     console.error("Memory summary update failed:", error);

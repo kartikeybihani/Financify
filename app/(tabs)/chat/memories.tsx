@@ -228,10 +228,12 @@ export default function MemoriesScreen({
       router.back();
     }
   };
-  const [memorySummary, setMemorySummary] = useState<MemorySummary | null>(
-    preloadedData || null
+  const [memorySummaries, setMemorySummaries] = useState<MemorySummary[]>(
+    preloadedData || []
   );
-  const [loading, setLoading] = useState(!preloadedData);
+  const [loading, setLoading] = useState(
+    !preloadedData || preloadedData.length === 0
+  );
 
   const handleClearMemories = () => {
     Alert.alert(
@@ -300,8 +302,7 @@ export default function MemoriesScreen({
     );
   }
 
-  const hasMemories =
-    memorySummary?.summary_text && memorySummary.summary_text.trim().length > 0;
+  const hasMemories = memorySummaries && memorySummaries.length > 0;
 
   return (
     <View style={styles.container}>
@@ -348,32 +349,37 @@ export default function MemoriesScreen({
             </View>
           ) : (
             <View style={styles.memorySection}>
-              {/* Memory Summary */}
-              <View style={styles.summaryCard}>
-                <View style={styles.summaryHeader}>
-                  <View style={styles.summaryLeft}>
-                    <Text style={styles.dateLabel}>
-                      {formatDate(memorySummary.last_updated)}
-                    </Text>
-                    <Text style={styles.summaryText}>
-                      {memorySummary.summary_text}
-                    </Text>
-                  </View>
-                  <View style={styles.summaryRight}>
-                    <TouchableOpacity
-                      style={styles.trashButton}
-                      onPress={handleClearMemories}
-                      activeOpacity={0.7}
-                    >
-                      <Ionicons
-                        name="trash-outline"
-                        size={28}
-                        color="#FF4444"
-                      />
-                    </TouchableOpacity>
+              {/* Memory Summaries */}
+              {memorySummaries.map((memorySummary, index) => (
+                <View
+                  key={memorySummary.created_at || index}
+                  style={styles.summaryCard}
+                >
+                  <View style={styles.summaryHeader}>
+                    <View style={styles.summaryLeft}>
+                      <Text style={styles.dateLabel}>
+                        {formatDate(memorySummary.created_at)}
+                      </Text>
+                      <Text style={styles.summaryText}>
+                        {memorySummary.summary_text}
+                      </Text>
+                    </View>
+                    <View style={styles.summaryRight}>
+                      <TouchableOpacity
+                        style={styles.trashButton}
+                        onPress={handleClearMemories}
+                        activeOpacity={0.7}
+                      >
+                        <Ionicons
+                          name="trash-outline"
+                          size={28}
+                          color="#FF4444"
+                        />
+                      </TouchableOpacity>
+                    </View>
                   </View>
                 </View>
-              </View>
+              ))}
             </View>
           )}
 
