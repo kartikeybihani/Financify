@@ -68,15 +68,6 @@ const OPENROUTER_MODEL =
 // Memory extraction model - small, fast, free
 const MEMORY_EXTRACTION_MODEL = "meta-llama/llama-3.3-8b-instruct:free";
 
-// Fixed top-level memory types (5 categories)
-const MEMORY_TYPES = {
-  profile_trait: "Personal characteristics, demographics, identity",
-  constraint: "Financial limitations, obligations, barriers",
-  goal: "Future plans, aspirations, targets, dreams",
-  preference: "Choices, priorities, risk tolerance, values",
-  context_signal: "Life events, situational info, temporary states",
-};
-
 // Comprehensive synonyms map for 18-35 US users
 const KEY_SYNONYMS = {
   // === PROFILE TRAITS ===
