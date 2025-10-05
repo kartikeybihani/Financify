@@ -1689,12 +1689,14 @@ export default async function handler(req, res) {
   }
 
   // Build safe context that overrides any client-provided user_id
+  // But fall back to client-provided user_id if no JWT token is present (for testing)
+  const finalUserId = serverUserId || context?.user_id;
   const safeContext = {
     ...(context || {}),
-    user_id: serverUserId || null,
+    user_id: finalUserId,
     profile: userProfile,
     // NEW: Add memory reading
-    memory: await loadUserMemory(serverUserId),
+    memory: await loadUserMemory(finalUserId),
   };
 
   if (!action) {

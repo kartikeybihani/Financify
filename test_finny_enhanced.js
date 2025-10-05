@@ -21,13 +21,20 @@
  *   node test_finny_enhanced.js --spending                # Test spending queries
  */
 
-const fetch = require("node-fetch");
-const readline = require("readline");
-require("dotenv").config();
+import fetch from "node-fetch";
+import readline from "readline";
+import dotenv from "dotenv";
+import { fileURLToPath } from "url";
+import { dirname } from "path";
+
+// Load environment variables
+dotenv.config();
 
 // Configuration
-const BASE_URL = process.env.APP_BASE_URL || "http://localhost:3000";
-const TEST_USER_ID = process.env.TEST_USER_ID || "test-user-123";
+const BASE_URL =
+  process.env.APP_BASE_URL || "https://financify-rose.vercel.app/";
+const TEST_USER_ID =
+  process.env.TEST_USER_ID || "79952f35-b607-40d6-a32e-d81386882eb7";
 
 // Color codes for console output
 const colors = {
@@ -573,11 +580,15 @@ process.on("unhandledRejection", (reason, promise) => {
 });
 
 // Run the script
-if (require.main === module) {
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+// Check if this file is being run directly
+if (process.argv[1] === __filename) {
   main().catch(console.error);
 }
 
-module.exports = {
+export {
   testFinnyQuery,
   runBatchTests,
   testMemorySystem,
