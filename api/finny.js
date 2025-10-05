@@ -6296,11 +6296,13 @@ async function loadUserMemory(userId) {
   if (!userId) return { summary: "", memories: [] };
 
   try {
-    // Get memory summary
+    // Get the most recent memory summary
     const { data: summary } = await supabase
       .from("memory_summary")
       .select("summary_text")
       .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(1)
       .single();
 
     // Get top 3 freshest non-expired memories
@@ -6354,6 +6356,46 @@ function extractMemoryCandidates(text) {
   return candidates;
 }
 
+// Helper function to check if data is sensitive
+function isSensitiveData(value) {
+  if (!value || typeof value !== "string") return false;
+
+  const sensitivePatterns = [
+    /\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b/, // Credit card numbers
+    /\b\d{3}-\d{2}-\d{4}\b/, // SSN
+    /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/, // Email addresses
+    /\b\d{3}-\d{3}-\d{4}\b/, // Phone numbers
+  ];
+
+  return sensitivePatterns.some((pattern) => pattern.test(value));
+}
+
+// Helper function to get expiry date for different memory types
+function getExpiryDate(memoryType) {
+  const now = new Date();
+
+  switch (memoryType) {
+    case "profile_trait":
+      // Profile traits last 1 year
+      return new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000);
+    case "constraint":
+      // Constraints last 6 months
+      return new Date(now.getTime() + 180 * 24 * 60 * 60 * 1000);
+    case "preference":
+      // Preferences last 3 months
+      return new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000);
+    case "goal":
+      // Goals last 6 months
+      return new Date(now.getTime() + 180 * 24 * 60 * 60 * 1000);
+    case "context_signal":
+      // Context signals last 1 month
+      return new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+    default:
+      // Default to 3 months
+      return new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000);
+  }
+}
+
 async function saveMemoryCandidates(userId, candidates) {
   if (!userId || !candidates.length) {
     console.log("🧠 [FINNY] No userId or candidates to save:", {
@@ -6366,6 +6408,7 @@ async function saveMemoryCandidates(userId, candidates) {
   try {
     let savedCount = 0;
     let skippedCount = 0;
+    const errors = [];
 
     for (const candidate of candidates) {
       // Map memory types to database format (support both old and new categories)
@@ -6418,7 +6461,14 @@ async function saveMemoryCandidates(userId, candidates) {
         }
 
         savedCount++;
+        console.log(`🧠 [FINNY] Saved memory: ${memoryType}:${candidate.key}`);
       } catch (supabaseError) {
+        console.error(
+          `🧠 [FINNY] Upsert failed for ${candidate.key}:`,
+          supabaseError
+        );
+        errors.push(`Upsert failed: ${supabaseError.message}`);
+
         // Try fallback insert
         try {
           const { error: insertError } = await supabase
@@ -6430,20 +6480,44 @@ async function saveMemoryCandidates(userId, candidates) {
           }
 
           savedCount++;
-        } catch (fallbackError) {}
+          console.log(
+            `🧠 [FINNY] Saved memory via insert: ${memoryType}:${candidate.key}`
+          );
+        } catch (fallbackError) {
+          console.error(
+            `🧠 [FINNY] Fallback insert failed for ${candidate.key}:`,
+            fallbackError
+          );
+          errors.push(`Fallback insert failed: ${fallbackError.message}`);
+        }
       }
+    }
 
-      // Error handling is now done in the try/catch above
+    console.log(
+      `🧠 [FINNY] Memory save summary: ${savedCount} saved, ${skippedCount} skipped, ${errors.length} errors`
+    );
+    if (errors.length > 0) {
+      console.error("🧠 [FINNY] Memory save errors:", errors);
     }
 
     // Update memory summary
-    await updateMemorySummary(userId);
-  } catch (error) {}
+    try {
+      await updateMemorySummary(userId);
+      console.log("🧠 [FINNY] Memory summary updated successfully");
+    } catch (summaryError) {
+      console.error(
+        "🧠 [FINNY] Failed to update memory summary:",
+        summaryError
+      );
+    }
+  } catch (error) {
+    console.error("🧠 [FINNY] Critical error in saveMemoryCandidates:", error);
+  }
 }
 
 async function updateMemorySummary(userId) {
   try {
-    const { data: memories } = await supabase
+    const { data: memories, error: memoriesError } = await supabase
       .from("user_memories")
       .select("memory_type, key, value")
       .eq("user_id", userId)
@@ -6451,21 +6525,59 @@ async function updateMemorySummary(userId) {
       .order("updated_at", { ascending: false })
       .limit(10);
 
-    if (!memories?.length) return;
+    if (memoriesError) {
+      throw memoriesError;
+    }
 
-    const summary = generateMemorySummary(memories);
+    if (!memories?.length) {
+      console.log("🧠 [FINNY] No memories found for summary update");
+      return;
+    }
 
-    await supabase.from("memory_summary").upsert({
-      user_id: userId,
-      summary_text: summary,
-      last_updated: new Date().toISOString(),
-    });
-  } catch (error) {}
+    const summary = await generateMemorySummary(memories, userId);
+
+    // Insert new memory summary row (instead of updating existing)
+    const { error: summaryError } = await supabase
+      .from("memory_summary")
+      .insert({
+        user_id: userId,
+        summary_text: summary,
+        memory_count: memories.length,
+        created_at: new Date().toISOString(),
+      });
+
+    if (summaryError) {
+      throw summaryError;
+    }
+
+    console.log(
+      `🧠 [FINNY] Created new memory summary with ${memories.length} memories`
+    );
+  } catch (error) {
+    console.error("🧠 [FINNY] Error creating memory summary:", error);
+    throw error; // Re-throw so the caller can handle it
+  }
 }
 
-function generateMemorySummary(memories) {
+async function generateMemorySummary(memories, userId) {
   if (!memories || memories.length === 0) {
     return "I haven't learned much about you yet. Keep chatting with me so I can better understand your financial situation and goals!";
+  }
+
+  // Get the most recent summary to avoid repeating information
+  let previousSummary = "";
+  try {
+    const { data: recentSummary } = await supabase
+      .from("memory_summary")
+      .select("summary_text")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .single();
+
+    previousSummary = recentSummary?.summary_text || "";
+  } catch (error) {
+    // No previous summary exists, that's fine
   }
 
   // Group by memory type
@@ -6475,250 +6587,106 @@ function generateMemorySummary(memories) {
     return acc;
   }, {});
 
-  const sentences = [];
+  const newInfo = [];
 
-  // Profile traits - create natural sentences
+  // Check for new goals
+  if (grouped.goal && grouped.goal.length > 0) {
+    const goalTexts = grouped.goal.map((m) => m.value);
+    const newGoals = goalTexts.filter(
+      (goal) => !previousSummary.toLowerCase().includes(goal.toLowerCase())
+    );
+    if (newGoals.length > 0) {
+      newInfo.push(`New goals: ${newGoals.join(", ")}`);
+    }
+  }
+
+  // Check for new preferences
+  if (grouped.preference && grouped.preference.length > 0) {
+    const preferenceTexts = grouped.preference.map((m) => m.value);
+    const newPreferences = preferenceTexts.filter(
+      (pref) => !previousSummary.toLowerCase().includes(pref.toLowerCase())
+    );
+    if (newPreferences.length > 0) {
+      newInfo.push(`New preferences: ${newPreferences.join(", ")}`);
+    }
+  }
+
+  // Check for new constraints
+  if (grouped.constraint && grouped.constraint.length > 0) {
+    const constraintTexts = grouped.constraint.map((m) => m.value);
+    const newConstraints = constraintTexts.filter(
+      (constraint) =>
+        !previousSummary.toLowerCase().includes(constraint.toLowerCase())
+    );
+    if (newConstraints.length > 0) {
+      newInfo.push(`New constraints: ${newConstraints.join(", ")}`);
+    }
+  }
+
+  // Check for new profile traits (only significant ones)
   if (grouped.profile_trait && grouped.profile_trait.length > 0) {
-    const profileInfo = {};
-
-    // Organize profile traits by category
+    const significantTraits = [];
     grouped.profile_trait.forEach((m) => {
       const key = m.key.replace("profile_trait.", "");
       const value = m.value;
 
-      if (key === "age") {
-        profileInfo.age = value;
-      } else if (key === "location") {
-        profileInfo.location = value;
-      } else if (key === "occupation") {
-        profileInfo.occupation = value;
-      } else if (key === "education") {
-        profileInfo.education = value;
-      } else if (key.startsWith("family.")) {
-        const familyKey = key.replace("family.", "");
-        if (!profileInfo.family) profileInfo.family = {};
-        profileInfo.family[familyKey] = value;
-      } else if (key.startsWith("interests.")) {
-        const interest = key.replace("interests.", "").replace(/_/g, " ");
-        if (!profileInfo.interests) profileInfo.interests = [];
-        profileInfo.interests.push(interest);
-      } else if (key.startsWith("hobbies.")) {
-        const hobby = key.replace("hobbies.", "").replace(/_/g, " ");
-        if (!profileInfo.hobbies) profileInfo.hobbies = [];
-        profileInfo.hobbies.push(hobby);
+      // Only include significant traits that aren't already mentioned
+      if (
+        (key === "location" ||
+          key === "education" ||
+          key.startsWith("family.") ||
+          key.startsWith("lifestyle.")) &&
+        !previousSummary.toLowerCase().includes(value.toLowerCase())
+      ) {
+        significantTraits.push(value);
       }
     });
 
-    // Build natural sentences from profile info
-    const profileParts = [];
-
-    if (profileInfo.age) {
-      profileParts.push(`a ${profileInfo.age}-year-old`);
-    }
-
-    if (profileInfo.occupation) {
-      profileParts.push(profileInfo.occupation);
-    }
-
-    if (profileInfo.education) {
-      profileParts.push(`with ${profileInfo.education}`);
-    }
-
-    if (profileInfo.location) {
-      profileParts.push(`living in ${profileInfo.location}`);
-    }
-
-    if (profileInfo.interests && profileInfo.interests.length > 0) {
-      if (profileInfo.interests.length === 1) {
-        profileParts.push(`interested in ${profileInfo.interests[0]}`);
-      } else if (profileInfo.interests.length === 2) {
-        profileParts.push(
-          `interested in ${profileInfo.interests.join(" and ")}`
-        );
-      } else {
-        const lastInterest = profileInfo.interests.pop();
-        profileParts.push(
-          `interested in ${profileInfo.interests.join(
-            ", "
-          )}, and ${lastInterest}`
-        );
-      }
-    }
-
-    if (profileInfo.hobbies && profileInfo.hobbies.length > 0) {
-      if (profileInfo.hobbies.length === 1) {
-        profileParts.push(`enjoys ${profileInfo.hobbies[0]}`);
-      } else if (profileInfo.hobbies.length === 2) {
-        profileParts.push(`enjoys ${profileInfo.hobbies.join(" and ")}`);
-      } else {
-        const lastHobby = profileInfo.hobbies.pop();
-        profileParts.push(
-          `enjoys ${profileInfo.hobbies.join(", ")}, and ${lastHobby}`
-        );
-      }
-    }
-
-    if (profileInfo.family) {
-      if (profileInfo.family.marital_status) {
-        profileParts.push(profileInfo.family.marital_status);
-      }
-      if (profileInfo.family.children) {
-        profileParts.push(profileInfo.family.children);
-      }
-      if (profileInfo.family.living_situation) {
-        profileParts.push(profileInfo.family.living_situation);
-      }
-    }
-
-    if (profileParts.length > 0) {
-      sentences.push(`User is ${profileParts.join(", ")}.`);
+    if (significantTraits.length > 0) {
+      newInfo.push(`New profile info: ${significantTraits.join(", ")}`);
     }
   }
 
-  // Goals - create natural sentences
-  if (grouped.goal && grouped.goal.length > 0) {
-    const goalCategories = {};
-
-    grouped.goal.forEach((m) => {
-      const key = m.key.replace("goal.", "");
-      const value = m.value;
-
-      if (key.startsWith("financial.")) {
-        const goalType = key.replace("financial.", "").replace(/_/g, " ");
-        if (!goalCategories.financial) goalCategories.financial = [];
-        goalCategories.financial.push(goalType);
-      } else if (key.startsWith("career.")) {
-        const goalType = key.replace("career.", "").replace(/_/g, " ");
-        if (!goalCategories.career) goalCategories.career = [];
-        goalCategories.career.push(goalType);
-      } else if (key.startsWith("family.")) {
-        const goalType = key.replace("family.", "").replace(/_/g, " ");
-        if (!goalCategories.family) goalCategories.family = [];
-        goalCategories.family.push(goalType);
-      } else if (key.startsWith("lifestyle.")) {
-        const goalType = key.replace("lifestyle.", "").replace(/_/g, " ");
-        if (!goalCategories.lifestyle) goalCategories.lifestyle = [];
-        goalCategories.lifestyle.push(goalType);
-      }
-    });
-
-    const goalParts = [];
-    if (goalCategories.financial && goalCategories.financial.length > 0) {
-      goalParts.push(
-        `financial goals like ${goalCategories.financial.join(", ")}`
-      );
-    }
-    if (goalCategories.career && goalCategories.career.length > 0) {
-      goalParts.push(
-        `career goals including ${goalCategories.career.join(", ")}`
-      );
-    }
-    if (goalCategories.family && goalCategories.family.length > 0) {
-      goalParts.push(
-        `family goals such as ${goalCategories.family.join(", ")}`
-      );
-    }
-    if (goalCategories.lifestyle && goalCategories.lifestyle.length > 0) {
-      goalParts.push(
-        `lifestyle goals like ${goalCategories.lifestyle.join(", ")}`
-      );
-    }
-
-    if (goalParts.length > 0) {
-      sentences.push(`Has ${goalParts.join(", ")}.`);
-    }
-  }
-
-  // Constraints - create natural sentences
-  if (grouped.constraint && grouped.constraint.length > 0) {
-    const constraintParts = [];
-
-    grouped.constraint.forEach((m) => {
-      const key = m.key.replace("constraint.", "");
-      const value = m.value;
-
-      if (key.startsWith("income.")) {
-        const constraintType = key.replace("income.", "").replace(/_/g, " ");
-        constraintParts.push(`${constraintType} situation`);
-      } else if (key.startsWith("debt.")) {
-        const debtType = key.replace("debt.", "").replace(/_/g, " ");
-        constraintParts.push(`${debtType} debt`);
-      } else if (key.startsWith("family_obligation.")) {
-        const obligation = key
-          .replace("family_obligation.", "")
-          .replace(/_/g, " ");
-        constraintParts.push(`family obligations for ${obligation}`);
-      } else if (key.startsWith("health.")) {
-        const healthIssue = key.replace("health.", "").replace(/_/g, " ");
-        constraintParts.push(`${healthIssue} concerns`);
-      }
-    });
-
-    if (constraintParts.length > 0) {
-      sentences.push(
-        `Faces constraints including ${constraintParts.join(", ")}.`
-      );
-    }
-  }
-
-  // Preferences - create natural sentences
-  if (grouped.preference && grouped.preference.length > 0) {
-    const preferenceParts = [];
-
-    grouped.preference.forEach((m) => {
-      const key = m.key.replace("preference.", "");
-      const value = m.value;
-
-      if (key === "risk_tolerance") {
-        preferenceParts.push(`${value} risk tolerance`);
-      } else if (key.startsWith("spending.")) {
-        const spendingStyle = key.replace("spending.", "").replace(/_/g, " ");
-        preferenceParts.push(`${spendingStyle} spending style`);
-      } else if (key.startsWith("investment.")) {
-        const investmentStyle = key
-          .replace("investment.", "")
-          .replace(/_/g, " ");
-        preferenceParts.push(`${investmentStyle} investment approach`);
-      }
-    });
-
-    if (preferenceParts.length > 0) {
-      sentences.push(`Prefers ${preferenceParts.join(", ")}.`);
-    }
-  }
-
-  // Context signals - create natural sentences
+  // Check for new context signals
   if (grouped.context_signal && grouped.context_signal.length > 0) {
-    const signalParts = [];
-
-    grouped.context_signal.forEach((m) => {
-      const key = m.key.replace("context_signal.", "");
-      const value = m.value;
-
-      if (key.startsWith("life_event.")) {
-        const eventType = key.replace("life_event.", "").replace(/_/g, " ");
-        signalParts.push(`recent ${eventType}`);
-      } else if (key === "financial_stress") {
-        signalParts.push("financial stress");
-      } else if (key === "financial_win") {
-        signalParts.push("recent financial success");
-      }
-    });
-
-    if (signalParts.length > 0) {
-      sentences.push(`Recently experienced ${signalParts.join(", ")}.`);
+    const contextTexts = grouped.context_signal.map((m) => m.value);
+    const newContext = contextTexts.filter(
+      (context) =>
+        !previousSummary.toLowerCase().includes(context.toLowerCase())
+    );
+    if (newContext.length > 0) {
+      newInfo.push(`New context: ${newContext.join(", ")}`);
     }
   }
 
-  // Join sentences naturally
-  if (sentences.length === 0) {
-    return "I'm still getting to know you. Share more about your financial situation and I'll remember it for our future conversations!";
-  } else if (sentences.length === 1) {
-    return sentences[0];
-  } else if (sentences.length === 2) {
-    return sentences.join(" ");
-  } else {
-    const lastSentence = sentences.pop();
-    return sentences.join(" ") + " " + lastSentence;
+  // If no new information, create a brief update message
+  if (newInfo.length === 0) {
+    if (previousSummary) {
+      return `Updated understanding based on ${memories.length} memories.`;
+    } else {
+      // First summary - create a concise overview
+      const overview = [];
+      if (grouped.goal && grouped.goal.length > 0) {
+        overview.push(`Goals: ${grouped.goal.map((m) => m.value).join(", ")}`);
+      }
+      if (grouped.profile_trait && grouped.profile_trait.length > 0) {
+        const profileInfo = {};
+        grouped.profile_trait.forEach((m) => {
+          const key = m.key.replace("profile_trait.", "");
+          if (key === "age") profileInfo.age = m.value;
+          else if (key === "occupation") profileInfo.occupation = m.value;
+        });
+        if (profileInfo.age && profileInfo.occupation) {
+          overview.push(
+            `${profileInfo.age}-year-old ${profileInfo.occupation}`
+          );
+        }
+      }
+      return overview.length > 0
+        ? overview.join(". ") + "."
+        : "Initial profile established.";
+    }
   }
+
+  return newInfo.join(". ") + ".";
 }
