@@ -6923,7 +6923,7 @@ async function saveMemoryCandidates(userId, candidates) {
   // Use anon key instead of service role key
   console.log("🧠 [FINNY] Using anon key for memory saving...");
 
-  const anonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+  const anonKey = process.env.SUPABASE_ANON_KEY;
   if (!anonKey) {
     console.error("🧠 [FINNY] No anon key found! Cannot save memories.");
     return;
