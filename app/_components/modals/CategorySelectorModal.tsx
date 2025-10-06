@@ -7,11 +7,12 @@ import {
   useWindowDimensions,
   Alert,
   StyleSheet,
-  TextInput,
-  Animated,
-  Keyboard,
   Modal,
   TouchableWithoutFeedback,
+  TextInput,
+  KeyboardAvoidingView,
+  Platform,
+  Keyboard,
 } from "react-native";
 import { BlurView } from "expo-blur";
 import { Ionicons } from "@expo/vector-icons";
@@ -37,17 +38,15 @@ export default function CategorySelectorModal({
   const insets = useSafeAreaInsets();
   const { height, width } = useWindowDimensions();
   const [loading, setLoading] = useState(false);
-  const [showAddCategory, setShowAddCategory] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState("");
   const [newCategoryIcon, setNewCategoryIcon] = useState("📦");
   const [addCategoryLoading, setAddCategoryLoading] = useState(false);
-  const [slideAnim] = useState(new Animated.Value(0));
-  const [heightAnim] = useState(new Animated.Value(0));
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [showAddForm, setShowAddForm] = useState(false);
 
   // Refs for text inputs
-  const categoryNameInputRef = useRef<TextInput>(null);
-  const categoryIconInputRef = useRef<TextInput>(null);
+  const nameInputRef = useRef<TextInput>(null);
+  const iconInputRef = useRef<TextInput>(null);
 
   // Get current user ID
   useEffect(() => {
@@ -62,13 +61,10 @@ export default function CategorySelectorModal({
   useEffect(() => {
     if (visible) {
       // Reset form state
-      setShowAddCategory(false);
       setNewCategoryName("");
       setNewCategoryIcon("📦");
       setAddCategoryLoading(false);
-      // Reset animations
-      slideAnim.setValue(0);
-      heightAnim.setValue(0);
+      setShowAddForm(false);
     }
   }, [visible]);
 
@@ -87,67 +83,30 @@ export default function CategorySelectorModal({
 
   const handleClose = () => {
     // Reset form state when closing
-    setShowAddCategory(false);
     setNewCategoryName("");
     setNewCategoryIcon("📦");
     setAddCategoryLoading(false);
-    // Reset animations
-    slideAnim.setValue(0);
-    heightAnim.setValue(0);
+    setShowAddForm(false);
     onClose();
   };
 
   const handleAddNewCategory = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setShowAddCategory(true);
+    setShowAddForm(true);
 
-    // Animate both slide and height
-    Animated.parallel([
-      Animated.timing(slideAnim, {
-        toValue: 1,
-        duration: 300,
-        useNativeDriver: false, // Height animation needs layout
-      }),
-      Animated.timing(heightAnim, {
-        toValue: 1,
-        duration: 300,
-        useNativeDriver: false,
-      }),
-    ]).start(() => {
-      // Focus on category name input after animation completes
-      setTimeout(() => {
-        categoryNameInputRef.current?.focus();
-      }, 100);
-    });
+    // Focus on name input after a short delay
+    setTimeout(() => {
+      nameInputRef.current?.focus();
+    }, 100);
   };
 
-  const handleCancelAddCategory = () => {
+  const handleCancelAddForm = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-
-    // Reset form data
-    setNewCategoryName("");
-    setNewCategoryIcon("📦");
-    setAddCategoryLoading(false);
-
     // Dismiss keyboard first
     Keyboard.dismiss();
-
-    // Animate both slide and height back to original state
-    Animated.parallel([
-      Animated.timing(slideAnim, {
-        toValue: 0,
-        duration: 300,
-        useNativeDriver: false,
-      }),
-      Animated.timing(heightAnim, {
-        toValue: 0,
-        duration: 300,
-        useNativeDriver: false,
-      }),
-    ]).start(() => {
-      // Hide the form after animation completes
-      setShowAddCategory(false);
-    });
+    setShowAddForm(false);
+    setNewCategoryName("");
+    setNewCategoryIcon("📦");
   };
 
   const handleSaveCategory = async () => {
@@ -237,27 +196,10 @@ export default function CategorySelectorModal({
       // Refresh categories to show the new category
       await refreshCategories();
 
-      // Dismiss keyboard first
-      Keyboard.dismiss();
-
-      // Animate both slide and height back to original state
-      Animated.parallel([
-        Animated.timing(slideAnim, {
-          toValue: 0,
-          duration: 300,
-          useNativeDriver: false,
-        }),
-        Animated.timing(heightAnim, {
-          toValue: 0,
-          duration: 300,
-          useNativeDriver: false,
-        }),
-      ]).start(() => {
-        // Reset form and hide after animation completes
-        setNewCategoryName("");
-        setNewCategoryIcon("📦");
-        setShowAddCategory(false);
-      });
+      // Reset form data and hide form
+      setNewCategoryName("");
+      setNewCategoryIcon("📦");
+      setShowAddForm(false);
 
       Alert.alert(
         "Success",
@@ -587,17 +529,7 @@ export default function CategorySelectorModal({
       <TouchableWithoutFeedback onPress={handleClose}>
         <View style={styles.overlay}>
           <TouchableWithoutFeedback onPress={() => {}}>
-            <Animated.View
-              style={[
-                styles.container,
-                {
-                  height: heightAnim.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: ["40%", "70%"], // Expand from 40% to 70% of screen height
-                  }),
-                },
-              ]}
-            >
+            <View style={styles.container}>
               {/* Drag Handle */}
               <View style={styles.dragHandle} />
 
@@ -700,117 +632,127 @@ export default function CategorySelectorModal({
                     style={styles.addNewChip}
                     onPress={handleAddNewCategory}
                     activeOpacity={0.7}
-                    disabled={loading || showAddCategory}
+                    disabled={loading}
                   >
                     <Text style={styles.chipIcon}>➕</Text>
                     <Text style={styles.addNewChipText}>Add New</Text>
                   </TouchableOpacity>
                 </View>
-
-                {/* Add Category Input Form */}
-                {showAddCategory && (
-                  <Animated.View
-                    style={[
-                      styles.addCategoryForm,
-                      {
-                        transform: [
-                          {
-                            translateY: slideAnim.interpolate({
-                              inputRange: [0, 1],
-                              outputRange: [100, 0],
-                            }),
-                          },
-                        ],
-                        opacity: slideAnim,
-                      },
-                    ]}
-                  >
-                    <View style={styles.addCategoryContainer}>
-                      <Text style={styles.addCategoryTitle}>
-                        Add New Category
-                      </Text>
-
-                      <View style={styles.addCategoryInputContainer}>
-                        {/* Emoji Input */}
-                        <View style={styles.emojiInputContainer}>
-                          <Text style={styles.emojiLabel}>Icon</Text>
-                          <TextInput
-                            ref={categoryIconInputRef}
-                            style={styles.emojiInput}
-                            value={newCategoryIcon}
-                            onChangeText={setNewCategoryIcon}
-                            maxLength={2}
-                            placeholder="📦"
-                            placeholderTextColor="rgba(255, 255, 255, 0.5)"
-                            returnKeyType="next"
-                            onSubmitEditing={() => {
-                              categoryNameInputRef.current?.focus();
-                            }}
-                          />
-                        </View>
-
-                        {/* Category Name Input */}
-                        <View style={styles.nameInputContainer}>
-                          <Text style={styles.nameLabel}>Name</Text>
-                          <TextInput
-                            ref={categoryNameInputRef}
-                            style={styles.nameInput}
-                            value={newCategoryName}
-                            onChangeText={setNewCategoryName}
-                            maxLength={25}
-                            placeholder="Enter category name"
-                            placeholderTextColor="rgba(255, 255, 255, 0.5)"
-                            returnKeyType="done"
-                            onSubmitEditing={() => {
-                              if (newCategoryName.trim()) {
-                                handleSaveCategory();
-                              }
-                            }}
-                          />
-                          <Text style={styles.characterCount}>
-                            {newCategoryName.length}/25
-                          </Text>
-                        </View>
-                      </View>
-
-                      {/* Action Buttons */}
-                      <View style={styles.addCategoryButtons}>
-                        <TouchableOpacity
-                          style={styles.cancelButton}
-                          onPress={handleCancelAddCategory}
-                          activeOpacity={0.7}
-                          disabled={addCategoryLoading}
-                        >
-                          <Text style={styles.cancelButtonText}>Cancel</Text>
-                        </TouchableOpacity>
-
-                        <TouchableOpacity
-                          style={[
-                            styles.saveButton,
-                            (!newCategoryName.trim() || addCategoryLoading) &&
-                              styles.saveButtonDisabled,
-                          ]}
-                          onPress={handleSaveCategory}
-                          activeOpacity={0.7}
-                          disabled={
-                            !newCategoryName.trim() || addCategoryLoading
-                          }
-                        >
-                          {addCategoryLoading ? (
-                            <Text style={styles.saveButtonText}>Saving...</Text>
-                          ) : (
-                            <Text style={styles.saveButtonText}>Save</Text>
-                          )}
-                        </TouchableOpacity>
-                      </View>
-                    </View>
-                  </Animated.View>
-                )}
               </ScrollView>
-            </Animated.View>
+            </View>
           </TouchableWithoutFeedback>
         </View>
       </TouchableWithoutFeedback>
+
+      {/* Custom Add Category Form Overlay */}
+      {showAddForm && (
+        <Modal
+          visible={showAddForm}
+          transparent={true}
+          animationType="fade"
+          onRequestClose={handleCancelAddForm}
+          statusBarTranslucent={true}
+          presentationStyle="overFullScreen"
+        >
+          <KeyboardAvoidingView
+            style={styles.formOverlay}
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+          >
+            <View style={styles.formBackdrop} />
+
+            <View style={styles.formContainer}>
+              <View style={styles.formHeader}>
+                <Text style={styles.formTitle}>Add New Category</Text>
+                <TouchableOpacity
+                  style={styles.formCloseButton}
+                  onPress={handleCancelAddForm}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons
+                    name="close"
+                    size={24}
+                    color="rgba(255, 255, 255, 0.7)"
+                  />
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.formContent}>
+                <View style={styles.inputRow}>
+                  <View style={styles.iconInputContainer}>
+                    <Text style={styles.inputLabel}>Icon</Text>
+                    <TextInput
+                      ref={iconInputRef}
+                      style={styles.iconInput}
+                      value={newCategoryIcon}
+                      onChangeText={setNewCategoryIcon}
+                      maxLength={2}
+                      placeholder="📦"
+                      placeholderTextColor="rgba(255, 255, 255, 0.5)"
+                      returnKeyType="next"
+                      onSubmitEditing={() => {
+                        nameInputRef.current?.focus();
+                      }}
+                    />
+                  </View>
+
+                  <View style={styles.nameInputContainer}>
+                    <Text style={styles.inputLabel}>Category Name</Text>
+                    <TextInput
+                      ref={nameInputRef}
+                      style={styles.nameInput}
+                      value={newCategoryName}
+                      onChangeText={setNewCategoryName}
+                      maxLength={25}
+                      placeholder="Enter category name"
+                      placeholderTextColor="rgba(255, 255, 255, 0.5)"
+                      returnKeyType="done"
+                      onSubmitEditing={() => {
+                        if (newCategoryName.trim()) {
+                          handleSaveCategory();
+                        }
+                      }}
+                    />
+                    <Text style={styles.characterCount}>
+                      {newCategoryName.length}/25
+                    </Text>
+                  </View>
+                </View>
+                <Text style={styles.iconHint}>
+                  Tap icon field to use your phone's emoji keyboard
+                </Text>
+              </View>
+
+              <View style={styles.formActions}>
+                <TouchableOpacity
+                  style={styles.cancelFormButton}
+                  onPress={handleCancelAddForm}
+                  activeOpacity={0.7}
+                  disabled={addCategoryLoading}
+                >
+                  <Text style={styles.cancelFormButtonText}>Cancel</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[
+                    styles.saveFormButton,
+                    (!newCategoryName.trim() || addCategoryLoading) &&
+                      styles.saveFormButtonDisabled,
+                  ]}
+                  onPress={handleSaveCategory}
+                  activeOpacity={0.7}
+                  disabled={!newCategoryName.trim() || addCategoryLoading}
+                >
+                  {addCategoryLoading ? (
+                    <Text style={styles.saveFormButtonText}>Saving...</Text>
+                  ) : (
+                    <Text style={styles.saveFormButtonText}>Save</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </View>
+          </KeyboardAvoidingView>
+        </Modal>
+      )}
     </Modal>
   );
 }
@@ -830,6 +772,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 10,
     elevation: 10,
+    height: "50%",
   },
   dragHandle: {
     width: 40,
@@ -925,108 +868,6 @@ const styles = StyleSheet.create({
     color: "rgba(255, 255, 255, 0.7)",
     marginLeft: 2,
   },
-  // Add Category Form Styles
-  addCategoryForm: {
-    marginTop: 20,
-    paddingHorizontal: 20,
-  },
-  addCategoryContainer: {
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
-    borderRadius: 16,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.2)",
-  },
-  addCategoryTitle: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: "#ffffff",
-    textAlign: "center",
-    marginBottom: 20,
-  },
-  addCategoryInputContainer: {
-    flexDirection: "row",
-    gap: 12,
-    marginBottom: 20,
-  },
-  emojiInputContainer: {
-    flex: 0.3,
-  },
-  emojiLabel: {
-    fontSize: 12,
-    fontWeight: "500",
-    color: "rgba(255, 255, 255, 0.7)",
-    marginBottom: 8,
-  },
-  emojiInput: {
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    fontSize: 20,
-    color: "#ffffff",
-    textAlign: "center",
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.2)",
-  },
-  nameInputContainer: {
-    flex: 0.7,
-  },
-  nameLabel: {
-    fontSize: 12,
-    fontWeight: "500",
-    color: "rgba(255, 255, 255, 0.7)",
-    marginBottom: 8,
-  },
-  nameInput: {
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    fontSize: 16,
-    color: "#ffffff",
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.2)",
-  },
-  characterCount: {
-    fontSize: 10,
-    color: "rgba(255, 255, 255, 0.5)",
-    textAlign: "right",
-    marginTop: 4,
-  },
-  addCategoryButtons: {
-    flexDirection: "row",
-    gap: 12,
-  },
-  cancelButton: {
-    flex: 1,
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
-    borderRadius: 12,
-    paddingVertical: 12,
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.2)",
-  },
-  cancelButtonText: {
-    fontSize: 16,
-    fontWeight: "500",
-    color: "rgba(255, 255, 255, 0.7)",
-  },
-  saveButton: {
-    flex: 1,
-    backgroundColor: "#4A90E2",
-    borderRadius: 12,
-    paddingVertical: 12,
-    alignItems: "center",
-  },
-  saveButtonDisabled: {
-    backgroundColor: "rgba(74, 144, 226, 0.3)",
-  },
-  saveButtonText: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#ffffff",
-  },
   // Delete indicator styles
   deleteIndicator: {
     position: "absolute",
@@ -1043,5 +884,141 @@ const styles = StyleSheet.create({
     fontSize: 8,
     color: "#ffffff",
     fontWeight: "bold",
+  },
+  // Custom Form Styles
+  formOverlay: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  formBackdrop: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+  },
+  formContainer: {
+    backgroundColor: "#1a1a1a",
+    borderRadius: 16,
+    marginHorizontal: 20,
+    maxWidth: 400,
+    width: "90%",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.25,
+    shadowRadius: 20,
+    elevation: 20,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.1)",
+  },
+  formHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255, 255, 255, 0.1)",
+  },
+  formTitle: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#ffffff",
+  },
+  formCloseButton: {
+    padding: 4,
+  },
+  formContent: {
+    paddingHorizontal: 20,
+    paddingVertical: 20,
+  },
+  inputRow: {
+    flexDirection: "row",
+    gap: 12,
+    marginBottom: 16,
+  },
+  iconInputContainer: {
+    flex: 0.3,
+  },
+  nameInputContainer: {
+    flex: 0.7,
+  },
+  inputLabel: {
+    fontSize: 14,
+    fontWeight: "500",
+    color: "rgba(255, 255, 255, 0.8)",
+    marginBottom: 8,
+  },
+  nameInput: {
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 16,
+    color: "#ffffff",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.2)",
+  },
+  iconInput: {
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 24,
+    color: "#ffffff",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.2)",
+    textAlign: "center",
+  },
+  characterCount: {
+    fontSize: 12,
+    color: "rgba(255, 255, 255, 0.5)",
+    textAlign: "right",
+    marginTop: 4,
+  },
+  iconHint: {
+    fontSize: 12,
+    color: "rgba(255, 255, 255, 0.6)",
+    textAlign: "center",
+    marginTop: 8,
+    fontStyle: "italic",
+  },
+  formActions: {
+    flexDirection: "row",
+    paddingHorizontal: 20,
+    paddingBottom: 20,
+    gap: 12,
+  },
+  cancelFormButton: {
+    flex: 1,
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.2)",
+  },
+  cancelFormButtonText: {
+    fontSize: 16,
+    fontWeight: "500",
+    color: "rgba(255, 255, 255, 0.7)",
+  },
+  saveFormButton: {
+    flex: 1,
+    backgroundColor: "#4A90E2",
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: "center",
+  },
+  saveFormButtonDisabled: {
+    backgroundColor: "rgba(74, 144, 226, 0.3)",
+  },
+  saveFormButtonText: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#ffffff",
   },
 });

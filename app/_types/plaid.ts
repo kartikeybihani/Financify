@@ -102,6 +102,7 @@ export interface TransactionDetailModalProps {
 
 // Memory Summary interface
 export interface MemorySummary {
+  id: string;
   summary_text: string;
   created_at: string;
 }

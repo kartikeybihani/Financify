@@ -59,12 +59,12 @@ const styles = {
     textAlign: "center" as const,
   },
   backButton: {
-    padding: 3,
+    padding: 6,
   },
   backButtonCircle: {
-    width: 35,
-    height: 35,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: "center" as const,
     justifyContent: "center" as const,
     borderWidth: 1,
@@ -105,7 +105,7 @@ const styles = {
     flexDirection: "row" as const,
     alignItems: "center" as const,
     justifyContent: "space-between" as const,
-    paddingVertical: responsivePadding(16),
+    paddingVertical: responsivePadding(18),
     paddingHorizontal: responsivePadding(16),
     borderBottomWidth: 1,
     borderBottomColor: "rgba(255, 255, 255, 0.1)",
@@ -244,7 +244,7 @@ export default function FinnyStyleScreen({ onBack }: FinnyStyleScreenProps) {
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
             >
-              <Ionicons name="chevron-back" size={22} color="#fff" />
+              <Ionicons name="chevron-back" size={24} color="#fff" />
             </LinearGradient>
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Finny's Style</Text>

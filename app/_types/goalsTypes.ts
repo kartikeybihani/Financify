@@ -6,6 +6,7 @@ import { Goal } from "@/app/_types/finny";
 export interface GoalsProps {
   deleteGoal: (id: string) => Promise<void>;
   updateGoal?: (id: string, updates: Partial<Goal>) => Promise<void>;
+  refreshGoals?: () => Promise<void>;
   goalsAnimations: Animated.Value[];
   goalsData: Goal[];
   onRefreshStart?: () => void;

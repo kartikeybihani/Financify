@@ -112,7 +112,7 @@ const styles = {
     flexDirection: "row" as const,
     alignItems: "center" as const,
     justifyContent: "space-between" as const,
-    paddingVertical: responsivePadding(12),
+    paddingVertical: responsivePadding(15),
     paddingHorizontal: responsivePadding(16),
   },
   settingItemBorder: {
@@ -242,7 +242,7 @@ export default function FinnySettingsScreen() {
     try {
       const { data: summaryData, error: summaryError } = await supabase
         .from("memory_summary")
-        .select("summary_text, created_at")
+        .select("id, summary_text, created_at")
         .eq("user_id", session?.user?.id)
         .order("created_at", { ascending: false });
 
@@ -320,7 +320,7 @@ export default function FinnySettingsScreen() {
 
   const handleClearChat = () => {
     Alert.alert(
-      "Clear Chat History",
+      "Clear Chat",
       "Are you sure you want to delete all conversation data? This action cannot be undone.",
       [
         {
@@ -340,10 +340,7 @@ export default function FinnySettingsScreen() {
               // );
             } catch (error) {
               console.error("Error clearing chat:", error);
-              Alert.alert(
-                "Error",
-                "Failed to clear chat history. Please try again."
-              );
+              Alert.alert("Error", "Failed to clear chat. Please try again.");
             }
           },
         },
@@ -403,8 +400,6 @@ export default function FinnySettingsScreen() {
         >
           {/* Header */}
           <View style={styles.header}>
-            <View style={{ width: 40 }} />
-            <Text style={styles.headerTitle}>Advisor Settings</Text>
             <TouchableOpacity
               style={styles.closeButton}
               onPress={() => router.back()}
@@ -422,6 +417,8 @@ export default function FinnySettingsScreen() {
                 <Ionicons name="close" size={22} color="#fff" />
               </LinearGradient>
             </TouchableOpacity>
+            <Text style={styles.headerTitle}>Advisor Settings</Text>
+            <View style={{ width: 40 }} />
           </View>
 
           {/* Content */}
@@ -511,7 +508,7 @@ export default function FinnySettingsScreen() {
               onPress={handleClearChat}
               activeOpacity={0.7}
             >
-              <Text style={styles.clearChatButtonText}>Clear Chat History</Text>
+              <Text style={styles.clearChatButtonText}>Clear chat</Text>
             </TouchableOpacity>
 
             {/* Bottom padding */}

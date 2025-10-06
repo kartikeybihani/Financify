@@ -36,6 +36,182 @@ const responsivePadding = (basePadding: number) => {
   return basePadding;
 };
 
+export default function MemoriesScreen({
+  onBack,
+  preloadedData,
+}: MemoriesScreenProps = {}) {
+  const insets = useSafeAreaInsets();
+  const router = useRouter();
+  const { session } = useAuth();
+
+  const handleBack = () => {
+    if (onBack) {
+      onBack();
+    } else {
+      router.back();
+    }
+  };
+  const [memorySummaries, setMemorySummaries] = useState<MemorySummary[]>(
+    preloadedData || []
+  );
+  const [loading, setLoading] = useState(
+    !preloadedData || preloadedData.length === 0
+  );
+
+  const handleDeleteMemory = (memoryId: string) => {
+    Alert.alert(
+      "Delete Memory",
+      `Are you sure you want to delete this memory? This action cannot be undone.`,
+      [
+        {
+          text: "Cancel",
+          style: "cancel",
+        },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => deleteMemorySummary(memoryId),
+        },
+      ]
+    );
+  };
+
+  const deleteMemorySummary = async (memoryId: string) => {
+    try {
+      // Delete the specific memory summary
+      const { error: summaryError } = await supabase
+        .from("memory_summary")
+        .delete()
+        .eq("id", memoryId)
+        .eq("user_id", session?.user?.id);
+
+      if (summaryError) throw summaryError;
+
+      // Remove the deleted memory from the local state
+      setMemorySummaries((prev) =>
+        prev.filter((memory) => memory.id !== memoryId)
+      );
+    } catch (error) {
+      console.error("Error deleting memory:", error);
+      Alert.alert("Error", "Failed to delete memory. Please try again.");
+    }
+  };
+
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+  };
+
+  if (loading) {
+    return (
+      <View style={styles.container}>
+        <SafeAreaView style={{ flex: 1, marginBottom: insets.bottom - 10 }}>
+          <View style={styles.header}>
+            <View style={{ width: 40 }} />
+            <Text style={styles.headerTitle}>Memories</Text>
+            <View style={{ width: 40 }} />
+          </View>
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color="#4A90E2" />
+          </View>
+        </SafeAreaView>
+      </View>
+    );
+  }
+
+  const hasMemories = memorySummaries && memorySummaries.length > 0;
+
+  return (
+    <View style={styles.container}>
+      <SafeAreaView style={{ flex: 1, marginBottom: insets.bottom - 10 }}>
+        {/* Header */}
+        <View style={styles.header}>
+          <TouchableOpacity
+            style={styles.closeButton}
+            onPress={handleBack}
+            activeOpacity={0.7}
+          >
+            <LinearGradient
+              colors={[
+                "rgba(255, 255, 255, 0.15)",
+                "rgba(255, 255, 255, 0.05)",
+              ]}
+              style={styles.closeButtonCircle}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+            >
+              <Ionicons name="chevron-back" size={24} color="#fff" />
+            </LinearGradient>
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Memories</Text>
+          <View style={{ width: 40 }} />
+        </View>
+
+        {/* Content */}
+        <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+          {!hasMemories ? (
+            <View style={styles.emptyContainer}>
+              <View style={styles.emptyIcon}>
+                <Ionicons
+                  name="bookmark-outline"
+                  size={64}
+                  color="rgba(255, 255, 255, 0.3)"
+                />
+              </View>
+              <Text style={styles.emptyTitle}>No Memories Yet</Text>
+              <Text style={styles.emptyDescription}>
+                Finny will start remembering your preferences and important
+                details as you chat. Keep the conversation going!
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.memorySection}>
+              {/* Memory Summaries */}
+              {memorySummaries.map((memorySummary, index) => (
+                <View
+                  key={memorySummary.id || index}
+                  style={styles.summaryCard}
+                >
+                  <View style={styles.summaryHeader}>
+                    <View style={styles.summaryLeft}>
+                      <Text style={styles.dateLabel}>
+                        {formatDate(memorySummary.created_at)}
+                      </Text>
+                      <Text style={styles.summaryText}>
+                        {memorySummary.summary_text}
+                      </Text>
+                    </View>
+                    <View style={styles.summaryRight}>
+                      <TouchableOpacity
+                        style={styles.trashButton}
+                        onPress={() => handleDeleteMemory(memorySummary.id)}
+                        activeOpacity={0.7}
+                      >
+                        <Ionicons
+                          name="trash-outline"
+                          size={28}
+                          color="#FF4444"
+                        />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                </View>
+              ))}
+            </View>
+          )}
+
+          {/* Bottom padding */}
+          <View style={{ height: responsivePadding(40) }} />
+        </ScrollView>
+      </SafeAreaView>
+    </View>
+  );
+}
+
 const styles = {
   container: {
     flex: 1,
@@ -62,12 +238,12 @@ const styles = {
     textAlign: "center" as const,
   },
   closeButton: {
-    padding: 4,
+    padding: 6,
   },
   closeButtonCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: "center" as const,
     justifyContent: "center" as const,
     borderWidth: 1,
@@ -151,7 +327,6 @@ const styles = {
     fontSize: responsiveFontSize(10),
     color: "rgba(255, 255, 255, 0.5)",
     marginBottom: 0,
-    marginLeft: 4,
   },
   summaryCard: {
     backgroundColor: "rgba(255, 255, 255, 0.08)",
@@ -212,181 +387,3 @@ const styles = {
     fontWeight: "600" as const,
   },
 };
-
-export default function MemoriesScreen({
-  onBack,
-  preloadedData,
-}: MemoriesScreenProps = {}) {
-  const insets = useSafeAreaInsets();
-  const router = useRouter();
-  const { session } = useAuth();
-
-  const handleBack = () => {
-    if (onBack) {
-      onBack();
-    } else {
-      router.back();
-    }
-  };
-  const [memorySummaries, setMemorySummaries] = useState<MemorySummary[]>(
-    preloadedData || []
-  );
-  const [loading, setLoading] = useState(
-    !preloadedData || preloadedData.length === 0
-  );
-
-  const handleClearMemories = () => {
-    Alert.alert(
-      "Clear All Memories",
-      "Are you sure you want to delete all your memories? This action cannot be undone.",
-      [
-        {
-          text: "Cancel",
-          style: "cancel",
-        },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: clearAllMemories,
-        },
-      ]
-    );
-  };
-
-  const clearAllMemories = async () => {
-    try {
-      // Delete all memories for the user
-      const { error: memoriesError } = await supabase
-        .from("user_memories")
-        .delete()
-        .eq("user_id", session?.user?.id);
-
-      if (memoriesError) throw memoriesError;
-
-      // Delete memory summary
-      const { error: summaryError } = await supabase
-        .from("memory_summary")
-        .delete()
-        .eq("user_id", session?.user?.id);
-
-      if (summaryError) throw summaryError;
-    } catch (error) {
-      console.error("Error clearing memories:", error);
-      Alert.alert("Error", "Failed to clear memories. Please try again.");
-    }
-  };
-
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    });
-  };
-
-  if (loading) {
-    return (
-      <View style={styles.container}>
-        <SafeAreaView style={{ flex: 1, marginBottom: insets.bottom - 10 }}>
-          <View style={styles.header}>
-            <View style={{ width: 40 }} />
-            <Text style={styles.headerTitle}>Memories</Text>
-            <View style={{ width: 40 }} />
-          </View>
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color="#4A90E2" />
-          </View>
-        </SafeAreaView>
-      </View>
-    );
-  }
-
-  const hasMemories = memorySummaries && memorySummaries.length > 0;
-
-  return (
-    <View style={styles.container}>
-      <SafeAreaView style={{ flex: 1, marginBottom: insets.bottom - 10 }}>
-        {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity
-            style={styles.closeButton}
-            onPress={handleBack}
-            activeOpacity={0.7}
-          >
-            <LinearGradient
-              colors={[
-                "rgba(255, 255, 255, 0.15)",
-                "rgba(255, 255, 255, 0.05)",
-              ]}
-              style={styles.closeButtonCircle}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-            >
-              <Ionicons name="chevron-back" size={22} color="#fff" />
-            </LinearGradient>
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Memories</Text>
-          <View style={{ width: 40 }} />
-        </View>
-
-        {/* Content */}
-        <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-          {!hasMemories ? (
-            <View style={styles.emptyContainer}>
-              <View style={styles.emptyIcon}>
-                <Ionicons
-                  name="bookmark-outline"
-                  size={64}
-                  color="rgba(255, 255, 255, 0.3)"
-                />
-              </View>
-              <Text style={styles.emptyTitle}>No Memories Yet</Text>
-              <Text style={styles.emptyDescription}>
-                Finny will start remembering your preferences and important
-                details as you chat. Keep the conversation going!
-              </Text>
-            </View>
-          ) : (
-            <View style={styles.memorySection}>
-              {/* Memory Summaries */}
-              {memorySummaries.map((memorySummary, index) => (
-                <View
-                  key={memorySummary.created_at || index}
-                  style={styles.summaryCard}
-                >
-                  <View style={styles.summaryHeader}>
-                    <View style={styles.summaryLeft}>
-                      <Text style={styles.dateLabel}>
-                        {formatDate(memorySummary.created_at)}
-                      </Text>
-                      <Text style={styles.summaryText}>
-                        {memorySummary.summary_text}
-                      </Text>
-                    </View>
-                    <View style={styles.summaryRight}>
-                      <TouchableOpacity
-                        style={styles.trashButton}
-                        onPress={handleClearMemories}
-                        activeOpacity={0.7}
-                      >
-                        <Ionicons
-                          name="trash-outline"
-                          size={28}
-                          color="#FF4444"
-                        />
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                </View>
-              ))}
-            </View>
-          )}
-
-          {/* Bottom padding */}
-          <View style={{ height: responsivePadding(40) }} />
-        </ScrollView>
-      </SafeAreaView>
-    </View>
-  );
-}

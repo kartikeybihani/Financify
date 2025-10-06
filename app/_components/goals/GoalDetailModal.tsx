@@ -271,35 +271,6 @@ const GoalDetailModal = ({
                     {isEditing ? `Edit Goal` : goal.label}
                   </Text>
                 </View>
-
-                {/* Header actions */}
-                <TouchableOpacity
-                  onPress={handleClose}
-                  style={styles.closeButton}
-                >
-                  <LinearGradient
-                    colors={
-                      hasProgressChanged
-                        ? ["rgba(50, 215, 75, 0.15)", "rgba(50, 215, 75, 0.05)"]
-                        : [
-                            "rgba(255, 255, 255, 0.15)",
-                            "rgba(255, 255, 255, 0.05)",
-                          ]
-                    }
-                    style={[
-                      styles.closeButtonCircle,
-                      hasProgressChanged && styles.closeButtonCircleUpdated,
-                    ]}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                  >
-                    <Ionicons
-                      name={hasProgressChanged ? "checkmark-outline" : "close"}
-                      size={18}
-                      color={hasProgressChanged ? "#fff" : "#fff"}
-                    />
-                  </LinearGradient>
-                </TouchableOpacity>
               </View>
 
               <ScrollView
@@ -443,6 +414,29 @@ const GoalDetailModal = ({
                               placeholder="0"
                               placeholderTextColor="#666"
                             />
+                            {hasProgressChanged && (
+                              <TouchableOpacity
+                                onPress={handleClose}
+                                style={styles.progressSaveButton}
+                                activeOpacity={0.7}
+                              >
+                                <LinearGradient
+                                  colors={[
+                                    "rgba(50, 215, 75, 0.15)",
+                                    "rgba(50, 215, 75, 0.05)",
+                                  ]}
+                                  style={styles.progressSaveIcon}
+                                  start={{ x: 0, y: 0 }}
+                                  end={{ x: 1, y: 1 }}
+                                >
+                                  <Ionicons
+                                    name="checkmark-outline"
+                                    size={16}
+                                    color="#32D74B"
+                                  />
+                                </LinearGradient>
+                              </TouchableOpacity>
+                            )}
                           </View>
                         </View>
                       </View>
@@ -893,22 +887,6 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: "rgba(255,255,255,0.1)",
   },
-  closeButton: {
-    padding: 4,
-  },
-  closeButtonCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.2)",
-  },
-  closeButtonCircleUpdated: {
-    borderWidth: 1,
-    borderColor: "rgba(50, 215, 75, 0.3)",
-  },
   headerTextContainer: {
     flex: 1,
     alignItems: "center",
@@ -918,6 +896,7 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: "#fff",
     textAlign: "center",
+    paddingVertical: 7,
   },
   headerActions: {
     flexDirection: "row",
@@ -1150,6 +1129,18 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 16,
     color: "#fff",
+  },
+  progressSaveButton: {
+    padding: 4,
+  },
+  progressSaveIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "rgba(50, 215, 75, 0.3)",
   },
   progressSymbol: {
     fontSize: 16,

@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useRef } from "react";
+import React, { useMemo, useState, useRef, useEffect } from "react";
 import {
   View,
   Text,
@@ -48,11 +48,22 @@ export default function RecurringSection({
   >([]);
   const [loadingTransactions, setLoadingTransactions] = useState(false);
   const [showTransactionHistory, setShowTransactionHistory] = useState(false);
+  const [isAnimating, setIsAnimating] = useState(false);
+
+  // Cache for recurring transactions
+  const transactionsCache = useRef<Map<string, RecurringTransaction[]>>(
+    new Map()
+  );
+  const [preloadingStreams, setPreloadingStreams] = useState<Set<string>>(
+    new Set()
+  );
 
   // Animation values
-  const fadeAnim = useRef(new Animated.Value(1)).current;
+  const gridFadeAnim = useRef(new Animated.Value(1)).current;
+  const detailFadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(1)).current;
+  const gridScaleAnim = useRef(new Animated.Value(1)).current;
 
   const isIOS = Platform.OS === "ios";
   const iosVersion = isIOS
@@ -66,6 +77,52 @@ export default function RecurringSection({
   const cardWidth = Math.floor(
     (width - 40 - horizontalPadding * 2 - interCardGap) / 2
   ); // 40px is the parent container padding (20px left + 20px right)
+
+  // Pre-load transactions for all recurring streams when data is available
+  useEffect(() => {
+    if (recurringData && !isLoading) {
+      const allStreams = [
+        ...(recurringData.subscriptions || []),
+        ...(recurringData.bills || []),
+        ...(recurringData.income || []),
+        ...(recurringData.other || []),
+      ].filter((stream) => stream.is_active);
+
+      // Pre-load transactions for each stream in the background
+      allStreams.forEach((stream) => {
+        if (
+          !transactionsCache.current.has(stream.stream_id) &&
+          !preloadingStreams.has(stream.stream_id)
+        ) {
+          setPreloadingStreams((prev) => new Set(prev).add(stream.stream_id));
+
+          getTransactionsForRecurringStream(stream.stream_id)
+            .then((transactions) => {
+              transactionsCache.current.set(stream.stream_id, transactions);
+            })
+            .catch((error) => {
+              console.error(
+                `Error pre-loading transactions for stream ${stream.stream_id}:`,
+                error
+              );
+              transactionsCache.current.set(stream.stream_id, []);
+            })
+            .finally(() => {
+              setPreloadingStreams((prev) => {
+                const newSet = new Set(prev);
+                newSet.delete(stream.stream_id);
+                return newSet;
+              });
+            });
+        }
+      });
+    }
+  }, [recurringData, isLoading]);
+
+  // Function to clear cache (useful for refresh scenarios)
+  const clearTransactionsCache = () => {
+    transactionsCache.current.clear();
+  };
 
   // Build and pad list so there are always two items per row
   const data: ListItem[] = useMemo(() => {
@@ -167,62 +224,118 @@ export default function RecurringSection({
   };
 
   const handleCardPress = async (stream: RecurringStream) => {
-    setSelectedStream(stream);
-    setLoadingTransactions(true);
+    if (isAnimating) return; // Prevent multiple animations
 
-    // Start animations
+    setIsAnimating(true);
+    setSelectedStream(stream);
+
+    // Check if we have cached transactions
+    const cachedTransactions = transactionsCache.current.get(stream.stream_id);
+
+    if (cachedTransactions) {
+      // Use cached data immediately
+      setStreamTransactions(cachedTransactions);
+      setLoadingTransactions(false);
+    } else {
+      // Load from API if not cached
+      setLoadingTransactions(true);
+
+      try {
+        const transactions = await getTransactionsForRecurringStream(
+          stream.stream_id
+        );
+        // Cache the result for future use
+        transactionsCache.current.set(stream.stream_id, transactions);
+        setStreamTransactions(transactions);
+      } catch (error) {
+        console.error("Error loading stream transactions:", error);
+        transactionsCache.current.set(stream.stream_id, []);
+        setStreamTransactions([]);
+      } finally {
+        setLoadingTransactions(false);
+      }
+    }
+
+    // Smooth transition animation with spring physics
     Animated.parallel([
-      // Fade out the grid
-      Animated.timing(fadeAnim, {
+      // Fade out and scale down the grid
+      Animated.timing(gridFadeAnim, {
         toValue: 0,
-        duration: 200,
+        duration: 250,
         useNativeDriver: true,
       }),
-      // Slide in from right
-      Animated.timing(slideAnim, {
+      Animated.spring(gridScaleAnim, {
+        toValue: 0.95,
+        tension: 100,
+        friction: 8,
+        useNativeDriver: true,
+      }),
+      // Prepare detail view (slide in from right)
+      Animated.spring(slideAnim, {
         toValue: 1,
-        duration: 300,
-        useNativeDriver: true,
-      }),
-      // Scale up slightly
-      Animated.timing(scaleAnim, {
-        toValue: 1.02,
-        duration: 300,
+        tension: 80,
+        friction: 8,
         useNativeDriver: true,
       }),
     ]).start(() => {
-      // Show transaction history after grid fades out
+      // Switch to detail view after grid fades out
       setShowTransactionHistory(true);
-      // Reset fade for the history view
-      fadeAnim.setValue(1);
-    });
 
-    try {
-      const transactions = await getTransactionsForRecurringStream(
-        stream.stream_id
-      );
-      setStreamTransactions(transactions);
-    } catch (error) {
-      console.error("Error loading stream transactions:", error);
-      setStreamTransactions([]);
-    } finally {
-      setLoadingTransactions(false);
-    }
+      // Fade in the detail view with spring
+      Animated.spring(detailFadeAnim, {
+        toValue: 1,
+        tension: 100,
+        friction: 8,
+        useNativeDriver: true,
+      }).start(() => {
+        setIsAnimating(false);
+      });
+    });
   };
 
   const handleBackToGrid = () => {
-    // Simple fade out animation
-    Animated.timing(fadeAnim, {
-      toValue: 0,
-      duration: 200,
-      useNativeDriver: true,
-    }).start(() => {
-      // Reset state after fade completes
+    if (isAnimating) return; // Prevent multiple animations
+
+    setIsAnimating(true);
+
+    // Smooth back transition animation with spring physics
+    Animated.parallel([
+      // Fade out the detail view
+      Animated.timing(detailFadeAnim, {
+        toValue: 0,
+        duration: 150,
+        useNativeDriver: true,
+      }),
+      // Slide out to the right
+      Animated.spring(slideAnim, {
+        toValue: 0,
+        tension: 100,
+        friction: 8,
+        useNativeDriver: true,
+      }),
+    ]).start(() => {
+      // Switch back to grid view immediately after detail fades out
       setShowTransactionHistory(false);
       setSelectedStream(null);
-      setStreamTransactions([]);
-      // Reset fade for the grid view
-      fadeAnim.setValue(1);
+      // Don't clear streamTransactions - keep them for potential quick re-access
+      // setStreamTransactions([]);
+
+      // Immediately start fading in the grid (no delay)
+      Animated.parallel([
+        Animated.timing(gridFadeAnim, {
+          toValue: 1,
+          duration: 200,
+          useNativeDriver: true,
+        }),
+        Animated.spring(gridScaleAnim, {
+          toValue: 1,
+          tension: 150,
+          friction: 8,
+          useNativeDriver: true,
+        }),
+      ]).start(() => {
+        setIsAnimating(false);
+      });
     });
   };
 
@@ -254,9 +367,10 @@ export default function RecurringSection({
     return (
       <TouchableOpacity
         key={stream.stream_id}
-        activeOpacity={0.7}
+        activeOpacity={0.8}
         onPress={() => handleCardPress(stream)}
         style={styles.cardTouchable}
+        disabled={isAnimating}
       >
         <CardShell
           {...(shouldUseLiquidGlass
@@ -295,12 +409,20 @@ export default function RecurringSection({
             <Text style={styles.merchantName} numberOfLines={1}>
               {stream.merchant_name || stream.description}
             </Text>
-            <Ionicons
-              name="chevron-forward"
-              size={16}
-              color="#888"
-              style={styles.chevronIcon}
-            />
+            {preloadingStreams.has(stream.stream_id) ? (
+              <ActivityIndicator
+                size="small"
+                color="#4A90E2"
+                style={styles.preloadIndicator}
+              />
+            ) : (
+              <Ionicons
+                name="chevron-forward"
+                size={16}
+                color="#888"
+                style={styles.chevronIcon}
+              />
+            )}
           </View>
 
           <View style={styles.boxContent}>
@@ -334,7 +456,7 @@ export default function RecurringSection({
         style={[
           styles.fullWidthContainer,
           {
-            opacity: fadeAnim,
+            opacity: detailFadeAnim,
             transform: [
               {
                 translateX: slideAnim.interpolate({
@@ -357,8 +479,9 @@ export default function RecurringSection({
                 {selectedStream.merchant_name || selectedStream.description}
               </Text>
               <Text style={styles.headerSubtitle}>
-                {selectedStream.frequency || ""} •{" "}
-                {selectedStream.transaction_ids?.length || 0} transactions
+                {(selectedStream.frequency || "").charAt(0).toUpperCase() +
+                  (selectedStream.frequency || "").slice(1).toLowerCase()}{" "}
+                • {selectedStream.transaction_ids?.length || 0} transactions
               </Text>
             </View>
           </View>
@@ -367,9 +490,28 @@ export default function RecurringSection({
             onPress={handleBackToGrid}
             activeOpacity={0.7}
           >
-            <Ionicons name="close" size={24} color="#fff" />
+            <Ionicons name="close" size={20} color="#fff" />
           </TouchableOpacity>
         </View>
+
+        {/* Loading Overlay */}
+        {loadingTransactions && (
+          <Animated.View
+            style={[
+              styles.loadingOverlay,
+              {
+                opacity: detailFadeAnim,
+              },
+            ]}
+          >
+            <View style={styles.loadingOverlayContent}>
+              <ActivityIndicator size="large" color="#4A90E2" />
+              <Text style={styles.loadingOverlayText}>
+                Loading transaction history...
+              </Text>
+            </View>
+          </Animated.View>
+        )}
 
         {/* Transaction History */}
         <View style={styles.historyContent}>
@@ -395,7 +537,7 @@ export default function RecurringSection({
                             name={
                               transaction.amount < 0 ? "arrow-down" : "arrow-up"
                             }
-                            size={16}
+                            size={14}
                             color={
                               transaction.amount < 0 ? "#4CAF50" : "#FF6B6B"
                             }
@@ -515,10 +657,10 @@ export default function RecurringSection({
   return (
     <Animated.View
       style={{
-        opacity: fadeAnim,
+        opacity: gridFadeAnim,
         transform: [
           {
-            scale: scaleAnim,
+            scale: gridScaleAnim,
           },
         ],
       }}
@@ -654,6 +796,9 @@ const styles = StyleSheet.create({
   chevronIcon: {
     marginLeft: 8,
   },
+  preloadIndicator: {
+    marginLeft: 8,
+  },
   loadingContainer: {
     flexDirection: "row",
     alignItems: "center",
@@ -690,9 +835,9 @@ const styles = StyleSheet.create({
     borderColor: "rgba(255, 255, 255, 0.1)",
   },
   closeButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     backgroundColor: "rgba(255, 255, 255, 0.1)",
     alignItems: "center",
     justifyContent: "center",
@@ -742,7 +887,7 @@ const styles = StyleSheet.create({
   historyTransactionItem: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 16,
+    paddingVertical: 12,
     paddingHorizontal: 20,
   },
   transactionDivider: {
@@ -756,30 +901,30 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   transactionIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     backgroundColor: "rgba(255, 255, 255, 0.1)",
     alignItems: "center",
     justifyContent: "center",
-    marginRight: 12,
+    marginRight: 10,
   },
   transactionDetails: {
     flex: 1,
   },
   historyTransactionName: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: "500",
     color: "#fff",
-    marginBottom: 4,
+    marginBottom: 3,
   },
   historyTransactionDate: {
-    fontSize: 12,
+    fontSize: 11,
     color: "#888",
-    marginBottom: 2,
+    marginBottom: 1,
   },
   historyTransactionAccount: {
-    fontSize: 12,
+    fontSize: 11,
     color: "#666",
     opacity: 0.8,
   },
@@ -787,7 +932,7 @@ const styles = StyleSheet.create({
     alignItems: "flex-end",
   },
   historyTransactionAmount: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: "600",
   },
   noTransactionsContainer: {
@@ -802,5 +947,26 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginTop: 8,
     opacity: 0.8,
+  },
+  loadingOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "rgba(20, 20, 25, 0.95)",
+    zIndex: 1000,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  loadingOverlayContent: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  loadingOverlayText: {
+    fontSize: 16,
+    color: "#fff",
+    marginTop: 16,
+    fontWeight: "500",
   },
 });

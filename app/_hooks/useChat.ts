@@ -156,7 +156,7 @@ export const useChat = () => {
       }
 
       // Show initial progress
-      setProgressStatus("Analyzing your question...");
+      setProgressStatus("Let me see what I can do");
 
       // Fetch session once and reuse the access token for all requests in this flow
       const { data: sessionData } = await supabase.auth.getSession();

@@ -109,6 +109,7 @@ export default function GoalsScreen() {
           goalsAnimations={goalsAnimations}
           deleteGoal={deleteGoal}
           updateGoal={updateGoal}
+          refreshGoals={refreshGoals}
           // Refresh control manages its own spinner; avoid duplicating header loader
         />
       </View>

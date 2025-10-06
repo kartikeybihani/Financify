@@ -858,7 +858,7 @@ const styles = StyleSheet.create({
     borderRadius: 2,
     alignSelf: "center",
     marginTop: 8,
-    marginBottom: 8,
+    marginBottom: 4,
   },
   headerContainer: {
     flexDirection: "row",
@@ -872,7 +872,7 @@ const styles = StyleSheet.create({
   transactionLabel: {
     fontSize: 12,
     fontWeight: "800",
-    color: "rgba(255, 255, 255, 0.8)",
+    color: "rgba(232, 229, 229, 0.55)",
     letterSpacing: 0.6,
     textTransform: "uppercase",
     textAlign: "center",

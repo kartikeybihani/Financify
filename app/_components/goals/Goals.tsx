@@ -40,6 +40,7 @@ const generateId = () => {
 const Goals: React.FC<GoalsProps> = ({
   deleteGoal,
   updateGoal,
+  refreshGoals: propRefreshGoals,
   goalsAnimations,
   goalsData,
   onRefreshStart,
@@ -236,7 +237,11 @@ const Goals: React.FC<GoalsProps> = ({
 
       // Persist in background; server refresh will reconcile and replace temp
       await addManualGoal(goalInput);
-      await refreshGoals();
+      if (propRefreshGoals) {
+        await propRefreshGoals();
+      } else {
+        await refreshGoals();
+      }
 
       // Trigger celebration animation
       Animated.sequence([
@@ -280,7 +285,11 @@ const Goals: React.FC<GoalsProps> = ({
       setLocalGoalsData((prev) => prev.filter((g) => g.id !== goalToDelete.id));
       await deleteGoal(goalToDelete.id);
       // Sync with server to ensure consistency and cache update
-      await refreshGoals();
+      if (propRefreshGoals) {
+        await propRefreshGoals();
+      } else {
+        await refreshGoals();
+      }
       setState((prev: GoalsState) => ({
         ...prev,
         notification: {
@@ -291,7 +300,11 @@ const Goals: React.FC<GoalsProps> = ({
     } catch (error) {
       logger.error("Error deleting goal:", error);
       // Revert by refreshing full list
-      await refreshGoals();
+      if (propRefreshGoals) {
+        await propRefreshGoals();
+      } else {
+        await refreshGoals();
+      }
       setState((prev: GoalsState) => ({
         ...prev,
         notification: {
@@ -350,7 +363,11 @@ const Goals: React.FC<GoalsProps> = ({
       }));
 
       // Revert optimistic update on error by refreshing goals
-      await refreshGoals();
+      if (propRefreshGoals) {
+        await propRefreshGoals();
+      } else {
+        await refreshGoals();
+      }
     }
   };
 
@@ -358,7 +375,11 @@ const Goals: React.FC<GoalsProps> = ({
     try {
       onRefreshStart?.();
       setState((prev: GoalsState) => ({ ...prev, refreshing: true }));
-      await refreshGoals();
+      if (propRefreshGoals) {
+        await propRefreshGoals();
+      } else {
+        await refreshGoals();
+      }
     } finally {
       setState((prev: GoalsState) => ({ ...prev, refreshing: false }));
       onRefreshEnd?.();

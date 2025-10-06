@@ -59,12 +59,12 @@ const styles = {
     textAlign: "center" as const,
   },
   backButton: {
-    padding: 3,
+    padding: 6,
   },
   backButtonCircle: {
-    width: 35,
-    height: 35,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: "center" as const,
     justifyContent: "center" as const,
     borderWidth: 1,
@@ -238,7 +238,7 @@ export default function FinnyCheckinScreen({
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
             >
-              <Ionicons name="chevron-back" size={22} color="#fff" />
+              <Ionicons name="chevron-back" size={24} color="#fff" />
             </LinearGradient>
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Check-in Frequency</Text>
