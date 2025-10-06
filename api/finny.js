@@ -884,7 +884,7 @@ User context:
 - Net worth: $${userIncome}
 - Recent spending categories: ${JSON.stringify(userSpending.slice(0, 5))}
 
-Return ONLY valid JSON (no markdown, no code blocks, no explanations):
+Return ONLY valid JSON (no markdown, no code blocks, no explanations). Do not wrap in \`\`\`json\`\`\` blocks:
 {
   "intent": "goal_create|goal_advice|goal_question|goal_manage|not_goal",
   "confidence": 0.0-1.0,
@@ -941,7 +941,16 @@ RULES:
       throw new Error("No content in response");
     }
 
-    const result = JSON.parse(content);
+    // Strip markdown code blocks if present
+    let cleanContent = content;
+    if (content.startsWith("```") && content.endsWith("```")) {
+      cleanContent = content.slice(3, -3).trim();
+    }
+    if (cleanContent.startsWith("```json")) {
+      cleanContent = cleanContent.slice(7).trim();
+    }
+
+    const result = JSON.parse(cleanContent);
     console.log("🎯 [GOAL EXTRACTION] Result:", result);
     return result;
   } catch (error) {
@@ -991,7 +1000,7 @@ User context:
     )}
 - Monthly spending: $${totalMonthlySpend}
 
-Return ONLY valid JSON (no markdown, no code blocks, no explanations):
+Return ONLY valid JSON (no markdown, no code blocks, no explanations). Do not wrap in \`\`\`json\`\`\` blocks:
 {
   "feasibility": "high|medium|low",
   "monthly_savings_needed": number,
@@ -1046,7 +1055,16 @@ RULES:
       throw new Error("No content in response");
     }
 
-    const result = JSON.parse(content);
+    // Strip markdown code blocks if present
+    let cleanContent = content;
+    if (content.startsWith("```") && content.endsWith("```")) {
+      cleanContent = content.slice(3, -3).trim();
+    }
+    if (cleanContent.startsWith("```json")) {
+      cleanContent = cleanContent.slice(7).trim();
+    }
+
+    const result = JSON.parse(cleanContent);
     console.log("📊 [GOAL ANALYSIS] Result:", result);
     return result;
   } catch (error) {
@@ -1435,7 +1453,7 @@ ${JSON.stringify(KEY_SYNONYMS, null, 2)}
 User message: "${message}"
 Pre-detected hints: ${JSON.stringify(hints)}
 
-Return ONLY valid JSON (no markdown, no code blocks, no explanations):
+Return ONLY valid JSON (no markdown, no code blocks, no explanations). Do not wrap in \`\`\`json\`\`\` blocks:
 {"memories": [
   {"type": "profile_trait", "key": "profile_trait.family.marital_status", "value": "married", "confidence": 0.9}
 ]}
@@ -4209,7 +4227,16 @@ async function handleClassify(message, context) {
       throw new Error("No content");
     }
 
-    const out = JSON.parse(content);
+    // Strip markdown code blocks if present
+    let cleanContent = content;
+    if (content.startsWith("```") && content.endsWith("```")) {
+      cleanContent = content.slice(3, -3).trim();
+    }
+    if (cleanContent.startsWith("```json")) {
+      cleanContent = cleanContent.slice(7).trim();
+    }
+
+    const out = JSON.parse(cleanContent);
     console.log("🔍 [FINNY] Parsed classification result:", out);
 
     // Defensive post-process so your app never crashes
@@ -5836,7 +5863,17 @@ async function planStockRequest(message) {
     const data = await r.json();
     const content = data.choices?.[0]?.message?.content;
     if (!content) return null;
-    const plan = JSON.parse(content);
+
+    // Strip markdown code blocks if present
+    let cleanContent = content;
+    if (content.startsWith("```") && content.endsWith("```")) {
+      cleanContent = content.slice(3, -3).trim();
+    }
+    if (cleanContent.startsWith("```json")) {
+      cleanContent = cleanContent.slice(7).trim();
+    }
+
+    const plan = JSON.parse(cleanContent);
     // Ensure arrays
     plan.ticker_candidates = Array.isArray(plan.ticker_candidates)
       ? plan.ticker_candidates
