@@ -266,14 +266,14 @@ export const useChat = () => {
         // Format projection response for display
         const proj = data.projection;
         message = `**Projection Results**\n\nTarget: $${proj.swr_target.toLocaleString()}\nProjected: $${proj.projected_nest_egg.toLocaleString()}\nYears to target: ${proj.years_to_target}\n\n${proj.notes.join('\n')}`;
-      } else if (data.intent === "ask_personalized" && data.message) {
+      } else if ((data.intent === "ask_personalized" || data.type === "assistant") && data.message) {
         // Handle personalized responses (including rent vs buy analysis)
         if (data.structuredData) {
           // Create expandable message with structured data
           const expandableMessage: ChatMessage = {
             id: `finny-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
             sender: "finny",
-            text: data.message,
+            text: data.structuredData.summary || data.message,
             timestamp: Date.now(),
             type: "expandable",
             structuredData: data.structuredData,

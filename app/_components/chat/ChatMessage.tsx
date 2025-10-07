@@ -216,91 +216,191 @@ export const ChatMessageComponent = ({
     }).start();
   };
 
+  const clamp = (v: number, min: number, max: number) =>
+    Math.max(min, Math.min(max, v));
+
   const renderTable = (data: any) => {
-    if (!data || !Array.isArray(data)) return null;
+    if (!data || !Array.isArray(data) || data.length === 0) return null;
 
-    // Handle different table formats
-    if (data.length === 0) return null;
+    // Normalize into headers + rows (2-column only). We still tolerate >2 cols by falling back to horizontal scroll.
+    let headers: string[] = [];
+    let rows: any[][] = [];
 
-    const firstRow = data[0];
-    const isObjectArray = typeof firstRow === "object" && firstRow !== null;
+    const isObjectArray =
+      typeof data[0] === "object" &&
+      data[0] !== null &&
+      !Array.isArray(data[0]);
 
     if (isObjectArray) {
-      // Object array format - extract headers from first object
-      const headers = Object.keys(firstRow);
-
-      return (
-        <View style={styles.tableContainer}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            <View style={styles.table}>
-              {/* Header row */}
-              <View style={styles.tableHeaderRow}>
-                {headers.map((header, index) => (
-                  <View key={index} style={styles.tableHeaderCell}>
-                    <Text style={styles.tableHeaderText}>
-                      {header.replace(/_/g, " ").toUpperCase()}
-                    </Text>
-                  </View>
-                ))}
-              </View>
-
-              {/* Data rows */}
-              {data.map((row, rowIndex) => (
-                <View key={rowIndex} style={styles.tableRow}>
-                  {headers.map((header, colIndex) => (
-                    <View key={colIndex} style={styles.tableCell}>
-                      <Text style={styles.tableCellText}>
-                        {typeof row[header] === "number"
-                          ? row[header].toLocaleString()
-                          : String(row[header] || "")}
-                      </Text>
-                    </View>
-                  ))}
-                </View>
-              ))}
-            </View>
-          </ScrollView>
-        </View>
-      );
+      headers = Object.keys(data[0]);
+      rows = data.map((row: any) => headers.map((h) => row[h]));
     } else {
-      // Array of arrays format
-      const headers = data[0] || [];
-      const rows = data.slice(1) || [];
+      // array-of-arrays format assumed: [headerRow, ...rows]
+      headers = (data[0] || []).map((h: any) => String(h));
+      rows = data.slice(1);
+    }
 
+    // If not exactly 2 columns, keep your old behavior (horizontal scroll), but that "won't be our case".
+    if (headers.length !== 2) {
       return (
-        <View style={styles.tableContainer}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            <View style={styles.table}>
-              {/* Header row */}
-              <View style={styles.tableHeaderRow}>
-                {headers.map((header: any, index: number) => (
-                  <View key={index} style={styles.tableHeaderCell}>
-                    <Text style={styles.tableHeaderText}>
-                      {String(header).replace(/_/g, " ").toUpperCase()}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.tableContainer}
+        >
+          <View style={styles.table}>
+            <View style={styles.tableHeaderRow}>
+              {headers.map((header, idx) => (
+                <View
+                  key={idx}
+                  style={[styles.tableHeaderCell, { minWidth: 120 }]}
+                >
+                  <Text style={styles.tableHeaderText}>
+                    {header.replace(/_/g, " ").toUpperCase()}
+                  </Text>
+                </View>
+              ))}
+            </View>
+            {rows.map((row, rIdx) => (
+              <View key={rIdx} style={styles.tableRow}>
+                {row.map((cell: any, cIdx: number) => (
+                  <View
+                    key={cIdx}
+                    style={[styles.tableCell, { minWidth: 120 }]}
+                  >
+                    <Text style={styles.tableCellText}>
+                      {renderBoldText(
+                        typeof cell === "number"
+                          ? cell.toLocaleString()
+                          : String(cell ?? "")
+                      )}
                     </Text>
                   </View>
                 ))}
               </View>
-
-              {/* Data rows */}
-              {rows.map((row: any[], rowIndex: number) => (
-                <View key={rowIndex} style={styles.tableRow}>
-                  {row.map((cell: any, colIndex: number) => (
-                    <View key={colIndex} style={styles.tableCell}>
-                      <Text style={styles.tableCellText}>
-                        {typeof cell === "number"
-                          ? cell.toLocaleString()
-                          : String(cell || "")}
-                      </Text>
-                    </View>
-                  ))}
-                </View>
-              ))}
-            </View>
-          </ScrollView>
-        </View>
+            ))}
+          </View>
+        </ScrollView>
       );
     }
+
+    // Two-column path (the default case we care about).
+    const [h1, h2] = headers;
+
+    // Estimate content lengths to bias the split, then clamp so layout stays balanced.
+    const len = (v: any) => {
+      if (v === null || v === undefined) return 0;
+      if (typeof v === "number") return v.toLocaleString().length;
+      return String(v).length;
+    };
+
+    const leftMax = Math.max(h1.length, ...rows.map((row) => len(row[0])));
+    const rightMax = Math.max(h2.length, ...rows.map((row) => len(row[1])));
+
+    // Convert to ratio, bias toward left when it's longer.
+    const rawLeftRatio =
+      leftMax + rightMax === 0 ? 0.6 : leftMax / (leftMax + rightMax);
+    // Clamp for nice, stable layout.
+    const leftRatio = clamp(rawLeftRatio, 0.52, 0.68);
+    const rightRatio = 1 - leftRatio;
+
+    return (
+      <View style={styles.tableContainer}>
+        <View style={[styles.table, { width: "100%" }]}>
+          {/* Header */}
+          <View style={styles.tableHeaderRow}>
+            <View
+              style={[
+                styles.tableHeaderCell,
+                { width: `${leftRatio * 100}%`, alignItems: "flex-start" },
+              ]}
+            >
+              <Text
+                style={[styles.tableHeaderText, styles.tableHeaderTextLeft]}
+              >
+                {h1.replace(/_/g, " ").toUpperCase()}
+              </Text>
+            </View>
+            <View
+              style={[
+                styles.tableHeaderCell,
+                {
+                  width: `${rightRatio * 100}%`,
+                  alignItems: "flex-end",
+                  borderRightWidth: 0,
+                },
+              ]}
+            >
+              <Text
+                style={[styles.tableHeaderText, styles.tableHeaderTextRight]}
+              >
+                {h2.replace(/_/g, " ").toUpperCase()}
+              </Text>
+            </View>
+          </View>
+
+          {/* Rows */}
+          {rows.map((row, rowIndex) => {
+            const c0 =
+              typeof row[0] === "number"
+                ? row[0].toLocaleString()
+                : String(row[0] ?? "");
+            const c1 =
+              typeof row[1] === "number"
+                ? row[1].toLocaleString()
+                : String(row[1] ?? "");
+            return (
+              <View key={rowIndex} style={styles.tableRow}>
+                <View
+                  style={[
+                    styles.tableCell,
+                    { width: `${leftRatio * 100}%`, alignItems: "flex-start" },
+                  ]}
+                >
+                  <Text
+                    style={[styles.tableCellText, styles.tableCellTextLeft]}
+                  >
+                    {renderBoldText(c0)}
+                  </Text>
+                </View>
+                <View
+                  style={[
+                    styles.tableCell,
+                    {
+                      width: `${rightRatio * 100}%`,
+                      alignItems: "flex-end",
+                      borderRightWidth: 0,
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[styles.tableCellText, styles.tableCellTextRight]}
+                  >
+                    {renderBoldText(c1)}
+                  </Text>
+                </View>
+              </View>
+            );
+          })}
+        </View>
+      </View>
+    );
+  };
+
+  const renderBoldText = (text: string) => {
+    // Split text by **bold** patterns and render accordingly
+    const parts = text.split(/(\*\*[^*]+\*\*)/);
+
+    return parts.map((part, index) => {
+      if (part.startsWith("**") && part.endsWith("**")) {
+        return (
+          <Text key={index} style={styles.boldTableText}>
+            {part.slice(2, -2)}
+          </Text>
+        );
+      }
+      return part;
+    });
   };
 
   const renderStructuredData = () => {
@@ -817,44 +917,72 @@ const styles = StyleSheet.create({
     borderColor: "rgba(255, 255, 255, 0.1)",
   },
   tableContainer: {
-    maxHeight: 250,
+    width: "100%",
   },
   table: {
     backgroundColor: "rgba(255, 255, 255, 0.05)",
-    borderRadius: 8,
+    borderRadius: 10,
     overflow: "hidden",
+    width: "100%",
   },
   tableHeaderRow: {
     flexDirection: "row",
-    backgroundColor: "rgba(74, 144, 226, 0.3)",
+    backgroundColor: "rgba(74, 144, 226, 0.28)",
+    width: "100%",
   },
   tableHeaderCell: {
-    padding: responsivePadding(8),
-    minWidth: 80,
+    justifyContent: "center",
+    paddingVertical: responsivePadding(8),
+    paddingHorizontal: responsivePadding(10),
     borderRightWidth: 1,
-    borderRightColor: "rgba(255, 255, 255, 0.1)",
+    borderRightColor: "rgba(255, 255, 255, 0.08)",
   },
   tableHeaderText: {
-    fontSize: responsiveFontSize(11),
+    fontSize: responsiveFontSize(12),
     fontWeight: "700",
     color: "#FFFFFF",
-    textAlign: "center",
+    letterSpacing: 0.5,
+    // wrapping
+    flexShrink: 1,
+    flexWrap: "wrap",
+  },
+  tableHeaderTextLeft: {
+    textAlign: "left",
+  },
+  tableHeaderTextRight: {
+    textAlign: "right",
   },
   tableRow: {
     flexDirection: "row",
+    width: "100%",
     borderBottomWidth: 1,
-    borderBottomColor: "rgba(255, 255, 255, 0.1)",
+    borderBottomColor: "rgba(255, 255, 255, 0.08)",
+    minHeight: 44,
   },
   tableCell: {
-    padding: responsivePadding(8),
-    minWidth: 80,
+    paddingVertical: responsivePadding(6),
+    paddingHorizontal: responsivePadding(10),
     borderRightWidth: 1,
-    borderRightColor: "rgba(255, 255, 255, 0.1)",
+    borderRightColor: "rgba(255, 255, 255, 0.06)",
+    justifyContent: "center",
   },
   tableCellText: {
-    fontSize: responsiveFontSize(12),
+    fontSize: responsiveFontSize(13),
     color: "#FFFFFF",
-    textAlign: "center",
+    lineHeight: responsiveFontSize(18),
+    // make wrapping reliable
+    flexShrink: 1,
+    flexWrap: "wrap",
+  },
+  tableCellTextLeft: {
+    textAlign: "left",
+  },
+  tableCellTextRight: {
+    textAlign: "right",
+  },
+  boldTableText: {
+    fontWeight: "700",
+    color: "#FFFFFF",
   },
   listContainer: {
     maxHeight: 200,
