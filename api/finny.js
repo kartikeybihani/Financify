@@ -2229,12 +2229,16 @@ async function handleAsk(message, context, intent = "ask_personalized") {
       console.log("🧠 [FINNY] No memories to save");
     }
 
+    // Check if response contains structured data that should be displayed as expandable
+    const structuredData = detectStructuredData(cleanText, packs);
+
     const response = {
       message:
         gaps.length > 0
           ? `${cleanText}\n\n(Using available data - some data may be incomplete.)`
           : cleanText,
       type: "assistant",
+      ...(structuredData && { structuredData }),
     };
 
     // Log the conversation
@@ -2279,6 +2283,148 @@ async function handleAsk(message, context, intent = "ask_personalized") {
       type: "assistant",
     };
   }
+}
+
+// === STRUCTURED DATA DETECTION ===
+// Detect if response contains tabular or structured data that should be expandable
+
+function detectStructuredData(message, packs) {
+  // Check if we have transaction data that could be displayed as a table
+  if (
+    packs?.txns_by_category &&
+    Array.isArray(packs.txns_by_category) &&
+    packs.txns_by_category.length > 0
+  ) {
+    return {
+      summary: message,
+      data: packs.txns_by_category,
+      dataType: "table",
+    };
+  }
+
+  // Check if we have merchant breakdown data
+  if (
+    packs?.merchant_breakdown &&
+    Array.isArray(packs.merchant_breakdown) &&
+    packs.merchant_breakdown.length > 0
+  ) {
+    return {
+      summary: message,
+      data: packs.merchant_breakdown,
+      dataType: "table",
+    };
+  }
+
+  // Check if we have recent transactions
+  if (
+    packs?.recent_txns &&
+    Array.isArray(packs.recent_txns) &&
+    packs.recent_txns.length > 0
+  ) {
+    return {
+      summary: message,
+      data: packs.recent_txns,
+      dataType: "table",
+    };
+  }
+
+  // Check if we have account data
+  if (
+    packs?.accounts &&
+    Array.isArray(packs.accounts) &&
+    packs.accounts.length > 0
+  ) {
+    return {
+      summary: message,
+      data: packs.accounts,
+      dataType: "table",
+    };
+  }
+
+  // Check if we have investment holdings
+  if (
+    packs?.holdings &&
+    Array.isArray(packs.holdings) &&
+    packs.holdings.length > 0
+  ) {
+    return {
+      summary: message,
+      data: packs.holdings,
+      dataType: "table",
+    };
+  }
+
+  // Check if we have goals data
+  if (packs?.goals && Array.isArray(packs.goals) && packs.goals.length > 0) {
+    return {
+      summary: message,
+      data: packs.goals,
+      dataType: "table",
+    };
+  }
+
+  // Check if we have recurring transactions
+  if (
+    packs?.recurring &&
+    Array.isArray(packs.recurring) &&
+    packs.recurring.length > 0
+  ) {
+    return {
+      summary: message,
+      data: packs.recurring,
+      dataType: "table",
+    };
+  }
+
+  // Check if message contains table-like patterns (basic detection)
+  const tablePatterns = [
+    /Category\s+Amount\s+Count/i,
+    /Merchant\s+Amount\s+Transactions/i,
+    /Account\s+Balance\s+Type/i,
+    /Date\s+Description\s+Amount/i,
+    /Symbol\s+Shares\s+Value/i,
+    /Goal\s+Target\s+Progress/i,
+  ];
+
+  const hasTablePattern = tablePatterns.some((pattern) =>
+    pattern.test(message)
+  );
+
+  if (hasTablePattern) {
+    // Try to extract table data from message text
+    const extractedData = extractTableFromText(message);
+    if (extractedData && extractedData.length > 0) {
+      return {
+        summary: message,
+        data: extractedData,
+        dataType: "table",
+      };
+    }
+  }
+
+  return null;
+}
+
+function extractTableFromText(text) {
+  // Simple table extraction from text
+  // Look for patterns like "Category: $100" or "Merchant: $50"
+  const lines = text.split("\n");
+  const tableData = [];
+
+  for (const line of lines) {
+    // Match patterns like "Category: $100" or "Merchant: $50 (3 transactions)"
+    const match = line.match(/([^:]+):\s*\$?([\d,]+\.?\d*)\s*(?:\(([^)]+)\))?/);
+    if (match) {
+      const [, category, amount, note] = match;
+      tableData.push({
+        category: category.trim(),
+        amount: parseFloat(amount.replace(/,/g, "")),
+        note: note ? note.trim() : "",
+      });
+    }
+  }
+
+  return tableData.length > 0 ? tableData : null;
 }
 
 // === CONTEXT PLANNER ===

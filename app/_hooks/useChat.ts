@@ -268,6 +268,23 @@ export const useChat = () => {
         message = `**Projection Results**\n\nTarget: $${proj.swr_target.toLocaleString()}\nProjected: $${proj.projected_nest_egg.toLocaleString()}\nYears to target: ${proj.years_to_target}\n\n${proj.notes.join('\n')}`;
       } else if (data.intent === "ask_personalized" && data.message) {
         // Handle personalized responses (including rent vs buy analysis)
+        if (data.structuredData) {
+          // Create expandable message with structured data
+          const expandableMessage: ChatMessage = {
+            id: `finny-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            sender: "finny",
+            text: data.message,
+            timestamp: Date.now(),
+            type: "expandable",
+            structuredData: data.structuredData,
+          };
+          // Add typing delay for expandable messages
+          setIsTyping(true);
+          await new Promise((resolve) => setTimeout(resolve, 1000 + Math.random() * 1000));
+          pushChat(expandableMessage);
+          setIsTyping(false);
+          return; // Don't process as regular message
+        }
         message = data.message;
       } else if (data.intent === "goal") {
         // Persist flow state if provided

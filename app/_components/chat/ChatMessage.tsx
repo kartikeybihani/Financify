@@ -9,8 +9,11 @@ import {
   Animated,
   Easing,
   Dimensions,
+  TouchableOpacity,
+  ScrollView,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
+import { Ionicons } from "@expo/vector-icons";
 
 // Enable LayoutAnimation for Android
 if (Platform.OS === "android") {
@@ -43,12 +46,17 @@ interface ChatMessageProps {
     sender: "user" | "finny";
     text: string;
     id: string;
-    type?: "text" | "action";
+    type?: "text" | "action" | "expandable";
     actions?: Array<{
       label: string;
       action: string;
       style?: "primary" | "secondary";
     }>;
+    structuredData?: {
+      summary: string;
+      data: any;
+      dataType: "table" | "list" | "chart";
+    };
   };
   showSender?: boolean;
   onAction?: (action: string) => void;
@@ -143,6 +151,8 @@ export const ChatMessageComponent = ({
   const scaleAnim = useRef(new Animated.Value(0.8)).current;
   const slideAnim = useRef(new Animated.Value(20)).current;
   const [lineCount, setLineCount] = useState(1);
+  const [isExpanded, setIsExpanded] = useState(false);
+  const expandAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     // Enhanced entrance animation
@@ -192,6 +202,137 @@ export const ChatMessageComponent = ({
     // e.nativeEvent.lines is available on RN Text layout events
     const lines = (e?.nativeEvent?.lines as any[]) || [];
     setLineCount(lines.length > 0 ? lines.length : 1);
+  };
+
+  const toggleExpanded = () => {
+    const newExpanded = !isExpanded;
+    setIsExpanded(newExpanded);
+
+    Animated.timing(expandAnim, {
+      toValue: newExpanded ? 1 : 0,
+      duration: 300,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    }).start();
+  };
+
+  const renderTable = (data: any) => {
+    if (!data || !Array.isArray(data)) return null;
+
+    // Handle different table formats
+    if (data.length === 0) return null;
+
+    const firstRow = data[0];
+    const isObjectArray = typeof firstRow === "object" && firstRow !== null;
+
+    if (isObjectArray) {
+      // Object array format - extract headers from first object
+      const headers = Object.keys(firstRow);
+
+      return (
+        <View style={styles.tableContainer}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            <View style={styles.table}>
+              {/* Header row */}
+              <View style={styles.tableHeaderRow}>
+                {headers.map((header, index) => (
+                  <View key={index} style={styles.tableHeaderCell}>
+                    <Text style={styles.tableHeaderText}>
+                      {header.replace(/_/g, " ").toUpperCase()}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+
+              {/* Data rows */}
+              {data.map((row, rowIndex) => (
+                <View key={rowIndex} style={styles.tableRow}>
+                  {headers.map((header, colIndex) => (
+                    <View key={colIndex} style={styles.tableCell}>
+                      <Text style={styles.tableCellText}>
+                        {typeof row[header] === "number"
+                          ? row[header].toLocaleString()
+                          : String(row[header] || "")}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              ))}
+            </View>
+          </ScrollView>
+        </View>
+      );
+    } else {
+      // Array of arrays format
+      const headers = data[0] || [];
+      const rows = data.slice(1) || [];
+
+      return (
+        <View style={styles.tableContainer}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            <View style={styles.table}>
+              {/* Header row */}
+              <View style={styles.tableHeaderRow}>
+                {headers.map((header: any, index: number) => (
+                  <View key={index} style={styles.tableHeaderCell}>
+                    <Text style={styles.tableHeaderText}>
+                      {String(header).replace(/_/g, " ").toUpperCase()}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+
+              {/* Data rows */}
+              {rows.map((row: any[], rowIndex: number) => (
+                <View key={rowIndex} style={styles.tableRow}>
+                  {row.map((cell: any, colIndex: number) => (
+                    <View key={colIndex} style={styles.tableCell}>
+                      <Text style={styles.tableCellText}>
+                        {typeof cell === "number"
+                          ? cell.toLocaleString()
+                          : String(cell || "")}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              ))}
+            </View>
+          </ScrollView>
+        </View>
+      );
+    }
+  };
+
+  const renderStructuredData = () => {
+    if (!message.structuredData) return null;
+
+    const { dataType, data } = message.structuredData;
+
+    switch (dataType) {
+      case "table":
+        return renderTable(data);
+      case "list":
+        return (
+          <View style={styles.listContainer}>
+            {Array.isArray(data) &&
+              data.map((item: any, index: number) => (
+                <View key={index} style={styles.listItem}>
+                  <Text style={styles.listItemText}>
+                    {typeof item === "object"
+                      ? JSON.stringify(item)
+                      : String(item)}
+                  </Text>
+                </View>
+              ))}
+          </View>
+        );
+      default:
+        return (
+          <View style={styles.dataContainer}>
+            <Text style={styles.dataText}>{JSON.stringify(data, null, 2)}</Text>
+          </View>
+        );
+    }
   };
 
   if (isUser) {
@@ -392,6 +533,107 @@ export const ChatMessageComponent = ({
     );
   }
 
+  // Handle expandable messages
+  if (message.type === "expandable" && message.structuredData) {
+    const messageText = message.structuredData.summary || message.text;
+
+    return (
+      <Animated.View
+        style={{
+          opacity: fadeAnim,
+          transform: [{ scale: scaleAnim }, { translateY: slideAnim }],
+        }}
+      >
+        {showSender && messageText && (
+          <Animated.View
+            style={[
+              styles.senderNameContainer,
+              {
+                opacity: fadeAnim,
+                transform: [{ translateY: slideAnim }],
+              },
+            ]}
+          >
+            <Text style={styles.senderName}>Finny</Text>
+          </Animated.View>
+        )}
+        <Animated.View style={styles.finnyMessageRow}>
+          <View style={styles.finnyMessageContainer}>
+            <LinearGradient
+              colors={["#1A3A5A", "#2E5A8A", "#4A90E2"]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={[styles.finnyMessageBubble, bubbleRadii]}
+            >
+              <Text style={[styles.messageText, styles.finnyMessageText]}>
+                {messageText.split("\n").map((line, lineIdx) => (
+                  <React.Fragment key={lineIdx}>
+                    {lineIdx > 0 && <Text>{"\n"}</Text>}
+                    <Text
+                      onTextLayout={lineIdx === 0 ? onTextLayout : undefined}
+                    >
+                      {line.split(/(\*\*[^*]+\*\*)/).map((chunk, idx) => {
+                        if (chunk.startsWith("**") && chunk.endsWith("**")) {
+                          return (
+                            <Text key={idx} style={styles.boldText}>
+                              {chunk.slice(2, -2)}
+                            </Text>
+                          );
+                        }
+                        return chunk;
+                      })}
+                    </Text>
+                  </React.Fragment>
+                ))}
+              </Text>
+
+              {/* View Details Button */}
+              <TouchableOpacity
+                style={styles.viewDetailsButton}
+                onPress={toggleExpanded}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.viewDetailsText}>View Details</Text>
+                <Animated.View
+                  style={{
+                    transform: [
+                      {
+                        rotate: expandAnim.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: ["0deg", "180deg"],
+                        }),
+                      },
+                    ],
+                  }}
+                >
+                  <Ionicons name="chevron-down" size={16} color="#FFFFFF" />
+                </Animated.View>
+              </TouchableOpacity>
+            </LinearGradient>
+          </View>
+        </Animated.View>
+
+        {/* Expanded Content */}
+        <Animated.View
+          style={[
+            styles.expandedContent,
+            {
+              height: expandAnim.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0, 300], // Adjust based on content
+              }),
+              opacity: expandAnim,
+            },
+          ]}
+        >
+          <View style={styles.expandedContentInner}>
+            {renderStructuredData()}
+          </View>
+        </Animated.View>
+      </Animated.View>
+    );
+  }
+
   // Display message as single string (no splitting)
   const messageText = message.text;
 
@@ -545,6 +787,94 @@ const styles = StyleSheet.create({
     fontWeight: "500",
     letterSpacing: -0.1,
     fontFamily: Platform.OS === "ios" ? "SF Pro Text" : "System",
+  },
+  viewDetailsButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: responsivePadding(8),
+    paddingTop: responsivePadding(8),
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255, 255, 255, 0.2)",
+  },
+  viewDetailsText: {
+    fontSize: responsiveFontSize(13),
+    color: "#FFFFFF",
+    fontWeight: "600",
+    letterSpacing: 0.3,
+  },
+  expandedContent: {
+    marginLeft: responsivePadding(12),
+    marginRight: responsiveWidth(15),
+    marginTop: responsivePadding(4),
+    overflow: "hidden",
+  },
+  expandedContentInner: {
+    backgroundColor: "rgba(255, 255, 255, 0.05)",
+    borderRadius: 12,
+    padding: responsivePadding(12),
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.1)",
+  },
+  tableContainer: {
+    maxHeight: 250,
+  },
+  table: {
+    backgroundColor: "rgba(255, 255, 255, 0.05)",
+    borderRadius: 8,
+    overflow: "hidden",
+  },
+  tableHeaderRow: {
+    flexDirection: "row",
+    backgroundColor: "rgba(74, 144, 226, 0.3)",
+  },
+  tableHeaderCell: {
+    padding: responsivePadding(8),
+    minWidth: 80,
+    borderRightWidth: 1,
+    borderRightColor: "rgba(255, 255, 255, 0.1)",
+  },
+  tableHeaderText: {
+    fontSize: responsiveFontSize(11),
+    fontWeight: "700",
+    color: "#FFFFFF",
+    textAlign: "center",
+  },
+  tableRow: {
+    flexDirection: "row",
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255, 255, 255, 0.1)",
+  },
+  tableCell: {
+    padding: responsivePadding(8),
+    minWidth: 80,
+    borderRightWidth: 1,
+    borderRightColor: "rgba(255, 255, 255, 0.1)",
+  },
+  tableCellText: {
+    fontSize: responsiveFontSize(12),
+    color: "#FFFFFF",
+    textAlign: "center",
+  },
+  listContainer: {
+    maxHeight: 200,
+  },
+  listItem: {
+    padding: responsivePadding(8),
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255, 255, 255, 0.1)",
+  },
+  listItemText: {
+    fontSize: responsiveFontSize(12),
+    color: "#FFFFFF",
+  },
+  dataContainer: {
+    maxHeight: 200,
+  },
+  dataText: {
+    fontSize: responsiveFontSize(11),
+    color: "#FFFFFF",
+    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
   },
 });
 
