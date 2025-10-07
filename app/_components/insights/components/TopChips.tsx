@@ -23,10 +23,10 @@ interface TopChipsProps {
 }
 
 const labels: { key: SectionKey; label: string }[] = [
-  { key: "investments", label: "Investments" },
+  { key: "recurring", label: "Recurring" },
   { key: "transactions", label: "Transactions" },
   { key: "spending", label: "Spending" },
-  { key: "recurring", label: "Recurring" },
+  { key: "investments", label: "Investments" },
   { key: "cashflow", label: "Cash Flow" },
 ];
 

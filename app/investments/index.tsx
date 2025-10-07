@@ -18,7 +18,6 @@ import {
   getSnaptradeOptionsFromDB,
   getSnaptradeBalancesFromDB,
   getSnaptradeConnectionsFromDB,
-  getStoredSnaptradeCredentials,
   getSnaptradeCredentialsWithFallback,
   syncSnaptradeInvestments,
   populateInvestmentAccountsInDB,
@@ -84,16 +83,31 @@ export default function InvestmentsScreen({
   const router = useRouter();
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
-  const [holdings, setHoldings] = useState<Holding[]>([]);
-  const [options, setOptions] = useState<OptionPosition[]>([]);
-  const [balances, setBalances] = useState<BalanceRow[]>([]);
-  const [connections, setConnections] = useState<ConnectionRow[]>([]);
+  const [holdings, setHoldings] = useState<Holding[]>(
+    preloadedData?.holdings || []
+  );
+  const [options, setOptions] = useState<OptionPosition[]>(
+    preloadedData?.options || []
+  );
+  const [balances, setBalances] = useState<BalanceRow[]>(
+    preloadedData?.balances || []
+  );
+  const [connections, setConnections] = useState<ConnectionRow[]>(
+    preloadedData?.connections || []
+  );
   const [showInstitutionModal, setShowInstitutionModal] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(!preloadedData);
   const [selectedSecurityType, setSelectedSecurityType] = useState<
     string | null
   >(null);
-  const hasData = useRef(false);
+  const hasData = useRef(
+    preloadedData
+      ? (preloadedData.holdings && preloadedData.holdings.length > 0) ||
+          (preloadedData.options && preloadedData.options.length > 0) ||
+          (preloadedData.balances && preloadedData.balances.length > 0) ||
+          (preloadedData.connections && preloadedData.connections.length > 0)
+      : false
+  );
 
   const loadFromDb = async () => {
     try {
@@ -154,11 +168,8 @@ export default function InvestmentsScreen({
       // Check if data is preloaded (when embedded in insights screen)
       if (preloadedData) {
         logger.info("Investments: Using preloaded data from insights screen");
-        setHoldings(preloadedData.holdings || []);
-        setOptions(preloadedData.options || []);
-        setBalances(preloadedData.balances || []);
-        setConnections(preloadedData.connections || []);
 
+        // Data is already set in initial state, just ensure loading state is correct
         const hasAnyData =
           (preloadedData.holdings && preloadedData.holdings.length > 0) ||
           (preloadedData.options && preloadedData.options.length > 0) ||

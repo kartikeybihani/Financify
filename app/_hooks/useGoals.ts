@@ -6,10 +6,11 @@ import { Goal } from "@/app/_types/finny";
 import { GoalInput } from "@/app/_types/addGoalModalTypes";
 import { supabase } from "@/app/_lib/supabase/supabase";
 import logger from "@/app/_utils/logger";
+import { CACHE_CONFIG } from "@/app/_shared/constants/cacheConfig";
 
-const GOALS_CACHE_KEY = "cached_goals";
-const GOALS_CACHE_TIMESTAMP_KEY = "cached_goals_timestamp";
-const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes in milliseconds
+const GOALS_CACHE_KEY = CACHE_CONFIG.KEYS.GOALS;
+const GOALS_CACHE_TIMESTAMP_KEY = CACHE_CONFIG.KEYS.GOALS_TIMESTAMP;
+const CACHE_DURATION = CACHE_CONFIG.DURATIONS.VERY_LONG; // 1 day in milliseconds
 
 export function useGoals(pushChat: (sender: "user" | "finny", message: string) => void) {
   const [goalsData, setGoalsData] = useState<Goal[]>([]);
@@ -195,7 +196,8 @@ export function useGoals(pushChat: (sender: "user" | "finny", message: string) =
 
       logger.info("✅ [GOALS] Goal saved successfully:", data);
 
-      // Refresh goals to get the updated list and update cache
+      // Clear cache first to ensure fresh data, then refresh from server
+      await clearGoalsCache();
       await refreshGoalsFromServer(false);
     } catch (e) {
       logger.error("❌ [GOALS] Error saving goal:", e);
@@ -215,7 +217,8 @@ export function useGoals(pushChat: (sender: "user" | "finny", message: string) =
         throw error;
       }
 
-      // Refresh goals to get the updated list and update cache
+      // Clear cache first to ensure fresh data, then refresh from server
+      await clearGoalsCache();
       await refreshGoalsFromServer(false);
     } catch (e) {
       logger.error("Error deleting goal:", e);
@@ -239,7 +242,8 @@ export function useGoals(pushChat: (sender: "user" | "finny", message: string) =
         return;
       }
 
-      // Refresh goals to get the updated list and update cache
+      // Clear cache first to ensure fresh data, then refresh from server
+      await clearGoalsCache();
       await refreshGoalsFromServer(false);
     } catch (e) {
       logger.error("Error updating goal:", e);

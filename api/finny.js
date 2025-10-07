@@ -1731,7 +1731,7 @@ export default async function handler(req, res) {
         response = await handleClassify(message, safeContext);
         break;
       case "ask":
-        response = await handleAsk(message, safeContext);
+        response = await handleAsk(message, safeContext, "ask_personalized");
         break;
       case "ask_state_rule":
         response = await handleAskStateRule(message, safeContext);
@@ -1757,7 +1757,7 @@ export default async function handler(req, res) {
   }
 }
 
-async function handleAsk(message, context) {
+async function handleAsk(message, context, intent = "ask_personalized") {
   console.log("🔍 [FINNY] Starting ask handler for message:", message);
   const startTime = Date.now();
   const timings = {
@@ -1937,30 +1937,71 @@ async function handleAsk(message, context) {
       "- Use the user's name when available to create personal connection",
       "- Focus on financial empowerment and positive outcomes",
       "",
-      // NEW: Add memory context
+      // Smart memory context with relevance-based selection
       ...(context.memory?.summary
         ? [`User context: ${context.memory.summary}`]
         : []),
-      ...(context.memory?.memories?.length
-        ? [
-            `Traits: ${context.memory.memories
-              .filter((m) => m.memory_type === "profile_trait")
-              .map((m) => `${m.key}: ${m.value}`)
-              .join(", ")}`,
-            `Constraints: ${context.memory.memories
-              .filter((m) => m.memory_type === "constraint")
-              .map((m) => `${m.key}: ${m.value}`)
-              .join(", ")}`,
-            `Preferences: ${context.memory.memories
-              .filter((m) => m.memory_type === "preference")
-              .map((m) => `${m.key}: ${m.value}`)
-              .join(", ")}`,
-            `Future plans: ${context.memory.memories
-              .filter((m) => m.memory_type === "future_plan")
-              .map((m) => `${m.key}: ${m.value}`)
-              .join(", ")}`,
-          ]
-        : []),
+      ...(() => {
+        // Select relevant memories based on message and intent
+        const selectedMemories = selectRelevantMemories(
+          context.memory,
+          message,
+          intent, // Use the actual intent passed to handleAsk
+          context.profile
+        );
+        const categorized = categorizeSelectedMemories(selectedMemories);
+
+        return [
+          // Profile traits
+          ...(categorized.profile_trait?.length
+            ? [
+                `Traits: ${categorized.profile_trait
+                  .map((m) => `${m.key}: ${m.value}`)
+                  .join(", ")}`,
+              ]
+            : []),
+          // Constraints
+          ...(categorized.constraint?.length
+            ? [
+                `Constraints: ${categorized.constraint
+                  .map((m) => `${m.key}: ${m.value}`)
+                  .join(", ")}`,
+              ]
+            : []),
+          // Preferences
+          ...(categorized.preference?.length
+            ? [
+                `Preferences: ${categorized.preference
+                  .map((m) => `${m.key}: ${m.value}`)
+                  .join(", ")}`,
+              ]
+            : []),
+          // Future plans
+          ...(categorized.future_plan?.length
+            ? [
+                `Future plans: ${categorized.future_plan
+                  .map((m) => `${m.key}: ${m.value}`)
+                  .join(", ")}`,
+              ]
+            : []),
+          // Context signals
+          ...(categorized.context_signal?.length
+            ? [
+                `Context signals: ${categorized.context_signal
+                  .map((m) => `${m.key}: ${m.value}`)
+                  .join(", ")}`,
+              ]
+            : []),
+          // Goals
+          ...(categorized.goal?.length
+            ? [
+                `Goals: ${categorized.goal
+                  .map((m) => `${m.key}: ${m.value}`)
+                  .join(", ")}`,
+              ]
+            : []),
+        ];
+      })(),
       "",
       "RESPONSE GUIDELINES:",
       "- Be CONCISE and focused - only answer what the user is asking for",
@@ -4303,30 +4344,71 @@ async function handleOffTopic(message, context) {
     "Keep responses concise but engaging.",
     "Focus on financial empowerment and positive outcomes.",
     "",
-    // Add memory context
+    // Smart memory context with relevance-based selection
     ...(context.memory?.summary
       ? [`User context: ${context.memory.summary}`]
       : []),
-    ...(context.memory?.memories?.length
-      ? [
-          `Traits: ${context.memory.memories
-            .filter((m) => m.memory_type === "profile_trait")
-            .map((m) => `${m.key}: ${m.value}`)
-            .join(", ")}`,
-          `Constraints: ${context.memory.memories
-            .filter((m) => m.memory_type === "constraint")
-            .map((m) => `${m.key}: ${m.value}`)
-            .join(", ")}`,
-          `Preferences: ${context.memory.memories
-            .filter((m) => m.memory_type === "preference")
-            .map((m) => `${m.key}: ${m.value}`)
-            .join(", ")}`,
-          `Future plans: ${context.memory.memories
-            .filter((m) => m.memory_type === "future_plan")
-            .map((m) => `${m.key}: ${m.value}`)
-            .join(", ")}`,
-        ]
-      : []),
+    ...(() => {
+      // Select relevant memories based on message and intent
+      const selectedMemories = selectRelevantMemories(
+        context.memory,
+        message,
+        "ask_personalized", // Default intent for classification
+        context.profile
+      );
+      const categorized = categorizeSelectedMemories(selectedMemories);
+
+      return [
+        // Profile traits
+        ...(categorized.profile_trait?.length
+          ? [
+              `Traits: ${categorized.profile_trait
+                .map((m) => `${m.key}: ${m.value}`)
+                .join(", ")}`,
+            ]
+          : []),
+        // Constraints
+        ...(categorized.constraint?.length
+          ? [
+              `Constraints: ${categorized.constraint
+                .map((m) => `${m.key}: ${m.value}`)
+                .join(", ")}`,
+            ]
+          : []),
+        // Preferences
+        ...(categorized.preference?.length
+          ? [
+              `Preferences: ${categorized.preference
+                .map((m) => `${m.key}: ${m.value}`)
+                .join(", ")}`,
+            ]
+          : []),
+        // Future plans
+        ...(categorized.future_plan?.length
+          ? [
+              `Future plans: ${categorized.future_plan
+                .map((m) => `${m.key}: ${m.value}`)
+                .join(", ")}`,
+            ]
+          : []),
+        // Context signals
+        ...(categorized.context_signal?.length
+          ? [
+              `Context signals: ${categorized.context_signal
+                .map((m) => `${m.key}: ${m.value}`)
+                .join(", ")}`,
+            ]
+          : []),
+        // Goals
+        ...(categorized.goal?.length
+          ? [
+              `Goals: ${categorized.goal
+                .map((m) => `${m.key}: ${m.value}`)
+                .join(", ")}`,
+            ]
+          : []),
+      ];
+    })(),
   ].join("\n");
 
   try {
@@ -6331,68 +6413,320 @@ async function forceRefreshUserData(userId) {
 
 // === MEMORY MANAGEMENT FUNCTIONS ===
 
+// In-memory cache for user memories
+const memoryCache = new Map();
+const MEMORY_CACHE_TTL = 10 * 60 * 1000; // 10 minutes
+
+// Cache entry structure: { data, timestamp }
+function getCachedMemory(userId) {
+  const cached = memoryCache.get(userId);
+  if (!cached) return null;
+
+  const now = Date.now();
+  if (now - cached.timestamp > MEMORY_CACHE_TTL) {
+    memoryCache.delete(userId);
+    return null;
+  }
+
+  return cached.data;
+}
+
+function setCachedMemory(userId, data) {
+  memoryCache.set(userId, {
+    data,
+    timestamp: Date.now(),
+  });
+}
+
+function invalidateMemoryCache(userId) {
+  memoryCache.delete(userId);
+}
+
+function getMemoryCacheStats() {
+  const now = Date.now();
+  const stats = {
+    totalEntries: memoryCache.size,
+    validEntries: 0,
+    expiredEntries: 0,
+    entries: [],
+  };
+
+  for (const [userId, entry] of memoryCache.entries()) {
+    const isExpired = now - entry.timestamp > MEMORY_CACHE_TTL;
+    if (isExpired) {
+      stats.expiredEntries++;
+    } else {
+      stats.validEntries++;
+    }
+
+    stats.entries.push({
+      userId,
+      age: now - entry.timestamp,
+      memoryCount: entry.data?.totalCount || 0,
+      hasSummary: !!entry.data?.summary,
+    });
+  }
+
+  return stats;
+}
+
+// Smart memory selection for optimal context building
+function selectRelevantMemories(memoryData, message, intent, userProfile) {
+  if (!memoryData?.memories?.length) return [];
+
+  const lowerMessage = message.toLowerCase();
+
+  // Define memory importance weights by type
+  const memoryTypeWeights = {
+    profile_trait: 0.9, // High - personal characteristics are always relevant
+    constraint: 0.95, // Very high - financial constraints are critical
+    preference: 0.85, // High - user preferences matter for advice
+    future_plan: 0.8, // High - future plans affect current decisions
+    goal: 0.9, // Very high - current goals are essential
+    context_signal: 0.7, // Medium - situational context
+  };
+
+  // Intent-based memory type priorities
+  const intentPriorities = {
+    ask_personalized: [
+      "constraint",
+      "goal",
+      "profile_trait",
+      "preference",
+      "future_plan",
+      "context_signal",
+    ],
+    goal_conversation: [
+      "goal",
+      "constraint",
+      "future_plan",
+      "profile_trait",
+      "preference",
+    ],
+    ask_fact_fresh: ["context_signal", "preference", "profile_trait"],
+    ask_state_rule: ["constraint", "preference", "context_signal"],
+    off_topic: ["profile_trait", "preference"],
+  };
+
+  // Dynamic memory limits based on query complexity
+  const getMemoryLimit = () => {
+    // High complexity indicators
+    const highComplexityKeywords = [
+      "advice",
+      "recommend",
+      "should i",
+      "help me",
+      "what do you think",
+      "financial plan",
+      "investment",
+      "retirement",
+      "budget",
+      "debt",
+      "goal",
+      "save",
+      "spend",
+      "afford",
+      "risk",
+    ];
+
+    // Medium complexity indicators
+    const mediumComplexityKeywords = [
+      "how much",
+      "when",
+      "where",
+      "which",
+      "compare",
+      "difference",
+    ];
+
+    const hasHighComplexity = highComplexityKeywords.some((keyword) =>
+      lowerMessage.includes(keyword)
+    );
+    const hasMediumComplexity = mediumComplexityKeywords.some((keyword) =>
+      lowerMessage.includes(keyword)
+    );
+
+    if (hasHighComplexity) return 12; // Comprehensive context for complex queries
+    if (hasMediumComplexity) return 8; // Good context for medium queries
+    return 5; // Basic context for simple queries
+  };
+
+  // Score memories based on relevance
+  const scoreMemory = (memory) => {
+    let score = 0;
+
+    // Base score from memory type weight
+    score += memoryTypeWeights[memory.memory_type] || 0.5;
+
+    // Confidence score boost
+    score += (memory.confidence_score || 0.7) * 0.3;
+
+    // Recency boost (newer memories are more relevant)
+    const daysSinceUpdate =
+      (Date.now() - new Date(memory.updated_at).getTime()) /
+      (1000 * 60 * 60 * 24);
+    score += Math.max(0, 0.2 - daysSinceUpdate / 30); // Decay over 30 days
+
+    // Keyword relevance boost
+    const memoryText = `${memory.key} ${memory.value}`.toLowerCase();
+    const messageWords = lowerMessage.split(/\s+/);
+    const relevanceMatches = messageWords.filter(
+      (word) => word.length > 3 && memoryText.includes(word)
+    ).length;
+    score += relevanceMatches * 0.1;
+
+    // Intent-based priority boost
+    const intentPriority =
+      intentPriorities[intent] || intentPriorities["ask_personalized"];
+    const typePriority = intentPriority.indexOf(memory.memory_type);
+    if (typePriority !== -1) {
+      score += (intentPriority.length - typePriority) * 0.1;
+    }
+
+    return score;
+  };
+
+  // Score and sort all memories
+  const scoredMemories = memoryData.memories
+    .map((memory) => ({
+      ...memory,
+      relevanceScore: scoreMemory(memory),
+    }))
+    .sort((a, b) => b.relevanceScore - a.relevanceScore);
+
+  // Apply dynamic limit
+  const limit = getMemoryLimit();
+  const selectedMemories = scoredMemories.slice(0, limit);
+
+  // Ensure we have at least one memory from each important type if available
+  const importantTypes =
+    intentPriorities[intent] || intentPriorities["ask_personalized"];
+  const finalMemories = [];
+  const usedTypes = new Set();
+
+  // First pass: Add top-scored memories
+  selectedMemories.forEach((memory) => {
+    if (finalMemories.length < limit) {
+      finalMemories.push(memory);
+      usedTypes.add(memory.memory_type);
+    }
+  });
+
+  // Second pass: Ensure coverage of important types
+  importantTypes.forEach((type) => {
+    if (!usedTypes.has(type) && finalMemories.length < limit) {
+      const typeMemory = memoryData.memories.find(
+        (m) => m.memory_type === type
+      );
+      if (typeMemory) {
+        finalMemories.push({
+          ...typeMemory,
+          relevanceScore: scoreMemory(typeMemory),
+        });
+        usedTypes.add(type);
+      }
+    }
+  });
+
+  console.log(
+    `🧠 [MEMORY] Selected ${finalMemories.length} memories for intent "${intent}" (limit: ${limit})`
+  );
+  console.log(`🧠 [MEMORY] Memory types included:`, Array.from(usedTypes));
+
+  return finalMemories.sort((a, b) => b.relevanceScore - a.relevanceScore);
+}
+
+// Helper function to categorize selected memories for context building
+function categorizeSelectedMemories(selectedMemories) {
+  const categorized = {
+    profile_trait: [],
+    constraint: [],
+    preference: [],
+    future_plan: [],
+    context_signal: [],
+    goal: [],
+  };
+
+  selectedMemories.forEach((memory) => {
+    if (categorized[memory.memory_type]) {
+      categorized[memory.memory_type].push(memory);
+    }
+  });
+
+  return categorized;
+}
+
 async function loadUserMemory(userId) {
   if (!userId) return { summary: "", memories: [] };
 
-  try {
-    // Get the most recent memory summary
-    const { data: summary } = await supabase
-      .from("memory_summary")
-      .select("summary_text")
-      .eq("user_id", userId)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .single();
+  // Check cache first
+  const cached = getCachedMemory(userId);
+  if (cached) {
+    console.log("🧠 [MEMORY] Using cached memory data for user:", userId);
+    return cached;
+  }
 
-    // Get top 3 freshest non-expired memories
+  try {
+    console.log("🧠 [MEMORY] Loading fresh memory data for user:", userId);
+
+    // Get ALL memory summaries (not just the most recent)
+    const { data: summaries } = await supabase
+      .from("memory_summary")
+      .select("summary_text, created_at")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false });
+
+    // Get all non-expired memories with higher limit and confidence filtering
     const { data: memories } = await supabase
       .from("user_memories")
-      .select("memory_type, key, value, confidence_score")
+      .select("memory_type, key, value, confidence_score, updated_at")
       .eq("user_id", userId)
       .or("expires_at.is.null,expires_at.gt.now()")
+      .gte("confidence_score", 0.7) // Only include high-confidence memories
       .order("updated_at", { ascending: false })
-      .limit(3);
+      .limit(20); // Increased limit for better context
 
-    const result = {
-      summary: summary?.summary_text || "",
-      memories: memories || [],
+    // Combine all summaries into one comprehensive summary
+    const combinedSummary =
+      summaries
+        ?.map((s) => s.summary_text)
+        .filter(Boolean)
+        .join(" ") || "";
+
+    // Categorize memories by type for better context building
+    const categorizedMemories = {
+      profile_trait: [],
+      constraint: [],
+      preference: [],
+      future_plan: [],
+      context_signal: [],
+      goal: [],
     };
 
-    if (result.summary || result.memories.length > 0) {
-    }
+    memories?.forEach((memory) => {
+      if (categorizedMemories[memory.memory_type]) {
+        categorizedMemories[memory.memory_type].push(memory);
+      }
+    });
 
+    const result = {
+      summary: combinedSummary,
+      memories: memories || [],
+      categorized: categorizedMemories,
+      totalCount: memories?.length || 0,
+    };
+
+    // Cache the result
+    setCachedMemory(userId, result);
+
+    console.log(
+      `🧠 [MEMORY] Loaded ${result.totalCount} memories for user ${userId}`
+    );
     return result;
   } catch (error) {
-    return { summary: "", memories: [] };
+    console.error("❌ [MEMORY] Error loading user memory:", error);
+    return { summary: "", memories: [], categorized: {}, totalCount: 0 };
   }
-}
-
-function extractMemoryCandidates(text) {
-  const candidates = [];
-
-  // Look for memory_candidates JSON object in response
-  const jsonMatch = text.match(
-    /\{\s*"memory_candidates"\s*:\s*\[(.*?)\]\s*\}/s
-  );
-  if (jsonMatch) {
-    try {
-      const candidatesText = `{"memory_candidates":[${jsonMatch[1]}]}`;
-      const parsed = JSON.parse(candidatesText);
-      return parsed.memory_candidates.filter((c) => c.confidence_score >= 0.7);
-    } catch (e) {}
-  }
-
-  // Fallback: look for simple array format
-  const arrayMatch = text.match(/memory_candidates[:\s]*\[(.*?)\]/s);
-  if (arrayMatch) {
-    try {
-      const candidatesText = `[${arrayMatch[1]}]`;
-      const parsed = JSON.parse(candidatesText);
-      return parsed.filter((c) => c.confidence_score >= 0.7);
-    } catch (e) {}
-  }
-
-  return candidates;
 }
 
 // Helper function to check if data is sensitive
@@ -6549,6 +6883,10 @@ async function saveMemoryCandidates(userId, candidates) {
         summaryError
       );
     }
+
+    // Invalidate memory cache since we've added new memories
+    invalidateMemoryCache(userId);
+    console.log("🧠 [MEMORY] Cache invalidated for user:", userId);
   } catch (error) {
     console.error("🧠 [FINNY] Critical error in saveMemoryCandidates:", error);
   }

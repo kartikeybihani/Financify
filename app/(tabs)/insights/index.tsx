@@ -45,7 +45,6 @@ import InsightsLoadingSkeleton from "@/app/_components/insights/InsightsLoadingS
 import SpendingSection from "@/app/_components/insights/components/SpendingSection";
 import TransactionsSection from "@/app/_components/insights/components/TransactionsSection";
 import CashFlowSection from "@/app/_components/insights/components/CashFlowSection";
-import RefreshStatus from "@/app/_components/insights/components/RefreshStatus";
 import { supabase } from "@/app/_lib/supabase/supabase";
 import InvestmentsScreen from "@/app/investments";
 import {
@@ -69,6 +68,27 @@ import {
 import { forceFullResync } from "@/src/utils/categoryFix";
 import logger from "@/app/_utils/logger";
 import { useCategories } from "@/app/_hooks/useCategories";
+import { OptimisticUpdateManager } from "@/app/_shared/utils/optimisticUpdates";
+import { InsightsAnimationManager } from "@/app/_shared/utils/insightsAnimations";
+import { SmartPreloader } from "@/app/_shared/utils/smartPreloader";
+import {
+  loadRecurringFromCache,
+  saveRecurringToCache,
+  clearRecurringCache,
+  CachedRecurringData,
+} from "@/app/_shared/utils/recurringCache";
+import {
+  loadInvestmentFromCache,
+  saveInvestmentToCache,
+  clearInvestmentCache,
+  CachedInvestmentData,
+} from "@/app/_shared/utils/investmentCache";
+import {
+  LoadingIndicator,
+  ErrorState,
+  EmptyState,
+  RefreshStatus,
+} from "@/app/_shared/components/LoadingStates";
 import {
   Transaction,
   RecurringStream,
@@ -171,6 +191,7 @@ export default function InsightsScreen() {
   const [hasMoreTransactions, setHasMoreTransactions] = useState(true);
 
   // Investment data state
+  // Initialize investment data with cached data if available
   const [investmentHoldings, setInvestmentHoldings] = useState<any[]>([]);
   const [investmentOptions, setInvestmentOptions] = useState<any[]>([]);
   const [investmentBalances, setInvestmentBalances] = useState<any[]>([]);
@@ -184,6 +205,15 @@ export default function InsightsScreen() {
   // Animation values for smooth transitions
   const fadeAnim = useRef(new Animated.Value(1)).current;
 
+  // Section entrance animations
+  const [sectionAnimations, setSectionAnimations] = useState<{
+    spending: Animated.Value;
+    transactions: Animated.Value;
+    recurring: Animated.Value;
+    investments: Animated.Value;
+    cashflow: Animated.Value;
+  } | null>(null);
+
   // Simple cache for filtered results
   const filterCache = useRef<
     Map<
@@ -195,7 +225,7 @@ export default function InsightsScreen() {
       }
     >
   >(new Map());
-  const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+  const CACHE_DURATION = 2 * 60 * 1000; // 2 minutes - using SHORT duration for filtered transactions
 
   // Cached userId to avoid repeated supabase.auth.getUser() calls
   const userIdRef = useRef<string | null>(null);
@@ -212,6 +242,17 @@ export default function InsightsScreen() {
     userIdRef.current = user?.id || null;
     return userIdRef.current;
   }, []);
+
+  // Track user behavior for smart preloading
+  const [userBehavior, setUserBehavior] = useState<{
+    sectionVisits: Record<string, number>;
+    lastVisited: string;
+    visitOrder: string[];
+  }>({
+    sectionVisits: {},
+    lastVisited: "spending",
+    visitOrder: ["spending"],
+  });
 
   // Listen for transaction category updates
   useEffect(() => {
@@ -230,38 +271,38 @@ export default function InsightsScreen() {
         if (data.affectedTransactions && data.affectedTransactions.length > 0) {
           console.log("📝 Updating filtered transactions with new categories");
 
-          // Update the filtered transactions list with new categories
+          // Apply optimistic updates to filtered transactions
           setFilteredTransactions((prevTransactions) => {
-            const updatedTransactions = prevTransactions.map((transaction) => {
-              // Check if this transaction was affected by the update
-              const affectedTx = data.affectedTransactions.find(
-                (affected: any) => affected.transactionId === transaction.id
+            let updatedTransactions = prevTransactions;
+
+            // Apply optimistic updates for each affected transaction
+            data.affectedTransactions.forEach((affectedTx: any) => {
+              updatedTransactions = OptimisticUpdateManager.applyCategoryChange(
+                updatedTransactions,
+                affectedTx.transactionId,
+                data.newCategory
               );
-
-              if (affectedTx) {
-                console.log("✅ Updating transaction:", {
-                  id: transaction.id,
-                  name: transaction.name,
-                  oldCategory:
-                    transaction.new_category || transaction.top_category,
-                  newCategory: data.newCategory,
-                });
-
-                // Update the transaction with new category
-                return {
-                  ...transaction,
-                  new_category: data.newCategory,
-                  top_category: data.newCategory, // Also update top_category for consistency
-                };
-              }
-
-              return transaction;
             });
 
             console.log(
               "📊 Updated transactions count:",
               updatedTransactions.length
             );
+            return updatedTransactions;
+          });
+
+          // Also update main transactions list for consistency
+          setTransactions((prevTransactions) => {
+            let updatedTransactions = prevTransactions;
+
+            data.affectedTransactions.forEach((affectedTx: any) => {
+              updatedTransactions = OptimisticUpdateManager.applyCategoryChange(
+                updatedTransactions,
+                affectedTx.transactionId,
+                data.newCategory
+              );
+            });
+
             return updatedTransactions;
           });
         } else {
@@ -275,6 +316,93 @@ export default function InsightsScreen() {
     );
 
     return () => subscription.remove();
+  }, []);
+
+  // Initialize section animations and preload tasks
+  useEffect(() => {
+    setSectionAnimations({
+      spending: InsightsAnimationManager.createSectionFadeIn(0),
+      transactions: InsightsAnimationManager.createSectionFadeIn(100),
+      recurring: InsightsAnimationManager.createSectionFadeIn(200),
+      investments: InsightsAnimationManager.createSectionFadeIn(300),
+      cashflow: InsightsAnimationManager.createSectionFadeIn(400),
+    });
+
+    // Register preload tasks for each section
+    SmartPreloader.registerTask({
+      id: "transactions",
+      priority: "high",
+      execute: async () => {
+        await loadFilteredTransactions(filterOptions, true);
+        return {
+          transactions: filteredTransactions,
+          count: totalFilteredCount,
+        };
+      },
+    });
+
+    SmartPreloader.registerTask({
+      id: "recurring",
+      priority: "medium",
+      execute: async () => {
+        await loadRecurringTransactions();
+        return { recurringData };
+      },
+    });
+
+    SmartPreloader.registerTask({
+      id: "investments",
+      priority: "medium",
+      execute: async () => {
+        await loadInvestmentData();
+        return {
+          holdings: investmentHoldings,
+          options: investmentOptions,
+          balances: investmentBalances,
+          connections: investmentConnections,
+        };
+      },
+    });
+
+    SmartPreloader.registerTask({
+      id: "accounts",
+      priority: "high",
+      execute: async () => {
+        await loadUserAccounts(false);
+        return { accounts };
+      },
+    });
+
+    // Start preloading for current section
+    SmartPreloader.preloadForSection(activeSection);
+  }, []);
+
+  // Load cached data immediately on mount to prevent flinching
+  useEffect(() => {
+    const loadCachedData = async () => {
+      try {
+        // Load cached investment data
+        const cachedInvestmentData = await loadInvestmentFromCache();
+        if (cachedInvestmentData) {
+          logger.info("📦 Loading cached investment data on mount");
+          setInvestmentHoldings(cachedInvestmentData.holdings);
+          setInvestmentOptions(cachedInvestmentData.options);
+          setInvestmentBalances(cachedInvestmentData.balances);
+          setInvestmentConnections(cachedInvestmentData.connections);
+        }
+
+        // Load cached recurring data
+        const cachedRecurringData = await loadRecurringFromCache();
+        if (cachedRecurringData) {
+          logger.info("📦 Loading cached recurring data on mount");
+          setRecurringData(cachedRecurringData);
+        }
+      } catch (error) {
+        logger.error("Error loading cached data:", error);
+      }
+    };
+
+    loadCachedData();
   }, []);
 
   // Initialize minimal data on mount: recent transactions + accounts only
@@ -324,15 +452,34 @@ export default function InsightsScreen() {
     }
   }, [filterOptions, activeSection, showEnhancedFilterModal]);
 
-  // Gate data loads by active section
+  // Gate data loads by active section and trigger smart preloading
   useEffect(() => {
     if (activeSection === "transactions") {
       loadFilteredTransactions(filterOptions, true);
     } else if (activeSection === "recurring") {
-      loadRecurringTransactions();
+      // Only load recurring data if we don't have any data yet
+      if (!recurringData) {
+        loadRecurringTransactions();
+      } else {
+        logger.info("📦 Recurring data already loaded, skipping reload");
+      }
     } else if (activeSection === "investments") {
-      loadInvestmentData();
+      // Only load investment data if we don't have any data yet
+      const hasInvestmentData =
+        investmentHoldings.length > 0 ||
+        investmentOptions.length > 0 ||
+        investmentBalances.length > 0 ||
+        investmentConnections.length > 0;
+
+      if (!hasInvestmentData) {
+        loadInvestmentData();
+      } else {
+        logger.info("📦 Investment data already loaded, skipping reload");
+      }
     }
+
+    // Trigger smart preloading for likely next sections
+    SmartPreloader.preloadForSection(activeSection);
   }, [activeSection]);
 
   const loadData = async () => {
@@ -581,7 +728,7 @@ export default function InsightsScreen() {
       async (data) => {
         logger.info("🔄 Financial data refreshed event received");
 
-        if (data.transactions) {
+        if (data && data.transactions) {
           setTransactions(data.transactions);
           processTransactionsData(data.transactions);
           hasData.current = true;
@@ -591,6 +738,10 @@ export default function InsightsScreen() {
         if (!showEnhancedFilterModal) {
           await loadUserAccounts(true); // Debug when financial data changes
           await loadFilteredTransactions(filterOptions, true);
+
+          // Clear caches since financial data has changed
+          await clearRecurringCache();
+          await clearInvestmentCache();
           // Also reload recurring transactions from database when data changes
           await loadRecurringTransactions();
           // Also reload investment data if financial data changes
@@ -829,6 +980,16 @@ export default function InsightsScreen() {
   ) => {
     if (newSection === activeSection) return;
 
+    // Track user behavior
+    setUserBehavior((prev) => ({
+      sectionVisits: {
+        ...prev.sectionVisits,
+        [newSection]: (prev.sectionVisits[newSection] || 0) + 1,
+      },
+      lastVisited: newSection,
+      visitOrder: [...prev.visitOrder, newSection].slice(-5), // Keep last 5 visits
+    }));
+
     // Fade out current content
     Animated.timing(fadeAnim, {
       toValue: 0,
@@ -850,8 +1011,35 @@ export default function InsightsScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
   };
 
-  // Load investment data from database
+  // Load investment data with AsyncStorage cache
   const loadInvestmentData = async () => {
+    try {
+      logger.info("Insights: Loading investment data...");
+
+      // First, try to load from cache
+      const cachedData = await loadInvestmentFromCache();
+      if (cachedData) {
+        logger.info("📦 Using cached investment data");
+        setInvestmentHoldings(cachedData.holdings);
+        setInvestmentOptions(cachedData.options);
+        setInvestmentBalances(cachedData.balances);
+        setInvestmentConnections(cachedData.connections);
+
+        // Load fresh data in background and update cache (no loading state)
+        loadInvestmentDataFromDB();
+        return true;
+      }
+
+      // No cache available, load from database
+      return await loadInvestmentDataFromDB();
+    } catch (err) {
+      logger.error("Failed to load investment data:", err);
+      return false;
+    }
+  };
+
+  // Load investment data from database and update cache
+  const loadInvestmentDataFromDB = async () => {
     try {
       logger.info("Insights: Loading investment data from Supabase...");
 
@@ -874,6 +1062,13 @@ export default function InsightsScreen() {
         (balances && balances.length > 0) ||
         (connections && connections.length > 0);
 
+      const investmentData = {
+        holdings: holdings || [],
+        options: options || [],
+        balances: balances || [],
+        connections: connections || [],
+      };
+
       if (hasAnyData) {
         logger.info(
           `Insights: Loaded investment data from Supabase - Holdings: ${
@@ -882,10 +1077,13 @@ export default function InsightsScreen() {
             balances?.length || 0
           }, Connections: ${connections?.length || 0}`
         );
-        setInvestmentHoldings(holdings || []);
-        setInvestmentOptions(options || []);
-        setInvestmentBalances(balances || []);
-        setInvestmentConnections(connections || []);
+        setInvestmentHoldings(investmentData.holdings);
+        setInvestmentOptions(investmentData.options);
+        setInvestmentBalances(investmentData.balances);
+        setInvestmentConnections(investmentData.connections);
+
+        // Save to cache for future use
+        await saveInvestmentToCache(investmentData);
         return true;
       }
 
@@ -894,6 +1092,9 @@ export default function InsightsScreen() {
       setInvestmentOptions([]);
       setInvestmentBalances([]);
       setInvestmentConnections([]);
+
+      // Save empty data to cache to avoid repeated DB calls
+      await saveInvestmentToCache(investmentData);
       return false;
     } catch (err) {
       logger.error("Failed to load investment data:", err);
@@ -1025,24 +1226,27 @@ export default function InsightsScreen() {
     }
   };
 
-  // Load recurring transactions from database (no Plaid calls)
+  // Load recurring transactions with AsyncStorage cache
   const loadRecurringTransactions = async () => {
     try {
+      logger.info("🔄 Loading recurring transactions...");
+
+      // First, try to load from cache
+      const cachedData = await loadRecurringFromCache();
+      if (cachedData) {
+        logger.info("📦 Using cached recurring transactions data");
+        setRecurringData(cachedData);
+
+        // Load fresh data in background and update cache (no loading state)
+        loadRecurringTransactionsFromDB();
+        return;
+      }
+
+      // No cache available, show loading state and load from database
       setRecurringLoading(true);
-      logger.info("🔄 Loading recurring transactions from database...");
-
-      const data = await getAllRecurringTransactions();
-      setRecurringData(data);
-
-      logger.info(
-        "✅ Recurring transactions loaded from database:",
-        data.summary
-      );
+      await loadRecurringTransactionsFromDB();
     } catch (error) {
-      logger.error(
-        "❌ Error loading recurring transactions from database:",
-        error
-      );
+      logger.error("❌ Error loading recurring transactions:", error);
       // Set empty data on error
       setRecurringData({
         subscriptions: [],
@@ -1053,6 +1257,29 @@ export default function InsightsScreen() {
       });
     } finally {
       setRecurringLoading(false);
+    }
+  };
+
+  // Load recurring transactions from database and update cache
+  const loadRecurringTransactionsFromDB = async () => {
+    try {
+      logger.info("🔄 Loading recurring transactions from database...");
+
+      const data = await getAllRecurringTransactions();
+      setRecurringData(data);
+
+      // Save to cache for future use
+      await saveRecurringToCache(data);
+
+      logger.info(
+        "✅ Recurring transactions loaded from database:",
+        data.summary
+      );
+    } catch (error) {
+      logger.error(
+        "❌ Error loading recurring transactions from database:",
+        error
+      );
     }
   };
 
@@ -1158,6 +1385,8 @@ export default function InsightsScreen() {
 
       // Clear cache before syncing
       clearCache();
+      await clearRecurringCache();
+      await clearInvestmentCache();
 
       setRefreshStatus({
         type: "manual",
@@ -1239,6 +1468,8 @@ export default function InsightsScreen() {
 
       // Clear cache before syncing
       clearCache();
+      await clearRecurringCache();
+      await clearInvestmentCache();
 
       setRefreshStatus({
         type: "category_fix",
@@ -1331,6 +1562,10 @@ export default function InsightsScreen() {
       logger.info("🔄 Step 4: Calling refreshRecurringTransactions()...");
       const recurringResult = await refreshRecurringTransactions();
       logger.info("📦 refreshRecurringTransactions result:", recurringResult);
+
+      // Clear caches since we have fresh data
+      await clearRecurringCache();
+      await clearInvestmentCache();
 
       // Step 5: Refresh UI from Supabase (single source of truth)
       setRefreshStatus({ type: "cloud", message: "Updating interface..." });
@@ -1494,9 +1729,8 @@ export default function InsightsScreen() {
           }
         >
           {isLoading && !hasData.current && (
-            <ActivityIndicator
-              size="large"
-              color="#4A90E2"
+            <LoadingIndicator
+              message="Loading your financial insights..."
               style={{ marginTop: 20 }}
             />
           )}
@@ -1505,7 +1739,18 @@ export default function InsightsScreen() {
             <>
               {/* Refresh Status Indicator */}
               {refreshStatus.type && (
-                <RefreshStatus message={refreshStatus.message} />
+                <RefreshStatus
+                  message={refreshStatus.message}
+                  type={
+                    refreshStatus.type === "cloud"
+                      ? "loading"
+                      : refreshStatus.type === "manual"
+                      ? "info"
+                      : refreshStatus.type === "category_fix"
+                      ? "loading"
+                      : "info"
+                  }
+                />
               )}
 
               {/* Re-auth banners */}
@@ -1525,7 +1770,14 @@ export default function InsightsScreen() {
                 <Animated.View
                   style={[
                     sectionContentStyles.container,
-                    { opacity: fadeAnim },
+                    {
+                      opacity: fadeAnim,
+                      ...(sectionAnimations?.cashflow
+                        ? InsightsAnimationManager.getInterpolatedStyles(
+                            sectionAnimations.cashflow
+                          )
+                        : {}),
+                    },
                   ]}
                 >
                   <CashFlowSection />
@@ -1537,7 +1789,14 @@ export default function InsightsScreen() {
                 <Animated.View
                   style={[
                     sectionContentStyles.container,
-                    { opacity: fadeAnim },
+                    {
+                      opacity: fadeAnim,
+                      ...(sectionAnimations?.spending
+                        ? InsightsAnimationManager.getInterpolatedStyles(
+                            sectionAnimations.spending
+                          )
+                        : {}),
+                    },
                   ]}
                 >
                   <SpendingSection
@@ -1557,7 +1816,14 @@ export default function InsightsScreen() {
                 <Animated.View
                   style={[
                     sectionContentStyles.container,
-                    { opacity: fadeAnim },
+                    {
+                      opacity: fadeAnim,
+                      ...(sectionAnimations?.transactions
+                        ? InsightsAnimationManager.getInterpolatedStyles(
+                            sectionAnimations.transactions
+                          )
+                        : {}),
+                    },
                   ]}
                 >
                   <TransactionsSection
@@ -1597,7 +1863,14 @@ export default function InsightsScreen() {
                 <Animated.View
                   style={[
                     sectionContentStyles.container,
-                    { opacity: fadeAnim },
+                    {
+                      opacity: fadeAnim,
+                      ...(sectionAnimations?.recurring
+                        ? InsightsAnimationManager.getInterpolatedStyles(
+                            sectionAnimations.recurring
+                          )
+                        : {}),
+                    },
                   ]}
                 >
                   <RecurringSection
@@ -1613,7 +1886,14 @@ export default function InsightsScreen() {
                 <Animated.View
                   style={[
                     sectionContentStyles.container,
-                    { opacity: fadeAnim },
+                    {
+                      opacity: fadeAnim,
+                      ...(sectionAnimations?.investments
+                        ? InsightsAnimationManager.getInterpolatedStyles(
+                            sectionAnimations.investments
+                          )
+                        : {}),
+                    },
                   ]}
                 >
                   <InvestmentsScreen

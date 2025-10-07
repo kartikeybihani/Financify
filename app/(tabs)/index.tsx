@@ -10,28 +10,18 @@ import {
   DeviceEventEmitter,
   Image,
   Dimensions,
+  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Feather, Ionicons } from "@expo/vector-icons";
 import { styles } from "@/app/_styles/homeStyles";
 import { supabase } from "@/app/_lib/supabase/supabase";
 import {
-  getUpdateLinkToken,
   openPlaidLink,
-  getAllUserAccounts,
   getPrimaryItemId,
-  clearOldPlaidData,
-  getItemIds,
   addNewBankAccount,
-} from "../_utils/plaid";
-import { populateInvestmentAccountsInDB } from "@/app/_utils/snaptrade";
-import {
-  Account,
-  Identity,
-  Investment,
-  Holding,
-  Security,
-} from "../_types/plaid";
+} from "@/app/_utils/plaid";
+import { Identity, Investment } from "@/app/_types/plaid";
 import { useRouter } from "expo-router";
 import FinancialBottomSheet from "@/app/_components/shared/FinancialBottomSheet";
 import FinancialCard from "@/app/_components/shared/FinancialCard";
@@ -41,9 +31,12 @@ import CashDepositInstitutionModal from "@/app/_components/modals/CashDepositIns
 import CreditCardInstitutionModal from "@/app/_components/modals/CreditCardInstitutionModal";
 import InstitutionSelectionModal from "@/app/_components/modals/InstitutionSelectionModal";
 import AccountDetailModal from "@/app/_components/modals/AccountDetailModal";
+import CashInputModal from "@/app/_components/modals/CashInputModal";
 import { LoadingSkeleton } from "@/src/components/LoadingSkeleton";
 import { Goal } from "@/app/_types/finny";
 import { useGoals } from "@/app/_hooks/useGoals";
+import { useAccountBalances } from "@/app/_hooks/useAccountBalances";
+import { useCashEntries } from "@/app/_hooks/useCashEntries";
 import logger from "@/app/_utils/logger";
 
 if (Platform.OS === "android") {
@@ -53,6 +46,25 @@ if (Platform.OS === "android") {
 export default function HomeScreen() {
   const router = useRouter();
   const { goalsData, loading: goalsLoading, refreshGoals } = useGoals(() => {});
+  const {
+    accounts,
+    loading: balancesLoading,
+    isInitialLoad: balancesInitialLoad,
+    refreshBalances,
+    categorizedLiabilities,
+    categorizedDeposits,
+    categorizedInvestments,
+    cashEntries,
+    totalCash,
+    refreshCash,
+    accountsTotal,
+    investmentsTotal,
+    liabilitiesTotal,
+    totalBalance,
+  } = useAccountBalances();
+
+  // Cash entries hook for managing cash operations
+  const { addCashEntry, deleteCashEntry } = useCashEntries();
 
   // Add encouraging messages array
   const encouragingMessages = [
@@ -72,7 +84,6 @@ export default function HomeScreen() {
 
   // Core states
   const [accessToken, setAccessToken] = useState<string | null>(null);
-  const [linkToken, setLinkToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -83,13 +94,14 @@ export default function HomeScreen() {
 
   // Modal states
   const [activeModal, setActiveModal] = useState<"accounts" | null>(null);
+  const [clickedCard, setClickedCard] = useState<string | null>(null);
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [showCashModal, setShowCashModal] = useState(false);
   const [showCreditModal, setShowCreditModal] = useState(false);
   const [showInvestmentModal, setShowInvestmentModal] = useState(false);
+  const [showCashInputModal, setShowCashInputModal] = useState(false);
 
-  // Financial data states
-  const [accounts, setAccounts] = useState<Account[]>([]);
+  // Legacy states for compatibility (will be removed after migration)
   const [identity, setIdentity] = useState<Identity[]>([]);
   const [investments, setInvestments] = useState<Investment | null>(null);
   const [liabilities, setLiabilities] = useState<any>(null);
@@ -203,10 +215,10 @@ export default function HomeScreen() {
     }
   };
 
-  // Load data directly from Supabase database (secure method)
-  const loadDataFromDatabase = async () => {
+  // Load additional data in background (non-blocking for UI)
+  const loadBackgroundData = async () => {
     try {
-      logger.info("Home: Loading data from Supabase database...");
+      logger.info("Home: Loading background data...");
 
       const {
         data: { user },
@@ -214,27 +226,13 @@ export default function HomeScreen() {
       } = await supabase.auth.getUser();
       if (authError || !user?.id) {
         logger.error("Auth error:", authError?.message);
-        return false;
+        return;
       }
 
-      // Get accounts directly from database (same as insights)
-      const accounts = await getAllUserAccounts(user.id);
-      setAccounts(accounts || []);
+      // Investment accounts are already included in getAllUserAccounts()
+      // No need to populate synthetic accounts in home screen
 
-      // Populate investment accounts in main accounts table if SnapTrade data exists
-      try {
-        await populateInvestmentAccountsInDB();
-        // Reload accounts to include any newly populated investment accounts
-        const updatedAccounts = await getAllUserAccounts(user.id);
-        setAccounts(updatedAccounts || []);
-      } catch (error) {
-        logger.warn(
-          "Failed to populate investment accounts (continuing anyway):",
-          error
-        );
-      }
-
-      // Get institution info from primary item
+      // Get institution info from primary item (for compatibility)
       const item_id = await getPrimaryItemId();
       let institution = null;
 
@@ -265,33 +263,30 @@ export default function HomeScreen() {
       });
       setLiabilities([]);
 
-      logger.info("Home: Data loaded from database", {
+      logger.info("Home: Background data loaded", {
         institution: institution?.name || "Multiple/Unknown",
-        accounts: accounts?.length || 0,
       });
-
-      return accounts && accounts.length > 0;
     } catch (error) {
-      logger.error("Error loading data from database:", error);
-      return false;
+      logger.error("Error loading background data:", error);
     }
   };
 
-  // Fetch fresh data using new Supabase approach (secure method)
+  // Fetch fresh data using new cached approach
   const fetchFreshData = async () => {
     try {
-      logger.info("Refreshing financial data from database...");
-      const hasData = await loadDataFromDatabase();
-      if (hasData) {
-        logger.info("Financial data refreshed successfully");
-        // Emit event for other components (like insights)
-        DeviceEventEmitter.emit("financialDataRefreshed", {
-          accounts,
-          transactions: [], // Transactions loaded separately in insights
-        });
-      } else {
-        logger.warn("No data available after refresh");
-      }
+      logger.info("Refreshing financial data...");
+      await refreshBalances();
+      await refreshGoals();
+
+      // Load background data
+      await loadBackgroundData();
+
+      logger.info("Financial data refreshed successfully");
+      // Emit event for other components (like insights)
+      DeviceEventEmitter.emit("financialDataRefreshed", {
+        accounts,
+        transactions: [], // Transactions loaded separately in insights
+      });
     } catch (error) {
       logger.error("Error refreshing data:", error);
     }
@@ -325,7 +320,7 @@ export default function HomeScreen() {
     setRefreshing(false);
   };
 
-  // Initial setup and data loading
+  // Simplified initialization - instant UI with cached data
   const initializeApp = async () => {
     try {
       setLoadingError(false);
@@ -340,21 +335,24 @@ export default function HomeScreen() {
       if (!user?.id) {
         logger.error("No authenticated user found");
         setAccessToken(null);
+        setIsInitialLoad(false);
+        setIsLoading(false);
         return;
       }
 
-      logger.info("Loading financial data from secure database...");
+      logger.info("Home screen initialized with cached data");
 
-      // Load data directly from database (secure method)
-      const hasData = await loadDataFromDatabase();
-
-      if (hasData) {
+      // Set access token based on whether we have any accounts (from cache or fresh)
+      if (accounts.length > 0) {
         setAccessToken("connected");
-        logger.info("Successfully loaded financial data from database");
+        logger.info("User has connected accounts");
       } else {
         logger.warn("No accounts found - user needs to connect a bank");
         setAccessToken(null);
       }
+
+      // Load background data without blocking UI
+      loadBackgroundData();
     } catch (err) {
       logger.error("Error initializing app:", err);
       setLoadingError(true);
@@ -373,7 +371,7 @@ export default function HomeScreen() {
       "financialDataRefreshed",
       (data) => {
         if (data) {
-          setAccounts(data.accounts || []);
+          // Accounts are now managed by useAccountBalances hook
           setIdentity(data.identity || []);
           setInvestments(data.investments || null);
           setLiabilities(data.liabilities || null);
@@ -460,61 +458,7 @@ export default function HomeScreen() {
   //   }))
   // );
 
-  // Memoized categorized account arrays
-  const categorizedLiabilities = useMemo(
-    () =>
-      accounts.filter((acc) => acc.type === "loan" || acc.type === "credit"),
-    [accounts]
-  );
-
-  const categorizedDeposits = useMemo(
-    () => accounts.filter((acc) => acc.type === "depository"),
-    [accounts]
-  );
-
-  const categorizedInvestments = useMemo(
-    () => accounts.filter((acc) => acc.type === "investment"),
-    [accounts]
-  );
-
-  // Debug: Log categorization results
-  // logger.debug("Categorized Deposits:", categorizedDeposits.length);
-  // logger.debug("Categorized Liabilities:", categorizedLiabilities.length);
-  // logger.debug("Investment Holdings:", investments?.holdings?.length || 0);
-  // logger.debug("Investment Accounts:", categorizedInvestments.length);
-
-  // Memoized financial totals
-  const accountsTotal = useMemo(
-    () =>
-      categorizedDeposits.reduce(
-        (acc, a) => acc + (a.balances.current || 0),
-        0
-      ),
-    [categorizedDeposits]
-  );
-
-  const investmentsTotal = useMemo(
-    () =>
-      categorizedInvestments.reduce(
-        (acc, a) => acc + (a.balances.current || 0),
-        0
-      ),
-    [categorizedInvestments]
-  );
-
-  const liabilitiesTotal = useMemo(
-    () =>
-      categorizedLiabilities.reduce(
-        (acc, a) => acc + (a.balances.current || 0),
-        0
-      ),
-    [categorizedLiabilities]
-  );
-
-  const totalBalance = useMemo(
-    () => accountsTotal + investmentsTotal - liabilitiesTotal,
-    [accountsTotal, investmentsTotal, liabilitiesTotal]
-  );
+  // Financial totals are now provided by useAccountBalances hook
 
   // Render functions
   const renderHeader = () => (
@@ -533,18 +477,18 @@ export default function HomeScreen() {
     </View>
   );
 
-  // Show loading skeleton during initial load or when loading
-  if (isInitialLoad || isLoading) {
+  // Show loading skeleton only during initial authentication check (very brief)
+  if (isInitialLoad && !userData) {
     return <LoadingSkeleton showError={false} />;
   }
 
-  // Show error state if we have an error and no cached data
-  if (loadingError && !accessToken) {
-    return <LoadingSkeleton showError={true} onRetry={retryLoading} />;
-  }
-
-  // Show error state if we've tried loading but have no access token and no cached data
-  if (hasTriedLoading && !accessToken && accounts.length === 0) {
+  // Show error state only if we have a critical error and no cached data
+  if (
+    loadingError &&
+    !accessToken &&
+    accounts.length === 0 &&
+    hasTriedLoading
+  ) {
     return <LoadingSkeleton showError={true} onRetry={retryLoading} />;
   }
 
@@ -720,7 +664,10 @@ export default function HomeScreen() {
                 useKM: true,
               })}
               icon="wallet-outline"
-              onPress={() => setActiveModal("accounts")}
+              onPress={() => {
+                setClickedCard("accounts");
+                setActiveModal("accounts");
+              }}
               iconColor="#4A90E2"
             />
             <FinancialCard
@@ -730,7 +677,10 @@ export default function HomeScreen() {
                 useKM: true,
               })}
               icon="trending-up"
-              onPress={() => setActiveModal("accounts")}
+              onPress={() => {
+                setClickedCard("investments");
+                setActiveModal("accounts");
+              }}
               iconColor="#4ECDC4"
             />
             <FinancialCard
@@ -740,7 +690,10 @@ export default function HomeScreen() {
                 useKM: true,
               })}
               icon="card-outline"
-              onPress={() => setActiveModal("accounts")}
+              onPress={() => {
+                setClickedCard("liabilities");
+                setActiveModal("accounts");
+              }}
               iconColor="#FF6B6B"
             />
           </View>
@@ -879,13 +832,20 @@ export default function HomeScreen() {
           {/* Bottom Sheets */}
           <FinancialBottomSheet
             visible={activeModal === "accounts"}
-            onClose={() => setActiveModal(null)}
+            onClose={() => {
+              setActiveModal(null);
+              setClickedCard(null);
+            }}
             title="Your Financial Accounts"
             icon="wallet-outline"
+            initialExpandedCategory={clickedCard || undefined}
             onAccountAdded={async () => {
               logger.info("New account added, refreshing financial data...");
               await fetchFreshData();
               logger.info("Financial data refreshed after new account");
+            }}
+            onCashAdded={() => {
+              setShowCashInputModal(true);
             }}
             categories={[
               {
@@ -898,7 +858,7 @@ export default function HomeScreen() {
                     name={account.name}
                     type={account.type}
                     balance={formatCurrency(
-                      account.balances.current || 0,
+                      account.balances?.current || 0,
                       "USD",
                       { decimals: 0, useKM: false }
                     )}
@@ -920,7 +880,7 @@ export default function HomeScreen() {
                     name={account.name}
                     type={account.type}
                     balance={formatCurrency(
-                      account.balances.current || 0,
+                      account.balances?.current || 0,
                       "USD",
                       { decimals: 0, useKM: false }
                     )}
@@ -948,7 +908,7 @@ export default function HomeScreen() {
                       name={account.name}
                       type={account.type}
                       balance={formatCurrency(
-                        account.balances.current || 0,
+                        account.balances?.current || 0,
                         "USD",
                         { decimals: 0, useKM: false }
                       )}
@@ -976,7 +936,7 @@ export default function HomeScreen() {
                       name={account.name}
                       type={account.type}
                       balance={formatCurrency(
-                        account.balances.current || 0,
+                        account.balances?.current || 0,
                         "USD",
                         { decimals: 0, useKM: false }
                       )}
@@ -987,6 +947,72 @@ export default function HomeScreen() {
                       onPress={() => handleAccountPress(account)}
                     />
                   )),
+              },
+              {
+                title: "CASH",
+                icon: "cash-outline" as keyof typeof Ionicons.glyphMap,
+                iconColor: "#4ECDC4",
+                items: cashEntries.map((entry, index) => (
+                  <AccountItem
+                    key={index}
+                    name={entry.description || "Cash"}
+                    type="cash"
+                    balance={formatCurrency(entry.amount, "USD", {
+                      decimals: 0,
+                      useKM: false,
+                    })}
+                    icon="cash-outline"
+                    bankName="Manual Entry"
+                    accountId={entry.id}
+                    accountData={entry}
+                    onPress={() => {
+                      Alert.alert(
+                        "Delete Cash Entry",
+                        `Are you sure you want to delete "${
+                          entry.description || "Cash"
+                        }" (${formatCurrency(entry.amount, "USD", {
+                          decimals: 0,
+                          useKM: false,
+                        })})?`,
+                        [
+                          {
+                            text: "Cancel",
+                            style: "cancel",
+                          },
+                          {
+                            text: "Delete",
+                            style: "destructive",
+                            onPress: async () => {
+                              try {
+                                await deleteCashEntry(entry.id);
+                                logger.info(
+                                  "✅ Cash entry deleted successfully:",
+                                  entry.id
+                                );
+
+                                // Refresh all financial data to update UI and net worth
+                                await fetchFreshData();
+                                logger.info(
+                                  "🔄 Financial data refreshed after cash deletion"
+                                );
+                              } catch (error) {
+                                logger.error(
+                                  "❌ Failed to delete cash entry:",
+                                  error
+                                );
+                                Alert.alert(
+                                  "Error",
+                                  "Failed to delete cash entry. Please try again.",
+                                  [{ text: "OK" }]
+                                );
+                              }
+                            },
+                          },
+                        ]
+                      );
+                    }}
+                  />
+                )),
               },
               {
                 title: "REAL ESTATE",
@@ -1107,6 +1133,34 @@ export default function HomeScreen() {
               setSelectedAccountId(null);
               setSelectedAccountData(null);
               setSelectedAccountPerformance(null);
+            }}
+          />
+
+          {/* Cash Input Modal */}
+          <CashInputModal
+            visible={showCashInputModal}
+            onClose={() => setShowCashInputModal(false)}
+            onSave={async (amount, description) => {
+              logger.info("Adding new cash entry:", { amount, description });
+              try {
+                await addCashEntry(amount, description);
+                logger.info("Cash entry added successfully");
+
+                // Refresh account balances to update the FinancialBottomSheet and net worth
+                // Note: addCashEntry already refreshes cash entries internally
+                await refreshBalances();
+
+                // Emit event to notify other components of the data refresh
+                DeviceEventEmitter.emit("financialDataRefreshed", {
+                  accounts: null, // Will be refreshed by the listener
+                  transactions: null, // Will be refreshed by the listener
+                });
+
+                setShowCashInputModal(false);
+              } catch (error) {
+                logger.error("Failed to add cash entry:", error);
+                throw error;
+              }
             }}
           />
         </ScrollView>

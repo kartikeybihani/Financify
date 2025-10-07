@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Modal,
   View,
@@ -37,7 +37,9 @@ interface FinancialBottomSheetProps {
   iconColor?: string;
   categories?: CategoryData[];
   children?: React.ReactNode;
+  initialExpandedCategory?: string;
   onAccountAdded?: () => void;
+  onCashAdded?: () => void;
 }
 
 export default function FinancialBottomSheet({
@@ -48,7 +50,9 @@ export default function FinancialBottomSheet({
   iconColor = "#4A90E2",
   categories,
   children,
+  initialExpandedCategory,
   onAccountAdded,
+  onCashAdded,
 }: FinancialBottomSheetProps) {
   const { height, width } = useWindowDimensions();
 
@@ -78,6 +82,63 @@ export default function FinancialBottomSheet({
   const [showInstitutionModal, setShowInstitutionModal] = useState(false);
   const [shouldReopenSheet, setShouldReopenSheet] = useState(false);
 
+  // Handle initial expanded category when modal opens
+  useEffect(() => {
+    if (visible && initialExpandedCategory && categories) {
+      const categoriesToExpand: string[] = [];
+
+      if (initialExpandedCategory === "accounts") {
+        // For accounts, expand CHECKINGS & SAVINGS if it has items
+        const checkingsCategory = categories.find(
+          (cat) => cat.title === "CHECKINGS & SAVINGS"
+        );
+        const cashCategory = categories.find((cat) => cat.title === "CASH");
+        const realEstateCategory = categories.find(
+          (cat) => cat.title === "REAL ESTATE"
+        );
+
+        if (checkingsCategory && checkingsCategory.items.length > 0) {
+          categoriesToExpand.push(checkingsCategory.title);
+          if (cashCategory && cashCategory.items.length > 0) {
+            categoriesToExpand.push(cashCategory.title);
+          }
+          if (realEstateCategory && realEstateCategory.items.length > 0) {
+            categoriesToExpand.push(realEstateCategory.title);
+          }
+        }
+      } else if (initialExpandedCategory === "investments") {
+        // For investments, expand INVESTMENTS if it has items
+        const investmentsCategory = categories.find(
+          (cat) => cat.title === "INVESTMENTS"
+        );
+        if (investmentsCategory && investmentsCategory.items.length > 0) {
+          categoriesToExpand.push(investmentsCategory.title);
+        }
+      } else if (initialExpandedCategory === "liabilities") {
+        // For liabilities, expand both CREDIT CARDS and LOANS if they have items
+        const creditCardsCategory = categories.find(
+          (cat) => cat.title === "CREDIT CARDS"
+        );
+        const loansCategory = categories.find((cat) => cat.title === "LOANS");
+
+        if (creditCardsCategory && creditCardsCategory.items.length > 0) {
+          categoriesToExpand.push(creditCardsCategory.title);
+        }
+        if (loansCategory && loansCategory.items.length > 0) {
+          categoriesToExpand.push(loansCategory.title);
+        }
+      }
+
+      // Set expanded categories if any were found with items
+      if (categoriesToExpand.length > 0) {
+        setExpandedCategories(new Set(categoriesToExpand));
+      }
+    } else if (!visible) {
+      // Reset expanded categories when modal closes
+      setExpandedCategories(new Set());
+    }
+  }, [visible, initialExpandedCategory, categories]);
+
   const toggleCategory = (categoryTitle: string) => {
     const newExpanded = new Set(expandedCategories);
     if (newExpanded.has(categoryTitle)) {
@@ -90,6 +151,20 @@ export default function FinancialBottomSheet({
 
   const handleAddNewAccount = async (categoryTitle?: string) => {
     if (isAddingAccount) return;
+
+    // If this is for cash, close the bottom sheet first, then trigger cash modal from parent
+    const isCashCategory = categoryTitle?.toLowerCase().includes("cash");
+
+    if (isCashCategory) {
+      // Close the FinancialBottomSheet first
+      onClose();
+
+      // Then trigger cash modal from parent
+      if (onCashAdded) {
+        onCashAdded();
+      }
+      return;
+    }
 
     // If this is for investments, show institution selection modal
     const isInvestmentCategory =
@@ -436,6 +511,8 @@ export default function FinancialBottomSheet({
                                   >
                                     {isAddingAccount
                                       ? "CONNECTING..."
+                                      : category.title === "CASH"
+                                      ? "ADD CASH MANUALLY"
                                       : "ADD A NEW ACCOUNT"}
                                   </Text>
                                 </TouchableOpacity>
