@@ -2376,6 +2376,27 @@ function detectStructuredData(message, packs) {
     };
   }
 
+  // Check if message contains markdown tables
+  const hasMarkdownTable = message.includes("|") && message.includes("---");
+
+  if (hasMarkdownTable) {
+    const extractedData = extractMarkdownTable(message);
+    if (extractedData && extractedData.length > 0) {
+      // Create a clean summary without the markdown table
+      const summary = message
+        .split("\n")
+        .filter((line) => !line.includes("|") && !line.includes("---"))
+        .join("\n")
+        .trim();
+
+      return {
+        summary: summary || "Here's the breakdown:",
+        data: extractedData,
+        dataType: "table",
+      };
+    }
+  }
+
   // Check if message contains table-like patterns (basic detection)
   const tablePatterns = [
     /Category\s+Amount\s+Count/i,
@@ -2403,6 +2424,66 @@ function detectStructuredData(message, packs) {
   }
 
   return null;
+}
+
+function extractMarkdownTable(text) {
+  const lines = text.split("\n");
+  const tableLines = [];
+  let inTable = false;
+
+  for (const line of lines) {
+    const trimmedLine = line.trim();
+
+    // Start of table (header row with |)
+    if (trimmedLine.includes("|") && !trimmedLine.includes("---")) {
+      inTable = true;
+      tableLines.push(trimmedLine);
+    }
+    // Separator row (---)
+    else if (trimmedLine.includes("---")) {
+      continue; // Skip separator
+    }
+    // Data rows
+    else if (inTable && trimmedLine.includes("|")) {
+      tableLines.push(trimmedLine);
+    }
+    // End of table
+    else if (inTable && !trimmedLine.includes("|")) {
+      break;
+    }
+  }
+
+  if (tableLines.length < 2) return null;
+
+  // Parse header
+  const headerLine = tableLines[0];
+  const headers = headerLine
+    .split("|")
+    .map((h) => h.trim())
+    .filter((h) => h.length > 0);
+
+  // Parse data rows
+  const dataRows = tableLines.slice(1).map((line) => {
+    const cells = line
+      .split("|")
+      .map((c) => c.trim())
+      .filter((c) => c.length > 0);
+
+    const row = {};
+    headers.forEach((header, index) => {
+      const value = cells[index] || "";
+      // Try to parse numbers
+      const numMatch = value.match(/\$?([\d,]+\.?\d*)/);
+      if (numMatch) {
+        row[header] = parseFloat(numMatch[1].replace(/,/g, ""));
+      } else {
+        row[header] = value;
+      }
+    });
+    return row;
+  });
+
+  return dataRows.length > 0 ? dataRows : null;
 }
 
 function extractTableFromText(text) {
