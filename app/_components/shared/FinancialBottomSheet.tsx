@@ -736,7 +736,7 @@ const styles = StyleSheet.create({
     paddingLeft: 6,
   },
   categoryItem: {
-    marginBottom: 8,
+    marginBottom: 2,
   },
   emptyState: {
     padding: 15,

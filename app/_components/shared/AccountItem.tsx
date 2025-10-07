@@ -143,7 +143,7 @@ export default function AccountItem({
 
 const styles = StyleSheet.create({
   cardWrapper: {
-    marginBottom: 12,
+    marginBottom: 3,
     elevation: 12,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 8 },

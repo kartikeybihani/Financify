@@ -15,7 +15,6 @@ import {
   Dimensions,
   Animated,
   Easing,
-  Linking,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -23,6 +22,7 @@ import { supabase } from "@/app/_lib/supabase/supabase";
 import { useRouter } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import logger from "@/app/_utils/logger";
+import * as WebBrowser from "expo-web-browser";
 const { width } = Dimensions.get("window");
 
 const MINIMUM_AGE = 18;
@@ -407,22 +407,30 @@ export default function SignupScreen() {
   const handlePrivacyPolicy = async () => {
     const url =
       "https://www.notion.so/Privacy-Policy-for-Financify-20d42b8a2179800682afdf5dc000fcdd?pvs=4";
-    const supported = await Linking.canOpenURL(url);
-    if (supported) {
-      await Linking.openURL(url);
-    } else {
+    try {
+      await WebBrowser.openBrowserAsync(url, {
+        presentationStyle: WebBrowser.WebBrowserPresentationStyle.FORM_SHEET,
+        controlsColor: "#4A90E2",
+        showTitle: true,
+      });
+    } catch (error) {
       Alert.alert("Error", "Cannot open privacy policy link");
+      logger.error("Failed to open privacy policy:", error);
     }
   };
 
   const handleTermsConditions = async () => {
     const url =
       "https://www.notion.so/Terms-Conditions-for-Financify-20d42b8a217980cea19ceda310df47c1?pvs=4";
-    const supported = await Linking.canOpenURL(url);
-    if (supported) {
-      await Linking.openURL(url);
-    } else {
+    try {
+      await WebBrowser.openBrowserAsync(url, {
+        presentationStyle: WebBrowser.WebBrowserPresentationStyle.FORM_SHEET,
+        controlsColor: "#4A90E2",
+        showTitle: true,
+      });
+    } catch (error) {
       Alert.alert("Error", "Cannot open terms & conditions link");
+      logger.error("Failed to open terms & conditions:", error);
     }
   };
 
@@ -540,7 +548,7 @@ export default function SignupScreen() {
                   <Text style={styles.label}>First Name</Text>
                   <TextInput
                     style={[styles.input]}
-                    placeholder="Kartik"
+                    placeholder="John"
                     placeholderTextColor="#666"
                     onChangeText={(text) => {
                       setFirstName(text);
@@ -552,7 +560,7 @@ export default function SignupScreen() {
                   <Text style={styles.label}>Last Name</Text>
                   <TextInput
                     style={[styles.input]}
-                    placeholder="Bihani"
+                    placeholder="Doe"
                     placeholderTextColor="#666"
                     onChangeText={(text) => {
                       setLastName(text);
@@ -605,7 +613,7 @@ export default function SignupScreen() {
                   <Text style={styles.label}>Email</Text>
                   <TextInput
                     style={[styles.input]}
-                    placeholder="kb@gmail.com"
+                    placeholder="john.doe@gmail.com"
                     placeholderTextColor="#666"
                     onChangeText={(text) => {
                       setEmail(text);
