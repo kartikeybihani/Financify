@@ -191,9 +191,8 @@ export const useChat = () => {
           "Sksksks, that's not really my vibe... but your bank account? That's my jam! ✨",
           "Bestie, I'm not about that life... but I AM about that financial freedom! 🌟",
           "Periodt, that's not my expertise... but budgeting? Now we're talking! 💯",
-          "Oop, wrong conversation... but let's talk about your money goals! 🚀",
+          "Oooohh...",
           "Not it, chief... but your financial future? That's definitely it! 👑",
-          "That's a no from me, dawg... but your savings? That's a yes! 💎",
           "I'm gonna need you to redirect that energy to your finances! ⚡"
         ];
         const randomMessage = funMessages[Math.floor(Math.random() * funMessages.length)];

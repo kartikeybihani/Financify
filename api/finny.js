@@ -4325,6 +4325,7 @@ async function handleClassify(message, context) {
 
 async function handleOffTopic(message, context) {
   console.log("🚫 [FINNY] Handling off-topic query:", message);
+  const startTime = Date.now();
 
   const category = context?.category || "general";
   const userProfile = context?.profile || {};
@@ -4455,7 +4456,7 @@ async function handleOffTopic(message, context) {
       intent: "off_topic",
       entities: [],
       confidence: 1.0,
-      response_time_ms: Date.now(),
+      response_time_ms: Date.now() - startTime,
       sources_used: [],
       cached: false,
       category: category,
