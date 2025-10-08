@@ -41,3 +41,5 @@ export const useChatContext = (): ChatContextType => {
   }
   return context;
 };
+
+export default ChatProvider;

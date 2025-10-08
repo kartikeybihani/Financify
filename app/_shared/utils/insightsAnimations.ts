@@ -203,3 +203,6 @@ export class InsightsAnimationManager {
     };
   }
 }
+
+// Default export for Expo Router compatibility
+export default InsightsAnimationManager;

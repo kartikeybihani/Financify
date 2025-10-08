@@ -160,3 +160,6 @@ export class CacheManager {
     return stats;
   }
 }
+
+// Default export for Expo Router compatibility
+export default CacheManager;

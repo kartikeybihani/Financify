@@ -176,3 +176,6 @@ export class SmartPreloader {
     logger.info(`🔄 [PRELOADER] Reset preloader state`);
   }
 }
+
+// Default export for Expo Router compatibility
+export default SmartPreloader;

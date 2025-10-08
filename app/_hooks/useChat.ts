@@ -7,6 +7,116 @@ import { supabase } from '@/app/_lib/supabase/supabase';
 
 // Message splitting removed - display messages as single strings
 
+// Ultra-simple message splitting - only split when there are clear tables
+const splitMessageWithTables = (fullMessage: string, structuredData?: any): ChatMessage[] => {
+  try {
+    // Simple approach: just check if message contains table markers
+    const hasTables = fullMessage.includes('|') && fullMessage.includes('---');
+    
+    if (!hasTables) {
+      // No tables, return as single message
+      return [{
+        id: `finny-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        sender: "finny",
+        text: fullMessage,
+        timestamp: Date.now(),
+        type: "text"
+      }];
+    }
+    
+    // Find the first table and split there
+    const firstTableIndex = fullMessage.search(/\|[\s\S]*?\n\s*\|[\s\-:]+\|/);
+    
+    if (firstTableIndex === -1) {
+      // Table pattern not found, return original
+      return [{
+        id: `finny-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        sender: "finny",
+        text: fullMessage,
+        timestamp: Date.now(),
+        type: "text"
+      }];
+    }
+    
+    // Split into two messages: before table and after table
+    const textBeforeTable = fullMessage.substring(0, firstTableIndex).trim();
+    const textAfterTable = fullMessage.substring(firstTableIndex).trim();
+    
+    const messages: ChatMessage[] = [];
+    const baseTimestamp = Date.now();
+    
+    // Message 1: Text before table
+    if (textBeforeTable) {
+      messages.push({
+        id: `finny-${baseTimestamp}-0-${Math.random().toString(36).substr(2, 9)}`,
+        sender: "finny",
+        text: textBeforeTable,
+        timestamp: baseTimestamp,
+        type: "text"
+      });
+    }
+    
+    // Message 2: Table (expandable)
+    const tableSummary = extractTableSummary(textBeforeTable);
+    messages.push({
+      id: `finny-${baseTimestamp}-1-${Math.random().toString(36).substr(2, 9)}`,
+      sender: "finny",
+      text: tableSummary,
+      timestamp: baseTimestamp + 100,
+      type: "expandable",
+      structuredData: structuredData
+    });
+    
+    // Message 3: Text after table (if any)
+    if (textAfterTable && textAfterTable.length > 50) {
+      messages.push({
+        id: `finny-${baseTimestamp}-2-${Math.random().toString(36).substr(2, 9)}`,
+        sender: "finny",
+        text: textAfterTable,
+        timestamp: baseTimestamp + 200,
+        type: "text"
+      });
+    }
+    
+    return messages.filter(msg => msg.text && msg.text.trim().length > 0);
+    
+  } catch (error) {
+    logger.error("Error in splitMessageWithTables:", error);
+    // Fallback to original message
+    return [{
+      id: `finny-${Date.now()}-fallback-${Math.random().toString(36).substr(2, 9)}`,
+      sender: "finny",
+      text: fullMessage,
+      timestamp: Date.now(),
+      type: "text"
+    }];
+  }
+};
+
+const extractTableSummary = (textBeforeTable: string): string => {
+  try {
+    // Look for the most recent header
+    const headerMatch = textBeforeTable.match(/##\s*(.+?)(?:\n|$)/);
+    if (headerMatch) {
+      return headerMatch[1].trim();
+    }
+    
+    // Look for the last meaningful sentence
+    const sentences = textBeforeTable.split(/[.!?]+/).filter(s => s.trim().length > 20);
+    if (sentences.length > 0) {
+      const lastSentence = sentences[sentences.length - 1].trim();
+      if (lastSentence.length > 20 && lastSentence.length < 150) {
+        return lastSentence;
+      }
+    }
+    
+    return "Here's the breakdown:";
+  } catch (error) {
+    logger.error("Error extracting table summary:", error);
+    return "Here's the data:";
+  }
+};
+
 export const useChat = () => {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>(finnyConstants.INITIAL_CHAT_MESSAGES);
   const [isTyping, setIsTyping] = useState(false);
@@ -103,6 +213,39 @@ export const useChat = () => {
       setIsTyping(false);
     } finally {
       setIsTyping(false); // Ensure typing is turned off even if there's an error
+    }
+  };
+
+  const pushMultipleMessages = async (messages: ChatMessage[]) => {
+    try {
+      if (!messages || messages.length === 0) {
+        logger.warn("No messages to send");
+        return;
+      }
+
+      for (let i = 0; i < messages.length; i++) {
+        try {
+          if (i > 0) {
+            // Add natural delay between messages (1-2 seconds)
+            setIsTyping(true);
+            await new Promise((resolve) => setTimeout(resolve, 1000 + Math.random() * 1000));
+          }
+          
+          pushChat(messages[i]);
+          setIsTyping(false);
+          
+          // Small delay to ensure smooth animation
+          if (i < messages.length - 1) {
+            await new Promise((resolve) => setTimeout(resolve, 200));
+          }
+        } catch (messageError) {
+          logger.error(`Error sending message ${i}:`, messageError);
+          // Continue with next message
+        }
+      }
+    } catch (error) {
+      logger.error("Error pushing multiple messages:", error);
+      setIsTyping(false);
     }
   };
 
@@ -243,6 +386,39 @@ export const useChat = () => {
       // Finny response received
       logger.info("🤖 [CHAT] API Response:", data);
       
+      // Check for structured data (tables) and implement simple message splitting
+      if (data.structuredData && data.message) {
+        try {
+          // Use ultra-simple splitting for messages with tables
+          const splitMessages = splitMessageWithTables(data.message, data.structuredData);
+          
+          if (splitMessages.length > 1) {
+            // Multiple messages - send them with proper timing
+            logger.info("🤖 [CHAT] Splitting message with tables into", splitMessages.length, "parts");
+            await pushMultipleMessages(splitMessages);
+            return;
+          } else {
+            // Single message - use original logic
+            const expandableMessage: ChatMessage = {
+              id: `finny-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+              sender: "finny",
+              text: data.structuredData.summary || data.message || "",
+              timestamp: Date.now(),
+              type: "expandable",
+              structuredData: data.structuredData,
+            };
+            setIsTyping(true);
+            await new Promise((resolve) => setTimeout(resolve, 1000 + Math.random() * 1000));
+            pushChat(expandableMessage);
+            setIsTyping(false);
+            return;
+          }
+        } catch (error) {
+          logger.error("Error in message splitting:", error);
+          // Fallback to original logic
+        }
+      }
+
       // Handle different response types based on intent
       let message;
       if (data.intent === "ask_fact_fresh" && data.fact) {
@@ -267,24 +443,6 @@ export const useChat = () => {
         const proj = data.projection;
         message = `**Projection Results**\n\nTarget: $${proj.swr_target.toLocaleString()}\nProjected: $${proj.projected_nest_egg.toLocaleString()}\nYears to target: ${proj.years_to_target}\n\n${proj.notes.join('\n')}`;
       } else if ((data.intent === "ask_personalized" || data.type === "assistant") && data.message) {
-        // Handle personalized responses (including rent vs buy analysis)
-        if (data.structuredData) {
-          // Create expandable message with structured data
-          const expandableMessage: ChatMessage = {
-            id: `finny-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-            sender: "finny",
-            text: data.structuredData.summary || data.message,
-            timestamp: Date.now(),
-            type: "expandable",
-            structuredData: data.structuredData,
-          };
-          // Add typing delay for expandable messages
-          setIsTyping(true);
-          await new Promise((resolve) => setTimeout(resolve, 1000 + Math.random() * 1000));
-          pushChat(expandableMessage);
-          setIsTyping(false);
-          return; // Don't process as regular message
-        }
         message = data.message;
       } else if (data.intent === "goal") {
         // Persist flow state if provided
@@ -336,6 +494,7 @@ export const useChat = () => {
     clearChat,
     pushChat,
     pushChatWithDelay,
+    pushMultipleMessages,
     handleUserMessage,
   };
 };

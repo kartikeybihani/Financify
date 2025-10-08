@@ -207,11 +207,14 @@ const Goals: React.FC<GoalsProps> = ({
   });
 
   useEffect(() => {
-    logger.info(
-      "🔄 [GOALS COMPONENT] Goals data changed:",
-      goalsData?.length || 0,
-      "goals"
-    );
+    // Only log when goals count actually changes (not on every render)
+    if (localGoalsData?.length !== goalsData?.length) {
+      logger.info(
+        "🔄 [GOALS COMPONENT] Goals data changed:",
+        goalsData?.length || 0,
+        "goals"
+      );
+    }
     setLocalGoalsData(goalsData);
   }, [goalsData]);
 

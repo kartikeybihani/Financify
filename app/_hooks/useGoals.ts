@@ -30,7 +30,10 @@ export function useGoals(pushChat: (sender: "user" | "finny", message: string) =
         AsyncStorage.setItem(GOALS_CACHE_KEY, JSON.stringify(goals)),
         AsyncStorage.setItem(GOALS_CACHE_TIMESTAMP_KEY, timestamp)
       ]);
-      logger.info("💾 [GOALS CACHE] Goals saved to cache:", goals.length, "goals");
+      // Only log on first save or when goals count changes significantly
+      if (goals.length === 0 || goals.length % 5 === 0) {
+        logger.info("💾 [GOALS CACHE] Saved:", goals.length, "goals");
+      }
     } catch (error) {
       logger.error("❌ [GOALS CACHE] Failed to save goals to cache:", error);
     }
@@ -44,7 +47,6 @@ export function useGoals(pushChat: (sender: "user" | "finny", message: string) =
       ]);
 
       if (!cachedGoalsString || !timestampString) {
-        logger.info("📭 [GOALS CACHE] No cached goals found");
         return null;
       }
 
@@ -52,10 +54,14 @@ export function useGoals(pushChat: (sender: "user" | "finny", message: string) =
       const now = Date.now();
       const cacheAge = now - timestamp;
 
-      logger.info(`📱 [GOALS CACHE] Cache age: ${Math.round(cacheAge / 1000)}s (max: ${CACHE_DURATION / 1000}s)`);
+      // Only log cache age if it's getting close to expiry (>80% of max duration)
+      const maxAgeSeconds = CACHE_DURATION / 1000;
+      const ageSeconds = Math.round(cacheAge / 1000);
+      if (cacheAge > CACHE_DURATION * 0.8) {
+        logger.info(`📱 [GOALS CACHE] Cache expiring soon: ${ageSeconds}s/${maxAgeSeconds}s`);
+      }
 
       const cachedGoals = JSON.parse(cachedGoalsString) as Goal[];
-      logger.info("📱 [GOALS CACHE] Loaded from cache:", cachedGoals.length, "goals");
       return cachedGoals;
     } catch (error) {
       logger.error("❌ [GOALS CACHE] Failed to load goals from cache:", error);
@@ -84,7 +90,6 @@ export function useGoals(pushChat: (sender: "user" | "finny", message: string) =
       // Always try to load from cache first for immediate UI update
       const cachedGoals = await loadGoalsFromCache();
       if (cachedGoals && cachedGoals.length > 0) {
-        logger.info("⚡ [GOALS CACHE] Using cached goals for immediate display");
         setGoalsData(cachedGoals);
         setIsInitialLoad(false);
       }
@@ -92,10 +97,12 @@ export function useGoals(pushChat: (sender: "user" | "finny", message: string) =
       // Check if we need to refresh from server
       const cacheValid = await isCacheValid();
       if (!cacheValid || isInitialLoad) {
-        logger.info("🔄 [GOALS CACHE] Cache invalid or initial load, fetching from server");
+        // Only log on initial load or when cache is truly invalid
+        if (isInitialLoad) {
+          logger.info("🔄 [GOALS CACHE] Initial load, fetching from server");
+        }
         await refreshGoalsFromServer(!!cachedGoals);
       } else {
-        logger.info("✅ [GOALS CACHE] Cache is valid, skipping server fetch");
         setLoading(false);
         setIsInitialLoad(false);
       }
@@ -108,8 +115,9 @@ export function useGoals(pushChat: (sender: "user" | "finny", message: string) =
 
   const refreshGoalsFromServer = async (hasCache: boolean = false): Promise<void> => {
     try {
-      logger.info("🔄 [GOALS] Refreshing goals from database...");
+      // Only log server refresh when there's no cache (first load or forced refresh)
       if (!hasCache) {
+        logger.info("🔄 [GOALS] Loading from database...");
         setLoading(true);
       }
       
@@ -119,8 +127,6 @@ export function useGoals(pushChat: (sender: "user" | "finny", message: string) =
         logger.error("❌ [GOALS] User not authenticated for refresh");
         return;
       }
-
-      logger.info("👤 [GOALS] User ID for query:", user.id);
 
       const { data: goals, error } = await supabase
         .from('goals')

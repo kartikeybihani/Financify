@@ -47,3 +47,6 @@ export const getCacheDuration = (dataType: keyof typeof CACHE_CONFIG.STRATEGIES)
 export const getCacheKey = (dataType: keyof typeof CACHE_CONFIG.KEYS): string => {
   return CACHE_CONFIG.KEYS[dataType];
 };
+
+// Default export for Expo Router compatibility
+export default CACHE_CONFIG;

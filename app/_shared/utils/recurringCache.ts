@@ -104,3 +104,11 @@ export const hasValidRecurringCache = async (): Promise<boolean> => {
     return false;
   }
 };
+
+// Default export for Expo Router compatibility
+export default {
+  saveRecurringToCache,
+  loadRecurringFromCache,
+  clearRecurringCache,
+  hasValidRecurringCache,
+};

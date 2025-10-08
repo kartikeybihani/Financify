@@ -142,3 +142,13 @@ export const formatRecurringStreamType = (streamType: string): string => {
       return streamType || 'Unknown';
   }
 };
+
+// Default export for Expo Router compatibility
+export default {
+  getRecurringStreamDetails,
+  isTransactionRecurring,
+  getRecurringTransactions,
+  getRecurringTransactionsByStream,
+  formatRecurringFrequency,
+  formatRecurringStreamType,
+};

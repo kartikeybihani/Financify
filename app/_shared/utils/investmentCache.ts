@@ -107,3 +107,11 @@ export const hasValidInvestmentCache = async (): Promise<boolean> => {
     return false;
   }
 };
+
+// Default export for Expo Router compatibility
+export default {
+  saveInvestmentToCache,
+  loadInvestmentFromCache,
+  clearInvestmentCache,
+  hasValidInvestmentCache,
+};

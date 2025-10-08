@@ -111,3 +111,6 @@ export class OptimisticUpdateManager {
     return this.updates.get(transactionId);
   }
 }
+
+// Default export for Expo Router compatibility
+export default OptimisticUpdateManager;
