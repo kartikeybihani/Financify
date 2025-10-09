@@ -3,7 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import fetch from "node-fetch";
 import crypto from "crypto";
 import { handleGoalConversation } from "./goals.js";
-import { KEY_SYNONYMS } from "../app/_shared/constants/keySynonyms.js";
+import { KEY_SYNONYMS } from "../src/constants/keySynonyms.js";
 import { braveSearch } from "../lib/websearch/brave.js";
 
 // Utilities

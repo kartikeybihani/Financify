@@ -105,91 +105,112 @@ GOALS & INVESTMENT TRACKING
 ---------------------------
 
 11. get_goals_overview ⭐ ACTIVE
-    - Returns active goals with progress percentage
-    - Parameters: p_user_id (uuid), p_limit (integer DEFAULT 5)
-    - Returns: TABLE(label text, category text, status text, target_amount numeric, current_amount numeric, progress_pct numeric, target_date date)
-    - Purpose: Financial goals tracking and progress monitoring
-    - Used in: store_accounts.js
+   - Returns active goals with progress percentage
+   - Parameters: p_user_id (uuid), p_limit (integer DEFAULT 5)
+   - Returns: TABLE(label text, category text, status text, target_amount numeric, current_amount numeric, progress_pct numeric, target_date date)
+   - Purpose: Financial goals tracking and progress monitoring
+   - Used in: store_accounts.js
 
-12. get_investment_holdings_detailed ⭐ ACTIVE
-    - Returns detailed investment holdings
-    - Parameters: p_user_id (uuid)
-    - Returns: TABLE(symbol text, description text, units numeric, market_value numeric, unrealized_pl numeric, day_change_percent numeric, price numeric)
-    - Purpose: Comprehensive investment portfolio analysis
-    - Used in: store_accounts.js
+12. get_investment_portfolio_summary ⭐ ACTIVE
+   - Returns comprehensive investment portfolio summary
+   - Parameters: p_user_id (uuid)
+   - Returns: TABLE(total_portfolio_value numeric, total_cash numeric, total_investments numeric, day_change numeric, day_change_percent numeric, total_change numeric, total_change_percent numeric, last_updated timestamp with time zone)
+   - Purpose: Complete investment portfolio overview with performance metrics
+   - Used in: investment components
+
+13. get_investment_holdings_detailed ⭐ ACTIVE
+   - Returns detailed investment holdings with performance data
+   - Parameters: p_user_id (uuid)
+   - Returns: TABLE(symbol text, description text, units numeric, price numeric, market_value numeric, unrealized_pl numeric, day_change numeric, day_change_percent numeric, security_type text, last_updated timestamp with time zone)
+   - Purpose: Comprehensive investment holdings analysis with performance tracking
+   - Used in: store_accounts.js, investment components
+
+14. get_investment_balances_summary ⭐ ACTIVE
+   - Returns investment account balances and performance
+   - Parameters: p_user_id (uuid)
+   - Returns: TABLE(cash numeric, buying_power numeric, total_value numeric, day_change numeric, day_change_percent numeric, total_change numeric, total_change_percent numeric, currency_code text, last_updated timestamp with time zone)
+   - Purpose: Investment account balance and performance summary
+   - Used in: investment components
+
+15. get_investment_connections ⭐ ACTIVE
+   - Returns active investment account connections
+   - Parameters: p_user_id (uuid)
+   - Returns: TABLE(account_id text, brokerage_name text, account_name text, account_type text, is_active boolean, last_synced_at timestamp with time zone, connection_status text)
+   - Purpose: Manage investment account connections and status
+   - Used in: investment components
 
 RECURRING TRANSACTIONS
 ----------------------
 
-13. get_recurring_streams_active ⭐ ACTIVE
-    - Returns active recurring income/expense streams
-    - Parameters: p_user_id (uuid)
-    - Returns: TABLE(stream_id text, stream_type text, flow_type text, merchant_name text, category text, average_amount numeric, last_amount numeric, frequency text, first_date date, last_date date)
-    - Purpose: Manages recurring transaction patterns
-    - Used in: store_accounts.js
+16. get_recurring_streams_active ⭐ ACTIVE
+   - Returns active recurring income/expense streams
+   - Parameters: p_user_id (uuid)
+   - Returns: TABLE(stream_id text, stream_type text, flow_type text, merchant_name text, category text, average_amount numeric, last_amount numeric, frequency text, first_date date, last_date date)
+   - Purpose: Manages recurring transaction patterns
+   - Used in: store_accounts.js
 
-14. get_recurring_next_dates ⭐ ACTIVE
-    - Calculates next occurrence dates for recurring streams
-    - Parameters: p_user_id (uuid)
-    - Returns: TABLE(stream_id text, stream_type text, flow_type text, merchant_name text, category text, average_amount numeric, frequency text, last_date date, first_date date, next_date date)
-    - Purpose: Predicts upcoming recurring transactions
-    - Used in: store_accounts.js
+17. get_recurring_next_dates ⭐ ACTIVE
+   - Calculates next occurrence dates for recurring streams
+   - Parameters: p_user_id (uuid)
+   - Returns: TABLE(stream_id text, stream_type text, flow_type text, merchant_name text, category text, average_amount numeric, frequency text, last_date date, first_date date, next_date date)
+   - Purpose: Predicts upcoming recurring transactions
+   - Used in: store_accounts.js
 
 SECURITY & CREDENTIAL MANAGEMENT
 --------------------------------
 
-15. secure_get_plaid_token ⭐ ACTIVE
-    - Securely retrieves Plaid access token from Vault
-    - Parameters: p_item_id (text), p_user_id (uuid)
-    - Returns: text
-    - Purpose: Secure access to encrypted Plaid tokens
-    - Used in: transactions_sync.js, plaid.js, refresh_data.js, store_accounts.js, plaid_management.js, refresh_recurring_transactions.js, sync-transactions function
+18. secure_get_plaid_token ⭐ ACTIVE
+   - Securely retrieves Plaid access token from Vault
+   - Parameters: p_item_id (text), p_user_id (uuid)
+   - Returns: text
+   - Purpose: Secure access to encrypted Plaid tokens
+   - Used in: transactions_sync.js, plaid.js, refresh_data.js, store_accounts.js, plaid_management.js, refresh_recurring_transactions.js, sync-transactions function
 
-16. secure_store_plaid_token ⭐ ACTIVE
-    - Securely stores Plaid access token in Vault
-    - Parameters: p_item_id (text), p_user_id (uuid), p_token (text)
-    - Returns: uuid (secret_id)
-    - Purpose: Encrypted storage of banking credentials
-    - Used in: store-plaid-token function
+19. secure_store_plaid_token ⭐ ACTIVE
+   - Securely stores Plaid access token in Vault
+   - Parameters: p_item_id (text), p_user_id (uuid), p_token (text)
+   - Returns: uuid (secret_id)
+   - Purpose: Encrypted storage of banking credentials
+   - Used in: store-plaid-token function
 
-17. secure_store_snaptrade_credentials ⭐ ACTIVE
-    - Securely stores SnapTrade credentials in Vault
-    - Parameters: p_user_id (uuid), p_snaptrade_user_id (text), p_account_id (text), p_user_secret (text)
-    - Returns: uuid (secret_id)
-    - Purpose: Encrypted storage of investment credentials
-    - Used in: store-snaptrade-credentials function
+20. secure_store_snaptrade_credentials ⭐ ACTIVE
+   - Securely stores SnapTrade credentials in Vault
+   - Parameters: p_user_id (uuid), p_snaptrade_user_id (text), p_account_id (text), p_user_secret (text)
+   - Returns: uuid (secret_id)
+   - Purpose: Encrypted storage of investment credentials
+   - Used in: store-snaptrade-credentials function
 
 AUTOMATIC CATEGORIZATION FUNCTIONS
 ----------------------------------
 
-18. apply_category_rules_to_existing_transactions ⭐ ACTIVE
-    - Applies category rules to existing transactions that don't have new_category set
-    - Parameters: none
-    - Returns: integer (updated_count)
-    - Purpose: Bulk apply existing rules to uncategorized transactions
-    - Used in: Automatic categorization system
+21. apply_category_rules_to_existing_transactions ⭐ ACTIVE
+   - Applies category rules to existing transactions that don't have new_category set
+   - Parameters: none
+   - Returns: integer (updated_count)
+   - Purpose: Bulk apply existing rules to uncategorized transactions
+   - Used in: Automatic categorization system
 
-19. auto_apply_category_rules ⭐ ACTIVE (TRIGGER)
-    - Trigger function that automatically applies category rules to new transactions
-    - Parameters: none (trigger function)
-    - Returns: trigger
-    - Purpose: Automatic categorization of new transactions based on existing rules
-    - Used in: Automatic categorization system
+22. auto_apply_category_rules ⭐ ACTIVE (TRIGGER)
+   - Trigger function that automatically applies category rules to new transactions
+   - Parameters: none (trigger function)
+   - Returns: trigger
+   - Purpose: Automatic categorization of new transactions based on existing rules
+   - Used in: Automatic categorization system
 
 UTILITY & TRIGGER FUNCTIONS
 ---------------------------
 
-20. update_updated_at_column ⭐ ACTIVE
-    - Trigger function to automatically update updated_at timestamp
-    - Parameters: none (trigger function)
-    - Returns: trigger
-    - Purpose: Maintains audit trail for record modifications
+23. update_updated_at_column ⭐ ACTIVE
+   - Trigger function to automatically update updated_at timestamp
+   - Parameters: none (trigger function)
+   - Returns: trigger
+   - Purpose: Maintains audit trail for record modifications
 
-21. update_web_scrape_cache_updated_at ⭐ ACTIVE
-    - Trigger function to update web scrape cache timestamp
-    - Parameters: none (trigger function)
-    - Returns: trigger
-    - Purpose: Cache invalidation for web scraping data
+24. update_web_scrape_cache_updated_at ⭐ ACTIVE
+   - Trigger function to update web scrape cache timestamp
+   - Parameters: none (trigger function)
+   - Returns: trigger
+   - Purpose: Cache invalidation for web scraping data
 
 REMAINING UNUSED FUNCTIONS (CANDIDATES FOR REMOVAL)
 ===================================================
@@ -212,7 +233,7 @@ REMAINING UNUSED FUNCTIONS (CANDIDATES FOR REMOVAL)
 27. get_spend_by_category_effective ❌ REMOVED
     - Status: Removed via schema cleanup
 
-TOTAL: 24 ACTIVE functions, 0 REMAINING unused functions
+TOTAL: 28 ACTIVE functions, 0 REMAINING unused functions
 
 NOTES:
 - ⭐ ACTIVE functions are currently used in the codebase

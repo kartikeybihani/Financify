@@ -1,4 +1,4 @@
-// app/_shared/constants/keySynonyms.ts
+// src/constants/keySynonyms.ts
 // Comprehensive synonyms map for 18-35 US users
 
 export const KEY_SYNONYMS = {

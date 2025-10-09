@@ -22,6 +22,7 @@ import {
   syncSnaptradeInvestments,
   populateInvestmentAccountsInDB,
 } from "../_utils/snaptrade";
+import { clearInvestmentCache } from "@/app/_shared/utils/investmentCache";
 import { styles } from "@/app/_styles/investmentsStyles";
 import InstitutionSelectionModal from "@/app/_components/modals/InstitutionSelectionModal";
 
@@ -55,6 +56,7 @@ interface BalanceRow {
   day_change_percent?: number | null;
   total_change?: number | null;
   total_change_percent?: number | null;
+  total_value?: number | null;
 }
 
 interface ConnectionRow {
@@ -109,6 +111,9 @@ export default function InvestmentsScreen({
       : false
   );
 
+  // Track last sync time to force reload after sync
+  const lastSyncTime = useRef<number | null>(null);
+
   const loadFromDb = async () => {
     try {
       logger.info("Investments: Loading data from Supabase...");
@@ -159,8 +164,12 @@ export default function InvestmentsScreen({
 
   useEffect(() => {
     const initializeScreen = async () => {
-      // If we already have data, don't reload unnecessarily
-      if (hasData.current) {
+      // Check if we need to reload data (either no data or recent sync)
+      const shouldReload =
+        !hasData.current ||
+        (lastSyncTime.current && Date.now() - lastSyncTime.current < 5000); // 5 second window
+
+      if (!shouldReload) {
         logger.info("Investments: Data already loaded, skipping reload");
         return;
       }
@@ -242,6 +251,12 @@ export default function InvestmentsScreen({
       logger.info("🔄 Starting investment sync...");
       await syncSnaptradeInvestments(user.id, first.account_id);
 
+      // Clear cache to ensure fresh data
+      await clearInvestmentCache();
+
+      // Mark sync time to force reload on next screen visit
+      lastSyncTime.current = Date.now();
+
       logger.info("🔄 Reloading data from database...");
       const hasStoredData = await loadFromDb();
 
@@ -286,7 +301,14 @@ export default function InvestmentsScreen({
     (sum, o) => sum + (o.market_value || 0),
     0
   );
-  const totalPortfolioValue = totalHoldingsValue + totalOptionsValue;
+
+  // Use total_value from investment_balances if available, otherwise calculate
+  const calculatedPortfolioValue = totalHoldingsValue + totalOptionsValue;
+  const totalPortfolioValue =
+    balances.length > 0 && balances[0].total_value
+      ? balances[0].total_value
+      : calculatedPortfolioValue;
+
   const totalCash = balances.reduce((sum, b) => sum + (b.cash || 0), 0);
 
   // Calculate total unrealized P&L using new investment_balances columns first, then fallback to holdings

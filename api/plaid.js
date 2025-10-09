@@ -501,6 +501,9 @@ async function handleSnapTradeSync(res, userId, accountId) {
           });
         }
 
+        // Calculate total portfolio value (cash + investments)
+        const totalValue = (balanceData[0]?.cash || 0) + totalPortfolioValue;
+
         // Calculate percentages
         const dayChangePercent =
           holdingsData && Array.isArray(holdingsData) && holdingsData.length > 0
@@ -548,6 +551,8 @@ async function handleSnapTradeSync(res, userId, accountId) {
           day_change_percent: dayChangePercent,
           total_change: totalUnrealizedPL,
           total_change_percent: totalChangePercent,
+          // New total value column
+          total_value: totalValue,
           is_current: true,
           last_updated: new Date().toISOString(),
         }));
