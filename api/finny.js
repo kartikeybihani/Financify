@@ -580,11 +580,11 @@ async function enhanceSearchQuery(message, context) {
       return message;
     }
 
-    // Sort holdings by market value (largest first) and get top 5
+    // Sort holdings by market value (largest first) and get top 2 to avoid rate limiting
     const topHoldings = holdings
       .filter((holding) => holding.symbol && holding.symbol.length <= 5)
       .sort((a, b) => (b.market_value || 0) - (a.market_value || 0))
-      .slice(0, 5);
+      .slice(0, 2); // Reduced from 5 to 2 to avoid rate limiting
 
     if (topHoldings.length === 0) {
       console.log("⚠️ [ENHANCE] No valid holdings found");
@@ -608,10 +608,21 @@ async function enhanceSearchQuery(message, context) {
       searchQueries
     );
 
-    // Return multiple queries for parallel processing
+    // Get all available holdings for user prompt
+    const allHoldings = holdings
+      .filter((holding) => holding.symbol && holding.symbol.length <= 5)
+      .sort((a, b) => (b.market_value || 0) - (a.market_value || 0));
+
+    // Return multiple queries for parallel processing with additional context
     return {
       queries: searchQueries,
       holdings: topHoldings,
+      allHoldings: allHoldings, // For user prompting
+      userPrompt: `I'm showing news for your top ${
+        topHoldings.length
+      } holdings (${topHoldings.map((h) => h.symbol).join(", ")}). You have ${
+        allHoldings.length
+      } total holdings. If you'd like news about any specific stock, just let me know!`,
     };
   } catch (error) {
     console.error("❌ [ENHANCE] Error enhancing search query:", error);
@@ -805,7 +816,7 @@ async function handleAsk(message, context, intent = "ask_personalized") {
           // Single query (original behavior)
           webResults = await braveSearch(enhancedData);
         } else if (enhancedData && enhancedData.queries) {
-          // Multiple queries - search in parallel
+          // Multiple queries - search in parallel (limited to avoid rate limiting)
           const symbols = enhancedData.queries.map((q) => q.split(" ")[0]);
           console.log(
             `🔍 [FINNY] Performing ${enhancedData.queries.length} parallel searches for:`,
@@ -828,6 +839,15 @@ async function handleAsk(message, context, intent = "ask_personalized") {
           console.log(
             `✅ [FINNY] Combined ${searchResults.length} searches into ${webResults.length} unique results`
           );
+
+          // Add user prompt to context for AI response
+          if (enhancedData.userPrompt) {
+            context.userPrompt = enhancedData.userPrompt;
+            console.log(
+              "🔍 [FINNY] Added user prompt to context:",
+              enhancedData.userPrompt
+            );
+          }
         } else {
           // Fallback to original message
           webResults = await braveSearch(message);
@@ -965,6 +985,10 @@ async function handleAsk(message, context, intent = "ask_personalized") {
             "",
             "SOURCE INCLUSION: When using web search results, ALWAYS include 2-3 most relevant source URLs in your response. Format them as links at the end of your response under a 'Sources:' section. Choose the most authoritative and directly relevant sources. Do NOT overwhelm with too many sources - quality over quantity.",
             "",
+            // Add user prompt if available
+            ...(context.userPrompt
+              ? ["USER GUIDANCE:", context.userPrompt, ""]
+              : []),
           ]
         : []),
       "RESPONSE GUIDELINES:",
