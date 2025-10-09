@@ -1,7 +1,7 @@
 // app/_shared/constants/keySynonyms.ts
 // Comprehensive synonyms map for 18-35 US users
 
-const KEY_SYNONYMS = {
+export const KEY_SYNONYMS = {
   // === PROFILE TRAITS ===
   "profile_trait.age": {
     synonyms: ["age", "years old", "turning", "birthday", "young", "old"],
@@ -456,5 +456,3 @@ const KEY_SYNONYMS = {
     examples: ["got a raise", "tax refund", "sold my car", "inherited money"],
   },
 };
-
-export default KEY_SYNONYMS;
