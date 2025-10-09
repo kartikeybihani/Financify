@@ -1163,6 +1163,8 @@ async function handleAsk(
             "",
             "SOURCE INCLUSION: When using web search results, ALWAYS include 2-3 most relevant source URLs in your response. Format them as links at the end of your response under a 'Sources:' section. Choose the most authoritative and directly relevant sources. Do NOT overwhelm with too many sources - quality over quantity.",
             "",
+            "LINK PROVISION: When suggesting users go online for additional resources (like checking credit scores, applying for credit cards, or accessing specific services), ALWAYS provide the direct link if you have it. This saves users time and provides immediate access to the resources you're recommending.",
+            "",
             // Add user prompt if available
             ...(context.userPrompt
               ? ["USER GUIDANCE:", context.userPrompt, ""]
@@ -3012,6 +3014,7 @@ async function handleClassify(message, context) {
               "- If it needs the user's actual data choose ask_personalized",
               "- If purely personal (spend, net worth, goals) → `ask_personalized` (needs_user_data=true, needs_web=false).",
               "- If asking about current rates, limits, rules, or regulations (Roth IRA limits, 401k limits, tax brackets, interest rates) → `ask_personalized` (needs_web=true, needs_user_data=false).",
+              "- If asking about credit card recommendations, applications, or which credit cards to get → `ask_personalized` (needs_web=true, needs_user_data=true) - this requires both current card offers and user's financial profile.",
               "- **GOAL CONVERSATIONS**: If message mentions saving, goals, targets, aspirations, or asks about goal feasibility → `goal_conversation` (needs_user_data=true, needs_calc=true)",
               "- If ambiguous but potentially financial, choose ask_personalized",
               "- **DEFAULT TO FINANCIAL**: When in doubt between financial and non-financial, prefer financial intent.",
@@ -3028,9 +3031,10 @@ async function handleClassify(message, context) {
               '"Difference between Roth and traditional IRA" → ask_personalized',
               '"What is the Roth IRA contribution limit for 2025?" → ask_personalized, needs_web:true, needs_user_data:false',
               '"Difference between credit and debit card?" → ask_personalized, needs_user_data:false, needs_web:false',
+              '"What are the best credit cards I can get?" → ask_personalized, needs_web:true, needs_user_data:true',
+              '"Which credit card should I apply for?" → ask_personalized, needs_web:true, needs_user_data:true',
               '"Rent vs buy in Phoenix at 7%" → ask_personalized, needs_web:true, needs_user_data:true, state:"AZ"',
               '"Can I hit FIRE by 35" → ask_personalized, needs_calc:true',
-              '"Can I retire by 45" → ask_personalized, needs_calc:true',
               '"Will I have enough to retire" → ask_personalized, needs_calc:true',
               '"Can I achieve my financial goals" → goal_conversation',
               '"What\'s the latest news on semiconductor industry and AMD especially?" → ask_personalized, needs_web:true, needs_user_data:false',
