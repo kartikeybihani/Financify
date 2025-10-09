@@ -178,7 +178,7 @@ export const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 3.84,
     elevation: 5,
-    paddingVertical: 10,
+    paddingVertical: 1,
   },
   flexRow: {
     flexDirection: "row",

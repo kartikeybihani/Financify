@@ -41,6 +41,7 @@ interface Holding {
   unrealized_pl: number | null;
   day_change?: number | null;
   day_change_percent?: number | null;
+  total_percent_change?: number | null;
   security_type?: string;
 }
 
@@ -837,18 +838,11 @@ export default function InvestmentsScreen({
             const getDisplayPercentage = () => {
               switch (holdingsSortBy) {
                 case "total_gain_loss":
-                  return totalPortfolioValue > 0
-                    ? ((h.unrealized_pl || 0) / totalPortfolioValue) * 100
-                    : 0;
+                  // Use the new total_percent_change column from database
+                  return h.total_percent_change || 0;
                 case "today_gain_loss":
-                  const todayValue =
-                    h.day_change ||
-                    (h.day_change_percent
-                      ? (h.market_value * h.day_change_percent) / 100
-                      : 0);
-                  return totalPortfolioValue > 0
-                    ? (todayValue / totalPortfolioValue) * 100
-                    : 0;
+                  // Use day_change_percent directly from database
+                  return h.day_change_percent || 0;
                 case "last_price":
                   // For last price, show the daily change percentage in the chip
                   return h.day_change_percent || 0;
@@ -857,9 +851,8 @@ export default function InvestmentsScreen({
                     ? (h.market_value / totalPortfolioValue) * 100
                     : 0;
                 default:
-                  return totalPortfolioValue > 0
-                    ? ((h.unrealized_pl || 0) / totalPortfolioValue) * 100
-                    : 0;
+                  // Use the new total_percent_change column from database
+                  return h.total_percent_change || 0;
               }
             };
 
