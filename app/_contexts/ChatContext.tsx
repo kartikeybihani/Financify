@@ -17,7 +17,7 @@ interface ChatContextType {
     sender: "user" | "finny",
     message: string
   ) => Promise<void>;
-  handleUserMessage: (messageText: string) => Promise<void>;
+  handleUserMessage: (messageText: string, startTime?: number) => Promise<void>;
 }
 
 const ChatContext = createContext<ChatContextType | undefined>(undefined);

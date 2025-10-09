@@ -252,13 +252,21 @@ export default function ChatScreen() {
       return;
     }
 
+    // Start timing for response time tracking
+    const messageStartTime = Date.now();
+    const mstTime = new Date(messageStartTime).toLocaleString("en-US", {
+      timeZone: "America/Los_Angeles",
+    });
+    console.log(`📤 Message sent at: ${mstTime} MST`);
+
     pushChat("user", messageText);
     Keyboard.dismiss();
     setUserInput("");
     setIsTyping(true);
 
     try {
-      await handleUserMessage(messageText);
+      const startTime = messageStartTime;
+      await handleUserMessage(messageText, startTime);
     } catch (error) {
       pushChat("finny", "Hmm, something went wrong. Try again?");
     } finally {

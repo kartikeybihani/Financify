@@ -139,13 +139,13 @@ export const useChat = () => {
     }
   };
 
-  const handleUserMessage = async (messageText: string) => {
+  const handleUserMessage = async (messageText: string, startTime?: number) => {
     setIsTyping(true); // Start typing indicator immediately
-    await handleFinnyResponse(messageText);
+    await handleFinnyResponse(messageText, startTime);
     setIsTyping(false); // Stop typing indicator after response
   };
 
-  const handleFinnyResponse = async (messageText: string) => {
+  const handleFinnyResponse = async (messageText: string, startTime?: number) => {
     const BASE_URL = process.env.EXPO_PUBLIC_APP_BASE_URL || "https://financify-rose.vercel.app";
     try {
       // Get user_id for the API calls
@@ -281,6 +281,7 @@ export const useChat = () => {
       // Finny response received
       logger.info("🤖 [CHAT] API Response:", data);
       
+      
       // Handle structured data as regular messages - no splitting or expandable logic
 
       // Handle different response types based on intent
@@ -324,10 +325,20 @@ export const useChat = () => {
       
       // logger.info("messages", message);
       setProgressStatus(""); // Clear progress status
+      
+      // Log total response time
+      if (startTime) {
+        const totalResponseDuration = Date.now() - startTime;
+        const ptTime = new Date().toLocaleString("en-US", { timeZone: "America/Los_Angeles" });
+        console.log(`📥 Total response time: ${totalResponseDuration}ms (${(totalResponseDuration / 1000).toFixed(2)}s) at ${ptTime} PT`);
+      }
+      
       await pushChatWithDelay("finny", message);
     } catch (error) {
       logger.error("AI error:", error);
       setProgressStatus(""); // Clear progress status
+      
+      
       pushChat("finny", "Something went wrong. Try again later.");
     }
   };

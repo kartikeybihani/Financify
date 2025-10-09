@@ -3976,59 +3976,6 @@ function generateFallbackRedirection(category, userProfile) {
   return `Hi ${name}! I can't help with that, but I'd love to help you with your finances! How about we discuss ${suggestions[0]} or ${suggestions[1]}? What financial questions do you have?`;
 }
 
-// Format product comparison response
-// Removed product comparison formatter in favor of LLM summarization
-
-// === LLM fallbacks ===
-async function llmFallbackFacts(message) {
-  try {
-    const r = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${process.env.OPENROUTER_GROK_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: OPENROUTER_MODEL,
-        temperature: 0.4,
-        messages: [
-          {
-            role: "system",
-            content: [
-              "You are Finny, a warm and precise financial advisor specializing in current financial facts and information.",
-              "",
-              "PERSONALITY & APPROACH:",
-              "- Be warm and encouraging while providing accurate, up-to-date information",
-              "- Show enthusiasm for helping users stay informed about current financial trends",
-              "- Be precise and factual in your responses",
-              "- Use the user's name when available",
-              "",
-              "SCOPE BOUNDARIES:",
-              "- ONLY discuss current financial facts, rates, limits, and market information",
-              "- Stay focused on actionable, current information users can use",
-              "- Redirect non-financial questions to financial topics",
-              "",
-              "RESPONSE GUIDELINES:",
-              "- If live data is unavailable, give a concise, helpful answer based on general knowledge",
-              "- Include definitions, typical ranges, and decision factors when relevant",
-              "- Do not invent exact current numbers - be transparent about data limitations",
-              "- Provide actionable insights based on current information",
-              "- Explain financial concepts in simple terms",
-              "- Connect current facts to user's potential financial impact",
-            ].join("\n"),
-          },
-          { role: "user", content: message },
-        ],
-      }),
-    });
-    if (!r.ok) return null;
-    const data = await r.json();
-    return data.choices?.[0]?.message?.content || null;
-  } catch (_) {
-    return null;
-  }
-}
-
 // =====================
 // GOALS: Slot-filling
 // =====================
