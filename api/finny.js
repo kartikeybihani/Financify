@@ -725,6 +725,7 @@ async function handleAsk(message, context, intent = "ask_personalized") {
           console.log(
             `✅ [FINNY] Web search completed: ${webResults.length} results`
           );
+          console.log("📄 [FINNY] Web summary for prompt:", webSummary);
           toolsUsed.push("brave-search");
         } else {
           console.log("⚠️ [FINNY] Web search returned no results");
@@ -842,11 +843,14 @@ async function handleAsk(message, context, intent = "ask_personalized") {
             "",
             webSummary,
             "",
+            "IMPORTANT: Use the web search results above for current information. These results are more up-to-date than training data.",
+            "",
           ]
         : []),
       "RESPONSE GUIDELINES:",
       "- Be CONCISE and focused - only answer what the user is asking for",
       "- Don't overwhelm users with too much information at once",
+      "- ALWAYS prioritize web search results over training data for current information (rates, limits, rules, etc.)",
       "- If user asks about 'accounts', show account balances and types, NOT individual holdings",
       "- If user asks about 'investments' or 'holdings', then show the detailed holdings",
       "- If user asks for 'investment advice' or 'financial advice', focus on actionable recommendations, not data dumps",
@@ -3160,6 +3164,7 @@ async function handleClassify(message, context) {
               "- If affordability, FIRE, retirement planning, or financial projections choose ask_personalized (set needs_calc=true)",
               "- If it needs the user's actual data choose ask_personalized",
               "- If purely personal (spend, net worth, goals) → `ask_personalized` (needs_user_data=true, needs_web=false).",
+              "- If asking about current rates, limits, rules, or regulations (Roth IRA limits, 401k limits, tax brackets, interest rates) → `ask_personalized` (needs_web=true, needs_user_data=false).",
               "- **GOAL CONVERSATIONS**: If message mentions saving, goals, targets, aspirations, or asks about goal feasibility → `goal_conversation` (needs_user_data=true, needs_calc=true)",
               "- If ambiguous but potentially financial, choose ask_personalized",
               "- **DEFAULT TO FINANCIAL**: When in doubt between financial and non-financial, prefer financial intent.",
@@ -3174,6 +3179,7 @@ async function handleClassify(message, context) {
               '"How do I cook pasta?" → off_topic',
               '"What movie should I watch?" → off_topic',
               '"Difference between Roth and traditional IRA" → ask_personalized',
+              '"What is the Roth IRA contribution limit for 2025?" → ask_personalized, needs_web:true, needs_user_data:false',
               '"Difference between credit and debit card?" → ask_personalized, needs_user_data:false, needs_web:false',
               '"Rent vs buy in Phoenix at 7%" → ask_personalized, needs_web:true, needs_user_data:true, state:"AZ"',
               '"Can I hit FIRE by 35" → ask_personalized, needs_calc:true',
