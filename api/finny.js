@@ -580,11 +580,11 @@ async function enhanceSearchQuery(message, context) {
       return message;
     }
 
-    // Sort holdings by market value (largest first) and get top 2 to avoid rate limiting
+    // Sort holdings by market value (largest first) and get top 1 to avoid rate limiting
     const topHoldings = holdings
       .filter((holding) => holding.symbol && holding.symbol.length <= 5)
       .sort((a, b) => (b.market_value || 0) - (a.market_value || 0))
-      .slice(0, 2); // Reduced from 5 to 2 to avoid rate limiting
+      .slice(0, 1); // Reduced to just 1 to completely avoid rate limiting
 
     if (topHoldings.length === 0) {
       console.log("⚠️ [ENHANCE] No valid holdings found");
@@ -618,11 +618,7 @@ async function enhanceSearchQuery(message, context) {
       queries: searchQueries,
       holdings: topHoldings,
       allHoldings: allHoldings, // For user prompting
-      userPrompt: `I'm showing news for your top ${
-        topHoldings.length
-      } holdings (${topHoldings.map((h) => h.symbol).join(", ")}). You have ${
-        allHoldings.length
-      } total holdings. If you'd like news about any specific stock, just let me know!`,
+      userPrompt: `I'm showing news for your top holding (${topHoldings[0].symbol}). You have ${allHoldings.length} total holdings. If you'd like news about any other specific stock, just ask! For example: "What's the latest news on AMD?" or "Tell me about PLTR news."`,
     };
   } catch (error) {
     console.error("❌ [ENHANCE] Error enhancing search query:", error);
