@@ -49,8 +49,6 @@ export type Intent =
   | "goal"
   | "ask_personalized"
   | "ask_concept_static"
-  | "ask_fact_fresh"
-  | "ask_state_rule"
   | "calc_projection";
 
 export type Fact = {
@@ -102,8 +100,6 @@ export type Projection = {
 };
 
 export type AnswerEnvelope =
-  | { intent: "ask_fact_fresh"; fact: Fact }
-  | { intent: "ask_state_rule"; rule: Rule }
   | { intent: "calc_projection"; projection: Projection }
   | { intent: "ask_personalized"; message: string; data?: any }
   | { intent: "ask_concept_static"; message: string }

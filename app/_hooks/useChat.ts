@@ -365,7 +365,7 @@ export const useChat = () => {
           }),
         });
       } else {
-        // For other intents (goal, ask_state_rule, etc.), route directly
+        // For other intents (goal, etc.), route directly
         res = await fetch(`${BASE_URL}/api/finny`, {
           method: "POST",
           headers: { 
@@ -421,24 +421,7 @@ export const useChat = () => {
 
       // Handle different response types based on intent
       let message;
-      if (data.intent === "ask_fact_fresh" && data.fact) {
-        // Format fact response for display - handle both old and new response formats
-        const fact = data.fact;
-        if (fact.message) {
-          // New format with direct message
-          message = fact.message;
-        } else if (fact.value && fact.source_title) {
-          // Old format with structured data
-          message = `**${fact.topic.replace(/_/g, ' ').toUpperCase()}**\n\n${fact.value}\n\n*Source: ${fact.source_title} (${fact.as_of})*`;
-        } else {
-          // Fallback to any available text
-          message = fact.message || fact.text || "Financial information retrieved successfully.";
-        }
-      } else if (data.intent === "ask_state_rule" && data.rule) {
-        // Format state rule response for display
-        const rule = data.rule;
-        message = `**${rule.topic.replace(/_/g, ' ').toUpperCase()} - ${rule.state}**\n\n${rule.rule_summary}\n\n*Source: ${rule.source_title} (${rule.updated_at})*`;
-      } else if (data.intent === "calc_projection" && data.projection) {
+      if (data.intent === "calc_projection" && data.projection) {
         // Format projection response for display
         const proj = data.projection;
         message = `**Projection Results**\n\nTarget: $${proj.swr_target.toLocaleString()}\nProjected: $${proj.projected_nest_egg.toLocaleString()}\nYears to target: ${proj.years_to_target}\n\n${proj.notes.join('\n')}`;

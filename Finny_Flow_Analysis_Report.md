@@ -17,14 +17,12 @@ This report analyzes the complete Finny flow from user input to response, docume
 **API Handler (`api/finny.js`)**
 - **Step 1**: Intent classification via `handleClassify()`
   - Uses OpenRouter x-ai/grok-4-fast:free for intent detection
-  - Classifies into: `goal`, `ask_personalized`, `ask_fact_fresh`, `ask_state_rule`, `calc_projection`
+  - Classifies into: `goal`, `ask_personalized`, `calc_projection`
   - Returns confidence score and required data sources
 
 - **Step 2**: Route to appropriate handler based on classification
   - `ask_personalized` → `handleAsk()` (requires user data + web research)
   - `goal` → `handleGoal()` (slot-filling for goal creation)
-  - `ask_fact_fresh` → `handleAskFactFresh()` (current year data)
-  - `ask_state_rule` → `handleAskStateRule()` (state-specific rules)
 
 ### 3. Data Gathering & Processing (OPTIMIZED)
 **For Personalized Queries (`handleAsk`) - Now with Parallel Processing**
@@ -194,8 +192,6 @@ This report analyzes the complete Finny flow from user input to response, docume
 The classification system routes ALL queries into financial intents:
 - `goal` - set or modify a savings or payoff goal
 - `ask_personalized` - question about the user's money that needs their data  
-- `ask_fact_fresh` - current year numbers or facts that change
-- `ask_state_rule` - state specific rules or taxes
 - `calc_projection` - what if or plan math
 
 **Critical Gap**: No intent for "non-financial" or "off-topic" queries.

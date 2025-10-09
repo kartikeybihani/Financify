@@ -8,7 +8,7 @@ The current system is **too restrictive** and **too rigid**. It's trying to cate
 
 1. **Over-categorization**: "Chase vs Bilt" gets forced into `credit_card_apr_band` topic, which only looks at CFPB for generic APR data
 2. **Rigid allowlist**: Only searches `consumerfinance.gov` for credit cards, missing Chase.com, Bilt.com, etc.
-3. **Wrong intent**: Should be `ask_personalized` with user's spending data + web research, not `ask_fact_fresh`
+3. **Wrong intent**: Should be `ask_personalized` with user's spending data + web research
 4. **Missing context**: No user spending patterns to make personalized recommendations
 
 ## **How Big LLMs Actually Do This**
@@ -37,7 +37,7 @@ They use **dynamic, intelligent web search**:
 - **Product comparisons** → `ask_personalized` (needs user data + web research)
 - **Specific product info** → `ask_personalized` (needs web research)
 - **User's own cards** → `ask_personalized` (needs user data)
-- **Generic market facts** → `ask_fact_fresh` (CFPB, etc.)
+- **Generic market facts** → `ask_personalized` (CFPB, etc.)
 
 ### **4. Hybrid Data Sources**
 - **User data**: Spending patterns, current cards, financial situation

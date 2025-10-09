@@ -16,7 +16,7 @@ We have successfully implemented **Phase 1** of the web research system for Fina
 - Extracts credit card issuers, card names, banks, investment platforms
 - Detects comparison queries ("vs", "compare", "which")
 - Identifies state-specific queries
-- Determines intent (ask_personalized, ask_fact_fresh, ask_state_rule)
+- Determines intent (ask_personalized, calc_projection, goal_conversation)
 
 ### 2. Domain Mapping System (`api/utils/domainMapper.js`)
 - **Comprehensive mapping** of financial institutions to their official websites

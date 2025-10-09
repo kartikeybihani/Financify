@@ -15,6 +15,19 @@ CREATE TABLE public.accounts (
   CONSTRAINT accounts_pkey PRIMARY KEY (account_id),
   CONSTRAINT accounts_item_id_fkey FOREIGN KEY (item_id) REFERENCES public.user_items(item_id)
 );
+CREATE TABLE public.cash_entries (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL,
+  amount numeric NOT NULL CHECK (amount >= 0::numeric),
+  currency_code text NOT NULL DEFAULT 'USD'::text,
+  description text,
+  entry_type text NOT NULL DEFAULT 'cash'::text CHECK (entry_type = ANY (ARRAY['cash'::text, 'savings'::text, 'emergency_fund'::text])),
+  is_active boolean NOT NULL DEFAULT true,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT cash_entries_pkey PRIMARY KEY (id),
+  CONSTRAINT cash_entries_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
+);
 CREATE TABLE public.categories (
   id uuid NOT NULL,
   user_id uuid,

@@ -9,7 +9,7 @@
       "finny_response": "string - Finny's complete response",
       "timestamp": "ISO string - when the conversation happened",
       "user_id": "string - user identifier",
-      "intent": "string - detected intent (ask_personalized, ask_fact_fresh, etc.)",
+      "intent": "string - detected intent (ask_personalized, calc_projection, etc.)",
       "entities": "array - extracted entities from the message",
       "confidence": "number - classification confidence score",
       "response_time_ms": "number - how long the response took",
