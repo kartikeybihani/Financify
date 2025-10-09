@@ -5,117 +5,7 @@ import finnyConstants from '@/app/_constants/finny';
 import logger from '@/app/_utils/logger';
 import { supabase } from '@/app/_lib/supabase/supabase';
 
-// Message splitting removed - display messages as single strings
-
-// Ultra-simple message splitting - only split when there are clear tables
-const splitMessageWithTables = (fullMessage: string, structuredData?: any): ChatMessage[] => {
-  try {
-    // Simple approach: just check if message contains table markers
-    const hasTables = fullMessage.includes('|') && fullMessage.includes('---');
-    
-    if (!hasTables) {
-      // No tables, return as single message
-      return [{
-        id: `finny-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-        sender: "finny",
-        text: fullMessage,
-        timestamp: Date.now(),
-        type: "text"
-      }];
-    }
-    
-    // Find the first table and split there
-    const firstTableIndex = fullMessage.search(/\|[\s\S]*?\n\s*\|[\s\-:]+\|/);
-    
-    if (firstTableIndex === -1) {
-      // Table pattern not found, return original
-      return [{
-        id: `finny-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-        sender: "finny",
-        text: fullMessage,
-        timestamp: Date.now(),
-        type: "text"
-      }];
-    }
-    
-    // Split into two messages: before table and after table
-    const textBeforeTable = fullMessage.substring(0, firstTableIndex).trim();
-    const textAfterTable = fullMessage.substring(firstTableIndex).trim();
-    
-    const messages: ChatMessage[] = [];
-    const baseTimestamp = Date.now();
-    
-    // Message 1: Text before table
-    if (textBeforeTable) {
-      messages.push({
-        id: `finny-${baseTimestamp}-0-${Math.random().toString(36).substr(2, 9)}`,
-        sender: "finny",
-        text: textBeforeTable,
-        timestamp: baseTimestamp,
-        type: "text"
-      });
-    }
-    
-    // Message 2: Table (expandable)
-    const tableSummary = extractTableSummary(textBeforeTable);
-    messages.push({
-      id: `finny-${baseTimestamp}-1-${Math.random().toString(36).substr(2, 9)}`,
-      sender: "finny",
-      text: tableSummary,
-      timestamp: baseTimestamp + 100,
-      type: "expandable",
-      structuredData: structuredData
-    });
-    
-    // Message 3: Text after table (if any)
-    if (textAfterTable && textAfterTable.length > 50) {
-      messages.push({
-        id: `finny-${baseTimestamp}-2-${Math.random().toString(36).substr(2, 9)}`,
-        sender: "finny",
-        text: textAfterTable,
-        timestamp: baseTimestamp + 200,
-        type: "text"
-      });
-    }
-    
-    return messages.filter(msg => msg.text && msg.text.trim().length > 0);
-    
-  } catch (error) {
-    logger.error("Error in splitMessageWithTables:", error);
-    // Fallback to original message
-    return [{
-      id: `finny-${Date.now()}-fallback-${Math.random().toString(36).substr(2, 9)}`,
-      sender: "finny",
-      text: fullMessage,
-      timestamp: Date.now(),
-      type: "text"
-    }];
-  }
-};
-
-const extractTableSummary = (textBeforeTable: string): string => {
-  try {
-    // Look for the most recent header
-    const headerMatch = textBeforeTable.match(/##\s*(.+?)(?:\n|$)/);
-    if (headerMatch) {
-      return headerMatch[1].trim();
-    }
-    
-    // Look for the last meaningful sentence
-    const sentences = textBeforeTable.split(/[.!?]+/).filter(s => s.trim().length > 20);
-    if (sentences.length > 0) {
-      const lastSentence = sentences[sentences.length - 1].trim();
-      if (lastSentence.length > 20 && lastSentence.length < 150) {
-        return lastSentence;
-      }
-    }
-    
-    return "Here's the breakdown:";
-  } catch (error) {
-    logger.error("Error extracting table summary:", error);
-    return "Here's the data:";
-  }
-};
+// Simple message handling - display messages as single strings
 
 export const useChat = () => {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>(finnyConstants.INITIAL_CHAT_MESSAGES);
@@ -386,38 +276,7 @@ export const useChat = () => {
       // Finny response received
       logger.info("🤖 [CHAT] API Response:", data);
       
-      // Check for structured data (tables) and implement simple message splitting
-      if (data.structuredData && data.message) {
-        try {
-          // Use ultra-simple splitting for messages with tables
-          const splitMessages = splitMessageWithTables(data.message, data.structuredData);
-          
-          if (splitMessages.length > 1) {
-            // Multiple messages - send them with proper timing
-            logger.info("🤖 [CHAT] Splitting message with tables into", splitMessages.length, "parts");
-            await pushMultipleMessages(splitMessages);
-            return;
-          } else {
-            // Single message - use original logic
-            const expandableMessage: ChatMessage = {
-              id: `finny-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-              sender: "finny",
-              text: data.structuredData.summary || data.message || "",
-              timestamp: Date.now(),
-              type: "expandable",
-              structuredData: data.structuredData,
-            };
-            setIsTyping(true);
-            await new Promise((resolve) => setTimeout(resolve, 1000 + Math.random() * 1000));
-            pushChat(expandableMessage);
-            setIsTyping(false);
-            return;
-          }
-        } catch (error) {
-          logger.error("Error in message splitting:", error);
-          // Fallback to original logic
-        }
-      }
+      // Handle structured data as regular messages - no splitting or expandable logic
 
       // Handle different response types based on intent
       let message;

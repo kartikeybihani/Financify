@@ -32,17 +32,12 @@ export interface ChatMessage {
   sender: "user" | "finny";
   text: string;
   timestamp?: number;
-  type?: "text" | "action" | "expandable";
+  type?: "text" | "action";
   actions?: Array<{
     label: string;
     action: "goal_confirm" | "goal_decline" | string;
     style?: "primary" | "secondary";
   }>;
-  structuredData?: {
-    summary: string;
-    data: any;
-    dataType: "table" | "list" | "chart";
-  };
 }
 
 export type Intent =
