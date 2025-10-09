@@ -580,32 +580,39 @@ async function enhanceSearchQuery(message, context) {
       return message;
     }
 
-    // Extract unique stock symbols from holdings
-    const symbols = [
-      ...new Set(
-        holdings
-          .map((holding) => holding.symbol)
-          .filter((symbol) => symbol && symbol.length <= 5) // Filter out long descriptions
-          .slice(0, 10) // Limit to top 10 symbols to avoid query length issues
-      ),
-    ];
+    // Sort holdings by market value (largest first) and get top 5
+    const topHoldings = holdings
+      .filter((holding) => holding.symbol && holding.symbol.length <= 5)
+      .sort((a, b) => (b.market_value || 0) - (a.market_value || 0))
+      .slice(0, 5);
 
-    if (symbols.length === 0) {
-      console.log("⚠️ [ENHANCE] No valid symbols found in holdings");
+    if (topHoldings.length === 0) {
+      console.log("⚠️ [ENHANCE] No valid holdings found");
       return message;
     }
 
-    // Enhance the query with specific symbols
-    const symbolsText = symbols.join(" ");
-    const enhancedQuery = `${message} ${symbolsText}`;
+    console.log(
+      `✅ [ENHANCE] Selected top ${topHoldings.length} holdings by value:`,
+      topHoldings.map(
+        (h) => `${h.symbol} ($${h.market_value?.toFixed(2) || "0"})`
+      )
+    );
+
+    // Create multiple targeted search queries
+    const searchQueries = topHoldings.map(
+      (holding) => `${holding.symbol} latest news`
+    );
 
     console.log(
-      `✅ [ENHANCE] Enhanced query with ${symbols.length} symbols:`,
-      symbols
+      `🔍 [ENHANCE] Generated ${searchQueries.length} targeted queries:`,
+      searchQueries
     );
-    console.log("🔍 [ENHANCE] Enhanced query:", enhancedQuery);
 
-    return enhancedQuery;
+    // Return multiple queries for parallel processing
+    return {
+      queries: searchQueries,
+      holdings: topHoldings,
+    };
   } catch (error) {
     console.error("❌ [ENHANCE] Error enhancing search query:", error);
     return message; // Fallback to original message
@@ -791,8 +798,41 @@ async function handleAsk(message, context, intent = "ask_personalized") {
 
       try {
         // Enhance search query with user-specific data when relevant
-        const enhancedQuery = await enhanceSearchQuery(message, context);
-        webResults = await braveSearch(enhancedQuery);
+        const enhancedData = await enhanceSearchQuery(message, context);
+
+        // Handle both single queries and multiple queries
+        if (typeof enhancedData === "string") {
+          // Single query (original behavior)
+          webResults = await braveSearch(enhancedData);
+        } else if (enhancedData && enhancedData.queries) {
+          // Multiple queries - search in parallel
+          const symbols = enhancedData.queries.map((q) => q.split(" ")[0]);
+          console.log(
+            `🔍 [FINNY] Performing ${enhancedData.queries.length} parallel searches for:`,
+            symbols
+          );
+
+          const searchPromises = enhancedData.queries.map((query) =>
+            braveSearch(query)
+          );
+          const searchResults = await Promise.all(searchPromises);
+
+          // Combine and deduplicate results
+          webResults = searchResults
+            .flat()
+            .filter(
+              (result, index, self) =>
+                index === self.findIndex((r) => r.url === result.url)
+            );
+
+          console.log(
+            `✅ [FINNY] Combined ${searchResults.length} searches into ${webResults.length} unique results`
+          );
+        } else {
+          // Fallback to original message
+          webResults = await braveSearch(message);
+        }
+
         timings.web_ms = Date.now() - webStartTime;
 
         if (webResults.length > 0) {
