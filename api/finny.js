@@ -868,9 +868,12 @@ async function handleAsk(message, context, intent = "ask_personalized") {
       "- For amounts like net worth, ONLY use values from the context. If missing, state that it's unavailable.",
       "",
       "CRITICAL FORMATTING RULES:",
-      "- NEVER use markdown formatting (no ###, **bold**, *italics*, `code blocks`, etc.)",
-      "- NEVER use hashtags (#) or numbered headers with emojis (like ### 1️⃣)",
-      "- Write in plain text format only - like you're texting a friend",
+      "- NEVER use markdown headers (no ###, ##, #) or hashtags",
+      "- NEVER use numbered headers with emojis (like ### 1️⃣)",
+      "- You CAN use double asterisks (**text**) for emphasis - the chat system will handle the formatting",
+      "- NEVER use single asterisks (*text*) or underscores (__text__, _text_)",
+      "- NEVER use code blocks (`code` or ```code```)",
+      "- Write in plain text format - like you're texting a friend",
       "- Use simple line breaks and bullet points with dashes (-) instead of markdown",
       "- Keep the conversational tone natural and chat-like",
       "- Avoid any formatting that would look robotic or structured",
@@ -1168,12 +1171,10 @@ function cleanResponseFormatting(response) {
     ""
   );
 
-  // Remove bold markdown (**text** or __text__)
-  cleaned = cleaned.replace(/\*\*(.*?)\*\*/g, "$1");
+  // Remove double underscore bold markdown (__text__) but keep double asterisks for your chat system
   cleaned = cleaned.replace(/__(.*?)__/g, "$1");
 
-  // Remove italic markdown (*text* or _text_)
-  cleaned = cleaned.replace(/\*(.*?)\*/g, "$1");
+  // Remove single underscore italic markdown (_text_) but keep asterisks
   cleaned = cleaned.replace(/_(.*?)_/g, "$1");
 
   // Remove code blocks (```code``` or `code`)
