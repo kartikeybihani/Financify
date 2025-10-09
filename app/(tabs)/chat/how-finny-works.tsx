@@ -317,7 +317,6 @@ export default function HowFinnyWorksScreen({
 
           {/* Getting Started */}
           <View style={styles.section}>
-            Remove this section of a few questions.
             <Text style={styles.sectionTitle}>
               🚀 Get the most out of Finny
             </Text>
