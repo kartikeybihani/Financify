@@ -464,6 +464,10 @@ async function handleSnapTradeSync(res, userId, accountId) {
           } holdings for performance calculation`
         );
 
+        // Extract total_value from holdings response if available
+        const apiTotalValue =
+          holdingsData?.total_value?.value || holdingsData?.total_value;
+
         // Get existing balance data to preserve day change values if no new data available
         const { data: existingBalance } = await supabase
           .from("investment_balances")
@@ -501,8 +505,30 @@ async function handleSnapTradeSync(res, userId, accountId) {
           });
         }
 
-        // Calculate total portfolio value (cash + investments)
-        const totalValue = (balanceData[0]?.cash || 0) + totalPortfolioValue;
+        // Calculate total portfolio value - prioritize API total_value, then fallback to calculations
+        let totalValue = 0;
+
+        // First priority: Use total_value from holdings API response
+        if (apiTotalValue && apiTotalValue > 0) {
+          totalValue = apiTotalValue;
+          console.log(`✅ Using API total_value: $${totalValue.toFixed(2)}`);
+        } else if (
+          balanceData[0]?.total_equity &&
+          balanceData[0].total_equity > 0
+        ) {
+          totalValue = balanceData[0].total_equity;
+          console.log(
+            `✅ Using balance total_equity: $${totalValue.toFixed(2)}`
+          );
+        } else {
+          // Fallback to sum of all stocks' market_value
+          totalValue = totalPortfolioValue;
+          console.log(
+            `⚠️ Fallback calculation: sum of all stocks' market_value = $${totalValue.toFixed(
+              2
+            )}`
+          );
+        }
 
         // Calculate percentages
         const dayChangePercent =
@@ -529,6 +555,7 @@ async function handleSnapTradeSync(res, userId, accountId) {
           {
             holdingsCount: holdingsData?.length || 0,
             totalPortfolioValue: totalPortfolioValue.toFixed(2),
+            totalValue: totalValue.toFixed(2),
             totalDayChange: totalDayChange.toFixed(2),
             dayChangePercent: dayChangePercent.toFixed(2),
             totalUnrealizedPL: totalUnrealizedPL.toFixed(2),
