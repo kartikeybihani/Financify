@@ -5416,6 +5416,14 @@ async function updateMemorySummary(userId) {
 
     const summary = await generateMemorySummary(memories, userId);
 
+    // Only create a new summary if there's actually new information
+    if (summary === null) {
+      console.log(
+        "🧠 [FINNY] No new information to summarize, keeping existing summary"
+      );
+      return;
+    }
+
     // Insert new memory summary row (instead of updating existing)
     const { error: summaryError } = await supabase
       .from("memory_summary")
@@ -5584,10 +5592,11 @@ async function generateMemorySummary(memories, userId) {
     }
   }
 
-  // If no new information, create a brief update message
+  // If no new information, don't create any summary update
   if (newInfo.length === 0) {
     if (previousSummary) {
-      return `Updated understanding based on ${memories.length} memories.`;
+      // Keep the existing summary unchanged - don't create generic updates
+      return null; // Signal to not create a new summary entry
     } else {
       // First summary - create a conversational overview
       const profileParts = [];
@@ -5630,6 +5639,12 @@ async function generateMemorySummary(memories, userId) {
       if (grouped.constraint && grouped.constraint.length > 0) {
         otherInfo.push(
           `Constraints: ${grouped.constraint.map((m) => m.value).join(", ")}`
+        );
+      }
+
+      if (grouped.context_signal && grouped.context_signal.length > 0) {
+        otherInfo.push(
+          `Context: ${grouped.context_signal.map((m) => m.value).join(", ")}`
         );
       }
 
