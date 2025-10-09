@@ -111,6 +111,7 @@ export interface MemorySummary {
 export interface MemoriesScreenProps {
   onBack?: () => void;
   preloadedData?: MemorySummary[] | null;
+  onMemoriesUpdated?: (memories: MemorySummary[]) => void;
 }
 
 // Setting Item Props interface

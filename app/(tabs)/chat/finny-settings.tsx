@@ -286,6 +286,10 @@ export default function FinnySettingsScreen() {
     });
   };
 
+  const handleMemoriesUpdated = (memories: MemorySummary[]) => {
+    setPreloadedMemorySummary(memories);
+  };
+
   const openStyle = () => {
     setShowStyle(true);
     Animated.timing(styleSlideAnimation, {
@@ -597,6 +601,7 @@ export default function FinnySettingsScreen() {
             <MemoriesScreen
               onBack={closeMemories}
               preloadedData={preloadedMemorySummary}
+              onMemoriesUpdated={handleMemoriesUpdated}
             />
           </Animated.View>
         )}

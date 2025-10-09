@@ -1002,6 +1002,8 @@ async function handleAsk(message, context, intent = "ask_personalized") {
       "- If required data is missing (e.g., no transactions or summary), explicitly say so and ask the user to refresh or connect accounts. Do NOT fabricate data.",
       "- When listing transactions, ONLY use transactions present in the provided context. If none exist, say you couldn't find recent transactions.",
       "- For amounts like net worth, ONLY use values from the context. If missing, state that it's unavailable.",
+      "- NEVER make meta-references to data sources or summaries. Avoid phrases like 'matching the summary', 'as shown in your summary', 'according to your data', or 'based on your financial summary'.",
+      "- Present information as if it's naturally known, without mentioning where you got it from or how you accessed it.",
       "",
       "CRITICAL FORMATTING RULES:",
       "- NEVER use markdown headers (no ###, ##, #) or hashtags",
@@ -1060,11 +1062,8 @@ async function handleAsk(message, context, intent = "ask_personalized") {
           const accountName =
             account.name || account.official_name || "Unknown Account";
           const accountType = account.type || "Unknown Type";
-          const mask = account.mask ? ` (****${account.mask})` : "";
           contextLines.push(
-            `${accountName}${mask} (${accountType}): $${Number(balance).toFixed(
-              2
-            )}`
+            `${accountName} (${accountType}): $${Number(balance).toFixed(2)}`
           );
         });
       }

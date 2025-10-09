@@ -39,6 +39,7 @@ const responsivePadding = (basePadding: number) => {
 export default function MemoriesScreen({
   onBack,
   preloadedData,
+  onMemoriesUpdated,
 }: MemoriesScreenProps = {}) {
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -57,6 +58,41 @@ export default function MemoriesScreen({
   const [loading, setLoading] = useState(
     !preloadedData || preloadedData.length === 0
   );
+  const [deletingMemoryId, setDeletingMemoryId] = useState<string | null>(null);
+
+  // Fetch memories data if not provided or if we need to refresh
+  useEffect(() => {
+    if (session?.user?.id && (!preloadedData || preloadedData.length === 0)) {
+      fetchMemoriesData();
+    }
+  }, [session, preloadedData]);
+
+  const fetchMemoriesData = async () => {
+    try {
+      setLoading(true);
+      const { data: summaryData, error: summaryError } = await supabase
+        .from("memory_summary")
+        .select("id, summary_text, created_at")
+        .eq("user_id", session?.user?.id)
+        .order("created_at", { ascending: false });
+
+      if (summaryError) {
+        console.error("Error fetching memory summary:", summaryError);
+        setMemorySummaries([]);
+      } else {
+        const memories = summaryData || [];
+        setMemorySummaries(memories);
+        // Notify parent component of updated memories
+        onMemoriesUpdated?.(memories);
+      }
+    } catch (error) {
+      console.error("Error fetching memories:", error);
+      setMemorySummaries([]);
+      onMemoriesUpdated?.([]);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleDeleteMemory = (memoryId: string) => {
     Alert.alert(
@@ -78,22 +114,39 @@ export default function MemoriesScreen({
 
   const deleteMemorySummary = async (memoryId: string) => {
     try {
-      // Delete the specific memory summary
+      setDeletingMemoryId(memoryId);
+
+      // Optimistic update - remove from UI immediately
+      const originalMemories = [...memorySummaries];
+      const updatedMemories = memorySummaries.filter(
+        (memory) => memory.id !== memoryId
+      );
+      setMemorySummaries(updatedMemories);
+      onMemoriesUpdated?.(updatedMemories);
+
+      // Delete from database
       const { error: summaryError } = await supabase
         .from("memory_summary")
         .delete()
         .eq("id", memoryId)
         .eq("user_id", session?.user?.id);
 
-      if (summaryError) throw summaryError;
+      if (summaryError) {
+        // If deletion failed, restore the original state
+        setMemorySummaries(originalMemories);
+        onMemoriesUpdated?.(originalMemories);
+        throw summaryError;
+      }
 
-      // Remove the deleted memory from the local state
-      setMemorySummaries((prev) =>
-        prev.filter((memory) => memory.id !== memoryId)
-      );
+      // Success - memory is already removed from UI via optimistic update
+      console.log("Memory deleted successfully");
     } catch (error) {
       console.error("Error deleting memory:", error);
-      Alert.alert("Error", "Failed to delete memory. Please try again.");
+      Alert.alert("Error", "Failed to delete memory. Please try again.", [
+        { text: "OK" },
+      ]);
+    } finally {
+      setDeletingMemoryId(null);
     }
   };
 
@@ -190,12 +243,17 @@ export default function MemoriesScreen({
                         style={styles.trashButton}
                         onPress={() => handleDeleteMemory(memorySummary.id)}
                         activeOpacity={0.7}
+                        disabled={deletingMemoryId === memorySummary.id}
                       >
-                        <Ionicons
-                          name="trash-outline"
-                          size={28}
-                          color="#FF4444"
-                        />
+                        {deletingMemoryId === memorySummary.id ? (
+                          <ActivityIndicator size="small" color="#FF4444" />
+                        ) : (
+                          <Ionicons
+                            name="trash-outline"
+                            size={28}
+                            color="#FF4444"
+                          />
+                        )}
                       </TouchableOpacity>
                     </View>
                   </View>
