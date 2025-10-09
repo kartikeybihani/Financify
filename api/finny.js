@@ -4,6 +4,7 @@ import fetch from "node-fetch";
 import crypto from "crypto";
 import { handleGoalConversation } from "./goals.js";
 import { KEY_SYNONYMS } from "../app/_shared/constants/keySynonyms.js";
+import { braveSearch } from "../lib/websearch/brave.js";
 
 // Utilities
 function generateRequestId() {
@@ -686,6 +687,54 @@ async function handleAsk(message, context, intent = "ask_personalized") {
     console.log("🎯 [FINNY] Extracted slots:", slots);
     console.log("🎯 [FINNY] Planned needs:", needs);
 
+    // 2.1) Check if web search is needed
+    let webResults = [];
+    let webSummary = "";
+
+    // Primary: Get classification result to check needs_web
+    let classificationResult = null;
+    try {
+      classificationResult = await handleClassify(message, context);
+    } catch (error) {
+      console.error("❌ [FINNY] Classification failed, using fallback:", error);
+    }
+
+    // Use classification.needs_web as primary, with keyword detection as fallback
+    const needsWeb =
+      classificationResult?.needs_web || detectWebSearchNeeded(message, slots);
+
+    console.log("🌍 [FINNY] Web search decision:", {
+      classification_needs_web: classificationResult?.needs_web,
+      keyword_fallback: detectWebSearchNeeded(message, slots),
+      final_decision: needsWeb,
+    });
+
+    if (needsWeb) {
+      console.log("🌍 [FINNY] Web search needed, fetching fresh data...");
+      const webStartTime = Date.now();
+
+      try {
+        webResults = await braveSearch(message);
+        timings.web_ms = Date.now() - webStartTime;
+
+        if (webResults.length > 0) {
+          webSummary = webResults
+            .map((r, i) => `${i + 1}. ${r.title} — ${r.url}\n${r.snippet}`)
+            .join("\n\n");
+
+          console.log(
+            `✅ [FINNY] Web search completed: ${webResults.length} results`
+          );
+          toolsUsed.push("brave-search");
+        } else {
+          console.log("⚠️ [FINNY] Web search returned no results");
+        }
+      } catch (error) {
+        console.error("❌ [FINNY] Web search failed:", error);
+        timings.web_ms = Date.now() - webStartTime;
+      }
+    }
+
     // Check if user wants to force refresh their data
     const forceRefresh =
       message.toLowerCase().includes("refresh") ||
@@ -785,6 +834,16 @@ async function handleAsk(message, context, intent = "ask_personalized") {
         ];
       })(),
       "",
+      // Add web context if available
+      ...(webSummary
+        ? [
+            "WEB CONTEXT:",
+            "The following is current information from web search:",
+            "",
+            webSummary,
+            "",
+          ]
+        : []),
       "RESPONSE GUIDELINES:",
       "- Be CONCISE and focused - only answer what the user is asking for",
       "- Don't overwhelm users with too much information at once",
@@ -1035,17 +1094,21 @@ async function handleAsk(message, context, intent = "ask_personalized") {
       entities: [],
       confidence: 1.0,
       response_time_ms: Date.now() - startTime,
-      sources_used: [],
+      sources_used:
+        webResults.length > 0 ? [...toolsUsed, "brave-search"] : toolsUsed,
       cached: false,
       context_packs: Object.keys(packs),
       data_gaps: gaps,
       request_id: generateRequestId(),
+      web_research: webResults.length > 0,
+      classification_result: classificationResult,
       metrics: {
         intent: "ask_personalized",
         latency_ms: {
           total: Date.now() - startTime,
           llm: timings.llm_ms,
           data_fetch: timings.summary_ms + timings.user_data_ms,
+          web_search: timings.web_ms,
         },
         tools_used: toolsUsed,
         model: OPENROUTER_MODEL,
@@ -1290,6 +1353,73 @@ function extractTableFromText(text) {
   }
 
   return tableData.length > 0 ? tableData : null;
+}
+
+// === WEB SEARCH DETECTION ===
+// Detect if a query needs fresh web data
+
+function detectWebSearchNeeded(message, slots) {
+  const lowerMessage = message.toLowerCase();
+
+  // Keywords that typically need current web data
+  const webKeywords = [
+    "current",
+    "latest",
+    "2025",
+    "2024",
+    "new",
+    "updated",
+    "recent",
+    "roth ira limit",
+    "401k limit",
+    "tax bracket",
+    "interest rate",
+    "inflation rate",
+    "fed rate",
+    "mortgage rate",
+    "cd rate",
+    "savings rate",
+    "credit card rate",
+    "tax rule",
+    "deduction",
+    "standard deduction",
+    "contribution limit",
+    "hsa limit",
+    "social security",
+    "medicare",
+    "medicaid",
+    "stimulus",
+    "economic",
+    "market trend",
+    "housing market",
+    "stock market",
+    "crypto",
+    "bitcoin",
+    "ethereum",
+    "regulation",
+    "policy",
+    "federal",
+    "state",
+    "irs",
+    "treasury",
+    "fed",
+    "fomc",
+  ];
+
+  // Check if message contains web-related keywords
+  const hasWebKeywords = webKeywords.some((keyword) =>
+    lowerMessage.includes(keyword)
+  );
+
+  // Check for time-sensitive queries
+  const hasTimeSensitiveTerms =
+    /(current|latest|new|updated|202[45]|this year)/i.test(message);
+
+  // Check for regulatory/policy queries
+  const hasRegulatoryTerms =
+    /(limit|rule|regulation|policy|bracket|rate)/i.test(message);
+
+  return hasWebKeywords || (hasTimeSensitiveTerms && hasRegulatoryTerms);
 }
 
 // === CONTEXT PLANNER ===
