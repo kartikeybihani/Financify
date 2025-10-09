@@ -1026,7 +1026,10 @@ export default function InsightsScreen() {
         setInvestmentConnections(cachedData.connections);
 
         // Load fresh data in background and update cache (no loading state)
-        loadInvestmentDataFromDB();
+        // But don't await it - let it update the state when it completes
+        loadInvestmentDataFromDB().catch((err) =>
+          logger.error("Background investment data refresh failed:", err)
+        );
         return true;
       }
 

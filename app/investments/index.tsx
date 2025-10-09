@@ -7,10 +7,14 @@ import {
   Platform,
   Image,
   ActivityIndicator,
+  Modal,
+  Dimensions,
+  TouchableWithoutFeedback,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
+import { LinearGradient } from "expo-linear-gradient";
 import { supabase } from "@/app/_lib/supabase/supabase";
 import logger from "@/app/_utils/logger";
 import {
@@ -25,6 +29,8 @@ import {
 import { clearInvestmentCache } from "@/app/_shared/utils/investmentCache";
 import { styles } from "@/app/_styles/investmentsStyles";
 import InstitutionSelectionModal from "@/app/_components/modals/InstitutionSelectionModal";
+
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 
 interface Holding {
   symbol: string;
@@ -102,6 +108,9 @@ export default function InvestmentsScreen({
   const [selectedSecurityType, setSelectedSecurityType] = useState<
     string | null
   >(null);
+  const [holdingsSortBy, setHoldingsSortBy] =
+    useState<string>("total_gain_loss");
+  const [showSortModal, setShowSortModal] = useState(false);
   const hasData = useRef(
     preloadedData
       ? (preloadedData.holdings && preloadedData.holdings.length > 0) ||
@@ -113,6 +122,9 @@ export default function InvestmentsScreen({
 
   // Track last sync time to force reload after sync
   const lastSyncTime = useRef<number | null>(null);
+
+  // Track preloaded data to detect changes
+  const lastPreloadedDataRef = useRef<any>(null);
 
   const loadFromDb = async () => {
     try {
@@ -164,10 +176,13 @@ export default function InvestmentsScreen({
 
   useEffect(() => {
     const initializeScreen = async () => {
-      // Check if we need to reload data (either no data or recent sync)
+      // Check if we need to reload data (either no data, recent sync, or preloaded data changed)
       const shouldReload =
         !hasData.current ||
-        (lastSyncTime.current && Date.now() - lastSyncTime.current < 5000); // 5 second window
+        (lastSyncTime.current && Date.now() - lastSyncTime.current < 5000) || // 5 second window
+        (preloadedData &&
+          JSON.stringify(preloadedData) !==
+            JSON.stringify(lastPreloadedDataRef.current));
 
       if (!shouldReload) {
         logger.info("Investments: Data already loaded, skipping reload");
@@ -177,6 +192,21 @@ export default function InvestmentsScreen({
       // Check if data is preloaded (when embedded in insights screen)
       if (preloadedData) {
         logger.info("Investments: Using preloaded data from insights screen");
+
+        // Check if preloaded data has changed
+        const hasPreloadedDataChanged =
+          JSON.stringify(preloadedData) !==
+          JSON.stringify(lastPreloadedDataRef.current);
+        if (hasPreloadedDataChanged) {
+          logger.info("Investments: Preloaded data changed, updating state");
+          lastPreloadedDataRef.current = preloadedData;
+
+          // Update state with new preloaded data
+          setHoldings(preloadedData.holdings || []);
+          setOptions(preloadedData.options || []);
+          setBalances(preloadedData.balances || []);
+          setConnections(preloadedData.connections || []);
+        }
 
         // Data is already set in initial state, just ensure loading state is correct
         const hasAnyData =
@@ -210,6 +240,26 @@ export default function InvestmentsScreen({
     };
 
     initializeScreen();
+  }, [preloadedData]);
+
+  // Watch for preloaded data changes and update state immediately
+  useEffect(() => {
+    if (
+      preloadedData &&
+      JSON.stringify(preloadedData) !==
+        JSON.stringify(lastPreloadedDataRef.current)
+    ) {
+      logger.info(
+        "Investments: Preloaded data changed, updating state immediately"
+      );
+      lastPreloadedDataRef.current = preloadedData;
+
+      // Update state with new preloaded data
+      setHoldings(preloadedData.holdings || []);
+      setOptions(preloadedData.options || []);
+      setBalances(preloadedData.balances || []);
+      setConnections(preloadedData.connections || []);
+    }
   }, [preloadedData]);
 
   const handleSync = async () => {
@@ -291,6 +341,15 @@ export default function InvestmentsScreen({
 
   const handleInstitutionModalClose = () => {
     setShowInstitutionModal(false);
+  };
+
+  const showHoldingsFilterOptions = () => {
+    setShowSortModal(true);
+  };
+
+  const handleSortSelection = (sortType: string) => {
+    setHoldingsSortBy(sortType);
+    setShowSortModal(false);
   };
 
   const totalHoldingsValue = holdings.reduce(
@@ -728,6 +787,7 @@ export default function InvestmentsScreen({
       (holding) => holding.security_type !== "Open Ended Fund"
     );
 
+    // Keep the same sequence - don't sort, just use filtered holdings
     const nonCashHoldings = filteredHoldings;
 
     console.log(
@@ -738,87 +798,163 @@ export default function InvestmentsScreen({
 
     return (
       <View style={styles.investmentGroup}>
-        <Text style={styles.sectionHeading}>
-          Your Holdings ({nonCashHoldings.length})
-        </Text>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionHeading}>
+            Your Holdings ({nonCashHoldings.length})
+          </Text>
+          <TouchableOpacity
+            style={styles.filterIconContainer}
+            onPress={showHoldingsFilterOptions}
+          >
+            <Ionicons name="filter-outline" size={18} color="#4A90E2" />
+          </TouchableOpacity>
+        </View>
         <View style={styles.glassContainer}>
-          {nonCashHoldings.map((h, idx) => (
-            <View key={idx}>
-              <View style={styles.holdingRow}>
-                <View style={styles.holdingLeft}>
-                  <Image
-                    source={{ uri: getCompanyLogoUrl(h.symbol) }}
-                    style={styles.stockLogo}
-                    defaultSource={require("../assets/icon.png")}
-                  />
-                  <View style={styles.stockInfo}>
-                    <Text style={styles.stockSymbol}>{h.symbol}</Text>
-                    <Text style={styles.stockDescription} numberOfLines={1}>
-                      {h.description}
+          {nonCashHoldings.map((h, idx) => {
+            // Calculate values based on sort type
+            const getDisplayValue = () => {
+              switch (holdingsSortBy) {
+                case "total_gain_loss":
+                  return h.unrealized_pl || 0;
+                case "today_gain_loss":
+                  return (
+                    h.day_change ||
+                    (h.day_change_percent
+                      ? (h.market_value * h.day_change_percent) / 100
+                      : 0)
+                  );
+                case "last_price":
+                  return h.price || 0;
+                case "percent_of_account":
+                  return totalPortfolioValue > 0
+                    ? (h.market_value / totalPortfolioValue) * 100
+                    : 0;
+                default:
+                  return h.unrealized_pl || 0;
+              }
+            };
+
+            const getDisplayPercentage = () => {
+              switch (holdingsSortBy) {
+                case "total_gain_loss":
+                  return totalPortfolioValue > 0
+                    ? ((h.unrealized_pl || 0) / totalPortfolioValue) * 100
+                    : 0;
+                case "today_gain_loss":
+                  const todayValue =
+                    h.day_change ||
+                    (h.day_change_percent
+                      ? (h.market_value * h.day_change_percent) / 100
+                      : 0);
+                  return totalPortfolioValue > 0
+                    ? (todayValue / totalPortfolioValue) * 100
+                    : 0;
+                case "last_price":
+                  // For last price, show the daily change percentage in the chip
+                  return h.day_change_percent || 0;
+                case "percent_of_account":
+                  return totalPortfolioValue > 0
+                    ? (h.market_value / totalPortfolioValue) * 100
+                    : 0;
+                default:
+                  return totalPortfolioValue > 0
+                    ? ((h.unrealized_pl || 0) / totalPortfolioValue) * 100
+                    : 0;
+              }
+            };
+
+            const displayValue = getDisplayValue();
+            const displayPercentage = getDisplayPercentage();
+
+            return (
+              <View key={idx}>
+                <View style={styles.holdingRow}>
+                  <View style={styles.holdingLeft}>
+                    <Image
+                      source={{ uri: getCompanyLogoUrl(h.symbol) }}
+                      style={styles.stockLogo}
+                      defaultSource={require("../assets/icon.png")}
+                    />
+                    <View style={styles.stockInfo}>
+                      <Text style={styles.stockSymbol}>{h.symbol}</Text>
+                      <Text style={styles.stockDescription} numberOfLines={1}>
+                        {h.description}
+                      </Text>
+                      <Text style={styles.stockQuantity}>{h.units} Shares</Text>
+                    </View>
+                  </View>
+                  <View style={styles.holdingRight}>
+                    <Text style={styles.stockValue}>
+                      $
+                      {h.market_value?.toLocaleString("en-US", {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      }) || "0.00"}
                     </Text>
-                    <View style={styles.stockMetaRow}>
-                      <Text style={styles.stockQuantity}>QTY: {h.units} |</Text>
-                      {(h.day_change_percent !== null &&
-                        h.day_change_percent !== undefined &&
-                        !isNaN(h.day_change_percent)) ||
-                      (h.day_change !== null &&
-                        h.day_change !== undefined &&
-                        !isNaN(h.day_change)) ? (
+                    <View style={styles.stockDetails}>
+                      <Text style={styles.stockDetail}>
+                        {holdingsSortBy === "percent_of_account"
+                          ? `${displayValue.toFixed(1)}%`
+                          : `$${displayValue.toFixed(2)}`}
+                      </Text>
+                      <View
+                        style={[
+                          styles.percentageChip,
+                          {
+                            backgroundColor:
+                              holdingsSortBy === "percent_of_account"
+                                ? "rgba(74, 144, 226, 0.15)"
+                                : holdingsSortBy === "last_price"
+                                ? "rgba(142, 142, 147, 0.15)"
+                                : displayPercentage >= 0
+                                ? "rgba(78, 205, 196, 0.15)"
+                                : "rgba(255, 107, 107, 0.15)",
+                            borderColor:
+                              holdingsSortBy === "percent_of_account"
+                                ? "rgba(74, 144, 226, 0.3)"
+                                : holdingsSortBy === "last_price"
+                                ? "rgba(142, 142, 147, 0.3)"
+                                : displayPercentage >= 0
+                                ? "rgba(78, 205, 196, 0.3)"
+                                : "rgba(255, 107, 107, 0.3)",
+                          },
+                        ]}
+                      >
                         <Text
                           style={[
-                            styles.stockQuantity,
-                            (h.day_change_percent ?? h.day_change ?? 0) >= 0
-                              ? styles.pnlPositive
-                              : styles.pnlNegative,
+                            styles.percentageChipText,
+                            {
+                              color:
+                                holdingsSortBy === "percent_of_account"
+                                  ? "#4A90E2"
+                                  : holdingsSortBy === "last_price"
+                                  ? "#8E8E93"
+                                  : displayPercentage >= 0
+                                  ? "#4ECDC4"
+                                  : "#FF6B6B",
+                            },
                           ]}
                         >
-                          Today:{" "}
-                          {(h.day_change_percent ?? h.day_change ?? 0) >= 0
-                            ? "+"
-                            : ""}
-                          {h.day_change_percent !== null &&
-                          h.day_change_percent !== undefined &&
-                          !isNaN(h.day_change_percent)
-                            ? `${Math.abs(h.day_change_percent).toFixed(2)}%`
-                            : `$${Math.abs(h.day_change || 0).toFixed(2)}`}
+                          {holdingsSortBy === "percent_of_account"
+                            ? `${displayPercentage.toFixed(1)}%`
+                            : holdingsSortBy === "last_price"
+                            ? `${
+                                displayPercentage >= 0 ? "+" : ""
+                              }${displayPercentage.toFixed(1)}%`
+                            : `${
+                                displayPercentage >= 0 ? "+" : ""
+                              }${displayPercentage.toFixed(1)}%`}
                         </Text>
-                      ) : null}
+                      </View>
                     </View>
                   </View>
                 </View>
-                <View style={styles.holdingRight}>
-                  <Text style={styles.stockValue}>
-                    $
-                    {h.market_value?.toLocaleString("en-US", {
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 2,
-                    }) || "0.00"}
-                  </Text>
-                  <View style={styles.stockDetails}>
-                    <Text style={styles.stockDetail}>
-                      ${h.price?.toFixed(2) || "0.00"}
-                    </Text>
-                    {h.unrealized_pl !== null && (
-                      <Text
-                        style={[
-                          styles.pnlText,
-                          (h.unrealized_pl || 0) >= 0
-                            ? styles.pnlPositive
-                            : styles.pnlNegative,
-                        ]}
-                      >
-                        Total: {(h.unrealized_pl || 0) >= 0 ? "+" : ""}$
-                        {Math.abs(h.unrealized_pl).toFixed(2)}
-                      </Text>
-                    )}
-                  </View>
-                </View>
+                {idx < nonCashHoldings.length - 1 && (
+                  <View style={styles.divider} />
+                )}
               </View>
-              {idx < nonCashHoldings.length - 1 && (
-                <View style={styles.divider} />
-              )}
-            </View>
-          ))}
+            );
+          })}
         </View>
       </View>
     );
@@ -877,6 +1013,63 @@ export default function InvestmentsScreen({
     );
   };
 
+  const renderSortModal = () => {
+    const sortOptions = [
+      { key: "total_gain_loss", label: "Total gain/loss" },
+      { key: "today_gain_loss", label: "Today gain/loss" },
+      { key: "last_price", label: "Last price" },
+      { key: "percent_of_account", label: "% of Account" },
+    ];
+
+    return (
+      <Modal
+        visible={showSortModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowSortModal(false)}
+      >
+        <TouchableWithoutFeedback onPress={() => setShowSortModal(false)}>
+          <View style={styles.modalOverlay}>
+            <TouchableWithoutFeedback onPress={(e) => e.stopPropagation()}>
+              <LinearGradient
+                colors={["rgba(31, 31, 31, 0.98)", "rgba(18, 18, 18, 0.99)"]}
+                style={styles.modalContent}
+              >
+                <View style={styles.modalHeader}>
+                  <Text style={styles.modalTitle}>Sort Holdings By</Text>
+                </View>
+
+                <View style={styles.sortOptionsContainer}>
+                  {sortOptions.map((option) => (
+                    <TouchableOpacity
+                      key={option.key}
+                      style={styles.sortOption}
+                      onPress={() => handleSortSelection(option.key)}
+                      activeOpacity={0.7}
+                    >
+                      <Text
+                        style={[
+                          styles.sortOptionText,
+                          holdingsSortBy === option.key &&
+                            styles.sortOptionTextSelected,
+                        ]}
+                      >
+                        {option.label}
+                      </Text>
+                      {holdingsSortBy === option.key && (
+                        <Ionicons name="checkmark" size={20} color="#4A90E2" />
+                      )}
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </LinearGradient>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
+    );
+  };
+
   return (
     <>
       <SafeAreaView style={styles.safeArea} edges={["left", "right", "bottom"]}>
@@ -915,6 +1108,9 @@ export default function InvestmentsScreen({
         onClose={handleInstitutionModalClose}
         onInstitutionSelect={handleInstitutionSelect}
       />
+
+      {/* Sort Modal */}
+      {renderSortModal()}
     </>
   );
 }

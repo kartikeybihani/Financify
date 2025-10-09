@@ -1,6 +1,6 @@
 import { StyleSheet, Platform, Dimensions } from "react-native";
 
-const { width } = Dimensions.get('window');
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 // Font size constants for consistency
 const FONTS = {
@@ -393,8 +393,18 @@ export const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 16,
+    marginBottom: 8,
     paddingHorizontal: 4,
+  },
+  filterIconContainer: {
+    width: 27,
+    height: 27,
+    borderRadius: 16,
+    backgroundColor: "rgba(74, 144, 226, 0.1)",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "rgba(74, 144, 226, 0.2)",
   },
   sectionTitle: {
     fontSize: FONTS.lg,
@@ -679,6 +689,73 @@ export const styles = StyleSheet.create({
   securityTypeChipTextSelected: {
     color: "#4A90E2",
     fontWeight: "600",
+  },
+  
+  // Sort Modal Styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.75)",
+    justifyContent: "flex-end",
+  },
+  modalContent: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    minHeight: SCREEN_HEIGHT * 0.3,
+    maxHeight: SCREEN_HEIGHT * 0.5,
+    width: SCREEN_WIDTH,
+  },
+  modalHeader: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: Math.max(20, SCREEN_WIDTH * 0.05),
+    paddingTop: 20,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255,255,255,0.1)",
+  },
+  modalTitle: {
+    fontSize: Math.max(18, SCREEN_WIDTH * 0.05),
+    fontWeight: "600",
+    color: "#fff",
+    textAlign: "center",
+  },
+  sortOptionsContainer: {
+    padding: Math.max(20, SCREEN_WIDTH * 0.05),
+  },
+  sortOption: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    backgroundColor: "rgba(255,255,255,0.05)",
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.1)",
+  },
+  sortOptionText: {
+    fontSize: 16,
+    color: "rgba(255, 255, 255, 0.8)",
+    fontWeight: "500",
+  },
+  sortOptionTextSelected: {
+    color: "#4A90E2",
+    fontWeight: "600",
+  },
+  
+  // Percentage Chip Styles
+  percentageChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
+    borderWidth: 1,
+    alignSelf: "flex-start",
+  },
+  percentageChipText: {
+    fontSize: 11,
+    fontWeight: "600",
+    letterSpacing: 0.3,
   },
 });
 

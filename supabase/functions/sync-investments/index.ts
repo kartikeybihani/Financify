@@ -144,6 +144,7 @@ serve(async (req: Request) => {
             realized_pl: 0, // Not provided in API response
             day_change: null, // Not provided in API response
             day_change_percent: null, // Not provided in API response
+            total_percent_change: null, // Will be calculated by trigger
             is_active: true,
             last_updated: new Date().toISOString()
           };

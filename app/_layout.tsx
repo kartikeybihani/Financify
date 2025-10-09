@@ -12,6 +12,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import AuthProvider, { useAuth } from "@/app/_contexts/AuthContext";
 import { runStorageMigrationV2 } from "@/src/utils/migrate";
 import logger from "@/app/_utils/logger";
+import { ActionSheetProvider } from "@expo/react-native-action-sheet";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -184,8 +185,12 @@ export default function RootLayout() {
 
   return (
     <AuthProvider>
-      <RootLayoutNav />
-      <StatusBar style="light" backgroundColor="transparent" translucent />
+      <ActionSheetProvider>
+        <>
+          <RootLayoutNav />
+          <StatusBar style="light" backgroundColor="transparent" translucent />
+        </>
+      </ActionSheetProvider>
     </AuthProvider>
   );
 }
