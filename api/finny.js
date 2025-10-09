@@ -64,6 +64,82 @@ const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL;
 // Memory extraction model - small, fast, free
 const MEMORY_EXTRACTION_MODEL = "meta-llama/llama-3.3-8b-instruct:free";
 
+// Classification cache - in-memory cache for classification results
+const classificationCache = new Map();
+const CLASSIFICATION_CACHE_TTL = 60 * 60 * 1000; // 1 hour in milliseconds
+
+// Generate a cache key for classification
+function generateClassificationCacheKey(message) {
+  // Normalize the message for better cache hits
+  const normalized = message
+    .toLowerCase()
+    .trim()
+    // Remove common variations
+    .replace(/\b(i|me|my|mine)\b/g, "USER")
+    .replace(/\b(last month|this month|december|january|etc)\b/g, "PERIOD")
+    .replace(/\$\d+/g, "AMOUNT")
+    .replace(/\d+/g, "NUMBER");
+
+  return normalized;
+}
+
+// Get cached classification result
+function getCachedClassification(message) {
+  const key = generateClassificationCacheKey(message);
+  const cached = classificationCache.get(key);
+
+  if (cached && Date.now() < cached.expires_at) {
+    console.log(
+      `✅ [CACHE] Classification cache HIT for: "${message.substring(
+        0,
+        50
+      )}..."`
+    );
+    return cached.result;
+  }
+
+  if (cached) {
+    console.log(
+      `⏰ [CACHE] Classification cache EXPIRED for: "${message.substring(
+        0,
+        50
+      )}..."`
+    );
+    classificationCache.delete(key);
+  }
+
+  return null;
+}
+
+// Set cached classification result
+function setCachedClassification(message, result) {
+  const key = generateClassificationCacheKey(message);
+  const expires_at = Date.now() + CLASSIFICATION_CACHE_TTL;
+
+  classificationCache.set(key, {
+    result,
+    expires_at,
+    cached_at: Date.now(),
+  });
+
+  console.log(
+    `💾 [CACHE] Classification cached for: "${message.substring(
+      0,
+      50
+    )}..." (expires in 1 hour)`
+  );
+
+  // Clean up expired entries periodically (every 100 cache writes)
+  if (classificationCache.size % 100 === 0) {
+    const now = Date.now();
+    for (const [key, value] of classificationCache.entries()) {
+      if (now >= value.expires_at) {
+        classificationCache.delete(key);
+      }
+    }
+  }
+}
+
 // Heuristic pre-pass for quick memory extraction (1ms)
 function quickExtract(message) {
   const hints = [];
@@ -452,7 +528,7 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  const { action, message, context, ...otherParams } = req.body;
+  const { action, message, context, classification, ...otherParams } = req.body;
   console.log("📝 [FINNY] Action:", action);
   // Avoid logging full message/context to reduce PII exposure
   console.log("📊 [FINNY] Context provided:", context ? "Yes" : "No");
@@ -520,7 +596,12 @@ export default async function handler(req, res) {
         response = await handleClassify(message, safeContext);
         break;
       case "ask":
-        response = await handleAsk(message, safeContext, "ask_personalized");
+        response = await handleAsk(
+          message,
+          safeContext,
+          "ask_personalized",
+          classification
+        );
         break;
       case "off_topic":
         response = await handleOffTopic(message, safeContext);
@@ -626,7 +707,12 @@ async function enhanceSearchQuery(message, context) {
   }
 }
 
-async function handleAsk(message, context, intent = "ask_personalized") {
+async function handleAsk(
+  message,
+  context,
+  intent = "ask_personalized",
+  classificationResult = null
+) {
   console.log("🔍 [FINNY] Starting ask handler for message:", message);
   const startTime = Date.now();
   const timings = {
@@ -781,12 +867,11 @@ async function handleAsk(message, context, intent = "ask_personalized") {
     let webResults = [];
     let webSummary = "";
 
-    // Primary: Get classification result to check needs_web
-    let classificationResult = null;
-    try {
-      classificationResult = await handleClassify(message, context);
-    } catch (error) {
-      console.error("❌ [FINNY] Classification failed, using fallback:", error);
+    // Use passed classification result or fallback to keyword detection
+    if (!classificationResult) {
+      console.log(
+        "⚠️ [FINNY] No classification result passed, using keyword fallback"
+      );
     }
 
     // Use classification.needs_web as primary, with keyword detection as fallback
@@ -3520,6 +3605,17 @@ async function handleClassify(message, context) {
     };
   }
 
+  // Check cache first
+  const cachedResult = getCachedClassification(text);
+  if (cachedResult) {
+    console.log(
+      `⚡ [FINNY] Using cached classification result (${
+        Date.now() - startTime
+      }ms)`
+    );
+    return cachedResult;
+  }
+
   // Pre-filter for obvious non-financial queries
   const preFilter = isObviousNonFinancial(text);
   if (preFilter.isOffTopic) {
@@ -3527,7 +3623,7 @@ async function handleClassify(message, context) {
       "🚫 [FINNY] Pre-filtered as non-financial query:",
       preFilter.category
     );
-    return {
+    const result = {
       intent: "off_topic",
       needs_web: false,
       needs_user_data: false,
@@ -3538,6 +3634,9 @@ async function handleClassify(message, context) {
       category: preFilter.category,
       preFiltered: true,
     };
+    // Cache the pre-filter result
+    setCachedClassification(text, result);
+    return result;
   }
 
   // Positive heuristic for common financial concept questions
@@ -3546,6 +3645,9 @@ async function handleClassify(message, context) {
     console.log(
       "✅ [FINNY] Heuristic classified as financial concept in-scope"
     );
+    // Cache the heuristic result
+    setCachedClassification(text, heuristic);
+
     // Log lightweight classification
     setImmediate(() =>
       logConversation({
@@ -3729,6 +3831,9 @@ async function handleClassify(message, context) {
       cached: false,
       classification_result: out,
     };
+
+    // Cache the result for future use
+    setCachedClassification(text, out);
 
     // Log conversation synchronously
     await logConversation(conversationData);

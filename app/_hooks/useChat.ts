@@ -256,7 +256,8 @@ export const useChat = () => {
           body: JSON.stringify({
             action: "ask",
             message: messageText,
-            context: {}
+            context: {},
+            classification: classifyData
           }),
         });
       } else {
