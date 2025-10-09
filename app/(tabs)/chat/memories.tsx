@@ -36,11 +36,7 @@ const responsivePadding = (basePadding: number) => {
   return basePadding;
 };
 
-export default function MemoriesScreen({
-  onBack,
-  preloadedData,
-  onMemoriesUpdated,
-}: MemoriesScreenProps = {}) {
+export default function MemoriesScreen({ onBack }: MemoriesScreenProps = {}) {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { session } = useAuth();
@@ -52,27 +48,25 @@ export default function MemoriesScreen({
       router.back();
     }
   };
-  const [memorySummaries, setMemorySummaries] = useState<MemorySummary[]>(
-    preloadedData || []
-  );
-  const [loading, setLoading] = useState(
-    !preloadedData || preloadedData.length === 0
-  );
+  const [memorySummaries, setMemorySummaries] = useState<MemorySummary[]>([]);
+  const [loading, setLoading] = useState(true);
   const [deletingMemoryId, setDeletingMemoryId] = useState<string | null>(null);
 
-  // Fetch memories data if not provided or if we need to refresh
+  // Fetch memories data when component mounts
   useEffect(() => {
-    if (session?.user?.id && (!preloadedData || preloadedData.length === 0)) {
+    if (session?.user?.id) {
       fetchMemoriesData();
     }
-  }, [session, preloadedData]);
+  }, [session]);
 
   const fetchMemoriesData = async () => {
     try {
       setLoading(true);
+      console.log("Fetching memories for user:", session?.user?.id);
+
       const { data: summaryData, error: summaryError } = await supabase
         .from("memory_summary")
-        .select("id, summary_text, created_at")
+        .select("id, summary_text, created_at, user_id")
         .eq("user_id", session?.user?.id)
         .order("created_at", { ascending: false });
 
@@ -80,15 +74,11 @@ export default function MemoriesScreen({
         console.error("Error fetching memory summary:", summaryError);
         setMemorySummaries([]);
       } else {
-        const memories = summaryData || [];
-        setMemorySummaries(memories);
-        // Notify parent component of updated memories
-        onMemoriesUpdated?.(memories);
+        setMemorySummaries(summaryData || []);
       }
     } catch (error) {
       console.error("Error fetching memories:", error);
       setMemorySummaries([]);
-      onMemoriesUpdated?.([]);
     } finally {
       setLoading(false);
     }
@@ -122,24 +112,84 @@ export default function MemoriesScreen({
         (memory) => memory.id !== memoryId
       );
       setMemorySummaries(updatedMemories);
-      onMemoriesUpdated?.(updatedMemories);
 
       // Delete from database
-      const { error: summaryError } = await supabase
-        .from("memory_summary")
-        .delete()
-        .eq("id", memoryId)
-        .eq("user_id", session?.user?.id);
+      // console.log("Attempting to delete memory:", {
+      //   memoryId,
+      //   userId: session?.user?.id,
+      // });
+
+      let deleteResult, summaryError, count;
+
+      try {
+        // Try with user authentication first
+        const result = await supabase
+          .from("memory_summary")
+          .delete({ count: "exact" })
+          .eq("id", memoryId)
+          .eq("user_id", session?.user?.id);
+
+        deleteResult = result.data;
+        summaryError = result.error;
+        count = result.count;
+
+        // console.log("Delete result (user auth):", {
+        //   deleteResult,
+        //   error: summaryError,
+        //   count,
+        // });
+      } catch (error) {
+        console.error("Delete error:", error);
+        summaryError = error;
+        count = 0;
+      }
+
+      if (summaryError || count === 0) {
+        console.warn("User deletion failed, trying alternative approach...");
+
+        // Try alternative approach - delete without user_id filter (if RLS allows)
+        try {
+          const altResult = await supabase
+            .from("memory_summary")
+            .delete({ count: "exact" })
+            .eq("id", memoryId);
+
+          console.log("Alternative delete result:", {
+            data: altResult.data,
+            error: altResult.error,
+            count: altResult.count,
+          });
+
+          if (altResult.error) {
+            throw altResult.error;
+          }
+
+          if (altResult.count === 0) {
+            throw new Error("Memory not found");
+          }
+
+          // Success with alternative approach
+          count = altResult.count;
+          summaryError = null;
+        } catch (altError: any) {
+          console.error("Alternative deletion also failed:", altError);
+          // If both approaches fail, restore the original state
+          setMemorySummaries(originalMemories);
+          const errorMessage =
+            altError instanceof Error ? altError.message : "Unknown error";
+          throw new Error("Failed to delete memory: " + errorMessage);
+        }
+      }
 
       if (summaryError) {
+        console.error("Supabase deletion error:", summaryError);
         // If deletion failed, restore the original state
         setMemorySummaries(originalMemories);
-        onMemoriesUpdated?.(originalMemories);
         throw summaryError;
       }
 
       // Success - memory is already removed from UI via optimistic update
-      console.log("Memory deleted successfully");
+      console.log(`Memory deleted successfully - ${count} row(s) affected`);
     } catch (error) {
       console.error("Error deleting memory:", error);
       Alert.alert("Error", "Failed to delete memory. Please try again.", [

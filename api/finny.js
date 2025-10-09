@@ -903,6 +903,15 @@ async function handleAsk(message, context, intent = "ask_personalized") {
       "- Use the user's name when available to create personal connection",
       "- Focus on financial empowerment and positive outcomes",
       "",
+      "EMPATHETIC ENGAGEMENT:",
+      "- ALWAYS acknowledge and engage with personal information users share, even if not directly financial",
+      "- Show genuine interest in their life, studies, career, location, hobbies, or experiences",
+      "- Make connections between their personal situation and financial advice when relevant",
+      "- Respond with warmth and understanding to personal details like age, location, occupation, or interests",
+      "- Examples: If someone says they're a 20-year-old software engineer student in Tucson, respond with something like 'That's awesome that you're studying software engineering in Tucson! That's such a growing field with great earning potential.'",
+      "- If users share non-financial information, acknowledge it warmly before transitioning to financial topics",
+      "- Build rapport by showing you care about them as a person, not just their finances",
+      "",
       // Smart memory context with relevance-based selection
       ...(context.memory?.summary
         ? [`User context: ${context.memory.summary}`]
@@ -3767,6 +3776,15 @@ async function handleOffTopic(message, context) {
     "Keep responses concise but engaging.",
     "Focus on financial empowerment and positive outcomes.",
     "",
+    "EMPATHETIC ENGAGEMENT:",
+    "- ALWAYS acknowledge and engage with personal information users share, even if not directly financial",
+    "- Show genuine interest in their life, studies, career, location, hobbies, or experiences",
+    "- Respond with warmth and understanding to personal details like age, location, occupation, or interests",
+    "- Examples: If someone says they're a 20-year-old software engineer student in Tucson, respond with something like 'That's awesome that you're studying software engineering in Tucson! That's such a growing field with great earning potential.'",
+    "- If users share non-financial information, acknowledge it warmly before transitioning to financial topics",
+    "- Build rapport by showing you care about them as a person, not just their finances",
+    "- Make the transition to financial topics feel natural and connected to their personal situation",
+    "",
     // Smart memory context with relevance-based selection
     ...(context.memory?.summary
       ? [`User context: ${context.memory.summary}`]
@@ -5494,7 +5512,9 @@ async function generateMemorySummary(memories, userId) {
 
       // Only include significant traits that aren't already mentioned
       if (
-        (key === "location" ||
+        (key === "age" ||
+          key === "location" ||
+          key === "occupation" ||
           key === "education" ||
           key.startsWith("family.") ||
           key.startsWith("lifestyle.")) &&
@@ -5505,7 +5525,50 @@ async function generateMemorySummary(memories, userId) {
     });
 
     if (significantTraits.length > 0) {
-      newInfo.push(`New profile info: ${significantTraits.join(", ")}`);
+      // Format profile traits more conversationally
+      const profileInfo = {};
+      grouped.profile_trait.forEach((m) => {
+        const key = m.key.replace("profile_trait.", "");
+        const value = m.value;
+
+        if (!previousSummary.toLowerCase().includes(value.toLowerCase())) {
+          if (key === "age") profileInfo.age = value;
+          else if (key === "occupation") profileInfo.occupation = value;
+          else if (key === "location") profileInfo.location = value;
+          else if (key === "education") profileInfo.education = value;
+          else if (key.startsWith("family.") || key.startsWith("lifestyle.")) {
+            profileInfo.other = profileInfo.other || [];
+            profileInfo.other.push(value);
+          }
+        }
+      });
+
+      const profileParts = [];
+      if (profileInfo.age && profileInfo.occupation) {
+        profileParts.push(
+          `${profileInfo.age}-year-old ${profileInfo.occupation}`
+        );
+      } else if (profileInfo.age) {
+        profileParts.push(`${profileInfo.age} years old`);
+      } else if (profileInfo.occupation) {
+        profileParts.push(`works as a ${profileInfo.occupation}`);
+      }
+
+      if (profileInfo.location) {
+        profileParts.push(`from ${profileInfo.location}`);
+      }
+
+      if (profileInfo.education) {
+        profileParts.push(`with ${profileInfo.education}`);
+      }
+
+      if (profileInfo.other && profileInfo.other.length > 0) {
+        profileParts.push(...profileInfo.other);
+      }
+
+      if (profileParts.length > 0) {
+        newInfo.push(`New profile info: ${profileParts.join(", ")}`);
+      }
     }
   }
 
@@ -5526,27 +5589,61 @@ async function generateMemorySummary(memories, userId) {
     if (previousSummary) {
       return `Updated understanding based on ${memories.length} memories.`;
     } else {
-      // First summary - create a concise overview
-      const overview = [];
-      if (grouped.goal && grouped.goal.length > 0) {
-        overview.push(`Goals: ${grouped.goal.map((m) => m.value).join(", ")}`);
-      }
+      // First summary - create a conversational overview
+      const profileParts = [];
+      const otherInfo = [];
+
       if (grouped.profile_trait && grouped.profile_trait.length > 0) {
         const profileInfo = {};
         grouped.profile_trait.forEach((m) => {
           const key = m.key.replace("profile_trait.", "");
           if (key === "age") profileInfo.age = m.value;
           else if (key === "occupation") profileInfo.occupation = m.value;
+          else if (key === "location") profileInfo.location = m.value;
+          else if (key === "education") profileInfo.education = m.value;
         });
+
+        // Build conversational profile description
         if (profileInfo.age && profileInfo.occupation) {
-          overview.push(
+          profileParts.push(
             `${profileInfo.age}-year-old ${profileInfo.occupation}`
           );
+        } else if (profileInfo.age) {
+          profileParts.push(`${profileInfo.age} years old`);
+        } else if (profileInfo.occupation) {
+          profileParts.push(`works as a ${profileInfo.occupation}`);
+        }
+
+        if (profileInfo.location) {
+          profileParts.push(`from ${profileInfo.location}`);
+        }
+
+        if (profileInfo.education) {
+          profileParts.push(`with ${profileInfo.education}`);
         }
       }
-      return overview.length > 0
-        ? overview.join(". ") + "."
-        : "Initial profile established.";
+
+      if (grouped.goal && grouped.goal.length > 0) {
+        otherInfo.push(`Goals: ${grouped.goal.map((m) => m.value).join(", ")}`);
+      }
+
+      if (grouped.constraint && grouped.constraint.length > 0) {
+        otherInfo.push(
+          `Constraints: ${grouped.constraint.map((m) => m.value).join(", ")}`
+        );
+      }
+
+      const parts = [];
+      if (profileParts.length > 0) {
+        parts.push(profileParts.join(", "));
+      }
+      if (otherInfo.length > 0) {
+        parts.push(otherInfo.join(". "));
+      }
+
+      return parts.length > 0
+        ? parts.join(". ") + "."
+        : "Getting to know you better through our conversations.";
     }
   }
 
