@@ -540,6 +540,78 @@ export default async function handler(req, res) {
   }
 }
 
+// Enhanced search query function to include user-specific data when relevant
+async function enhanceSearchQuery(message, context) {
+  try {
+    const lowerMessage = message.toLowerCase();
+
+    // Check if this is a query about user's personal investments/holdings
+    const isPersonalInvestmentQuery =
+      lowerMessage.includes("my holdings") ||
+      lowerMessage.includes("my investments") ||
+      lowerMessage.includes("my portfolio") ||
+      lowerMessage.includes("my stocks") ||
+      lowerMessage.includes("my positions") ||
+      (lowerMessage.includes("holdings") &&
+        (lowerMessage.includes("my") || lowerMessage.includes("investment"))) ||
+      (lowerMessage.includes("news") &&
+        lowerMessage.includes("investment") &&
+        lowerMessage.includes("my"));
+
+    if (!isPersonalInvestmentQuery || !context?.user_id) {
+      console.log("🔍 [ENHANCE] No enhancement needed for query:", message);
+      return message;
+    }
+
+    console.log(
+      "🔍 [ENHANCE] Detected personal investment query, fetching user holdings..."
+    );
+
+    // Fetch user's investment holdings
+    const { data: holdings, error } = await withTimeout(
+      supabase.rpc("get_investment_holdings_detailed", {
+        p_user_id: context.user_id,
+      }),
+      3000 // 3 second timeout
+    );
+
+    if (error || !holdings || holdings.length === 0) {
+      console.log("⚠️ [ENHANCE] No holdings found or error:", error?.message);
+      return message;
+    }
+
+    // Extract unique stock symbols from holdings
+    const symbols = [
+      ...new Set(
+        holdings
+          .map((holding) => holding.symbol)
+          .filter((symbol) => symbol && symbol.length <= 5) // Filter out long descriptions
+          .slice(0, 10) // Limit to top 10 symbols to avoid query length issues
+      ),
+    ];
+
+    if (symbols.length === 0) {
+      console.log("⚠️ [ENHANCE] No valid symbols found in holdings");
+      return message;
+    }
+
+    // Enhance the query with specific symbols
+    const symbolsText = symbols.join(" ");
+    const enhancedQuery = `${message} ${symbolsText}`;
+
+    console.log(
+      `✅ [ENHANCE] Enhanced query with ${symbols.length} symbols:`,
+      symbols
+    );
+    console.log("🔍 [ENHANCE] Enhanced query:", enhancedQuery);
+
+    return enhancedQuery;
+  } catch (error) {
+    console.error("❌ [ENHANCE] Error enhancing search query:", error);
+    return message; // Fallback to original message
+  }
+}
+
 async function handleAsk(message, context, intent = "ask_personalized") {
   console.log("🔍 [FINNY] Starting ask handler for message:", message);
   const startTime = Date.now();
@@ -718,7 +790,9 @@ async function handleAsk(message, context, intent = "ask_personalized") {
       const webStartTime = Date.now();
 
       try {
-        webResults = await braveSearch(message);
+        // Enhance search query with user-specific data when relevant
+        const enhancedQuery = await enhanceSearchQuery(message, context);
+        webResults = await braveSearch(enhancedQuery);
         timings.web_ms = Date.now() - webStartTime;
 
         if (webResults.length > 0) {
