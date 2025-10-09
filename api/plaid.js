@@ -283,6 +283,120 @@ async function callSnapTradeAPI(endpoint, params) {
   return response.json();
 }
 
+// Helper function to recalculate portfolio metrics from database holdings
+async function recalculatePortfolioMetricsFromDatabase(
+  userId,
+  snaptradeUserId,
+  accountId
+) {
+  try {
+    console.log("🔄 Recalculating portfolio metrics from database holdings...");
+
+    // Get all active holdings for this account from the database
+    const { data: holdings, error: holdingsError } = await supabase
+      .from("investment_holdings")
+      .select("*")
+      .eq("user_id", userId)
+      .eq("snaptrade_user_id", snaptradeUserId)
+      .eq("account_id", accountId)
+      .eq("is_active", true);
+
+    if (holdingsError) {
+      console.error(
+        "❌ Error fetching holdings for recalculation:",
+        holdingsError
+      );
+      return;
+    }
+
+    if (!holdings || holdings.length === 0) {
+      console.log("ℹ️ No holdings found for recalculation");
+      return;
+    }
+
+    // Calculate totals from database holdings
+    let totalValue = 0;
+    let totalDayChange = 0;
+    let totalUnrealizedPL = 0;
+
+    holdings.forEach((holding) => {
+      const marketValue = holding.market_value || 0;
+      const dayChange = holding.day_change || 0;
+      const unrealizedPL = holding.unrealized_pl || 0;
+
+      totalValue += marketValue;
+      totalDayChange += dayChange;
+      totalUnrealizedPL += unrealizedPL;
+    });
+
+    // Get cash balance from investment_balances
+    const { data: balanceData, error: balanceError } = await supabase
+      .from("investment_balances")
+      .select("cash")
+      .eq("user_id", userId)
+      .eq("snaptrade_user_id", snaptradeUserId)
+      .eq("account_id", accountId)
+      .eq("is_current", true)
+      .single();
+
+    const cashAmount = balanceData?.cash || 0;
+    const totalPortfolioValue = totalValue + cashAmount;
+
+    // Calculate percentages
+    const dayChangePercent =
+      totalPortfolioValue > 0
+        ? (totalDayChange / totalPortfolioValue) * 100
+        : 0;
+    const totalChangePercent =
+      totalPortfolioValue > 0
+        ? (totalUnrealizedPL / totalPortfolioValue) * 100
+        : 0;
+
+    console.log("📊 Database-calculated portfolio metrics:", {
+      holdingsCount: holdings.length,
+      totalValue: totalValue.toFixed(2),
+      cashAmount: cashAmount.toFixed(2),
+      totalPortfolioValue: totalPortfolioValue.toFixed(2),
+      totalDayChange: totalDayChange.toFixed(2),
+      dayChangePercent: dayChangePercent.toFixed(2),
+      totalUnrealizedPL: totalUnrealizedPL.toFixed(2),
+      totalChangePercent: totalChangePercent.toFixed(2),
+    });
+
+    // Update investment_balances with recalculated values
+    const { error: updateError } = await supabase
+      .from("investment_balances")
+      .update({
+        total_value: totalPortfolioValue,
+        day_change: totalDayChange,
+        day_change_percent: dayChangePercent,
+        total_change: totalUnrealizedPL,
+        total_change_percent: totalChangePercent,
+        last_updated: new Date().toISOString(),
+      })
+      .eq("user_id", userId)
+      .eq("snaptrade_user_id", snaptradeUserId)
+      .eq("account_id", accountId)
+      .eq("is_current", true);
+
+    if (updateError) {
+      console.error(
+        "❌ Error updating balance with recalculated metrics:",
+        updateError
+      );
+    } else {
+      console.log(
+        "✅ Portfolio metrics recalculated and updated from database holdings"
+      );
+    }
+  } catch (error) {
+    console.error(
+      "❌ Error in recalculatePortfolioMetricsFromDatabase:",
+      error
+    );
+  }
+}
+
 // SnapTrade mode handlers
 async function handleSnapTradeRegister(res) {
   // This would typically call your Supabase function to register a new user
@@ -600,6 +714,13 @@ async function handleSnapTradeSync(res, userId, accountId) {
             "✅ Balance updated successfully with new performance metrics"
           );
         }
+
+        // After updating balances, recalculate from database holdings to ensure accuracy
+        await recalculatePortfolioMetricsFromDatabase(
+          connection.user_id,
+          connection.snaptrade_user_id,
+          accountId
+        );
       } else {
         console.log("ℹ️ No balance data to sync");
       }
@@ -897,6 +1018,14 @@ async function handleSnapTradeSync(res, userId, accountId) {
     } catch (error) {
       console.error("❌ Error syncing holdings:", error);
     }
+
+    // Final recalculation from database holdings to ensure accuracy
+    console.log("🔄 Final recalculation of portfolio metrics from database...");
+    await recalculatePortfolioMetricsFromDatabase(
+      connection.user_id,
+      connection.snaptrade_user_id,
+      accountId
+    );
 
     // Update last_synced_at timestamp
     await supabase

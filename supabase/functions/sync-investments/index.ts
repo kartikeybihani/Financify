@@ -17,6 +17,99 @@ const snaptrade = new Snaptrade({
   consumerKey: SNAPTRADE_CONSUMER_KEY,
 });
 
+// Helper function to recalculate portfolio metrics from database holdings
+async function recalculatePortfolioMetricsFromDatabase(userId: string, snaptradeUserId: string, accountId: string) {
+  try {
+    console.log("🔄 Recalculating portfolio metrics from database holdings...");
+
+    // Get all active holdings for this account from the database
+    const { data: holdings, error: holdingsError } = await supabase
+      .from("investment_holdings")
+      .select("*")
+      .eq("user_id", userId)
+      .eq("snaptrade_user_id", snaptradeUserId)
+      .eq("account_id", accountId)
+      .eq("is_active", true);
+
+    if (holdingsError) {
+      console.error("❌ Error fetching holdings for recalculation:", holdingsError);
+      return;
+    }
+
+    if (!holdings || holdings.length === 0) {
+      console.log("ℹ️ No holdings found for recalculation");
+      return;
+    }
+
+    // Calculate totals from database holdings
+    let totalValue = 0;
+    let totalDayChange = 0;
+    let totalUnrealizedPL = 0;
+
+    holdings.forEach((holding: any) => {
+      const marketValue = holding.market_value || 0;
+      const dayChange = holding.day_change || 0;
+      const unrealizedPL = holding.unrealized_pl || 0;
+
+      totalValue += marketValue;
+      totalDayChange += dayChange;
+      totalUnrealizedPL += unrealizedPL;
+    });
+
+    // Get cash balance from investment_balances
+    const { data: balanceData, error: balanceError } = await supabase
+      .from("investment_balances")
+      .select("cash")
+      .eq("user_id", userId)
+      .eq("snaptrade_user_id", snaptradeUserId)
+      .eq("account_id", accountId)
+      .eq("is_current", true)
+      .single();
+
+    const cashAmount = balanceData?.cash || 0;
+    const totalPortfolioValue = totalValue + cashAmount;
+
+    // Calculate percentages
+    const dayChangePercent = totalPortfolioValue > 0 ? (totalDayChange / totalPortfolioValue) * 100 : 0;
+    const totalChangePercent = totalPortfolioValue > 0 ? (totalUnrealizedPL / totalPortfolioValue) * 100 : 0;
+
+    console.log("📊 Database-calculated portfolio metrics:", {
+      holdingsCount: holdings.length,
+      totalValue: totalValue.toFixed(2),
+      cashAmount: cashAmount.toFixed(2),
+      totalPortfolioValue: totalPortfolioValue.toFixed(2),
+      totalDayChange: totalDayChange.toFixed(2),
+      dayChangePercent: dayChangePercent.toFixed(2),
+      totalUnrealizedPL: totalUnrealizedPL.toFixed(2),
+      totalChangePercent: totalChangePercent.toFixed(2),
+    });
+
+    // Update investment_balances with recalculated values
+    const { error: updateError } = await supabase
+      .from("investment_balances")
+      .update({
+        total_value: totalPortfolioValue,
+        day_change: totalDayChange,
+        day_change_percent: dayChangePercent,
+        total_change: totalUnrealizedPL,
+        total_change_percent: totalChangePercent,
+        last_updated: new Date().toISOString(),
+      })
+      .eq("user_id", userId)
+      .eq("snaptrade_user_id", snaptradeUserId)
+      .eq("account_id", accountId)
+      .eq("is_current", true);
+
+    if (updateError) {
+      console.error("❌ Error updating balance with recalculated metrics:", updateError);
+    } else {
+      console.log("✅ Portfolio metrics recalculated and updated from database holdings");
+    }
+  } catch (error) {
+    console.error("❌ Error in recalculatePortfolioMetricsFromDatabase:", error);
+  }
+}
+
 serve(async (req: Request) => {
   try {
     console.log("🔄 Starting investments sync...");
@@ -180,7 +273,11 @@ serve(async (req: Request) => {
     }
     */
 
-    // 5. Update last_synced_at timestamp
+    // 5. Recalculate portfolio metrics from database holdings
+    console.log("🔄 Recalculating portfolio metrics from database holdings...");
+    await recalculatePortfolioMetricsFromDatabase(user_id, snaptrade_user_id, account_id);
+
+    // 6. Update last_synced_at timestamp
     await supabase
       .from("snaptrade_connections")
       .update({ last_synced_at: new Date().toISOString() })
@@ -198,7 +295,7 @@ serve(async (req: Request) => {
   } catch (error) {
     console.error("❌ Investments sync error:", error);
     return new Response(JSON.stringify({ 
-      error: error.message 
+      error: error instanceof Error ? error.message : "Unknown error"
     }), { 
       status: 500,
       headers: { "Content-Type": "application/json" }
