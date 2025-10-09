@@ -266,7 +266,7 @@ RULES:
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: MEMORY_EXTRACTION_MODEL,
+          model: OPENROUTER_MODEL,
           temperature: 0.1, // Low for consistent extraction
           max_tokens: 500, // Small response
           messages: [
@@ -520,7 +520,9 @@ export default async function handler(req, res) {
         response = await handleClassify(message, safeContext);
         break;
       case "ask":
-        response = await handleAsk(message, safeContext, "ask_personalized");
+        // Get classification first, then pass it to handleAsk
+        const classification = await handleClassify(message, safeContext);
+        response = await handleAsk(message, safeContext, classification);
         break;
       case "off_topic":
         response = await handleOffTopic(message, safeContext);
@@ -626,7 +628,7 @@ async function enhanceSearchQuery(message, context) {
   }
 }
 
-async function handleAsk(message, context, intent = "ask_personalized") {
+async function handleAsk(message, context, classification) {
   console.log("🔍 [FINNY] Starting ask handler for message:", message);
   const startTime = Date.now();
   const timings = {
@@ -658,7 +660,7 @@ async function handleAsk(message, context, intent = "ask_personalized") {
                 finny_response: redactPII(formatted),
                 timestamp: new Date().toISOString(),
                 user_id: context?.user_id || "unknown",
-                intent: "ask_personalized",
+                intent: classification?.intent || "ask_personalized",
                 entities: [exec.ticker].filter(Boolean),
                 confidence: 0.95,
                 response_time_ms: Date.now() - startTime,
@@ -675,7 +677,7 @@ async function handleAsk(message, context, intent = "ask_personalized") {
                 cached: false,
                 request_id: generateRequestId(),
                 metrics: {
-                  intent: "ask_personalized",
+                  intent: classification?.intent || "ask_personalized",
                   latency_ms: { total: Date.now() - startTime },
                 },
               })
@@ -729,7 +731,7 @@ async function handleAsk(message, context, intent = "ask_personalized") {
               cached: !!stockResponse?.cachedAt,
               request_id: generateRequestId(),
               metrics: {
-                intent: "ask_personalized",
+                intent: classification?.intent || "ask_personalized",
                 latency_ms: { total: Date.now() - startTime },
                 tools_used: [
                   {
@@ -781,20 +783,12 @@ async function handleAsk(message, context, intent = "ask_personalized") {
     let webResults = [];
     let webSummary = "";
 
-    // Primary: Get classification result to check needs_web
-    let classificationResult = null;
-    try {
-      classificationResult = await handleClassify(message, context);
-    } catch (error) {
-      console.error("❌ [FINNY] Classification failed, using fallback:", error);
-    }
-
-    // Use classification.needs_web as primary, with keyword detection as fallback
+    // Use passed classification result to check needs_web
     const needsWeb =
-      classificationResult?.needs_web || detectWebSearchNeeded(message, slots);
+      classification?.needs_web || detectWebSearchNeeded(message, slots);
 
     console.log("🌍 [FINNY] Web search decision:", {
-      classification_needs_web: classificationResult?.needs_web,
+      classification_needs_web: classification?.needs_web,
       keyword_fallback: detectWebSearchNeeded(message, slots),
       final_decision: needsWeb,
     });
@@ -3573,7 +3567,7 @@ async function handleClassify(message, context) {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: OPENROUTER_MODEL,
+        model: MEMORY_EXTRACTION_MODEL,
         temperature: 0.2,
         messages: [
           {
