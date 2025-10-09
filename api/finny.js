@@ -174,8 +174,8 @@ function generateDataCacheKey(dataType, userId, params = {}) {
   return keyParts.join("_");
 }
 
-// Get cached data
-function getCachedData(dataType, userId, params = {}) {
+// Get cached user data
+function getCachedUserData(dataType, userId, params = {}) {
   const key = generateDataCacheKey(dataType, userId, params);
   const cached = dataCache.get(key);
 
@@ -192,8 +192,8 @@ function getCachedData(dataType, userId, params = {}) {
   return null;
 }
 
-// Set cached data
-function setCachedData(dataType, userId, data, params = {}) {
+// Set cached user data
+function setCachedUserData(dataType, userId, data, params = {}) {
   const key = generateDataCacheKey(dataType, userId, params);
   const ttl = CACHE_TTL[dataType] || 5 * 60 * 1000; // Default 5 minutes
   const expires_at = Date.now() + ttl;
@@ -1816,7 +1816,7 @@ async function buildContextPacks(userId, needs, slots) {
     // 1. Financial summary fetch promise
     if (needs.includes("summary_min")) {
       // Check cache first
-      const cachedSummary = getCachedData("financial_summary", userId);
+      const cachedSummary = getCachedUserData("financial_summary", userId);
 
       if (cachedSummary) {
         // Use cached data
@@ -1844,7 +1844,7 @@ async function buildContextPacks(userId, needs, slots) {
     // 2. Spend data fetch promise
     if (needs.includes("spend_total") && slots.period) {
       // Check cache first
-      const cachedSpend = getCachedData("spend_data", userId, {
+      const cachedSpend = getCachedUserData("spend_data", userId, {
         period: slots.period,
       });
 
@@ -1885,7 +1885,7 @@ async function buildContextPacks(userId, needs, slots) {
     // 3. Category transactions fetch promise (detailed)
     if (slots.category && slots.period) {
       // Check cache first
-      const cachedCategoryTxns = getCachedData(
+      const cachedCategoryTxns = getCachedUserData(
         "category_transactions",
         userId,
         {
@@ -1937,7 +1937,7 @@ async function buildContextPacks(userId, needs, slots) {
     // 4. Transactions by category fetch promise (for spend pack)
     if (needs.includes("txns_by_category") && slots.category && slots.period) {
       // Check cache first (reuse category_transactions cache)
-      const cachedTxns = getCachedData("category_transactions", userId, {
+      const cachedTxns = getCachedUserData("category_transactions", userId, {
         category: slots.category,
         period: slots.period,
       });
@@ -1985,7 +1985,7 @@ async function buildContextPacks(userId, needs, slots) {
     // 5. Investment holdings fetch promise
     if (needs.includes("invest_holdings")) {
       // Check cache first
-      const cachedHoldings = getCachedData("investment_holdings", userId);
+      const cachedHoldings = getCachedUserData("investment_holdings", userId);
 
       if (cachedHoldings) {
         // Use cached data
@@ -2015,7 +2015,7 @@ async function buildContextPacks(userId, needs, slots) {
     // 6. Goals overview fetch promise
     if (needs.includes("goals_overview")) {
       // Check cache first
-      const cachedGoals = getCachedData("goals_overview", userId, {
+      const cachedGoals = getCachedUserData("goals_overview", userId, {
         limit: 10,
       });
 
@@ -2045,7 +2045,7 @@ async function buildContextPacks(userId, needs, slots) {
     // 7. Cashflow monthly fetch promise
     if (needs.includes("cashflow_monthly")) {
       // Check cache first
-      const cachedCashflow = getCachedData("cashflow_monthly", userId, {
+      const cachedCashflow = getCachedUserData("cashflow_monthly", userId, {
         months: 3,
       });
 
@@ -2119,7 +2119,7 @@ async function buildContextPacks(userId, needs, slots) {
                 packs.base = processedData;
 
                 // Cache the processed data
-                setCachedData(
+                setCachedUserData(
                   "financial_summary",
                   metadata.userId,
                   processedData
@@ -2146,7 +2146,7 @@ async function buildContextPacks(userId, needs, slots) {
               packs.spend = processedData;
 
               // Cache the processed data
-              setCachedData("spend_data", metadata.userId, processedData, {
+              setCachedUserData("spend_data", metadata.userId, processedData, {
                 period: metadata.period,
               });
             } else {
@@ -2173,7 +2173,7 @@ async function buildContextPacks(userId, needs, slots) {
               packs.categoryDetails = processedData;
 
               // Cache the processed data
-              setCachedData(
+              setCachedUserData(
                 "category_transactions",
                 metadata.userId,
                 processedData,
@@ -2202,7 +2202,7 @@ async function buildContextPacks(userId, needs, slots) {
               packs.spend = processedData;
 
               // Cache the processed data
-              setCachedData(
+              setCachedUserData(
                 "category_transactions",
                 metadata.userId,
                 processedData,
@@ -2232,7 +2232,7 @@ async function buildContextPacks(userId, needs, slots) {
               packs.invest = processedData;
 
               // Cache the processed data
-              setCachedData(
+              setCachedUserData(
                 "investment_holdings",
                 metadata.userId,
                 processedData
@@ -2259,9 +2259,14 @@ async function buildContextPacks(userId, needs, slots) {
               packs.goals = processedData;
 
               // Cache the processed data
-              setCachedData("goals_overview", metadata.userId, processedData, {
-                limit: 10,
-              });
+              setCachedUserData(
+                "goals_overview",
+                metadata.userId,
+                processedData,
+                {
+                  limit: 10,
+                }
+              );
             } else {
               gaps.push("goals_overview");
             }
@@ -2284,7 +2289,7 @@ async function buildContextPacks(userId, needs, slots) {
               packs.goals = processedData;
 
               // Cache the processed data
-              setCachedData(
+              setCachedUserData(
                 "cashflow_monthly",
                 metadata.userId,
                 processedData,
