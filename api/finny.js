@@ -562,7 +562,10 @@ async function handleAsk(message, context, intent = "ask_personalized") {
           const exec = await executeStockPlan(plan || {}, message);
           if (!exec.error && exec.data?.current != null) {
             const formatted = formatPlannedStockResponse(exec);
-            const response = { message: formatted, type: "assistant" };
+            const response = {
+              message: cleanResponseFormatting(formatted),
+              type: "assistant",
+            };
             setImmediate(() =>
               logConversation({
                 user_message: redactPII(message),
@@ -616,7 +619,7 @@ async function handleAsk(message, context, intent = "ask_personalized") {
         if (data && !data.error && data.current) {
           const formatted = formatStockResponse(data);
           const response = {
-            message: formatted,
+            message: cleanResponseFormatting(formatted),
             type: "assistant",
           };
 
@@ -673,8 +676,9 @@ async function handleAsk(message, context, intent = "ask_personalized") {
     if (!userId) {
       console.log("❌ [FINNY] No user_id provided in context");
       return {
-        message:
-          "I need to know who you are to provide personalized advice. Please try again.",
+        message: cleanResponseFormatting(
+          "I need to know who you are to provide personalized advice. Please try again."
+        ),
         type: "assistant",
       };
     }
@@ -862,6 +866,14 @@ async function handleAsk(message, context, intent = "ask_personalized") {
       "- If required data is missing (e.g., no transactions or summary), explicitly say so and ask the user to refresh or connect accounts. Do NOT fabricate data.",
       "- When listing transactions, ONLY use transactions present in the provided context. If none exist, say you couldn't find recent transactions.",
       "- For amounts like net worth, ONLY use values from the context. If missing, state that it's unavailable.",
+      "",
+      "CRITICAL FORMATTING RULES:",
+      "- NEVER use markdown formatting (no ###, **bold**, *italics*, `code blocks`, etc.)",
+      "- NEVER use hashtags (#) or numbered headers with emojis (like ### 1️⃣)",
+      "- Write in plain text format only - like you're texting a friend",
+      "- Use simple line breaks and bullet points with dashes (-) instead of markdown",
+      "- Keep the conversational tone natural and chat-like",
+      "- Avoid any formatting that would look robotic or structured",
       "",
       "DATA INTERPRETATION:",
       "- IMPORTANT: In transaction data, EXPENSE means money spent (going out), INCOME means money received (coming in).",
@@ -1053,7 +1065,7 @@ async function handleAsk(message, context, intent = "ask_personalized") {
     if (!resp.ok) {
       console.error("❌ [FINNY] OpenRouter API error:", resp.status);
       return {
-        message: "I'm glitching right now—try again.",
+        message: cleanResponseFormatting("I'm glitching right now—try again."),
         type: "assistant",
       };
     }
@@ -1076,11 +1088,15 @@ async function handleAsk(message, context, intent = "ask_personalized") {
       console.log("🧠 [FINNY] No memories to save");
     }
 
+    // Clean any markdown formatting from the response
+    const cleanedMessage = cleanResponseFormatting(
+      gaps.length > 0
+        ? `${cleanText}\n\n(Using available data - some data may be incomplete.)`
+        : cleanText
+    );
+
     const response = {
-      message:
-        gaps.length > 0
-          ? `${cleanText}\n\n(Using available data - some data may be incomplete.)`
-          : cleanText,
+      message: cleanedMessage,
       type: "assistant",
     };
 
@@ -1125,11 +1141,59 @@ async function handleAsk(message, context, intent = "ask_personalized") {
   } catch (error) {
     console.error("❌ [FINNY] Ask handler error:", error);
     return {
-      message:
-        "I'm having some technical difficulties right now. Please try again in a moment.",
+      message: cleanResponseFormatting(
+        "I'm having some technical difficulties right now. Please try again in a moment."
+      ),
       type: "assistant",
     };
   }
+}
+
+// === RESPONSE FORMATTING ===
+// Clean markdown and formatting from responses to ensure chat-friendly format
+
+function cleanResponseFormatting(response) {
+  if (!response || typeof response !== "string") {
+    return response;
+  }
+
+  let cleaned = response;
+
+  // Remove markdown headers (### Header, ## Header, # Header)
+  cleaned = cleaned.replace(/^#{1,6}\s*/gm, "");
+
+  // Remove markdown headers with emojis (### 1️⃣ Header)
+  cleaned = cleaned.replace(
+    /^#{1,6}\s*[\d\w]*[\u{1F300}-\u{1F9FF}]+\s*/gmu,
+    ""
+  );
+
+  // Remove bold markdown (**text** or __text__)
+  cleaned = cleaned.replace(/\*\*(.*?)\*\*/g, "$1");
+  cleaned = cleaned.replace(/__(.*?)__/g, "$1");
+
+  // Remove italic markdown (*text* or _text_)
+  cleaned = cleaned.replace(/\*(.*?)\*/g, "$1");
+  cleaned = cleaned.replace(/_(.*?)_/g, "$1");
+
+  // Remove code blocks (```code``` or `code`)
+  cleaned = cleaned.replace(/```[\s\S]*?```/g, "");
+  cleaned = cleaned.replace(/`([^`]+)`/g, "$1");
+
+  // Remove markdown tables (| col1 | col2 |)
+  cleaned = cleaned.replace(/\|.*\|/g, "");
+
+  // Remove horizontal rules (--- or ***)
+  cleaned = cleaned.replace(/^[-*]{3,}$/gm, "");
+
+  // Clean up excessive whitespace
+  cleaned = cleaned.replace(/\n{3,}/g, "\n\n");
+  cleaned = cleaned.replace(/[ \t]+$/gm, "");
+
+  // Remove standalone hashtags
+  cleaned = cleaned.replace(/^#+\s*$/gm, "");
+
+  return cleaned.trim();
 }
 
 // === WEB SEARCH DETECTION ===
@@ -3234,7 +3298,7 @@ async function handleOffTopic(message, context) {
     await logConversation(conversationData);
 
     return {
-      text: content,
+      text: cleanResponseFormatting(content),
       type: "assistant",
       intent: "off_topic",
       category: category,
@@ -3247,7 +3311,7 @@ async function handleOffTopic(message, context) {
     const fallbackResponse = generateFallbackRedirection(category, userProfile);
 
     return {
-      text: fallbackResponse,
+      text: cleanResponseFormatting(fallbackResponse),
       type: "assistant",
       intent: "off_topic",
       category: category,

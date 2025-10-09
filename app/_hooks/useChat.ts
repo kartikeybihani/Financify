@@ -231,7 +231,12 @@ export const useChat = () => {
         const randomMessage = funMessages[Math.floor(Math.random() * funMessages.length)];
         setProgressStatus(randomMessage);
       } else if (classifyData.intent === "ask_personalized") {
-        setProgressStatus("Taking a peek at your finances...");
+        // Check if web search is needed for more specific progress message
+        if (classifyData.needs_web) {
+          setProgressStatus("Looking up the web for you now...");
+        } else {
+          setProgressStatus("Taking a peek at your finances...");
+        }
       } else if (classifyData.intent === "goal") {
         setProgressStatus("Setting up your goal...");
       } else {
