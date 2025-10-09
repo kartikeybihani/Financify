@@ -991,7 +991,7 @@ async function handleAsk(message, context, intent = "ask_personalized") {
       "- Be CONCISE and focused - only answer what the user is asking for",
       "- Don't overwhelm users with too much information at once",
       "- ALWAYS prioritize web search results over training data for current information (rates, limits, rules, etc.)",
-      "- If user asks about 'accounts', show account balances and types, NOT individual holdings",
+      "- If user asks about 'accounts', show individual account names, balances, and types from the provided account data",
       "- If user asks about 'investments' or 'holdings', then show the detailed holdings",
       "- If user asks for 'investment advice' or 'financial advice', focus on actionable recommendations, not data dumps",
       "- Keep responses conversational and encouraging, not overwhelming",
@@ -1051,6 +1051,23 @@ async function handleAsk(message, context, intent = "ask_personalized") {
       contextLines.push(`Liquid Assets: $${packs.base.liquidAssets}`);
       contextLines.push(`Investments Total: $${packs.base.investmentsTotal}`);
       contextLines.push(`Total Liabilities: $${packs.base.totalLiabilities}`);
+
+      if (packs.base.accounts?.length > 0) {
+        contextLines.push("Your accounts:");
+        packs.base.accounts.forEach((account) => {
+          const balance =
+            account.current_balance || account.available_balance || 0;
+          const accountName =
+            account.name || account.official_name || "Unknown Account";
+          const accountType = account.type || "Unknown Type";
+          const mask = account.mask ? ` (****${account.mask})` : "";
+          contextLines.push(
+            `${accountName}${mask} (${accountType}): $${Number(balance).toFixed(
+              2
+            )}`
+          );
+        });
+      }
 
       if (packs.base.recentTransactions?.length > 0) {
         contextLines.push("Recent transactions:");
@@ -1620,6 +1637,7 @@ async function buildContextPacks(userId, needs, slots) {
               merchant: txn.merchant || txn.name,
             })),
           spendByCategory: summaryData.transactions?.spendByCategory || [],
+          accounts: summaryData.bankAccounts || [],
         };
       } else {
         gaps.push("summary_min");
