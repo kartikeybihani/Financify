@@ -849,6 +849,8 @@ async function handleAsk(message, context, intent = "ask_personalized") {
             "",
             "IMPORTANT: Use the web search results above for current information. These results are more up-to-date than training data.",
             "",
+            "SOURCE INCLUSION: When using web search results, ALWAYS include 2-3 most relevant source URLs in your response. Format them as links at the end of your response under a 'Sources:' section. Choose the most authoritative and directly relevant sources. Do NOT overwhelm with too many sources - quality over quantity.",
+            "",
           ]
         : []),
       "RESPONSE GUIDELINES:",

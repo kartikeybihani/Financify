@@ -9,9 +9,11 @@ import {
   Animated,
   Easing,
   Dimensions,
+  Linking,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
+import * as WebBrowser from "expo-web-browser";
 
 // Enable LayoutAnimation for Android
 if (Platform.OS === "android") {
@@ -19,6 +21,104 @@ if (Platform.OS === "android") {
     UIManager.setLayoutAnimationEnabledExperimental(true);
   }
 }
+
+// URL detection regex
+const URL_REGEX = /(https?:\/\/[^\s]+)/g;
+
+// Function to open URL in WebBrowser
+const openURL = async (url: string) => {
+  try {
+    await WebBrowser.openBrowserAsync(url, {
+      presentationStyle: WebBrowser.WebBrowserPresentationStyle.FORM_SHEET,
+      controlsColor: "#4A90E2",
+      showTitle: true,
+    });
+  } catch (error) {
+    console.error("Failed to open URL:", error);
+    // Fallback to system browser
+    await Linking.openURL(url);
+  }
+};
+
+// Function to generate elegant link text based on context
+const generateLinkText = (url: string, context: string = "") => {
+  const domain = url.replace(/^https?:\/\//, "").split("/")[0];
+
+  // Check for specific patterns in the surrounding context
+  const lowerContext = context.toLowerCase();
+
+  if (
+    lowerContext.includes("check") ||
+    lowerContext.includes("visit") ||
+    lowerContext.includes("see")
+  ) {
+    return "here";
+  }
+  if (lowerContext.includes("learn") || lowerContext.includes("more")) {
+    return "learn more";
+  }
+  if (lowerContext.includes("source") || lowerContext.includes("reference")) {
+    return "source";
+  }
+  if (lowerContext.includes("apply") || lowerContext.includes("application")) {
+    return "apply here";
+  }
+  if (
+    lowerContext.includes("eligibility") ||
+    lowerContext.includes("qualify")
+  ) {
+    return "check eligibility";
+  }
+  if (
+    lowerContext.includes("documentation") ||
+    lowerContext.includes("documents")
+  ) {
+    return "view docs";
+  }
+
+  // Domain-based fallbacks
+  if (domain.includes("gov")) return "official site";
+  if (domain.includes("nyc.gov")) return "NYC portal";
+  if (domain.includes("usa.gov")) return "USAGov";
+  if (domain.includes("hcr.ny.gov")) return "HCR portal";
+
+  // Generic fallback
+  return "view link";
+};
+
+// Function to parse text and render links with elegant text
+const parseTextWithLinks = (text: string, textStyle: any) => {
+  const parts = text.split(URL_REGEX);
+  let linkCounter = 0;
+
+  return parts.map((part, index) => {
+    if (URL_REGEX.test(part)) {
+      linkCounter++;
+      const linkText = generateLinkText(part, text);
+      const isMultipleLinks = (text.match(URL_REGEX) || []).length > 1;
+      const displayText = isMultipleLinks
+        ? `${linkText} (${linkCounter})`
+        : linkText;
+
+      return (
+        <Text
+          key={index}
+          style={[textStyle, styles.linkText]}
+          onPress={() => openURL(part)}
+        >
+          {displayText}{" "}
+          <Ionicons
+            name="open-outline"
+            size={12}
+            color="#87CEEB"
+            style={{ marginLeft: 2 }}
+          />
+        </Text>
+      );
+    }
+    return part;
+  });
+};
 
 // Responsive calculations
 const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
@@ -217,7 +317,10 @@ export const ChatMessageComponent = ({
             onTextLayout={onTextLayout}
             style={[styles.messageText, styles.userMessageText]}
           >
-            {message.text}
+            {parseTextWithLinks(message.text, [
+              styles.messageText,
+              styles.userMessageText,
+            ])}
           </Text>
           {isLastInGroup && <View style={styles.userMessageTail} />}
         </LinearGradient>
@@ -263,7 +366,10 @@ export const ChatMessageComponent = ({
                 onTextLayout={onTextLayout}
                 style={[styles.messageText, styles.finnyMessageText]}
               >
-                {message.text}
+                {parseTextWithLinks(message.text, [
+                  styles.messageText,
+                  styles.finnyMessageText,
+                ])}
               </Text>
             </LinearGradient>
           </View>
@@ -436,11 +542,17 @@ export const ChatMessageComponent = ({
                         if (chunk.startsWith("**") && chunk.endsWith("**")) {
                           return (
                             <Text key={idx} style={styles.boldText}>
-                              {chunk.slice(2, -2)}
+                              {parseTextWithLinks(
+                                chunk.slice(2, -2),
+                                styles.boldText
+                              )}
                             </Text>
                           );
                         }
-                        return chunk;
+                        return parseTextWithLinks(chunk, [
+                          styles.messageText,
+                          styles.finnyMessageText,
+                        ]);
                       })}
                     </Text>
                   </React.Fragment>
@@ -535,6 +647,16 @@ const styles = StyleSheet.create({
   boldText: {
     fontWeight: "600",
     color: "#FFFFFF",
+  },
+  linkText: {
+    textDecorationLine: "underline",
+    color: "#87CEEB", // Light blue color for links
+    fontWeight: "500",
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: "rgba(135, 206, 235, 0.3)",
   },
   senderNameContainer: {
     marginLeft: responsivePadding(16),
