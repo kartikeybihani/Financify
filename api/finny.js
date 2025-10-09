@@ -266,7 +266,7 @@ RULES:
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: OPENROUTER_MODEL,
+          model: MEMORY_EXTRACTION_MODEL,
           temperature: 0.1, // Low for consistent extraction
           max_tokens: 500, // Small response
           messages: [
@@ -520,19 +520,13 @@ export default async function handler(req, res) {
         response = await handleClassify(message, safeContext);
         break;
       case "ask":
-        // Get classification first, then pass it to handleAsk
-        const classification = await handleClassify(message, safeContext);
-        response = await handleAsk(message, safeContext, classification);
+        response = await handleAsk(message, safeContext, "ask_personalized");
         break;
       case "off_topic":
         response = await handleOffTopic(message, safeContext);
         break;
       case "goal_conversation":
         response = await handleGoalConversation(message, safeContext);
-        break;
-      case "process":
-        // Unified action: classify + route + respond in one call
-        response = await handleProcess(message, safeContext);
         break;
       default:
         return res.status(400).json({ error: "Invalid action" });
@@ -632,7 +626,7 @@ async function enhanceSearchQuery(message, context) {
   }
 }
 
-async function handleAsk(message, context, classification) {
+async function handleAsk(message, context, intent = "ask_personalized") {
   console.log("🔍 [FINNY] Starting ask handler for message:", message);
   const startTime = Date.now();
   const timings = {
@@ -664,7 +658,7 @@ async function handleAsk(message, context, classification) {
                 finny_response: redactPII(formatted),
                 timestamp: new Date().toISOString(),
                 user_id: context?.user_id || "unknown",
-                intent: classification?.intent || "ask_personalized",
+                intent: "ask_personalized",
                 entities: [exec.ticker].filter(Boolean),
                 confidence: 0.95,
                 response_time_ms: Date.now() - startTime,
@@ -681,7 +675,7 @@ async function handleAsk(message, context, classification) {
                 cached: false,
                 request_id: generateRequestId(),
                 metrics: {
-                  intent: classification?.intent || "ask_personalized",
+                  intent: "ask_personalized",
                   latency_ms: { total: Date.now() - startTime },
                 },
               })
@@ -735,7 +729,7 @@ async function handleAsk(message, context, classification) {
               cached: !!stockResponse?.cachedAt,
               request_id: generateRequestId(),
               metrics: {
-                intent: classification?.intent || "ask_personalized",
+                intent: "ask_personalized",
                 latency_ms: { total: Date.now() - startTime },
                 tools_used: [
                   {
@@ -787,12 +781,20 @@ async function handleAsk(message, context, classification) {
     let webResults = [];
     let webSummary = "";
 
-    // Use passed classification result to check needs_web
+    // Primary: Get classification result to check needs_web
+    let classificationResult = null;
+    try {
+      classificationResult = await handleClassify(message, context);
+    } catch (error) {
+      console.error("❌ [FINNY] Classification failed, using fallback:", error);
+    }
+
+    // Use classification.needs_web as primary, with keyword detection as fallback
     const needsWeb =
-      classification?.needs_web || detectWebSearchNeeded(message, slots);
+      classificationResult?.needs_web || detectWebSearchNeeded(message, slots);
 
     console.log("🌍 [FINNY] Web search decision:", {
-      classification_needs_web: classification?.needs_web,
+      classification_needs_web: classificationResult?.needs_web,
       keyword_fallback: detectWebSearchNeeded(message, slots),
       final_decision: needsWeb,
     });
@@ -3571,7 +3573,7 @@ async function handleClassify(message, context) {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: MEMORY_EXTRACTION_MODEL,
+        model: OPENROUTER_MODEL,
         temperature: 0.2,
         messages: [
           {
@@ -3750,38 +3752,6 @@ async function handleClassify(message, context) {
       fallback: true,
     };
   }
-}
-
-// Unified handler that classifies and responds in one call
-async function handleProcess(message, context) {
-  console.log("🔄 [FINNY] Processing message (unified flow):", message);
-  const startTime = Date.now();
-
-  // Step 1: Classify the message
-  const classification = await handleClassify(message, context);
-  console.log("🎯 [FINNY] Classification result:", classification);
-
-  // Step 2: Route to appropriate handler based on classification
-  let response;
-  if (classification.intent === "ask_personalized") {
-    response = await handleAsk(message, context, classification);
-  } else if (classification.intent === "off_topic") {
-    response = await handleOffTopic(message, context);
-  } else if (classification.intent === "goal") {
-    response = await handleGoalConversation(message, context);
-  } else {
-    // Default to ask handler for unknown intents
-    response = await handleAsk(message, context, classification);
-  }
-
-  // Add classification info to response for client
-  response.intent = classification.intent;
-  response.needs_web = classification.needs_web;
-
-  const duration = Date.now() - startTime;
-  console.log(`⚡ [FINNY] Unified process completed in ${duration}ms`);
-
-  return response;
 }
 
 async function handleOffTopic(message, context) {

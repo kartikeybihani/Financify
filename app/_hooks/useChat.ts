@@ -191,29 +191,100 @@ export const useChat = () => {
       // Show initial progress
       setProgressStatus("Let me see what I can do");
 
-      // Fetch session once and reuse the access token
+      // Fetch session once and reuse the access token for all requests in this flow
       const { data: sessionData } = await supabase.auth.getSession();
       const accessToken = sessionData?.session?.access_token || '';
 
-      // Single API call that handles everything: classification + response generation
-      const res = await fetch(`${BASE_URL}/api/finny`, {
+      // 1) First classify the message to determine intent (skip if goal flow active)
+      const classifyRes = goalFlow?.active ? null : await fetch(`${BASE_URL}/api/finny`, {
         method: "POST",
         headers: { 
           "Content-Type": "application/json",
+          // Pass Supabase JWT to server; server will derive userId
           "Authorization": `Bearer ${accessToken}`
         },
         body: JSON.stringify({
-          action: "process", // New unified action
+          action: "classify",
           message: messageText,
-          context: goalFlow ? { goal_flow: goalFlow } : {}
+          // client context no longer carries user_id; server derives it
+          context: {}
         }),
       });
 
+      const classifyData = classifyRes ? await classifyRes.json() : { intent: "goal" };
+      if (classifyRes) logger.info("🎯 [CHAT] Classification result:", classifyData);
+
+      // Update progress based on intent
+      if (classifyData.intent === "off_topic") {
+        // Fun Gen Z-style messages for off-topic queries
+        const funMessages = [
+          "Hold up, let me redirect you to something better... 💸",
+          "Plot twist: let's talk money instead! 🎭",
+          "Ngl, I'm not the right person for that... but I AM great at finances! 💅",
+          "Sksksks, that's not really my vibe... but your bank account? That's my jam! ✨",
+          "Bestie, I'm not about that life... but I AM about that financial freedom! 🌟",
+          "Periodt, that's not my expertise... but budgeting? Now we're talking! 💯",
+          "Oooohh...",
+          "Not it, chief... but your financial future? That's definitely it! 👑",
+          "I'm gonna need you to redirect that energy to your finances! ⚡"
+        ];
+        const randomMessage = funMessages[Math.floor(Math.random() * funMessages.length)];
+        setProgressStatus(randomMessage);
+      } else if (classifyData.intent === "ask_personalized") {
+        // Check if web search is needed for more specific progress message
+        if (classifyData.needs_web) {
+          setProgressStatus("Looking up the web for you now...");
+        } else {
+          setProgressStatus("Taking a peek at your finances...");
+        }
+      } else if (classifyData.intent === "goal") {
+        setProgressStatus("Setting up your goal...");
+      } else {
+        setProgressStatus("Processing your request...");
+      }
+
+      // 2) Route to appropriate handler based on classification
+      let res;
+      if (!goalFlow?.active && classifyData.intent === "ask_personalized") {
+        // For personalized questions, call the ask handler
+        res = await fetch(`${BASE_URL}/api/finny`, {
+          method: "POST",
+          headers: { 
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${accessToken}`
+          },
+          body: JSON.stringify({
+            action: "ask",
+            message: messageText,
+            context: {}
+          }),
+        });
+      } else {
+        // For other intents (goal, etc.), route directly
+        res = await fetch(`${BASE_URL}/api/finny`, {
+          method: "POST",
+          headers: { 
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${accessToken}`
+          },
+          body: JSON.stringify({
+            action: goalFlow?.active ? "goal" : classifyData.intent,
+            message: messageText,
+            context: goalFlow ? { goal_flow: goalFlow } : {}
+          }),
+        });
+      }
+
+      // Response status: ${res.status}
       setProgressStatus("Generating your personalized response...");
       const data = await res.json();
+      // Finny response received
       logger.info("🤖 [CHAT] API Response:", data);
       
-      // Handle different response types
+      
+      // Handle structured data as regular messages - no splitting or expandable logic
+
+      // Handle different response types based on intent
       let message;
       if (data.intent === "calc_projection" && data.projection) {
         // Format projection response for display
@@ -252,6 +323,7 @@ export const useChat = () => {
         message = data.message || data.text || "Sorry, I wasn't able to generate advice just now.";
       }
       
+      // logger.info("messages", message);
       setProgressStatus(""); // Clear progress status
       
       // Log total response time
@@ -265,6 +337,8 @@ export const useChat = () => {
     } catch (error) {
       logger.error("AI error:", error);
       setProgressStatus(""); // Clear progress status
+      
+      
       pushChat("finny", "Something went wrong. Try again later.");
     }
   };
