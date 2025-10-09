@@ -530,6 +530,10 @@ export default async function handler(req, res) {
       case "goal_conversation":
         response = await handleGoalConversation(message, safeContext);
         break;
+      case "process":
+        // Unified action: classify + route + respond in one call
+        response = await handleProcess(message, safeContext);
+        break;
       default:
         return res.status(400).json({ error: "Invalid action" });
     }
@@ -3746,6 +3750,38 @@ async function handleClassify(message, context) {
       fallback: true,
     };
   }
+}
+
+// Unified handler that classifies and responds in one call
+async function handleProcess(message, context) {
+  console.log("🔄 [FINNY] Processing message (unified flow):", message);
+  const startTime = Date.now();
+
+  // Step 1: Classify the message
+  const classification = await handleClassify(message, context);
+  console.log("🎯 [FINNY] Classification result:", classification);
+
+  // Step 2: Route to appropriate handler based on classification
+  let response;
+  if (classification.intent === "ask_personalized") {
+    response = await handleAsk(message, context, classification);
+  } else if (classification.intent === "off_topic") {
+    response = await handleOffTopic(message, context);
+  } else if (classification.intent === "goal") {
+    response = await handleGoalConversation(message, context);
+  } else {
+    // Default to ask handler for unknown intents
+    response = await handleAsk(message, context, classification);
+  }
+
+  // Add classification info to response for client
+  response.intent = classification.intent;
+  response.needs_web = classification.needs_web;
+
+  const duration = Date.now() - startTime;
+  console.log(`⚡ [FINNY] Unified process completed in ${duration}ms`);
+
+  return response;
 }
 
 async function handleOffTopic(message, context) {
