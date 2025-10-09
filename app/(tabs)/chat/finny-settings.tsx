@@ -17,6 +17,8 @@ import { LinearGradient } from "expo-linear-gradient";
 import MemoriesScreen from "@/app/(tabs)/chat/memories";
 import FinnyStyleScreen from "@/app/(tabs)/chat/finny-style";
 import FinnyCheckinScreen from "@/app/(tabs)/chat/finny-checkin";
+import LegalSummaryScreen from "@/app/(tabs)/chat/legal-summary";
+import HowFinnyWorksScreen from "@/app/(tabs)/chat/how-finny-works";
 import { useAuth } from "@/app/_contexts/AuthContext";
 import { supabase } from "@/app/_lib/supabase/supabase";
 import { useChatContext } from "@/app/_contexts/ChatContext";
@@ -66,11 +68,11 @@ const styles = {
     textAlign: "center" as const,
   },
   closeButton: {
-    padding: 3,
+    padding: 8,
   },
   closeButtonCircle: {
-    width: 35,
-    height: 35,
+    width: 40,
+    height: 40,
     borderRadius: 20,
     alignItems: "center" as const,
     justifyContent: "center" as const,
@@ -224,9 +226,13 @@ export default function FinnySettingsScreen() {
   const [showMemories, setShowMemories] = useState(false);
   const [showStyle, setShowStyle] = useState(false);
   const [showCheckin, setShowCheckin] = useState(false);
+  const [showLegalSummary, setShowLegalSummary] = useState(false);
+  const [showHowFinnyWorks, setShowHowFinnyWorks] = useState(false);
   const [slideAnimation] = useState(new Animated.Value(0));
   const [styleSlideAnimation] = useState(new Animated.Value(0));
   const [checkinSlideAnimation] = useState(new Animated.Value(0));
+  const [legalSummarySlideAnimation] = useState(new Animated.Value(0));
+  const [howFinnyWorksSlideAnimation] = useState(new Animated.Value(0));
   const [preloadedMemorySummary, setPreloadedMemorySummary] = useState<
     MemorySummary[] | null
   >(null);
@@ -318,6 +324,44 @@ export default function FinnySettingsScreen() {
     });
   };
 
+  const openLegalSummary = () => {
+    setShowLegalSummary(true);
+    Animated.timing(legalSummarySlideAnimation, {
+      toValue: 1,
+      duration: 300,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const closeLegalSummary = () => {
+    Animated.timing(legalSummarySlideAnimation, {
+      toValue: 0,
+      duration: 300,
+      useNativeDriver: true,
+    }).start(() => {
+      setShowLegalSummary(false);
+    });
+  };
+
+  const openHowFinnyWorks = () => {
+    setShowHowFinnyWorks(true);
+    Animated.timing(howFinnyWorksSlideAnimation, {
+      toValue: 1,
+      duration: 300,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const closeHowFinnyWorks = () => {
+    Animated.timing(howFinnyWorksSlideAnimation, {
+      toValue: 0,
+      duration: 300,
+      useNativeDriver: true,
+    }).start(() => {
+      setShowHowFinnyWorks(false);
+    });
+  };
+
   const handleClearChat = () => {
     Alert.alert(
       "Clear Chat",
@@ -378,6 +422,29 @@ export default function FinnySettingsScreen() {
     outputRange: [screenWidth, 0],
   });
 
+  const legalSummarySettingsTranslateX = legalSummarySlideAnimation.interpolate(
+    {
+      inputRange: [0, 1],
+      outputRange: [0, -screenWidth],
+    }
+  );
+
+  const legalSummaryTranslateX = legalSummarySlideAnimation.interpolate({
+    inputRange: [0, 1],
+    outputRange: [screenWidth, 0],
+  });
+
+  const howFinnyWorksSettingsTranslateX =
+    howFinnyWorksSlideAnimation.interpolate({
+      inputRange: [0, 1],
+      outputRange: [0, -screenWidth],
+    });
+
+  const howFinnyWorksTranslateX = howFinnyWorksSlideAnimation.interpolate({
+    inputRange: [0, 1],
+    outputRange: [screenWidth, 0],
+  });
+
   return (
     <View style={styles.container}>
       <SafeAreaView style={{ flex: 1, marginBottom: insets.bottom - 10 }}>
@@ -392,6 +459,10 @@ export default function FinnySettingsScreen() {
                     ? styleSettingsTranslateX
                     : showCheckin
                     ? checkinSettingsTranslateX
+                    : showLegalSummary
+                    ? legalSummarySettingsTranslateX
+                    : showHowFinnyWorks
+                    ? howFinnyWorksSettingsTranslateX
                     : settingsTranslateX,
                 },
               ],
@@ -480,9 +551,7 @@ export default function FinnySettingsScreen() {
                 <SettingItem
                   icon="document-text-outline"
                   title="Legal summary"
-                  onPress={() => {
-                    console.log("Open legal summary");
-                  }}
+                  onPress={openLegalSummary}
                   rightElement={
                     <Ionicons name="chevron-forward" size={20} color="#666" />
                   }
@@ -491,9 +560,7 @@ export default function FinnySettingsScreen() {
                 <SettingItem
                   icon="help-circle-outline"
                   title="How does finny work?"
-                  onPress={() => {
-                    console.log("Open how finny works");
-                  }}
+                  onPress={openHowFinnyWorks}
                   rightElement={
                     <Ionicons name="chevron-forward" size={20} color="#666" />
                   }
@@ -561,6 +628,36 @@ export default function FinnySettingsScreen() {
             ]}
           >
             <FinnyCheckinScreen onBack={closeCheckin} />
+          </Animated.View>
+        )}
+
+        {/* Legal Summary View */}
+        {showLegalSummary && (
+          <Animated.View
+            style={[
+              styles.modalContainer,
+              styles.memoriesContainer,
+              {
+                transform: [{ translateX: legalSummaryTranslateX }],
+              },
+            ]}
+          >
+            <LegalSummaryScreen onBack={closeLegalSummary} />
+          </Animated.View>
+        )}
+
+        {/* How Finny Works View */}
+        {showHowFinnyWorks && (
+          <Animated.View
+            style={[
+              styles.modalContainer,
+              styles.memoriesContainer,
+              {
+                transform: [{ translateX: howFinnyWorksTranslateX }],
+              },
+            ]}
+          >
+            <HowFinnyWorksScreen onBack={closeHowFinnyWorks} />
           </Animated.View>
         )}
       </SafeAreaView>
