@@ -62,7 +62,7 @@ const supabase = createClient(
 const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL;
 
 // Memory extraction model - small, fast, free
-const MEMORY_EXTRACTION_MODEL = "meta-llama/llama-3.3-8b-instruct:free";
+const SMALLER_MODEL = "meta-llama/llama-3.3-8b-instruct:free";
 
 // Classification cache - in-memory cache for classification results
 const classificationCache = new Map();
@@ -450,7 +450,7 @@ RULES:
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: MEMORY_EXTRACTION_MODEL,
+          model: SMALLER_MODEL,
           temperature: 0.1, // Low for consistent extraction
           max_tokens: 500, // Small response
           messages: [
@@ -4060,7 +4060,7 @@ async function handleClassify(message, context) {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: OPENROUTER_MODEL,
+        model: SMALLER_MODEL,
         temperature: 0.2,
         messages: [
           {
