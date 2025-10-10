@@ -24,7 +24,11 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     usesAppleSignIn: true,
     bundleIdentifier: "com.kartikey08.financify",
     infoPlist: {
-      "ITSAppUsesNonExemptEncryption": false
+      "ITSAppUsesNonExemptEncryption": false,
+      "NSAppTransportSecurity": {
+        "NSAllowsArbitraryLoads": true,
+        "NSAllowsLocalNetworking": true
+      }
     }
   },
   android: {
