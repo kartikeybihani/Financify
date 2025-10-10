@@ -14,6 +14,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Feather, Ionicons } from "@expo/vector-icons";
+import { GlassView } from "expo-glass-effect";
 import { styles } from "@/app/_styles/homeStyles";
 import { supabase } from "@/app/_lib/supabase/supabase";
 import {
@@ -367,7 +368,7 @@ export default function HomeScreen() {
     initializeApp();
 
     // Set up event listener for financial data updates
-    const subscription = DeviceEventEmitter.addListener(
+    const financialSubscription = DeviceEventEmitter.addListener(
       "financialDataRefreshed",
       (data) => {
         if (data) {
@@ -380,8 +381,26 @@ export default function HomeScreen() {
       }
     );
 
+    // Set up event listener for goals updates
+    const goalsSubscription = DeviceEventEmitter.addListener(
+      "goalsUpdated",
+      (data) => {
+        if (
+          data &&
+          (data.action === "deleted" ||
+            data.action === "updated" ||
+            data.action === "created")
+        ) {
+          logger.info("Goals updated event received:", data.action);
+          // Refresh goals to update the closest goal calculation
+          refreshGoals();
+        }
+      }
+    );
+
     return () => {
-      subscription.remove();
+      financialSubscription.remove();
+      goalsSubscription.remove();
     };
   }, []);
 
@@ -793,22 +812,29 @@ export default function HomeScreen() {
                       Start your financial journey by setting your first goal.
                     </Text>
                     <TouchableOpacity
-                      style={styles.addFirstGoalButton}
                       onPress={() => {
                         router.push({
                           pathname: "/goals",
                           params: { openAddGoal: "true" },
                         });
                       }}
+                      activeOpacity={0.8}
                     >
-                      <Ionicons
-                        name="add-circle-outline"
-                        size={20}
-                        color="#fff"
-                      />
-                      <Text style={styles.addFirstGoalText}>
-                        Add Your First Goal
-                      </Text>
+                      <GlassView
+                        style={styles.addFirstGoalButton}
+                        tintColor="#4A90E2"
+                      >
+                        <View style={styles.addFirstGoalContent}>
+                          <Ionicons
+                            name="add-circle-outline"
+                            size={20}
+                            color="#fff"
+                          />
+                          <Text style={styles.addFirstGoalText}>
+                            Add Your First Goal
+                          </Text>
+                        </View>
+                      </GlassView>
                     </TouchableOpacity>
                   </View>
                 </View>

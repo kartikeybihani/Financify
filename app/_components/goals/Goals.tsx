@@ -445,7 +445,11 @@ const Goals: React.FC<GoalsProps> = ({
                       tintColor="rgba(74, 144, 226, 0.8)"
                       style={styles.glassButtonContainer}
                     >
-                      <Ionicons name="add" size={24} color="#fff" />
+                      <Ionicons
+                        name="add-circle-outline"
+                        size={24}
+                        color="#fff"
+                      />
                       <Text style={styles.primaryActionButtonText}>
                         Create your first goal
                       </Text>
@@ -457,7 +461,11 @@ const Goals: React.FC<GoalsProps> = ({
                       end={{ x: 1, y: 1 }}
                       style={styles.gradientButtonContainer}
                     >
-                      <Ionicons name="add" size={24} color="#fff" />
+                      <Ionicons
+                        name="add-circle-outline"
+                        size={24}
+                        color="#fff"
+                      />
                       <Text style={styles.primaryActionButtonText}>
                         Create your first goal
                       </Text>

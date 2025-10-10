@@ -35,3 +35,4 @@ export async function deleteAccount(
   return response.json();
 }
 
+export default {};

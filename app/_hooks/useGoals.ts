@@ -1,6 +1,7 @@
 // hooks/useGoals.ts
 
 import { useState, useEffect } from "react";
+import { DeviceEventEmitter } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Goal } from "@/app/_types/finny";
 import { GoalInput } from "@/app/_types/addGoalModalTypes";
@@ -205,6 +206,12 @@ export function useGoals(pushChat: (sender: "user" | "finny", message: string) =
       // Clear cache first to ensure fresh data, then refresh from server
       await clearGoalsCache();
       await refreshGoalsFromServer(false);
+
+      // Emit event to notify other screens of new goal
+      DeviceEventEmitter.emit("goalsUpdated", { 
+        action: "created", 
+        goalId: data.id 
+      });
     } catch (e) {
       logger.error("❌ [GOALS] Error saving goal:", e);
       if (pushChat) pushChat("finny", "Couldn't save your goal. Try again later.");
@@ -226,6 +233,12 @@ export function useGoals(pushChat: (sender: "user" | "finny", message: string) =
       // Clear cache first to ensure fresh data, then refresh from server
       await clearGoalsCache();
       await refreshGoalsFromServer(false);
+
+      // Emit event to notify other screens of goal deletion
+      DeviceEventEmitter.emit("goalsUpdated", { 
+        action: "deleted", 
+        goalId: id 
+      });
     } catch (e) {
       logger.error("Error deleting goal:", e);
       throw e;
@@ -251,6 +264,12 @@ export function useGoals(pushChat: (sender: "user" | "finny", message: string) =
       // Clear cache first to ensure fresh data, then refresh from server
       await clearGoalsCache();
       await refreshGoalsFromServer(false);
+
+      // Emit event to notify other screens of goal update
+      DeviceEventEmitter.emit("goalsUpdated", { 
+        action: "updated", 
+        goalId: id 
+      });
     } catch (e) {
       logger.error("Error updating goal:", e);
       if (pushChat) pushChat("finny", "Couldn't update your goal. Try again later.");

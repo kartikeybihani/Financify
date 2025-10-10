@@ -51,9 +51,9 @@ export default async function handler(req, res) {
 
       if (deleteError) {
         console.error("❌ Database deletion failed:", deleteError);
-        return res.status(500).json({ 
-          error: "Failed to delete account", 
-          details: deleteError.message 
+        return res.status(500).json({
+          error: "Failed to delete account",
+          details: deleteError.message,
         });
       }
 
@@ -62,7 +62,10 @@ export default async function handler(req, res) {
       // 2. If this was the last account for the item, remove from Plaid and Vault
       if (deleteResult.should_delete_item) {
         const item_id = deleteResult.item_id;
-        console.log("🔑 Last account for item - removing from Plaid and Vault:", item_id);
+        console.log(
+          "🔑 Last account for item - removing from Plaid and Vault:",
+          item_id
+        );
 
         // Get access_token from Vault
         const { data: access_token, error: tokenError } = await supabase.rpc(
@@ -388,13 +391,9 @@ export default async function handler(req, res) {
     const { data: tokenData } = await client.linkTokenCreate({
       user: { client_user_id: user_id },
       client_name: "Financify",
-      products: ["auth"],
-      required_if_supported_products: [
-        "transactions",
-        "liabilities",
-        "investments",
-      ],
-      optional_products: [],
+      products: ["transactions"],
+      required_if_supported_products: ["investments"],
+      optional_products: ["auth", "liabilities"],
       additional_consented_products: [],
       country_codes: ["US"],
       language: "en",

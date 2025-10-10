@@ -19,7 +19,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import { Ionicons } from "@expo/vector-icons";
 import { AntDesign } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { useRouter, useFocusEffect } from "expo-router";
 import { ChatMessageComponent } from "@/app/_components/chat/ChatMessage";
 import { NudgeGrid } from "@/app/_components/chat/NudgeGrid";
 import { useChatContext } from "@/app/_contexts/ChatContext";
@@ -67,18 +67,16 @@ export default function ChatScreen() {
     return () => subscription?.remove();
   }, []);
 
-  // Auto-scroll to bottom when user comes to this screen - only once
-  const [hasInitialScrolled, setHasInitialScrolled] = useState(false);
-
-  useEffect(() => {
-    if (!hasInitialScrolled) {
+  // Auto-scroll to bottom when user comes to this screen (every time)
+  useFocusEffect(
+    useCallback(() => {
+      // Scroll to bottom whenever the user focuses on this screen
       const timer = setTimeout(() => {
         scrollToAbsoluteBottom();
-        setHasInitialScrolled(true);
       }, 150);
       return () => clearTimeout(timer);
-    }
-  }, [hasInitialScrolled]);
+    }, [])
+  );
 
   const [suggestions] = useState<Suggestion[]>(() => {
     const baseSuggestions = [
@@ -152,16 +150,16 @@ export default function ChatScreen() {
     return data;
   }, [chatMessages, showNudges, isTyping, progressStatus]);
 
-  // Auto-scroll to bottom when new messages are added (not on initial load)
+  // Auto-scroll to bottom when new messages are added
   useEffect(() => {
-    if (hasInitialScrolled && flatListData.length > 0) {
+    if (flatListData.length > 0) {
       const timer = setTimeout(() => {
         scrollToAbsoluteBottom();
       }, 100);
 
       return () => clearTimeout(timer);
     }
-  }, [flatListData.length, hasInitialScrolled]);
+  }, [flatListData.length]);
 
   // FlatList key extractor
   const keyExtractor = useCallback((item: any) => item.id, []);
@@ -301,18 +299,15 @@ export default function ChatScreen() {
     [showScrollButton, scrollButtonAnimation]
   );
 
-  const onContentSizeChange = useCallback(
-    (w: number, h: number) => {
-      contentHeights.current.content = h;
-      if (atBottomRef.current && flatListRef.current && hasInitialScrolled) {
-        // Only auto-scroll if user is already at bottom and we've done initial load
-        requestAnimationFrame(() => {
-          (flatListRef.current as any)?.scrollToEnd({ animated: true });
-        });
-      }
-    },
-    [hasInitialScrolled]
-  );
+  const onContentSizeChange = useCallback((w: number, h: number) => {
+    contentHeights.current.content = h;
+    if (atBottomRef.current && flatListRef.current) {
+      // Only auto-scroll if user is already at bottom
+      requestAnimationFrame(() => {
+        (flatListRef.current as any)?.scrollToEnd({ animated: true });
+      });
+    }
+  }, []);
 
   const onLayout = useCallback((e: any) => {
     const h = e.nativeEvent.layout.height;
