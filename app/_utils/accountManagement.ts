@@ -1,6 +1,6 @@
 // Account management utilities for Plaid account operations
 
-const BASE_URL = process.env.EXPO_PUBLIC_APP_BASE_URL || "";
+const BASE_URL = process.env.EXPO_PUBLIC_APP_BASE_URL || "https://financify-rose.vercel.app";
 
 export interface DeleteAccountResponse {
   success: boolean;
