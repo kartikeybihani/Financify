@@ -147,12 +147,22 @@ export const handleSnapTradeLogin = async (userId: string, userSecret: string, b
 
 // === Register SnapTrade User ===
 export const registerSnaptradeUser = async () => {
-  const { data: { user } } = await supabase.auth.getUser();
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  
+  if (authError) {
+    logger.error("❌ Authentication error in registerSnaptradeUser:", authError);
+    throw new Error(`Authentication failed: ${authError.message}`);
+  }
+  
+  if (!user?.id) {
+    logger.error("❌ No authenticated user found in registerSnaptradeUser");
+    throw new Error("User not authenticated. Please log in and try again.");
+  }
   
   // Generate a new unique user ID for each SnapTrade registration
   const timestamp = Date.now();
   const randomSuffix = Math.random().toString(36).substring(2, 8);
-  const snaptradeUserId = `financify-${user?.id}-${timestamp}-${randomSuffix}`;
+  const snaptradeUserId = `financify-${user.id}-${timestamp}-${randomSuffix}`;
   
   logger.info("🆔 Generated new SnapTrade user ID:", snaptradeUserId);
   

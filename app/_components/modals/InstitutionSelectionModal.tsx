@@ -104,6 +104,19 @@ export default function InstitutionSelectionModal({
     setConnectingInstitution(institutionId);
 
     try {
+      // Check if user is authenticated first
+      const {
+        data: { user },
+        error: authError,
+      } = await supabase.auth.getUser();
+      if (authError || !user?.id) {
+        logger.error(
+          `❌ User not authenticated for ${institutionId} connection:`,
+          authError
+        );
+        throw new Error("Please log in to connect your investment account.");
+      }
+
       // Get institution name and broker for this specific institution
       const institutionName = getInstitutionName(institutionId);
       const brokerName = getSnapTradeBrokerName(institutionId);
@@ -228,7 +241,7 @@ export default function InstitutionSelectionModal({
             // Navigate to investments screen to show data
             setIsConnecting(false);
             setConnectingInstitution(null);
-            router.push("/investments" as any);
+            // router.push("/investments" as any);
           } catch (accountError) {
             logger.error("❌ Failed to fetch accounts:", accountError);
 
@@ -318,6 +331,19 @@ export default function InstitutionSelectionModal({
     setConnectingInstitution("other");
 
     try {
+      // Check if user is authenticated first
+      const {
+        data: { user },
+        error: authError,
+      } = await supabase.auth.getUser();
+      if (authError || !user?.id) {
+        logger.error(
+          "❌ User not authenticated for Other Institutions connection:",
+          authError
+        );
+        throw new Error("Please log in to connect your investment account.");
+      }
+
       // Use the same connection flow but without a specific institution name
       const registerResponse = await registerSnaptradeUser();
       logger.info(
@@ -411,7 +437,7 @@ export default function InstitutionSelectionModal({
 
             setIsConnecting(false);
             setConnectingInstitution(null);
-            router.push("/investments" as any);
+            // router.push("/investments" as any);
           } catch (accountError) {
             logger.error("❌ Failed to fetch accounts:", accountError);
             setIsConnecting(false);
