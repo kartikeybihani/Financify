@@ -19,6 +19,8 @@ export interface GoalsState {
   notification: {
     visible: boolean;
     message: string;
+    action?: 'delete' | 'update' | 'create';
+    goalId?: string;
   };
   refreshing: boolean;
 }
@@ -55,7 +57,10 @@ export interface GoalDetailModalProps {
 
 export interface GoalNotificationProps {
   message: string;
+  action?: 'delete' | 'update' | 'create';
+  goalId?: string;
   onClose: () => void;
+  onUndo?: (goalId: string) => void;
 }
 
 export const types = {

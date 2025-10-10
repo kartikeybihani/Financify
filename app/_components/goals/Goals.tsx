@@ -12,9 +12,12 @@ import {
   ActivityIndicator,
   Image,
   Easing,
+  Platform,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import { GlassView } from "expo-glass-effect";
+import { LinearGradient } from "expo-linear-gradient";
 import GoalNotification from "@/app/_components/goals/GoalNotification";
 import AddGoalModal from "@/app/_components/goals/AddGoalModal";
 import GoalItem from "@/app/_components/goals/GoalItem";
@@ -59,6 +62,7 @@ const Goals: React.FC<GoalsProps> = ({
 
   const [selectedGoal, setSelectedGoal] = useState<Goal | null>(null);
   const [localGoalsData, setLocalGoalsData] = useState<Goal[]>(goalsData);
+  const [deletedGoal, setDeletedGoal] = useState<Goal | null>(null); // Store for undo
 
   const { addManualGoal, refreshGoals } = useGoals(() => {});
 
@@ -125,85 +129,12 @@ const Goals: React.FC<GoalsProps> = ({
     });
   }, [localGoalsData]);
 
-  // Enhanced mascot animation refs
-  const mascotIdle = useRef(new Animated.Value(0)).current;
-  const mascotNudge = useRef(new Animated.Value(0)).current;
+  // Simple celebration animation for when user creates first goal
   const mascotCelebrate = useRef(new Animated.Value(0)).current;
-  const progressRing = useRef(new Animated.Value(0)).current;
-
-  // Purposeful mascot animations
-  useEffect(() => {
-    if (sortedGoalsData.length === 0) {
-      // Idle animation: gentle blink and 2% bob every 6 seconds
-      const startIdleAnimation = () => {
-        Animated.sequence([
-          Animated.timing(mascotIdle, {
-            toValue: 1,
-            duration: 300,
-            easing: Easing.out(Easing.quad),
-            useNativeDriver: true,
-          }),
-          Animated.timing(mascotIdle, {
-            toValue: 0,
-            duration: 300,
-            easing: Easing.in(Easing.quad),
-            useNativeDriver: true,
-          }),
-        ]).start(() => {
-          setTimeout(startIdleAnimation, 6000);
-        });
-      };
-
-      // Nudge animation: points at primary card after 5 seconds of inactivity
-      const startNudgeAnimation = () => {
-        setTimeout(() => {
-          Animated.sequence([
-            Animated.timing(mascotNudge, {
-              toValue: 1,
-              duration: 400,
-              easing: Easing.out(Easing.back(1.2)),
-              useNativeDriver: true,
-            }),
-            Animated.timing(mascotNudge, {
-              toValue: 0,
-              duration: 400,
-              easing: Easing.in(Easing.back(1.2)),
-              useNativeDriver: true,
-            }),
-          ]).start();
-        }, 5000);
-      };
-
-      startIdleAnimation();
-      startNudgeAnimation();
-    }
-  }, [sortedGoalsData.length]);
-
-  // Progress ring animation for behavioral nudge
-  useEffect(() => {
-    if (sortedGoalsData.length === 0) {
-      Animated.timing(progressRing, {
-        toValue: 0.02, // 2% progress to leverage goal gradient effect
-        duration: 1000,
-        easing: Easing.out(Easing.quad),
-        useNativeDriver: false,
-      }).start();
-    }
-  }, []);
-
-  const idleTransform = mascotIdle.interpolate({
-    inputRange: [0, 1],
-    outputRange: [1, 1.02], // 2% bob
-  });
-
-  const nudgeTransform = mascotNudge.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0, -10], // Points left toward primary action
-  });
 
   const celebrateTransform = mascotCelebrate.interpolate({
     inputRange: [0, 1],
-    outputRange: [1, 1.2],
+    outputRange: [1, 1.1],
   });
 
   useEffect(() => {
@@ -246,18 +177,18 @@ const Goals: React.FC<GoalsProps> = ({
         await refreshGoals();
       }
 
-      // Trigger celebration animation
+      // Trigger subtle celebration animation
       Animated.sequence([
         Animated.timing(mascotCelebrate, {
           toValue: 1,
-          duration: 400,
-          easing: Easing.out(Easing.back(1.5)),
+          duration: 300,
+          easing: Easing.out(Easing.quad),
           useNativeDriver: true,
         }),
         Animated.timing(mascotCelebrate, {
           toValue: 0,
-          duration: 400,
-          easing: Easing.in(Easing.back(1.5)),
+          duration: 300,
+          easing: Easing.in(Easing.quad),
           useNativeDriver: true,
         }),
       ]).start();
@@ -267,7 +198,8 @@ const Goals: React.FC<GoalsProps> = ({
         showAddGoalModal: false,
         notification: {
           visible: true,
-          message: "Goal created successfully!",
+          message: "Yay! You created a new milestone!",
+          action: "create",
         },
       }));
     } catch (err) {
@@ -284,6 +216,9 @@ const Goals: React.FC<GoalsProps> = ({
 
   const handleDeleteGoal = async (goalToDelete: Goal) => {
     try {
+      // Store deleted goal for potential undo
+      setDeletedGoal(goalToDelete);
+
       // Optimistic removal
       setLocalGoalsData((prev) => prev.filter((g) => g.id !== goalToDelete.id));
       await deleteGoal(goalToDelete.id);
@@ -298,10 +233,14 @@ const Goals: React.FC<GoalsProps> = ({
         notification: {
           visible: true,
           message: "Goal deleted successfully",
+          action: "delete",
+          goalId: goalToDelete.id,
         },
       }));
     } catch (error) {
       logger.error("Error deleting goal:", error);
+      // Clear stored deleted goal on error
+      setDeletedGoal(null);
       // Revert by refreshing full list
       if (propRefreshGoals) {
         await propRefreshGoals();
@@ -352,7 +291,8 @@ const Goals: React.FC<GoalsProps> = ({
         ...prev,
         notification: {
           visible: true,
-          message: "Goal updated successfully",
+          message: "Goal updated successfully!",
+          action: "update",
         },
       }));
     } catch (error) {
@@ -366,6 +306,43 @@ const Goals: React.FC<GoalsProps> = ({
       }));
 
       // Revert optimistic update on error by refreshing goals
+      if (propRefreshGoals) {
+        await propRefreshGoals();
+      } else {
+        await refreshGoals();
+      }
+    }
+  };
+
+  const handleUndoDelete = async (goalId: string) => {
+    try {
+      if (deletedGoal) {
+        // Restore the goal to local data
+        setLocalGoalsData((prev) => [...prev, deletedGoal]);
+
+        // Re-create the goal in the database
+        await addManualGoal({
+          label: deletedGoal.label,
+          target_amount: deletedGoal.target_amount,
+          current_amount: deletedGoal.current_amount,
+          target_date: deletedGoal.target_date,
+          category: deletedGoal.category,
+          note: deletedGoal.note,
+        });
+
+        // Clear the stored deleted goal
+        setDeletedGoal(null);
+
+        // Refresh to ensure consistency
+        if (propRefreshGoals) {
+          await propRefreshGoals();
+        } else {
+          await refreshGoals();
+        }
+      }
+    } catch (error) {
+      logger.error("Error undoing goal deletion:", error);
+      // If undo fails, refresh to get current state
       if (propRefreshGoals) {
         await propRefreshGoals();
       } else {
@@ -394,12 +371,15 @@ const Goals: React.FC<GoalsProps> = ({
       {state.notification.visible && (
         <GoalNotification
           message={state.notification.message}
+          action={state.notification.action}
+          goalId={state.notification.goalId}
           onClose={() =>
             setState((prev: GoalsState) => ({
               ...prev,
               notification: { visible: false, message: "" },
             }))
           }
+          onUndo={handleUndoDelete}
         />
       )}
       <ScrollView
@@ -418,48 +398,91 @@ const Goals: React.FC<GoalsProps> = ({
       >
         {sortedGoalsData.length === 0 ? (
           <View style={styles.emptyStateContainer}>
-            <View style={(styles as any).emptyMascotWrap}>
-              <Image
-                source={require("../../assets/mascot1.jpg")}
-                style={(styles as any).emptyMascotImage}
-                resizeMode="cover"
-              />
+            {/* Clean, minimal mascot */}
+            <View style={styles.mascotContainer}>
+              <View style={styles.mascotImageContainer}>
+                <Image
+                  source={require("../../assets/mascotgpt.png")}
+                  style={styles.emptyStateImage}
+                  resizeMode="cover"
+                />
+              </View>
             </View>
-            <View style={styles.emptyIconCircle}>
-              <Ionicons name="flag-outline" size={28} color="#4A90E2" />
-            </View>
-            <Text style={styles.emptyStateTitle}>No goals yet</Text>
-            <Text style={styles.emptyStateSubtitle}>
-              Start with one small goal. We'll help you stay on track.
-            </Text>
 
-            <TouchableOpacity
-              style={styles.emptyPrimaryButton}
-              activeOpacity={0.9}
-              onPress={() =>
-                setState((prev: GoalsState) => ({
-                  ...prev,
-                  showAddGoalModal: true,
-                }))
-              }
-            >
-              <Ionicons name="add-circle" size={18} color="#fff" />
-              <Text style={styles.emptyPrimaryButtonText}>
-                Create your first goal
+            {/* Direct, outcome-focused messaging */}
+            <View style={styles.emptyHeaderSection}>
+              <Text style={styles.emptyStateTitle}>
+                What do you want to achieve?
               </Text>
-            </TouchableOpacity>
+              <Text style={styles.emptyStateSubtitle}>
+                Set a goal and we'll help you get there.
+              </Text>
+            </View>
 
+            {/* Single, clear call-to-action with liquid glass */}
+            {(() => {
+              const isIOS = Platform.OS === "ios";
+              const iosVersion = isIOS
+                ? parseInt(String(Platform.Version).split(".")[0] || "0", 10)
+                : 0;
+              const shouldUseLiquidGlass = isIOS && iosVersion >= 18;
+              const ButtonShell = shouldUseLiquidGlass ? GlassView : View;
+
+              return (
+                <TouchableOpacity
+                  style={styles.primaryActionButton}
+                  activeOpacity={0.9}
+                  onPress={() =>
+                    setState((prev: GoalsState) => ({
+                      ...prev,
+                      showAddGoalModal: true,
+                    }))
+                  }
+                >
+                  {shouldUseLiquidGlass ? (
+                    <ButtonShell
+                      glassEffectStyle="regular"
+                      tintColor="rgba(74, 144, 226, 0.8)"
+                      style={styles.glassButtonContainer}
+                    >
+                      <Ionicons name="add" size={24} color="#fff" />
+                      <Text style={styles.primaryActionButtonText}>
+                        Create your first goal
+                      </Text>
+                    </ButtonShell>
+                  ) : (
+                    <LinearGradient
+                      colors={["#4A90E2", "#357ABD", "#2E6BA8"]}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={styles.gradientButtonContainer}
+                    >
+                      <Ionicons name="add" size={24} color="#fff" />
+                      <Text style={styles.primaryActionButtonText}>
+                        Create your first goal
+                      </Text>
+                    </LinearGradient>
+                  )}
+                </TouchableOpacity>
+              );
+            })()}
+
+            {/* Alternative path - more compelling */}
             <TouchableOpacity
-              style={styles.emptySecondaryLink}
+              style={styles.secondaryActionButton}
+              activeOpacity={0.8}
               onPress={() => router.push("/chat")}
             >
-              <Ionicons name="sparkles" size={16} color="#4A90E2" />
-              <Text style={styles.emptySecondaryLinkText}>
-                Or ask Finny to set one up
+              <Text style={styles.secondaryActionButtonText}>
+                Need ideas? Ask Finny to suggest goals for you
               </Text>
             </TouchableOpacity>
 
-            <Text style={styles.emptyHint}>You can edit or delete anytime</Text>
+            {/* Social proof - the only element that actually works */}
+            <Text style={styles.footerNote}>
+              Join thousands who've turned their dreams into reality with
+              structured goal tracking
+            </Text>
           </View>
         ) : (
           sortedGoalsData.map((item, index) => (
