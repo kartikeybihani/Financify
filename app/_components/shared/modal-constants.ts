@@ -112,24 +112,19 @@ export const INVESTMENT_INSTITUTIONS: Institution[] = [
 ];
 
 // Cash deposit institutions (for checking & savings)
+// Only includes institutions that have Plaid support
 export const CASH_DEPOSIT_INSTITUTIONS: Institution[] = [
-  {
-    id: "american_express",
-    name: "American Express",
-    color: "#006FCF",
-    initials: "AE",
-  },
-  {
-    id: "capital_one",
-    name: "Capital One",
-    color: "#FF0000",
-    initials: "CO",
-  },
   {
     id: "chase",
     name: "Chase",
     color: "#117ACA",
     initials: "CH",
+  },
+  {
+    id: "bank_of_america",
+    name: "Bank of America",
+    color: "#E31837",
+    initials: "BA",
   },
   {
     id: "wells_fargo",
@@ -138,10 +133,16 @@ export const CASH_DEPOSIT_INSTITUTIONS: Institution[] = [
     initials: "WF",
   },
   {
-    id: "bank_of_america",
-    name: "Bank of America",
-    color: "#E31837",
-    initials: "BA",
+    id: "capital_one",
+    name: "Capital One",
+    color: "#FF0000",
+    initials: "CO",
+  },
+  {
+    id: "american_express",
+    name: "American Express",
+    color: "#006FCF",
+    initials: "AE",
   },
   {
     id: "chime",
@@ -156,45 +157,28 @@ export const CASH_DEPOSIT_INSTITUTIONS: Institution[] = [
     initials: "DC",
   },
   {
-    id: "venmo",
-    name: "Venmo",
-    color: "#0084FF",
-    initials: "VN",
-  },
-  {
-    id: "us_bank",
-    name: "US Bank",
-    color: "#0446AD",
-    initials: "US",
-  },
-  {
     id: "citibank",
     name: "Citibank",
     color: "#056DAE",
     initials: "CB",
   },
-  {
-    id: "fidelity",
-    name: "Fidelity",
-    color: "#00A651",
-    initials: "FI",
-  },
+  // Note: Venmo, US Bank, and Fidelity are not available through Plaid
+  // Users can still connect them through "Other Institutions" option
 ];
 
 // Mapping of institution IDs to Plaid institution IDs
 // These are the actual Plaid institution IDs that can be used with linkTokenCreate
 export const PLAID_INSTITUTION_ID_MAP: Record<string, string> = {
-  american_express: "ins_115616",
-  capital_one: "ins_115617", 
-  chase: "ins_116944",
-  wells_fargo: "ins_127988",
-  bank_of_america: "ins_127989",
-  chime: "ins_115618",
-  discover: "ins_115619",
-  venmo: "ins_115620",
-  us_bank: "ins_115621",
-  citibank: "ins_115622",
-  fidelity: "ins_115623",
+  chase: "ins_56",
+  bank_of_america: "ins_100866",
+  wells_fargo: "ins_127991",
+  capital_one: "ins_128026",
+  american_express: "ins_10",
+  chime: "ins_35",
+  discover: "ins_116949",
+  citibank: "ins_5",
+  // Note: Venmo, US Bank, and Fidelity were not found in Plaid's institution list
+  // They may not support Plaid integration or may have different names
 };
 
 // Helper function to get Plaid institution ID
