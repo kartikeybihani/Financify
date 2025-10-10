@@ -1,38 +1,24 @@
 // Debug script to check Plaid environment and get correct institution IDs
-import { client } from "../app/plaidClient.js";
+import { Configuration, PlaidApi, PlaidEnvironments } from "plaid";
 
-// Check what environment variables are set
-console.log("🔍 Checking Plaid Environment Configuration...\n");
+// Use direct credentials
+const PLAID_CLIENT_ID = "6726f1c5869739001904fb8b";
+const PLAID_SECRET = "0608c4b8a83d6f7a8cc4430cb98377";
+const PLAID_SECRET_PROD = "582075c2f0c4f90c20df9a1a584cd5";
+const PLAID_ENV = "production";
 
-const PLAID_CLIENT_ID = process.env.PLAID_CLIENT_ID;
-const PLAID_SECRET = process.env.PLAID_SECRET;
-const PLAID_SECRET_PROD = process.env.PLAID_SECRET_PROD;
-const PLAID_ENV = process.env.PLAID_ENV || "sandbox";
+// Create Plaid client
+const config = new Configuration({
+  basePath: PlaidEnvironments.production,
+  baseOptions: {
+    headers: {
+      "PLAID-CLIENT-ID": PLAID_CLIENT_ID,
+      "PLAID-SECRET": PLAID_SECRET_PROD,
+    },
+  },
+});
 
-console.log("📋 Environment Variables:");
-console.log(`PLAID_CLIENT_ID: ${PLAID_CLIENT_ID ? "✅ Set" : "❌ Missing"}`);
-console.log(`PLAID_SECRET: ${PLAID_SECRET ? "✅ Set" : "❌ Missing"}`);
-console.log(
-  `PLAID_SECRET_PROD: ${PLAID_SECRET_PROD ? "✅ Set" : "❌ Missing"}`
-);
-console.log(`PLAID_ENV: ${PLAID_ENV}`);
-console.log("");
-
-// Determine which environment we're using
-const isProduction = PLAID_ENV === "production";
-console.log(`🎯 Using Environment: ${isProduction ? "PRODUCTION" : "SANDBOX"}`);
-console.log(
-  `🔑 Using Secret: ${isProduction ? PLAID_SECRET_PROD : PLAID_SECRET} ${
-    isProduction
-      ? PLAID_SECRET_PROD
-        ? "✅ Available"
-        : "❌ Missing"
-      : PLAID_SECRET
-      ? "✅ Available"
-      : "❌ Missing"
-  }`
-);
-console.log("");
+const client = new PlaidApi(config);
 
 // List of institutions we want to verify
 const institutionsToCheck = [
@@ -59,7 +45,7 @@ async function debugInstitutionIds() {
 
     const institutions = response.data.institutions;
     console.log(
-      `📊 Found ${institutions.length} institutions in ${PLAID_ENV} environment\n`
+      `📊 Found ${institutions.length} institutions in current environment\n`
     );
 
     // Create mapping
@@ -129,10 +115,6 @@ async function debugInstitutionIds() {
         );
       }
     }
-
-    console.log(
-      "\n🎉 Debug completed! Copy the mapping above to your modal-constants.ts file"
-    );
   } catch (error) {
     console.error(
       "❌ Error fetching institutions:",
