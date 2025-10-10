@@ -156,24 +156,46 @@ RECURRING TRANSACTIONS
    - Purpose: Predicts upcoming recurring transactions
    - Used in: store_accounts.js
 
+ACCOUNT MANAGEMENT
+------------------
+
+18. delete_account_and_related_data ⭐ ACTIVE
+   - Deletes a Plaid account and all associated data (transactions, recurring streams)
+   - Parameters: p_account_id (text), p_user_id (uuid)
+   - Returns: json { should_delete_item: boolean, item_id: text, remaining_accounts: integer, deleted_account_name: text, deleted_account_mask: text }
+   - Purpose: Complete account deletion with cascade cleanup, returns metadata for Plaid item removal if needed
+   - Used in: plaid_management.js (remove_account mode), AccountDetailModal.tsx
+   - Notes: 
+     * Verifies account ownership before deletion
+     * Deletes all transactions and recurring streams for the account
+     * Returns should_delete_item=true if this was the last account for its item_id
+     * Caller should use returned metadata to determine if Plaid /item/remove API call is needed
+
 SECURITY & CREDENTIAL MANAGEMENT
 --------------------------------
 
-18. secure_get_plaid_token ⭐ ACTIVE
+19. secure_get_plaid_token ⭐ ACTIVE
    - Securely retrieves Plaid access token from Vault
    - Parameters: p_item_id (text), p_user_id (uuid)
    - Returns: text
    - Purpose: Secure access to encrypted Plaid tokens
    - Used in: transactions_sync.js, plaid.js, refresh_data.js, store_accounts.js, plaid_management.js, refresh_recurring_transactions.js, sync-transactions function
 
-19. secure_store_plaid_token ⭐ ACTIVE
+20. secure_store_plaid_token ⭐ ACTIVE
    - Securely stores Plaid access token in Vault
    - Parameters: p_item_id (text), p_user_id (uuid), p_token (text)
    - Returns: uuid (secret_id)
    - Purpose: Encrypted storage of banking credentials
    - Used in: store-plaid-token function
 
-20. secure_store_snaptrade_credentials ⭐ ACTIVE
+21. secure_delete_plaid_token ⭐ ACTIVE
+   - Securely deletes Plaid access token from Vault
+   - Parameters: p_item_id (text), p_user_id (uuid)
+   - Returns: void
+   - Purpose: Removes encrypted Plaid tokens when accounts/items are deleted
+   - Used in: plaid_management.js (remove_item and remove_account modes)
+
+22. secure_store_snaptrade_credentials ⭐ ACTIVE
    - Securely stores SnapTrade credentials in Vault
    - Parameters: p_user_id (uuid), p_snaptrade_user_id (text), p_account_id (text), p_user_secret (text)
    - Returns: uuid (secret_id)
@@ -183,14 +205,14 @@ SECURITY & CREDENTIAL MANAGEMENT
 AUTOMATIC CATEGORIZATION FUNCTIONS
 ----------------------------------
 
-21. apply_category_rules_to_existing_transactions ⭐ ACTIVE
+23. apply_category_rules_to_existing_transactions ⭐ ACTIVE
    - Applies category rules to existing transactions that don't have new_category set
    - Parameters: none
    - Returns: integer (updated_count)
    - Purpose: Bulk apply existing rules to uncategorized transactions
    - Used in: Automatic categorization system
 
-22. auto_apply_category_rules ⭐ ACTIVE (TRIGGER)
+24. auto_apply_category_rules ⭐ ACTIVE (TRIGGER)
    - Trigger function that automatically applies category rules to new transactions
    - Parameters: none (trigger function)
    - Returns: trigger
@@ -200,13 +222,13 @@ AUTOMATIC CATEGORIZATION FUNCTIONS
 UTILITY & TRIGGER FUNCTIONS
 ---------------------------
 
-23. update_updated_at_column ⭐ ACTIVE
+25. update_updated_at_column ⭐ ACTIVE
    - Trigger function to automatically update updated_at timestamp
    - Parameters: none (trigger function)
    - Returns: trigger
    - Purpose: Maintains audit trail for record modifications
 
-24. update_web_scrape_cache_updated_at ⭐ ACTIVE
+26. update_web_scrape_cache_updated_at ⭐ ACTIVE
    - Trigger function to update web scrape cache timestamp
    - Parameters: none (trigger function)
    - Returns: trigger
@@ -215,25 +237,9 @@ UTILITY & TRIGGER FUNCTIONS
 REMAINING UNUSED FUNCTIONS (CANDIDATES FOR REMOVAL)
 ===================================================
 
-22. apply_transaction_override ❌ REMOVED
-    - Status: Removed via schema cleanup
+All previously unused functions have been removed via schema cleanup.
 
-23. create_category_rule ❌ REMOVED
-    - Status: Removed via schema cleanup
-
-24. get_category_tree ❌ REMOVED
-    - Status: Removed via schema cleanup
-
-25. get_mapped_sub_category ❌ REMOVED
-    - Status: Removed via schema cleanup
-
-26. get_mapped_top_category ❌ REMOVED
-    - Status: Removed via schema cleanup
-
-27. get_spend_by_category_effective ❌ REMOVED
-    - Status: Removed via schema cleanup
-
-TOTAL: 28 ACTIVE functions, 0 REMAINING unused functions
+TOTAL: 30 ACTIVE functions, 0 REMAINING unused functions
 
 NOTES:
 - ⭐ ACTIVE functions are currently used in the codebase

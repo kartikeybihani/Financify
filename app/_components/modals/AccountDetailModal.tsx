@@ -241,13 +241,13 @@ export default function AccountDetailModal({
                   <TouchableOpacity
                     style={styles.filterButton}
                     onPress={handleFilterIconPress}
-                    activeOpacity={0.7}
+                    activeOpacity={0.6}
                     disabled={deleting}
                   >
                     <Ionicons
                       name="ellipsis-horizontal"
-                      size={22}
-                      color="rgba(255, 255, 255, 0.8)"
+                      size={18}
+                      color="rgba(255, 255, 255, 0.7)"
                     />
                   </TouchableOpacity>
                 )}
@@ -602,14 +602,14 @@ const styles = StyleSheet.create({
   filterButton: {
     position: "absolute",
     right: 20,
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
     alignItems: "center",
     justifyContent: "center",
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.2)",
+    borderWidth: 0.5,
+    borderColor: "rgba(255, 255, 255, 0.15)",
   },
   loadingContainer: {
     padding: 40,
