@@ -2989,8 +2989,8 @@ async function handleClassify(message, context) {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: SMALLER_MODEL,
-        temperature: 0.2,
+        model: OPENROUTER_MODEL,
+        temperature: 0.1,
         messages: [
           {
             role: "system",
