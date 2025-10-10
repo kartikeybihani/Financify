@@ -121,14 +121,21 @@ export const handleSnapTradeRegister = async (userId: string) => {
 };
 
 // === Handle SnapTrade Login ===
-export const handleSnapTradeLogin = async (userId: string, userSecret: string) => {
+export const handleSnapTradeLogin = async (userId: string, userSecret: string, broker?: string) => {
   try {
-    logger.info("🔄 Logging in SnapTrade user:", userId);
+    logger.info("🔄 Logging in SnapTrade user:", userId, broker ? `with broker: ${broker}` : "without specific broker");
     
-    const response = await callSnapTradeAPI("snaptrade", { 
+    const params: any = { 
       userId: userId, 
       userSecret: userSecret 
-    });
+    };
+    
+    // Add broker parameter if provided
+    if (broker) {
+      params.broker = broker;
+    }
+    
+    const response = await callSnapTradeAPI("snaptrade", params);
     
     logger.info("✅ SnapTrade user logged in successfully:", response);
     return response;

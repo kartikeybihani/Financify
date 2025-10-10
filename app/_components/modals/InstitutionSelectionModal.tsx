@@ -80,6 +80,9 @@ export default function InstitutionSelectionModal({
   onReopenFinancialSheet,
 }: InstitutionSelectionModalProps) {
   const [isConnecting, setIsConnecting] = useState(false);
+  const [connectingInstitution, setConnectingInstitution] = useState<
+    string | null
+  >(null);
   const [showInvestmentModal, setShowInvestmentModal] = useState(false);
   const [investmentData, setInvestmentData] = useState<{
     holdings: Holding[];
@@ -95,95 +98,22 @@ export default function InstitutionSelectionModal({
   const [isSyncing, setIsSyncing] = useState(false);
   const router = useRouter();
 
-  const handleFidelityConnection = async () => {
-    logger.info("🔄 Starting Fidelity connection...");
+  const handleInstitutionConnection = async (institutionId: string) => {
+    logger.info(`🔄 Starting ${institutionId} connection...`);
     setIsConnecting(true);
+    setConnectingInstitution(institutionId);
 
     try {
-      // If there is already investment data in DB, skip API calls and navigate to investments screen
-      const existingConnectionsInDb = await getSnaptradeConnectionsFromDB();
-      if (existingConnectionsInDb && existingConnectionsInDb.length > 0) {
-        logger.info(
-          "✅ Found existing Snaptrade data in DB, navigating to /investments without API calls..."
-        );
-        setIsConnecting(false);
-        router.push("/investments" as any);
-        onClose();
-        return;
-      }
+      // Get institution name and broker for this specific institution
+      const institutionName = getInstitutionName(institutionId);
+      const brokerName = getSnapTradeBrokerName(institutionId);
 
-      // First, check if user already has a valid Snaptrade connection
-      const hasExistingConnection = await hasSnaptradeConnection();
-
-      if (hasExistingConnection) {
-        logger.info(
-          "✅ Found existing Snaptrade connection, fetching accounts..."
-        );
-
-        try {
-          const accounts = await fetchSnaptradeAccountsFromStorage();
-          logger.info("✅ Existing Snaptrade accounts fetched:", accounts);
-
-          // Sync investments data to database for existing connection
-          if (accounts.length > 0) {
-            const firstAccount = accounts[0];
-            if (firstAccount && firstAccount.id) {
-              try {
-                logger.info(
-                  "🔄 Syncing existing investments data to database for account:",
-                  firstAccount.id
-                );
-                const credentials = await getStoredSnaptradeCredentials();
-                if (credentials) {
-                  // Get the actual authenticated user ID
-                  const {
-                    data: { user },
-                  } = await supabase.auth.getUser();
-                  if (user) {
-                    await syncSnaptradeInvestments(
-                      user.id, // Actual authenticated user ID
-                      firstAccount.id
-                    );
-                    logger.info(
-                      "✅ Existing investments data synced to database successfully"
-                    );
-                  }
-                }
-              } catch (syncError) {
-                logger.error(
-                  "⚠️ Failed to sync existing investments to database (continuing anyway):",
-                  syncError
-                );
-                // Don't fail the whole flow if sync fails
-              }
-            }
-          }
-
-          if (accounts.length === 0) {
-            // No accounts found - allow user to connect
-            logger.info(
-              "🔄 No accounts found, proceeding with new connection..."
-            );
-            // Continue with new connection flow below
-          } else {
-            // Navigate to investments screen to display DB data
-            setIsConnecting(false);
-            router.push("/investments" as any);
-            return;
-          }
-        } catch (accountError) {
-          logger.error(
-            "❌ Failed to fetch existing accounts, proceeding with new connection:",
-            accountError
-          );
-          // Continue with new connection flow if fetching existing accounts fails
-        }
-      }
-
-      // No existing connection or failed to fetch existing accounts - proceed with new connection
       logger.info(
-        "🔄 Starting new Snaptrade user registration for Fidelity..."
+        `🔄 Starting new Snaptrade user registration for ${institutionName}${
+          brokerName ? ` (${brokerName})` : ""
+        }...`
       );
+
       const registerResponse = await registerSnaptradeUser();
       logger.info(
         "✅ Snaptrade user registered successfully:",
@@ -196,10 +126,12 @@ export default function InstitutionSelectionModal({
         "registerResponse.userSecret --->: ",
         registerResponse.userSecret
       );
-      // Now login to get the redirect URI
+
+      // Now login to get the redirect URI with the specific broker
       const loginResponse = await handleSnapTradeLogin(
         registerResponse.userId,
-        registerResponse.userSecret
+        registerResponse.userSecret,
+        brokerName // Pass the broker name for specific institutions
       );
       logger.info("✅ Snaptrade user logged in successfully:", loginResponse);
 
@@ -243,8 +175,9 @@ export default function InstitutionSelectionModal({
                   accounts[0].id, // Account ID
                   registerResponse.userSecret,
                   {
-                    brokerage_name: "Fidelity",
-                    account_name: accounts[0].name || "Fidelity Account",
+                    brokerage_name: institutionName,
+                    account_name:
+                      accounts[0].name || `${institutionName} Account`,
                     account_type: "investment",
                   }
                 );
@@ -294,6 +227,7 @@ export default function InstitutionSelectionModal({
 
             // Navigate to investments screen to show data
             setIsConnecting(false);
+            setConnectingInstitution(null);
             router.push("/investments" as any);
           } catch (accountError) {
             logger.error("❌ Failed to fetch accounts:", accountError);
@@ -311,8 +245,8 @@ export default function InstitutionSelectionModal({
                   "unknown", // Account ID unknown due to fetch failure
                   registerResponse.userSecret,
                   {
-                    brokerage_name: "Fidelity",
-                    account_name: "Fidelity Account",
+                    brokerage_name: institutionName,
+                    account_name: `${institutionName} Account`,
                     account_type: "investment",
                   }
                 );
@@ -328,33 +262,173 @@ export default function InstitutionSelectionModal({
             }
 
             setIsConnecting(false);
+            setConnectingInstitution(null);
           }
         } else {
           // User cancelled or there was an error
           setIsConnecting(false);
+          setConnectingInstitution(null);
         }
       } else {
         throw new Error("No redirect URI received from Snaptrade");
       }
     } catch (error) {
-      logger.error("❌ Failed to connect Fidelity account:", error);
+      logger.error(`❌ Failed to connect ${institutionId} account:`, error);
       setIsConnecting(false);
+      setConnectingInstitution(null);
     }
+  };
+
+  // Helper function to get institution name from ID
+  const getInstitutionName = (institutionId: string): string => {
+    const institution = INVESTMENT_INSTITUTIONS.find(
+      (inst) => inst.id === institutionId
+    );
+    return institution ? institution.name : institutionId;
+  };
+
+  // Helper function to get SnapTrade broker name from institution ID
+  const getSnapTradeBrokerName = (
+    institutionId: string
+  ): string | undefined => {
+    const brokerMapping: Record<string, string> = {
+      fidelity: "FIDELITY",
+      wells_fargo: "WELLS-FARGO",
+      alpaca: "ALPACA",
+      charles_schwab: "SCHWAB",
+      robinhood: "ROBINHOOD",
+      coinbase: "COINBASE",
+      etrade: "ETRADE",
+      interactive_brokers: "INTERACTIVE-BROKERS-FLEX",
+      public: "PUBLIC",
+      webull: "WEBULL",
+    };
+    return brokerMapping[institutionId];
   };
 
   const handleInstitutionPress = (institutionId: string) => {
-    if (institutionId === "fidelity") {
-      handleFidelityConnection();
-    } else {
-      onInstitutionSelect(institutionId);
-      onClose();
-    }
+    // All institutions now use the same SnapTrade connection flow
+    handleInstitutionConnection(institutionId);
   };
 
-  const handleOtherInstitutions = () => {
-    // Handle "Other Institutions" selection
-    onInstitutionSelect("other");
-    onClose();
+  const handleOtherInstitutions = async () => {
+    // Handle "Other Institutions" selection - this will also use SnapTrade but without a specific broker
+    logger.info("🔄 Starting connection for Other Institutions...");
+    setIsConnecting(true);
+    setConnectingInstitution("other");
+
+    try {
+      // Use the same connection flow but without a specific institution name
+      const registerResponse = await registerSnaptradeUser();
+      logger.info(
+        "✅ Snaptrade user registered successfully:",
+        registerResponse
+      );
+
+      // Don't pass a broker parameter for "Other Institutions" - let SnapTrade show all available brokers
+      const loginResponse = await handleSnapTradeLogin(
+        registerResponse.userId,
+        registerResponse.userSecret
+      );
+      logger.info("✅ Snaptrade user logged in successfully:", loginResponse);
+
+      if (loginResponse.redirectURI) {
+        logger.info(
+          "🌐 Opening Snaptrade redirect URI:",
+          loginResponse.redirectURI
+        );
+
+        const result = await WebBrowser.openBrowserAsync(
+          loginResponse.redirectURI,
+          {
+            presentationStyle:
+              WebBrowser.WebBrowserPresentationStyle.FORM_SHEET,
+          }
+        );
+
+        logger.info("🔗 WebBrowser result:", result);
+
+        if (result.type === "cancel") {
+          logger.info("🔄 User completed connection, fetching accounts...");
+          try {
+            const accounts = await fetchSnaptradeAccounts(
+              registerResponse.userId,
+              registerResponse.userSecret
+            );
+            logger.info("✅ Snaptrade accounts fetched:", accounts);
+
+            // Store credentials securely in database
+            try {
+              const {
+                data: { user },
+              } = await supabase.auth.getUser();
+              if (user) {
+                await storeSnaptradeCredentials(
+                  user.id,
+                  registerResponse.userId,
+                  accounts[0].id,
+                  registerResponse.userSecret,
+                  {
+                    brokerage_name:
+                      accounts[0].brokerage || "Other Institution",
+                    account_name: accounts[0].name || "Investment Account",
+                    account_type: "investment",
+                  }
+                );
+                logger.info(
+                  "✅ SnapTrade credentials stored securely in database"
+                );
+              }
+            } catch (storageError) {
+              logger.error(
+                "⚠️ Failed to store credentials in database:",
+                storageError
+              );
+            }
+
+            // Sync investments data to database
+            if (accounts.length > 0) {
+              const firstAccount = accounts[0];
+              if (firstAccount && firstAccount.id) {
+                try {
+                  const {
+                    data: { user },
+                  } = await supabase.auth.getUser();
+                  if (user) {
+                    await syncSnaptradeInvestments(user.id, firstAccount.id);
+                  }
+                  logger.info(
+                    "✅ Investments data synced to database successfully"
+                  );
+                } catch (syncError) {
+                  logger.error(
+                    "⚠️ Failed to sync investments to database:",
+                    syncError
+                  );
+                }
+              }
+            }
+
+            setIsConnecting(false);
+            setConnectingInstitution(null);
+            router.push("/investments" as any);
+          } catch (accountError) {
+            logger.error("❌ Failed to fetch accounts:", accountError);
+            setIsConnecting(false);
+            setConnectingInstitution(null);
+          }
+        } else {
+          setIsConnecting(false);
+          setConnectingInstitution(null);
+        }
+      } else {
+        throw new Error("No redirect URI received from Snaptrade");
+      }
+    } catch (error) {
+      logger.error("❌ Failed to connect other institutions:", error);
+      setIsConnecting(false);
+      setConnectingInstitution(null);
+    }
   };
 
   const handleClose = () => {
@@ -366,7 +440,8 @@ export default function InstitutionSelectionModal({
   };
 
   const renderInstitutionCard = (institution: Institution) => {
-    const isLoadingFidelity = isConnecting && institution.id === "fidelity";
+    const isLoadingInstitution =
+      isConnecting && connectingInstitution === institution.id;
     const logoSource = (INSTITUTION_LOGO_MAP as any)[institution.id];
     const useLightBg = LIGHT_BG_LOGO_IDS.has(institution.id);
 
@@ -375,15 +450,15 @@ export default function InstitutionSelectionModal({
         key={institution.id}
         style={[
           styles.institutionCard,
-          isLoadingFidelity && styles.institutionCardLoading,
+          isLoadingInstitution && styles.institutionCardLoading,
         ]}
         onPress={() => handleInstitutionPress(institution.id)}
         activeOpacity={0.8}
-        disabled={isLoadingFidelity}
+        disabled={isConnecting}
       >
         <View style={styles.institutionContent}>
           <View style={styles.logoContainer}>
-            {isLoadingFidelity ? (
+            {isLoadingInstitution ? (
               <Ionicons name="hourglass" size={32} color="#000" />
             ) : logoSource ? (
               <Image
@@ -467,17 +542,30 @@ export default function InstitutionSelectionModal({
                         style={[
                           styles.institutionCard,
                           styles.otherInstitutionsCard,
+                          isConnecting &&
+                            connectingInstitution === "other" &&
+                            styles.institutionCardLoading,
                         ]}
                         onPress={handleOtherInstitutions}
                         activeOpacity={0.8}
+                        disabled={isConnecting}
                       >
                         <View style={styles.institutionContent}>
                           <View style={styles.otherInstitutionsIcon}>
-                            <Ionicons
-                              name="business-outline"
-                              size={24}
-                              color="#4A90E2"
-                            />
+                            {isConnecting &&
+                            connectingInstitution === "other" ? (
+                              <Ionicons
+                                name="hourglass"
+                                size={24}
+                                color="#4A90E2"
+                              />
+                            ) : (
+                              <Ionicons
+                                name="business-outline"
+                                size={24}
+                                color="#4A90E2"
+                              />
+                            )}
                           </View>
                           <Text style={styles.institutionName}>
                             Other Institutions

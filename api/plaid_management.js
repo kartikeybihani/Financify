@@ -230,13 +230,21 @@ export default async function handler(req, res) {
       // If userId and userSecret are provided, this is a login request
       if (userId && userSecret) {
         try {
+          const { broker } = req.body; // Get broker parameter from request
+
           // Login the user to get redirect URI
+          const loginParams = {
+            userId: userId,
+            userSecret: userSecret,
+          };
+
+          // Add broker parameter if provided
+          if (broker) {
+            loginParams.broker = broker;
+          }
+
           const loginResponse =
-            await snaptrade.authentication.loginSnapTradeUser({
-              userId: userId,
-              userSecret: userSecret,
-              broker: "FIDELITY",
-            });
+            await snaptrade.authentication.loginSnapTradeUser(loginParams);
           console.log("✅ Snaptrade Login Response: ", loginResponse);
 
           return res.status(200).json({

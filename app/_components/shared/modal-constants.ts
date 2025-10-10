@@ -27,7 +27,6 @@ export const INSTITUTION_LOGO_MAP: Record<string, any> = {
   interactive_brokers: require("../../../assets/invest_logo/ib.png"),
   public: require("../../../assets/invest_logo/public.png"),
   robinhood: require("../../../assets/invest_logo/robinhood.png"),
-  wealthfront: require("../../../assets/invest_logo/wealthfront.png"),
   webull: require("../../../assets/invest_logo/webull.png"),
   american_express: require("../../../assets/invest_logo/amex.png"),
   capital_one: require("../../../assets/invest_logo/capitalone.png"),
@@ -103,12 +102,6 @@ export const INVESTMENT_INSTITUTIONS: Institution[] = [
     name: "Public",
     color: "#212121",
     initials: "PU",
-  },
-  {
-    id: "wealthfront",
-    name: "Wealthfront",
-    color: "#4840BB",
-    initials: "WF",
   },
   {
     id: "webull",
