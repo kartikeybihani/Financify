@@ -76,16 +76,58 @@ export async function getPrimaryItemId(): Promise<string | null> {
 }
 
 // === Create Link Token ===
-export const fetchLinkToken = async () => {
+export const fetchLinkToken = async (institution_id?: string) => {
   const { data: { user } } = await supabase.auth.getUser();
+  
+  const requestBody: any = { mode: "create", user_id: user?.id };
+  
+  // Add institution_id if provided for direct institution login
+  if (institution_id) {
+    requestBody.institution_id = institution_id;
+    logger.info("🏦 Fetching link token for specific institution:", institution_id);
+  }
+
   const res = await fetch(`${BASE_URL}/api/plaid_management`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ mode: "create", user_id: user?.id }),
+    body: JSON.stringify(requestBody),
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || "Failed to get link token");
   return data.link_token;
+};
+
+// === Institution-Specific Connect Flow ===
+export const handleInstitutionConnect = async (
+  institutionId: string,
+  onSuccess: (itemId: string) => void,
+  onExit?: (error?: any) => void
+) => {
+  try {
+    logger.info(`🔄 Starting institution-specific connection for: ${institutionId}`);
+    
+    // Get the Plaid institution ID
+    const { getPlaidInstitutionId } = await import("@/app/_components/shared/modal-constants");
+    const plaidInstitutionId = getPlaidInstitutionId(institutionId);
+    
+    if (!plaidInstitutionId) {
+      logger.warn(`⚠️ No Plaid institution ID found for: ${institutionId}, falling back to general flow`);
+      // Fall back to general connection flow
+      const linkToken = await fetchLinkToken();
+      return handlePlaidConnect(linkToken, onSuccess, onExit);
+    }
+    
+    logger.info(`🏦 Using Plaid institution ID: ${plaidInstitutionId}`);
+    
+    // Get institution-specific link token
+    const linkToken = await fetchLinkToken(plaidInstitutionId);
+    
+    // Use the existing connect flow with the institution-specific token
+    return handlePlaidConnect(linkToken, onSuccess, onExit);
+  } catch (error) {
+    logger.error(`❌ Failed to connect to institution ${institutionId}:`, error);
+    throw error;
+  }
 };
 
 // === Connect Flow ===

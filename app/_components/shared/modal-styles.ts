@@ -145,6 +145,19 @@ export const MODAL_SHARED_STYLES = StyleSheet.create({
     letterSpacing: 0.2,
     lineHeight: 18,
   },
+  loadingContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 8,
+  },
+  loadingText: {
+    fontSize: 12,
+    fontWeight: "500",
+    color: "#4A90E2",
+    textAlign: "center",
+    marginTop: 4,
+    fontFamily: Platform.OS === "ios" ? "System" : "sans-serif",
+  },
   // Category modal specific styles
   categoriesGrid: {
     flexDirection: "row",

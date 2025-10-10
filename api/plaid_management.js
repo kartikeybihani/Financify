@@ -396,7 +396,7 @@ export default async function handler(req, res) {
     // ------------------------------
     // PLAID CREATE MODE (default)
     // ------------------------------
-    const { data: tokenData } = await client.linkTokenCreate({
+    const linkTokenParams = {
       user: { client_user_id: user_id },
       client_name: "Financify",
       products: ["transactions"],
@@ -407,9 +407,23 @@ export default async function handler(req, res) {
       language: "en",
       webhook: `${process.env.APP_BASE_URL}/api/webhook`,
       redirect_uri,
-    });
+    };
 
-    return res.status(200).json({ link_token: tokenData.link_token });
+    // Add institution_id if provided for direct institution login
+    if (req.body.institution_id) {
+      linkTokenParams.institution_id = req.body.institution_id;
+      console.log(
+        "🏦 Creating link token for specific institution:",
+        req.body.institution_id
+      );
+    }
+
+    const { data: tokenData } = await client.linkTokenCreate(linkTokenParams);
+
+    return res.status(200).json({
+      link_token: tokenData.link_token,
+      institution_id: req.body.institution_id || null,
+    });
   } catch (err) {
     console.error(
       "❌ Error in plaid_management API:",

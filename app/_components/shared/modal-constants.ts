@@ -181,6 +181,27 @@ export const CASH_DEPOSIT_INSTITUTIONS: Institution[] = [
   },
 ];
 
+// Mapping of institution IDs to Plaid institution IDs
+// These are the actual Plaid institution IDs that can be used with linkTokenCreate
+export const PLAID_INSTITUTION_ID_MAP: Record<string, string> = {
+  american_express: "ins_115616",
+  capital_one: "ins_115617", 
+  chase: "ins_116944",
+  wells_fargo: "ins_127988",
+  bank_of_america: "ins_127989",
+  chime: "ins_115618",
+  discover: "ins_115619",
+  venmo: "ins_115620",
+  us_bank: "ins_115621",
+  citibank: "ins_115622",
+  fidelity: "ins_115623",
+};
+
+// Helper function to get Plaid institution ID
+export const getPlaidInstitutionId = (institutionId: string): string | null => {
+  return PLAID_INSTITUTION_ID_MAP[institutionId] || null;
+};
+
 // Credit card institutions (for credit cards & loans)
 export const CREDIT_CARD_INSTITUTIONS: Institution[] = [
   {
