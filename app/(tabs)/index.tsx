@@ -1128,11 +1128,13 @@ export default function HomeScreen() {
             accountId={selectedAccountId}
             account={selectedAccountData}
             investmentPerformance={selectedAccountPerformance}
-            onClose={() => {
+            onClose={async () => {
               setShowAccountDetailModal(false);
               setSelectedAccountId(null);
               setSelectedAccountData(null);
               setSelectedAccountPerformance(null);
+              // Refresh balances to reflect any account deletions
+              await refreshBalances();
             }}
           />
 

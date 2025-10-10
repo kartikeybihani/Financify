@@ -11,12 +11,13 @@ import {
   TouchableWithoutFeedback,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
 import { supabase } from "@/app/_lib/supabase/supabase";
-import { FontAwesome } from "@expo/vector-icons";
 import AccountCard from "@/app/_components/shared/AccountCard";
+import AccountActionAlert from "@/app/_components/modals/AccountActionAlert";
+import { deleteAccount } from "@/app/_utils/accountManagement";
+import { useAuth } from "@/app/_contexts/AuthContext";
 import {
   Transaction,
   Account,
@@ -49,12 +50,15 @@ export default function AccountDetailModal({
 }: AccountDetailModalProps) {
   const insets = useSafeAreaInsets();
   const { height, width } = useWindowDimensions();
+  const { session } = useAuth();
   const [account, setAccount] = useState<Account | null>(null);
   const [recentTransactions, setRecentTransactions] = useState<Transaction[]>(
     []
   );
   const [loading, setLoading] = useState(true);
   const [transactionsLoading, setTransactionsLoading] = useState(false);
+  const [showActionAlert, setShowActionAlert] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   // Responsive layout flags
   const isLandscape = width > height;
@@ -160,7 +164,39 @@ export default function AccountDetailModal({
     setRecentTransactions([]);
     setLoading(true);
     setTransactionsLoading(false);
+    setShowActionAlert(false);
+    setDeleting(false);
     onClose();
+  };
+
+  const handleDeleteAccount = async () => {
+    if (!account || !session?.user?.id) return;
+
+    try {
+      setDeleting(true);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+
+      await deleteAccount(account.account_id, session.user.id);
+
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setShowActionAlert(false);
+
+      // Close modal and let parent component handle refresh
+      handleClose();
+    } catch (error) {
+      console.error("Error deleting account:", error);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      alert(
+        error instanceof Error ? error.message : "Failed to delete account"
+      );
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const handleFilterIconPress = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setShowActionAlert(true);
   };
 
   const isCreditCard =
@@ -200,6 +236,21 @@ export default function AccountDetailModal({
                     ? (account.subtype || account.type).toUpperCase()
                     : "ACCOUNT DETAILS"}
                 </Text>
+                {/* Filter Icon - Only show when account is loaded and not an investment */}
+                {account && account.type !== "investment" && (
+                  <TouchableOpacity
+                    style={styles.filterButton}
+                    onPress={handleFilterIconPress}
+                    activeOpacity={0.7}
+                    disabled={deleting}
+                  >
+                    <Ionicons
+                      name="ellipsis-horizontal"
+                      size={22}
+                      color="rgba(255, 255, 255, 0.8)"
+                    />
+                  </TouchableOpacity>
+                )}
               </View>
 
               {loading || externalLoading ? (
@@ -487,6 +538,16 @@ export default function AccountDetailModal({
           </TouchableWithoutFeedback>
         </View>
       </TouchableWithoutFeedback>
+
+      {/* Account Action Alert */}
+      <AccountActionAlert
+        visible={showActionAlert}
+        onClose={() => setShowActionAlert(false)}
+        onDelete={handleDeleteAccount}
+        accountName={
+          account?.official_name || account?.name || "Unknown Account"
+        }
+      />
     </Modal>
   );
 }
@@ -537,6 +598,18 @@ const styles = StyleSheet.create({
     letterSpacing: 0.6,
     textTransform: "uppercase",
     textAlign: "center",
+  },
+  filterButton: {
+    position: "absolute",
+    right: 20,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.2)",
   },
   loadingContainer: {
     padding: 40,

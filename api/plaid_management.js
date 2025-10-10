@@ -30,6 +30,111 @@ export default async function handler(req, res) {
 
   try {
     // ------------------------------
+    // REMOVE ACCOUNT MODE
+    // ------------------------------
+    if (mode === "remove_account") {
+      console.log("🔄 Removing account:", { account_id: req.body.account_id });
+
+      const { account_id } = req.body;
+
+      if (!account_id || !user_id) {
+        console.error("❌ Missing account_id or user_id in request");
+        return res.status(400).json({ error: "Missing account_id or user_id" });
+      }
+
+      // 1. Call RPC function to delete account and related data
+      console.log("🗑️ Deleting account and related data from database...");
+      const { data: deleteResult, error: deleteError } = await supabase.rpc(
+        "delete_account_and_related_data",
+        { p_account_id: account_id, p_user_id: user_id }
+      );
+
+      if (deleteError) {
+        console.error("❌ Database deletion failed:", deleteError);
+        return res.status(500).json({ 
+          error: "Failed to delete account", 
+          details: deleteError.message 
+        });
+      }
+
+      console.log("✅ Account deleted from database:", deleteResult);
+
+      // 2. If this was the last account for the item, remove from Plaid and Vault
+      if (deleteResult.should_delete_item) {
+        const item_id = deleteResult.item_id;
+        console.log("🔑 Last account for item - removing from Plaid and Vault:", item_id);
+
+        // Get access_token from Vault
+        const { data: access_token, error: tokenError } = await supabase.rpc(
+          "secure_get_plaid_token",
+          { p_item_id: item_id, p_user_id: user_id }
+        );
+
+        if (tokenError || !access_token) {
+          console.error(
+            "⚠️ Error retrieving Plaid token from Vault:",
+            tokenError
+          );
+          // Continue with cleanup even if token retrieval fails
+        } else {
+          // Remove item from Plaid
+          try {
+            console.log("🏦 Removing item from Plaid...");
+            await client.itemRemove({ access_token });
+            console.log("✅ Successfully removed item from Plaid");
+          } catch (plaidError) {
+            console.error("⚠️ Plaid item removal failed:", plaidError);
+            // Continue with cleanup even if Plaid API fails
+          }
+        }
+
+        // Remove access token from Vault
+        console.log("🔐 Removing access token from Vault...");
+        const { error: vaultDeleteError } = await supabase.rpc(
+          "secure_delete_plaid_token",
+          { p_item_id: item_id, p_user_id: user_id }
+        );
+
+        if (vaultDeleteError) {
+          console.warn(
+            "⚠️ Could not remove token from Vault:",
+            vaultDeleteError.message
+          );
+        } else {
+          console.log("✅ Removed access token from Vault");
+        }
+
+        // Delete from user_items
+        console.log("🗑️ Removing item from user_items table...");
+        const { error: itemDeleteError } = await supabase
+          .from("user_items")
+          .delete()
+          .eq("item_id", item_id);
+
+        if (itemDeleteError) {
+          console.error("⚠️ user_items deletion failed:", itemDeleteError);
+        } else {
+          console.log("✅ Successfully removed item from user_items");
+        }
+      }
+
+      console.log(
+        `🎉 Account ${account_id} (${deleteResult.deleted_account_name}) removed successfully`
+      );
+
+      return res.status(200).json({
+        success: true,
+        message: "Account removed successfully",
+        deleted_account: {
+          name: deleteResult.deleted_account_name,
+          mask: deleteResult.deleted_account_mask,
+        },
+        item_also_deleted: deleteResult.should_delete_item,
+        remaining_accounts: deleteResult.remaining_accounts,
+      });
+    }
+
+    // ------------------------------
     // REMOVE ITEM MODE
     // ------------------------------
     if (mode === "remove_item") {
