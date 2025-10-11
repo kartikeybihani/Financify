@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { AppState } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ChatMessage, Goal } from '@/app/_types/finny';
 import finnyConstants from '@/app/_constants/finny';
@@ -13,14 +14,20 @@ export const useChat = () => {
   const [showNudges, setShowNudges] = useState(true);
   const [goalFlow, setGoalFlow] = useState<any | null>(null);
   const [progressStatus, setProgressStatus] = useState<string>("");
+  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
+  const [isNewSession, setIsNewSession] = useState(true);
+  const appStateRef = useRef(AppState.currentState);
 
   useEffect(() => {
     loadChatMessages();
   }, []);
 
+  // Note: We don't save on unmount - only save on app background or clear chat
+
   useEffect(() => {
     setShowNudges(chatMessages.length <= 1);
     saveChatMessages();
+    // Remove auto-save - only save on app close or clear chat
   }, [chatMessages]);
 
   const loadChatMessages = async () => {
@@ -56,13 +63,164 @@ export const useChat = () => {
 
   const clearChat = async () => {
     try {
+      // Save current session to database before clearing
+      await saveCurrentSession();
       await AsyncStorage.removeItem("chatMessages");
       setChatMessages(finnyConstants.INITIAL_CHAT_MESSAGES);
+      setCurrentSessionId(null);
+      setIsNewSession(true);
       // Chat cleared and storage reset
     } catch (error) {
       logger.error("Error clearing chat:", error);
     }
   };
+
+  // Helper function to truncate text
+  const truncate = (text: string, maxLength: number): string => {
+    if (text.length <= maxLength) return text;
+    return text.substring(0, maxLength).trim() + '...';
+  };
+
+  // Save current session to database (only when conversation ends)
+  const saveCurrentSession = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user?.id) {
+        logger.warn("No user ID available for saving session");
+        return;
+      }
+      
+      if (chatMessages.length <= 1) {
+        logger.info("Skipping session save - not enough messages:", chatMessages.length);
+        return;
+      }
+
+      const firstUserMsg = chatMessages.find(m => m.sender === 'user');
+      if (!firstUserMsg) {
+        logger.warn("No user message found in chat for session save");
+        return;
+      }
+
+      // Sort messages by timestamp to ensure proper chat sequence
+      const sortedMessages = [...chatMessages].sort((a, b) => {
+        const timestampA = a.timestamp || 0;
+        const timestampB = b.timestamp || 0;
+        return timestampA - timestampB;
+      });
+
+      logger.info("Saving chat session:", {
+        userId: user.id,
+        messageCount: sortedMessages.length,
+        firstMessage: firstUserMsg.text.substring(0, 50) + '...',
+        sessionTitle: truncate(firstUserMsg.text || 'Chat', 60),
+        currentSessionId: currentSessionId,
+        isUpdate: !!currentSessionId
+      });
+
+      let sessionId = currentSessionId;
+
+      if (currentSessionId) {
+        // Update existing session
+        const { error: updateError } = await supabase
+          .from('chat_sessions')
+          .update({
+            messages: sortedMessages,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', currentSessionId)
+          .eq('user_id', user.id);
+
+        if (updateError) {
+          logger.error("Error updating chat session:", updateError);
+        } else {
+          logger.info("✅ Chat session updated successfully:", currentSessionId);
+        }
+      } else {
+        // Create new session
+        const { data, error } = await supabase.rpc('save_chat_session', {
+          p_user_id: user.id,
+          p_session_title: truncate(firstUserMsg.text || 'Chat', 60),
+          p_first_message: firstUserMsg.text || '',
+          p_messages: sortedMessages
+        });
+
+        if (error) {
+          logger.error("Error saving chat session:", error);
+        } else {
+          sessionId = data;
+          setCurrentSessionId(data);
+          logger.info("✅ Chat session saved successfully:", data);
+        }
+      }
+    } catch (error) {
+      logger.error("Error in saveCurrentSession:", error);
+    }
+  };
+
+  // Start new session
+  const startNewSession = async () => {
+    try {
+      await saveCurrentSession();
+      await AsyncStorage.removeItem('chatMessages');
+      setChatMessages(finnyConstants.INITIAL_CHAT_MESSAGES);
+      setCurrentSessionId(null);
+      setIsNewSession(true);
+      setShowNudges(true);
+      logger.info("Started new chat session");
+    } catch (error) {
+      logger.error("Error starting new session:", error);
+    }
+  };
+
+  // Load session from database
+  const loadSession = async (sessionId: string) => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user?.id) return;
+
+      const { data, error } = await supabase.rpc('get_chat_session_messages', {
+        p_session_id: sessionId,
+        p_user_id: user.id
+      });
+
+      if (error) {
+        logger.error("Error loading session:", error);
+        return;
+      }
+
+      if (data && Array.isArray(data)) {
+        setChatMessages(data);
+        setCurrentSessionId(sessionId);
+        setIsNewSession(false);
+        await AsyncStorage.setItem('chatMessages', JSON.stringify(data));
+        setShowNudges(data.length <= 1);
+        logger.info("Session loaded:", sessionId);
+      }
+    } catch (error) {
+      logger.error("Error in loadSession:", error);
+    }
+  };
+
+  // Setup app state listener for detecting app lifecycle
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', async (nextAppState) => {
+      if (nextAppState === 'background' && appStateRef.current === 'active') {
+        // App going to background - save current session
+        if (chatMessages.length > 1) {
+          logger.info("App going to background - saving current session");
+          await saveCurrentSession();
+        }
+      } else if (nextAppState === 'active' && appStateRef.current === 'background') {
+        // App came to foreground - start fresh session
+        logger.info("App came to foreground - starting fresh session");
+        if (chatMessages.length > 1) {
+          await startNewSession();
+        }
+      }
+      appStateRef.current = nextAppState;
+    });
+    return () => subscription.remove();
+  }, [chatMessages.length]); // Add dependency to access current chatMessages
 
 
   const pushChat = (
@@ -350,11 +508,15 @@ export const useChat = () => {
     showNudges,
     goalFlow,
     progressStatus,
+    currentSessionId,
+    isNewSession,
     clearChat,
     pushChat,
     pushChatWithDelay,
     pushMultipleMessages,
     handleUserMessage,
+    startNewSession,
+    loadSession,
   };
 };
 

@@ -7,6 +7,8 @@ interface ChatContextType {
   showNudges: boolean;
   goalFlow: any | null;
   progressStatus: string;
+  currentSessionId: string | null;
+  isNewSession: boolean;
   clearChat: () => Promise<void>;
   pushChat: (
     senderOrMsg: "user" | "finny" | any,
@@ -18,6 +20,8 @@ interface ChatContextType {
     message: string
   ) => Promise<void>;
   handleUserMessage: (messageText: string, startTime?: number) => Promise<void>;
+  startNewSession: () => Promise<void>;
+  loadSession: (sessionId: string) => Promise<void>;
 }
 
 const ChatContext = createContext<ChatContextType | undefined>(undefined);

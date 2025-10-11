@@ -19,6 +19,7 @@ import FinnyStyleScreen from "@/app/(tabs)/chat/finny-style";
 import FinnyCheckinScreen from "@/app/(tabs)/chat/finny-checkin";
 import LegalSummaryScreen from "@/app/(tabs)/chat/legal-summary";
 import HowFinnyWorksScreen from "@/app/(tabs)/chat/how-finny-works";
+import ChatHistoryScreen from "@/app/(tabs)/chat/history";
 import { useAuth } from "@/app/_contexts/AuthContext";
 import { supabase } from "@/app/_lib/supabase/supabase";
 import { useChatContext } from "@/app/_contexts/ChatContext";
@@ -207,6 +208,11 @@ const SettingItem: React.FC<SettingItemProps> = ({
     activeOpacity={onPress ? 0.7 : 1}
   >
     <View style={styles.settingLeft}>
+      {icon && (
+        <View style={styles.settingIcon}>
+          <Ionicons name={icon as any} size={20} color="#4A90E2" />
+        </View>
+      )}
       <View style={{ flex: 1 }}>
         <Text style={styles.settingText}>{title}</Text>
         {description && (
@@ -228,11 +234,13 @@ export default function FinnySettingsScreen() {
   const [showCheckin, setShowCheckin] = useState(false);
   const [showLegalSummary, setShowLegalSummary] = useState(false);
   const [showHowFinnyWorks, setShowHowFinnyWorks] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
   const [slideAnimation] = useState(new Animated.Value(0));
   const [styleSlideAnimation] = useState(new Animated.Value(0));
   const [checkinSlideAnimation] = useState(new Animated.Value(0));
   const [legalSummarySlideAnimation] = useState(new Animated.Value(0));
   const [howFinnyWorksSlideAnimation] = useState(new Animated.Value(0));
+  const [historySlideAnimation] = useState(new Animated.Value(0));
 
   const openMemories = () => {
     setShowMemories(true);
@@ -329,6 +337,25 @@ export default function FinnySettingsScreen() {
     });
   };
 
+  const openHistory = () => {
+    setShowHistory(true);
+    Animated.timing(historySlideAnimation, {
+      toValue: 1,
+      duration: 300,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const closeHistory = () => {
+    Animated.timing(historySlideAnimation, {
+      toValue: 0,
+      duration: 300,
+      useNativeDriver: true,
+    }).start(() => {
+      setShowHistory(false);
+    });
+  };
+
   const handleClearChat = () => {
     Alert.alert(
       "Clear Chat",
@@ -412,6 +439,16 @@ export default function FinnySettingsScreen() {
     outputRange: [screenWidth, 0],
   });
 
+  const historySettingsTranslateX = historySlideAnimation.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, -screenWidth],
+  });
+
+  const historyTranslateX = historySlideAnimation.interpolate({
+    inputRange: [0, 1],
+    outputRange: [screenWidth, 0],
+  });
+
   return (
     <View style={styles.container}>
       <SafeAreaView style={{ flex: 1, marginBottom: insets.bottom - 10 }}>
@@ -430,6 +467,8 @@ export default function FinnySettingsScreen() {
                     ? legalSummarySettingsTranslateX
                     : showHowFinnyWorks
                     ? howFinnyWorksSettingsTranslateX
+                    : showHistory
+                    ? historySettingsTranslateX
                     : settingsTranslateX,
                 },
               ],
@@ -500,9 +539,7 @@ export default function FinnySettingsScreen() {
                   icon="time-outline"
                   title="History"
                   description="Check out the last 5 chats"
-                  onPress={() => {
-                    console.log("Open chat history");
-                  }}
+                  onPress={openHistory}
                   rightElement={
                     <Ionicons name="chevron-forward" size={20} color="#666" />
                   }
@@ -622,6 +659,21 @@ export default function FinnySettingsScreen() {
             ]}
           >
             <HowFinnyWorksScreen onBack={closeHowFinnyWorks} />
+          </Animated.View>
+        )}
+
+        {/* History View */}
+        {showHistory && (
+          <Animated.View
+            style={[
+              styles.modalContainer,
+              styles.memoriesContainer,
+              {
+                transform: [{ translateX: historyTranslateX }],
+              },
+            ]}
+          >
+            <ChatHistoryScreen onBack={closeHistory} />
           </Animated.View>
         )}
       </SafeAreaView>
