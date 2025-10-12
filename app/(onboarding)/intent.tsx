@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import {
   View,
   Text,
@@ -9,118 +9,195 @@ import {
   Animated,
   Platform,
   Alert,
+  Dimensions,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import { supabase } from "@/app/_lib/supabase/supabase";
-import logger from "@/app/_utils/logger";
+import { supabase } from "@/src/lib/supabase/supabase";
+import {
+  useNavigationContext,
+  OnboardingStage,
+} from "@/src/contexts/NavigationContext";
+import logger from "@/src/utils/logger";
+import { logOnboardingEvent } from "@/src/utils/onboarding";
 
-const options = [
+const { width: SCREEN_WIDTH } = Dimensions.get("window");
+
+type Question = {
+  key: "money_mindset" | "stress_level" | "emergency_readiness";
+  title: string;
+  options: { id: string; label: string; icon: any; color: string }[];
+};
+
+const QUESTIONS: Question[] = [
   {
-    id: "behind",
-    label: "Start Growing",
-    description: "Get back on track with your finances",
-    icon: "trending-up-outline",
-    color: "#FF6B35",
+    key: "money_mindset",
+    title: "How do you feel about money right now?",
+    options: [
+      {
+        id: "freedom",
+        label: "Tool for freedom",
+        icon: "rocket-outline",
+        color: "#00D4AA",
+      },
+      {
+        id: "stress",
+        label: "It stresses me",
+        icon: "flash-outline",
+        color: "#FF6B6B",
+      },
+      {
+        id: "ignore",
+        label: "I kind of ignore it",
+        icon: "eye-off-outline",
+        color: "#A0AEC0",
+      },
+      {
+        id: "disciplined",
+        label: "I'm disciplined",
+        icon: "trophy-outline",
+        color: "#4A90E2",
+      },
+    ],
   },
   {
-    id: "save",
-    label: "Save smarter",
-    description: "Build wealth with smart strategies",
-    icon: "cash-outline",
-    color: "#4CAF50",
+    key: "stress_level",
+    title: "How stressed do you feel financially?",
+    options: [
+      { id: "chill", label: "Chill", icon: "sunny-outline", color: "#00D4AA" },
+      {
+        id: "tense",
+        label: "A bit tense",
+        icon: "cloud-outline",
+        color: "#FFB020",
+      },
+      {
+        id: "stressed",
+        label: "Stressed",
+        icon: "thunderstorm-outline",
+        color: "#FF6B6B",
+      },
+      {
+        id: "overwhelmed",
+        label: "Overwhelmed",
+        icon: "snow-outline",
+        color: "#E53E3E",
+      },
+    ],
   },
   {
-    id: "overview",
-    label: "See everything",
-    description: "All your money in one place",
-    icon: "apps-outline",
-    color: "#4A90E2",
-  },
-  {
-    id: "invest",
-    label: "Learn investing",
-    description: "Start building your investment portfolio",
-    icon: "bar-chart-outline",
-    color: "yellow",
-  },
-  {
-    id: "curious",
-    label: "Just curious",
-    description: "Explore financial possibilities",
-    icon: "bulb-outline",
-    color: "white",
+    key: "emergency_readiness",
+    title: "Could you cover a $1,000 emergency expense?",
+    options: [
+      {
+        id: "yes",
+        label: "Yes",
+        icon: "diamond-outline",
+        color: "#00D4AA",
+      },
+      {
+        id: "maybe",
+        label: "Maybe",
+        icon: "hourglass-outline",
+        color: "#FFB020",
+      },
+      { id: "no", label: "No", icon: "ban-outline", color: "#FF6B6B" },
+      {
+        id: "unsure",
+        label: "Not sure",
+        icon: "help-outline",
+        color: "#A0AEC0",
+      },
+    ],
   },
 ];
 
 export default function IntentScreen() {
-  const [selected, setSelected] = useState<string[]>([]);
+  useEffect(() => {
+    logOnboardingEvent({ stage: "q1", action: "view" });
+  }, []);
+  const [questionIndex, setQuestionIndex] = useState(0);
+  const [selectedOption, setSelectedOption] = useState<string | null>(null);
+  const [answers, setAnswers] = useState<Record<string, string>>({});
   const router = useRouter();
   const params = useLocalSearchParams();
-  const scaleAnim = useState(new Animated.Value(1))[0];
+  const { updateOnboardingStage } = useNavigationContext();
 
-  const handleSelect = (id: string) => {
-    setSelected((prev) => {
-      if (prev.includes(id)) {
-        return prev.filter((item) => item !== id);
-      } else {
-        return [...prev, id];
-      }
-    });
+  // Animation values
+  const fadeAnim = useRef(new Animated.Value(1)).current;
+  const slideAnim = useRef(new Animated.Value(0)).current;
 
+  const handleSelect = async (id: string) => {
+    // If already selected, deselect
+    if (selectedOption === id) {
+      setSelectedOption(null);
+      return;
+    }
+
+    setSelectedOption(id);
+
+    // Start slide animation
     Animated.sequence([
-      Animated.timing(scaleAnim, {
-        toValue: 0.98,
-        duration: 100,
+      Animated.timing(slideAnim, {
+        toValue: -SCREEN_WIDTH,
+        duration: 300,
         useNativeDriver: true,
       }),
-      Animated.timing(scaleAnim, {
-        toValue: 1,
-        duration: 100,
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 0,
         useNativeDriver: true,
       }),
     ]).start();
+
+    // Navigate after animation
+    setTimeout(async () => {
+      await handleContinue(id);
+    }, 300);
   };
 
-  const handleContinue = async () => {
-    if (selected.length === 0) return;
-
+  const persistAnswer = async (key: string, value: string) => {
     try {
       const {
         data: { user },
-        error,
       } = await supabase.auth.getUser();
-
-      if (error || !user) {
-        logger.info("Error - Could not get user in the intent screen.");
-        return;
-      }
-
-      const { error: updateError } = await supabase.auth.updateUser({
-        data: {
-          intents: selected,
-        },
-      });
-
-      if (updateError) {
-        logger.info(
-          "Error - Could not save your intents in the intent screen."
-        );
-        return;
-      }
-
-      // Navigate to account connection with including selected intents in user metadata
-      router.replace("/(onboarding)/accountconnection");
+      if (!user) return;
+      await supabase.auth.updateUser({ data: { [key]: value } });
     } catch (err) {
-      logger.error("Intent update failed:", err);
-      Alert.alert("Something went wrong. Try again.");
+      logger.info("Could not persist answer", key, err);
     }
   };
 
-  const renderOption = (option: (typeof options)[0], index: number) => {
-    const isSelected = selected.includes(option.id);
+  const handleContinue = async (selectedId?: string) => {
+    const q = QUESTIONS[questionIndex];
+    const optionToSave = selectedId || selectedOption;
+    if (!q || !optionToSave) return;
+
+    const newAnswers = { ...answers, [q.key]: optionToSave };
+    setAnswers(newAnswers);
+
+    const nextIndex = questionIndex + 1;
+    if (nextIndex < QUESTIONS.length) {
+      // Update question index after animation completes
+      setQuestionIndex(nextIndex);
+      setSelectedOption(null);
+
+      // Persist data in background
+      persistAnswer(q.key, optionToSave);
+    } else {
+      // Last question - update stage and let NavigationContext handle navigation
+      try {
+        await updateOnboardingStage(OnboardingStage.ABOUT_YOU);
+        await persistAnswer(q.key, optionToSave);
+      } catch {}
+      logOnboardingEvent({ stage: "q1", action: "complete" });
+    }
+  };
+
+  const renderOption = (option: Question["options"][0], index: number) => {
+    const isSelected = selectedOption === option.id;
 
     return (
       <TouchableOpacity
@@ -130,16 +207,15 @@ export default function IntentScreen() {
         activeOpacity={0.8}
       >
         <View style={styles.iconContainer}>
-          <Ionicons name={option.icon as any} size={20} color={option.color} />
+          <Ionicons name={option.icon as any} size={22} color={option.color} />
         </View>
         <View style={styles.cardContent}>
           <Text style={styles.cardTitle}>{option.label}</Text>
-          <Text style={styles.cardDescription}>{option.description}</Text>
         </View>
         {isSelected && (
           <View style={styles.checkmarkContainer}>
             <View style={styles.checkmarkBackground}>
-              <Ionicons name="checkmark" size={16} color="blue" />
+              <Ionicons name="checkmark" size={16} color="#fff" />
             </View>
           </View>
         )}
@@ -148,11 +224,14 @@ export default function IntentScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <LinearGradient
-        colors={["#1A1A2E", "#16213E", "#0D1117"]}
-        locations={[0, 0.5, 1]}
-        style={styles.container}
+    <LinearGradient
+      colors={["#1A1A2E", "#16213E", "#0D1117"]}
+      locations={[0, 0.5, 1]}
+      style={styles.container}
+    >
+      <SafeAreaView
+        style={styles.safeArea}
+        edges={["top", "left", "right", "bottom"]}
       >
         <StatusBar barStyle="light-content" />
 
@@ -160,46 +239,41 @@ export default function IntentScreen() {
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
-          <View style={styles.header}>
-            <Text style={styles.title}>What brings you here today?</Text>
-            <Text style={styles.subtitle}>
-              Choose one or more goals to personalize your experience
-            </Text>
-          </View>
-
-          <View style={styles.optionsContainer}>
-            {options.map((option, index) => renderOption(option, index))}
-          </View>
-        </ScrollView>
-
-        <View style={styles.footer}>
-          <TouchableOpacity
+          <Animated.View
             style={[
-              styles.button,
-              selected.length === 0 && styles.buttonDisabled,
+              styles.header,
+              {
+                opacity: fadeAnim,
+                transform: [{ translateX: slideAnim }],
+              },
             ]}
-            onPress={handleContinue}
-            disabled={selected.length === 0}
           >
-            <LinearGradient
-              colors={["#4A90E2", "#5DA0F2"]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={styles.gradientButton}
-            >
-              <Text style={styles.buttonText}>Continue</Text>
-            </LinearGradient>
-          </TouchableOpacity>
-        </View>
-      </LinearGradient>
-    </SafeAreaView>
+            <Text style={styles.title}>{QUESTIONS[questionIndex].title}</Text>
+          </Animated.View>
+
+          <Animated.View
+            style={[
+              styles.optionsContainer,
+              {
+                opacity: fadeAnim,
+                transform: [{ translateX: slideAnim }],
+              },
+            ]}
+          >
+            {QUESTIONS[questionIndex].options.map((option, index) =>
+              renderOption(option, index)
+            )}
+          </Animated.View>
+        </ScrollView>
+      </SafeAreaView>
+    </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: "#1A1A2E",
+    backgroundColor: "transparent",
   },
   container: {
     flex: 1,
@@ -208,10 +282,15 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     paddingHorizontal: 24,
     paddingTop: Platform.OS === "ios" ? 70 : 50,
-    paddingBottom: 10,
+    paddingBottom: Platform.OS === "ios" ? 40 : 30,
   },
   header: {
     marginBottom: 28,
+  },
+  progress: {
+    fontSize: 12,
+    color: "rgba(255,255,255,0.6)",
+    marginBottom: 8,
   },
   title: {
     fontSize: 28,
@@ -231,24 +310,28 @@ const styles = StyleSheet.create({
     gap: 15,
   },
   optionCard: {
-    backgroundColor: "rgba(255, 255, 255, 0.03)",
-    borderRadius: 12,
+    backgroundColor: "rgba(255, 255, 255, 0.05)",
+    borderRadius: 16,
     padding: 12,
-    borderWidth: 1,
-    borderColor: "rgba(74, 144, 226, 0.2)",
-    shadowColor: "#4A90E2",
-    shadowOpacity: 0.15,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 5,
+    borderWidth: 1.5,
+    borderColor: "rgba(255, 255, 255, 0.1)",
+    shadowColor: "#000",
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 6,
     flexDirection: "row",
     alignItems: "center",
+    marginVertical: 3,
+    minHeight: 60,
   },
   selectedCard: {
     borderColor: "#4A90E2",
-    backgroundColor: "rgba(74, 144, 226, 0.08)",
-    shadowOpacity: 0.25,
-    elevation: 8,
+    backgroundColor: "rgba(74, 144, 226, 0.1)",
+    shadowColor: "#4A90E2",
+    shadowOpacity: 0.3,
+    elevation: 10,
+    transform: [{ scale: 1.02 }],
   },
   iconContainer: {
     width: 40,
@@ -258,16 +341,19 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     marginRight: 12,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.1)",
   },
   cardContent: {
     flex: 1,
   },
   cardTitle: {
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: "600",
     color: "#fff",
     marginBottom: 3,
     textAlign: "left",
+    letterSpacing: 0.3,
   },
   cardDescription: {
     fontSize: 12,
@@ -276,38 +362,18 @@ const styles = StyleSheet.create({
     textAlign: "left",
   },
   checkmarkContainer: {
-    marginLeft: 8,
+    marginLeft: 12,
   },
   checkmarkBackground: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: "#fff",
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: "#4A90E2",
     justifyContent: "center",
     alignItems: "center",
-    borderWidth: 1,
-    borderColor: "rgba(74, 144, 226, 0.3)",
-  },
-  footer: {
-    paddingHorizontal: 24,
-    paddingBottom: Platform.OS === "ios" ? 30 : 35,
-    paddingTop: 16,
-  },
-  button: {
-    borderRadius: 16,
-    overflow: "hidden",
-  },
-  buttonDisabled: {
-    opacity: 0.5,
-  },
-  gradientButton: {
-    paddingVertical: 16,
-    paddingHorizontal: 24,
-    alignItems: "center",
-  },
-  buttonText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "600",
+    shadowColor: "#4A90E2",
+    shadowOpacity: 0.2,
+    shadowRadius: 1,
+    elevation: 4,
   },
 });

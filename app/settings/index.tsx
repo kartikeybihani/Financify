@@ -15,10 +15,10 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter, useLocalSearchParams } from "expo-router";
-import { supabase } from "@/app/_lib/supabase/supabase";
-import FeedbackModal from "@/app/_components/modals/FeedbackModal";
-import { handleDisconnect, getPrimaryItemId } from "@/app/_utils/plaid";
-import logger from "@/app/_utils/logger";
+import { supabase } from "@/src/lib/supabase/supabase";
+import FeedbackModal from "@/src/components/modals/FeedbackModal";
+import { handleDisconnect, getPrimaryItemId } from "@/src/utils/plaid";
+import logger from "@/src/utils/logger";
 
 export default function SettingsScreen() {
   const router = useRouter();
@@ -129,8 +129,11 @@ export default function SettingsScreen() {
           await AsyncStorage.removeItem("user_authenticated");
           await AsyncStorage.removeItem("userData");
 
+          // Dismiss all modals first
+          router.dismissAll();
+
+          // Sign out - NavigationContext will handle the navigation
           await supabase.auth.signOut();
-          router.replace("/(onboarding)/welcome");
           logger.info("User logged out and cache cleared");
         },
       },

@@ -18,9 +18,11 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { supabase } from "@/app/_lib/supabase/supabase";
+import { supabase } from "@/src/lib/supabase/supabase";
+import { useNavigationContext } from "@/src/contexts/NavigationContext";
 import type { ComponentProps } from "react";
-import logger from "@/app/_utils/logger";
+import logger from "@/src/utils/logger";
+import { logOnboardingEvent } from "@/src/utils/onboarding";
 
 const { width, height } = Dimensions.get("window");
 
@@ -36,52 +38,17 @@ const finalCards: CardItem[] = [
   {
     icon: "cash-outline",
     color: "#FFD700",
-    text: "Let's set a savings goal you're excited about.",
-  },
-  {
-    icon: "calendar",
-    color: "#98FB98",
-    text: "Want a plan to clear your debt faster? I've got ideas.",
-  },
-  {
-    icon: "leaf-outline",
-    color: "#87CEFA",
-    text: "One new habit a week. Simple. Powerful. Doable.",
-  },
-  {
-    icon: "compass",
-    color: "#F08080",
-    text: "You're steering. I'm just helping you see the path.",
-  },
-  {
-    icon: "shield-checkmark",
-    color: "#FF69B4",
-    text: "An emergency fund starts with $10/week. Ready?",
+    text: "Biggest spend last 30d: loading…",
   },
   {
     icon: "document-text-outline",
     color: "#00CED1",
-    text: "Let's kill those useless subscriptions together.",
-  },
-  {
-    icon: "heart-half-outline",
-    color: "#DA70D6",
-    text: "You're doing better than you think. I'll nudge when needed.",
+    text: "Subscriptions this month: loading…",
   },
   {
     icon: "timer-outline",
     color: "#FFA500",
-    text: "We're playing the long game. Every step counts.",
-  },
-  {
-    icon: "trending-up-outline",
-    color: "#20B2AA",
-    text: "Smart investing starts with small, consistent steps.",
-  },
-  {
-    icon: "people-outline",
-    color: "#FFB6C1",
-    text: "You're joining thousands already on this journey.",
+    text: "Cash runway estimate: loading…",
   },
 ];
 
@@ -102,13 +69,13 @@ const carouselSlides = finalCards.reduce((acc, curr, i) => {
 
 export default function FinalScreen() {
   const router = useRouter();
+  const { completeOnboarding } = useNavigationContext();
   const [typedText, setTypedText] = useState("");
   const [activeSlide, setActiveSlide] = useState(0);
   const [isButtonEnabled, setIsButtonEnabled] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const index = useRef(0);
-  const message =
-    "Hey, I'm Finny. Respect money and it'll respect you. Let's build your wealth story — together.";
+  const message = "You’re in. Here’s what jumps out already.";
   const cursorVisible = useRef(true);
   const viewabilityConfig = useRef({
     viewAreaCoveragePercentThreshold: 50,
@@ -129,7 +96,105 @@ export default function FinalScreen() {
     new Animated.Value(0.3),
   ]).current;
   const gradientShift = useRef(new Animated.Value(0)).current;
-  const typingSpeed = 30; // Reduced from 50 to 30ms per character
+  const typingSpeed = 20;
+
+  const loadInsights = async () => {
+    try {
+      const {
+        data: { user },
+        error,
+      } = await supabase.auth.getUser();
+      if (error || !user) return;
+
+      const formatDate = (d: Date) => {
+        const y = d.getFullYear();
+        const m = `${d.getMonth() + 1}`.padStart(2, "0");
+        const day = `${d.getDate()}`.padStart(2, "0");
+        return `${y}-${m}-${day}`;
+      };
+
+      // Dates for last 30 days
+      const end = new Date();
+      const start = new Date();
+      start.setDate(end.getDate() - 30);
+
+      // 1) Top category last 30d
+      try {
+        const { data: catRows } = await supabase.rpc("get_spend_by_category", {
+          p_user_id: user.id,
+          p_start: formatDate(start),
+          p_end: formatDate(end),
+        });
+        if (Array.isArray(catRows) && catRows.length > 0) {
+          const top = [...catRows].sort(
+            (a: any, b: any) => Number(b.total_spend) - Number(a.total_spend)
+          )[0];
+          finalCards[0].text = `Biggest spend last 30d: ${
+            top.category
+          } ($${Number(top.total_spend).toFixed(0)})`;
+        }
+      } catch (e) {
+        logger.info("get_spend_by_category failed", e);
+      }
+
+      // 2) Subscriptions total (active recurring streams)
+      try {
+        const { data: rec } = await supabase.rpc(
+          "get_recurring_streams_active",
+          { p_user_id: user.id }
+        );
+        if (Array.isArray(rec)) {
+          const subs = rec.filter((r: any) => r.stream_type === "subscription");
+          const total = subs.reduce(
+            (s: number, r: any) => s + Number(r.average_amount || 0),
+            0
+          );
+          finalCards[1].text = `Subscriptions this month: $${total.toFixed(
+            0
+          )} across ${subs.length}`;
+        }
+      } catch (e) {
+        logger.info("get_recurring_streams_active failed", e);
+      }
+
+      // 3) Cash runway estimate = liquid_assets / max(expense - income, 1)
+      try {
+        const { data: netWorthRows } = await supabase.rpc("get_net_worth", {
+          p_user_id: user.id,
+        });
+        const { data: cashflow } = await supabase.rpc("get_cashflow_monthly", {
+          p_user_id: user.id,
+          p_months: 3,
+        });
+        const liquidAssets =
+          Array.isArray(netWorthRows) && netWorthRows[0]
+            ? Number(netWorthRows[0].liquid_assets || 0)
+            : 0;
+        let avgMonthlyBurn = 0;
+        if (Array.isArray(cashflow) && cashflow.length > 0) {
+          const nets = cashflow.map(
+            (m: any) => Number(m.expense || 0) - Number(m.income || 0)
+          );
+          avgMonthlyBurn =
+            nets.reduce((a: number, b: number) => a + b, 0) / nets.length;
+        }
+        if (liquidAssets > 0) {
+          if (avgMonthlyBurn <= 0) {
+            finalCards[2].text = `Cash runway: growing (positive cashflow)`;
+          } else {
+            const months = liquidAssets / avgMonthlyBurn;
+            finalCards[2].text = `Cash runway: ~${months.toFixed(
+              1
+            )} months at current burn`;
+          }
+        }
+      } catch (e) {
+        logger.info("runway calc failed", e);
+      }
+
+      setTypedText((prev) => prev);
+    } catch {}
+  };
 
   const onViewableItemsChanged = useRef(
     ({ viewableItems }: { viewableItems: ViewToken[] }) => {
@@ -191,6 +256,7 @@ export default function FinalScreen() {
   ).current;
 
   useEffect(() => {
+    logOnboardingEvent({ stage: "final", action: "view" });
     // Cursor blink animation
     const cursorInterval = setInterval(() => {
       cursorVisible.current = !cursorVisible.current;
@@ -250,7 +316,8 @@ export default function FinalScreen() {
       }
     };
 
-    typingTimeout = setTimeout(typeNextChar, 500); // Initial delay
+    typingTimeout = setTimeout(typeNextChar, 300);
+    loadInsights();
     return () => {
       clearTimeout(typingTimeout);
       clearInterval(cursorInterval);
@@ -307,28 +374,15 @@ export default function FinalScreen() {
     animateLoadingDots();
 
     try {
-      // Update Supabase user metadata
-      const { error } = await supabase.auth.updateUser({
-        data: { onboarding_complete: true },
-      });
+      // Complete onboarding using NavigationContext
+      await completeOnboarding();
 
-      if (error) {
-        logger.error("Error updating user metadata:", error);
-        setIsLoading(false);
-        return;
-      }
+      logger.info("✅ Onboarding completed via NavigationContext");
+      logOnboardingEvent({ stage: "final", action: "complete" });
 
-      // Store in AsyncStorage for hot reload persistence during development
-      await AsyncStorage.setItem("onboarding_complete", "true");
-      await AsyncStorage.setItem("user_authenticated", "true");
-
-      logger.info(
-        "✅ Onboarding completed - stored in both Supabase and AsyncStorage"
-      );
-
-      // Wait for loading animation
+      // Wait for loading animation - NavigationContext will handle navigation
       setTimeout(() => {
-        router.replace("/(tabs)");
+        // NavigationContext will automatically navigate to authenticated state
       }, 2000);
     } catch (error) {
       logger.error("Error completing onboarding:", error);
@@ -418,7 +472,7 @@ export default function FinalScreen() {
           <Animated.View style={styles.loadingOverlay}>
             <View style={styles.loadingContent}>
               <Animated.Image
-                source={require("../assets/mascot1.jpg")}
+                source={require("../../assets/images/mascot1.jpg")}
                 resizeMode="contain"
                 style={[styles.loadingMascot, { transform: [{ scaleX: -1 }] }]}
               />
@@ -447,7 +501,7 @@ export default function FinalScreen() {
 
           <Animated.View style={[styles.finnyBox, { height: boxHeight }]}>
             <Animated.Image
-              source={require("../assets/mascot1.jpg")}
+              source={require("../../assets/images/mascot1.jpg")}
               resizeMode="contain"
               style={[
                 styles.mascot,

@@ -13,10 +13,10 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import { Dimensions } from "react-native";
-import { useAuth } from "@/app/_contexts/AuthContext";
+import { useAuth } from "@/src/contexts/AuthContext";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { supabase } from "@/app/_lib/supabase/supabase";
-import { MemorySummary, MemoriesScreenProps } from "@/app/_types/plaid";
+import { supabase } from "@/src/lib/supabase/supabase";
+import { MemorySummary, MemoriesScreenProps } from "@/src/types/plaid";
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
 

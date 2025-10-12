@@ -15,30 +15,30 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Feather, Ionicons } from "@expo/vector-icons";
 import { GlassView } from "expo-glass-effect";
-import { styles } from "@/app/_styles/homeStyles";
-import { supabase } from "@/app/_lib/supabase/supabase";
+import { styles } from "@/src/styles/homeStyles";
+import { supabase } from "@/src/lib/supabase/supabase";
 import {
   openPlaidLink,
   getPrimaryItemId,
   addNewBankAccount,
-} from "@/app/_utils/plaid";
-import { Identity, Investment } from "@/app/_types/plaid";
+} from "@/src/utils/plaid";
+import { Identity, Investment } from "@/src/types/plaid";
 import { useRouter } from "expo-router";
-import FinancialBottomSheet from "@/app/_components/shared/FinancialBottomSheet";
-import FinancialCard from "@/app/_components/shared/FinancialCard";
-import AccountItem from "@/app/_components/shared/AccountItem";
-import CategorySelectionModal from "@/app/_components/modals/CategorySelectionModal";
-import CashDepositInstitutionModal from "@/app/_components/modals/CashDepositInstitutionModal";
-import CreditCardInstitutionModal from "@/app/_components/modals/CreditCardInstitutionModal";
-import InstitutionSelectionModal from "@/app/_components/modals/InstitutionSelectionModal";
-import AccountDetailModal from "@/app/_components/modals/AccountDetailModal";
-import CashInputModal from "@/app/_components/modals/CashInputModal";
+import FinancialBottomSheet from "@/src/components/shared/FinancialBottomSheet";
+import FinancialCard from "@/src/components/shared/FinancialCard";
+import AccountItem from "@/src/components/shared/AccountItem";
+import CategorySelectionModal from "@/src/components/modals/CategorySelectionModal";
+import CashDepositInstitutionModal from "@/src/components/modals/CashDepositInstitutionModal";
+import CreditCardInstitutionModal from "@/src/components/modals/CreditCardInstitutionModal";
+import InstitutionSelectionModal from "@/src/components/modals/InstitutionSelectionModal";
+import AccountDetailModal from "@/src/components/modals/AccountDetailModal";
+import CashInputModal from "@/src/components/modals/CashInputModal";
 import { LoadingSkeleton } from "@/src/components/LoadingSkeleton";
-import { Goal } from "@/app/_types/finny";
-import { useGoals } from "@/app/_hooks/useGoals";
-import { useAccountBalances } from "@/app/_hooks/useAccountBalances";
-import { useCashEntries } from "@/app/_hooks/useCashEntries";
-import logger from "@/app/_utils/logger";
+import { Goal } from "@/src/types/finny";
+import { useGoals } from "@/src/hooks/useGoals";
+import { useAccountBalances } from "@/src/hooks/useAccountBalances";
+import { useCashEntries } from "@/src/hooks/useCashEntries";
+import logger from "@/src/utils/logger";
 
 if (Platform.OS === "android") {
   UIManager.setLayoutAnimationEnabledExperimental?.(true);
@@ -564,7 +564,7 @@ export default function HomeScreen() {
             <View style={styles.finnyMessage}>
               <View style={styles.finnyIconContainer}>
                 <Image
-                  source={require("../assets/mascot1.jpg")}
+                  source={require("../../assets/images/mascot1.jpg")}
                   style={{
                     width: 45,
                     height: 50,
@@ -796,7 +796,7 @@ export default function HomeScreen() {
                 <View style={styles.emptyGoalsContent}>
                   <View style={styles.emptyGoalsImageContainer}>
                     <Image
-                      source={require("../assets/mascot1.jpg")}
+                      source={require("../../assets/images/mascot1.jpg")}
                       style={[
                         styles.emptyGoalsImage,
                         {

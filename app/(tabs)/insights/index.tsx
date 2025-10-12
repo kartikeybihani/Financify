@@ -23,11 +23,11 @@ import {
 } from "react-native";
 import { InteractionManager } from "react-native";
 import * as Haptics from "expo-haptics";
-import TopChips from "@/app/_components/insights/components/TopChips";
-import RecurringSection from "@/app/_components/insights/components/RecurringSection";
+import TopChips from "@/src/components/insights/components/TopChips";
+import RecurringSection from "@/src/components/insights/components/RecurringSection";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { styles } from "@/app/_styles/insightsStyles";
+import { styles } from "@/src/styles/insightsStyles";
 import {
   headerRefreshStyles,
   updateModalStyles,
@@ -35,17 +35,17 @@ import {
   loadMoreStyles,
   sectionContentStyles,
 } from "./insightsStyles";
-import CategoryDetailModal from "@/app/_components/insights/CategoryDetailModal";
+import CategoryDetailModal from "@/src/components/insights/CategoryDetailModal";
 import EnhancedFilterModal, {
   FilterOptions,
   Account,
-} from "../../_components/EnhancedFilterModal";
-import ReAuthBanner from "@/app/_components/ui/ReAuthBanner";
-import InsightsLoadingSkeleton from "@/app/_components/insights/InsightsLoadingSkeleton";
-import SpendingSection from "@/app/_components/insights/components/SpendingSection";
-import TransactionsSection from "@/app/_components/insights/components/TransactionsSection";
-import CashFlowSection from "@/app/_components/insights/components/CashFlowSection";
-import { supabase } from "@/app/_lib/supabase/supabase";
+} from "@/src/components/EnhancedFilterModal";
+import ReAuthBanner from "@/src/components/ui/ReAuthBanner";
+import InsightsLoadingSkeleton from "@/src/components/insights/InsightsLoadingSkeleton";
+import SpendingSection from "@/src/components/insights/components/SpendingSection";
+import TransactionsSection from "@/src/components/insights/components/TransactionsSection";
+import CashFlowSection from "@/src/components/insights/components/CashFlowSection";
+import { supabase } from "@/src/lib/supabase/supabase";
 import InvestmentsScreen from "@/app/investments";
 import {
   syncAllUserTransactions,
@@ -58,43 +58,43 @@ import {
   getFilteredTransactions,
   getFilteredTransactionsCount,
   getUserAccountsForFilter,
-} from "../../_utils/plaid";
+} from "@/src/utils/plaid";
 import {
   getSnaptradeHoldingsFromDB,
   getSnaptradeOptionsFromDB,
   getSnaptradeBalancesFromDB,
   getSnaptradeConnectionsFromDB,
-} from "../../_utils/snaptrade";
+} from "@/src/utils/snaptrade";
 import { forceFullResync } from "@/src/utils/categoryFix";
-import logger from "@/app/_utils/logger";
-import { useCategories } from "@/app/_hooks/useCategories";
-import { OptimisticUpdateManager } from "@/app/_shared/utils/optimisticUpdates";
-import { InsightsAnimationManager } from "@/app/_shared/utils/insightsAnimations";
-import { SmartPreloader } from "@/app/_shared/utils/smartPreloader";
+import logger from "@/src/utils/logger";
+import { useCategories } from "@/src/hooks/useCategories";
+import { OptimisticUpdateManager } from "@/src/shared/utils/optimisticUpdates";
+import { InsightsAnimationManager } from "@/src/shared/utils/insightsAnimations";
+import { SmartPreloader } from "@/src/shared/utils/smartPreloader";
 import {
   loadRecurringFromCache,
   saveRecurringToCache,
   clearRecurringCache,
   CachedRecurringData,
-} from "@/app/_shared/utils/recurringCache";
+} from "@/src/shared/utils/recurringCache";
 import {
   loadInvestmentFromCache,
   saveInvestmentToCache,
   clearInvestmentCache,
   CachedInvestmentData,
-} from "@/app/_shared/utils/investmentCache";
+} from "@/src/shared/utils/investmentCache";
 import {
   LoadingIndicator,
   ErrorState,
   EmptyState,
   RefreshStatus,
-} from "@/app/_shared/components/LoadingStates";
+} from "@/src/shared/components/LoadingStates";
 import {
   Transaction,
   RecurringStream,
   CategoryBreakdown,
   Insight,
-} from "../../_types/plaid";
+} from "@/src/types/plaid";
 
 // Define types
 

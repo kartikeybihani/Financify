@@ -15,43 +15,35 @@ import {
 } from "react-native";
 import { useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
-import { Ionicons } from "@expo/vector-icons";
+import {
+  AntDesign,
+  Entypo,
+  Feather,
+  Ionicons,
+  MaterialIcons,
+} from "@expo/vector-icons";
 import * as AppleAuthentication from "expo-apple-authentication";
-import { supabase } from "@/app/_lib/supabase/supabase";
-import logger from "@/app/_utils/logger";
+import { supabase } from "@/src/lib/supabase/supabase";
+import {
+  useNavigationContext,
+  OnboardingStage,
+} from "@/src/contexts/NavigationContext";
+import logger from "@/src/utils/logger";
+import { logOnboardingEvent } from "@/src/utils/onboarding";
 
 const { width } = Dimensions.get("window");
 
 export default function WelcomeScreen() {
   const router = useRouter();
-  const [started, setStarted] = useState(false);
+  const { updateOnboardingStage } = useNavigationContext();
 
-  const fadeAnim = useRef(new Animated.Value(1)).current;
-  const scaleAnim = useRef(new Animated.Value(1)).current;
   const imageSlideAnim = useRef(new Animated.Value(40)).current;
   const titleSlideAnim = useRef(new Animated.Value(30)).current;
   const textRevealAnim = useRef(new Animated.Value(0)).current;
   const sparkGlowAnim = useRef(new Animated.Value(0)).current;
-  const flipAnim = useRef(new Animated.Value(0)).current;
-  const flipAnimationRef = useRef<Animated.CompositeAnimation | null>(null);
-
-  const googleButtonAnim = useRef(new Animated.Value(0)).current;
-  const emailButtonAnim = useRef(new Animated.Value(0)).current;
-  const loginTextAnim = useRef(new Animated.Value(0)).current;
-
-  // Dynamic styles based on state
-  const dynamicStyles = {
-    content: {
-      justifyContent: started
-        ? ("space-between" as const)
-        : ("flex-start" as const),
-    },
-    bottomSection: {
-      marginTop: started ? 0 : 140,
-    },
-  };
 
   useEffect(() => {
+    logOnboardingEvent({ stage: "welcome", action: "view" });
     Animated.parallel([
       Animated.spring(textRevealAnim, {
         toValue: 1,
@@ -84,92 +76,10 @@ export default function WelcomeScreen() {
         ])
       ),
     ]).start();
-
-    // Start the auto-flip animation only if not started
-    if (!started) {
-      const animation = Animated.loop(
-        Animated.sequence([
-          Animated.timing(flipAnim, {
-            toValue: 180,
-            duration: 1500,
-            useNativeDriver: true,
-            easing: Easing.inOut(Easing.ease),
-          }),
-          Animated.timing(flipAnim, {
-            toValue: 0,
-            duration: 1500,
-            useNativeDriver: true,
-            easing: Easing.inOut(Easing.ease),
-          }),
-        ])
-      );
-      flipAnimationRef.current = animation;
-      animation.start();
-    } else {
-      // Stop the animation and show "after" state when started
-      if (flipAnimationRef.current) {
-        flipAnimationRef.current.stop();
-      }
-      Animated.timing(flipAnim, {
-        toValue: 180,
-        duration: 500,
-        useNativeDriver: true,
-        easing: Easing.inOut(Easing.ease),
-      }).start();
-    }
-
-    return () => {
-      if (flipAnimationRef.current) {
-        flipAnimationRef.current.stop();
-      }
-    };
-  }, [started]);
-
-  const handleBegin = () => {
-    Animated.timing(scaleAnim, {
-      toValue: 0.95,
-      duration: 150,
-      useNativeDriver: true,
-    }).start(() => {
-      Animated.timing(fadeAnim, {
-        toValue: 0,
-        duration: 400,
-        useNativeDriver: true,
-      }).start(() => {
-        setStarted(true);
-        Animated.stagger(150, [
-          Animated.timing(googleButtonAnim, {
-            toValue: 1,
-            duration: 500,
-            useNativeDriver: true,
-          }),
-          Animated.timing(emailButtonAnim, {
-            toValue: 1,
-            duration: 500,
-            useNativeDriver: true,
-          }),
-          Animated.timing(loginTextAnim, {
-            toValue: 1,
-            duration: 400,
-            useNativeDriver: true,
-          }),
-        ]).start();
-      });
-    });
-  };
+  }, []);
 
   const handleEmailSignup = () => router.push("/(auth)/signup");
   const handleLogin = () => router.push("/(auth)/login");
-
-  const frontInterpolate = flipAnim.interpolate({
-    inputRange: [0, 180],
-    outputRange: ["0deg", "180deg"],
-  });
-
-  const backInterpolate = flipAnim.interpolate({
-    inputRange: [0, 180],
-    outputRange: ["180deg", "360deg"],
-  });
 
   const animatedSparkStyle = {
     opacity: sparkGlowAnim,
@@ -184,6 +94,7 @@ export default function WelcomeScreen() {
   };
 
   const signInWithApple = async () => {
+    const start = Date.now();
     logger.info("Signing in with Apple...");
 
     try {
@@ -215,12 +126,25 @@ export default function WelcomeScreen() {
 
         if (user) {
           logger.info("Successfully authenticated with Supabase");
-          router.replace("/(tabs)");
+          try {
+            await updateOnboardingStage(OnboardingStage.INTENT);
+          } catch {}
+          logOnboardingEvent({
+            stage: "welcome",
+            action: "auth_success",
+            durationMs: Date.now() - start,
+          });
         }
       } else {
         throw new Error("No identity token received from Apple");
       }
     } catch (error) {
+      logOnboardingEvent({
+        stage: "welcome",
+        action: "auth_error",
+        durationMs: Date.now() - start,
+        errorCode: (error as any)?.message,
+      });
       if (error instanceof Error) {
         if (error.message === "ERR_REQUEST_CANCELED") {
           logger.info("User canceled Apple sign in");
@@ -256,10 +180,11 @@ export default function WelcomeScreen() {
           style={[styles.spotlightContainer]}
           locations={[0, 0.5, 1]}
         />
-        <View style={[styles.content, dynamicStyles.content]}>
+        <View style={styles.content}>
+          {/* Step text removed per request */}
           <View style={styles.heroSection}>
             <Animated.Image
-              source={require("../assets/main2.png")}
+              source={require("../../assets/images/main2.png")}
               style={[styles.heroImage, animatedSparkStyle]}
               resizeMode="contain"
             />
@@ -302,118 +227,52 @@ export default function WelcomeScreen() {
             </Animated.View>
           </View>
 
-          <View style={[styles.bottomSection, dynamicStyles.bottomSection]}>
-            <Text style={styles.microcopy}>
-              Built to give you peace of mind — not overwhelm.
-            </Text>
+          <View style={styles.bottomSection}>
             <View style={styles.buttonSection}>
-              {!started ? (
-                <Animated.View
-                  style={{
-                    opacity: fadeAnim,
-                    transform: [{ scale: scaleAnim }],
-                  }}
+              <View style={styles.authButtons}>
+                <TouchableOpacity
+                  style={styles.googleButton}
+                  activeOpacity={0.9}
+                  onPress={signInWithApple}
                 >
-                  <TouchableOpacity
-                    style={styles.primaryButton}
-                    onPress={handleBegin}
-                    activeOpacity={0.9}
-                  >
-                    <LinearGradient
-                      colors={["#4A90E2", "#5DA0F2"]}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 0 }}
-                      style={styles.gradientButton}
-                    >
-                      <Text style={styles.primaryButtonText}>Let's Begin</Text>
-                    </LinearGradient>
-                  </TouchableOpacity>
-                </Animated.View>
-              ) : (
-                <View style={styles.authButtons}>
-                  <Animated.View
-                    style={{
-                      opacity: googleButtonAnim,
-                      transform: [
-                        {
-                          translateY: googleButtonAnim.interpolate({
-                            inputRange: [0, 1],
-                            outputRange: [20, 0],
-                          }),
-                        },
-                      ],
-                    }}
-                  >
-                    <TouchableOpacity
-                      style={styles.googleButton}
-                      activeOpacity={0.9}
-                      onPress={signInWithApple}
-                    >
-                      <View style={styles.blurContainer}>
-                        <Ionicons name="logo-apple" size={22} color="#fff" />
-                        <Text style={styles.googleButtonText}>
-                          Continue with Apple
-                        </Text>
-                      </View>
-                    </TouchableOpacity>
-                  </Animated.View>
+                  <View style={styles.blurContainer}>
+                    <Ionicons name="logo-apple" size={22} color="#fff" />
+                    <Text style={styles.googleButtonText}>
+                      Continue with Apple
+                    </Text>
+                  </View>
+                </TouchableOpacity>
 
-                  <Animated.View
-                    style={{
-                      opacity: emailButtonAnim,
-                      transform: [
-                        {
-                          translateY: emailButtonAnim.interpolate({
-                            inputRange: [0, 1],
-                            outputRange: [20, 0],
-                          }),
-                        },
-                      ],
-                    }}
+                <TouchableOpacity
+                  style={styles.emailButton}
+                  onPress={handleEmailSignup}
+                  activeOpacity={0.9}
+                >
+                  <LinearGradient
+                    colors={["#4A90E2", "#5DA0F2"]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={styles.gradientButton}
                   >
-                    <TouchableOpacity
-                      style={styles.emailButton}
-                      onPress={handleEmailSignup}
-                      activeOpacity={0.9}
-                    >
-                      <LinearGradient
-                        colors={["#4A90E2", "#5DA0F2"]}
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 1, y: 0 }}
-                        style={styles.gradientButton}
-                      >
-                        <Text style={styles.emailButtonText}>
-                          Continue with Email
-                        </Text>
-                      </LinearGradient>
-                    </TouchableOpacity>
-                  </Animated.View>
-
-                  <Animated.View
-                    style={{
-                      opacity: loginTextAnim,
-                      transform: [
-                        {
-                          translateY: loginTextAnim.interpolate({
-                            inputRange: [0, 1],
-                            outputRange: [10, 0],
-                          }),
-                        },
-                      ],
-                    }}
-                  >
-                    <TouchableOpacity
-                      style={styles.loginLink}
-                      onPress={handleLogin}
-                    >
-                      <Text style={styles.loginText}>
-                        Already have an account?{" "}
-                        <Text style={styles.loginTextBold}>Login</Text>
+                    <View style={styles.emailButtonContent}>
+                      <Entypo name="mail" size={23} color="#fff" />
+                      <Text style={styles.emailButtonText}>
+                        Continue with Email
                       </Text>
-                    </TouchableOpacity>
-                  </Animated.View>
-                </View>
-              )}
+                    </View>
+                  </LinearGradient>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.loginLink}
+                  onPress={handleLogin}
+                >
+                  <Text style={styles.loginText}>
+                    Already have an account?{" "}
+                    <Text style={styles.loginTextBold}>Login</Text>
+                  </Text>
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
         </View>
@@ -427,6 +286,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#121212",
   },
+  // step text removed
   gradientBackground: {
     flex: 1,
   },
@@ -436,6 +296,7 @@ const styles = StyleSheet.create({
     paddingTop: Platform.OS === "ios" ? 90 : 80,
     paddingBottom: Platform.OS === "ios" ? 40 : 30,
     position: "relative",
+    justifyContent: "space-between",
   },
   spotlightContainer: {
     position: "absolute",
@@ -605,28 +466,11 @@ const styles = StyleSheet.create({
   buttonSection: {
     width: "100%",
   },
-  primaryButton: {
-    width: "100%",
-    height: 56,
-    borderRadius: 30,
-    overflow: "hidden",
-    shadowColor: "#4A90E2",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 5,
-  },
   gradientButton: {
     width: "100%",
     height: "100%",
     justifyContent: "center",
     alignItems: "center",
-  },
-  primaryButtonText: {
-    color: "#fff",
-    fontSize: 18,
-    fontWeight: "600",
-    letterSpacing: 0.5,
   },
   authButtons: {
     width: "100%",
@@ -667,6 +511,14 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 5,
+  },
+  emailButtonContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    height: "100%",
+    width: "100%",
+    gap: 12,
   },
   emailButtonText: {
     color: "#fff",
@@ -710,19 +562,6 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     marginTop: 12,
   },
-  microcopy: {
-    color: "rgba(255, 255, 255, 0.6)",
-    fontSize: 14,
-    textAlign: "center",
-    marginBottom: 16,
-    lineHeight: 20,
-    fontWeight: "500",
-    letterSpacing: 0.2,
-  },
-  appleButton: {
-    width: "100%",
-    height: 56,
-  },
   fluffText: {
     color: "rgba(255,255,255,0.45)",
     fontSize: 13,
@@ -743,5 +582,6 @@ const styles = StyleSheet.create({
   bottomSection: {
     width: "100%",
     justifyContent: "flex-end",
+    marginTop: 0,
   },
 });

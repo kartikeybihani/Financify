@@ -15,8 +15,8 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
-import { supabase } from "@/app/_lib/supabase/supabase";
-import logger from "@/app/_utils/logger";
+import { supabase } from "@/src/lib/supabase/supabase";
+import logger from "@/src/utils/logger";
 import {
   getSnaptradeHoldingsFromDB,
   getSnaptradeOptionsFromDB,
@@ -25,10 +25,10 @@ import {
   getSnaptradeCredentialsWithFallback,
   syncSnaptradeInvestments,
   populateInvestmentAccountsInDB,
-} from "../_utils/snaptrade";
-import { clearInvestmentCache } from "@/app/_shared/utils/investmentCache";
-import { styles } from "@/app/_styles/investmentsStyles";
-import InstitutionSelectionModal from "@/app/_components/modals/InstitutionSelectionModal";
+} from "@/src/utils/snaptrade";
+import { clearInvestmentCache } from "@/src/shared/utils/investmentCache";
+import { styles } from "@/src/styles/investmentsStyles";
+import InstitutionSelectionModal from "@/src/components/modals/InstitutionSelectionModal";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 
@@ -675,7 +675,7 @@ export default function InvestmentsScreen({
               <Image
                 source={{ uri: getBrokerageLogoUrl(brokerageName) }}
                 style={styles.brokerageLogo}
-                defaultSource={require("../assets/icon.png")}
+                defaultSource={require("../../assets/images/icon.png")}
               />
               <View style={styles.brokerageDetails}>
                 <Text style={styles.accountName}>{brokerageName}</Text>
@@ -866,7 +866,7 @@ export default function InvestmentsScreen({
                     <Image
                       source={{ uri: getCompanyLogoUrl(h.symbol) }}
                       style={styles.stockLogo}
-                      defaultSource={require("../assets/icon.png")}
+                      defaultSource={require("../../assets/images/icon.png")}
                     />
                     <View style={styles.stockInfo}>
                       <Text style={styles.stockSymbol}>{h.symbol}</Text>

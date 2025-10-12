@@ -11,21 +11,28 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { supabase } from "@/app/_lib/supabase/supabase";
+import { supabase } from "@/src/lib/supabase/supabase";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
-import { fetchLinkToken, handlePlaidConnect } from "@/app/_utils/plaid";
+import { fetchLinkToken, handlePlaidConnect } from "@/src/utils/plaid";
 import { BlurView } from "expo-blur";
-import logger from "@/app/_utils/logger";
+import {
+  useNavigationContext,
+  OnboardingStage,
+} from "@/src/contexts/NavigationContext";
+import logger from "@/src/utils/logger";
+import { logOnboardingEvent } from "@/src/utils/onboarding";
 
 export default function AccountConnectionScreen() {
   const params = useLocalSearchParams();
   const router = useRouter();
+  const { updateOnboardingStage } = useNavigationContext();
   const [isLoading, setIsLoading] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [linkToken, setLinkToken] = useState<string | null>(null);
   const [hasConnectedBank, setHasConnectedBank] = useState(false);
 
   useEffect(() => {
+    logOnboardingEvent({ stage: "plaid", action: "view" });
     const initializePlaid = async () => {
       try {
         const token = await fetchLinkToken();
@@ -63,8 +70,8 @@ export default function AccountConnectionScreen() {
           // itemId is already stored via addItemId in handlePlaidConnect
 
           Alert.alert(
-            "Success!",
-            "Your bank account has been connected successfully.",
+            "Connected!",
+            "Connected 1 account. Add more now or later—your call.",
             [
               {
                 text: "Continue",
@@ -73,7 +80,8 @@ export default function AccountConnectionScreen() {
                   await supabase.auth.updateUser({
                     data: { hasConnectedBank: true },
                   });
-                  router.replace("/(onboarding)/final");
+                  await updateOnboardingStage(OnboardingStage.FINAL);
+                  logOnboardingEvent({ stage: "plaid", action: "success" });
                 },
               },
             ]
@@ -85,6 +93,11 @@ export default function AccountConnectionScreen() {
           setIsConnecting(false);
 
           logger.info("❌ Plaid connection error:", error);
+          logOnboardingEvent({
+            stage: "plaid",
+            action: "error",
+            errorCode: error?.message || error?.error?.errorCode,
+          });
 
           if (error?.error?.errorCode === "INVALID_LINK_TOKEN") {
             Alert.alert(
@@ -113,6 +126,11 @@ export default function AccountConnectionScreen() {
       );
     } catch (error) {
       logger.error("Error connecting bank:", error);
+      logOnboardingEvent({
+        stage: "plaid",
+        action: "error",
+        errorCode: (error as any)?.message,
+      });
       Alert.alert(
         "Connection Failed",
         "Unable to connect your bank account. Please try again."
@@ -121,81 +139,55 @@ export default function AccountConnectionScreen() {
     }
   };
 
-  const benefits = [
-    {
-      icon: "bulb-outline",
-      title: "Smart savings",
-      description: "Personalized recommendations",
-      color: "#FFD700", // Bright gold
-    },
-    {
-      icon: "analytics-outline",
-      title: "Wealth Building",
-      description: "Financial Planning & Goal tracking",
-      color: "#4CAF50", // Nice green
-    },
-    {
-      icon: "trending-up-outline",
-      title: "Net worth & debt tracking",
-      description:
-        "See your complete financial picture in one place with real-time updates",
-      color: "#4A90E2", // Keeping the existing blue
-    },
-  ];
-
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <LinearGradient
-        colors={["#1A1A2E", "#16213E", "#0D1117"]}
-        locations={[0, 0.5, 1]}
-        style={styles.container}
+    <LinearGradient
+      colors={["#1A1A2E", "#16213E", "#0D1117"]}
+      locations={[0, 0.5, 1]}
+      style={styles.container}
+    >
+      <SafeAreaView
+        style={styles.safeArea}
+        edges={["top", "left", "right", "bottom"]}
       >
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => router.replace("/(onboarding)/intent")}
+        <View
+          style={[
+            styles.content,
+            { paddingBottom: Platform.OS === "ios" ? 24 : 24 },
+          ]}
         >
-          <Ionicons name="arrow-back" size={24} color="#fff" />
-        </TouchableOpacity>
-
-        <View style={styles.content}>
           <View style={styles.header}>
-            <Text style={styles.title}>Let's see the full picture</Text>
-            <Text style={styles.subtitle}>
-              Connect at least one account so we can give you personalized
-              insights.
+            <Text style={styles.title}>Connect at least 1 account</Text>
+            <Text style={styles.subtitle}>Real advice needs real data</Text>
+            <Text style={styles.description}>
+              This helps us analyze your spending patterns, track your goals,
+              and give you personalized insights to help you build and manage
+              wealth smarter.
             </Text>
           </View>
 
-          <View style={styles.benefitsContainer}>
-            <View style={styles.benefitsRow}>
-              {benefits.slice(0, 2).map((benefit, index) => (
-                <View key={index} style={styles.benefitCard}>
-                  <View style={styles.benefitIconContainer}>
-                    <Ionicons
-                      name={benefit.icon as any}
-                      size={20}
-                      color={benefit.color}
-                    />
-                  </View>
-                  <Text style={styles.benefitTitle}>{benefit.title}</Text>
-                  <Text style={styles.benefitDescription}>
-                    {benefit.description}
-                  </Text>
-                </View>
-              ))}
-            </View>
-            <View style={styles.benefitCardFull}>
-              <View style={styles.benefitIconContainerFull}>
-                <Ionicons
-                  name={benefits[2].icon as any}
-                  size={24}
-                  color={benefits[2].color}
-                />
+          <View style={styles.trustSection}>
+            <View style={styles.trustCard}>
+              <View style={styles.trustIconContainer}>
+                <Ionicons name="shield-checkmark" size={24} color="#00D4AA" />
               </View>
-              <Text style={styles.benefitTitleFull}>{benefits[2].title}</Text>
-              <Text style={styles.benefitDescriptionFull}>
-                {benefits[2].description}
-              </Text>
+              <View style={styles.trustContent}>
+                <Text style={styles.trustTitle}>Bank-level security</Text>
+                <Text style={styles.trustSubtitle}>
+                  Used by Venmo, Robinhood • Read-only • Encrypted
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.trustCard}>
+              <View style={styles.trustIconContainer}>
+                <Ionicons name="time-outline" size={24} color="#4A90E2" />
+              </View>
+              <View style={styles.trustContent}>
+                <Text style={styles.trustTitle}>Takes ~90 seconds</Text>
+                <Text style={styles.trustSubtitle}>
+                  See insights right after connecting
+                </Text>
+              </View>
             </View>
           </View>
 
@@ -229,9 +221,39 @@ export default function AccountConnectionScreen() {
                 color="#A0A0A0"
               />
               <Text style={styles.securityText}>
-                We securely connect your bank account with Plaid
+                We securely connect via Plaid
               </Text>
             </View>
+            {hasConnectedBank && (
+              <View style={{ marginTop: 10, gap: 8 }}>
+                <TouchableOpacity
+                  style={[styles.connectButton]}
+                  onPress={handleConnect}
+                  disabled={isLoading}
+                >
+                  <Text style={styles.connectButtonText}>
+                    Add another account
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={async () => {
+                    try {
+                      await updateOnboardingStage(OnboardingStage.FINAL);
+                    } catch {}
+                  }}
+                >
+                  <Text
+                    style={{
+                      color: "#fff",
+                      textAlign: "center",
+                      textDecorationLine: "underline",
+                    }}
+                  >
+                    Continue
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
         </View>
 
@@ -250,28 +272,19 @@ export default function AccountConnectionScreen() {
             </View>
           </View>
         )}
-      </LinearGradient>
-    </SafeAreaView>
+      </SafeAreaView>
+    </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: "#1A1A2E",
+    backgroundColor: "transparent",
   },
   container: {
     flex: 1,
     paddingTop: Platform.OS === "ios" ? 40 : 20,
-  },
-  backButton: {
-    position: "absolute",
-    top: Platform.OS === "ios" ? 40 : 20,
-    left: 24,
-    zIndex: 10,
-    width: 40,
-    height: 40,
-    justifyContent: "center",
   },
   content: {
     flex: 1,
@@ -280,104 +293,65 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   header: {
-    marginBottom: 32,
+    marginBottom: 40,
   },
   title: {
     fontSize: 28,
     fontWeight: "700",
     color: "#fff",
-    marginBottom: 10,
+    marginBottom: 8,
     textAlign: "left",
     lineHeight: 34,
   },
   subtitle: {
+    fontSize: 18,
+    color: "#4A90E2",
+    lineHeight: 24,
+    textAlign: "left",
+    fontWeight: "600",
+    marginBottom: 16,
+  },
+  description: {
     fontSize: 16,
-    color: "rgba(255, 255, 255, 0.7)",
+    color: "rgba(255, 255, 255, 0.8)",
     lineHeight: 24,
     textAlign: "left",
   },
-  benefitsContainer: {
-    gap: 10,
+  trustSection: {
+    gap: 16,
+    marginBottom: 40,
   },
-  benefitsRow: {
+  trustCard: {
+    backgroundColor: "rgba(255, 255, 255, 0.03)",
+    borderRadius: 16,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.1)",
     flexDirection: "row",
-    gap: 20,
-  },
-  benefitCard: {
-    flex: 1,
-    backgroundColor: "rgba(255, 255, 255, 0.03)",
-    borderRadius: 12,
-    padding: 10,
-    borderWidth: 1,
-    borderColor: "rgba(74, 144, 226, 0.2)",
-    shadowColor: "#4A90E2",
-    shadowOpacity: 0.15,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 5,
     alignItems: "center",
+    gap: 16,
   },
-  benefitIconContainer: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+  trustIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     backgroundColor: "rgba(255, 255, 255, 0.08)",
     justifyContent: "center",
     alignItems: "center",
-    marginBottom: 6,
   },
-  benefitContent: {
+  trustContent: {
     flex: 1,
-    justifyContent: "center",
   },
-  benefitTitle: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#fff",
-    marginBottom: 3,
-    textAlign: "center",
-  },
-  benefitDescription: {
-    fontSize: 12,
-    color: "rgba(255, 255, 255, 0.7)",
-    lineHeight: 16,
-    textAlign: "center",
-  },
-  benefitCardFull: {
-    backgroundColor: "rgba(255, 255, 255, 0.03)",
-    borderRadius: 16,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: "rgba(74, 144, 226, 0.2)",
-    shadowColor: "#4A90E2",
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 5,
-    alignItems: "center",
-    marginTop: 10,
-  },
-  benefitIconContainerFull: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "rgba(255, 255, 255, 0.08)",
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 8,
-  },
-  benefitTitleFull: {
-    fontSize: 15,
+  trustTitle: {
+    fontSize: 16,
     fontWeight: "600",
     color: "#fff",
     marginBottom: 4,
-    textAlign: "center",
   },
-  benefitDescriptionFull: {
-    fontSize: 13,
+  trustSubtitle: {
+    fontSize: 14,
     color: "rgba(255, 255, 255, 0.7)",
-    lineHeight: 18,
-    textAlign: "center",
+    lineHeight: 20,
   },
   buttonContainer: {
     alignItems: "center",
@@ -385,7 +359,7 @@ const styles = StyleSheet.create({
   },
   connectButton: {
     backgroundColor: "#4A90E2",
-    borderRadius: 16,
+    borderRadius: 26,
     padding: 16,
     alignItems: "center",
     width: "100%",

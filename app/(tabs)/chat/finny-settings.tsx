@@ -20,10 +20,9 @@ import FinnyCheckinScreen from "@/app/(tabs)/chat/finny-checkin";
 import LegalSummaryScreen from "@/app/(tabs)/chat/legal-summary";
 import HowFinnyWorksScreen from "@/app/(tabs)/chat/how-finny-works";
 import ChatHistoryScreen from "@/app/(tabs)/chat/history";
-import { useAuth } from "@/app/_contexts/AuthContext";
-import { supabase } from "@/app/_lib/supabase/supabase";
-import { useChatContext } from "@/app/_contexts/ChatContext";
-import { SettingItemProps, MemorySummary } from "@/app/_types/plaid";
+import { useAuth } from "@/src/contexts/AuthContext";
+import { useChatContext } from "@/src/contexts/ChatContext";
+import { SettingItemProps, MemorySummary } from "@/src/types/plaid";
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
 

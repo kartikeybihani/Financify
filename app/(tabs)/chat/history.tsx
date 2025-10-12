@@ -16,10 +16,10 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
-import { useAuth } from "@/app/_contexts/AuthContext";
-import { useChatContext } from "@/app/_contexts/ChatContext";
-import { supabase } from "@/app/_lib/supabase/supabase";
-import { ChatSession } from "@/app/_types/chatHistory";
+import { useAuth } from "@/src/contexts/AuthContext";
+import { useChatContext } from "@/src/contexts/ChatContext";
+import { supabase } from "@/src/lib/supabase/supabase";
+import { ChatSession } from "@/src/types/chatHistory";
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
 

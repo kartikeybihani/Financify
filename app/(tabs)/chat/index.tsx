@@ -20,12 +20,12 @@ import { StatusBar } from "expo-status-bar";
 import { Ionicons } from "@expo/vector-icons";
 import { AntDesign } from "@expo/vector-icons";
 import { useRouter, useFocusEffect } from "expo-router";
-import { ChatMessageComponent } from "@/app/_components/chat/ChatMessage";
-import { NudgeGrid } from "@/app/_components/chat/NudgeGrid";
-import { useChatContext } from "@/app/_contexts/ChatContext";
-import styles from "@/app/_styles/chatStyles";
-import TypingIndicator from "@/app/_components/chat/TypingIndicator";
-import ConversationStartersModal from "@/app/_components/chat/ConversationStartersModal";
+import { ChatMessageComponent } from "@/src/components/chat/ChatMessage";
+import { NudgeGrid } from "@/src/components/chat/NudgeGrid";
+import { useChatContext } from "@/src/contexts/ChatContext";
+import styles from "@/src/styles/chatStyles";
+import TypingIndicator from "@/src/components/chat/TypingIndicator";
+import ConversationStartersModal from "@/src/components/chat/ConversationStartersModal";
 
 interface Suggestion {
   text: string;
@@ -374,12 +374,14 @@ export default function ChatScreen() {
 
   return (
     <View style={styles.safeArea}>
-      <SafeAreaView style={{ flex: 1, marginBottom: insets.bottom - 10 }}>
+      <SafeAreaView
+        style={{ flex: 1, paddingBottom: Math.max(insets.bottom, 12) }}
+      >
         <View style={styles.headerContainer}>
           <View style={styles.titleContainer}>
             <View style={styles.mascotContainer}>
               <Animated.Image
-                source={require("../../assets/mascot1.jpg")}
+                source={require("../../../assets/images/mascot1.jpg")}
                 style={[
                   styles.mascotImage,
                   {

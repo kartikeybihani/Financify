@@ -1,12 +1,14 @@
 import { Redirect } from "expo-router";
-import { useAuth } from "@/app/_contexts/AuthContext";
+import { useNavigationContext } from "@/src/contexts/NavigationContext";
 
 export default function Index() {
-  const { session, isLoading } = useAuth();
+  const { isLoading } = useNavigationContext();
 
   if (isLoading) {
     return null;
   }
 
-  return <Redirect href={session ? "/(tabs)" : "/(onboarding)/welcome"} />;
+  // Let NavigationContext handle all navigation decisions
+  // It will determine the correct screen based on onboarding status
+  return <Redirect href="/(onboarding)/welcome" />;
 }

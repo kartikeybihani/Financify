@@ -10,11 +10,11 @@ import {
   Easing,
 } from "react-native";
 import { useRouter } from "expo-router";
-import { supabase } from "@/app/_lib/supabase/supabase";
-import logger from "@/app/_utils/logger";
-import AuthTemplate from "@/app/_components/auth/AuthTemplate";
-import AuthInput from "@/app/_components/auth/AuthInput";
-import AuthButton from "@/app/_components/auth/AuthButton";
+import { supabase } from "@/src/lib/supabase/supabase";
+import logger from "@/src/utils/logger";
+import AuthTemplate from "@/src/components/auth/AuthTemplate";
+import AuthInput from "@/src/components/auth/AuthInput";
+import AuthButton from "@/src/components/auth/AuthButton";
 import { LinearGradient } from "expo-linear-gradient";
 
 const { width } = Dimensions.get("window");
@@ -174,7 +174,7 @@ export default function LoginScreen() {
       showFooter={false}
       footerLinkText="Don't have an account?"
       footerLinkHighlight="Sign up"
-      footerLinkAction={() => router.replace("../signup")}
+      footerLinkAction={() => router.push("../signup")}
       backgroundColors={[
         "rgba(8, 11, 16, 0.99)",
         "rgba(18, 26, 50, 0.95)",
@@ -283,7 +283,7 @@ export default function LoginScreen() {
 
       {step === 1 && (
         <TouchableOpacity
-          onPress={() => router.replace("../signup")}
+          onPress={() => router.push("../signup")}
           style={styles.linkContainer}
         >
           <Text style={styles.linkText}>

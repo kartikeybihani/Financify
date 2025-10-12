@@ -1,4 +1,4 @@
-import { Account } from "@/app/_types/plaid";
+import { Account } from "@/src/types/plaid";
 
 export interface Category {
   id: string;

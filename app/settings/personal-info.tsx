@@ -9,12 +9,12 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useLocalSearchParams } from "expo-router";
-import { supabase } from "@/app/_lib/supabase/supabase";
+import { supabase } from "@/src/lib/supabase/supabase";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import EditEmailModal from "@/app/_components/menu/EditEmailModal";
-import EditPhoneModal from "@/app/_components/menu/EditPhoneModal";
-import EditNameModal from "@/app/_components/menu/EditNameModal";
-import logger from "@/app/_utils/logger";
+import EditEmailModal from "@/src/components/menu/EditEmailModal";
+import EditPhoneModal from "@/src/components/menu/EditPhoneModal";
+import EditNameModal from "@/src/components/menu/EditNameModal";
+import logger from "@/src/utils/logger";
 
 export default function PersonalInfoScreen() {
   const router = useRouter();
