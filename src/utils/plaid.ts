@@ -3,6 +3,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { open, create } from "react-native-plaid-link-sdk";
 import {supabase} from "@/src/lib/supabase/supabase";
 import logger from "@/src/utils/logger";
+import { getPlaidInstitutionId, logInstitutionMapping } from "@/src/components/shared/modal-constants";
 
 const BASE_URL = process.env.EXPO_PUBLIC_APP_BASE_URL || "https://financify-rose.vercel.app";
 
@@ -107,11 +108,12 @@ export const handleInstitutionConnect = async (
     logger.info(`🔄 Starting institution-specific connection for: ${institutionId}`);
     
     // Get the Plaid institution ID
-    const { getPlaidInstitutionId } = await import("@/src/components/shared/modal-constants");
     const plaidInstitutionId = getPlaidInstitutionId(institutionId);
     
     if (!plaidInstitutionId) {
       logger.warn(`⚠️ No Plaid institution ID found for: ${institutionId}, falling back to general flow`);
+      logger.info(`🔍 Available institution mappings:`);
+      logInstitutionMapping();
       // Fall back to general connection flow
       const linkToken = await fetchLinkToken();
       return handlePlaidConnect(linkToken, onSuccess, onExit);
@@ -126,6 +128,17 @@ export const handleInstitutionConnect = async (
     return handlePlaidConnect(linkToken, onSuccess, onExit);
   } catch (error) {
     logger.error(`❌ Failed to connect to institution ${institutionId}:`, error);
+    
+    // Enhanced error logging for debugging
+    if (error instanceof Error && error.message.includes('invalid institution_id')) {
+      logger.error(`🔍 Institution ID Debug Info:`, {
+        requestedInstitution: institutionId,
+        plaidInstitutionId: getPlaidInstitutionId(institutionId),
+        errorMessage: error instanceof Error ? error.message : String(error),
+        suggestion: 'Check if institution is registered in Plaid Dashboard or if ID has changed'
+      });
+    }
+    
     throw error;
   }
 };

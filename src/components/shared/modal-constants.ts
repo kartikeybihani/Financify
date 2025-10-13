@@ -168,22 +168,39 @@ export const CASH_DEPOSIT_INSTITUTIONS: Institution[] = [
 
 // Mapping of institution IDs to Plaid institution IDs
 // These are the actual Plaid institution IDs that can be used with linkTokenCreate
+// Updated with verified institution IDs (as of 2024)
 export const PLAID_INSTITUTION_ID_MAP: Record<string, string> = {
   chase: "ins_56",
-  bank_of_america: "ins_100866",
+  bank_of_america: "ins_100866", 
   wells_fargo: "ins_127991",
   capital_one: "ins_128026",
   american_express: "ins_10",
   chime: "ins_35",
-  discover: "ins_116949",
+  discover: "ins_33",
   citibank: "ins_5",
-  // Note: Venmo, US Bank, and Fidelity were not found in Plaid's institution list
-  // They may not support Plaid integration or may have different names
+  // Note: Some institutions may require OAuth registration in Plaid Dashboard
+  // If you continue to get "invalid institution_id" errors, check:
+  // 1. Institution is registered in your Plaid Dashboard
+  // 2. Institution supports the products you're requesting
+  // 3. Institution IDs haven't changed (verify via /institutions/get endpoint)
 };
 
 // Helper function to get Plaid institution ID
 export const getPlaidInstitutionId = (institutionId: string): string | null => {
   return PLAID_INSTITUTION_ID_MAP[institutionId] || null;
+};
+
+// Helper function to validate institution ID format
+export const isValidInstitutionId = (institutionId: string): boolean => {
+  return institutionId.startsWith('ins_') && institutionId.length > 4;
+};
+
+// Debug helper to log institution mapping for troubleshooting
+export const logInstitutionMapping = () => {
+  console.log('🏦 Current Plaid Institution ID Mapping:');
+  Object.entries(PLAID_INSTITUTION_ID_MAP).forEach(([key, value]) => {
+    console.log(`  ${key}: ${value}`);
+  });
 };
 
 // Credit card institutions (for credit cards & loans)
