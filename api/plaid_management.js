@@ -426,23 +426,15 @@ export default async function handler(req, res) {
           req.body.routing_number
         );
       }
-
-      // Use minimal products for better compatibility across all institutions
-      linkTokenParams.products = ["transactions"];
-      linkTokenParams.optional_products = ["auth"];
-
-      console.log(
-        "🔧 Using minimal products for institution-specific connection"
-      );
-    } else {
-      // For general link tokens, we can request more products
-      linkTokenParams.products = ["transactions"];
-      linkTokenParams.required_if_supported_products = ["investments"];
-      linkTokenParams.optional_products = ["auth", "liabilities"];
-      linkTokenParams.additional_consented_products = [];
-
-      console.log("🔧 Using full product set for general connection");
     }
+
+    // Use the same products for all institutions (original configuration)
+    linkTokenParams.products = ["transactions"];
+    linkTokenParams.required_if_supported_products = ["investments"];
+    linkTokenParams.optional_products = ["auth", "liabilities"];
+    linkTokenParams.additional_consented_products = [];
+
+    console.log("🔧 Using standard product configuration for all connections");
 
     console.log(
       "📋 Final link token parameters:",
