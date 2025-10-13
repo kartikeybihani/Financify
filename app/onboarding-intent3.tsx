@@ -48,7 +48,6 @@ export default function IntentQuestion3Screen() {
   useEffect(() => {
     isMounted.current = true;
     logOnboardingEvent({ stage: "q1_3", action: "view" });
-    logger.info("🎬 IntentQuestion3Screen: Screen mounted");
 
     // Restore saved answer if exists
     const restoreAnswer = async () => {
@@ -60,29 +59,20 @@ export default function IntentQuestion3Screen() {
           const answers = JSON.parse(savedAnswers);
           if (answers.emergency_readiness) {
             setSelectedOption(answers.emergency_readiness);
-            logger.info("📥 IntentQuestion3Screen: Restored answer", {
-              answer: answers.emergency_readiness,
-            });
           }
         }
-      } catch (error) {
-        logger.error("❌ IntentQuestion3Screen: Error restoring answer", error);
-      }
+      } catch (error) {}
     };
 
     restoreAnswer();
 
     return () => {
       isMounted.current = false;
-      logger.info("🎬 IntentQuestion3Screen: Screen unmounted");
     };
   }, []);
 
   const handleSelect = async (id: string) => {
     if (isProcessing) {
-      logger.info(
-        "⚠️ IntentQuestion3Screen: Already processing, ignoring click"
-      );
       return;
     }
 
@@ -91,7 +81,6 @@ export default function IntentQuestion3Screen() {
       return;
     }
 
-    logger.info("👆 IntentQuestion3Screen: Option selected", { id });
     setSelectedOption(id);
     setIsProcessing(true);
 
@@ -104,13 +93,6 @@ export default function IntentQuestion3Screen() {
 
   const handleContinue = async (selectedId: string) => {
     try {
-      logger.info(
-        "💾 IntentQuestion3Screen: Saving final answer to AsyncStorage",
-        {
-          answer: selectedId,
-        }
-      );
-
       // Get existing answers and update
       const existingAnswers = await AsyncStorage.getItem(
         "pending_intent_answers"
@@ -131,18 +113,14 @@ export default function IntentQuestion3Screen() {
         if (user?.id) {
           await supabase
             .from("profiles")
-            .update({ onboarding_step: 2 })
+            .update({ onboarding_step: 2, intent_q3: selectedId })
             .eq("id", user.id);
         }
       } catch {}
 
-      logger.info(
-        "✅ IntentQuestion3Screen: All intent answers saved, navigating to profile"
-      );
       router.replace("/onboarding-profile" as any);
       logOnboardingEvent({ stage: "q1_3", action: "complete" });
     } catch (error) {
-      logger.error("❌ IntentQuestion3Screen: Error saving answer:", error);
       setIsProcessing(false);
     }
   };

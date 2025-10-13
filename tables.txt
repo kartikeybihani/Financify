@@ -209,6 +209,22 @@ CREATE TABLE public.memory_summary (
   CONSTRAINT memory_summary_pkey PRIMARY KEY (id),
   CONSTRAINT memory_summary_history_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
 );
+CREATE TABLE public.profiles (
+  id uuid NOT NULL,
+  onboarding_completed boolean NOT NULL DEFAULT false,
+  onboarding_step integer NOT NULL DEFAULT 0,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  intent_q1 text,
+  intent_q2 text,
+  intent_q3 text,
+  first_name text,
+  last_name text,
+  age integer CHECK (age IS NULL OR age >= 0),
+  occupation text,
+  CONSTRAINT profiles_pkey PRIMARY KEY (id),
+  CONSTRAINT profiles_id_fkey FOREIGN KEY (id) REFERENCES auth.users(id)
+);
 CREATE TABLE public.recurring_streams (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL,

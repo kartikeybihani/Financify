@@ -13,9 +13,9 @@ import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { supabase } from "@/src/lib/supabase/supabase";
 import logger from "@/src/utils/logger";
 import { logOnboardingEvent } from "@/src/utils/onboarding";
+import { supabase } from "@/src/lib/supabase/supabase";
 
 const OPTIONS = [
   {
@@ -53,7 +53,6 @@ export default function IntentQuestion1Screen() {
   useEffect(() => {
     isMounted.current = true;
     logOnboardingEvent({ stage: "q1_1", action: "view" });
-    logger.info("🎬 IntentQuestion1Screen: Screen mounted");
 
     // Restore saved answer if exists
     const restoreAnswer = async () => {
@@ -65,29 +64,20 @@ export default function IntentQuestion1Screen() {
           const answers = JSON.parse(savedAnswers);
           if (answers.money_mindset) {
             setSelectedOption(answers.money_mindset);
-            logger.info("📥 IntentQuestion1Screen: Restored answer", {
-              answer: answers.money_mindset,
-            });
           }
         }
-      } catch (error) {
-        logger.error("❌ IntentQuestion1Screen: Error restoring answer", error);
-      }
+      } catch (error) {}
     };
 
     restoreAnswer();
 
     return () => {
       isMounted.current = false;
-      logger.info("🎬 IntentQuestion1Screen: Screen unmounted");
     };
   }, []);
 
   const handleSelect = async (id: string) => {
     if (isProcessing) {
-      logger.info(
-        "⚠️ IntentQuestion1Screen: Already processing, ignoring click"
-      );
       return;
     }
 
@@ -96,7 +86,6 @@ export default function IntentQuestion1Screen() {
       return;
     }
 
-    logger.info("👆 IntentQuestion1Screen: Option selected", { id });
     setSelectedOption(id);
     setIsProcessing(true);
 
@@ -109,10 +98,6 @@ export default function IntentQuestion1Screen() {
 
   const handleContinue = async (selectedId: string) => {
     try {
-      logger.info("💾 IntentQuestion1Screen: Saving answer to AsyncStorage", {
-        answer: selectedId,
-      });
-
       // Get existing answers and update
       const existingAnswers = await AsyncStorage.getItem(
         "pending_intent_answers"
@@ -125,7 +110,7 @@ export default function IntentQuestion1Screen() {
         JSON.stringify(answers)
       );
 
-      // Persist progress in profiles (step 1 still -> next is step 2 handled by gate)
+      // Persist progress and answer in profiles (step 1)
       try {
         const {
           data: { user },
@@ -133,18 +118,14 @@ export default function IntentQuestion1Screen() {
         if (user?.id) {
           await supabase
             .from("profiles")
-            .update({ onboarding_step: 1 })
+            .update({ onboarding_step: 1, intent_q1: selectedId })
             .eq("id", user.id);
         }
       } catch {}
 
-      logger.info(
-        "✅ IntentQuestion1Screen: Answer saved, navigating to question 2"
-      );
       router.replace("/onboarding-intent2" as any);
       logOnboardingEvent({ stage: "q1_1", action: "complete" });
     } catch (error) {
-      logger.error("❌ IntentQuestion1Screen: Error saving answer:", error);
       setIsProcessing(false);
     }
   };

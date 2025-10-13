@@ -47,7 +47,6 @@ export default function AccountConnectionScreen() {
 
   useEffect(() => {
     logOnboardingEvent({ stage: "plaid", action: "view" });
-    logger.info("🎬 AccountConnectionScreen: Screen mounted");
 
     const initializePlaid = async () => {
       try {
@@ -81,10 +80,6 @@ export default function AccountConnectionScreen() {
 
     initializePlaid();
     checkExistingAccounts();
-
-    return () => {
-      logger.info("🎬 AccountConnectionScreen: Screen unmounted");
-    };
   }, []);
 
   const fetchConnectedAccounts = async (

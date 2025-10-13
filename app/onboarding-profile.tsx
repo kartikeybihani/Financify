@@ -24,11 +24,6 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 export default function AboutYouScreen() {
   useEffect(() => {
     logOnboardingEvent({ stage: "q2", action: "view" });
-    logger.info("🎬 AboutYouScreen: Screen mounted");
-
-    return () => {
-      logger.info("🎬 AboutYouScreen: Screen unmounted");
-    };
   }, []);
   const router = useRouter();
   const [firstName, setFirstName] = useState("");
@@ -69,7 +64,7 @@ export default function AboutYouScreen() {
         JSON.stringify(profileData)
       );
 
-      // Mark onboarding step -> 3 (connect accounts)
+      // Persist profile data and step -> 3 (connect accounts)
       try {
         const {
           data: { user },
@@ -77,17 +72,19 @@ export default function AboutYouScreen() {
         if (user?.id) {
           await supabase
             .from("profiles")
-            .update({ onboarding_step: 3 })
+            .update({
+              onboarding_step: 3,
+              first_name: profileData.first_name,
+              last_name: profileData.last_name,
+              age: profileData.age,
+              occupation: profileData.occupation,
+            })
             .eq("id", user.id);
         }
       } catch {}
 
       // Navigate to connect
       router.replace("/onboarding-connect" as any);
-
-      logger.info(
-        "✅ AboutYouScreen: Navigated to connect, profile saved locally"
-      );
       logOnboardingEvent({ stage: "q2", action: "complete" });
     } catch (error) {
       logger.error("❌ AboutYouScreen: Error saving user data:", error);
