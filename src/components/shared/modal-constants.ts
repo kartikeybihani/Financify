@@ -185,9 +185,27 @@ export const PLAID_INSTITUTION_ID_MAP: Record<string, string> = {
   // 3. Institution IDs haven't changed (verify via /institutions/get endpoint)
 };
 
+// Mapping of institution IDs to routing numbers for Institution Select shortcut
+// These routing numbers are used with institution_data to pre-select institutions
+export const INSTITUTION_ROUTING_NUMBER_MAP: Record<string, string> = {
+  chase: "021000021",           // Chase Bank
+  bank_of_america: "026009593", // Bank of America
+  wells_fargo: "121000248",     // Wells Fargo
+  capital_one: "031176110",     // Capital One
+  american_express: "124085066", // American Express
+  chime: "031101279",           // Chime (Bancorp Bank)
+  discover: "031100924",        // Discover Bank
+  citibank: "021000089",        // Citibank
+};
+
 // Helper function to get Plaid institution ID
 export const getPlaidInstitutionId = (institutionId: string): string | null => {
   return PLAID_INSTITUTION_ID_MAP[institutionId] || null;
+};
+
+// Helper function to get institution routing number for Institution Select shortcut
+export const getInstitutionRoutingNumber = (institutionId: string): string | null => {
+  return INSTITUTION_ROUTING_NUMBER_MAP[institutionId] || null;
 };
 
 // Helper function to validate institution ID format
@@ -199,6 +217,11 @@ export const isValidInstitutionId = (institutionId: string): boolean => {
 export const logInstitutionMapping = () => {
   console.log('🏦 Current Plaid Institution ID Mapping:');
   Object.entries(PLAID_INSTITUTION_ID_MAP).forEach(([key, value]) => {
+    console.log(`  ${key}: ${value}`);
+  });
+  
+  console.log('🏦 Current Institution Routing Number Mapping:');
+  Object.entries(INSTITUTION_ROUTING_NUMBER_MAP).forEach(([key, value]) => {
     console.log(`  ${key}: ${value}`);
   });
 };

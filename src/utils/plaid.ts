@@ -77,15 +77,20 @@ export async function getPrimaryItemId(): Promise<string | null> {
 }
 
 // === Create Link Token ===
-export const fetchLinkToken = async (institution_id?: string) => {
+export const fetchLinkToken = async (institution_id?: string, routing_number?: string) => {
   const { data: { user } } = await supabase.auth.getUser();
   
   const requestBody: any = { mode: "create", user_id: user?.id };
   
-  // Add institution_id if provided for direct institution login
+  // Add institution_id and routing_number if provided for Institution Select shortcut
   if (institution_id) {
     requestBody.institution_id = institution_id;
     logger.info("🏦 Fetching link token for specific institution:", institution_id);
+  }
+  
+  if (routing_number) {
+    requestBody.routing_number = routing_number;
+    logger.info("🎯 Using routing number for Institution Select shortcut:", routing_number);
   }
 
   const res = await fetch(`${BASE_URL}/api/plaid_management`, {
@@ -121,11 +126,21 @@ export const handleInstitutionConnect = async (
     
     logger.info(`🏦 Using Plaid institution ID: ${plaidInstitutionId}`);
     
-    // Get institution-specific link token
-    const linkToken = await fetchLinkToken(plaidInstitutionId);
+    // Get the routing number for Institution Select shortcut
+    const { getInstitutionRoutingNumber } = await import("@/src/components/shared/modal-constants");
+    const routingNumber = getInstitutionRoutingNumber(institutionId);
     
-    // Use the existing connect flow with the institution-specific token
-    return handlePlaidConnect(linkToken, onSuccess, onExit);
+    if (routingNumber) {
+      logger.info(`🎯 Using Institution Select shortcut with routing number: ${routingNumber}`);
+      // Create link token with routing number for Institution Select shortcut
+      const linkToken = await fetchLinkToken(institutionId, routingNumber);
+      return handlePlaidConnect(linkToken, onSuccess, onExit);
+    } else {
+      logger.warn(`⚠️ No routing number found for ${institutionId}, using general flow`);
+      // Fall back to general connection flow
+      const linkToken = await fetchLinkToken();
+      return handlePlaidConnect(linkToken, onSuccess, onExit);
+    }
   } catch (error) {
     logger.error(`❌ Failed to connect to institution ${institutionId}:`, error);
     

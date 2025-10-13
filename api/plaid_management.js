@@ -408,16 +408,26 @@ export default async function handler(req, res) {
       redirect_uri,
     };
 
-    // Add institution_id if provided for direct institution login
+    // Handle institution-specific connections using Institution Select shortcut
     if (req.body.institution_id) {
-      linkTokenParams.institution_id = req.body.institution_id;
       console.log(
         "🏦 Creating link token for specific institution:",
         req.body.institution_id
       );
 
-      // For institution-specific tokens, use minimal products to avoid compatibility issues
-      // Some institutions don't support investments or other advanced products
+      // For US institutions, use Institution Select shortcut with routing_number
+      // This will pre-select the institution in Link without requiring institution_id
+      if (req.body.routing_number) {
+        linkTokenParams.institution_data = {
+          routing_number: req.body.routing_number,
+        };
+        console.log(
+          "🎯 Using Institution Select shortcut with routing number:",
+          req.body.routing_number
+        );
+      }
+
+      // Use minimal products for better compatibility across all institutions
       linkTokenParams.products = ["transactions"];
       linkTokenParams.optional_products = ["auth"];
 
