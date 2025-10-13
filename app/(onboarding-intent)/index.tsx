@@ -300,7 +300,7 @@ export default function IntentScreen() {
     } else {
       // Last question - move to next stage
       logger.info(
-        "🏁 IntentScreen: All questions completed, saving to AsyncStorage",
+        "🏁 IntentScreen: All questions completed, saving all data to Supabase",
         { allAnswers: newAnswers }
       );
       try {
@@ -308,13 +308,13 @@ export default function IntentScreen() {
           "🧭 IntentScreen: Saving answers and navigating to profile screen"
         );
 
-        // Save answers to AsyncStorage (NO Supabase update - wait until AccountConnectionScreen)
+        // Save answers to AsyncStorage for next screen to update Supabase
         await AsyncStorage.setItem(
           "pending_intent_answers",
           JSON.stringify(newAnswers)
         );
 
-        // Clear progress tracking since we're done with questions
+        // Clear progress tracking
         await AsyncStorage.removeItem("intent_answers");
         await AsyncStorage.removeItem("intent_progress");
 

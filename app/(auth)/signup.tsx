@@ -17,10 +17,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { supabase } from "@/src/lib/supabase/supabase";
 import { useRouter } from "expo-router";
-import {
-  useNavigationContext,
-  OnboardingStage,
-} from "@/src/contexts/NavigationContext";
+// NavigationContext will handle routing automatically based on onboarding status
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import logger from "@/src/utils/logger";
 import * as WebBrowser from "expo-web-browser";
@@ -28,7 +25,7 @@ const { width } = Dimensions.get("window");
 
 export default function SignupScreen() {
   const router = useRouter();
-  const { updateOnboardingStage } = useNavigationContext();
+  // NavigationContext will handle routing automatically
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -69,7 +66,10 @@ export default function SignupScreen() {
       email,
       password,
       options: {
-        data: { onboarding_complete: false },
+        data: {
+          onboarding_complete: false,
+          onboarding_stage: "q1", // Set initial stage to intent questions
+        },
       },
     });
 
@@ -85,9 +85,8 @@ export default function SignupScreen() {
       return;
     }
 
-    // Set onboarding started flag and update stage
+    // Set onboarding started flag - NavigationContext will handle routing
     await AsyncStorage.setItem("onboarding_started", "true");
-    await updateOnboardingStage(OnboardingStage.INTENT);
   };
 
   const handlePrivacyPolicy = async () => {

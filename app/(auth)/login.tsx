@@ -15,7 +15,6 @@ import logger from "@/src/utils/logger";
 import AuthTemplate from "@/src/components/auth/AuthTemplate";
 import AuthInput from "@/src/components/auth/AuthInput";
 import AuthButton from "@/src/components/auth/AuthButton";
-import { LinearGradient } from "expo-linear-gradient";
 
 const { width } = Dimensions.get("window");
 

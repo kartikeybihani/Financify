@@ -11,6 +11,7 @@ import { useEffect } from "react";
 import AuthProvider from "@/src/contexts/AuthContext";
 import NavigationProvider, {
   useNavigationContext,
+  NavigationState,
 } from "@/src/contexts/NavigationContext";
 import NavigationLoadingScreen from "@/src/components/shared/NavigationLoadingScreen";
 import { runStorageMigrationV2 } from "@/src/utils/migrate";

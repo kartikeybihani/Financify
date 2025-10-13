@@ -17,14 +17,17 @@ import { fetchLinkToken, handlePlaidConnect } from "@/src/utils/plaid";
 import { BlurView } from "expo-blur";
 import logger from "@/src/utils/logger";
 import { logOnboardingEvent } from "@/src/utils/onboarding";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 export default function AccountConnectionScreen() {
   const params = useLocalSearchParams();
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
+  const [isClosingPlaid, setIsClosingPlaid] = useState(false);
   const [linkToken, setLinkToken] = useState<string | null>(null);
   const [hasConnectedBank, setHasConnectedBank] = useState(false);
+  const [hasUpdatedStage, setHasUpdatedStage] = useState(false);
 
   useEffect(() => {
     logOnboardingEvent({ stage: "plaid", action: "view" });
@@ -66,9 +69,60 @@ export default function AccountConnectionScreen() {
         async (itemId: string) => {
           setHasConnectedBank(true);
           setIsLoading(false);
+          setIsClosingPlaid(true);
           setIsConnecting(true);
 
           // itemId is already stored via addItemId in handlePlaidConnect
+
+          // NOW collect ALL pending data and update Supabase once
+          try {
+            logger.info(
+              "💾 AccountConnectionScreen: Collecting all pending onboarding data"
+            );
+
+            const pendingIntent = await AsyncStorage.getItem(
+              "pending_intent_answers"
+            );
+            const pendingProfile = await AsyncStorage.getItem(
+              "pending_profile_data"
+            );
+
+            const intentData = pendingIntent ? JSON.parse(pendingIntent) : {};
+            const profileData = pendingProfile
+              ? JSON.parse(pendingProfile)
+              : {};
+
+            logger.info(
+              "💾 AccountConnectionScreen: Updating Supabase with all data",
+              {
+                intentData,
+                profileData,
+              }
+            );
+
+            // Single Supabase update with all data at once
+            await supabase.auth.updateUser({
+              data: {
+                ...intentData,
+                ...profileData,
+                onboarding_stage: "plaid",
+              },
+            });
+
+            // Clear all pending data
+            await AsyncStorage.removeItem("pending_intent_answers");
+            await AsyncStorage.removeItem("pending_profile_data");
+
+            logger.info(
+              "✅ AccountConnectionScreen: Successfully updated all onboarding data"
+            );
+            setHasUpdatedStage(true);
+          } catch (error) {
+            logger.error(
+              "❌ AccountConnectionScreen: Error updating onboarding data:",
+              error
+            );
+          }
 
           Alert.alert(
             "Connected!",
@@ -78,31 +132,17 @@ export default function AccountConnectionScreen() {
                 text: "Continue",
                 onPress: async () => {
                   setIsConnecting(false);
+                  setIsClosingPlaid(false);
 
                   logger.info(
-                    "🧭 AccountConnectionScreen: Navigating to final BEFORE updating Supabase"
+                    "🧭 AccountConnectionScreen: Navigating to complete screen"
                   );
 
-                  // Navigate FIRST (before USER_UPDATED event)
-                  router.replace("/(onboarding)/final");
-
-                  // Small delay to let navigation start
-                  await new Promise((resolve) => setTimeout(resolve, 150));
-
-                  // NOW update Supabase
-                  logger.info(
-                    "💾 AccountConnectionScreen: Updating connection status"
-                  );
-
-                  await supabase.auth.updateUser({
-                    data: {
-                      hasConnectedBank: true,
-                      onboarding_stage: "final", // Move to final stage
-                    },
-                  });
+                  // Navigate to complete screen
+                  router.replace("/(onboarding-complete)");
 
                   logger.info(
-                    "✅ AccountConnectionScreen: Successfully updated connection status"
+                    "✅ AccountConnectionScreen: Navigated to complete screen"
                   );
                   logOnboardingEvent({ stage: "plaid", action: "success" });
                 },
@@ -113,7 +153,13 @@ export default function AccountConnectionScreen() {
         // onExit:
         (error?: any) => {
           setIsLoading(false);
-          setIsConnecting(false);
+          setIsClosingPlaid(true);
+
+          // Reset after a short delay to allow the closing animation
+          setTimeout(() => {
+            setIsClosingPlaid(false);
+            setIsConnecting(false);
+          }, 500);
 
           logger.info("❌ Plaid connection error:", error);
           logOnboardingEvent({
@@ -262,26 +308,14 @@ export default function AccountConnectionScreen() {
                   onPress={async () => {
                     try {
                       logger.info(
-                        "🧭 AccountConnectionScreen: Skipping - navigating to final BEFORE updating Supabase"
+                        "🧭 AccountConnectionScreen: Navigating to complete screen (continuing)"
                       );
 
-                      // Navigate FIRST (before USER_UPDATED event)
-                      router.replace("/(onboarding)/final");
-
-                      // Small delay to let navigation start
-                      await new Promise((resolve) => setTimeout(resolve, 150));
-
-                      // NOW update onboarding stage
-                      logger.info(
-                        "💾 AccountConnectionScreen: Updating stage to final (skipped)"
-                      );
-
-                      await supabase.auth.updateUser({
-                        data: { onboarding_stage: "final" },
-                      });
+                      // Navigate WITHOUT updating Supabase (no USER_UPDATED event)
+                      router.replace("/(onboarding-complete)");
 
                       logger.info(
-                        "✅ AccountConnectionScreen: Successfully skipped to final"
+                        "✅ AccountConnectionScreen: Navigated to complete"
                       );
                     } catch (error) {
                       logger.error(
@@ -306,7 +340,7 @@ export default function AccountConnectionScreen() {
           </View>
         </View>
 
-        {(isLoading || isConnecting) && (
+        {(isLoading || isConnecting || isClosingPlaid) && (
           <View style={styles.loadingOverlay}>
             <BlurView
               intensity={95}
@@ -316,7 +350,7 @@ export default function AccountConnectionScreen() {
             <View style={styles.loadingContent}>
               <ActivityIndicator size="large" color="#4A90E2" />
               <Text style={styles.loadingText}>
-                {isLoading ? "Working with Plaid..." : "Closing Plaid..."}
+                {isClosingPlaid ? "Closing Plaid..." : "Opening Plaid..."}
               </Text>
             </View>
           </View>

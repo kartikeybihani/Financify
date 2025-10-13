@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -18,11 +18,13 @@ import { useRouter } from "expo-router";
 import { supabase } from "@/src/lib/supabase/supabase";
 import { logOnboardingEvent } from "@/src/utils/onboarding";
 import logger from "@/src/utils/logger";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 export default function AboutYouScreen() {
-  React.useEffect(() => {
+  useEffect(() => {
     logOnboardingEvent({ stage: "q2", action: "view" });
     logger.info("🎬 AboutYouScreen: Screen mounted");
+
     return () => {
       logger.info("🎬 AboutYouScreen: Screen unmounted");
     };
@@ -49,31 +51,29 @@ export default function AboutYouScreen() {
     setSaving(true);
     try {
       const parsedAge = age ? Number(age) : undefined;
+      const profileData = {
+        first_name: firstName.trim(),
+        last_name: lastName.trim(),
+        age: parsedAge,
+        occupation: occupation.trim(),
+      };
 
       logger.info(
-        "🧭 AboutYouScreen: Navigating to accountconnection BEFORE updating Supabase"
+        "🧭 AboutYouScreen: Saving profile data and navigating to connect screen"
       );
 
-      // Navigate FIRST (before USER_UPDATED event)
-      router.replace("/(onboarding)/accountconnection");
+      // Save profile data to AsyncStorage for next screen
+      await AsyncStorage.setItem(
+        "pending_profile_data",
+        JSON.stringify(profileData)
+      );
 
-      // Small delay to let navigation start
-      await new Promise((resolve) => setTimeout(resolve, 150));
+      // Navigate WITHOUT updating Supabase (no USER_UPDATED event)
+      router.replace("/(onboarding-connect)");
 
-      // NOW update Supabase
-      logger.info("💾 AboutYouScreen: Updating user profile data");
-
-      await supabase.auth.updateUser({
-        data: {
-          first_name: firstName.trim(),
-          last_name: lastName.trim(),
-          age: parsedAge,
-          occupation: occupation.trim(),
-          onboarding_stage: "plaid", // Move to plaid connection stage
-        },
-      });
-
-      logger.info("✅ AboutYouScreen: Successfully updated profile");
+      logger.info(
+        "✅ AboutYouScreen: Navigated to connect, profile saved locally"
+      );
       logOnboardingEvent({ stage: "q2", action: "complete" });
     } catch (error) {
       logger.error("❌ AboutYouScreen: Error saving user data:", error);

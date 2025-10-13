@@ -72,10 +72,32 @@ export default function FinalScreen() {
   const [activeSlide, setActiveSlide] = useState(0);
   const [isButtonEnabled, setIsButtonEnabled] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [hasUpdatedStage, setHasUpdatedStage] = useState(false);
 
-  // Log when Final screen mounts
+  // Update Supabase on mount with stage "final" (only once)
   useEffect(() => {
     logger.info("🎬 FinalScreen: Screen mounted");
+
+    const updateStageOnMount = async () => {
+      if (hasUpdatedStage) return;
+
+      try {
+        logger.info("💾 FinalScreen: Updating stage to final on mount");
+
+        await supabase.auth.updateUser({
+          data: {
+            onboarding_stage: "final",
+          },
+        });
+
+        setHasUpdatedStage(true);
+        logger.info("✅ FinalScreen: Successfully updated stage to final");
+      } catch (error) {
+        logger.error("❌ FinalScreen: Error updating stage on mount:", error);
+      }
+    };
+
+    updateStageOnMount();
 
     return () => {
       logger.info("🎬 FinalScreen: Screen unmounted");
