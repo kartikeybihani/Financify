@@ -125,7 +125,7 @@ export default function IntentQuestion3Screen() {
       logger.info(
         "✅ IntentQuestion3Screen: All intent answers saved, navigating to profile"
       );
-      router.replace("/(onboarding-profile)");
+      router.replace("/onboarding-profile" as any);
       logOnboardingEvent({ stage: "q1_3", action: "complete" });
     } catch (error) {
       logger.error("❌ IntentQuestion3Screen: Error saving answer:", error);

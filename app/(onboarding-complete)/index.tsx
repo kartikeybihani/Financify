@@ -22,6 +22,10 @@ import { supabase } from "@/src/lib/supabase/supabase";
 import type { ComponentProps } from "react";
 import logger from "@/src/utils/logger";
 import { logOnboardingEvent } from "@/src/utils/onboarding";
+import {
+  useOnboardingFlow,
+  OnboardingStage,
+} from "@/src/contexts/OnboardingFlowContext";
 
 const { width, height } = Dimensions.get("window");
 
@@ -68,57 +72,47 @@ const carouselSlides = finalCards.reduce((acc, curr, i) => {
 
 export default function FinalScreen() {
   const router = useRouter();
+  const { updateStage, currentStage, completeOnboarding } = useOnboardingFlow();
   const [typedText, setTypedText] = useState("");
   const [activeSlide, setActiveSlide] = useState(0);
   const [isButtonEnabled, setIsButtonEnabled] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [hasUpdatedStage, setHasUpdatedStage] = useState(false);
+  const [hasInitialized, setHasInitialized] = useState(false);
 
-  // Update Supabase on mount with stage "final" (only once)
+  // Initialize stage only if we're supposed to be here
   useEffect(() => {
     logger.info("🎬 FinalScreen: Screen mounted");
 
-    const updateStageOnMount = async () => {
-      if (hasUpdatedStage) return;
+    const initializeStage = async () => {
+      if (hasInitialized) return;
 
       try {
-        logger.info("💾 FinalScreen: Checking stage on mount");
+        logger.info("💾 FinalScreen: Checking if stage should be final");
 
-        // Get current user metadata to preserve existing values
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
-        const currentMetadata = user?.user_metadata || {};
-
-        // Only update if the stage is not already "final" to prevent infinite loops
-        if (currentMetadata.onboarding_stage !== "final") {
+        // Only update stage if we're not already in final stage
+        // This prevents automatic stage updates when user shouldn't be here
+        if (currentStage !== OnboardingStage.FINAL) {
           logger.info("💾 FinalScreen: Updating stage to final");
-
-          await supabase.auth.updateUser({
-            data: {
-              ...currentMetadata, // Preserve existing metadata
-              onboarding_stage: "final",
-              // Don't complete onboarding automatically - let user complete it manually
-            },
-          });
-
+          await updateStage(OnboardingStage.FINAL);
           logger.info("✅ FinalScreen: Successfully updated stage to final");
         } else {
-          logger.info("✅ FinalScreen: Stage already final, no update needed");
+          logger.info(
+            "✅ FinalScreen: Already in final stage, no update needed"
+          );
         }
 
-        setHasUpdatedStage(true);
+        setHasInitialized(true);
       } catch (error) {
-        logger.error("❌ FinalScreen: Error updating stage on mount:", error);
+        logger.error("❌ FinalScreen: Error updating stage:", error);
       }
     };
 
-    updateStageOnMount();
+    initializeStage();
 
     return () => {
       logger.info("🎬 FinalScreen: Screen unmounted");
     };
-  }, []);
+  }, [currentStage, updateStage, hasInitialized]);
   const index = useRef(0);
   const message = "You’re in. Here’s what jumps out already.";
   const cursorVisible = useRef(true);
@@ -419,10 +413,8 @@ export default function FinalScreen() {
     animateLoadingDots();
 
     try {
-      // Complete onboarding by updating user metadata
-      await supabase.auth.updateUser({
-        data: { onboarding_complete: true },
-      });
+      // Complete onboarding using the context
+      await completeOnboarding();
 
       logger.info("✅ Onboarding completed");
       logOnboardingEvent({ stage: "final", action: "complete" });

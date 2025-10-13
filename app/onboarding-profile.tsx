@@ -70,7 +70,7 @@ export default function AboutYouScreen() {
       );
 
       // Navigate WITHOUT updating Supabase (no USER_UPDATED event)
-      router.replace("/(onboarding-connect)");
+      router.replace("/onboarding-connect" as any);
 
       logger.info(
         "✅ AboutYouScreen: Navigated to connect, profile saved locally"

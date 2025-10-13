@@ -13,6 +13,7 @@ import NavigationProvider, {
   useNavigationContext,
   NavigationState,
 } from "@/src/contexts/NavigationContext";
+import OnboardingFlowProvider from "@/src/contexts/OnboardingFlowContext";
 import NavigationLoadingScreen from "@/src/components/shared/NavigationLoadingScreen";
 import { runStorageMigrationV2 } from "@/src/utils/migrate";
 import logger from "@/src/utils/logger";
@@ -32,13 +33,13 @@ function RootLayoutNav() {
 
   return (
     <Stack screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="(onboarding-complete)" />
-      <Stack.Screen name="(onboarding-connect)" />
-      <Stack.Screen name="(onboarding-profile)" />
-      <Stack.Screen name="(onboarding-intent3)" />
-      <Stack.Screen name="(onboarding-intent2)" />
-      <Stack.Screen name="(onboarding-intent1)" />
       <Stack.Screen name="(auth)" />
+      <Stack.Screen name="onboarding-intent1" />
+      <Stack.Screen name="onboarding-intent2" />
+      <Stack.Screen name="onboarding-intent3" />
+      <Stack.Screen name="onboarding-profile" />
+      <Stack.Screen name="onboarding-connect" />
+      <Stack.Screen name="(onboarding-complete)" />
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen
         name="investments"
@@ -90,18 +91,20 @@ export default function RootLayout() {
 
   return (
     <AuthProvider>
-      <NavigationProvider>
-        <ActionSheetProvider>
-          <>
-            <RootLayoutNav />
-            <StatusBar
-              style="light"
-              backgroundColor="transparent"
-              translucent
-            />
-          </>
-        </ActionSheetProvider>
-      </NavigationProvider>
+      <OnboardingFlowProvider>
+        <NavigationProvider>
+          <ActionSheetProvider>
+            <>
+              <RootLayoutNav />
+              <StatusBar
+                style="light"
+                backgroundColor="transparent"
+                translucent
+              />
+            </>
+          </ActionSheetProvider>
+        </NavigationProvider>
+      </OnboardingFlowProvider>
     </AuthProvider>
   );
 }

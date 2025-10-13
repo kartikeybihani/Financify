@@ -17,28 +17,33 @@ import logger from "@/src/utils/logger";
 import { logOnboardingEvent } from "@/src/utils/onboarding";
 
 const OPTIONS = [
-  { id: "chill", label: "Chill", icon: "sunny-outline", color: "#00D4AA" },
   {
-    id: "tense",
-    label: "A bit tense",
-    icon: "cloud-outline",
-    color: "#FFB020",
+    id: "freedom",
+    label: "Tool for freedom",
+    icon: "rocket-outline",
+    color: "#00D4AA",
   },
   {
-    id: "stressed",
-    label: "Stressed",
-    icon: "thunderstorm-outline",
+    id: "stress",
+    label: "It stresses me",
+    icon: "flash-outline",
     color: "#FF6B6B",
   },
   {
-    id: "overwhelmed",
-    label: "Overwhelmed",
-    icon: "snow-outline",
-    color: "#E53E3E",
+    id: "ignore",
+    label: "I kind of ignore it",
+    icon: "eye-off-outline",
+    color: "#A0AEC0",
+  },
+  {
+    id: "disciplined",
+    label: "I'm disciplined",
+    icon: "trophy-outline",
+    color: "#4A90E2",
   },
 ];
 
-export default function IntentQuestion2Screen() {
+export default function IntentQuestion1Screen() {
   const isMounted = useRef(true);
   const router = useRouter();
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
@@ -46,8 +51,8 @@ export default function IntentQuestion2Screen() {
 
   useEffect(() => {
     isMounted.current = true;
-    logOnboardingEvent({ stage: "q1_2", action: "view" });
-    logger.info("🎬 IntentQuestion2Screen: Screen mounted");
+    logOnboardingEvent({ stage: "q1_1", action: "view" });
+    logger.info("🎬 IntentQuestion1Screen: Screen mounted");
 
     // Restore saved answer if exists
     const restoreAnswer = async () => {
@@ -57,15 +62,15 @@ export default function IntentQuestion2Screen() {
         );
         if (savedAnswers) {
           const answers = JSON.parse(savedAnswers);
-          if (answers.stress_level) {
-            setSelectedOption(answers.stress_level);
-            logger.info("📥 IntentQuestion2Screen: Restored answer", {
-              answer: answers.stress_level,
+          if (answers.money_mindset) {
+            setSelectedOption(answers.money_mindset);
+            logger.info("📥 IntentQuestion1Screen: Restored answer", {
+              answer: answers.money_mindset,
             });
           }
         }
       } catch (error) {
-        logger.error("❌ IntentQuestion2Screen: Error restoring answer", error);
+        logger.error("❌ IntentQuestion1Screen: Error restoring answer", error);
       }
     };
 
@@ -73,14 +78,14 @@ export default function IntentQuestion2Screen() {
 
     return () => {
       isMounted.current = false;
-      logger.info("🎬 IntentQuestion2Screen: Screen unmounted");
+      logger.info("🎬 IntentQuestion1Screen: Screen unmounted");
     };
   }, []);
 
   const handleSelect = async (id: string) => {
     if (isProcessing) {
       logger.info(
-        "⚠️ IntentQuestion2Screen: Already processing, ignoring click"
+        "⚠️ IntentQuestion1Screen: Already processing, ignoring click"
       );
       return;
     }
@@ -90,7 +95,7 @@ export default function IntentQuestion2Screen() {
       return;
     }
 
-    logger.info("👆 IntentQuestion2Screen: Option selected", { id });
+    logger.info("👆 IntentQuestion1Screen: Option selected", { id });
     setSelectedOption(id);
     setIsProcessing(true);
 
@@ -103,7 +108,7 @@ export default function IntentQuestion2Screen() {
 
   const handleContinue = async (selectedId: string) => {
     try {
-      logger.info("💾 IntentQuestion2Screen: Saving answer to AsyncStorage", {
+      logger.info("💾 IntentQuestion1Screen: Saving answer to AsyncStorage", {
         answer: selectedId,
       });
 
@@ -112,7 +117,7 @@ export default function IntentQuestion2Screen() {
         "pending_intent_answers"
       );
       const answers = existingAnswers ? JSON.parse(existingAnswers) : {};
-      answers.stress_level = selectedId;
+      answers.money_mindset = selectedId;
 
       await AsyncStorage.setItem(
         "pending_intent_answers",
@@ -120,12 +125,12 @@ export default function IntentQuestion2Screen() {
       );
 
       logger.info(
-        "✅ IntentQuestion2Screen: Answer saved, navigating to question 3"
+        "✅ IntentQuestion1Screen: Answer saved, navigating to question 2"
       );
-      router.replace("/(onboarding-intent3)");
-      logOnboardingEvent({ stage: "q1_2", action: "complete" });
+      router.replace("/onboarding-intent2" as any);
+      logOnboardingEvent({ stage: "q1_1", action: "complete" });
     } catch (error) {
-      logger.error("❌ IntentQuestion2Screen: Error saving answer:", error);
+      logger.error("❌ IntentQuestion1Screen: Error saving answer:", error);
       setIsProcessing(false);
     }
   };
@@ -174,9 +179,9 @@ export default function IntentQuestion2Screen() {
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.header}>
-            <Text style={styles.progress}>Question 2 of 3</Text>
+            <Text style={styles.progress}>Question 1 of 3</Text>
             <Text style={styles.title}>
-              How stressed do you feel financially?
+              How do you feel about money right now?
             </Text>
           </View>
 
@@ -279,5 +284,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#4A90E2",
     justifyContent: "center",
     alignItems: "center",
+    shadowColor: "#4A90E2",
   },
 });

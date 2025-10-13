@@ -209,9 +209,8 @@ export default function WelcomeScreen() {
                 />
               </View>
               <Text style={styles.titleHighlight}>
-                <Text style={styles.titleEmphasis}>Finally, </Text>
                 <Text style={styles.titleMain}>
-                  feel great about your money.
+                  Finally, a financial advisor that gets you
                 </Text>
               </Text>
             </Animated.View>
@@ -319,7 +318,7 @@ const styles = StyleSheet.create({
   },
   brandName: {
     fontSize: 42,
-    fontWeight: "900",
+    fontWeight: "700",
     color: "#fff",
     textAlign: "center",
     marginBottom: 4,
@@ -353,6 +352,7 @@ const styles = StyleSheet.create({
     textShadowColor: "rgba(255, 255, 255, 0.1)",
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 1,
+    marginHorizontal: 30,
   },
   titleEmphasis: {
     color: "#5DA0F2",
@@ -363,7 +363,7 @@ const styles = StyleSheet.create({
   },
   titleMain: {
     color: "rgba(255, 255, 255, 0.9)",
-    fontWeight: "500",
+    fontWeight: "600",
   },
   cardContainer: {
     width: "100%",
