@@ -32,8 +32,13 @@ function RootLayoutNav() {
 
   return (
     <Stack screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="(onboarding)" options={{ headerShown: false }} />
-      <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+      <Stack.Screen name="(onboarding-complete)" />
+      <Stack.Screen name="(onboarding-connect)" />
+      <Stack.Screen name="(onboarding-profile)" />
+      <Stack.Screen name="(onboarding-intent3)" />
+      <Stack.Screen name="(onboarding-intent2)" />
+      <Stack.Screen name="(onboarding-intent1)" />
+      <Stack.Screen name="(auth)" />
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen
         name="investments"

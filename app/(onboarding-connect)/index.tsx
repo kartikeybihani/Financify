@@ -7,6 +7,7 @@ import {
   Alert,
   ActivityIndicator,
   Platform,
+  ScrollView,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
@@ -19,6 +20,18 @@ import logger from "@/src/utils/logger";
 import { logOnboardingEvent } from "@/src/utils/onboarding";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
+interface ConnectedAccount {
+  account_id: string;
+  name: string;
+  mask: string;
+  type: string;
+  subtype: string;
+  official_name: string;
+  current_balance: number;
+  available_balance: number;
+  institution_name: string;
+}
+
 export default function AccountConnectionScreen() {
   const params = useLocalSearchParams();
   const router = useRouter();
@@ -28,6 +41,9 @@ export default function AccountConnectionScreen() {
   const [linkToken, setLinkToken] = useState<string | null>(null);
   const [hasConnectedBank, setHasConnectedBank] = useState(false);
   const [hasUpdatedStage, setHasUpdatedStage] = useState(false);
+  const [connectedAccounts, setConnectedAccounts] = useState<
+    ConnectedAccount[]
+  >([]);
 
   useEffect(() => {
     logOnboardingEvent({ stage: "plaid", action: "view" });
@@ -46,18 +62,72 @@ export default function AccountConnectionScreen() {
       }
     };
 
+    const checkExistingAccounts = async () => {
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (!user?.id) return;
+
+        const accounts = await fetchConnectedAccounts(user.id);
+        if (accounts.length > 0) {
+          setHasConnectedBank(true);
+          setConnectedAccounts(accounts);
+        }
+      } catch (error) {
+        logger.error("Error checking existing accounts:", error);
+      }
+    };
+
     initializePlaid();
+    checkExistingAccounts();
 
     return () => {
       logger.info("🎬 AccountConnectionScreen: Screen unmounted");
     };
   }, []);
 
+  const fetchConnectedAccounts = async (
+    userId: string
+  ): Promise<ConnectedAccount[]> => {
+    try {
+      const { data: accounts, error } = await supabase
+        .from("accounts")
+        .select(
+          `
+          account_id,
+          name,
+          mask,
+          type,
+          subtype,
+          official_name,
+          current_balance,
+          available_balance,
+          user_items!inner(institution_name, user_id)
+        `
+        )
+        .eq("user_items.user_id", userId)
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+
+      return (
+        accounts?.map((acc: any) => ({
+          ...acc,
+          institution_name: acc.user_items.institution_name,
+        })) || []
+      );
+    } catch (error) {
+      logger.error("Error fetching connected accounts:", error);
+      return [];
+    }
+  };
+
   const handleConnect = async () => {
     if (!linkToken) {
       Alert.alert(
         "Not Ready",
-        "Please wait while we prepare the connection..."
+        "Please try again in 5 seconds while we prepare..."
       );
       return;
     }
@@ -67,88 +137,34 @@ export default function AccountConnectionScreen() {
       await handlePlaidConnect(
         linkToken,
         async (itemId: string) => {
-          setHasConnectedBank(true);
           setIsLoading(false);
           setIsClosingPlaid(true);
           setIsConnecting(true);
 
-          // itemId is already stored via addItemId in handlePlaidConnect
+          // Wait a bit for accounts to be stored in the database
+          await new Promise((resolve) => setTimeout(resolve, 1500));
 
-          // NOW collect ALL pending data and update Supabase once
-          try {
-            logger.info(
-              "💾 AccountConnectionScreen: Collecting all pending onboarding data"
-            );
-
-            const pendingIntent = await AsyncStorage.getItem(
-              "pending_intent_answers"
-            );
-            const pendingProfile = await AsyncStorage.getItem(
-              "pending_profile_data"
-            );
-
-            const intentData = pendingIntent ? JSON.parse(pendingIntent) : {};
-            const profileData = pendingProfile
-              ? JSON.parse(pendingProfile)
-              : {};
-
-            logger.info(
-              "💾 AccountConnectionScreen: Updating Supabase with all data",
-              {
-                intentData,
-                profileData,
-              }
-            );
-
-            // Single Supabase update with all data at once
-            await supabase.auth.updateUser({
-              data: {
-                ...intentData,
-                ...profileData,
-                onboarding_stage: "plaid",
-              },
-            });
-
-            // Clear all pending data
-            await AsyncStorage.removeItem("pending_intent_answers");
-            await AsyncStorage.removeItem("pending_profile_data");
-
-            logger.info(
-              "✅ AccountConnectionScreen: Successfully updated all onboarding data"
-            );
-            setHasUpdatedStage(true);
-          } catch (error) {
-            logger.error(
-              "❌ AccountConnectionScreen: Error updating onboarding data:",
-              error
-            );
+          // Fetch the newly connected accounts
+          const {
+            data: { user },
+          } = await supabase.auth.getUser();
+          if (user?.id) {
+            const accounts = await fetchConnectedAccounts(user.id);
+            setConnectedAccounts(accounts);
+            setHasConnectedBank(true);
           }
 
-          Alert.alert(
-            "Connected!",
-            "Connected 1 account. Add more now or later—your call.",
-            [
-              {
-                text: "Continue",
-                onPress: async () => {
-                  setIsConnecting(false);
-                  setIsClosingPlaid(false);
+          setIsConnecting(false);
+          setIsClosingPlaid(false);
 
-                  logger.info(
-                    "🧭 AccountConnectionScreen: Navigating to complete screen"
-                  );
-
-                  // Navigate to complete screen
-                  router.replace("/(onboarding-complete)");
-
-                  logger.info(
-                    "✅ AccountConnectionScreen: Navigated to complete screen"
-                  );
-                  logOnboardingEvent({ stage: "plaid", action: "success" });
-                },
-              },
-            ]
+          logger.info(
+            "✅ AccountConnectionScreen: Successfully connected account"
           );
+          logOnboardingEvent({ stage: "plaid", action: "success" });
+
+          // Refresh link token for next connection
+          const newToken = await fetchLinkToken();
+          setLinkToken(newToken);
         },
         // onExit:
         (error?: any) => {
@@ -208,6 +224,89 @@ export default function AccountConnectionScreen() {
     }
   };
 
+  const handleContinue = async () => {
+    try {
+      logger.info(
+        "🧭 AccountConnectionScreen: Moving to final onboarding stage"
+      );
+
+      // Move to final onboarding stage - user has connected their account
+      const { data: updateData, error: updateError } =
+        await supabase.auth.updateUser({
+          data: {
+            hasConnectedBank: true,
+            onboarding_stage: "final",
+          },
+        });
+
+      if (updateError) {
+        logger.error(
+          "❌ AccountConnectionScreen: Auth update failed:",
+          updateError
+        );
+        throw updateError;
+      }
+
+      logger.info("🔍 AccountConnectionScreen: Auth update response:", {
+        user: updateData.user?.user_metadata,
+        error: updateError,
+      });
+
+      // Wait a moment for the auth state to propagate
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+
+      // Verify the update was successful
+      const {
+        data: { user },
+        error: getUserError,
+      } = await supabase.auth.getUser();
+
+      if (getUserError) {
+        logger.error(
+          "❌ AccountConnectionScreen: Failed to get user:",
+          getUserError
+        );
+        throw getUserError;
+      }
+
+      logger.info("🔍 AccountConnectionScreen: Fresh user data:", {
+        onboarding_complete: user?.user_metadata?.onboarding_complete,
+        onboarding_stage: user?.user_metadata?.onboarding_stage,
+        hasConnectedBank: user?.user_metadata?.hasConnectedBank,
+      });
+
+      logger.info(
+        "✅ AccountConnectionScreen: Moved to final onboarding stage"
+      );
+      logOnboardingEvent({ stage: "plaid", action: "continue" });
+    } catch (error) {
+      logger.error("❌ Error moving to final onboarding stage:", error);
+    }
+  };
+
+  const formatBalance = (balance: number | null) => {
+    if (balance === null || balance === undefined) return "N/A";
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: "USD",
+    }).format(balance);
+  };
+
+  const getAccountIcon = (type: string) => {
+    switch (type?.toLowerCase()) {
+      case "depository":
+        return "wallet";
+      case "credit":
+        return "card";
+      case "investment":
+        return "trending-up";
+      case "loan":
+        return "receipt";
+      default:
+        return "cash";
+    }
+  };
+
   return (
     <LinearGradient
       colors={["#1A1A2E", "#16213E", "#0D1117"]}
@@ -218,127 +317,172 @@ export default function AccountConnectionScreen() {
         style={styles.safeArea}
         edges={["top", "left", "right", "bottom"]}
       >
-        <View
-          style={[
-            styles.content,
-            { paddingBottom: Platform.OS === "ios" ? 24 : 24 },
-          ]}
-        >
-          <View style={styles.header}>
-            <Text style={styles.title}>Connect at least 1 account</Text>
-            <Text style={styles.subtitle}>Real advice needs real data</Text>
-            <Text style={styles.description}>
-              This helps us analyze your spending patterns, track your goals,
-              and give you personalized insights to help you build and manage
-              wealth smarter.
-            </Text>
-          </View>
-
-          <View style={styles.trustSection}>
-            <View style={styles.trustCard}>
-              <View style={styles.trustIconContainer}>
-                <Ionicons name="shield-checkmark" size={24} color="#00D4AA" />
-              </View>
-              <View style={styles.trustContent}>
-                <Text style={styles.trustTitle}>Bank-level security</Text>
-                <Text style={styles.trustSubtitle}>
-                  Used by Venmo, Robinhood • Read-only • Encrypted
-                </Text>
-              </View>
-            </View>
-
-            <View style={styles.trustCard}>
-              <View style={styles.trustIconContainer}>
-                <Ionicons name="time-outline" size={24} color="#4A90E2" />
-              </View>
-              <View style={styles.trustContent}>
-                <Text style={styles.trustTitle}>Takes ~90 seconds</Text>
-                <Text style={styles.trustSubtitle}>
-                  See insights right after connecting
-                </Text>
-              </View>
-            </View>
-          </View>
-
-          <View style={styles.buttonContainer}>
-            <TouchableOpacity
-              style={[
-                styles.connectButton,
-                isLoading && styles.connectButtonDisabled,
-              ]}
-              onPress={handleConnect}
-              disabled={isLoading}
-            >
-              {isLoading ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <>
-                  <Text style={styles.connectButtonText}>Connect My Bank</Text>
-                  <MaterialCommunityIcons
-                    name="bank"
-                    size={20}
-                    color="#fff"
-                    style={styles.buttonIcon}
-                  />
-                </>
-              )}
-            </TouchableOpacity>
-            <View style={styles.securityMessage}>
-              <Ionicons
-                name="shield-checkmark-outline"
-                size={14}
-                color="#A0A0A0"
-              />
-              <Text style={styles.securityText}>
-                We securely connect via Plaid
+        {!hasConnectedBank ? (
+          <View
+            style={[
+              styles.content,
+              { paddingBottom: Platform.OS === "ios" ? 24 : 24 },
+            ]}
+          >
+            <View style={styles.header}>
+              <Text style={styles.title}>Connect at least 1 account</Text>
+              <Text style={styles.subtitle}>Real advice needs real data</Text>
+              <Text style={styles.description}>
+                This helps us analyze your spending patterns, track your goals,
+                and give you personalized insights to help you build and manage
+                wealth smarter.
               </Text>
             </View>
-            {hasConnectedBank && (
-              <View style={{ marginTop: 10, gap: 8 }}>
-                <TouchableOpacity
-                  style={[styles.connectButton]}
-                  onPress={handleConnect}
-                  disabled={isLoading}
-                >
-                  <Text style={styles.connectButtonText}>
-                    Add another account
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={async () => {
-                    try {
-                      logger.info(
-                        "🧭 AccountConnectionScreen: Navigating to complete screen (continuing)"
-                      );
 
-                      // Navigate WITHOUT updating Supabase (no USER_UPDATED event)
-                      router.replace("/(onboarding-complete)");
-
-                      logger.info(
-                        "✅ AccountConnectionScreen: Navigated to complete"
-                      );
-                    } catch (error) {
-                      logger.error(
-                        "❌ AccountConnectionScreen: Error skipping bank connection:",
-                        error
-                      );
-                    }
-                  }}
-                >
-                  <Text
-                    style={{
-                      color: "#fff",
-                      textAlign: "center",
-                      textDecorationLine: "underline",
-                    }}
-                  >
-                    Continue
+            <View style={styles.trustSection}>
+              <View style={styles.trustCard}>
+                <View style={styles.trustIconContainer}>
+                  <Ionicons name="shield-checkmark" size={24} color="#00D4AA" />
+                </View>
+                <View style={styles.trustContent}>
+                  <Text style={styles.trustTitle}>Bank-level security</Text>
+                  <Text style={styles.trustSubtitle}>
+                    Used by Venmo, Robinhood • Read-only • Encrypted
                   </Text>
-                </TouchableOpacity>
+                </View>
               </View>
-            )}
+
+              <View style={styles.trustCard}>
+                <View style={styles.trustIconContainer}>
+                  <Ionicons name="time-outline" size={24} color="#4A90E2" />
+                </View>
+                <View style={styles.trustContent}>
+                  <Text style={styles.trustTitle}>Takes ~90 seconds</Text>
+                  <Text style={styles.trustSubtitle}>
+                    See insights right after connecting
+                  </Text>
+                </View>
+              </View>
+            </View>
+
+            <View style={styles.buttonContainer}>
+              <TouchableOpacity
+                style={[
+                  styles.connectButton,
+                  isLoading && styles.connectButtonDisabled,
+                ]}
+                onPress={handleConnect}
+                disabled={isLoading}
+              >
+                {isLoading ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <>
+                    <Text style={styles.connectButtonText}>
+                      Connect My Bank
+                    </Text>
+                    <MaterialCommunityIcons
+                      name="bank"
+                      size={20}
+                      color="#fff"
+                      style={styles.buttonIcon}
+                    />
+                  </>
+                )}
+              </TouchableOpacity>
+              <View style={styles.securityMessage}>
+                <Ionicons
+                  name="shield-checkmark-outline"
+                  size={14}
+                  color="#A0A0A0"
+                />
+                <Text style={styles.securityText}>
+                  We securely connect via Plaid
+                </Text>
+              </View>
+            </View>
           </View>
-        </View>
+        ) : (
+          <View style={styles.content}>
+            <View style={styles.header}>
+              <Text style={styles.title}>
+                {connectedAccounts.length}{" "}
+                {connectedAccounts.length === 1 ? "Account" : "Accounts"}{" "}
+                connected
+              </Text>
+              <Text style={styles.addMoreText}>
+                You can always add more accounts later!
+              </Text>
+            </View>
+
+            <ScrollView
+              style={styles.accountsList}
+              contentContainerStyle={styles.accountsListContent}
+              showsVerticalScrollIndicator={false}
+            >
+              {connectedAccounts.map((account) => (
+                <View key={account.account_id} style={styles.accountCard}>
+                  <View style={styles.cardHeader}>
+                    <View style={styles.cardInfo}>
+                      <Text style={styles.institutionName}>
+                        {account.institution_name}
+                      </Text>
+                      <Text style={styles.accountName}>
+                        {account.official_name || account.name}
+                        {account.mask && ` ••${account.mask}`}
+                      </Text>
+                      <Text style={styles.accountType}>
+                        {account.subtype || account.type}
+                      </Text>
+                    </View>
+                    <View style={styles.balanceSection}>
+                      <Text style={styles.balanceLabel}>Balance</Text>
+                      <Text style={styles.balanceAmount}>
+                        {formatBalance(account.current_balance)}
+                      </Text>
+                      {account.available_balance !== null &&
+                        account.available_balance !==
+                          account.current_balance && (
+                          <Text style={styles.availableBalance}>
+                            Available:{" "}
+                            {formatBalance(account.available_balance)}
+                          </Text>
+                        )}
+                    </View>
+                  </View>
+                </View>
+              ))}
+            </ScrollView>
+
+            <View style={styles.buttonContainer}>
+              <TouchableOpacity
+                style={[
+                  styles.addAccountButton,
+                  isLoading && styles.connectButtonDisabled,
+                ]}
+                onPress={handleConnect}
+                disabled={isLoading}
+              >
+                {isLoading ? (
+                  <ActivityIndicator color="#4A90E2" />
+                ) : (
+                  <>
+                    <Ionicons
+                      name="add-circle-outline"
+                      size={20}
+                      color="#4A90E2"
+                    />
+                    <Text style={styles.addAccountButtonText}>
+                      Add Another Account
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.continueButton}
+                onPress={handleContinue}
+              >
+                <Text style={styles.continueButtonText}>Continue</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
 
         {(isLoading || isConnecting || isClosingPlaid) && (
           <View style={styles.loadingOverlay}>
@@ -350,7 +494,11 @@ export default function AccountConnectionScreen() {
             <View style={styles.loadingContent}>
               <ActivityIndicator size="large" color="#4A90E2" />
               <Text style={styles.loadingText}>
-                {isClosingPlaid ? "Closing Plaid..." : "Opening Plaid..."}
+                {isClosingPlaid
+                  ? "Closing Plaid..."
+                  : isConnecting
+                  ? "Loading your accounts..."
+                  : "Working with Plaid..."}
               </Text>
             </View>
           </View>
@@ -376,7 +524,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   header: {
-    marginBottom: 40,
+    marginBottom: 24,
   },
   title: {
     fontSize: 28,
@@ -392,7 +540,6 @@ const styles = StyleSheet.create({
     lineHeight: 24,
     textAlign: "left",
     fontWeight: "600",
-    marginBottom: 16,
   },
   description: {
     fontSize: 16,
@@ -436,9 +583,86 @@ const styles = StyleSheet.create({
     color: "rgba(255, 255, 255, 0.7)",
     lineHeight: 20,
   },
+  accountsList: {
+    flex: 1,
+    marginBottom: 16,
+  },
+  accountsListContent: {
+    gap: 16,
+    paddingBottom: 16,
+  },
+  accountCard: {
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.15)",
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
+    minHeight: 100,
+  },
+  cardHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    flex: 1,
+  },
+  cardInfo: {
+    flex: 1,
+    gap: 4,
+  },
+  institutionName: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#fff",
+    marginBottom: 2,
+  },
+  accountName: {
+    fontSize: 14,
+    fontWeight: "500",
+    color: "rgba(255, 255, 255, 0.9)",
+  },
+  accountType: {
+    fontSize: 12,
+    fontWeight: "400",
+    color: "rgba(255, 255, 255, 0.6)",
+    textTransform: "capitalize",
+  },
+  balanceSection: {
+    alignItems: "flex-end",
+    gap: 2,
+  },
+  balanceLabel: {
+    fontSize: 11,
+    fontWeight: "500",
+    color: "rgba(255, 255, 255, 0.6)",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  balanceAmount: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#00D4AA",
+  },
+  availableBalance: {
+    fontSize: 11,
+    fontWeight: "500",
+    color: "rgba(255, 255, 255, 0.7)",
+  },
+  addMoreText: {
+    fontSize: 14,
+    color: "rgba(255, 255, 255, 0.6)",
+    textAlign: "left",
+    marginTop: 5,
+  },
   buttonContainer: {
-    alignItems: "center",
-    gap: 8,
+    gap: 12,
   },
   connectButton: {
     backgroundColor: "#4A90E2",
@@ -451,6 +675,38 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   connectButtonText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  addAccountButton: {
+    backgroundColor: "rgba(74, 144, 226, 0.15)",
+    borderRadius: 26,
+    padding: 16,
+    alignItems: "center",
+    width: "100%",
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: 8,
+    borderWidth: 1,
+    borderColor: "rgba(74, 144, 226, 0.3)",
+  },
+  addAccountButtonText: {
+    color: "#4A90E2",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  continueButton: {
+    backgroundColor: "#4A90E2",
+    borderRadius: 26,
+    padding: 16,
+    alignItems: "center",
+    width: "100%",
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: 8,
+  },
+  continueButtonText: {
     color: "#fff",
     fontSize: 16,
     fontWeight: "600",

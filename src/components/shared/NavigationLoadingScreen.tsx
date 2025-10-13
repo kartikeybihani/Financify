@@ -135,35 +135,6 @@ export default function NavigationLoadingScreen({
               ))}
             </View>
           </View>
-
-          {/* Decorative Elements */}
-          <View style={styles.decorativeContainer}>
-            <Animated.View
-              style={[
-                styles.decorativeCircle,
-                styles.circle1,
-                {
-                  transform: [{ rotate }],
-                },
-              ]}
-            />
-            <Animated.View
-              style={[
-                styles.decorativeCircle,
-                styles.circle2,
-                {
-                  transform: [
-                    {
-                      rotate: rotateAnim.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: ["360deg", "0deg"],
-                      }),
-                    },
-                  ],
-                },
-              ]}
-            />
-          </View>
         </Animated.View>
       </LinearGradient>
     </View>
@@ -244,32 +215,5 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     backgroundColor: "#4A90E2",
     marginHorizontal: 4,
-  },
-  decorativeContainer: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    pointerEvents: "none",
-  },
-  decorativeCircle: {
-    position: "absolute",
-    borderWidth: 1,
-    borderColor: "rgba(74, 144, 226, 0.1)",
-  },
-  circle1: {
-    width: 200,
-    height: 200,
-    borderRadius: 100,
-    top: "15%",
-    right: -50,
-  },
-  circle2: {
-    width: 150,
-    height: 150,
-    borderRadius: 75,
-    bottom: "20%",
-    left: -30,
   },
 });

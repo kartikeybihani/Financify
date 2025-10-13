@@ -82,16 +82,32 @@ export default function FinalScreen() {
       if (hasUpdatedStage) return;
 
       try {
-        logger.info("💾 FinalScreen: Updating stage to final on mount");
+        logger.info("💾 FinalScreen: Checking stage on mount");
 
-        await supabase.auth.updateUser({
-          data: {
-            onboarding_stage: "final",
-          },
-        });
+        // Get current user metadata to preserve existing values
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        const currentMetadata = user?.user_metadata || {};
+
+        // Only update if the stage is not already "final" to prevent infinite loops
+        if (currentMetadata.onboarding_stage !== "final") {
+          logger.info("💾 FinalScreen: Updating stage to final");
+
+          await supabase.auth.updateUser({
+            data: {
+              ...currentMetadata, // Preserve existing metadata
+              onboarding_stage: "final",
+              // Don't complete onboarding automatically - let user complete it manually
+            },
+          });
+
+          logger.info("✅ FinalScreen: Successfully updated stage to final");
+        } else {
+          logger.info("✅ FinalScreen: Stage already final, no update needed");
+        }
 
         setHasUpdatedStage(true);
-        logger.info("✅ FinalScreen: Successfully updated stage to final");
       } catch (error) {
         logger.error("❌ FinalScreen: Error updating stage on mount:", error);
       }
@@ -530,7 +546,7 @@ export default function FinalScreen() {
             </Text> */}
           </View>
 
-          <Animated.View style={[styles.finnyBox, { height: boxHeight }]}>
+          <Animated.View style={[styles.finnyBox]}>
             <Animated.Image
               source={require("../../assets/images/mascot1.jpg")}
               resizeMode="contain"
@@ -669,8 +685,8 @@ const styles = StyleSheet.create({
   },
   header: {
     alignItems: "center",
-    marginBottom: 16,
-    paddingTop: Platform.OS === "ios" ? 60 : 40,
+    marginBottom: 12,
+    paddingTop: Platform.OS === "ios" ? 40 : 24,
   },
   doneText: {
     fontSize: 20,
@@ -686,20 +702,20 @@ const styles = StyleSheet.create({
   },
   finnyBox: {
     backgroundColor: "rgba(255, 255, 255, 0.08)",
-    borderRadius: 18,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.12)",
-    padding: 16,
+    padding: 14,
     marginHorizontal: 20,
     flexDirection: "row",
     alignItems: "flex-start",
-    marginBottom: 20,
+    marginBottom: 16,
   },
   mascot: {
-    width: 80,
-    height: 80,
-    marginRight: 12,
-    borderRadius: 20,
+    width: 60,
+    height: 60,
+    marginRight: 10,
+    borderRadius: 18,
   },
   finnyText: {
     fontSize: 15,
@@ -710,13 +726,13 @@ const styles = StyleSheet.create({
   },
   cardsContainer: {
     flex: 1,
-    marginTop: 20, // Added margin top
+    marginTop: 12,
   },
   sectionTitle: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: "600",
     color: "#fff",
-    marginBottom: 16,
+    marginBottom: 12,
     marginLeft: 24,
   },
   carousel: {
@@ -728,19 +744,19 @@ const styles = StyleSheet.create({
   slide: {
     width: width,
     paddingHorizontal: 20,
-    paddingTop: 10,
+    paddingTop: 6,
   },
   card: {
     width: "100%",
     height: CARD_HEIGHT,
     backgroundColor: "rgba(255, 255, 255, 0.06)",
-    borderRadius: 14,
-    marginBottom: 12,
+    borderRadius: 12,
+    marginBottom: 10,
     flexDirection: "row",
     alignItems: "center",
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.12)",
-    paddingHorizontal: 14,
+    paddingHorizontal: 12,
   },
   iconContainer: {
     width: 40,
@@ -763,8 +779,8 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "center",
     alignItems: "center",
-    marginTop: 16,
-    marginBottom: 16,
+    marginTop: 12,
+    marginBottom: 12,
     paddingHorizontal: 40,
   },
   progressTrack: {
@@ -801,7 +817,7 @@ const styles = StyleSheet.create({
   },
   footer: {
     paddingHorizontal: 20,
-    paddingBottom: Platform.OS === "ios" ? 20 : 16,
+    paddingBottom: Platform.OS === "ios" ? 16 : 12,
     backgroundColor: "transparent",
   },
   buttonContainer: {
@@ -816,7 +832,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "center",
     alignItems: "center",
-    paddingVertical: 14,
+    paddingVertical: 12,
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.12)",
   },

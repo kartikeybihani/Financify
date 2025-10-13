@@ -9,6 +9,7 @@ import {
   StatusBar,
   ScrollView,
   Modal,
+  Keyboard,
 } from "react-native";
 import { Picker } from "@react-native-picker/picker";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -141,18 +142,23 @@ export default function AboutYouScreen() {
             />
           </TouchableOpacity>
 
-          <Text style={styles.label}>Occupation</Text>
-          <View style={styles.inputWrap}>
+          <Text style={styles.label}>What do you do?</Text>
+          <View style={styles.occupationInputWrap}>
             <TextInput
               value={occupation}
               onChangeText={(text) =>
                 setOccupation(text.charAt(0).toUpperCase() + text.slice(1))
               }
-              placeholder="Engineering Student, Designer, Nurse, etc."
+              placeholder="e.g., Engineering student at MIT, Investment banking analyst, Freelance designer, Nurse..."
               placeholderTextColor="rgba(255,255,255,0.5)"
-              style={styles.input}
-              returnKeyType="done"
-              autoCapitalize="words"
+              style={styles.occupationInput}
+              autoCapitalize="sentences"
+              returnKeyType="default"
+              multiline
+              numberOfLines={3}
+              textAlignVertical="top"
+              blurOnSubmit={true}
+              onSubmitEditing={() => Keyboard.dismiss()}
             />
           </View>
         </ScrollView>
@@ -271,6 +277,27 @@ const styles = StyleSheet.create({
   },
   input: { color: "#fff", fontSize: 16, fontWeight: "500", flex: 1 },
   placeholder: { color: "rgba(255,255,255,0.5)" },
+  occupationInputWrap: {
+    backgroundColor: "rgba(255,255,255,0.05)",
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: "rgba(255,255,255,0.15)",
+    paddingHorizontal: 16,
+    paddingVertical: Platform.OS === "ios" ? 5 : 7,
+    shadowColor: "#000",
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
+    minHeight: 60,
+  },
+  occupationInput: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "500",
+    minHeight: 70,
+    maxHeight: 100,
+  },
   footer: {
     paddingHorizontal: 24,
     paddingBottom: Platform.OS === "ios" ? 20 : 25,

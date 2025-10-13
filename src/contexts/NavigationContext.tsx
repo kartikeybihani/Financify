@@ -11,10 +11,11 @@ import { supabase } from "@/src/lib/supabase/supabase";
 import { useAuth } from "./AuthContext";
 import logger from "@/src/utils/logger";
 
-// Navigation states - only the 3 main stages
+// Navigation states - the 4 main stages
 export enum NavigationState {
   PRE_SIGNUP = "pre_signup", // Stage 1: Welcome, Login, Signup (user logged out)
   ONBOARDING = "onboarding", // Stage 2: Onboarding flow (user logged in, onboarding incomplete)
+  ONBOARDING_FINAL = "onboarding_final", // Stage 2.5: Final onboarding stage (onboarding-complete screen)
   AUTHENTICATED = "authenticated", // Stage 3: Tabs, Settings, Investments (user logged in, onboarding complete)
 }
 
@@ -140,16 +141,31 @@ export const NavigationProvider: React.FC<NavigationProviderProps> = ({
     const onboardingComplete = meta.onboarding_complete === true;
     const onboardingStage = meta.onboarding_stage;
 
+    // Determine the actual state for logging
+    let actualState: string;
+    if (onboardingComplete) {
+      actualState = "AUTHENTICATED";
+    } else if (onboardingStage === "final") {
+      actualState = "ONBOARDING_FINAL";
+    } else {
+      actualState = "ONBOARDING";
+    }
+
     logger.info("🔍 NavigationContext: User metadata check", {
       onboardingComplete,
       onboardingStage,
       userId: freshUser.id,
-      stage: onboardingComplete ? "AUTHENTICATED" : "ONBOARDING",
+      stage: actualState,
     });
 
     // Stage 3: User logged in AND onboarding complete = AUTHENTICATED
     if (onboardingComplete) {
       return { state: NavigationState.AUTHENTICATED };
+    }
+
+    // Stage 2.5: User logged in, onboarding_stage is "final" but not complete = ONBOARDING_FINAL
+    if (onboardingStage === "final") {
+      return { state: NavigationState.ONBOARDING_FINAL, onboardingStage };
     }
 
     // Stage 2: User logged in BUT onboarding not complete = ONBOARDING
@@ -164,7 +180,7 @@ export const NavigationProvider: React.FC<NavigationProviderProps> = ({
     switch (state) {
       case NavigationState.PRE_SIGNUP:
         // Stage 1: Welcome, Login, Signup screens
-        return "/(onboarding)/welcome";
+        return "/(auth)/welcome";
 
       case NavigationState.ONBOARDING:
         // Stage 2: Onboarding flow - route based on onboarding_stage
@@ -173,19 +189,23 @@ export const NavigationProvider: React.FC<NavigationProviderProps> = ({
           return "/(onboarding-profile)";
         } else if (onboardingStage === "plaid") {
           return "/(onboarding-connect)";
-        } else if (onboardingStage === "final") {
-          return "/(onboarding-complete)";
+        } else if (onboardingStage === "q1") {
+          return "/(onboarding-intent1)";
         } else {
-          // Default to first intent screen for q1 or undefined
+          // Default to first intent screen for undefined or other stages
           return "/(onboarding-intent1)";
         }
+
+      case NavigationState.ONBOARDING_FINAL:
+        // Stage 2.5: Final onboarding stage
+        return "/(onboarding-complete)";
 
       case NavigationState.AUTHENTICATED:
         // Stage 3: Inside the app (tabs, settings, etc.)
         return "/(tabs)/chat"; // Default to chat tab
 
       default:
-        return "/(onboarding)/welcome";
+        return "/(auth)/welcome";
     }
   };
 
@@ -213,16 +233,16 @@ export const NavigationProvider: React.FC<NavigationProviderProps> = ({
       "/(onboarding-profile)",
       "/(onboarding-connect)",
       "/(onboarding-complete)",
-      // Old paths for backwards compatibility during transition
-      "/(onboarding)/intent",
-      "/(onboarding)/aboutyou",
-      "/(onboarding)/accountconnection",
-      "/(onboarding)/final",
     ];
 
     // If target state is ONBOARDING and user is on any onboarding screen, don't navigate
     if (targetState === NavigationState.ONBOARDING) {
       return onboardingScreens.includes(currentPath);
+    }
+
+    // If target state is ONBOARDING_FINAL, don't interfere if already on the final screen
+    if (targetState === NavigationState.ONBOARDING_FINAL) {
+      return currentPath === "/(onboarding-complete)";
     }
 
     return false;
@@ -268,6 +288,7 @@ export const NavigationProvider: React.FC<NavigationProviderProps> = ({
             currentPath: `/${segments.join("/")}`,
             targetRoute,
             onboardingStage,
+            targetState,
           }
         );
         setIsLoading(false);
@@ -362,10 +383,10 @@ export const NavigationProvider: React.FC<NavigationProviderProps> = ({
   // Handle auth state changes with debounce to avoid navigation spam
   useEffect(() => {
     if (!isInitializing && !authLoading) {
-      // Debounce navigation to avoid rapid re-navigation during user metadata updates
+      // Increased debounce time for user metadata updates to prevent race conditions
       const timeoutId = setTimeout(() => {
         navigateToCorrectScreen();
-      }, 100);
+      }, 500);
 
       return () => clearTimeout(timeoutId);
     }
@@ -380,8 +401,8 @@ export const NavigationProvider: React.FC<NavigationProviderProps> = ({
         "🚪 NavigationContext: User signed out, returning to PRE_SIGNUP stage"
       );
 
-      // NavigationContext will automatically navigate via the main navigation logic
-      // No need for explicit navigation here since it's handled by the useEffect above
+      // Force immediate navigation to welcome screen on logout
+      // router.replace("/(auth)/welcome" as any);
     }
   }, [session, authLoading]);
 

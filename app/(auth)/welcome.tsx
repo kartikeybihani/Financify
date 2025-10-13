@@ -9,25 +9,13 @@ import {
   Dimensions,
   StatusBar,
   Animated,
-  Image,
   Platform,
-  Easing,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
-import {
-  AntDesign,
-  Entypo,
-  Feather,
-  Ionicons,
-  MaterialIcons,
-} from "@expo/vector-icons";
+import { Entypo, Ionicons } from "@expo/vector-icons";
 import * as AppleAuthentication from "expo-apple-authentication";
 import { supabase } from "@/src/lib/supabase/supabase";
-import {
-  useNavigationContext,
-  OnboardingStage,
-} from "@/src/contexts/NavigationContext";
 import logger from "@/src/utils/logger";
 import { logOnboardingEvent } from "@/src/utils/onboarding";
 
@@ -35,7 +23,6 @@ const { width } = Dimensions.get("window");
 
 export default function WelcomeScreen() {
   const router = useRouter();
-  const { updateOnboardingStage } = useNavigationContext();
 
   const imageSlideAnim = useRef(new Animated.Value(40)).current;
   const titleSlideAnim = useRef(new Animated.Value(30)).current;
@@ -43,7 +30,9 @@ export default function WelcomeScreen() {
   const sparkGlowAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
+    logger.info("🎬 WelcomeScreen: Screen mounted");
     logOnboardingEvent({ stage: "welcome", action: "view" });
+
     Animated.parallel([
       Animated.spring(textRevealAnim, {
         toValue: 1,
@@ -76,6 +65,10 @@ export default function WelcomeScreen() {
         ])
       ),
     ]).start();
+
+    return () => {
+      logger.info("🎬 WelcomeScreen: Screen unmounted");
+    };
   }, []);
 
   const handleEmailSignup = () => router.push("/(auth)/signup");
@@ -126,9 +119,6 @@ export default function WelcomeScreen() {
 
         if (user) {
           logger.info("Successfully authenticated with Supabase");
-          try {
-            await updateOnboardingStage(OnboardingStage.INTENT);
-          } catch {}
           logOnboardingEvent({
             stage: "welcome",
             action: "auth_success",

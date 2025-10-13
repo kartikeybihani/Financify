@@ -6,9 +6,7 @@ import {
   StyleSheet,
   StatusBar,
   ScrollView,
-  Animated,
   Platform,
-  Dimensions,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
@@ -17,8 +15,6 @@ import { LinearGradient } from "expo-linear-gradient";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import logger from "@/src/utils/logger";
 import { logOnboardingEvent } from "@/src/utils/onboarding";
-
-const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
 const OPTIONS = [
   {
@@ -47,8 +43,6 @@ export default function IntentQuestion3Screen() {
   const router = useRouter();
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
-  const slideAnim = useRef(new Animated.Value(0)).current;
-  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     isMounted.current = true;
@@ -79,9 +73,6 @@ export default function IntentQuestion3Screen() {
 
     return () => {
       isMounted.current = false;
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current);
-      }
       logger.info("🎬 IntentQuestion3Screen: Screen unmounted");
     };
   }, []);
@@ -103,36 +94,11 @@ export default function IntentQuestion3Screen() {
     setSelectedOption(id);
     setIsProcessing(true);
 
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current);
-      timeoutRef.current = null;
+    // Navigate immediately without animation
+    await handleContinue(id);
+    if (isMounted.current) {
+      setIsProcessing(false);
     }
-
-    // Start slide animation
-    Animated.sequence([
-      Animated.timing(slideAnim, {
-        toValue: -SCREEN_WIDTH,
-        duration: 300,
-        useNativeDriver: true,
-      }),
-      Animated.timing(slideAnim, {
-        toValue: 0,
-        duration: 0,
-        useNativeDriver: true,
-      }),
-    ]).start();
-
-    // Navigate after animation
-    timeoutRef.current = setTimeout(async () => {
-      if (!isMounted.current) {
-        logger.warn("⚠️ IntentQuestion3Screen: Component unmounted, aborting");
-        return;
-      }
-      await handleContinue(id);
-      if (isMounted.current) {
-        setIsProcessing(false);
-      }
-    }, 300);
   };
 
   const handleContinue = async (selectedId: string) => {
@@ -210,30 +176,16 @@ export default function IntentQuestion3Screen() {
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
-          <Animated.View
-            style={[
-              styles.header,
-              {
-                transform: [{ translateX: slideAnim }],
-              },
-            ]}
-          >
+          <View style={styles.header}>
             <Text style={styles.progress}>Question 3 of 3</Text>
             <Text style={styles.title}>
               Could you cover a $1,000 emergency expense?
             </Text>
-          </Animated.View>
+          </View>
 
-          <Animated.View
-            style={[
-              styles.optionsContainer,
-              {
-                transform: [{ translateX: slideAnim }],
-              },
-            ]}
-          >
+          <View style={styles.optionsContainer}>
             {OPTIONS.map((option) => renderOption(option))}
-          </Animated.View>
+          </View>
         </ScrollView>
       </SafeAreaView>
     </LinearGradient>
