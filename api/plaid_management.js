@@ -396,13 +396,12 @@ export default async function handler(req, res) {
     // ------------------------------
     // PLAID CREATE MODE (default)
     // ------------------------------
+
+    // Base link token parameters
     const linkTokenParams = {
       user: { client_user_id: user_id },
       client_name: "Financify",
       products: ["transactions"],
-      required_if_supported_products: ["investments"],
-      optional_products: ["auth", "liabilities"],
-      additional_consented_products: [],
       country_codes: ["US"],
       language: "en",
       webhook: `${process.env.APP_BASE_URL}/api/webhook`,
@@ -416,10 +415,33 @@ export default async function handler(req, res) {
         "🏦 Creating link token for specific institution:",
         req.body.institution_id
       );
+
+      // For institution-specific tokens, use minimal products to avoid compatibility issues
+      // Some institutions don't support investments or other advanced products
+      linkTokenParams.products = ["transactions"];
+      linkTokenParams.optional_products = ["auth"];
+
+      console.log(
+        "🔧 Using minimal products for institution-specific connection"
+      );
+    } else {
+      // For general link tokens, we can request more products
+      linkTokenParams.products = ["transactions"];
+      linkTokenParams.required_if_supported_products = ["investments"];
+      linkTokenParams.optional_products = ["auth", "liabilities"];
+      linkTokenParams.additional_consented_products = [];
+
+      console.log("🔧 Using full product set for general connection");
     }
+
+    console.log(
+      "📋 Final link token parameters:",
+      JSON.stringify(linkTokenParams, null, 2)
+    );
 
     const { data: tokenData } = await client.linkTokenCreate(linkTokenParams);
 
+    console.log("✅ Link token created successfully");
     return res.status(200).json({
       link_token: tokenData.link_token,
       institution_id: req.body.institution_id || null,
@@ -429,6 +451,20 @@ export default async function handler(req, res) {
       "❌ Error in plaid_management API:",
       err.response?.data || err.message
     );
+
+    // Enhanced error logging for institution-specific issues
+    if (
+      req.body.institution_id &&
+      err.response?.data?.error_code === "INVALID_INSTITUTION_ID"
+    ) {
+      console.error("🔍 Institution-specific error details:", {
+        institution_id: req.body.institution_id,
+        error_code: err.response.data.error_code,
+        error_message: err.response.data.error_message,
+        suggestion:
+          "Institution may not support requested products or require OAuth registration",
+      });
+    }
 
     return res.status(500).json({
       error:
