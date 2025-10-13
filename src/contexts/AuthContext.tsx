@@ -36,6 +36,9 @@ export default function AuthProvider({
 }) {
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  // Dedupe auth events across the component lifecycle
+  const lastEventRef = useRef<string>("");
+  const lastUserIdRef = useRef<string | undefined>(undefined);
 
   useEffect(() => {
     // Get initial session and validate user exists
@@ -61,10 +64,6 @@ export default function AuthProvider({
       setSession(session);
       setIsLoading(false);
     });
-
-    // Listen for auth changes
-    const lastEventRef = { current: "" as string };
-    const lastUserIdRef = { current: undefined as string | undefined };
 
     const {
       data: { subscription },

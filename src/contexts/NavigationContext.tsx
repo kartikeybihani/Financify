@@ -61,6 +61,7 @@ export const NavigationProvider: React.FC<NavigationProviderProps> = ({
   const [onboardingCompleted, setOnboardingCompleted] = useState<
     boolean | null
   >(null);
+  const lastStateRef = useRef<NavigationState | null>(null);
 
   // Cache keys
   const CACHE_KEYS = {
@@ -189,17 +190,21 @@ export const NavigationProvider: React.FC<NavigationProviderProps> = ({
       return;
     }
 
-    setIsLoading(true);
+    // Only show loading during the very first determination
+    if (!hasCompletedInitialNav) {
+      setIsLoading(true);
+    }
 
     try {
       const result = await determineNavigationState();
       const targetState = result.state;
 
-      // Update context state
-      setNavigationState(targetState);
-
-      // Save to cache for next app launch
-      await saveNavigationState(targetState);
+      // Update only if changed
+      if (lastStateRef.current !== targetState) {
+        setNavigationState(targetState);
+        await saveNavigationState(targetState);
+        lastStateRef.current = targetState;
+      }
 
       // Mark that we've completed initial navigation determination
       setHasCompletedInitialNav(true);
@@ -208,9 +213,10 @@ export const NavigationProvider: React.FC<NavigationProviderProps> = ({
     } catch (error) {
       logger.error("❌ NavigationContext: Error updating state:", error);
     } finally {
+      // Always clear local loading flag when a determination completes
       setIsLoading(false);
     }
-  }, [authLoading, isInitializing, session]);
+  }, [authLoading, isInitializing, session, hasCompletedInitialNav]);
 
   // Force a specific navigation state (for testing or manual control)
   const forceNavigationState = async (state: NavigationState) => {
@@ -230,10 +236,8 @@ export const NavigationProvider: React.FC<NavigationProviderProps> = ({
       // Load cached state first for instant UI
       await loadCachedState();
 
-      // Small delay to let auth context settle
-      setTimeout(() => {
-        setIsInitializing(false);
-      }, 100);
+      // End initializing immediately; gate will resolve deterministically
+      setIsInitializing(false);
     };
 
     initializeNavigation();

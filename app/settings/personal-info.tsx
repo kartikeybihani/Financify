@@ -12,7 +12,6 @@ import { useRouter, useLocalSearchParams } from "expo-router";
 import { supabase } from "@/src/lib/supabase/supabase";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import EditEmailModal from "@/src/components/menu/EditEmailModal";
-import EditPhoneModal from "@/src/components/menu/EditPhoneModal";
 import EditNameModal from "@/src/components/menu/EditNameModal";
 import logger from "@/src/utils/logger";
 
@@ -21,11 +20,13 @@ export default function PersonalInfoScreen() {
   const { userName } = useLocalSearchParams();
   const [userData, setUserData] = useState<any>(null);
   const [showEmailModal, setShowEmailModal] = useState(false);
-  const [showPhoneModal, setShowPhoneModal] = useState(false);
   const [newEmail, setNewEmail] = useState("");
-  const [newPhone, setNewPhone] = useState("");
   const [newName, setNewName] = useState("");
   const [showNameModal, setShowNameModal] = useState(false);
+  const [occupation, setOccupation] = useState<string>("");
+  const [profileAge, setProfileAge] = useState<number | null>(null);
+  const [firstName, setFirstName] = useState<string>("");
+  const [lastName, setLastName] = useState<string>("");
 
   useEffect(() => {
     const fetchAndSetUserData = async () => {
@@ -42,6 +43,25 @@ export default function PersonalInfoScreen() {
           setUserData(user);
           await AsyncStorage.setItem("userData", JSON.stringify(user));
           logger.info("[PersonalInfo] Current user email:", user.email);
+
+          // Fetch occupation (and age) from profiles
+          try {
+            const { data: profile } = await supabase
+              .from("profiles")
+              .select("occupation, age, first_name, last_name")
+              .eq("id", user.id)
+              .maybeSingle();
+            if (profile) {
+              setOccupation(profile.occupation || "");
+              setProfileAge(
+                typeof profile.age === "number" ? profile.age : null
+              );
+              setFirstName(profile.first_name || "");
+              setLastName(profile.last_name || "");
+            }
+          } catch (e) {
+            logger.error("[PersonalInfo] Failed to fetch profile:", e);
+          }
         }
       } catch (error) {
         logger.error("Error fetching user data:", error);
@@ -65,33 +85,38 @@ export default function PersonalInfoScreen() {
     }
   };
 
-  const handleSavePhone = async (phone: string) => {
-    try {
-      const { data, error } = await supabase.auth.updateUser({
-        phone,
-      });
-      if (error) throw error;
-      const updatedUserData = { ...userData, phone };
-      setUserData(updatedUserData);
-      await AsyncStorage.setItem("userData", JSON.stringify(updatedUserData));
-      setShowPhoneModal(false);
-    } catch (error: any) {
-      throw error;
-    }
-  };
-
   const handleSaveName = async (name: string) => {
     try {
-      const { data, error } = await supabase.auth.updateUser({
-        data: { full_name: name },
+      const fullName = (name || "").trim();
+      const parts = fullName.split(/\s+/);
+      const first = parts[0] || "";
+      const last = parts.slice(1).join(" ") || "";
+
+      // Update profiles split name
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (user?.id) {
+        await supabase
+          .from("profiles")
+          .update({ first_name: first, last_name: last })
+          .eq("id", user.id);
+      }
+
+      // Mirror to auth metadata full_name for legacy consumers
+      const { error: authErr } = await supabase.auth.updateUser({
+        data: { full_name: fullName },
       });
-      if (error) throw error;
+      if (authErr) throw authErr;
+
       const updatedUserData = {
         ...userData,
-        user_metadata: { ...userData.user_metadata, full_name: name },
+        user_metadata: { ...userData.user_metadata, full_name: fullName },
       };
       setUserData(updatedUserData);
       await AsyncStorage.setItem("userData", JSON.stringify(updatedUserData));
+      setFirstName(first);
+      setLastName(last);
       setShowNameModal(false);
     } catch (error: any) {
       throw error;
@@ -157,9 +182,17 @@ export default function PersonalInfoScreen() {
             {renderInfoItem(
               "person-outline",
               "Name",
-              userData?.user_metadata?.full_name || userName || "Not available",
+              (firstName || lastName
+                ? `${firstName}${lastName ? " " + lastName : ""}`
+                : userData?.user_metadata?.full_name ||
+                  userName ||
+                  "Not available") as string,
               () => {
-                setNewName(userData?.user_metadata?.full_name || "");
+                const current =
+                  firstName || lastName
+                    ? `${firstName}${lastName ? " " + lastName : ""}`
+                    : userData?.user_metadata?.full_name || "";
+                setNewName(current);
                 setShowNameModal(true);
               }
             )}
@@ -175,13 +208,9 @@ export default function PersonalInfoScreen() {
             )}
             <View style={styles.divider} />
             {renderInfoItem(
-              "call-outline",
-              "Phone",
-              userData?.user_metadata?.phone_number || "Not available",
-              () => {
-                setNewPhone(userData?.user_metadata?.phone_number || "");
-                setShowPhoneModal(true);
-              }
+              "briefcase-outline",
+              "Occupation",
+              occupation || "Not available"
             )}
             <View style={styles.divider} />
             <View style={styles.horizontalFields}>
@@ -189,7 +218,8 @@ export default function PersonalInfoScreen() {
                 {renderInfoItem(
                   "calendar-outline",
                   "Age",
-                  userData?.user_metadata?.age || "Not available"
+                  (profileAge ?? userData?.user_metadata?.age) ||
+                    "Not available"
                 )}
               </View>
               <View style={styles.fieldDivider} />
@@ -229,17 +259,7 @@ export default function PersonalInfoScreen() {
         onSave={handleSaveEmail}
       />
 
-      {/* Phone Edit Modal */}
-      <EditPhoneModal
-        visible={showPhoneModal}
-        value={newPhone}
-        onChange={setNewPhone}
-        onCancel={() => {
-          setShowPhoneModal(false);
-          setNewPhone("");
-        }}
-        onSave={handleSavePhone}
-      />
+      {/* Removed phone modal; occupation is read-only from profiles */}
     </SafeAreaView>
   );
 }

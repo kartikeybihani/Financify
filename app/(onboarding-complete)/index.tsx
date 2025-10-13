@@ -22,10 +22,7 @@ import { supabase } from "@/src/lib/supabase/supabase";
 import type { ComponentProps } from "react";
 import logger from "@/src/utils/logger";
 import { logOnboardingEvent } from "@/src/utils/onboarding";
-import {
-  useOnboardingFlow,
-  OnboardingStage,
-} from "@/src/contexts/OnboardingFlowContext";
+// Onboarding flow context removed; using profiles + router only
 
 const { width, height } = Dimensions.get("window");
 
@@ -72,47 +69,19 @@ const carouselSlides = finalCards.reduce((acc, curr, i) => {
 
 export default function FinalScreen() {
   const router = useRouter();
-  const { updateStage, currentStage, completeOnboarding } = useOnboardingFlow();
   const [typedText, setTypedText] = useState("");
   const [activeSlide, setActiveSlide] = useState(0);
   const [isButtonEnabled, setIsButtonEnabled] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [hasInitialized, setHasInitialized] = useState(false);
 
-  // Initialize stage only if we're supposed to be here
+  // Screen mount/unmount logs only
   useEffect(() => {
     logger.info("🎬 FinalScreen: Screen mounted");
-
-    const initializeStage = async () => {
-      if (hasInitialized) return;
-
-      try {
-        logger.info("💾 FinalScreen: Checking if stage should be final");
-
-        // Only update stage if we're not already in final stage
-        // This prevents automatic stage updates when user shouldn't be here
-        if (currentStage !== OnboardingStage.FINAL) {
-          logger.info("💾 FinalScreen: Updating stage to final");
-          await updateStage(OnboardingStage.FINAL);
-          logger.info("✅ FinalScreen: Successfully updated stage to final");
-        } else {
-          logger.info(
-            "✅ FinalScreen: Already in final stage, no update needed"
-          );
-        }
-
-        setHasInitialized(true);
-      } catch (error) {
-        logger.error("❌ FinalScreen: Error updating stage:", error);
-      }
-    };
-
-    initializeStage();
-
     return () => {
       logger.info("🎬 FinalScreen: Screen unmounted");
     };
-  }, [currentStage, updateStage, hasInitialized]);
+  }, []);
   const index = useRef(0);
   const message = "You’re in. Here’s what jumps out already.";
   const cursorVisible = useRef(true);

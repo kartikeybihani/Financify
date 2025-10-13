@@ -13,7 +13,6 @@ import NavigationProvider, {
   useNavigationContext,
   NavigationState,
 } from "@/src/contexts/NavigationContext";
-import OnboardingFlowProvider from "@/src/contexts/OnboardingFlowContext";
 import NavigationLoadingScreen from "@/src/components/shared/NavigationLoadingScreen";
 import { runStorageMigrationV2 } from "@/src/utils/migrate";
 import logger from "@/src/utils/logger";
@@ -91,20 +90,18 @@ export default function RootLayout() {
 
   return (
     <AuthProvider>
-      <OnboardingFlowProvider>
-        <NavigationProvider>
-          <ActionSheetProvider>
-            <>
-              <RootLayoutNav />
-              <StatusBar
-                style="light"
-                backgroundColor="transparent"
-                translucent
-              />
-            </>
-          </ActionSheetProvider>
-        </NavigationProvider>
-      </OnboardingFlowProvider>
+      <NavigationProvider>
+        <ActionSheetProvider>
+          <>
+            <RootLayoutNav />
+            <StatusBar
+              style="light"
+              backgroundColor="transparent"
+              translucent
+            />
+          </>
+        </ActionSheetProvider>
+      </NavigationProvider>
     </AuthProvider>
   );
 }
