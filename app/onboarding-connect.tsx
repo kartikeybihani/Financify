@@ -230,57 +230,38 @@ export default function AccountConnectionScreen() {
         "🧭 AccountConnectionScreen: Moving to final onboarding stage"
       );
 
-      // Move to final onboarding stage - user has connected their account
-      const { data: updateData, error: updateError } =
-        await supabase.auth.updateUser({
-          data: {
-            hasConnectedBank: true,
-            onboarding_stage: "final",
-          },
-        });
-
-      if (updateError) {
+      // Update profiles step -> 4 (final)
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (user?.id) {
+          await supabase
+            .from("profiles")
+            .update({ onboarding_step: 4 })
+            .eq("id", user.id);
+        }
+      } catch (e) {
         logger.error(
-          "❌ AccountConnectionScreen: Auth update failed:",
-          updateError
+          "❌ AccountConnectionScreen: profiles step update failed",
+          e
         );
-        throw updateError;
       }
-
-      logger.info("🔍 AccountConnectionScreen: Auth update response:", {
-        user: updateData.user?.user_metadata,
-        error: updateError,
-      });
-
-      // Wait a moment for the auth state to propagate
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-
-      // Verify the update was successful
-      const {
-        data: { user },
-        error: getUserError,
-      } = await supabase.auth.getUser();
-
-      if (getUserError) {
-        logger.error(
-          "❌ AccountConnectionScreen: Failed to get user:",
-          getUserError
-        );
-        throw getUserError;
-      }
-
-      logger.info("🔍 AccountConnectionScreen: Fresh user data:", {
-        onboarding_complete: user?.user_metadata?.onboarding_complete,
-        onboarding_stage: user?.user_metadata?.onboarding_stage,
-        hasConnectedBank: user?.user_metadata?.hasConnectedBank,
-      });
 
       logger.info(
         "✅ AccountConnectionScreen: Moved to final onboarding stage"
       );
       logOnboardingEvent({ stage: "plaid", action: "continue" });
+
+      // Navigate immediately to final screen to avoid waiting for gate refresh
+      router.replace("/(onboarding-complete)" as any);
     } catch (error) {
       logger.error("❌ Error moving to final onboarding stage:", error);
+      Alert.alert(
+        "Could not continue",
+        "We couldn't move to the next step. Please try again.",
+        [{ text: "OK" }]
+      );
     }
   };
 

@@ -122,13 +122,14 @@ export default function LoginScreen() {
         setFormError(error.message);
       }
     } else {
-      // Fetch user and log email
       const {
         data: { user },
       } = await supabase.auth.getUser();
       if (user) {
         logger.info("User logged in:", user.email);
       }
+      // Direct to tabs; gate will also confirm
+      router.replace("/(tabs)/chat" as any);
     }
   };
 

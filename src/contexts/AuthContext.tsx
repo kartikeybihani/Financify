@@ -1,5 +1,11 @@
 // app/contexts/AuthContext.tsx
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, {
+  createContext,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { Session } from "@supabase/supabase-js";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { supabase } from "@/src/lib/supabase/supabase";
@@ -57,9 +63,20 @@ export default function AuthProvider({
     });
 
     // Listen for auth changes
+    const lastEventRef = { current: "" as string };
+    const lastUserIdRef = { current: undefined as string | undefined };
+
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, session) => {
+      const userId = session?.user?.id;
+      if (lastEventRef.current === event && lastUserIdRef.current === userId) {
+        // Ignore duplicate auth event to avoid loops
+        return;
+      }
+      lastEventRef.current = event;
+      lastUserIdRef.current = userId;
+
       logger.info(`🔐 Auth state changed: ${event}`);
 
       // Handle invalid user errors
@@ -77,11 +94,12 @@ export default function AuthProvider({
         }
       }
 
+      // INITIAL_SESSION may fire with null session; do not treat as sign-out
       setSession(session);
       setIsLoading(false);
 
-      // Clear cache when user signs out
-      if (event === "SIGNED_OUT" || !session) {
+      // Clear cache ONLY on explicit sign out
+      if (event === "SIGNED_OUT") {
         await clearAllCache();
       }
     });

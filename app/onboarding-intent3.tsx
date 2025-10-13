@@ -13,6 +13,7 @@ import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { supabase } from "@/src/lib/supabase/supabase";
 import logger from "@/src/utils/logger";
 import { logOnboardingEvent } from "@/src/utils/onboarding";
 
@@ -121,6 +122,19 @@ export default function IntentQuestion3Screen() {
         "pending_intent_answers",
         JSON.stringify(answers)
       );
+
+      // Persist step -> 2 (Profile next)
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (user?.id) {
+          await supabase
+            .from("profiles")
+            .update({ onboarding_step: 2 })
+            .eq("id", user.id);
+        }
+      } catch {}
 
       logger.info(
         "✅ IntentQuestion3Screen: All intent answers saved, navigating to profile"

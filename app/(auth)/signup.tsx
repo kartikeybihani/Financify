@@ -65,12 +65,7 @@ export default function SignupScreen() {
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
-      options: {
-        data: {
-          onboarding_complete: false,
-          onboarding_stage: "q1", // Set initial stage to intent questions
-        },
-      },
+      options: {},
     });
 
     logger.info("Signup data: ", data);
@@ -85,8 +80,24 @@ export default function SignupScreen() {
       return;
     }
 
-    // Set onboarding started flag - NavigationContext will handle routing
-    await AsyncStorage.setItem("onboarding_started", "true");
+    // Create profiles row and route to intent
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (user?.id) {
+        await supabase.from("profiles").upsert(
+          {
+            id: user.id,
+            onboarding_completed: false,
+            onboarding_step: 1,
+          },
+          { onConflict: "id" }
+        );
+      }
+    } catch {}
+
+    router.replace("/onboarding-intent1" as any);
   };
 
   const handlePrivacyPolicy = async () => {

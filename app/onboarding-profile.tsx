@@ -69,7 +69,20 @@ export default function AboutYouScreen() {
         JSON.stringify(profileData)
       );
 
-      // Navigate WITHOUT updating Supabase (no USER_UPDATED event)
+      // Mark onboarding step -> 3 (connect accounts)
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (user?.id) {
+          await supabase
+            .from("profiles")
+            .update({ onboarding_step: 3 })
+            .eq("id", user.id);
+        }
+      } catch {}
+
+      // Navigate to connect
       router.replace("/onboarding-connect" as any);
 
       logger.info(

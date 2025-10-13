@@ -3,6 +3,7 @@ import React, {
   useContext,
   useEffect,
   useState,
+  useRef,
   ReactNode,
 } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -62,6 +63,7 @@ export const OnboardingFlowProvider: React.FC<OnboardingFlowProviderProps> = ({
   children,
 }) => {
   const { session } = useAuth();
+  const hadUserRef = useRef<boolean>(false);
 
   // State management
   const [currentStage, setCurrentStage] = useState<OnboardingStage | null>(
@@ -433,11 +435,18 @@ export const OnboardingFlowProvider: React.FC<OnboardingFlowProviderProps> = ({
 
   // Clear cache when user signs out
   useEffect(() => {
-    if (!session) {
+    // Only treat as a real sign-out if we previously had a user session
+    if (!session && hadUserRef.current) {
       clearOnboardingCache();
       setCurrentStage(null);
       setFlowState(OnboardingFlowState.IN_PROGRESS);
       logger.info("🚪 OnboardingFlow: User signed out, resetting state");
+      hadUserRef.current = false;
+      return;
+    }
+
+    if (session?.user) {
+      hadUserRef.current = true;
     }
   }, [session]);
 

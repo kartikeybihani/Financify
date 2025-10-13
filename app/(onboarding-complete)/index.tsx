@@ -413,16 +413,23 @@ export default function FinalScreen() {
     animateLoadingDots();
 
     try {
-      // Complete onboarding using the context
-      await completeOnboarding();
+      // Mark profiles completed and jump to tabs
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (user?.id) {
+        await supabase
+          .from("profiles")
+          .update({ onboarding_completed: true, onboarding_step: 4 })
+          .eq("id", user.id);
+      }
 
       logger.info("✅ Onboarding completed");
       logOnboardingEvent({ stage: "final", action: "complete" });
 
-      // Wait for loading animation then navigate to main app
       setTimeout(() => {
-        // NavigationContext will automatically navigate to authenticated state
-      }, 2000);
+        router.replace("/(tabs)/chat" as any);
+      }, 1200);
     } catch (error) {
       logger.error("Error completing onboarding:", error);
       setIsLoading(false);

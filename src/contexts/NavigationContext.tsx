@@ -3,13 +3,13 @@ import React, {
   useContext,
   useEffect,
   useState,
+  useCallback,
+  useRef,
   ReactNode,
 } from "react";
-import { useRouter, useSegments } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { supabase } from "@/src/lib/supabase/supabase";
 import { useAuth } from "./AuthContext";
-import { useOnboardingFlow, OnboardingStage } from "./OnboardingFlowContext";
+import { supabase } from "@/src/lib/supabase/supabase";
 import logger from "@/src/utils/logger";
 
 // Navigation states - the 4 main stages
@@ -25,6 +25,8 @@ interface NavigationContextType {
   navigationState: NavigationState;
   isLoading: boolean;
   isInitializing: boolean;
+  onboardingStep?: number | null;
+  onboardingCompleted?: boolean | null;
 
   // Navigation actions
   navigateToCorrectScreen: () => void;
@@ -46,13 +48,7 @@ export const NavigationProvider: React.FC<NavigationProviderProps> = ({
   children,
 }) => {
   const { session, isLoading: authLoading } = useAuth();
-  const {
-    currentStage,
-    flowState,
-    isLoading: onboardingLoading,
-  } = useOnboardingFlow();
-  const router = useRouter();
-  const segments = useSegments();
+  const hadUserRef = useRef<boolean>(false);
 
   // State management
   const [navigationState, setNavigationState] = useState<NavigationState>(
@@ -60,7 +56,11 @@ export const NavigationProvider: React.FC<NavigationProviderProps> = ({
   );
   const [isLoading, setIsLoading] = useState(true);
   const [isInitializing, setIsInitializing] = useState(true);
-  const [lastNavigatedTo, setLastNavigatedTo] = useState<string | null>(null);
+  const [hasCompletedInitialNav, setHasCompletedInitialNav] = useState(false);
+  const [onboardingStep, setOnboardingStep] = useState<number | null>(null);
+  const [onboardingCompleted, setOnboardingCompleted] = useState<
+    boolean | null
+  >(null);
 
   // Cache keys
   const CACHE_KEYS = {
@@ -78,6 +78,7 @@ export const NavigationProvider: React.FC<NavigationProviderProps> = ({
 
       if (cachedNavState && cachedAuth === "true") {
         setNavigationState(cachedNavState as NavigationState);
+        setHasCompletedInitialNav(true); // We have cached state, can show UI
         logger.info("📍 NavigationContext: Loaded cached state", {
           state: cachedNavState,
         });
@@ -123,126 +124,67 @@ export const NavigationProvider: React.FC<NavigationProviderProps> = ({
   // Determine navigation state based on session and onboarding flow
   const determineNavigationState = async (): Promise<{
     state: NavigationState;
-    onboardingStage?: string;
+    step?: number | null;
+    completed?: boolean | null;
   }> => {
     // Stage 1: No user session = PRE_SIGNUP
     if (!session?.user) {
+      setOnboardingStep(null);
+      setOnboardingCompleted(null);
       return { state: NavigationState.PRE_SIGNUP };
     }
 
-    // Use onboarding flow context state instead of fetching from server
-    logger.info("🔍 NavigationContext: Onboarding flow check", {
-      currentStage,
-      currentStageType: typeof currentStage,
-      flowState,
-      userId: session.user.id,
-    });
+    // Fetch profile row
+    try {
+      const { data: profile, error } = await supabase
+        .from("profiles")
+        .select("onboarding_completed, onboarding_step")
+        .eq("id", session.user.id)
+        .maybeSingle();
 
-    // Stage 3: User logged in AND onboarding complete = AUTHENTICATED
-    if (
-      flowState === "completed" ||
-      currentStage === OnboardingStage.COMPLETE
-    ) {
-      return { state: NavigationState.AUTHENTICATED };
-    }
+      if (error) {
+        logger.error("❌ NavigationContext: profiles fetch error", error);
+      }
 
-    // Stage 2.5: User logged in, onboarding_stage is "final" but not complete = ONBOARDING_FINAL
-    if (currentStage === OnboardingStage.FINAL) {
-      return {
-        state: NavigationState.ONBOARDING_FINAL,
-        onboardingStage: currentStage || undefined,
-      };
-    }
+      // Legacy user: no profile row => treat as completed
+      if (!profile) {
+        setOnboardingStep(null);
+        setOnboardingCompleted(true);
+        return {
+          state: NavigationState.AUTHENTICATED,
+          step: null,
+          completed: true,
+        };
+      }
 
-    // Stage 2: User logged in BUT onboarding not complete = ONBOARDING
-    return {
-      state: NavigationState.ONBOARDING,
-      onboardingStage: currentStage || OnboardingStage.INTENT_Q1,
-    };
-  };
+      const completed = !!profile.onboarding_completed;
+      const step = Number(profile.onboarding_step || 0);
+      setOnboardingStep(step);
+      setOnboardingCompleted(completed);
 
-  // Get the correct route for current state
-  const getRouteForState = (
-    state: NavigationState,
-    onboardingStage?: string
-  ): string => {
-    switch (state) {
-      case NavigationState.PRE_SIGNUP:
-        // Stage 1: Welcome, Login, Signup screens
-        return "/(auth)/welcome";
+      if (completed) {
+        return { state: NavigationState.AUTHENTICATED, step, completed };
+      }
 
-      case NavigationState.ONBOARDING:
-        // Stage 2: Onboarding flow - route based on onboarding_stage
-        if (onboardingStage === OnboardingStage.INTENT_Q2) {
-          return "/onboarding-intent2";
-        } else if (onboardingStage === OnboardingStage.INTENT_Q3) {
-          return "/onboarding-intent3";
-        } else if (onboardingStage === OnboardingStage.PROFILE) {
-          return "/onboarding-profile";
-        } else if (onboardingStage === OnboardingStage.PLAID_CONNECT) {
-          return "/onboarding-connect";
-        } else {
-          // Default to first intent screen for q1 or undefined stages
-          return "/onboarding-intent1";
-        }
+      // step 4 == final screen
+      if (step === 4) {
+        return { state: NavigationState.ONBOARDING_FINAL, step, completed };
+      }
 
-      case NavigationState.ONBOARDING_FINAL:
-        // Stage 2.5: Final onboarding stage
-        return "/(onboarding-complete)";
-
-      case NavigationState.AUTHENTICATED:
-        // Stage 3: Inside the app (tabs, settings, etc.)
-        return "/(tabs)/chat"; // Default to chat tab
-
-      default:
-        return "/(auth)/welcome";
+      return { state: NavigationState.ONBOARDING, step, completed };
+    } catch (e) {
+      logger.error("❌ NavigationContext: error determining state", e);
+      // On error, hold at pre-signup to avoid misrouting
+      return { state: NavigationState.PRE_SIGNUP };
     }
   };
 
-  // Check if user is currently on the correct screen
-  const isOnCorrectScreen = (targetRoute: string): boolean => {
-    const currentPath = `/${segments.join("/")}`;
-    const isCorrect = currentPath === targetRoute;
-
-    logger.info("🔍 NavigationContext: Screen check", {
-      currentPath,
-      targetRoute,
-      isCorrect,
-    });
-
-    return isCorrect;
-  };
-
-  // Check if user is on any valid onboarding screen (not just the target one)
-  const isOnValidOnboardingScreen = (targetState: NavigationState): boolean => {
-    const currentPath = `/${segments.join("/")}`;
-    const onboardingScreens = [
-      "/onboarding-intent1",
-      "/onboarding-intent2",
-      "/onboarding-intent3",
-      "/onboarding-profile",
-      "/onboarding-connect",
-      "/(onboarding-complete)",
-    ];
-
-    // If target state is ONBOARDING and user is on any onboarding screen, don't navigate
-    if (targetState === NavigationState.ONBOARDING) {
-      return onboardingScreens.includes(currentPath);
-    }
-
-    // If target state is ONBOARDING_FINAL, don't interfere if already on the final screen
-    if (targetState === NavigationState.ONBOARDING_FINAL) {
-      return currentPath === "/(onboarding-complete)";
-    }
-
-    return false;
-  };
-
-  // Main navigation function with loading states
-  const navigateToCorrectScreen = async () => {
-    if (authLoading || isInitializing || onboardingLoading) {
+  // Main navigation function - now just updates state without navigating
+  // Let index.tsx handle the actual navigation declaratively
+  const navigateToCorrectScreen = useCallback(async () => {
+    if (authLoading || isInitializing) {
       logger.info(
-        "⏳ NavigationContext: Waiting for auth/onboarding/initialization to complete"
+        "⏳ NavigationContext: Waiting for auth/initialization to complete"
       );
       return;
     }
@@ -252,9 +194,6 @@ export const NavigationProvider: React.FC<NavigationProviderProps> = ({
     try {
       const result = await determineNavigationState();
       const targetState = result.state;
-      const onboardingStage = result.onboardingStage;
-
-      const targetRoute = getRouteForState(targetState, onboardingStage);
 
       // Update context state
       setNavigationState(targetState);
@@ -262,88 +201,25 @@ export const NavigationProvider: React.FC<NavigationProviderProps> = ({
       // Save to cache for next app launch
       await saveNavigationState(targetState);
 
-      // Check if user is already on a valid onboarding screen
-      // If so, don't interfere with manual navigation within onboarding flow
-      if (isOnValidOnboardingScreen(targetState)) {
-        logger.info(
-          "✅ NavigationContext: User already in onboarding flow, not interfering",
-          {
-            currentPath: `/${segments.join("/")}`,
-            targetRoute,
-            onboardingStage,
-            targetState,
-          }
-        );
-        setIsLoading(false);
-        return;
-      }
+      // Mark that we've completed initial navigation determination
+      setHasCompletedInitialNav(true);
 
-      // Only navigate if not already on correct screen
-      if (!isOnCorrectScreen(targetRoute)) {
-        logger.info("🧭 NavigationContext: Navigating", {
-          from: `/${segments.join("/")}`,
-          to: targetRoute,
-          state: targetState,
-          onboardingStage,
-        });
-
-        // Prevent duplicate navigation
-        if (lastNavigatedTo === targetRoute) {
-          logger.info(
-            "⏭️ NavigationContext: Already navigated to this route, skipping"
-          );
-          setIsLoading(false);
-          return;
-        }
-
-        setLastNavigatedTo(targetRoute);
-
-        // For logout scenarios, use push to avoid navigation stack issues
-        if (targetState === NavigationState.PRE_SIGNUP) {
-          try {
-            router.push(targetRoute as any);
-          } catch (error) {
-            logger.error(
-              "❌ NavigationContext: Push failed, trying replace:",
-              error
-            );
-            router.replace(targetRoute as any);
-          }
-        } else {
-          router.replace(targetRoute as any);
-        }
-
-        // Reset navigation tracking after delay
-        setTimeout(() => {
-          setLastNavigatedTo(null);
-        }, 1000);
-      } else {
-        logger.info(
-          "✅ NavigationContext: Already on correct screen",
-          targetRoute
-        );
-      }
+      logger.info("📍 NavigationContext: Updated state", { targetState });
     } catch (error) {
-      logger.error("❌ NavigationContext: Error during navigation:", error);
+      logger.error("❌ NavigationContext: Error updating state:", error);
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [authLoading, isInitializing, session]);
 
   // Force a specific navigation state (for testing or manual control)
   const forceNavigationState = async (state: NavigationState) => {
-    logger.info("🎯 NavigationContext: Force navigation", { state });
+    logger.info("🎯 NavigationContext: Force state update", { state });
 
     setNavigationState(state);
     await saveNavigationState(state);
 
-    const targetRoute = getRouteForState(state);
-    setLastNavigatedTo(targetRoute);
-    router.replace(targetRoute as any);
-
-    setTimeout(() => {
-      setLastNavigatedTo(null);
-    }, 1000);
+    // State change will trigger redirect in index.tsx
   };
 
   // Initialize navigation context
@@ -363,36 +239,44 @@ export const NavigationProvider: React.FC<NavigationProviderProps> = ({
     initializeNavigation();
   }, []);
 
-  // Handle auth and onboarding state changes with debounce to avoid navigation spam
+  // Handle auth state changes with debounce to avoid navigation spam
   useEffect(() => {
-    if (!isInitializing && !authLoading && !onboardingLoading) {
-      // Increased debounce time for user metadata updates to prevent race conditions
+    if (!isInitializing && !authLoading) {
+      // Small debounce to batch state updates
       const timeoutId = setTimeout(() => {
         navigateToCorrectScreen();
-      }, 1000); // Increased debounce to prevent loops
+      }, 100); // Reduced debounce for faster response
 
       return () => clearTimeout(timeoutId);
     }
-  }, [session, authLoading, isInitializing, onboardingLoading]);
+  }, [navigateToCorrectScreen, authLoading, isInitializing]);
 
   // Clear cache when user signs out
   useEffect(() => {
-    if (!session && !authLoading) {
+    // Only clear when transitioning from real signed-in to signed-out
+    if (!session && !authLoading && hadUserRef.current) {
       clearNavigationCache();
       setNavigationState(NavigationState.PRE_SIGNUP);
+      setHasCompletedInitialNav(false); // Reset on logout
       logger.info(
         "🚪 NavigationContext: User signed out, returning to PRE_SIGNUP stage"
       );
+      hadUserRef.current = false;
+      return;
+    }
 
-      // Force immediate navigation to welcome screen on logout
-      // router.replace("/(auth)/welcome" as any);
+    if (session?.user) {
+      hadUserRef.current = true;
     }
   }, [session, authLoading]);
 
   const contextValue: NavigationContextType = {
     navigationState,
-    isLoading: isLoading || authLoading || isInitializing || onboardingLoading,
+    isLoading:
+      isLoading || authLoading || isInitializing || !hasCompletedInitialNav,
     isInitializing,
+    onboardingStep,
+    onboardingCompleted,
     navigateToCorrectScreen,
     forceNavigationState,
     clearNavigationCache,
