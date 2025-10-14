@@ -23,6 +23,11 @@ export async function addUserMessageToSupermemory(
 ) {
   try {
     console.log("🧠 [SUPERMEMORY] Adding user message for user:", userId);
+    console.log(
+      "🧠 [SUPERMEMORY] Message content:",
+      message.substring(0, 100) + "..."
+    );
+    console.log("🧠 [SUPERMEMORY] Container tag:", `user_${userId}_life`);
 
     const result = await supermemoryClient.memories.add({
       content: message,
@@ -35,13 +40,18 @@ export async function addUserMessageToSupermemory(
       },
     });
 
-    console.log("✅ [SUPERMEMORY] Memory added:", result.id);
+    console.log("✅ [SUPERMEMORY] Memory added successfully:", result.id);
+    console.log("✅ [SUPERMEMORY] Memory status:", result.status);
+    console.log(
+      "✅ [SUPERMEMORY] Full result:",
+      JSON.stringify(result, null, 2)
+    );
     return result;
   } catch (error) {
-    console.error(
-      "❌ [SUPERMEMORY] Failed to add user message:",
-      error.message
-    );
+    console.error("❌ [SUPERMEMORY] Failed to add user message:");
+    console.error("❌ [SUPERMEMORY] Error message:", error.message);
+    console.error("❌ [SUPERMEMORY] Error details:", error);
+    console.error("❌ [SUPERMEMORY] Stack trace:", error.stack);
     return null;
   }
 }
@@ -57,6 +67,15 @@ export async function addAIResponseToSupermemory(
 ) {
   try {
     console.log("🧠 [SUPERMEMORY] Adding AI response for user:", userId);
+    console.log(
+      "🧠 [SUPERMEMORY] User message:",
+      userMessage.substring(0, 100) + "..."
+    );
+    console.log(
+      "🧠 [SUPERMEMORY] AI response length:",
+      aiResponse.length,
+      "characters"
+    );
 
     const result = await supermemoryClient.memories.add({
       content: `User: ${userMessage}\nAI: ${aiResponse}`,
@@ -69,10 +88,17 @@ export async function addAIResponseToSupermemory(
       },
     });
 
-    console.log("✅ [SUPERMEMORY] Conversation memory added:", result.id);
+    console.log(
+      "✅ [SUPERMEMORY] Conversation memory added successfully:",
+      result.id
+    );
+    console.log("✅ [SUPERMEMORY] Memory status:", result.status);
     return result;
   } catch (error) {
-    console.error("❌ [SUPERMEMORY] Failed to add AI response:", error.message);
+    console.error("❌ [SUPERMEMORY] Failed to add AI response:");
+    console.error("❌ [SUPERMEMORY] Error message:", error.message);
+    console.error("❌ [SUPERMEMORY] Error details:", error);
+    console.error("❌ [SUPERMEMORY] Stack trace:", error.stack);
     return null;
   }
 }

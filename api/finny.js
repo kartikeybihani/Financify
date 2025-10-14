@@ -1588,10 +1588,10 @@ async function handleAsk(
             }
           );
         } catch (supermemoryError) {
-          console.error(
-            "⚠️ [FINNY] Supermemory integration failed:",
-            supermemoryError.message
-          );
+          console.error("⚠️ [FINNY] Supermemory integration failed:");
+          console.error("⚠️ [FINNY] Error message:", supermemoryError.message);
+          console.error("⚠️ [FINNY] Error details:", supermemoryError);
+          console.error("⚠️ [FINNY] Stack trace:", supermemoryError.stack);
         }
       });
     }
@@ -3262,10 +3262,10 @@ async function handleClassify(message, context) {
             }
           );
         } catch (supermemoryError) {
-          console.error(
-            "⚠️ [FINNY] Supermemory integration failed:",
-            supermemoryError.message
-          );
+          console.error("⚠️ [FINNY] Supermemory integration failed:");
+          console.error("⚠️ [FINNY] Error message:", supermemoryError.message);
+          console.error("⚠️ [FINNY] Error details:", supermemoryError);
+          console.error("⚠️ [FINNY] Stack trace:", supermemoryError.stack);
         }
       });
     }
@@ -3462,10 +3462,10 @@ async function handleOffTopic(message, context) {
             redirection_suggestions: redirectionSuggestions,
           });
         } catch (supermemoryError) {
-          console.error(
-            "⚠️ [FINNY] Supermemory integration failed:",
-            supermemoryError.message
-          );
+          console.error("⚠️ [FINNY] Supermemory integration failed:");
+          console.error("⚠️ [FINNY] Error message:", supermemoryError.message);
+          console.error("⚠️ [FINNY] Error details:", supermemoryError);
+          console.error("⚠️ [FINNY] Stack trace:", supermemoryError.stack);
         }
       });
     }
