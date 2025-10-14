@@ -33,7 +33,7 @@ export async function queryUserMemory(
       },
     ],
     tools: {
-      ...supermemoryTools("sm_qCVxTPU3rydaSushnrMase_VjPiglvEVJZJgrKlZgXcntHMMaNAinHgCiRMcVnlKPKUFwzlqfqnDuwihBVzpQBc", {
+      ...supermemoryTools("sm_qCVxTPU3rydaSushnrMase_FntVFeCDBNjZgZbIiFdpByXYFthaMEgNfFFeUjZNkbYgmzwCKxNmJxemIyChZGWI", {
         containerTags: [`user_kartik_life`],
       }),
     },

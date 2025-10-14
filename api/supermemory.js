@@ -10,7 +10,7 @@ const supabase = createClient(
 const supermemoryClient = new Supermemory({
   apiKey:
     process.env.SUPERMEMORY_KEY ||
-    "sm_qCVxTPU3rydaSushnrMase_VjPiglvEVJZJgrKlZgXcntHMMaNAinHgCiRMcVnlKPKUFwzlqfqnDuwihBVzpQBc",
+    "sm_qCVxTPU3rydaSushnrMase_FntVFeCDBNjZgZbIiFdpByXYFthaMEgNfFFeUjZNkbYgmzwCKxNmJxemIyChZGWI",
 });
 
 /**

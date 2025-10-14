@@ -858,6 +858,52 @@ async function handleAsk(
                 },
               })
             );
+
+            // Add to Supermemory (async, don't block response)
+            if (context?.user_id) {
+              setImmediate(async () => {
+                try {
+                  await addUserMessageToSupermemory(context.user_id, message, {
+                    intent: "ask_personalized",
+                    type: "stock_query",
+                    ticker: exec.ticker,
+                  });
+
+                  await addAIResponseToSupermemory(
+                    context.user_id,
+                    message,
+                    formatted,
+                    {
+                      intent: "ask_personalized",
+                      type: "stock_response",
+                      ticker: exec.ticker,
+                      response_time_ms: Date.now() - startTime,
+                      sources_used: [
+                        "finnhub:quote",
+                        "finnhub:profile2",
+                        "finnhub:recommendation",
+                        "finnhub:price-target",
+                        "finnhub:metric",
+                        plan?.wants?.includes("earnings")
+                          ? "finnhub:earnings"
+                          : null,
+                        plan?.wants?.includes("filings")
+                          ? "finnhub:filings"
+                          : null,
+                        plan?.wants?.includes("insider")
+                          ? "finnhub:insider"
+                          : null,
+                      ].filter(Boolean),
+                    }
+                  );
+                } catch (supermemoryError) {
+                  console.error(
+                    "⚠️ [FINNY] Supermemory integration failed:",
+                    supermemoryError.message
+                  );
+                }
+              });
+            }
             return response;
           }
         }
@@ -923,6 +969,43 @@ async function handleAsk(
               },
             })
           );
+
+          // Add to Supermemory (async, don't block response)
+          if (context?.user_id) {
+            setImmediate(async () => {
+              try {
+                await addUserMessageToSupermemory(context.user_id, message, {
+                  intent: "ask_personalized",
+                  type: "stock_query",
+                  ticker: data.ticker,
+                });
+
+                await addAIResponseToSupermemory(
+                  context.user_id,
+                  message,
+                  formatted,
+                  {
+                    intent: "ask_personalized",
+                    type: "stock_response",
+                    ticker: data.ticker,
+                    response_time_ms: Date.now() - startTime,
+                    sources_used: [
+                      "finnhub:quote",
+                      "finnhub:profile2",
+                      "finnhub:recommendation",
+                      data.priceTarget ? "finnhub:price-target" : null,
+                    ].filter(Boolean),
+                    cached: !!stockResponse?.cachedAt,
+                  }
+                );
+              } catch (supermemoryError) {
+                console.error(
+                  "⚠️ [FINNY] Supermemory integration failed:",
+                  supermemoryError.message
+                );
+              }
+            });
+          }
 
           return response;
         }
@@ -3155,6 +3238,38 @@ async function handleClassify(message, context) {
     // Log conversation synchronously
     await logConversation(conversationData);
 
+    // Add to Supermemory (async, don't block response)
+    if (context?.user_id) {
+      setImmediate(async () => {
+        try {
+          // Add user message to Supermemory
+          await addUserMessageToSupermemory(context.user_id, message, {
+            intent: "classify",
+            classification_result: out,
+            type: "classification_request",
+          });
+
+          // Add classification result to Supermemory
+          await addAIResponseToSupermemory(
+            context.user_id,
+            message,
+            `Classification: ${out.intent} (confidence: ${out.confidence})`,
+            {
+              intent: "classify",
+              classification_result: out,
+              response_time_ms: Date.now() - startTime,
+              cached: false,
+            }
+          );
+        } catch (supermemoryError) {
+          console.error(
+            "⚠️ [FINNY] Supermemory integration failed:",
+            supermemoryError.message
+          );
+        }
+      });
+    }
+
     return out;
   } catch (e) {
     console.error("❌ [FINNY] Classification error:", e?.message);
@@ -3327,6 +3442,33 @@ async function handleOffTopic(message, context) {
 
     // Log conversation synchronously
     await logConversation(conversationData);
+
+    // Add to Supermemory (async, don't block response)
+    if (context?.user_id) {
+      setImmediate(async () => {
+        try {
+          // Add user message to Supermemory
+          await addUserMessageToSupermemory(context.user_id, message, {
+            intent: "off_topic",
+            category: category,
+            type: "non_financial_query",
+          });
+
+          // Add AI response to Supermemory
+          await addAIResponseToSupermemory(context.user_id, message, content, {
+            intent: "off_topic",
+            category: category,
+            response_time_ms: Date.now() - startTime,
+            redirection_suggestions: redirectionSuggestions,
+          });
+        } catch (supermemoryError) {
+          console.error(
+            "⚠️ [FINNY] Supermemory integration failed:",
+            supermemoryError.message
+          );
+        }
+      });
+    }
 
     return {
       text: cleanResponseFormatting(content),
