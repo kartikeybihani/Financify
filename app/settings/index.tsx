@@ -129,12 +129,13 @@ export default function SettingsScreen() {
           await AsyncStorage.removeItem("user_authenticated");
           await AsyncStorage.removeItem("userData");
 
-          // Dismiss all modals first
-          router.dismissAll();
-
-          // Sign out - NavigationContext will handle the navigation
+          // Sign out first (context will update state)
           await supabase.auth.signOut();
           logger.info("User logged out and cache cleared");
+
+          // Navigate to root - this triggers the declarative redirect in index.tsx
+          router.dismissAll();
+          router.replace("/");
         },
       },
     ]);

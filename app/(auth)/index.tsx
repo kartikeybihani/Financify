@@ -1,11 +1,11 @@
 import { Redirect } from "expo-router";
 import {
-  useNavigationContext,
+  useAuthNavigation,
   NavigationState,
-} from "@/src/contexts/NavigationContext";
+} from "@/src/contexts/AuthNavigationContext";
 
 export default function AuthIndex() {
-  const { navigationState, isLoading } = useNavigationContext();
+  const { navigationState, isLoading } = useAuthNavigation();
 
   // If user should be onboarding or authenticated, don't intercept
   if (!isLoading && navigationState !== NavigationState.PRE_SIGNUP) {

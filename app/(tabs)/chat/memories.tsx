@@ -13,7 +13,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import { Dimensions } from "react-native";
-import { useAuth } from "@/src/contexts/AuthContext";
+import { useAuthNavigation } from "@/src/contexts/AuthNavigationContext";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { supabase } from "@/src/lib/supabase/supabase";
 import { MemorySummary, MemoriesScreenProps } from "@/src/types/plaid";
@@ -39,7 +39,7 @@ const responsivePadding = (basePadding: number) => {
 export default function MemoriesScreen({ onBack }: MemoriesScreenProps = {}) {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { session } = useAuth();
+  const { session } = useAuthNavigation();
 
   const handleBack = () => {
     if (onBack) {

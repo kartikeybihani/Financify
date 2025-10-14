@@ -17,7 +17,7 @@ import { supabase } from "@/src/lib/supabase/supabase";
 import AccountCard from "@/src/components/shared/AccountCard";
 import AccountActionAlert from "@/src/components/modals/AccountActionAlert";
 import { deleteAccount } from "@/src/utils/accountManagement";
-import { useAuth } from "@/src/contexts/AuthContext";
+import { useAuthNavigation } from "@/src/contexts/AuthNavigationContext";
 import {
   Transaction,
   Account,
@@ -50,7 +50,7 @@ export default function AccountDetailModal({
 }: AccountDetailModalProps) {
   const insets = useSafeAreaInsets();
   const { height, width } = useWindowDimensions();
-  const { session } = useAuth();
+  const { session } = useAuthNavigation();
   const [account, setAccount] = useState<Account | null>(null);
   const [recentTransactions, setRecentTransactions] = useState<Transaction[]>(
     []

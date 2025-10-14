@@ -20,7 +20,7 @@ import FinnyCheckinScreen from "@/app/(tabs)/chat/finny-checkin";
 import LegalSummaryScreen from "@/app/(tabs)/chat/legal-summary";
 import HowFinnyWorksScreen from "@/app/(tabs)/chat/how-finny-works";
 import ChatHistoryScreen from "@/app/(tabs)/chat/history";
-import { useAuth } from "@/src/contexts/AuthContext";
+import { useAuthNavigation } from "@/src/contexts/AuthNavigationContext";
 import { useChatContext } from "@/src/contexts/ChatContext";
 import { SettingItemProps, MemorySummary } from "@/src/types/plaid";
 
@@ -226,7 +226,7 @@ const SettingItem: React.FC<SettingItemProps> = ({
 export default function FinnySettingsScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { session } = useAuth();
+  const { session } = useAuthNavigation();
   const { clearChat } = useChatContext();
   const [showMemories, setShowMemories] = useState(false);
   const [showStyle, setShowStyle] = useState(false);

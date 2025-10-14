@@ -128,8 +128,9 @@ export default function LoginScreen() {
       if (user) {
         logger.info("User logged in:", user.email);
       }
-      // Direct to tabs; gate will also confirm
-      router.replace("/(tabs)/chat" as any);
+      // Auth listener will trigger navigation via context
+      // The loading indicator in the button shows feedback during auth
+      router.push("(tabs)/chat" as any);
     }
   };
 

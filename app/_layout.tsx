@@ -8,11 +8,9 @@ import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import { useFonts } from "expo-font";
 import { useEffect } from "react";
-import AuthProvider from "@/src/contexts/AuthContext";
-import NavigationProvider, {
-  useNavigationContext,
-  NavigationState,
-} from "@/src/contexts/NavigationContext";
+import AuthNavigationProvider, {
+  useAuthNavigation,
+} from "@/src/contexts/AuthNavigationContext";
 import NavigationLoadingScreen from "@/src/components/shared/NavigationLoadingScreen";
 import { runStorageMigrationV2 } from "@/src/utils/migrate";
 import logger from "@/src/utils/logger";
@@ -23,10 +21,10 @@ SplashScreen.preventAutoHideAsync();
 setupGlobalErrorHandling();
 
 function RootLayoutNav() {
-  const { isLoading, isInitializing } = useNavigationContext();
+  const { isLoading } = useAuthNavigation();
 
-  // Show loading screen while determining navigation state
-  if (isLoading || isInitializing) {
+  // Show loading screen only during initial auth check
+  if (isLoading) {
     return <NavigationLoadingScreen message="Getting ready..." />;
   }
 
@@ -89,19 +87,13 @@ export default function RootLayout() {
   if (!loaded) return null;
 
   return (
-    <AuthProvider>
-      <NavigationProvider>
-        <ActionSheetProvider>
-          <>
-            <RootLayoutNav />
-            <StatusBar
-              style="light"
-              backgroundColor="transparent"
-              translucent
-            />
-          </>
-        </ActionSheetProvider>
-      </NavigationProvider>
-    </AuthProvider>
+    <AuthNavigationProvider>
+      <ActionSheetProvider>
+        <>
+          <RootLayoutNav />
+          <StatusBar style="light" backgroundColor="transparent" translucent />
+        </>
+      </ActionSheetProvider>
+    </AuthNavigationProvider>
   );
 }

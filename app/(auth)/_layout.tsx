@@ -1,12 +1,12 @@
 import { Stack, useRouter } from "expo-router";
 import { useEffect, useRef } from "react";
 import {
-  useNavigationContext,
+  useAuthNavigation,
   NavigationState,
-} from "@/src/contexts/NavigationContext";
+} from "@/src/contexts/AuthNavigationContext";
 
 export default function AuthLayout() {
-  const { isLoading, navigationState } = useNavigationContext();
+  const { isLoading, navigationState } = useAuthNavigation();
   const router = useRouter();
   const hasRedirectedRef = useRef(false);
 

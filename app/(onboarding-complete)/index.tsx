@@ -793,7 +793,7 @@ const styles = StyleSheet.create({
     backgroundColor: "transparent",
   },
   button: {
-    borderRadius: 12,
+    borderRadius: 30,
     overflow: "hidden",
   },
   buttonGradient: {

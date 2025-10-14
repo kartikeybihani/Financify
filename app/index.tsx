@@ -1,38 +1,40 @@
-import { useEffect, useMemo, useRef } from "react";
-import { useRouter } from "expo-router";
-import { useNavigationContext } from "@/src/contexts/NavigationContext";
-import { NavigationState } from "@/src/contexts/NavigationContext";
+import { Redirect } from "expo-router";
+import {
+  useAuthNavigation,
+  NavigationState,
+} from "@/src/contexts/AuthNavigationContext";
 
 export default function Index() {
-  const router = useRouter();
-  const { isLoading, navigationState, onboardingStep } = useNavigationContext();
-  const lastHrefRef = useRef<string | null>(null);
+  const { isLoading, navigationState, onboardingStep } = useAuthNavigation();
 
-  const targetHref = useMemo(() => {
-    if (isLoading) return null;
-    switch (navigationState) {
-      case NavigationState.PRE_SIGNUP:
-        return "/(auth)/welcome";
-      case NavigationState.ONBOARDING:
-        if (onboardingStep === 2) return "/onboarding-profile";
-        if (onboardingStep === 3) return "/onboarding-connect";
-        return "/onboarding-intent1"; // step 1
-      case NavigationState.ONBOARDING_FINAL:
-        return "/(onboarding-complete)";
-      case NavigationState.AUTHENTICATED:
-        return "/(tabs)/chat";
-      default:
-        return "/(auth)/welcome";
-    }
-  }, [isLoading, navigationState, onboardingStep]);
+  // Show nothing while loading (parent shows loading screen)
+  if (isLoading) {
+    return null;
+  }
 
-  useEffect(() => {
-    if (!targetHref) return;
-    if (lastHrefRef.current === targetHref) return;
-    lastHrefRef.current = targetHref;
-    router.replace(targetHref as any);
-  }, [router, targetHref]);
+  // Declarative navigation based on state
+  switch (navigationState) {
+    case NavigationState.PRE_SIGNUP:
+      return <Redirect href="/(auth)/welcome" />;
 
-  // Render nothing while deciding; navigation happens imperatively above
-  return null;
+    case NavigationState.ONBOARDING:
+      // Route to specific onboarding step
+      if (onboardingStep === 2) {
+        return <Redirect href="/onboarding-profile" />;
+      }
+      if (onboardingStep === 3) {
+        return <Redirect href="/onboarding-connect" />;
+      }
+      // Default to first onboarding screen
+      return <Redirect href="/onboarding-intent1" />;
+
+    case NavigationState.ONBOARDING_FINAL:
+      return <Redirect href="/(onboarding-complete)" />;
+
+    case NavigationState.AUTHENTICATED:
+      return <Redirect href="/(tabs)/chat" />;
+
+    default:
+      return <Redirect href="/(auth)/welcome" />;
+  }
 }
