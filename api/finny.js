@@ -5,6 +5,10 @@ import crypto from "crypto";
 import { handleGoalConversation } from "./goals.js";
 import { KEY_SYNONYMS } from "../src/constants/keySynonyms.js";
 import { braveSearch } from "../lib/websearch/brave.js";
+import {
+  addUserMessageToSupermemory,
+  addAIResponseToSupermemory,
+} from "./supermemory.js";
 
 // Utilities
 function generateRequestId() {
@@ -1475,6 +1479,39 @@ async function handleAsk(
 
     // Log conversation synchronously (wait for it)
     await logConversation(conversationData);
+
+    // Add to Supermemory (async, don't block response)
+    if (context?.user_id) {
+      setImmediate(async () => {
+        try {
+          // Add user message to Supermemory
+          await addUserMessageToSupermemory(context.user_id, message, {
+            intent: intent,
+            classification: classificationResult?.intent || null,
+            confidence: classificationResult?.confidence || null,
+          });
+
+          // Add AI response to Supermemory
+          await addAIResponseToSupermemory(
+            context.user_id,
+            message,
+            response.message,
+            {
+              intent: intent,
+              classification: classificationResult?.intent || null,
+              tools_used: toolsUsed,
+              response_time_ms: Date.now() - startTime,
+              data_sources: Object.keys(packs),
+            }
+          );
+        } catch (supermemoryError) {
+          console.error(
+            "⚠️ [FINNY] Supermemory integration failed:",
+            supermemoryError.message
+          );
+        }
+      });
+    }
 
     return response;
   } catch (error) {
