@@ -5,10 +5,6 @@ import crypto from "crypto";
 import { handleGoalConversation } from "./goals.js";
 import { KEY_SYNONYMS } from "../src/constants/keySynonyms.js";
 import { braveSearch } from "../lib/websearch/brave.js";
-import {
-  addUserMessageToSupermemory,
-  addAIResponseToSupermemory,
-} from "./supermemory.js";
 
 // Utilities
 function generateRequestId() {
@@ -818,190 +814,140 @@ async function handleAsk(
   let degraded = false;
 
   try {
-    // 0) If this looks like a stock question, route to Finnhub fast-path regardless of classifier
+    // 0) If this looks like a stock question, route to conversational stock handler
     if (looksLikeStockQuery(message)) {
       try {
-        if (looksLikeStockDeepQuery(message)) {
-          const plan = await planStockRequest(message);
-          const exec = await executeStockPlan(plan || {}, message);
-          if (!exec.error && exec.data?.current != null) {
-            const formatted = formatPlannedStockResponse(exec);
+        // Get user context for personalization
+        const userId = context?.user_id;
+        if (!userId) {
+          console.log(
+            "❌ [FINNY] No user_id for stock query, falling back to regular flow"
+          );
+          // Fall through to regular ask handler
+        } else {
+          // Load user context for stock queries
+          const userMemory = await loadUserMemory(userId);
+          const userProfile = context.profile || { name: null, age: null };
+
+          // Get investment holdings if available
+          const investmentHoldings = await getCachedUserData(
+            "investments",
+            userId
+          );
+
+          let stockData = null;
+          let stockPlan = null;
+
+          // Try deep query first
+          if (looksLikeStockDeepQuery(message)) {
+            stockPlan = await planStockRequest(message);
+            const exec = await executeStockPlan(stockPlan || {}, message);
+            if (!exec.error && exec.data?.current != null) {
+              stockData = exec;
+            }
+          } else {
+            // Simple stock query
+            const stockResponse = await getCachedDataWithFallback(
+              "stock_snapshot",
+              message.toLowerCase().trim(),
+              async () => {
+                const { ticker, queryUsed } = await resolveTickerForQuery(
+                  message
+                );
+                if (!ticker) {
+                  return {
+                    error: "Could not resolve ticker from query",
+                    queryUsed,
+                  };
+                }
+                const snapshot = await fetchStockSnapshot(ticker);
+                return { ...snapshot, ticker, queryUsed };
+              },
+              false
+            );
+
+            const data = stockResponse?.data || stockResponse;
+            if (data && !data.error && data.current) {
+              stockData = data;
+            }
+          }
+
+          if (stockData && stockData.current != null) {
+            // Generate conversational stock response
+            const conversationalResponse =
+              await generateConversationalStockResponse(
+                stockData,
+                message,
+                userProfile,
+                userMemory,
+                investmentHoldings,
+                stockPlan
+              );
+
             const response = {
-              message: cleanResponseFormatting(formatted),
+              message: cleanResponseFormatting(conversationalResponse),
               type: "assistant",
             };
+
+            // Log with enhanced data
             setImmediate(() =>
               logConversation({
                 user_message: redactPII(message),
-                finny_response: redactPII(formatted),
+                finny_response: redactPII(conversationalResponse),
                 timestamp: new Date().toISOString(),
                 user_id: context?.user_id || "unknown",
                 intent: "ask_personalized",
-                entities: [exec.ticker].filter(Boolean),
+                entities: [stockData.ticker, stockData.profile?.name].filter(
+                  Boolean
+                ),
                 confidence: 0.95,
                 response_time_ms: Date.now() - startTime,
                 sources_used: [
                   "finnhub:quote",
                   "finnhub:profile2",
                   "finnhub:recommendation",
-                  "finnhub:price-target",
-                  "finnhub:metric",
-                  plan?.wants?.includes("earnings") ? "finnhub:earnings" : null,
-                  plan?.wants?.includes("filings") ? "finnhub:filings" : null,
-                  plan?.wants?.includes("insider") ? "finnhub:insider" : null,
+                  stockData.priceTarget ? "finnhub:price-target" : null,
+                  stockPlan?.wants?.includes("earnings")
+                    ? "finnhub:earnings"
+                    : null,
+                  stockPlan?.wants?.includes("filings")
+                    ? "finnhub:filings"
+                    : null,
+                  stockPlan?.wants?.includes("insider")
+                    ? "finnhub:insider"
+                    : null,
                 ].filter(Boolean),
                 cached: false,
                 request_id: generateRequestId(),
                 metrics: {
                   intent: "ask_personalized",
                   latency_ms: { total: Date.now() - startTime },
+                  tools_used: [
+                    {
+                      name: "finnhub",
+                      latency_ms: Date.now() - startTime,
+                      cache_hit: false,
+                    },
+                    {
+                      name: "llm_conversational",
+                      latency_ms: 0, // Will be set by the function
+                      cache_hit: false,
+                    },
+                  ],
+                  model: OPENROUTER_MODEL,
+                  cache_hits: {},
+                  tokens: null,
+                  result: "success",
                 },
               })
             );
 
-            // Add to Supermemory (async, don't block response)
-            if (context?.user_id) {
-              setImmediate(async () => {
-                try {
-                  await addUserMessageToSupermemory(context.user_id, message, {
-                    intent: "ask_personalized",
-                    type: "stock_query",
-                    ticker: exec.ticker,
-                  });
-
-                  await addAIResponseToSupermemory(
-                    context.user_id,
-                    message,
-                    formatted,
-                    {
-                      intent: "ask_personalized",
-                      type: "stock_response",
-                      ticker: exec.ticker,
-                      response_time_ms: Date.now() - startTime,
-                      sources_used: [
-                        "finnhub:quote",
-                        "finnhub:profile2",
-                        "finnhub:recommendation",
-                        "finnhub:price-target",
-                        "finnhub:metric",
-                        plan?.wants?.includes("earnings")
-                          ? "finnhub:earnings"
-                          : null,
-                        plan?.wants?.includes("filings")
-                          ? "finnhub:filings"
-                          : null,
-                        plan?.wants?.includes("insider")
-                          ? "finnhub:insider"
-                          : null,
-                      ].filter(Boolean),
-                    }
-                  );
-                } catch (supermemoryError) {}
-              });
-            }
             return response;
           }
         }
-
-        const stockResponse = await getCachedDataWithFallback(
-          "stock_snapshot",
-          message.toLowerCase().trim(),
-          async () => {
-            const { ticker, queryUsed } = await resolveTickerForQuery(message);
-            if (!ticker) {
-              return {
-                error: "Could not resolve ticker from query",
-                queryUsed,
-              };
-            }
-            const snapshot = await fetchStockSnapshot(ticker);
-            return { ...snapshot, ticker, queryUsed };
-          },
-          false
-        );
-
-        const data = stockResponse?.data || stockResponse;
-        if (data && !data.error && data.current) {
-          const formatted = formatStockResponse(data);
-          const response = {
-            message: cleanResponseFormatting(formatted),
-            type: "assistant",
-          };
-
-          // Log
-          setImmediate(() =>
-            logConversation({
-              user_message: redactPII(message),
-              finny_response: redactPII(formatted),
-              timestamp: new Date().toISOString(),
-              user_id: context?.user_id || "unknown",
-              intent: "ask_personalized",
-              entities: [data.ticker, data.profile?.name].filter(Boolean),
-              confidence: 0.95,
-              response_time_ms: Date.now() - startTime,
-              sources_used: [
-                "finnhub:quote",
-                "finnhub:profile2",
-                "finnhub:recommendation",
-                data.priceTarget ? "finnhub:price-target" : null,
-              ].filter(Boolean),
-              cached: !!stockResponse?.cachedAt,
-              request_id: generateRequestId(),
-              metrics: {
-                intent: "ask_personalized",
-                latency_ms: { total: Date.now() - startTime },
-                tools_used: [
-                  {
-                    name: "finnhub",
-                    latency_ms: Date.now() - startTime,
-                    cache_hit: !!stockResponse?.cachedAt,
-                  },
-                ],
-                model: null,
-                cache_hits: { finnhub: !!stockResponse?.cachedAt },
-                tokens: null,
-                result: "success",
-              },
-            })
-          );
-
-          // Add to Supermemory (async, don't block response)
-          if (context?.user_id) {
-            setImmediate(async () => {
-              try {
-                await addUserMessageToSupermemory(context.user_id, message, {
-                  intent: "ask_personalized",
-                  type: "stock_query",
-                  ticker: data.ticker,
-                });
-
-                await addAIResponseToSupermemory(
-                  context.user_id,
-                  message,
-                  formatted,
-                  {
-                    intent: "ask_personalized",
-                    type: "stock_response",
-                    ticker: data.ticker,
-                    response_time_ms: Date.now() - startTime,
-                    sources_used: [
-                      "finnhub:quote",
-                      "finnhub:profile2",
-                      "finnhub:recommendation",
-                      data.priceTarget ? "finnhub:price-target" : null,
-                    ].filter(Boolean),
-                    cached: !!stockResponse?.cachedAt,
-                  }
-                );
-              } catch (supermemoryError) {}
-            });
-          }
-
-          return response;
-        }
       } catch (e) {
         console.log(
-          "ℹ️ [FINNY] Stock fast-path failed, falling back:",
+          "ℹ️ [FINNY] Conversational stock handler failed, falling back:",
           e?.message
         );
       }
@@ -1552,34 +1498,6 @@ async function handleAsk(
 
     // Log conversation synchronously (wait for it)
     await logConversation(conversationData);
-
-    // Add to Supermemory (async, don't block response)
-    if (context?.user_id) {
-      setImmediate(async () => {
-        try {
-          // Add user message to Supermemory
-          await addUserMessageToSupermemory(context.user_id, message, {
-            intent: intent,
-            classification: classificationResult?.intent || null,
-            confidence: classificationResult?.confidence || null,
-          });
-
-          // Add AI response to Supermemory
-          await addAIResponseToSupermemory(
-            context.user_id,
-            message,
-            response.message,
-            {
-              intent: intent,
-              classification: classificationResult?.intent || null,
-              tools_used: toolsUsed,
-              response_time_ms: Date.now() - startTime,
-              data_sources: Object.keys(packs),
-            }
-          );
-        } catch (supermemoryError) {}
-      });
-    }
 
     return response;
   } catch (error) {
@@ -3223,33 +3141,6 @@ async function handleClassify(message, context) {
     // Log conversation synchronously
     await logConversation(conversationData);
 
-    // Add to Supermemory (async, don't block response)
-    if (context?.user_id) {
-      setImmediate(async () => {
-        try {
-          // Add user message to Supermemory
-          await addUserMessageToSupermemory(context.user_id, message, {
-            intent: "classify",
-            classification_result: out,
-            type: "classification_request",
-          });
-
-          // Add classification result to Supermemory
-          await addAIResponseToSupermemory(
-            context.user_id,
-            message,
-            `Classification: ${out.intent} (confidence: ${out.confidence})`,
-            {
-              intent: "classify",
-              classification_result: out,
-              response_time_ms: Date.now() - startTime,
-              cached: false,
-            }
-          );
-        } catch (supermemoryError) {}
-      });
-    }
-
     return out;
   } catch (e) {
     console.error("❌ [FINNY] Classification error:", e?.message);
@@ -3422,28 +3313,6 @@ async function handleOffTopic(message, context) {
 
     // Log conversation synchronously
     await logConversation(conversationData);
-
-    // Add to Supermemory (async, don't block response)
-    if (context?.user_id) {
-      setImmediate(async () => {
-        try {
-          // Add user message to Supermemory
-          await addUserMessageToSupermemory(context.user_id, message, {
-            intent: "off_topic",
-            category: category,
-            type: "non_financial_query",
-          });
-
-          // Add AI response to Supermemory
-          await addAIResponseToSupermemory(context.user_id, message, content, {
-            intent: "off_topic",
-            category: category,
-            response_time_ms: Date.now() - startTime,
-            redirection_suggestions: redirectionSuggestions,
-          });
-        } catch (supermemoryError) {}
-      });
-    }
 
     return {
       text: cleanResponseFormatting(content),
@@ -4237,6 +4106,250 @@ function formatStockResponse(data) {
   if (data.ts) out += `\n*As of ${new Date(data.ts).toLocaleString()}*`;
   out += `\n\nThis is informational, not investment advice.`;
   return out;
+}
+
+async function generateConversationalStockResponse(
+  stockData,
+  userMessage,
+  userProfile,
+  userMemory,
+  investmentHoldings,
+  stockPlan = null
+) {
+  const startTime = Date.now();
+
+  // Build user context
+  const contextLines = [];
+
+  // User profile
+  if (userProfile?.name) {
+    contextLines.push(`User name: ${userProfile.name}`);
+  }
+  if (userProfile?.age) {
+    contextLines.push(`Age: ${userProfile.age}`);
+  }
+
+  // User memory summary
+  if (userMemory?.summary) {
+    contextLines.push(`User context: ${userMemory.summary}`);
+  }
+
+  // Investment holdings
+  if (investmentHoldings?.holdings?.length > 0) {
+    contextLines.push("Current investment holdings:");
+    investmentHoldings.holdings.forEach((holding) => {
+      contextLines.push(
+        `${holding.symbol}: ${holding.units} shares, $${
+          holding.market_value?.toFixed(2) || "N/A"
+        }`
+      );
+    });
+  }
+
+  // Goals if available
+  if (userMemory?.goals?.length > 0) {
+    contextLines.push("Financial goals:");
+    userMemory.goals.slice(0, 3).forEach((goal) => {
+      contextLines.push(
+        `${goal.label}: $${goal.current_amount || 0} / $${
+          goal.target_amount || 0
+        }`
+      );
+    });
+  }
+
+  const userContext =
+    contextLines.length > 0
+      ? contextLines.join("\n")
+      : "No specific user context available.";
+
+  // Build stock data summary
+  const stockSummary = buildStockDataSummary(stockData, stockPlan);
+
+  const systemPrompt = `You are Finny, a warm, encouraging, and empowering financial advisor who is blunt when needed.
+
+PERSONALITY & APPROACH:
+- Be warm and encouraging while maintaining professional expertise
+- Show enthusiasm for helping users achieve their financial goals
+- Be blunt and direct when users need to hear hard truths about their finances
+- Celebrate wins and progress, no matter how small
+- Use the user's name when available to create personal connection
+- Focus on financial empowerment and positive outcomes
+
+STOCK RESPONSE GUIDELINES:
+- Start with a warm greeting using the user's name if available
+- Present stock data in a conversational, easy-to-understand way
+- Connect the stock information to the user's financial situation when relevant
+- If they have investment holdings, relate the stock to their existing portfolio
+- If they have financial goals, suggest how this stock might fit (or not fit) their goals
+- Be honest about risks and don't give specific investment advice
+- End with an encouraging question or next step suggestion
+- Use emojis sparingly but effectively
+- Keep it conversational and engaging, not robotic
+
+Always remember: This is informational only, not investment advice.`;
+
+  const userPrompt = `User asked: "${userMessage}"
+
+Stock Information:
+${stockSummary}
+
+User Context:
+${userContext}
+
+Please provide a warm, conversational response about this stock that connects to the user's financial situation. Be encouraging and helpful while staying professional.`;
+
+  try {
+    const response = await fetch(
+      "https://openrouter.ai/api/v1/chat/completions",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${process.env.OPENROUTER_GROK_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: SMALLER_MODEL,
+          temperature: 0.7,
+          max_tokens: 800,
+          stream: false,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt },
+          ],
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      console.error(
+        "❌ [FINNY] Conversational stock response API error:",
+        response.status
+      );
+      // Fallback to formatted response
+      return formatStockResponse(stockData);
+    }
+
+    const data = await response.json();
+    const conversationalResponse =
+      data.choices?.[0]?.message?.content || formatStockResponse(stockData);
+
+    console.log(
+      `✅ [FINNY] Generated conversational stock response in ${
+        Date.now() - startTime
+      }ms`
+    );
+
+    return conversationalResponse;
+  } catch (error) {
+    console.error(
+      "❌ [FINNY] Error generating conversational stock response:",
+      error
+    );
+    // Fallback to formatted response
+    return formatStockResponse(stockData);
+  }
+}
+
+function buildStockDataSummary(stockData, stockPlan = null) {
+  const name = stockData.profile?.name || stockData.ticker || "Stock";
+  const cur =
+    stockData.current != null
+      ? `$${Number(stockData.current).toFixed(2)}`
+      : "n/a";
+  const dp =
+    stockData.changePercent != null
+      ? `${Number(stockData.changePercent).toFixed(2)}%`
+      : "n/a";
+  const pt = stockData.priceTarget?.targetMean
+    ? `$${Number(stockData.priceTarget.targetMean).toFixed(2)}`
+    : null;
+
+  let summary = `${name} (${stockData.ticker})\n`;
+  summary += `Current price: ${cur} (${dp} today)\n`;
+
+  if (pt) summary += `Analyst price target: ${pt}\n`;
+
+  // Analyst recommendations
+  if (
+    Array.isArray(stockData.recommendations) &&
+    stockData.recommendations.length > 0
+  ) {
+    const latest = stockData.recommendations[0];
+    const totals = [
+      latest?.strongBuy || 0,
+      latest?.buy || 0,
+      latest?.hold || 0,
+      latest?.sell || 0,
+      latest?.strongSell || 0,
+    ];
+    const sum = totals.reduce((a, b) => a + b, 0) || 1;
+    const buyPct = ((100 * (totals[0] + totals[1])) / sum).toFixed(0);
+    const holdPct = ((100 * totals[2]) / sum).toFixed(0);
+    const sellPct = ((100 * (totals[3] + totals[4])) / sum).toFixed(0);
+    summary += `Analyst sentiment: ${buyPct}% Buy, ${holdPct}% Hold, ${sellPct}% Sell\n`;
+  }
+
+  if (stockData.profile?.finnhubIndustry) {
+    summary += `Industry: ${stockData.profile.finnhubIndustry}\n`;
+  }
+
+  // Key metrics
+  const pe =
+    stockData.metrics?.peBasicExclExtraTTM || stockData.metrics?.peBasicTTM;
+  const ps = stockData.metrics?.psTTM;
+  if (pe || ps) {
+    summary += "Key ratios: ";
+    if (pe) summary += `P/E ${Number(pe).toFixed(1)}`;
+    if (pe && ps) summary += ", ";
+    if (ps) summary += `P/S ${Number(ps).toFixed(1)}`;
+    summary += "\n";
+  }
+
+  // Additional data from stock plan
+  if (stockPlan?.wants) {
+    const wants = new Set(stockPlan.wants || []);
+    if (
+      wants.has("market_cap") &&
+      stockData.profile?.marketCapitalization != null
+    ) {
+      summary += `Market cap: $${Number(
+        stockData.profile.marketCapitalization
+      ).toLocaleString()}\n`;
+    }
+    if (wants.has("52w")) {
+      const hi = stockData.metrics?.["52WeekHigh"];
+      const lo = stockData.metrics?.["52WeekLow"];
+      if (hi || lo) {
+        summary += `52-week range: ${
+          lo ? `$${Number(lo).toFixed(2)}` : "?"
+        } - ${hi ? `$${Number(hi).toFixed(2)}` : "?"}\n`;
+      }
+    }
+    if (wants.has("dividend")) {
+      const y = stockData.metrics?.dividendYieldIndicatedAnnual;
+      const dps = stockData.metrics?.dividendPerShareTTM;
+      if (y || dps) {
+        summary += `Dividend: ${
+          dps ? `$${Number(dps).toFixed(2)} TTM` : "n/a"
+        }${y ? ` (${Number(y * 100).toFixed(2)}% yield)` : ""}\n`;
+      }
+    }
+  }
+
+  // Recent news
+  if (Array.isArray(stockData.news) && stockData.news.length > 0) {
+    summary += "Recent headlines:\n";
+    stockData.news.slice(0, 2).forEach((n) => {
+      if (n.headline) summary += `- ${n.headline}\n`;
+    });
+  }
+
+  if (stockData.ts) {
+    summary += `Data as of ${new Date(stockData.ts).toLocaleString()}`;
+  }
+
+  return summary;
 }
 
 async function fetchJson(url) {
