@@ -4209,7 +4209,7 @@ Please provide a warm, conversational response about this stock that connects to
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: SMALLER_MODEL,
+          model: OPENROUTER_MODEL,
           temperature: 0.7,
           max_tokens: 800,
           stream: false,
