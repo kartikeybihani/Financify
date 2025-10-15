@@ -22,13 +22,6 @@ export async function addUserMessageToSupermemory(
   metadata = {}
 ) {
   try {
-    console.log("🧠 [SUPERMEMORY] Adding user message for user:", userId);
-    console.log(
-      "🧠 [SUPERMEMORY] Message content:",
-      message.substring(0, 100) + "..."
-    );
-    console.log("🧠 [SUPERMEMORY] Container tag:", `user_${userId}_life`);
-
     const result = await supermemoryClient.memories.add({
       content: message,
       containerTag: `user_${userId}_life`,
@@ -40,18 +33,8 @@ export async function addUserMessageToSupermemory(
       },
     });
 
-    console.log("✅ [SUPERMEMORY] Memory added successfully:", result.id);
-    console.log("✅ [SUPERMEMORY] Memory status:", result.status);
-    console.log(
-      "✅ [SUPERMEMORY] Full result:",
-      JSON.stringify(result, null, 2)
-    );
     return result;
   } catch (error) {
-    console.error("❌ [SUPERMEMORY] Failed to add user message:");
-    console.error("❌ [SUPERMEMORY] Error message:", error.message);
-    console.error("❌ [SUPERMEMORY] Error details:", error);
-    console.error("❌ [SUPERMEMORY] Stack trace:", error.stack);
     return null;
   }
 }
@@ -66,17 +49,6 @@ export async function addAIResponseToSupermemory(
   metadata = {}
 ) {
   try {
-    console.log("🧠 [SUPERMEMORY] Adding AI response for user:", userId);
-    console.log(
-      "🧠 [SUPERMEMORY] User message:",
-      userMessage.substring(0, 100) + "..."
-    );
-    console.log(
-      "🧠 [SUPERMEMORY] AI response length:",
-      aiResponse.length,
-      "characters"
-    );
-
     const result = await supermemoryClient.memories.add({
       content: `User: ${userMessage}\nAI: ${aiResponse}`,
       containerTag: `user_${userId}_life`,
@@ -88,17 +60,8 @@ export async function addAIResponseToSupermemory(
       },
     });
 
-    console.log(
-      "✅ [SUPERMEMORY] Conversation memory added successfully:",
-      result.id
-    );
-    console.log("✅ [SUPERMEMORY] Memory status:", result.status);
     return result;
   } catch (error) {
-    console.error("❌ [SUPERMEMORY] Failed to add AI response:");
-    console.error("❌ [SUPERMEMORY] Error message:", error.message);
-    console.error("❌ [SUPERMEMORY] Error details:", error);
-    console.error("❌ [SUPERMEMORY] Stack trace:", error.stack);
     return null;
   }
 }
@@ -108,27 +71,14 @@ export async function addAIResponseToSupermemory(
  */
 export async function searchUserMemories(userId, query, limit = 5) {
   try {
-    console.log(
-      "🔍 [SUPERMEMORY] Searching memories for user:",
-      userId,
-      "query:",
-      query
-    );
-
     const result = await supermemoryClient.search.memories({
       q: query,
       containerTag: `user_${userId}_life`,
       limit: limit,
     });
 
-    console.log(
-      "✅ [SUPERMEMORY] Search completed, found:",
-      result.results?.length || 0,
-      "memories"
-    );
     return result;
   } catch (error) {
-    console.error("❌ [SUPERMEMORY] Failed to search memories:", error.message);
     return { results: [] };
   }
 }
@@ -138,24 +88,13 @@ export async function searchUserMemories(userId, query, limit = 5) {
  */
 export async function getUserRecentMemories(userId, limit = 10) {
   try {
-    console.log("📚 [SUPERMEMORY] Getting recent memories for user:", userId);
-
     const result = await supermemoryClient.memories.list({
       containerTag: `user_${userId}_life`,
       limit: limit,
     });
 
-    console.log(
-      "✅ [SUPERMEMORY] Retrieved",
-      result.memories?.length || 0,
-      "recent memories"
-    );
     return result;
   } catch (error) {
-    console.error(
-      "❌ [SUPERMEMORY] Failed to get recent memories:",
-      error.message
-    );
     return { memories: [] };
   }
 }
@@ -180,9 +119,7 @@ async function extractUserIdFromRequest(req) {
         return authData.user.id;
       }
     }
-  } catch (error) {
-    console.error("⚠️ [SUPERMEMORY] Auth verification failed:", error?.message);
-  }
+  } catch (error) {}
 
   return null;
 }
@@ -191,24 +128,17 @@ async function extractUserIdFromRequest(req) {
  * Main API handler
  */
 export default async function handler(req, res) {
-  console.log("🧠 [SUPERMEMORY API] Request received:", req.method);
-
   if (req.method !== "POST") {
-    console.log("❌ [SUPERMEMORY API] Method not allowed:", req.method);
     return res.status(405).json({ error: "Method not allowed" });
   }
 
   const { action, message, query, limit, metadata } = req.body;
-  console.log("📝 [SUPERMEMORY API] Action:", action);
 
   // Extract user ID from JWT
   const userId = await extractUserIdFromRequest(req);
   if (!userId) {
-    console.log("❌ [SUPERMEMORY API] No authenticated user found");
     return res.status(401).json({ error: "Authentication required" });
   }
-
-  console.log("👤 [SUPERMEMORY API] Authenticated user:", userId);
 
   try {
     let result;
@@ -254,7 +184,6 @@ export default async function handler(req, res) {
         });
     }
 
-    console.log("✅ [SUPERMEMORY API] Action completed successfully");
     return res.status(200).json({
       success: true,
       action,
@@ -262,7 +191,6 @@ export default async function handler(req, res) {
       data: result,
     });
   } catch (error) {
-    console.error("❌ [SUPERMEMORY API] Error:", error.message);
     return res.status(500).json({
       success: false,
       error: error.message,

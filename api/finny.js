@@ -896,12 +896,7 @@ async function handleAsk(
                       ].filter(Boolean),
                     }
                   );
-                } catch (supermemoryError) {
-                  console.error(
-                    "⚠️ [FINNY] Supermemory integration failed:",
-                    supermemoryError.message
-                  );
-                }
+                } catch (supermemoryError) {}
               });
             }
             return response;
@@ -998,12 +993,7 @@ async function handleAsk(
                     cached: !!stockResponse?.cachedAt,
                   }
                 );
-              } catch (supermemoryError) {
-                console.error(
-                  "⚠️ [FINNY] Supermemory integration failed:",
-                  supermemoryError.message
-                );
-              }
+              } catch (supermemoryError) {}
             });
           }
 
@@ -1587,12 +1577,7 @@ async function handleAsk(
               data_sources: Object.keys(packs),
             }
           );
-        } catch (supermemoryError) {
-          console.error("⚠️ [FINNY] Supermemory integration failed:");
-          console.error("⚠️ [FINNY] Error message:", supermemoryError.message);
-          console.error("⚠️ [FINNY] Error details:", supermemoryError);
-          console.error("⚠️ [FINNY] Stack trace:", supermemoryError.stack);
-        }
+        } catch (supermemoryError) {}
       });
     }
 
@@ -3261,12 +3246,7 @@ async function handleClassify(message, context) {
               cached: false,
             }
           );
-        } catch (supermemoryError) {
-          console.error("⚠️ [FINNY] Supermemory integration failed:");
-          console.error("⚠️ [FINNY] Error message:", supermemoryError.message);
-          console.error("⚠️ [FINNY] Error details:", supermemoryError);
-          console.error("⚠️ [FINNY] Stack trace:", supermemoryError.stack);
-        }
+        } catch (supermemoryError) {}
       });
     }
 
@@ -3461,12 +3441,7 @@ async function handleOffTopic(message, context) {
             response_time_ms: Date.now() - startTime,
             redirection_suggestions: redirectionSuggestions,
           });
-        } catch (supermemoryError) {
-          console.error("⚠️ [FINNY] Supermemory integration failed:");
-          console.error("⚠️ [FINNY] Error message:", supermemoryError.message);
-          console.error("⚠️ [FINNY] Error details:", supermemoryError);
-          console.error("⚠️ [FINNY] Stack trace:", supermemoryError.stack);
-        }
+        } catch (supermemoryError) {}
       });
     }
 
