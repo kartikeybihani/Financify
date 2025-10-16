@@ -3060,92 +3060,107 @@ async function handleClassify(message, context) {
   }
 
   try {
-    const r = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${process.env.OPENROUTER_GROK_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: OPENROUTER_MODEL,
-        temperature: 0.1,
-        messages: [
-          {
-            role: "system",
-            content: [
-              "You are Financify's intent router with strict financial scope boundaries.",
-              "Classify one user message into exactly one intent.",
-              "Intents:",
-              "- ask_personalized  question about the user's money that needs their data",
-              "- calc_projection  what if or plan math",
-              "- goal_conversation  goal creation, advice, or management",
-              "- off_topic  non-financial queries that should be redirected",
-              "",
-              "Rules:",
-              "- **SCOPE BOUNDARIES**: Only handle financial topics. Non-financial queries (weather, recipes, movies, sports, general chat, technical support) should be classified as `off_topic`.",
-              "- **INVESTMENT NEWS IS FINANCIAL**: Stock news, company updates, earnings reports, industry analysis, market trends, and sector performance are ALL financial topics. Use `ask_personalized` with `needs_web=true`.",
-              "- **Intents are primary; flags can combine.** Return exactly one `intent`, but `needs_user_data`, `needs_calc`, and `needs_web` may be **true** together.",
-              "- **OFF-TOPIC DETECTION**: If message is clearly non-financial (weather, cooking, entertainment, sports, general greetings, technical issues), use `intent=off_topic`.",
-              "- **CONCEPT EXPLANATIONS ARE IN-SCOPE**: General finance concepts (e.g., 'difference between credit and debit card') are financial. Do not mark them off_topic.",
-              "- If the message asks 'rent vs buy in <city/state>' → `ask_personalized` (needs_web=true, needs_user_data=true) - this is a personal financial decision requiring user data.",
-              "- If affordability, FIRE, retirement planning, or financial projections choose ask_personalized (set needs_calc=true)",
-              "- If it needs the user's actual data choose ask_personalized",
-              "- If purely personal (spend, net worth, goals) → `ask_personalized` (needs_user_data=true, needs_web=false).",
-              "- If asking about current rates, limits, rules, or regulations (Roth IRA limits, 401k limits, tax brackets, interest rates) → `ask_personalized` (needs_web=true, needs_user_data=false).",
-              "- If asking about credit card recommendations, applications, or which credit cards to get → `ask_personalized` (needs_web=true, needs_user_data=true) - this requires both current card offers and user's financial profile.",
-              "- **GOAL CONVERSATIONS**: If message mentions saving, goals, targets, aspirations, or asks about goal feasibility → `goal_conversation` (needs_user_data=true, needs_calc=true)",
-              "- If ambiguous but potentially financial, choose ask_personalized",
-              "- **DEFAULT TO FINANCIAL**: When in doubt between financial and non-financial, prefer financial intent.",
-              "",
-              "Sample inputs and expected intent:",
-              '"Set a 2000 emergency fund by March" → goal_conversation',
-              '"I want to save $5000 for a house down payment" → goal_conversation',
-              '"Should I buy a Rolex or save for a house?" → goal_conversation',
-              '"How much did I spend on Uber last month" → ask_personalized',
-              '"How are you" or "What\'s up" or "Am I normal?" → ask_personalized (financial wellness)',
-              '"What\'s the weather like?" → off_topic',
-              '"How do I cook pasta?" → off_topic',
-              '"What movie should I watch?" → off_topic',
-              '"Difference between Roth and traditional IRA" → ask_personalized',
-              '"What is the Roth IRA contribution limit for 2025?" → ask_personalized, needs_web:true, needs_user_data:false',
-              '"Difference between credit and debit card?" → ask_personalized, needs_user_data:false, needs_web:false',
-              '"What are the best credit cards I can get?" → ask_personalized, needs_web:true, needs_user_data:true',
-              '"Which credit card should I apply for?" → ask_personalized, needs_web:true, needs_user_data:true',
-              '"Rent vs buy in Phoenix at 7%" → ask_personalized, needs_web:true, needs_user_data:true, state:"AZ"',
-              '"Can I hit FIRE by 35" → ask_personalized, needs_calc:true',
-              '"Will I have enough to retire" → ask_personalized, needs_calc:true',
-              '"Can I achieve my financial goals" → goal_conversation',
-              '"What\'s the latest news on semiconductor industry and AMD especially?" → ask_personalized, needs_web:true, needs_user_data:false',
-              '"How is Tesla stock performing today?" → ask_personalized, needs_web:true, needs_user_data:false',
-              '"What are analysts saying about Apple earnings?" → ask_personalized, needs_web:true, needs_user_data:false',
-              '"Latest trends in the tech sector" → ask_personalized, needs_web:true, needs_user_data:false',
-              "",
-              "**IMPORTANT**: Return ONLY a JSON object with this EXACT structure:",
-              "{",
-              '  "intent": "ask_personalized" | "goal_conversation" | "off_topic",',
-              '  "needs_web": boolean,',
-              '  "needs_user_data": boolean,',
-              '  "needs_calc": boolean,',
-              '  "state": string | null (two-letter US state code like "CA" or null),',
-              '  "entities": string[],',
-              '  "confidence": number (0 to 1)',
-              "}",
-              "No markdown, no code blocks, no extra text. Just the JSON object.",
-            ].join("\n"),
-          },
-          {
-            role: "user",
-            content: JSON.stringify({
-              text,
-              user_hint_state: user?.state || null,
-            }),
-          },
-        ],
-        response_format: {
-          type: "json_object",
-        },
-      }),
+    // Create a timeout promise that rejects after 4 seconds
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(
+        () => reject(new Error("Classification timeout after 4 seconds")),
+        4000
+      );
     });
+
+    // Create the fetch promise
+    const fetchPromise = fetch(
+      "https://openrouter.ai/api/v1/chat/completions",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${process.env.OPENROUTER_GROK_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: OPENROUTER_MODEL,
+          temperature: 0.1,
+          messages: [
+            {
+              role: "system",
+              content: [
+                "You are Financify's intent router with strict financial scope boundaries.",
+                "Classify one user message into exactly one intent.",
+                "Intents:",
+                "- ask_personalized  question about the user's money that needs their data",
+                "- calc_projection  what if or plan math",
+                "- goal_conversation  goal creation, advice, or management",
+                "- off_topic  non-financial queries that should be redirected",
+                "",
+                "Rules:",
+                "- **SCOPE BOUNDARIES**: Only handle financial topics. Non-financial queries (weather, recipes, movies, sports, general chat, technical support) should be classified as `off_topic`.",
+                "- **INVESTMENT NEWS IS FINANCIAL**: Stock news, company updates, earnings reports, industry analysis, market trends, and sector performance are ALL financial topics. Use `ask_personalized` with `needs_web=true`.",
+                "- **Intents are primary; flags can combine.** Return exactly one `intent`, but `needs_user_data`, `needs_calc`, and `needs_web` may be **true** together.",
+                "- **OFF-TOPIC DETECTION**: If message is clearly non-financial (weather, cooking, entertainment, sports, general greetings, technical issues), use `intent=off_topic`.",
+                "- **CONCEPT EXPLANATIONS ARE IN-SCOPE**: General finance concepts (e.g., 'difference between credit and debit card') are financial. Do not mark them off_topic.",
+                "- If the message asks 'rent vs buy in <city/state>' → `ask_personalized` (needs_web=true, needs_user_data=true) - this is a personal financial decision requiring user data.",
+                "- If affordability, FIRE, retirement planning, or financial projections choose ask_personalized (set needs_calc=true)",
+                "- If it needs the user's actual data choose ask_personalized",
+                "- If purely personal (spend, net worth, goals) → `ask_personalized` (needs_user_data=true, needs_web=false).",
+                "- If asking about current rates, limits, rules, or regulations (Roth IRA limits, 401k limits, tax brackets, interest rates) → `ask_personalized` (needs_web=true, needs_user_data=false).",
+                "- If asking about credit card recommendations, applications, or which credit cards to get → `ask_personalized` (needs_web=true, needs_user_data=true) - this requires both current card offers and user's financial profile.",
+                "- **GOAL CONVERSATIONS**: If message mentions saving, goals, targets, aspirations, or asks about goal feasibility → `goal_conversation` (needs_user_data=true, needs_calc=true)",
+                "- If ambiguous but potentially financial, choose ask_personalized",
+                "- **DEFAULT TO FINANCIAL**: When in doubt between financial and non-financial, prefer financial intent.",
+                "",
+                "Sample inputs and expected intent:",
+                '"Set a 2000 emergency fund by March" → goal_conversation',
+                '"I want to save $5000 for a house down payment" → goal_conversation',
+                '"Should I buy a Rolex or save for a house?" → goal_conversation',
+                '"How much did I spend on Uber last month" → ask_personalized',
+                '"How are you" or "What\'s up" or "Am I normal?" → ask_personalized (financial wellness)',
+                '"What\'s the weather like?" → off_topic',
+                '"How do I cook pasta?" → off_topic',
+                '"What movie should I watch?" → off_topic',
+                '"Difference between Roth and traditional IRA" → ask_personalized',
+                '"What is the Roth IRA contribution limit for 2025?" → ask_personalized, needs_web:true, needs_user_data:false',
+                '"Difference between credit and debit card?" → ask_personalized, needs_user_data:false, needs_web:false',
+                '"What are the best credit cards I can get?" → ask_personalized, needs_web:true, needs_user_data:true',
+                '"Which credit card should I apply for?" → ask_personalized, needs_web:true, needs_user_data:true',
+                '"Rent vs buy in Phoenix at 7%" → ask_personalized, needs_web:true, needs_user_data:true, state:"AZ"',
+                '"Can I hit FIRE by 35" → ask_personalized, needs_calc:true',
+                '"Will I have enough to retire" → ask_personalized, needs_calc:true',
+                '"Can I achieve my financial goals" → goal_conversation',
+                '"What\'s the latest news on semiconductor industry and AMD especially?" → ask_personalized, needs_web:true, needs_user_data:false',
+                '"How is Tesla stock performing today?" → ask_personalized, needs_web:true, needs_user_data:false',
+                '"What are analysts saying about Apple earnings?" → ask_personalized, needs_web:true, needs_user_data:false',
+                '"Latest trends in the tech sector" → ask_personalized, needs_web:true, needs_user_data:false',
+                "",
+                "**IMPORTANT**: Return ONLY a JSON object with this EXACT structure:",
+                "{",
+                '  "intent": "ask_personalized" | "goal_conversation" | "off_topic",',
+                '  "needs_web": boolean,',
+                '  "needs_user_data": boolean,',
+                '  "needs_calc": boolean,',
+                '  "state": string | null (two-letter US state code like "CA" or null),',
+                '  "entities": string[],',
+                '  "confidence": number (0 to 1)',
+                "}",
+                "No markdown, no code blocks, no extra text. Just the JSON object.",
+              ].join("\n"),
+            },
+            {
+              role: "user",
+              content: JSON.stringify({
+                text,
+                user_hint_state: user?.state || null,
+              }),
+            },
+          ],
+          response_format: {
+            type: "json_object",
+          },
+        }),
+      }
+    );
+
+    // Race between fetch and timeout
+    const r = await Promise.race([fetchPromise, timeoutPromise]);
 
     if (!r.ok) {
       const errText = await r.text();
@@ -3199,11 +3214,29 @@ async function handleClassify(message, context) {
     return out;
   } catch (e) {
     console.error("❌ [FINNY] Classification error:", e?.message);
+
+    // Handle timeout specifically
+    if (e?.message?.includes("timeout")) {
+      console.log(
+        "⏰ [FINNY] Classification timed out after 4 seconds, using fallback"
+      );
+    }
+
     // Heuristic fallback if available
     const heuristic = financialConceptHeuristic(message);
     if (heuristic) {
-      return heuristic;
+      console.log(
+        "✅ [FINNY] Using heuristic fallback after classification error"
+      );
+      return {
+        ...heuristic,
+        fallback: true,
+        timeout_fallback: e?.message?.includes("timeout") || false,
+      };
     }
+
+    // Default fallback for any classification error
+    console.log("🔄 [FINNY] Using default ask_personalized fallback");
     return {
       intent: "ask_personalized",
       needs_web: false,
@@ -3213,6 +3246,7 @@ async function handleClassify(message, context) {
       entities: [],
       confidence: 0.1,
       fallback: true,
+      timeout_fallback: e?.message?.includes("timeout") || false,
     };
   }
 }
@@ -3989,7 +4023,7 @@ async function executeStockPlan(plan, message) {
 function formatPlannedStockResponse(exec) {
   const d = exec.data;
   const wants = new Set(exec.planWants || []);
-  let out = formatStockResponse(d);
+  let out = buildStockDataSummary(d, { wants: exec.planWants });
   const lines = [];
 
   // Append requested items succinctly
@@ -4164,6 +4198,7 @@ async function fetchStockSnapshot(ticker) {
   };
 }
 
+// Deprecated: replaced by buildStockDataSummary
 function formatStockResponse(data) {
   const name = data.profile?.name || data.ticker || "Stock";
   const cur =
@@ -4233,154 +4268,8 @@ async function generateConversationalStockResponse(
   investmentHoldings,
   stockPlan = null
 ) {
-  const startTime = Date.now();
-
-  // Build user context
-  const contextLines = [];
-
-  // User profile
-  if (userProfile?.name) {
-    contextLines.push(`User name: ${userProfile.name}`);
-  }
-  if (userProfile?.age) {
-    contextLines.push(`Age: ${userProfile.age}`);
-  }
-
-  // User memory summary
-  if (userMemory?.summary) {
-    contextLines.push(`User context: ${userMemory.summary}`);
-  }
-
-  // Investment holdings
-  if (investmentHoldings?.holdings?.length > 0) {
-    contextLines.push("Current investment holdings:");
-    investmentHoldings.holdings.forEach((holding) => {
-      contextLines.push(
-        `${holding.symbol}: ${holding.units} shares, $${
-          holding.market_value?.toFixed(2) || "N/A"
-        }`
-      );
-    });
-  }
-
-  // Goals if available
-  if (userMemory?.goals?.length > 0) {
-    contextLines.push("Financial goals:");
-    userMemory.goals.slice(0, 3).forEach((goal) => {
-      contextLines.push(
-        `${goal.label}: $${goal.current_amount || 0} / $${
-          goal.target_amount || 0
-        }`
-      );
-    });
-  }
-
-  const userContext =
-    contextLines.length > 0
-      ? contextLines.join("\n")
-      : "No specific user context available.";
-
-  // Build stock data summary
-  const stockSummary = buildStockDataSummary(stockData, stockPlan);
-
-  // Data-first concise response (deterministic, low-chatter)
-  try {
-    const concise = buildConciseStockMessage(
-      stockData,
-      userProfile,
-      userContext
-    );
-    console.log(
-      `✅ [FINNY] Generated concise stock response in ${
-        Date.now() - startTime
-      }ms`
-    );
-    return concise;
-  } catch (error) {
-    console.error("❌ [FINNY] Error building concise stock response:", error);
-    // Fallback to formatted snapshot
-    return formatStockResponse(stockData);
-  }
-}
-
-function buildConciseStockMessage(stockData, userProfile, userContext) {
-  const cur =
-    stockData.current != null
-      ? `$${Number(stockData.current).toFixed(2)}`
-      : "n/a";
-  const dp =
-    stockData.changePercent != null
-      ? `${Number(stockData.changePercent).toFixed(2)}%`
-      : "n/a";
-  const pt = stockData.priceTarget?.targetMean
-    ? `$${Number(stockData.priceTarget.targetMean).toFixed(2)}`
-    : null;
-  const pe =
-    stockData.metrics?.peBasicExclExtraTTM || stockData.metrics?.peBasicTTM;
-  const ps = stockData.metrics?.psTTM;
-  const hi = stockData.metrics?.["52WeekHigh"];
-  const lo = stockData.metrics?.["52WeekLow"];
-
-  // Analyst sentiment
-  let sentiment = null;
-  if (
-    Array.isArray(stockData.recommendations) &&
-    stockData.recommendations.length > 0
-  ) {
-    const latest = stockData.recommendations[0];
-    const totals = [
-      latest?.strongBuy || 0,
-      latest?.buy || 0,
-      latest?.hold || 0,
-      latest?.sell || 0,
-      latest?.strongSell || 0,
-    ];
-    const sum = totals.reduce((a, b) => a + b, 0) || 1;
-    const buyPct = ((100 * (totals[0] + totals[1])) / sum).toFixed(0);
-    const holdPct = ((100 * totals[2]) / sum).toFixed(0);
-    const sellPct = ((100 * (totals[3] + totals[4])) / sum).toFixed(0);
-    sentiment = `${buyPct}% Buy / ${holdPct}% Hold / ${sellPct}% Sell`;
-  }
-
-  // Headlines (at most 2)
-  const headlines = Array.isArray(stockData.news)
-    ? stockData.news
-        .slice(0, 2)
-        .map((n) => (n?.headline ? `- ${n.headline}` : null))
-        .filter(Boolean)
-    : [];
-
-  const lines = [];
-  lines.push(`${stockData.profile?.name || stockData.ticker} — Snapshot`);
-  lines.push("");
-  lines.push(`Price: ${cur} (${dp} today)`);
-  if (pt) lines.push(`Price target (mean): ${pt}`);
-  if (pe || ps) {
-    const ratios = [
-      pe ? `P/E ${Number(pe).toFixed(1)}` : null,
-      ps ? `P/S ${Number(ps).toFixed(1)}` : null,
-    ]
-      .filter(Boolean)
-      .join(", ");
-    if (ratios) lines.push(`Ratios: ${ratios}`);
-  }
-  if (hi || lo) {
-    lines.push(
-      `52w range: ${lo ? `$${Number(lo).toFixed(2)}` : "?"} - ${
-        hi ? `$${Number(hi).toFixed(2)}` : "?"
-      }`
-    );
-  }
-  if (sentiment) lines.push(`Analyst mix: ${sentiment}`);
-  if (headlines.length > 0) {
-    lines.push("");
-    lines.push("Headlines:");
-    headlines.forEach((h) => lines.push(h));
-  }
-  if (stockData.ts)
-    lines.push(`As of ${new Date(stockData.ts).toLocaleString()}`);
-
-  return lines.join("\n");
+  // Use deterministic summary only; no additional prompting
+  return buildStockDataSummary(stockData, stockPlan);
 }
 
 function buildStockDataSummary(stockData, stockPlan = null) {
