@@ -344,6 +344,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: "#fff",
     fontWeight: "500",
+    marginRight: 25,
   },
   divider: {
     height: 1,

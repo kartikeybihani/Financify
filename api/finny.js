@@ -4247,6 +4247,8 @@ function formatStockResponse(data) {
     if (ps) ratioParts.push(`P/S ${Number(ps).toFixed(1)}`);
     if (ratioParts.length > 0) {
       out += `\nKey ratios (TTM): ${ratioParts.join(", ")}\n`;
+      // add a blank line
+      out += "\n\n";
     }
   }
   // Add latest headlines
@@ -4310,10 +4312,12 @@ function buildStockDataSummary(stockData, stockPlan = null) {
     const buyPct = ((100 * (totals[0] + totals[1])) / sum).toFixed(0);
     const holdPct = ((100 * totals[2]) / sum).toFixed(0);
     const sellPct = ((100 * (totals[3] + totals[4])) / sum).toFixed(0);
+    summary += "\n";
     summary += `Analyst sentiment: ${buyPct}% Buy, ${holdPct}% Hold, ${sellPct}% Sell\n`;
   }
 
   if (stockData.profile?.finnhubIndustry) {
+    summary += "\n";
     summary += `Industry: ${stockData.profile.finnhubIndustry}\n`;
   }
 
@@ -4362,6 +4366,7 @@ function buildStockDataSummary(stockData, stockPlan = null) {
 
   // Recent news
   if (Array.isArray(stockData.news) && stockData.news.length > 0) {
+    summary += "\n";
     summary += "Recent headlines:\n";
     stockData.news.slice(0, 2).forEach((n) => {
       if (n.headline) summary += `- ${n.headline}\n`;
