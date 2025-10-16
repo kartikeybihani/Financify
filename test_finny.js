@@ -158,12 +158,17 @@ async function main() {
   console.log(`🌐 Base URL: ${BASE_URL}`);
   console.log(`👤 Test User: ${TEST_USER_ID}`);
 
-  if (process.argv[2]) {
+  if (process.argv[2] === "timeout") {
+    // Test timeout mechanism specifically
+    await testClassificationTimeout();
+  } else if (process.argv[2]) {
     // Test specific query
     await testSpecificQuery();
   } else {
-    // Run all tests
+    // Run all tests including timeout test
     await runAllTests();
+    console.log("\n" + "═".repeat(80));
+    await testClassificationTimeout();
   }
 }
 
@@ -178,9 +183,56 @@ process.on("unhandledRejection", (reason, promise) => {
   process.exit(1);
 });
 
+// Test timeout mechanism
+async function testClassificationTimeout() {
+  console.log("\n🧪 Testing classification timeout mechanism...");
+
+  const startTime = Date.now();
+
+  try {
+    const response = await fetch(`${BASE_URL}/api/finny`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        action: "classify",
+        message: "What's the latest on AMD?",
+        context: {
+          user_id: TEST_USER_ID,
+        },
+      }),
+    });
+
+    const result = await response.json();
+    const endTime = Date.now();
+    const duration = endTime - startTime;
+
+    console.log(`⏱️  Classification completed in ${duration}ms`);
+    console.log("📋 Classification result:", JSON.stringify(result, null, 2));
+
+    if (result.timeout_fallback) {
+      console.log("✅ Timeout fallback mechanism working correctly");
+    } else if (duration > 4000) {
+      console.log(
+        "⚠️  Classification took longer than 4 seconds but no timeout detected"
+      );
+    } else {
+      console.log("✅ Classification completed within timeout window");
+    }
+
+    return { success: true, duration, result };
+  } catch (error) {
+    const endTime = Date.now();
+    const duration = endTime - startTime;
+    console.error("❌ Classification test failed:", error.message);
+    return { success: false, duration, error: error.message };
+  }
+}
+
 // Run the script
 if (import.meta.url === new URL(import.meta.url).href) {
   main().catch(console.error);
 }
 
-export { testFinnyQuery, TEST_QUERIES };
+export { testFinnyQuery, TEST_QUERIES, testClassificationTimeout };
