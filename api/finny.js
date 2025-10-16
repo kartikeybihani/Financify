@@ -75,7 +75,7 @@ const dataCache = new Map();
 const CACHE_TTL = {
   financial_summary: 5 * 60 * 1000, // 5 minutes
   spend_data: 30 * 60 * 1000, // 30 minutes
-  investment_holdings: 6 * 60 * 60 * 1000, // 6 hours (as requested)
+  investments_all: 6 * 60 * 60 * 1000, // 6 hours consolidated investments
   goals_overview: 60 * 60 * 1000, // 60 minutes
   cashflow_monthly: 30 * 60 * 1000, // 30 minutes
   category_transactions: 30 * 60 * 1000, // 30 minutes
@@ -831,7 +831,7 @@ async function handleAsk(
 
           // Get investment holdings if available
           const investmentHoldings = await getCachedUserData(
-            "investments",
+            "investments_all",
             userId
           );
 
@@ -1006,7 +1006,7 @@ async function handleAsk(
         // Handle both single queries and multiple queries
         if (typeof enhancedData === "string") {
           // Single query (original behavior)
-          webResults = await braveSearch(enhancedData);
+          webResults = await limitedBraveSearch(enhancedData);
         } else if (enhancedData && enhancedData.queries) {
           // Multiple queries - search in parallel (limited to avoid rate limiting)
           const symbols = enhancedData.queries.map((q) => q.split(" ")[0]);
@@ -1016,7 +1016,7 @@ async function handleAsk(
           );
 
           const searchPromises = enhancedData.queries.map((query) =>
-            braveSearch(query)
+            limitedBraveSearch(query)
           );
           const searchResults = await Promise.all(searchPromises);
 
@@ -1042,7 +1042,7 @@ async function handleAsk(
           }
         } else {
           // Fallback to original message
-          webResults = await braveSearch(message);
+          webResults = await limitedBraveSearch(message);
         }
 
         timings.web_ms = Date.now() - webStartTime;
@@ -1564,11 +1564,9 @@ function detectWebSearchNeeded(message, slots) {
 
   // Keywords that typically need current web data
   const webKeywords = [
-    "current",
     "latest",
     "2025",
     "2024",
-    "new",
     "updated",
     "recent",
     "roth ira limit",
@@ -1824,23 +1822,68 @@ async function buildContextPacks(userId, needs, slots) {
       const cachedSummary = getCachedUserData("financial_summary", userId);
 
       if (cachedSummary) {
-        // Use cached data
         fetchPromises.push(Promise.resolve(cachedSummary));
         fetchMetadata.push({ type: "summary_min", userId, cached: true });
       } else {
-        // Fetch fresh data
+        // Parallel RPCs for base pack: net worth, recent txns, category spend (last 30d)
         fetchPromises.push(
-          fetch(`${process.env.APP_BASE_URL}/api/store_accounts`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              mode: "financial_summary",
-              user_id: userId,
-            }),
-          }).catch((error) => {
-            console.error("❌ [FINNY] Financial summary fetch failed:", error);
-            return null;
-          })
+          (async () => {
+            const now = new Date();
+            const past = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+            const p_start = past.toISOString().split("T")[0];
+            const p_end = now.toISOString().split("T")[0];
+
+            const [netWorthRes, recentRes, spendCatRes] = await Promise.all([
+              withTimeout(
+                supabase.rpc("get_net_worth", { p_user_id: userId }),
+                2000,
+                null
+              ).catch(() => null),
+              withTimeout(
+                supabase.rpc("get_recent_transactions", {
+                  p_user_id: userId,
+                  p_limit: 5,
+                }),
+                2000,
+                null
+              ).catch(() => null),
+              withTimeout(
+                supabase.rpc("get_spend_by_category", {
+                  p_user_id: userId,
+                  p_start,
+                  p_end,
+                }),
+                2000,
+                null
+              ).catch(() => null),
+            ]);
+
+            const net = netWorthRes?.data?.[0] || null;
+            const recent = Array.isArray(recentRes?.data) ? recentRes.data : [];
+            const spendCats = Array.isArray(spendCatRes?.data)
+              ? spendCatRes.data
+              : [];
+
+            if (!net) return null;
+
+            const processedData = {
+              netWorth: Number(net.net_worth || 0),
+              liquidAssets: Number(net.liquid_assets || 0),
+              investmentsTotal: Number(net.investments_total || 0),
+              totalLiabilities: Number(net.total_liabilities || 0),
+              recentTransactions: recent.slice(0, 5).map((txn) => ({
+                date: txn.date,
+                amount: txn.amount,
+                merchant: txn.merchant || txn.name,
+              })),
+              spendByCategory: spendCats,
+              accounts: Array.isArray(net.bank_accounts)
+                ? net.bank_accounts
+                : [],
+            };
+
+            return processedData;
+          })()
         );
         fetchMetadata.push({ type: "summary_min", userId, cached: false });
       }
@@ -1989,25 +2032,23 @@ async function buildContextPacks(userId, needs, slots) {
 
     // 5. Investment holdings fetch promise
     if (needs.includes("invest_holdings")) {
-      // Check cache first
-      const cachedHoldings = getCachedUserData("investment_holdings", userId);
+      // Check cache first (consolidated investments)
+      const cachedInvest = getCachedUserData("investments_all", userId);
 
-      if (cachedHoldings) {
-        // Use cached data
-        fetchPromises.push(Promise.resolve(cachedHoldings));
+      if (cachedInvest) {
+        fetchPromises.push(Promise.resolve(cachedInvest));
         fetchMetadata.push({ type: "invest_holdings", userId, cached: true });
       } else {
-        // Fetch fresh data
         fetchPromises.push(
           withTimeout(
-            supabase.rpc("get_investment_holdings_detailed", {
+            supabase.rpc("get_investment_overview", {
               p_user_id: userId,
             }),
             2000,
             null
           ).catch((error) => {
             console.error(
-              "❌ [FINNY] Investment holdings fetch failed:",
+              "❌ [FINNY] Investment overview fetch failed:",
               error
             );
             return null;
@@ -2099,40 +2140,10 @@ async function buildContextPacks(userId, needs, slots) {
         switch (metadata.type) {
           case "summary_min":
             if (metadata.cached) {
-              // Data is already processed from cache
               packs.base = data;
-            } else if (data.ok) {
-              try {
-                const summaryData = await data.json();
-                const processedData = {
-                  netWorth: summaryData.summary?.netWorth || 0,
-                  liquidAssets: summaryData.summary?.liquidAssets || 0,
-                  investmentsTotal: summaryData.summary?.investmentsTotal || 0,
-                  totalLiabilities: summaryData.summary?.totalLiabilities || 0,
-                  recentTransactions: (summaryData.transactions?.recent || [])
-                    .slice(0, 5)
-                    .map((txn) => ({
-                      date: txn.date,
-                      amount: txn.amount,
-                      merchant: txn.merchant || txn.name,
-                    })),
-                  spendByCategory:
-                    summaryData.transactions?.spendByCategory || [],
-                  accounts: summaryData.bankAccounts || [],
-                };
-
-                packs.base = processedData;
-
-                // Cache the processed data
-                setCachedUserData(
-                  "financial_summary",
-                  metadata.userId,
-                  processedData
-                );
-              } catch (err) {
-                console.error("❌ [FINNY] Error parsing summary data:", err);
-                gaps.push("summary_min");
-              }
+            } else if (data) {
+              packs.base = data;
+              setCachedUserData("financial_summary", metadata.userId, data);
             } else {
               gaps.push("summary_min");
             }
@@ -2223,22 +2234,27 @@ async function buildContextPacks(userId, needs, slots) {
 
           case "invest_holdings":
             if (metadata.cached) {
-              // Data is already processed from cache
               packs.invest = data;
             } else if (data?.data) {
+              // data.data is jsonb: { holdings: [], balances: [], options: [] }
+              const payload = data.data || {};
               const processedData = {
-                holdings: (data.data || []).map((holding) => ({
-                  symbol: holding.symbol,
-                  description: holding.description,
-                  units: holding.units,
-                  market_value: holding.market_value,
-                })),
+                holdings: Array.isArray(payload.holdings)
+                  ? payload.holdings.map((h) => ({
+                      symbol: h.symbol,
+                      description: h.description,
+                      units: h.units,
+                      market_value: h.market_value,
+                    }))
+                  : [],
+                balances: Array.isArray(payload.balances)
+                  ? payload.balances
+                  : [],
+                options: Array.isArray(payload.options) ? payload.options : [],
               };
               packs.invest = processedData;
-
-              // Cache the processed data
               setCachedUserData(
-                "investment_holdings",
+                "investments_all",
                 metadata.userId,
                 processedData
               );
@@ -3701,6 +3717,66 @@ let activeRequests = 0;
 // Request deduplication map
 const pendingRequests = new Map();
 
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function runNextQueued() {
+  if (activeRequests >= RATE_LIMITS.maxConcurrent) return;
+  const next = requestQueue.shift();
+  if (!next) return;
+  activeRequests++;
+  try {
+    const result = await next.task();
+    next.resolve(result);
+  } catch (e) {
+    next.reject(e);
+  } finally {
+    activeRequests--;
+    setTimeout(runNextQueued, RATE_LIMITS.delayBetweenRequests);
+  }
+}
+
+function enqueueTask(task) {
+  return new Promise((resolve, reject) => {
+    requestQueue.push({ task, resolve, reject });
+    runNextQueued();
+  });
+}
+
+async function limitedBraveSearch(query) {
+  const key = `brave:${query}`;
+  if (pendingRequests.has(key)) return pendingRequests.get(key);
+
+  const job = enqueueTask(async () => {
+    let lastErr = null;
+    for (let attempt = 0; attempt <= RATE_LIMITS.maxRetries; attempt++) {
+      try {
+        const p = braveSearch(query);
+        const timed = withTimeout(p, RATE_LIMITS.timeout, null);
+        const res = await timed;
+        if (res === null) throw new Error("braveSearch timeout");
+        return res;
+      } catch (e) {
+        lastErr = e;
+        if (attempt < RATE_LIMITS.maxRetries) {
+          await delay(300 * (attempt + 1));
+          continue;
+        }
+        throw lastErr;
+      }
+    }
+  });
+
+  pendingRequests.set(key, job);
+  try {
+    const out = await job;
+    return out;
+  } finally {
+    pendingRequests.delete(key);
+  }
+}
+
 // === Stocks via Finnhub ===
 function looksLikeStockQuery(message) {
   const m = message.toLowerCase();
@@ -4260,6 +4336,7 @@ function buildConciseStockMessage(stockData, userProfile, userContext) {
   }
   if (sentiment) lines.push(`- Analyst mix: ${sentiment}`);
   if (headlines.length > 0) {
+    lines.push("\n\n");
     lines.push("- Headlines:");
     headlines.forEach((h) => lines.push(h));
   }
@@ -4524,11 +4601,47 @@ async function forceRefreshUserData(userId) {
   try {
     console.log(`🔄 [CACHE] Force refreshing user data for: ${userId}`);
 
-    // Clear user summary cache specifically
-    await clearCacheByType("user_summary", userId);
+    // Clear relevant rows in Postgres web_scrape_cache for this user (prefix match)
+    try {
+      const prefixes = [
+        "user_summary",
+        "enhanced_merchant",
+        "web_research",
+        "stock_snapshot",
+        "brave_search",
+      ];
+      for (const prefix of prefixes) {
+        const { error } = await supabase
+          .from("web_scrape_cache")
+          .delete()
+          .like("cache_key", `${prefix}_${userId}%`);
+        if (error) {
+          console.log(`ℹ️ [CACHE] Failed to clear ${prefix}:`, error.message);
+        }
+      }
+    } catch (e) {
+      console.log("ℹ️ [CACHE] Postgres cache purge skipped:", e?.message);
+    }
 
-    // Clear enhanced merchant cache for this user
-    await clearCacheByType("enhanced_merchant", userId);
+    // NEW: Purge in-memory context caches for this user
+    try {
+      const keysToDelete = [];
+      for (const [key, value] of dataCache.entries()) {
+        if (!value || typeof key !== "string") continue;
+        // Keys are of form: `${dataType}_${userId}` plus optional params suffix
+        if (key.includes(`_${userId}`)) {
+          keysToDelete.push(key);
+        }
+      }
+      keysToDelete.forEach((k) => dataCache.delete(k));
+      if (keysToDelete.length > 0) {
+        console.log(
+          `🧹 [DATA_CACHE] Purged ${keysToDelete.length} in-memory entries for user ${userId}`
+        );
+      }
+    } catch (e) {
+      console.log("ℹ️ [CACHE] In-memory purge skipped:", e?.message);
+    }
 
     console.log(`✅ [CACHE] Force refresh completed for user: ${userId}`);
     return true;

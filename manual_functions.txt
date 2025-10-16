@@ -66,12 +66,12 @@ FINANCIAL ANALYTICS & REPORTING
    - Purpose: Provides monthly financial overview for dashboard
    - Used in: store_accounts.js
 
-9. get_spending_by_merchant ⭐ ACTIVE
-   - Enhanced merchant spending with transaction details
-   - Parameters: p_user_id (uuid), p_merchant_name (text), p_start (date), p_end (date)
-   - Returns: TABLE(total_spend numeric, txn_count integer, transactions jsonb)
-   - Purpose: Detailed merchant analysis with transaction breakdown
-   - Used in: finny.js
+9. get_spend_by_merchant ⭐ ACTIVE (STANDARD)
+   - Merchant spending summary with optional merchant filter
+   - Parameters: p_user_id (uuid), p_start (date), p_end (date), p_merchant (text DEFAULT NULL)
+   - Returns: TABLE(merchant text, total_spend numeric, txn_count integer)
+   - Purpose: Merchant-level totals; prefer this for summaries
+   - Used in: analysis/reporting
 
 10. get_transactions_by_category ⭐ ACTIVE
     - Returns transactions filtered by category
@@ -234,10 +234,12 @@ UTILITY & TRIGGER FUNCTIONS
    - Returns: trigger
    - Purpose: Cache invalidation for web scraping data
 
-REMAINING UNUSED FUNCTIONS (CANDIDATES FOR REMOVAL)
-===================================================
+DEPRECATED/TO BE REMOVED
+========================
 
-All previously unused functions have been removed via schema cleanup.
+get_spending_by_merchant (removed!)
+ - Legacy detailed variant returning transactions jsonb.
+ - Prefer `get_spend_by_merchant` for totals. If detailed list is needed, consider adding `get_transactions_by_merchant`.
 
 CHAT HISTORY MANAGEMENT
 ------------------------

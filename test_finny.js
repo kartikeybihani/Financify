@@ -11,11 +11,13 @@
  *   node test_finny.js "Do you think I can achieve my goals?"
  */
 
-const fetch = require("node-fetch");
-require("dotenv").config();
+import fetch from "node-fetch";
+import dotenv from "dotenv";
+dotenv.config();
 
 // Configuration
-const BASE_URL = process.env.APP_BASE_URL || "http://localhost:3000";
+const BASE_URL =
+  process.env.APP_BASE_URL || "https://financify-rose.vercel.app";
 const TEST_USER_ID = process.env.TEST_USER_ID || "test-user-123";
 
 // Test queries to verify different scenarios
@@ -177,8 +179,8 @@ process.on("unhandledRejection", (reason, promise) => {
 });
 
 // Run the script
-if (require.main === module) {
+if (import.meta.url === new URL(import.meta.url).href) {
   main().catch(console.error);
 }
 
-module.exports = { testFinnyQuery, TEST_QUERIES };
+export { testFinnyQuery, TEST_QUERIES };
