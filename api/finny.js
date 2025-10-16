@@ -435,7 +435,7 @@ RULES:
         body: JSON.stringify({
           model: SMALLER_MODEL,
           temperature: 0.1, // Low for consistent extraction
-          max_tokens: 500, // Small response
+          max_tokens: 1200, // Small response
           messages: [
             {
               role: "system",
@@ -4643,7 +4643,7 @@ async function updateSessionSummaryLLM(
       body: JSON.stringify({
         model: SUMMARY_MODEL,
         temperature: 0.2,
-        max_tokens: 180,
+        max_tokens: 280,
         messages: [
           {
             role: "system",
