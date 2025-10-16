@@ -4236,7 +4236,7 @@ function formatStockResponse(data) {
   if (pt) out += `Price target (mean): ${pt}\n`;
   if (recLine) out += `${recLine}\n`;
   if (data.profile?.finnhubIndustry)
-    out += `Industry: ${data.profile.finnhubIndustry}\n`;
+    out += `\nIndustry: ${data.profile.finnhubIndustry}\n`;
   if (data.profile?.weburl) out += `Website: ${data.profile.weburl}\n`;
   // Add a couple of basic metrics if available
   const pe = data.metrics?.peBasicExclExtraTTM || data.metrics?.peBasicTTM;
@@ -4251,6 +4251,7 @@ function formatStockResponse(data) {
   }
   // Add latest headlines
   if (Array.isArray(data.news) && data.news.length > 0) {
+    out += "\n";
     out += "\nRecent headlines:\n";
     for (const n of data.news.slice(0, 3)) {
       if (n.headline) out += `- ${n.headline}\n`;
@@ -4287,9 +4288,10 @@ function buildStockDataSummary(stockData, stockPlan = null) {
     : null;
 
   let summary = `${name} (${stockData.ticker})\n`;
-  summary += `Current price: ${cur} (${dp} today)\n`;
+  summary += "\n";
+  summary += `\nCurrent price: ${cur} (${dp} today)\n`;
 
-  if (pt) summary += `Analyst price target: ${pt}\n`;
+  if (pt) summary += `\nAnalyst price target: ${pt}\n`;
 
   // Analyst recommendations
   if (
@@ -4320,7 +4322,7 @@ function buildStockDataSummary(stockData, stockPlan = null) {
     stockData.metrics?.peBasicExclExtraTTM || stockData.metrics?.peBasicTTM;
   const ps = stockData.metrics?.psTTM;
   if (pe || ps) {
-    summary += "Key ratios: ";
+    summary += "\nKey ratios: ";
     if (pe) summary += `P/E ${Number(pe).toFixed(1)}`;
     if (pe && ps) summary += ", ";
     if (ps) summary += `P/S ${Number(ps).toFixed(1)}`;
@@ -4367,6 +4369,7 @@ function buildStockDataSummary(stockData, stockPlan = null) {
   }
 
   if (stockData.ts) {
+    summary += "\n";
     summary += `Data as of ${new Date(stockData.ts).toLocaleString()}`;
   }
 
