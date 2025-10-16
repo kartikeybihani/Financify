@@ -64,6 +64,9 @@ const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL;
 // Memory extraction model - small, fast, free
 const SMALLER_MODEL = "meta-llama/llama-3.3-8b-instruct:free";
 
+// Session summarization model (LLM) via OpenRouter
+const SUMMARY_MODEL = "deepseek/deepseek-r1-0528-qwen3-8b:free";
+
 // Classification cache - in-memory cache for classification results
 const classificationCache = new Map();
 const CLASSIFICATION_CACHE_TTL = 60 * 60 * 1000; // 1 hour in milliseconds
@@ -662,10 +665,13 @@ export default async function handler(req, res) {
   // Build safe context that overrides any client-provided user_id
   // But fall back to client-provided user_id if no JWT token is present (for testing)
   const finalUserId = serverUserId || context?.user_id;
+  const sessionState = getSessionState(finalUserId);
   const safeContext = {
     ...(context || {}),
     user_id: finalUserId,
     profile: userProfile,
+    // carry session short-term state into handlers
+    session: sessionState,
     // NEW: Add memory reading
     memory: await loadUserMemory(finalUserId),
   };
@@ -694,9 +700,27 @@ export default async function handler(req, res) {
       case "off_topic":
         response = await handleOffTopic(message, safeContext);
         break;
-      case "goal_conversation":
+      case "goal_conversation": {
+        // If there's active goal_flow in session, pass it in context
+        if (safeContext?.session?.goal_flow) {
+          safeContext.goal_flow = safeContext.session.goal_flow;
+        }
         response = await handleGoalConversation(message, safeContext);
+        // Persist any goal_flow updates returned by the handler
+        if (response?.goal_flow) {
+          mergeSessionState(finalUserId, { goal_flow: response.goal_flow });
+        } else if (
+          safeContext?.session?.goal_flow &&
+          response?.intent === "goal_conversation"
+        ) {
+          // If flow completed or canceled, clear when not active
+          const gf = safeContext.session.goal_flow;
+          if (gf && gf.active === false) {
+            mergeSessionState(finalUserId, { goal_flow: null });
+          }
+        }
         break;
+      }
       default:
         return res.status(400).json({ error: "Invalid action" });
     }
@@ -1109,6 +1133,10 @@ async function handleAsk(
       "- Build rapport by showing you care about them as a person, not just their finances",
       "",
       // Smart memory context with relevance-based selection
+      // Session summary (short-term conversation memory)
+      ...(getSessionSummary(context.user_id)
+        ? [`Session summary: ${getSessionSummary(context.user_id)}`]
+        : []),
       ...(context.memory?.summary
         ? [`User context: ${context.memory.summary}`]
         : []),
@@ -1199,6 +1227,7 @@ async function handleAsk(
       "- Don't overwhelm users with too much information at once",
       "- ALWAYS prioritize web search results over training data for current information (rates, limits, rules, etc.)",
       "- If user asks about 'accounts', show individual account names, balances, and types from the provided account data",
+      "- If user asks 'net worth' or 'what's my net worth', ALWAYS include a brief breakdown: show total plus top 2–3 contributors across assets and liabilities (e.g., cash, investments, credit card debt). Keep it concise, no long lists",
       "- If user asks about 'investments' or 'holdings', then show the detailed holdings",
       "- If user asks for 'investment advice' or 'financial advice', focus on actionable recommendations, not data dumps",
       "- Keep responses conversational and encouraging, not overwhelming",
@@ -1498,6 +1527,16 @@ async function handleAsk(
 
     // Log conversation synchronously (wait for it)
     await logConversation(conversationData);
+
+    // Asynchronously refresh session summary using LLM (short-term memory)
+    setImmediate(() =>
+      updateSessionSummaryLLM(
+        context?.user_id,
+        getSessionSummary(context?.user_id),
+        message,
+        cleanedMessage
+      )
+    );
 
     return response;
   } catch (error) {
@@ -4656,6 +4695,105 @@ async function forceRefreshUserData(userId) {
 // In-memory cache for user memories
 const memoryCache = new Map();
 const MEMORY_CACHE_TTL = 10 * 60 * 1000; // 10 minutes
+
+// In-memory cache for short session summaries (per user)
+const sessionSummaryCache = new Map(); // key: userId, value: { summary, timestamp }
+const SESSION_SUMMARY_TTL = 15 * 60 * 1000; // 15 minutes
+
+function getSessionSummary(userId) {
+  if (!userId) return "";
+  const entry = sessionSummaryCache.get(userId);
+  if (!entry) return "";
+  if (Date.now() - entry.timestamp > SESSION_SUMMARY_TTL) {
+    sessionSummaryCache.delete(userId);
+    return "";
+  }
+  return entry.summary || "";
+}
+
+function setSessionSummary(userId, summary) {
+  if (!userId || typeof summary !== "string") return;
+  const trimmed = summary.trim().slice(0, 600); // hard cap
+  sessionSummaryCache.set(userId, { summary: trimmed, timestamp: Date.now() });
+}
+
+async function updateSessionSummaryLLM(
+  userId,
+  previousSummary,
+  userMessage,
+  assistantMessage
+) {
+  try {
+    if (!userId) return;
+    const prompt = [
+      "You are a session summarizer for a financial assistant.",
+      "Goal: Maintain a concise running summary with only crucial facts needed for follow-ups.",
+      "Keep it short (<= 400 chars). Do NOT repeat pleasantries, disclaimers, or formatting.",
+      "Prioritize: last discussed stock ticker/company, spending category + period, explicit numbers (amounts, dates), and any active goal details.",
+      "Avoid: verbose narrative, unrelated small talk, URLs, or markdown.",
+      "",
+      `Previous summary: ${previousSummary || ""}`,
+      "Latest exchange:",
+      `User: ${userMessage}`,
+      `Assistant: ${assistantMessage}`,
+      "",
+      "Return ONLY the updated summary text with no extra words.",
+    ].join("\n");
+
+    const r = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${process.env.OPENROUTER_GROK_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: SUMMARY_MODEL,
+        temperature: 0.2,
+        max_tokens: 180,
+        messages: [
+          {
+            role: "system",
+            content: "You return only a concise session summary string.",
+          },
+          { role: "user", content: prompt },
+        ],
+      }),
+    });
+    if (!r.ok) return;
+    const data = await r.json();
+    const content = data.choices?.[0]?.message?.content?.trim();
+    if (!content) return;
+    setSessionSummary(userId, content);
+  } catch (e) {
+    // Non-fatal: ignore summarization errors
+  }
+}
+
+// Lightweight session state (goal_flow, etc.) with TTL
+const sessionStateCache = new Map(); // key: userId, value: { state, timestamp }
+const SESSION_STATE_TTL = 15 * 60 * 1000; // 15 minutes
+
+function getSessionState(userId) {
+  if (!userId) return {};
+  const entry = sessionStateCache.get(userId);
+  if (!entry) return {};
+  if (Date.now() - entry.timestamp > SESSION_STATE_TTL) {
+    sessionStateCache.delete(userId);
+    return {};
+  }
+  return entry.state || {};
+}
+
+function setSessionState(userId, state) {
+  if (!userId) return;
+  sessionStateCache.set(userId, { state: state || {}, timestamp: Date.now() });
+}
+
+function mergeSessionState(userId, partial) {
+  if (!userId) return;
+  const current = getSessionState(userId);
+  setSessionState(userId, { ...current, ...(partial || {}) });
+}
 
 // Cache entry structure: { data, timestamp }
 function getCachedMemory(userId) {

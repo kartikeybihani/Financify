@@ -74,195 +74,6 @@ const GOAL_CATEGORY_KEYWORDS = [
   { key: "other", words: [] },
 ];
 
-// Goal synonyms for intent detection (from finny.js)
-const GOAL_SYNONYMS = {
-  "goal.financial.emergency_fund": {
-    synonyms: [
-      "emergency fund",
-      "savings",
-      "rainy day fund",
-      "safety net",
-      "cushion",
-      "backup money",
-    ],
-    examples: [
-      "build an emergency fund",
-      "save for emergencies",
-      "rainy day savings",
-      "safety net",
-    ],
-  },
-
-  "goal.financial.house_down_payment": {
-    synonyms: [
-      "down payment",
-      "buy a house",
-      "home purchase",
-      "first home",
-      "starter home",
-      "house hunting",
-    ],
-    examples: [
-      "save for a house",
-      "down payment",
-      "buying a home",
-      "first time buyer",
-    ],
-  },
-
-  "goal.financial.debt_payoff": {
-    synonyms: [
-      "pay off debt",
-      "debt free",
-      "eliminate debt",
-      "debt payoff",
-      "get out of debt",
-    ],
-    examples: [
-      "pay off my loans",
-      "become debt free",
-      "eliminate credit card debt",
-    ],
-  },
-
-  "goal.financial.retirement": {
-    synonyms: [
-      "retirement",
-      "401k",
-      "roth ira",
-      "retirement savings",
-      "pension",
-      "retire early",
-      "fire",
-    ],
-    examples: [
-      "save for retirement",
-      "max out 401k",
-      "retire early",
-      "financial independence",
-    ],
-  },
-
-  "goal.financial.investment": {
-    synonyms: [
-      "invest",
-      "investment",
-      "stocks",
-      "crypto",
-      "portfolio",
-      "wealth building",
-      "passive income",
-    ],
-    examples: [
-      "start investing",
-      "build wealth",
-      "stock market",
-      "cryptocurrency",
-      "passive income",
-    ],
-  },
-
-  "goal.career.job_change": {
-    synonyms: [
-      "new job",
-      "career change",
-      "switch jobs",
-      "better job",
-      "promotion",
-      "raise",
-      "quit",
-    ],
-    examples: [
-      "find a new job",
-      "career change",
-      "get promoted",
-      "quit my job",
-    ],
-  },
-
-  "goal.career.education": {
-    synonyms: [
-      "go back to school",
-      "masters degree",
-      "certification",
-      "learn new skills",
-      "online course",
-    ],
-    examples: [
-      "get my masters",
-      "learn coding",
-      "online course",
-      "certification program",
-    ],
-  },
-
-  "goal.family.marriage": {
-    synonyms: [
-      "get married",
-      "wedding",
-      "propose",
-      "engagement",
-      "marriage",
-      "tie the knot",
-    ],
-    examples: [
-      "planning to get married",
-      "save for wedding",
-      "propose soon",
-      "engagement ring",
-    ],
-  },
-
-  "goal.family.children": {
-    synonyms: [
-      "have kids",
-      "start a family",
-      "baby",
-      "pregnant",
-      "family planning",
-      "kids",
-      "children",
-    ],
-    examples: [
-      "want to have kids",
-      "start a family",
-      "planning for a baby",
-      "family planning",
-    ],
-  },
-
-  "goal.lifestyle.travel": {
-    synonyms: [
-      "travel",
-      "vacation",
-      "trip",
-      "backpacking",
-      "europe",
-      "travel the world",
-      "sabbatical",
-    ],
-    examples: ["travel more", "europe trip", "backpacking", "travel the world"],
-  },
-
-  "goal.lifestyle.moving": {
-    synonyms: [
-      "move",
-      "relocate",
-      "new city",
-      "move out",
-      "get my own place",
-      "apartment",
-      "house",
-    ],
-    examples: [
-      "move to a new city",
-      "get my own place",
-      "move out of parents",
-      "relocate",
-    ],
-  },
-};
-
 // =====================
 // GOAL UTILITY FUNCTIONS
 // =====================
@@ -822,6 +633,37 @@ async function handleGoalConversation(message, context) {
   }
 
   try {
+    // Deterministic list-goals guard
+    const m = (message || "").toLowerCase();
+    const wantsList =
+      /\b(what are|show|list|see)\b.*\b(my|current)\b.*\b(goal|goals)\b/.test(
+        m
+      ) || /\b(my goals|current goals|goals overview)\b/.test(m);
+
+    if (wantsList) {
+      // Ensure goals are loaded in context if missing
+      if (!Array.isArray(context?.goals)) {
+        try {
+          const { data } = await supabase.rpc("get_goals_overview", {
+            p_user_id: userId,
+            p_limit: 10,
+          });
+          context.goals = (data || []).map((g) => ({
+            label: g.label,
+            current_amount: g.current_amount,
+            target_amount: g.target_amount,
+            progress_pct: g.progress_pct,
+            target_date: g.target_date,
+          }));
+        } catch {}
+      }
+      return await handleGoalQuestion(
+        { intent: "goal_question" },
+        context,
+        message
+      );
+    }
+
     // 1. Extract goal intent with small model
     const extraction = await extractGoalIntent(message, context);
 
@@ -832,6 +674,27 @@ async function handleGoalConversation(message, context) {
         type: "assistant",
         intent: "goal_conversation",
       };
+    }
+
+    // Short-circuit affirmations for active flow
+    const flow = context?.goal_flow;
+    if (flow && flow.active) {
+      const yes = /\b(yes|yep|yeah|create|go ahead|confirm)\b/i.test(message);
+      const no = /\b(no|cancel|stop|nevermind)\b/i.test(message);
+      if (no) {
+        return {
+          message: "No problem — I canceled the goal setup.",
+          type: "assistant",
+          intent: "goal_conversation",
+          goal_flow: { ...flow, active: false },
+        };
+      }
+      if (yes && flow.action === "create") {
+        // proceed with existing slots
+        const analysis = await analyzeGoalFeasibility(flow.slots, context);
+        return await createGoalFromSlots(flow.slots, context, analysis);
+      }
+      // Otherwise, continue normal branching
     }
 
     // 2. Handle different goal intents
@@ -1463,7 +1326,6 @@ export {
 
   // Constants
   GOAL_CATEGORY_KEYWORDS,
-  GOAL_SYNONYMS,
 
   // Utilities
   generateRequestId,
