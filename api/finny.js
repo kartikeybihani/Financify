@@ -4166,89 +4166,112 @@ async function generateConversationalStockResponse(
   // Build stock data summary
   const stockSummary = buildStockDataSummary(stockData, stockPlan);
 
-  const systemPrompt = `You are Finny, a warm, encouraging, and empowering financial advisor who is blunt when needed.
-
-PERSONALITY & APPROACH:
-- Be warm and encouraging while maintaining professional expertise
-- Show enthusiasm for helping users achieve their financial goals
-- Be blunt and direct when users need to hear hard truths about their finances
-- Celebrate wins and progress, no matter how small
-- Use the user's name when available to create personal connection
-- Focus on financial empowerment and positive outcomes
-
-STOCK RESPONSE GUIDELINES:
-- Start with a warm greeting using the user's name if available
-- Present stock data in a conversational, easy-to-understand way
-- Connect the stock information to the user's financial situation when relevant
-- If they have investment holdings, relate the stock to their existing portfolio
-- If they have financial goals, suggest how this stock might fit (or not fit) their goals
-- Be honest about risks and don't give specific investment advice
-- End with an encouraging question or next step suggestion
-- Use emojis sparingly but effectively
-- Keep it conversational and engaging, not robotic
-
-Always remember: This is informational only, not investment advice.`;
-
-  const userPrompt = `User asked: "${userMessage}"
-
-Stock Information:
-${stockSummary}
-
-User Context:
-${userContext}
-
-Please provide a warm, conversational response about this stock that connects to the user's financial situation. Be encouraging and helpful while staying professional.`;
-
+  // Data-first concise response (deterministic, low-chatter)
   try {
-    const response = await fetch(
-      "https://openrouter.ai/api/v1/chat/completions",
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${process.env.OPENROUTER_GROK_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: OPENROUTER_MODEL,
-          temperature: 0.7,
-          max_tokens: 800,
-          stream: false,
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: userPrompt },
-          ],
-        }),
-      }
+    const concise = buildConciseStockMessage(
+      stockData,
+      userProfile,
+      userContext
     );
-
-    if (!response.ok) {
-      console.error(
-        "❌ [FINNY] Conversational stock response API error:",
-        response.status
-      );
-      // Fallback to formatted response
-      return formatStockResponse(stockData);
-    }
-
-    const data = await response.json();
-    const conversationalResponse =
-      data.choices?.[0]?.message?.content || formatStockResponse(stockData);
-
     console.log(
-      `✅ [FINNY] Generated conversational stock response in ${
+      `✅ [FINNY] Generated concise stock response in ${
         Date.now() - startTime
       }ms`
     );
-
-    return conversationalResponse;
+    return concise;
   } catch (error) {
-    console.error(
-      "❌ [FINNY] Error generating conversational stock response:",
-      error
-    );
-    // Fallback to formatted response
+    console.error("❌ [FINNY] Error building concise stock response:", error);
+    // Fallback to formatted snapshot
     return formatStockResponse(stockData);
   }
+}
+
+function buildConciseStockMessage(stockData, userProfile, userContext) {
+  const name = userProfile?.name || "there";
+  const cur =
+    stockData.current != null
+      ? `$${Number(stockData.current).toFixed(2)}`
+      : "n/a";
+  const dp =
+    stockData.changePercent != null
+      ? `${Number(stockData.changePercent).toFixed(2)}%`
+      : "n/a";
+  const pt = stockData.priceTarget?.targetMean
+    ? `$${Number(stockData.priceTarget.targetMean).toFixed(2)}`
+    : null;
+  const pe =
+    stockData.metrics?.peBasicExclExtraTTM || stockData.metrics?.peBasicTTM;
+  const ps = stockData.metrics?.psTTM;
+  const hi = stockData.metrics?.["52WeekHigh"];
+  const lo = stockData.metrics?.["52WeekLow"];
+
+  // Analyst sentiment
+  let sentiment = null;
+  if (
+    Array.isArray(stockData.recommendations) &&
+    stockData.recommendations.length > 0
+  ) {
+    const latest = stockData.recommendations[0];
+    const totals = [
+      latest?.strongBuy || 0,
+      latest?.buy || 0,
+      latest?.hold || 0,
+      latest?.sell || 0,
+      latest?.strongSell || 0,
+    ];
+    const sum = totals.reduce((a, b) => a + b, 0) || 1;
+    const buyPct = ((100 * (totals[0] + totals[1])) / sum).toFixed(0);
+    const holdPct = ((100 * totals[2]) / sum).toFixed(0);
+    const sellPct = ((100 * (totals[3] + totals[4])) / sum).toFixed(0);
+    sentiment = `${buyPct}% Buy / ${holdPct}% Hold / ${sellPct}% Sell`;
+  }
+
+  // Headlines (at most 2)
+  const headlines = Array.isArray(stockData.news)
+    ? stockData.news
+        .slice(0, 2)
+        .map((n) => (n?.headline ? `- ${n.headline}` : null))
+        .filter(Boolean)
+    : [];
+
+  const lines = [];
+  lines.push(
+    `Hey ${name}! ${
+      stockData.profile?.name || stockData.ticker
+    } quick snapshot:`
+  );
+  lines.push(`- Price: ${cur} (${dp} today)`);
+  if (pt) lines.push(`- Price target (mean): ${pt}`);
+  if (pe || ps) {
+    const ratios = [
+      pe ? `P/E ${Number(pe).toFixed(1)}` : null,
+      ps ? `P/S ${Number(ps).toFixed(1)}` : null,
+    ]
+      .filter(Boolean)
+      .join(", ");
+    if (ratios) lines.push(`- Ratios: ${ratios}`);
+  }
+  if (hi || lo) {
+    lines.push(
+      `- 52w range: ${lo ? `$${Number(lo).toFixed(2)}` : "?"} - ${
+        hi ? `$${Number(hi).toFixed(2)}` : "?"
+      }`
+    );
+  }
+  if (sentiment) lines.push(`- Analyst mix: ${sentiment}`);
+  if (headlines.length > 0) {
+    lines.push("- Headlines:");
+    headlines.forEach((h) => lines.push(h));
+  }
+  if (stockData.ts)
+    lines.push(`- As of ${new Date(stockData.ts).toLocaleString()}`);
+
+  // Brief personalized nudge
+  lines.push(
+    `Given your goals and profile, I can help you decide how (or if) this fits your plan. Want a quick allocation check or risk review?`
+  );
+
+  return lines.join("\n");
 }
 
 function buildStockDataSummary(stockData, stockPlan = null) {
