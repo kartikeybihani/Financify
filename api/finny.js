@@ -4196,20 +4196,23 @@ function formatStockResponse(data) {
     ).toFixed(0)}%`;
   }
 
-  let out = `**${name} (${data.ticker}) — Snapshot**\n\n`;
-  out += `- Price: ${cur} (${dp} today)\n`;
-  if (pt) out += `- Street price target (mean): ${pt}\n`;
-  if (recLine) out += `- ${recLine}\n`;
+  let out = `${name} (${data.ticker}) — Snapshot\n\n`;
+  out += `Price: ${cur} (${dp} today)\n`;
+  if (pt) out += `Price target (mean): ${pt}\n`;
+  if (recLine) out += `${recLine}\n`;
   if (data.profile?.finnhubIndustry)
-    out += `- Industry: ${data.profile.finnhubIndustry}\n`;
-  if (data.profile?.weburl) out += `- Website: ${data.profile.weburl}\n`;
+    out += `Industry: ${data.profile.finnhubIndustry}\n`;
+  if (data.profile?.weburl) out += `Website: ${data.profile.weburl}\n`;
   // Add a couple of basic metrics if available
   const pe = data.metrics?.peBasicExclExtraTTM || data.metrics?.peBasicTTM;
   const ps = data.metrics?.psTTM;
   if (pe || ps) {
-    out += "\nKey ratios (TTM):\n";
-    if (pe) out += `- P/E: ${Number(pe).toFixed(1)}\n`;
-    if (ps) out += `- P/S: ${Number(ps).toFixed(1)}\n`;
+    const ratioParts = [];
+    if (pe) ratioParts.push(`P/E ${Number(pe).toFixed(1)}`);
+    if (ps) ratioParts.push(`P/S ${Number(ps).toFixed(1)}`);
+    if (ratioParts.length > 0) {
+      out += `\nKey ratios (TTM): ${ratioParts.join(", ")}\n`;
+    }
   }
   // Add latest headlines
   if (Array.isArray(data.news) && data.news.length > 0) {
@@ -4218,8 +4221,7 @@ function formatStockResponse(data) {
       if (n.headline) out += `- ${n.headline}\n`;
     }
   }
-  if (data.ts) out += `\n*As of ${new Date(data.ts).toLocaleString()}*`;
-  out += `\n\nThis is informational, not investment advice.`;
+  if (data.ts) out += `\nAs of ${new Date(data.ts).toLocaleString()}`;
   return out;
 }
 
@@ -4302,7 +4304,6 @@ async function generateConversationalStockResponse(
 }
 
 function buildConciseStockMessage(stockData, userProfile, userContext) {
-  const name = userProfile?.name || "there";
   const cur =
     stockData.current != null
       ? `$${Number(stockData.current).toFixed(2)}`
@@ -4350,13 +4351,10 @@ function buildConciseStockMessage(stockData, userProfile, userContext) {
     : [];
 
   const lines = [];
-  lines.push(
-    `Hey ${name}! ${
-      stockData.profile?.name || stockData.ticker
-    } quick snapshot:`
-  );
-  lines.push(`- Price: ${cur} (${dp} today)`);
-  if (pt) lines.push(`- Price target (mean): ${pt}`);
+  lines.push(`${stockData.profile?.name || stockData.ticker} — Snapshot`);
+  lines.push("");
+  lines.push(`Price: ${cur} (${dp} today)`);
+  if (pt) lines.push(`Price target (mean): ${pt}`);
   if (pe || ps) {
     const ratios = [
       pe ? `P/E ${Number(pe).toFixed(1)}` : null,
@@ -4364,28 +4362,23 @@ function buildConciseStockMessage(stockData, userProfile, userContext) {
     ]
       .filter(Boolean)
       .join(", ");
-    if (ratios) lines.push(`- Ratios: ${ratios}`);
+    if (ratios) lines.push(`Ratios: ${ratios}`);
   }
   if (hi || lo) {
     lines.push(
-      `- 52w range: ${lo ? `$${Number(lo).toFixed(2)}` : "?"} - ${
+      `52w range: ${lo ? `$${Number(lo).toFixed(2)}` : "?"} - ${
         hi ? `$${Number(hi).toFixed(2)}` : "?"
       }`
     );
   }
-  if (sentiment) lines.push(`- Analyst mix: ${sentiment}`);
+  if (sentiment) lines.push(`Analyst mix: ${sentiment}`);
   if (headlines.length > 0) {
-    lines.push("\n\n");
-    lines.push("- Headlines:");
+    lines.push("");
+    lines.push("Headlines:");
     headlines.forEach((h) => lines.push(h));
   }
   if (stockData.ts)
-    lines.push(`- As of ${new Date(stockData.ts).toLocaleString()}`);
-
-  // Brief personalized nudge
-  lines.push(
-    `Given your goals and profile, I can help you decide how (or if) this fits your plan. Want a quick allocation check or risk review?`
-  );
+    lines.push(`As of ${new Date(stockData.ts).toLocaleString()}`);
 
   return lines.join("\n");
 }
@@ -4725,6 +4718,10 @@ async function updateSessionSummaryLLM(
 ) {
   try {
     if (!userId) return;
+    console.log(
+      "🧠 [SUMMARY] Starting session summary update via LLM for user:",
+      userId
+    );
     const prompt = [
       "You are a session summarizer for a financial assistant.",
       "Goal: Maintain a concise running summary with only crucial facts needed for follow-ups.",
@@ -4759,11 +4756,18 @@ async function updateSessionSummaryLLM(
         ],
       }),
     });
-    if (!r.ok) return;
+    if (!r.ok) {
+      console.log("🧠 [SUMMARY] LLM request failed with status:", r.status);
+      return;
+    }
     const data = await r.json();
     const content = data.choices?.[0]?.message?.content?.trim();
-    if (!content) return;
+    if (!content) {
+      console.log("🧠 [SUMMARY] No summary content returned by LLM");
+      return;
+    }
     setSessionSummary(userId, content);
+    console.log("🧠 [SUMMARY] Session summary updated:", content);
   } catch (e) {
     // Non-fatal: ignore summarization errors
   }
