@@ -1753,6 +1753,15 @@ function detectOffTopic(message) {
 
   // Strong off-topic indicators (specific patterns)
   const offTopicPatterns = [
+    // Trust/meta questions
+    "can i trust you",
+    "are you trustworthy",
+    "can we trust",
+    "is this trustworthy",
+    "are you reliable",
+    "can i trust this",
+    "can i rely on you",
+
     // Weather & environment
     "what's the weather",
     "weather today",
@@ -3077,6 +3086,7 @@ async function handleOffTopic(message, context) {
     "Limit your reply to 4-6 sentences (roughly <=120 words).",
     "Finish complete sentences; avoid trailing fragments or cut-offs.",
     "Focus on financial empowerment and positive outcomes.",
+    "Add spacing between sentences to make the response more readable.",
     "",
     "EMPATHETIC ENGAGEMENT:",
     "- ALWAYS acknowledge and engage with personal information users share, even if not directly financial",
@@ -3166,7 +3176,7 @@ async function handleOffTopic(message, context) {
         body: JSON.stringify({
           model: SMALLER_MODEL,
           temperature: 0.7,
-          max_tokens: 400,
+          max_tokens: 250,
           messages: [
             {
               role: "system",

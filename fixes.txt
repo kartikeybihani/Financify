@@ -58,6 +58,14 @@ SESSION -
 Make sure that `sessionSummary` is run after sending the response to the user. 
 Then, if it is the same chat, just add that summary in the user context for the next question or query of the user.
 
+OFF_TOPIC - 
+✅ Improved off-topic detection & response stability
+- Added explicit trust/meta question detection (e.g., "can I trust you?", "are you trustworthy?", "can I rely on you?") to route as off_topic with warm redirection
+- Strengthened off-topic redirection prompt: concise 4–6 sentences, no truncation, spacing between sentences, allows emojis per spec
+- Capped generation time and length: smaller model for off-topic (SMALLER_MODEL), max_tokens set to 250 for faster turnaround
+- Guardrails to avoid mid-sentence cutoffs and ensure complete sentences
+- Updated logging to include category and redirection suggestions
+
 === IMPLEMENTATION SUMMARY ===
 ✅ All classification issues resolved
 ✅ Production-ready enhanced classification system deployed
