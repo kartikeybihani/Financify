@@ -80,6 +80,7 @@ const CACHE_TTL = {
   investments_all: 6 * 60 * 60 * 1000, // 6 hours consolidated investments
   goals_overview: 60 * 60 * 1000, // 60 minutes
   cashflow_monthly: 30 * 60 * 1000, // 30 minutes
+  net_worth: 10 * 60 * 1000, // 10 minutes
   category_transactions: 30 * 60 * 1000, // 30 minutes
 };
 
@@ -3403,6 +3404,22 @@ async function handleOffTopic(message, context) {
   const category = context?.category || "general";
   const userProfile = context?.profile || {};
 
+  // Fetch net worth data for context
+  let netWorthData = null;
+  if (context?.user_id) {
+    try {
+      netWorthData = await getNetWorthData(context.user_id);
+      if (netWorthData) {
+        console.log("📊 [OFF_TOPIC] Net worth data loaded for context");
+      }
+    } catch (error) {
+      console.log(
+        "⚠️ [OFF_TOPIC] Could not load net worth data:",
+        error?.message
+      );
+    }
+  }
+
   // Generate context-aware financial redirection suggestions
   const redirectionSuggestions = generateFinancialRedirectionSuggestions(
     category,
@@ -3496,6 +3513,19 @@ async function handleOffTopic(message, context) {
           : []),
       ];
     })(),
+    // Net worth context
+    ...(netWorthData
+      ? [
+          "",
+          "FINANCIAL SITUATION:",
+          `Current net worth: ${netWorthData.formatted.net_worth}`,
+          `Liquid assets: ${netWorthData.formatted.liquid_assets}`,
+          `Investments: ${netWorthData.formatted.investments_total}`,
+          `Liabilities: ${netWorthData.formatted.total_liabilities}`,
+          "",
+          "Use this financial context to provide more relevant and personalized financial advice when redirecting the user to financial topics.",
+        ]
+      : []),
   ].join("\n");
 
   try {
@@ -3520,9 +3550,11 @@ async function handleOffTopic(message, context) {
               role: "user",
               content: `User asked: "${message}"\n\nCategory: ${category}\n\nRedirection suggestions: ${redirectionSuggestions.join(
                 ", "
-              )}\n\nUser name: ${
-                userProfile.name || "there"
-              }\n\nUse the user's memory context to make the redirection more personal and relevant to their situation.`,
+              )}\n\nUser name: ${userProfile.name || "there"}${
+                netWorthData
+                  ? `\n\nUser's financial situation: Net worth ${netWorthData.formatted.net_worth} (${netWorthData.formatted.liquid_assets} liquid, ${netWorthData.formatted.investments_total} invested, ${netWorthData.formatted.total_liabilities} liabilities)`
+                  : ""
+              }\n\nUse the user's memory context and financial situation to make the redirection more personal and relevant to their situation.`,
             },
           ],
         }),
@@ -4777,6 +4809,92 @@ async function forceRefreshUserData(userId) {
   }
 }
 
+// === NET WORTH DATA FUNCTIONS ===
+
+// Helper function to format currency for net worth display
+function formatNetWorthCurrency(amount) {
+  if (amount >= 1000000) {
+    return `$${(amount / 1000000).toFixed(amount % 1000000 === 0 ? 0 : 1)}M`;
+  } else if (amount >= 1000) {
+    return `$${(amount / 1000).toFixed(amount % 1000 === 0 ? 0 : 1)}K`;
+  } else {
+    return `$${amount.toFixed(0)}`;
+  }
+}
+
+// Fetch and cache net worth data
+async function getNetWorthData(userId) {
+  if (!userId) {
+    console.log("❌ [NET_WORTH] No userId provided");
+    return null;
+  }
+
+  // Check cache first
+  const cached = getCachedUserData("net_worth", userId);
+  if (cached) {
+    console.log("✅ [NET_WORTH] Using cached net worth data");
+    return cached;
+  }
+
+  try {
+    console.log("📊 [NET_WORTH] Fetching net worth data for user:", userId);
+
+    const { data: netWorthData, error } = await withTimeout(
+      supabase.rpc("get_net_worth", { p_user_id: userId }),
+      3000, // 3 second timeout
+      null
+    );
+
+    if (error) {
+      console.error("❌ [NET_WORTH] Error fetching net worth:", error);
+      return null;
+    }
+
+    if (!netWorthData || netWorthData.length === 0) {
+      console.log("⚠️ [NET_WORTH] No net worth data found");
+      return null;
+    }
+
+    const netWorth = netWorthData[0]; // get_net_worth returns array with single object
+
+    // Process and format the data
+    const processedData = {
+      liquid_assets: netWorth.liquid_assets || 0,
+      investments_total: netWorth.investments_total || 0,
+      total_liabilities: netWorth.total_liabilities || 0,
+      net_worth: netWorth.net_worth || 0,
+      bank_accounts: Array.isArray(netWorth.bank_accounts)
+        ? netWorth.bank_accounts
+        : [],
+      summary: {
+        total_assets:
+          (netWorth.liquid_assets || 0) + (netWorth.investments_total || 0),
+        total_liabilities: netWorth.total_liabilities || 0,
+        net_worth: netWorth.net_worth || 0,
+      },
+      formatted: {
+        liquid_assets: formatNetWorthCurrency(netWorth.liquid_assets || 0),
+        investments_total: formatNetWorthCurrency(
+          netWorth.investments_total || 0
+        ),
+        total_liabilities: formatNetWorthCurrency(
+          netWorth.total_liabilities || 0
+        ),
+        net_worth: formatNetWorthCurrency(netWorth.net_worth || 0),
+      },
+    };
+
+    // Cache the processed data
+    setCachedUserData("net_worth", userId, processedData);
+    console.log("💾 [NET_WORTH] Cached net worth data");
+
+    return processedData;
+  } catch (error) {
+    console.error("❌ [NET_WORTH] Error in getNetWorthData:", error);
+    return null;
+  }
+}
+
 // === MEMORY MANAGEMENT FUNCTIONS ===
 
 // In-memory cache for user memories
@@ -6015,4 +6133,6 @@ export {
   loadUserMemory,
   saveMemoryCandidates,
   generateMemorySummary,
+  getNetWorthData,
+  formatNetWorthCurrency,
 };
