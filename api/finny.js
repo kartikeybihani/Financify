@@ -2967,7 +2967,6 @@ function financialConceptHeuristic(raw) {
       intent: "ask_personalized",
       needs_web: false,
       needs_user_data: false,
-      needs_calc: false,
       state: null,
       entities: [],
       confidence: 0.85,
@@ -2992,7 +2991,6 @@ async function handleClassify(message, context) {
       intent: "ask_personalized",
       needs_web: false,
       needs_user_data: true,
-      needs_calc: false,
       state: null,
       entities: [],
       confidence: 0.1,
@@ -3022,7 +3020,6 @@ async function handleClassify(message, context) {
       intent: "off_topic",
       needs_web: false,
       needs_user_data: false,
-      needs_calc: false,
       state: null,
       entities: [],
       confidence: 0.9,
@@ -3063,11 +3060,11 @@ async function handleClassify(message, context) {
   }
 
   try {
-    // Create a timeout promise that rejects after 4 seconds
+    // Create a timeout promise that rejects after 8 seconds (increased for stability)
     const timeoutPromise = new Promise((_, reject) => {
       setTimeout(
-        () => reject(new Error("Classification timeout after 4 seconds")),
-        4000
+        () => reject(new Error("Classification timeout after 8 seconds")),
+        8000
       );
     });
 
@@ -3083,6 +3080,8 @@ async function handleClassify(message, context) {
         body: JSON.stringify({
           model: OPENROUTER_MODEL,
           temperature: 0.1,
+          max_tokens: 150, // Limit response size for faster processing
+          top_p: 0.9, // Add top_p for better stability
           messages: [
             {
               role: "system",
@@ -3098,16 +3097,17 @@ async function handleClassify(message, context) {
                 "Rules:",
                 "- **SCOPE BOUNDARIES**: Only handle financial topics. Non-financial queries (weather, recipes, movies, sports, general chat, technical support) should be classified as `off_topic`.",
                 "- **INVESTMENT NEWS IS FINANCIAL**: Stock news, company updates, earnings reports, industry analysis, market trends, and sector performance are ALL financial topics. Use `ask_personalized` with `needs_web=true`.",
-                "- **Intents are primary; flags can combine.** Return exactly one `intent`, but `needs_user_data`, `needs_calc`, and `needs_web` may be **true** together.",
+                "- **Intents are primary; flags can combine.** Return exactly one `intent`, but `needs_user_data` and `needs_web` may be **true** together.",
                 "- **OFF-TOPIC DETECTION**: If message is clearly non-financial (weather, cooking, entertainment, sports, general greetings, technical issues), use `intent=off_topic`.",
                 "- **CONCEPT EXPLANATIONS ARE IN-SCOPE**: General finance concepts (e.g., 'difference between credit and debit card') are financial. Do not mark them off_topic.",
                 "- If the message asks 'rent vs buy in <city/state>' → `ask_personalized` (needs_web=true, needs_user_data=true) - this is a personal financial decision requiring user data.",
-                "- If affordability, FIRE, retirement planning, or financial projections choose ask_personalized (set needs_calc=true)",
+                "- If affordability, FIRE, retirement planning, or financial projections choose ask_personalized",
                 "- If it needs the user's actual data choose ask_personalized",
                 "- If purely personal (spend, net worth, goals) → `ask_personalized` (needs_user_data=true, needs_web=false).",
                 "- If asking about current rates, limits, rules, or regulations (Roth IRA limits, 401k limits, tax brackets, interest rates) → `ask_personalized` (needs_web=true, needs_user_data=false).",
+                "- **CURRENT FINANCIAL INFO**: Questions about 2024/2025 limits, current rates, recent changes, or 'what is the current...' → needs_web=true",
                 "- If asking about credit card recommendations, applications, or which credit cards to get → `ask_personalized` (needs_web=true, needs_user_data=true) - this requires both current card offers and user's financial profile.",
-                "- **GOAL CONVERSATIONS**: If message mentions saving, goals, targets, aspirations, or asks about goal feasibility → `goal_conversation` (needs_user_data=true, needs_calc=true)",
+                "- **GOAL CONVERSATIONS**: If message mentions saving, goals, targets, aspirations, or asks about goal feasibility → `goal_conversation` (needs_user_data=true)",
                 "- If ambiguous but potentially financial, choose ask_personalized",
                 "- **DEFAULT TO FINANCIAL**: When in doubt between financial and non-financial, prefer financial intent.",
                 "",
@@ -3126,8 +3126,8 @@ async function handleClassify(message, context) {
                 '"What are the best credit cards I can get?" → ask_personalized, needs_web:true, needs_user_data:true',
                 '"Which credit card should I apply for?" → ask_personalized, needs_web:true, needs_user_data:true',
                 '"Rent vs buy in Phoenix at 7%" → ask_personalized, needs_web:true, needs_user_data:true, state:"AZ"',
-                '"Can I hit FIRE by 35" → ask_personalized, needs_calc:true',
-                '"Will I have enough to retire" → ask_personalized, needs_calc:true',
+                '"Can I hit FIRE by 35" → ask_personalized',
+                '"Will I have enough to retire" → ask_personalized',
                 '"Can I achieve my financial goals" → goal_conversation',
                 '"What\'s the latest news on semiconductor industry and AMD especially?" → ask_personalized, needs_web:true, needs_user_data:false',
                 '"How is Tesla stock performing today?" → ask_personalized, needs_web:true, needs_user_data:false',
@@ -3139,7 +3139,6 @@ async function handleClassify(message, context) {
                 '  "intent": "ask_personalized" | "goal_conversation" | "off_topic",',
                 '  "needs_web": boolean,',
                 '  "needs_user_data": boolean,',
-                '  "needs_calc": boolean,',
                 '  "state": string | null (two-letter US state code like "CA" or null),',
                 '  "entities": string[],',
                 '  "confidence": number (0 to 1)',
@@ -3244,7 +3243,6 @@ async function handleClassify(message, context) {
       intent: "ask_personalized",
       needs_web: false,
       needs_user_data: true,
-      needs_calc: false,
       state: null,
       entities: [],
       confidence: 0.1,

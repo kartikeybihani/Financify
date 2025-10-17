@@ -1,0 +1,34 @@
+Finny fixes to be done: URGENT - 
+
+CLASSIFICATION - 
+Classification layer many times gets failed due to 400 Open Router error. I dont know, sometimes it works, 
+but quite a few times either it gets hanged or it fails or it gives a 400 error. 
+But that only happens sometimes, even though I dont change anything in that. Is it a model issue or what issue is that?
+
+And also in the classification layer, sometimes it doesn't realize that the query might need a web search (like if a user asks, "What is the Roth IRA limit?"). 
+Those things change every year, so we should definitely go for web search. Sometimes it gives me the web research as false, so it should carefully analyze those.
+
+Let's remove the `needs_calc` parameter as we are not even using that in the Finny file anywhere. 
+Analyze that and let me know if you are using it or not and remove it?
+
+And also analyze and tell me how entities are being used and if yes, then where and how.
+
+GOALS
+It confuses sometimes whenever I ask it `What are my current goals?` It goes into the goal creation mode and confuses that simple question with goal creation mode and asks me `What do I want to name my goals?`
+
+SPENDING - 
+TBD
+
+CHAT -
+Update the progress status in more details like not just high-level looking up the data or looking up the web or getting your transactions. 
+Add more progress status as Finny works through things like understanding our question and then taking a look at your transactions or taking a look at your net worth. 
+If possible, add it. Otherwise, the current version is fine for progress status.
+
+TIMING -
+Set a timeout system like dont be on work for more than 13-14 seconds for an answer. 
+If you dont get an answer, give a basic answer of `Sorry, I wasnt able to do some thing` or bla bla. 
+Do not keep thinking for so long I dont want it to be more than 13-14 seconds.`
+
+SESSION - 
+Make sure that `sessionSummary` is run after sending the response to the user. 
+Then, if it is the same chat, just add that summary in the user context for the next question or query of the user.
