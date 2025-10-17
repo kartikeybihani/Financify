@@ -3073,6 +3073,9 @@ async function handleOffTopic(message, context) {
     "Be encouraging and show enthusiasm for helping with their finances.",
     "Use their name if available, and make the redirection feel natural.",
     "Keep responses concise but engaging.",
+    "You can use emojis or decorative symbols.",
+    "Limit your reply to 4-6 sentences (roughly <=120 words).",
+    "Finish complete sentences; avoid trailing fragments or cut-offs.",
     "Focus on financial empowerment and positive outcomes.",
     "",
     "EMPATHETIC ENGAGEMENT:",
@@ -3161,9 +3164,9 @@ async function handleOffTopic(message, context) {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: OPENROUTER_MODEL,
+          model: SMALLER_MODEL,
           temperature: 0.7,
-          max_tokens: 300,
+          max_tokens: 400,
           messages: [
             {
               role: "system",
