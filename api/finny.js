@@ -3152,7 +3152,7 @@ async function handleClassify(message, context) {
         body: JSON.stringify({
           model: OPENROUTER_MODEL,
           temperature: 0.1,
-          max_tokens: 300, // Allow slightly longer responses for stability
+          max_tokens: 350, // Allow slightly longer responses for stability
           top_p: 0.9, // Add top_p for better stability
           messages: [
             {
@@ -3566,47 +3566,34 @@ async function handleOffTopic(message, context) {
       data.choices?.[0]?.message?.content ||
       "I'd love to help you with your finances! What financial questions can I answer for you today?";
 
-    // Off-topic: also run gated memory extraction/saving if strong personal facts are present
+    // Off-topic: always run LLM-based memory extraction (no gating or heuristics)
     try {
-      const hints = quickExtract(message);
-      if (shouldRunMemoryExtraction(message, "ask_personalized")) {
-        const validated = await validateMemoriesWithSmallModel(
-          message,
-          hints,
-          "ask_personalized"
+      const validated = await validateMemoriesWithSmallModel(
+        message,
+        [],
+        "ask_personalized"
+      );
+
+      const toSave = (validated || [])
+        .filter((m) => m && typeof m.value === "string" && cleanValue(m.value))
+        .filter((m) => {
+          const conf = m.confidence != null ? m.confidence : m.confidence_score;
+          return conf >= 0.8;
+        })
+        .filter(
+          (m, i, self) =>
+            i === self.findIndex((x) => x.type === m.type && x.key === m.key)
         );
-        let merged = validated || [];
-        const fallback = fallbackExtractCandidates(message, hints);
-        if (!merged || merged.length === 0) {
-          if (fallback.length > 0) merged = fallback;
-        } else if (fallback.length > 0) {
-          const seen = new Set(merged.map((m) => `${m.type}|${m.key}`));
-          for (const f of fallback) {
-            const k = `${f.type}|${f.key}`;
-            if (!seen.has(k)) merged.push(f);
-          }
-        }
 
-        const toSave = (merged || [])
-          .filter(
-            (m) => m && typeof m.value === "string" && cleanValue(m.value)
-          )
-          .filter((m) => {
-            const conf =
-              m.confidence != null ? m.confidence : m.confidence_score;
-            return conf >= 0.8;
-          })
-          .filter(
-            (m, i, self) =>
-              i === self.findIndex((x) => x.type === m.type && x.key === m.key)
-          );
+      console.log(
+        `🧠 [FINNY] Off-topic LLM memory candidates prepared: ${toSave.length}`
+      );
 
-        if (toSave.length > 0 && context?.user_id) {
-          try {
-            await saveMemoryCandidates(context.user_id, toSave);
-          } catch (e) {
-            console.log("🧠 [FINNY] Off-topic memory save failed:", e?.message);
-          }
+      if (toSave.length > 0 && context?.user_id) {
+        try {
+          await saveMemoryCandidates(context.user_id, toSave);
+        } catch (e) {
+          console.log("🧠 [FINNY] Off-topic memory save failed:", e?.message);
         }
       }
     } catch (e) {
