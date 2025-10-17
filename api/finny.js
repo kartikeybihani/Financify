@@ -807,6 +807,8 @@ async function validateMemoriesWithSmallModel(
       return true;
     });
 
+    console.log("🔍 [FINNY] Filtered memories:", filtered);
+
     // Deduplicate by type+key
     const unique = filtered.filter(
       (m, i, self) =>
