@@ -2,6 +2,12 @@ import { TimePeriod, Category, MonthData } from '@/src/components/EnhancedFilter
 
 export const QUICK_TIME_PERIODS: TimePeriod[] = [
   {
+    id: "all",
+    label: "All",
+    emoji: "∞",
+    description: "All time",
+  },
+  {
     id: "7days",
     label: "Last Week",
     emoji: "📅",

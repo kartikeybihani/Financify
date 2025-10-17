@@ -11,7 +11,7 @@ import {
   TouchableWithoutFeedback,
   ActivityIndicator,
 } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+import { AntDesign, Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
@@ -23,61 +23,6 @@ import AccountDetailModal from "@/src/components/modals/AccountDetailModal";
 import AccountCard from "@/src/components/shared/AccountCard";
 import TransactionActionAlert from "@/src/components/shared/TransactionActionAlert";
 import { Transaction, TransactionDetailModalProps } from "@/src/types/plaid";
-
-const getCategoryEmojiForName = (categoryName: string): string => {
-  const name = categoryName || "";
-  const lc = name.toLowerCase();
-  if (
-    lc.includes("food") ||
-    lc.includes("drink") ||
-    lc.includes("restaurant") ||
-    lc.includes("dining")
-  )
-    return "🍔";
-  if (
-    lc.includes("shop") ||
-    lc.includes("retail") ||
-    lc.includes("store") ||
-    lc.includes("merchand")
-  )
-    return "🛒";
-  if (lc.includes("transport") || lc.includes("car") || lc.includes("gas"))
-    return "🚗";
-  if (
-    lc.includes("entertainment") ||
-    lc.includes("recreation") ||
-    lc.includes("movie") ||
-    lc.includes("game")
-  )
-    return "🎬";
-  if (lc.includes("travel") || lc.includes("hotel") || lc.includes("flight"))
-    return "✈️";
-  if (lc.includes("health") || lc.includes("medical") || lc.includes("care"))
-    return "🏋️";
-  if (lc.includes("home") || lc.includes("improvement") || lc.includes("rent"))
-    return "🏠";
-  if (
-    lc.includes("payment") ||
-    lc.includes("transfer") ||
-    lc.includes("loan") ||
-    lc.includes("card")
-  )
-    return "💳";
-  if (
-    lc.includes("service") ||
-    lc.includes("professional") ||
-    lc.includes("business")
-  )
-    return "💼";
-  if (
-    lc.includes("income") ||
-    lc.includes("deposit") ||
-    lc.includes("salary") ||
-    lc.includes("payroll")
-  )
-    return "📈";
-  return "📊";
-};
 
 const getCategoryBackgroundColorForName = (categoryName: string): string => {
   const map: { [key: string]: string } = {
@@ -719,7 +664,7 @@ export default function TransactionDetailModal({
                           activeOpacity={0.7}
                         >
                           <Text style={styles.categoryEmojiText}>
-                            {getCategoryEmojiForName(
+                            {getCategoryIcon(
                               getDisplayCategory(updatedCategory, transaction)
                             )}
                           </Text>
@@ -740,21 +685,16 @@ export default function TransactionDetailModal({
                               getDisplayCategory(updatedCategory, transaction)
                             )}
                           </Text>
-                          <Text
-                            style={[
-                              styles.categoryArrow,
-                              {
-                                color: getCategoryColor(
-                                  getDisplayCategory(
-                                    updatedCategory,
-                                    transaction
-                                  )
-                                ),
-                              },
-                            ]}
-                          >
-                            ▼
-                          </Text>
+                          <AntDesign
+                            name="caret-right"
+                            size={14}
+                            style={{
+                              color: getCategoryColor(
+                                getDisplayCategory(updatedCategory, transaction)
+                              ),
+                              marginLeft: 4,
+                            }}
+                          />
                         </TouchableOpacity>
                       )}
 

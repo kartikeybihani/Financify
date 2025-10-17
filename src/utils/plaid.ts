@@ -1081,6 +1081,10 @@ const getDateRangeFromTimePeriod = (timePeriod: string) => {
   let endDate: string = now.toISOString().split('T')[0]; // Today
 
   switch (timePeriod) {
+    case "all":
+      // Use an early start date to effectively remove lower bound constraint
+      startDate = "2023-01-01";
+      break;
     case "7days":
       startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
       break;

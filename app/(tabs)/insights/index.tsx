@@ -919,6 +919,7 @@ export default function InsightsScreen() {
         : `${accountIds.length} accounts`;
 
     const timePeriodMap: { [key: string]: string } = {
+      all: "All",
       "7days": "7 days",
       "30days": "30 days",
       "3months": "3 months",

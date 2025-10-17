@@ -81,7 +81,8 @@ export const TimePeriodSelector: React.FC<TimePeriodSelectorProps> = ({
 
   const selectedPeriod =
     ALL_TIME_PERIODS.find((p) => p.id === localFilters.timePeriod) ||
-    QUICK_TIME_PERIODS[1]; // Default to "Last Month"
+    QUICK_TIME_PERIODS.find((p) => p.id === "30days") ||
+    QUICK_TIME_PERIODS[0]; // Default to "Last Month"
 
   const handlePeriodSelection = (periodId: string) => {
     setLocalFilters((prev) => ({

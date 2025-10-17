@@ -205,14 +205,14 @@ export default function TransactionsSection(props: Props) {
         </View>
       </View>
 
-      {totalFilteredCount > 0 && (
+      {/* {totalFilteredCount > 0 && (
         <View style={transactionInfoContainerStyle}>
           <Text style={transactionInfoTextStyle}>
             Showing {displayedTransactions.length} of {totalFilteredCount}{" "}
             transactions
           </Text>
         </View>
-      )}
+      )} */}
 
       <FlatList
         data={displayedTransactions}
