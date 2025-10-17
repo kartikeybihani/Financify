@@ -36,6 +36,8 @@ function setCachedClassification(message, result) {
 // Enhanced web search detection patterns
 function detectWebSearchNeeded(message) {
   const lowerMessage = message.toLowerCase();
+  // Do not suggest web for off-topic queries (e.g., weather)
+  if (detectOffTopic(message)) return false;
 
   // Production-optimized web search keywords
   const webKeywords = [
@@ -133,6 +135,54 @@ function detectOffTopic(message) {
   ];
   if (financeTerms.some((t) => lower.includes(t))) {
     return false;
+  }
+  // Broad weather/forecast catch
+  if (lower.includes("weather") || lower.includes("forecast")) {
+    return true;
+  }
+  // Ethics / philosophy / emotions / meta-AI / culture / jokes / riddles
+  const offTopicBroad = [
+    // ethics & morality
+    "acceptable to lie",
+    "is it ok to lie",
+    "is it ever acceptable",
+    "ethical",
+    "morality",
+    "moral",
+    // emotions / mental health
+    "feeling really down",
+    "depressed",
+    "anxious",
+    "anxiety",
+    "sad",
+    // philosophy
+    "meaning of life",
+    "purpose of life",
+    "existential",
+    // AI meta
+    "surpass human intelligence",
+    "are you an ai",
+    "do you know that you're an ai",
+    "can you learn from our previous conversations",
+    // humor / riddles
+    "why did the chicken cross the road",
+    "riddle",
+    // culture / etiquette
+    "best practices for greeting",
+    "etiquette",
+    "cultural",
+  ];
+  if (offTopicBroad.some((p) => lower.includes(p))) {
+    return true;
+  }
+  // Ambiguous generic nouns: if only "bank" without financial context, treat off-topic
+  if (
+    lower.includes("bank") &&
+    !/account|loan|interest|branch|routing|checking|savings|credit|debit/.test(
+      lower
+    )
+  ) {
+    return true;
   }
 
   // Strong off-topic indicators (specific patterns)
@@ -430,7 +480,7 @@ async function handleClassify(message, context) {
             {
               role: "system",
               content: [
-                "You are Financify's intent router. Classify the user message into exactly one intent and set flags.",
+                "You are Financify's intent router. Classify the user message into exactly one intent and set flags. Never answer off-topic (e.g., weather, ethics, feelings, philosophy, AI meta, culture).",
                 "",
                 "Intents:",
                 "- ask_personalized: user’s finances (spending, accounts, goals, investments)",
@@ -448,6 +498,12 @@ async function handleClassify(message, context) {
                 '"Which credit card should I get?" → {intent:"ask_personalized", needs_web:true, needs_user_data:true}',
                 '"Rent vs buy in Phoenix at 7% for me" → {intent:"ask_personalized", needs_web:true, needs_user_data:true, state:"AZ"}',
                 '"What\'s the weather?" → {intent:"off_topic", needs_web:false, needs_user_data:false}',
+                '"How\'s the weather looking today?" → {intent:"off_topic", needs_web:false, needs_user_data:false}',
+                '"Is it ever acceptable to lie?" → {intent:"off_topic", needs_web:false, needs_user_data:false}',
+                '"I\'m feeling really down today; what should I do?" → {intent:"off_topic", needs_web:false, needs_user_data:false}',
+                '"What is the meaning of life?" → {intent:"off_topic", needs_web:false, needs_user_data:false}',
+                '"Do you know that you\'re an AI?" → {intent:"off_topic", needs_web:false, needs_user_data:false}',
+                '"What are the best practices for greeting someone in Japan?" → {intent:"off_topic", needs_web:false, needs_user_data:false}',
                 "",
                 "Return ONLY JSON (no code fences, no commentary):",
                 '{"intent":"ask_personalized|goal_conversation|off_topic","needs_web":true|false,"needs_user_data":true|false,"state":null|"AZ","entities":[],"confidence":0.0-1.0}',
@@ -806,10 +862,79 @@ if (
 
     testSingleMessage(userMessage).catch(console.error);
   } else {
-    console.log(
-      'Usage: node test_classification_direct.js "Your message here"'
-    );
+    console.log("Running curveball tests...");
+    runCurveballTests().catch(console.error);
   }
 }
 
 export { testSingleMessage, handleClassify };
+
+// Curveball hard tests
+async function runCurveballTests() {
+  const tests = [
+    {
+      q: "Can you tell me about the bank?",
+      note: "Ambiguous 'bank' (river bank vs financial). Expect off_topic or ask_personalized depending on context",
+    },
+    {
+      q: "Is it ever acceptable to lie?",
+      note: "Ethical dilemma → off_topic",
+    },
+    {
+      q: "I'm feeling really down today; what should I do?",
+      note: "Emotional support → off_topic",
+    },
+    {
+      q: "What is the meaning of life?",
+      note: "Philosophical → off_topic",
+    },
+    {
+      q: "Will AI ever surpass human intelligence?",
+      note: "Future prediction → off_topic",
+    },
+    {
+      q: "Why did the chicken cross the road?",
+      note: "Humor → off_topic",
+    },
+    {
+      q: "If I have a red house on the left and a blue house on the right, where is the white house?",
+      note: "Common-sense riddle → off_topic",
+    },
+    {
+      q: "Do you know that you're an AI?",
+      note: "Self-awareness → off_topic",
+    },
+    {
+      q: "Can you learn from our previous conversations?",
+      note: "Meta/system behavior → off_topic",
+    },
+    {
+      q: "What are the best practices for greeting someone in Japan?",
+      note: "Cultural sensitivity → off_topic",
+    },
+  ];
+
+  let pass = 0;
+  for (const t of tests) {
+    const { classification } = await testSingleMessage(t.q);
+    const isOffTopic = classification?.intent === "off_topic";
+    const ok =
+      isOffTopic &&
+      !classification?.needs_web &&
+      !classification?.needs_user_data;
+    if (ok) pass++;
+    console.log(`\n➡️  Curveball: ${t.q}`);
+    console.log(
+      `   -> intent=${classification?.intent}, needs_web=${classification?.needs_web}, needs_user_data=${classification?.needs_user_data}`
+    );
+    console.log(`   Note: ${t.note}`);
+    console.log(
+      `   Result: ${
+        ok ? "✅ as expected (off_topic)" : "⚠️ check classification"
+      }`
+    );
+  }
+  console.log(
+    `\nCurveball summary: ${pass}/${tests.length} off_topic as expected`
+  );
+}

@@ -1599,6 +1599,8 @@ function cleanResponseFormatting(response) {
 // Enhanced web search detection patterns
 function detectWebSearchNeeded(message) {
   const lowerMessage = message.toLowerCase();
+  // Do not trigger web search for off-topic queries (e.g., weather)
+  if (detectOffTopic(message)) return false;
 
   // Production-optimized web search keywords
   const webKeywords = [
@@ -1696,6 +1698,57 @@ function detectOffTopic(message) {
   ];
   if (financeTerms.some((t) => lower.includes(t))) {
     return false;
+  }
+
+  // Broad weather/forecast detection
+  if (lower.includes("weather") || lower.includes("forecast")) {
+    return true;
+  }
+
+  // Broad off-topic indicators beyond patterns: ethics, emotions, philosophy, AI meta, culture, jokes/riddles
+  const offTopicBroad = [
+    // ethics & morality
+    "acceptable to lie",
+    "is it ok to lie",
+    "is it ever acceptable",
+    "ethical",
+    "morality",
+    "moral",
+    // emotions / mental health
+    "feeling really down",
+    "depressed",
+    "anxious",
+    "anxiety",
+    "sad",
+    // philosophy
+    "meaning of life",
+    "purpose of life",
+    "existential",
+    // AI meta
+    "surpass human intelligence",
+    "are you an ai",
+    "do you know that you're an ai",
+    "can you learn from our previous conversations",
+    // humor / riddles
+    "why did the chicken cross the road",
+    "riddle",
+    // culture / etiquette
+    "best practices for greeting",
+    "etiquette",
+    "cultural",
+  ];
+  if (offTopicBroad.some((p) => lower.includes(p))) {
+    return true;
+  }
+
+  // Ambiguous generic noun: if contains "bank" without financial context keywords, treat as off-topic
+  if (
+    lower.includes("bank") &&
+    !/account|loan|interest|branch|routing|checking|savings|credit|debit/.test(
+      lower
+    )
+  ) {
+    return true;
   }
 
   // Strong off-topic indicators (specific patterns)
@@ -3110,6 +3163,7 @@ async function handleOffTopic(message, context) {
         body: JSON.stringify({
           model: OPENROUTER_MODEL,
           temperature: 0.7,
+          max_tokens: 300,
           messages: [
             {
               role: "system",
