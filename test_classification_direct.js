@@ -1,0 +1,757 @@
+/**
+ * Direct Classification Test with Improved Prompting
+ * Tests the classification function directly with enhanced web search detection
+ */
+
+// Configuration
+const OPENROUTER_API_KEY =
+  "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";
+const OPENROUTER_MODEL = "openai/gpt-oss-20b:free";
+
+// Cache for testing
+const classificationCache = new Map();
+
+function generateClassificationCacheKey(message) {
+  return message.toLowerCase().trim();
+}
+
+function getCachedClassification(message) {
+  const key = generateClassificationCacheKey(message);
+  const cached = classificationCache.get(key);
+  if (cached && Date.now() < cached.expires_at) {
+    return cached.data;
+  }
+  return null;
+}
+
+function setCachedClassification(message, result) {
+  const key = generateClassificationCacheKey(message);
+  const ttl = 5 * 60 * 1000; // 5 minutes
+  classificationCache.set(key, {
+    data: result,
+    expires_at: Date.now() + ttl,
+  });
+}
+
+// Enhanced web search detection patterns
+function detectWebSearchNeeded(message) {
+  const lowerMessage = message.toLowerCase();
+
+  // Production-optimized web search keywords
+  const webKeywords = [
+    // Year indicators
+    "2025",
+    "2024",
+    "current",
+    "latest",
+    "recent",
+    "updated",
+    "today",
+
+    // Financial limits & rates
+    "roth ira",
+    "ira limit",
+    "contribution limit",
+    "401k limit",
+    "hsa limit",
+    "tax bracket",
+    "interest rate",
+    "mortgage rate",
+    "fed rate",
+    "inflation rate",
+    "cd rate",
+    "savings rate",
+    "credit card rate",
+    "standard deduction",
+
+    // Market & economic data
+    "stock market",
+    "housing market",
+    "market trend",
+    "economic",
+    "crypto",
+    "bitcoin",
+    "ethereum",
+    "regulation",
+    "policy",
+
+    // Government & institutions
+    "federal",
+    "state",
+    "irs",
+    "treasury",
+    "fed",
+    "social security",
+    "medicare",
+
+    // Question patterns
+    "what is the current",
+    "what are the current",
+    "what's the current",
+    "what is the latest",
+    "what are the latest",
+    "what's the latest",
+    "what are the best",
+    "what's the best",
+    "current rates",
+    "latest news",
+  ];
+
+  return webKeywords.some((keyword) => lowerMessage.includes(keyword));
+}
+
+// Enhanced off-topic detection
+function detectOffTopic(message) {
+  const lower = message.toLowerCase();
+
+  // Strong off-topic indicators (specific patterns)
+  const offTopicPatterns = [
+    // Weather & environment
+    "what's the weather",
+    "weather today",
+    "weather forecast",
+    "temperature today",
+    "is it raining",
+    "is it sunny",
+    "weather like",
+    "what's the weather like",
+
+    // Cooking & food
+    "how to cook",
+    "recipe for",
+    "cooking",
+    "baking",
+    "kitchen",
+    "meal prep",
+    "what to eat",
+    "restaurant",
+    "food",
+    "dinner",
+    "lunch",
+    "breakfast",
+
+    // Entertainment
+    "what movie",
+    "watch",
+    "netflix",
+    "tv show",
+    "entertainment",
+    "cinema",
+    "actor",
+    "actress",
+    "director",
+    "oscar",
+    "award",
+    "film",
+
+    // Sports
+    "football",
+    "soccer",
+    "basketball",
+    "baseball",
+    "tennis",
+    "golf",
+    "sports",
+    "game",
+    "team",
+    "player",
+    "score",
+    "match",
+    "tournament",
+    "championship",
+
+    // General chat
+    "hello",
+    "hi",
+    "hey",
+    "how are you",
+    "what's up",
+    "good morning",
+    "good evening",
+    "joke",
+    "funny",
+    "laugh",
+    "humor",
+    "tell me a joke",
+    "amuse me",
+
+    // Technical support
+    "computer",
+    "laptop",
+    "phone",
+    "internet",
+    "wifi",
+    "password",
+    "login",
+    "software",
+    "app",
+    "download",
+    "install",
+    "update",
+    "virus",
+    "bug",
+
+    // Academic
+    "homework",
+    "assignment",
+    "school",
+    "university",
+    "college",
+    "study",
+    "exam",
+    "test",
+    "grade",
+    "teacher",
+    "professor",
+    "student",
+
+    // Travel & geography
+    "travel",
+    "vacation",
+    "trip",
+    "hotel",
+    "flight",
+    "airport",
+    "passport",
+    "country",
+    "city",
+    "capital",
+    "geography",
+    "map",
+    "location",
+
+    // Health & medical
+    "doctor",
+    "hospital",
+    "medicine",
+    "sick",
+    "illness",
+    "health",
+    "medical",
+    "pain",
+    "ache",
+    "symptoms",
+    "diagnosis",
+    "treatment",
+    "therapy",
+  ];
+
+  return offTopicPatterns.some((pattern) => lower.includes(pattern));
+}
+
+// Enhanced financial concept heuristic
+function financialConceptHeuristic(text) {
+  const lower = text.toLowerCase();
+
+  // Check for off-topic first (highest priority)
+  if (detectOffTopic(text)) {
+    return {
+      intent: "off_topic",
+      needs_web: false,
+      needs_user_data: false,
+      state: null,
+      entities: [],
+      confidence: 0.9,
+      heuristic: true,
+    };
+  }
+
+  // Strong web search indicators (only for financial topics)
+  if (detectWebSearchNeeded(text)) {
+    return {
+      intent: "ask_personalized",
+      needs_web: true,
+      needs_user_data: false,
+      state: null,
+      entities: [],
+      confidence: 0.9,
+      heuristic: true,
+    };
+  }
+
+  // Goal-related patterns
+  if (
+    lower.includes("save") &&
+    (lower.includes("goal") ||
+      lower.includes("target") ||
+      lower.includes("plan") ||
+      lower.includes("want"))
+  ) {
+    return {
+      intent: "goal_conversation",
+      needs_web: false,
+      needs_user_data: true,
+      state: null,
+      entities: [],
+      confidence: 0.85,
+      heuristic: true,
+    };
+  }
+
+  return null;
+}
+
+// Enhanced classification function with improved prompting
+async function handleClassify(message, context) {
+  console.log("🔍 [TEST] Starting classification for message:", message);
+  const startTime = Date.now();
+
+  const { text, user } = { text: message, user: context };
+  if (!text || typeof text !== "string") {
+    console.log("❌ [TEST] Missing or invalid text parameter");
+    return {
+      intent: "ask_personalized",
+      needs_web: false,
+      needs_user_data: true,
+      state: null,
+      entities: [],
+      confidence: 0.1,
+      fallback: true,
+    };
+  }
+
+  // Check cache first
+  const cachedResult = getCachedClassification(text);
+  if (cachedResult) {
+    console.log(
+      `⚡ [TEST] Using cached classification result (${
+        Date.now() - startTime
+      }ms)`
+    );
+    return cachedResult;
+  }
+
+  // Check for off-topic first (highest priority)
+  const offTopicHeuristic = detectOffTopic(text);
+  if (offTopicHeuristic) {
+    console.log("✅ [TEST] Heuristic detected off-topic query");
+    const result = {
+      intent: "off_topic",
+      needs_web: false,
+      needs_user_data: false,
+      state: null,
+      entities: [],
+      confidence: 0.9,
+      heuristic: true,
+    };
+    setCachedClassification(text, result);
+    return result;
+  }
+
+  // Enhanced heuristic for web search detection
+  const webSearchHeuristic = detectWebSearchNeeded(text);
+  if (webSearchHeuristic) {
+    console.log("✅ [TEST] Heuristic detected web search needed");
+    const result = {
+      intent: "ask_personalized",
+      needs_web: true,
+      needs_user_data: false,
+      state: null,
+      entities: [],
+      confidence: 0.9,
+      heuristic: true,
+    };
+    setCachedClassification(text, result);
+    return result;
+  }
+
+  // Positive heuristic for common financial concept questions
+  const heuristic = financialConceptHeuristic(text);
+  if (heuristic) {
+    console.log("✅ [TEST] Heuristic classified as financial concept");
+    setCachedClassification(text, heuristic);
+    return heuristic;
+  }
+
+  try {
+    // Create a timeout promise that rejects after 8 seconds
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(
+        () => reject(new Error("Classification timeout after 8 seconds")),
+        8000
+      );
+    });
+
+    // Create the fetch promise with ENHANCED prompting
+    const fetchPromise = fetch(
+      "https://openrouter.ai/api/v1/chat/completions",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${OPENROUTER_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: OPENROUTER_MODEL,
+          temperature: 0.1,
+          max_tokens: 200,
+          top_p: 0.9,
+          messages: [
+            {
+              role: "system",
+              content: [
+                "You are Financify's intent router. Classify user messages into financial intents.",
+                "",
+                "Intents:",
+                "- ask_personalized: personal financial questions needing user data",
+                "- goal_conversation: saving goals, targets, aspirations",
+                "- off_topic: non-financial queries (weather, cooking, movies, sports)",
+                "",
+                "CRITICAL RULES:",
+                "- Questions about 2024/2025 limits, current rates, 'what is the current...' → needs_web=true",
+                "- Roth IRA limits, 401k limits, tax brackets, interest rates → needs_web=true",
+                "- Stock news, market trends, current rates → needs_web=true",
+                "- Personal spending, net worth, transactions → needs_user_data=true",
+                "- Saving goals, targets, aspirations → goal_conversation",
+                "",
+                "Examples:",
+                '"What is the Roth IRA limit for 2025?" → ask_personalized, needs_web:true, needs_user_data:false',
+                '"How much did I spend last month?" → ask_personalized, needs_web:false, needs_user_data:true',
+                '"I want to save $5000 for a house" → goal_conversation, needs_web:false, needs_user_data:true',
+                '"What\'s the weather?" → off_topic, needs_web:false, needs_user_data:false',
+                "",
+                "Return ONLY JSON:",
+                '{"intent": "ask_personalized|goal_conversation|off_topic", "needs_web": boolean, "needs_user_data": boolean, "state": null, "entities": [], "confidence": 0.0-1.0}',
+              ].join("\n"),
+            },
+            {
+              role: "user",
+              content: JSON.stringify({
+                text,
+                user_hint_state: user?.state || null,
+              }),
+            },
+          ],
+          response_format: {
+            type: "json_object",
+          },
+        }),
+      }
+    );
+
+    // Race between fetch and timeout
+    const r = await Promise.race([fetchPromise, timeoutPromise]);
+
+    if (!r.ok) {
+      const errText = await r.text();
+      throw new Error(`OpenRouter error ${r.status}: ${errText}`);
+    }
+    const data = await r.json();
+    console.log("🔍 [TEST] Classification data:", data);
+    const content = data.choices?.[0]?.message?.content;
+    console.log("🔍 [TEST] Raw content:", content);
+    if (!content) {
+      console.log("❌ [TEST] No content in response");
+      throw new Error("No content");
+    }
+
+    // Strip markdown code blocks if present
+    let cleanContent = content;
+    if (content.startsWith("```") && content.endsWith("```")) {
+      cleanContent = content.slice(3, -3).trim();
+    }
+    if (cleanContent.startsWith("```json")) {
+      cleanContent = cleanContent.slice(7).trim();
+    }
+
+    // Handle incomplete JSON responses
+    let out;
+    try {
+      out = JSON.parse(cleanContent);
+    } catch (parseError) {
+      console.log("❌ [TEST] JSON parse error, trying to fix incomplete JSON");
+      console.log("❌ [TEST] Raw content was:", cleanContent);
+
+      // Try to extract intent from malformed JSON
+      const intentMatch = cleanContent.match(/"intent"\s*:\s*"([^"]+)"/);
+      const needsWebMatch = cleanContent.match(
+        /"needs_web"\s*:\s*(true|false)/
+      );
+      const needsUserDataMatch = cleanContent.match(
+        /"needs_user_data"\s*:\s*(true|false)/
+      );
+      const confidenceMatch = cleanContent.match(
+        /"confidence"\s*:\s*([0-9.]+)/
+      );
+
+      if (intentMatch) {
+        console.log("✅ [TEST] Extracted intent from malformed JSON");
+        out = {
+          intent: intentMatch[1],
+          needs_web: needsWebMatch ? needsWebMatch[1] === "true" : false,
+          needs_user_data: needsUserDataMatch
+            ? needsUserDataMatch[1] === "true"
+            : false,
+          state: null,
+          entities: [],
+          confidence: confidenceMatch ? parseFloat(confidenceMatch[1]) : 0.8,
+          malformed_json: true,
+        };
+      } else {
+        throw new Error("Malformed JSON response");
+      }
+    }
+    console.log("🔍 [TEST] Parsed classification result:", out);
+
+    // Defensive post-process so your app never crashes
+    if (!out.state || typeof out.state !== "string") out.state = null;
+    if (!Array.isArray(out.entities)) out.entities = [];
+
+    // Cache the result for future use
+    setCachedClassification(text, out);
+
+    return out;
+  } catch (e) {
+    console.error("❌ [TEST] Classification error:", e?.message);
+
+    // Handle timeout specifically
+    if (e?.message?.includes("timeout")) {
+      console.log(
+        "⏰ [TEST] Classification timed out after 8 seconds, using fallback"
+      );
+    }
+
+    // Enhanced heuristic fallbacks in priority order
+
+    // 1. Off-topic detection (highest priority)
+    if (detectOffTopic(message)) {
+      console.log("✅ [TEST] Using off-topic heuristic fallback");
+      return {
+        intent: "off_topic",
+        needs_web: false,
+        needs_user_data: false,
+        state: null,
+        entities: [],
+        confidence: 0.9,
+        fallback: true,
+        timeout_fallback: e?.message?.includes("timeout") || false,
+      };
+    }
+
+    // 2. Web search detection
+    const webSearchHeuristic = detectWebSearchNeeded(message);
+    if (webSearchHeuristic) {
+      console.log("✅ [TEST] Using web search heuristic fallback");
+      return {
+        intent: "ask_personalized",
+        needs_web: true,
+        needs_user_data: false,
+        state: null,
+        entities: [],
+        confidence: 0.8,
+        fallback: true,
+        timeout_fallback: e?.message?.includes("timeout") || false,
+      };
+    }
+
+    // 3. Goal conversation detection
+    const lowerMessage = message.toLowerCase();
+    if (
+      lowerMessage.includes("save") &&
+      (lowerMessage.includes("goal") ||
+        lowerMessage.includes("target") ||
+        lowerMessage.includes("plan") ||
+        lowerMessage.includes("want"))
+    ) {
+      console.log("✅ [TEST] Using goal conversation heuristic fallback");
+      return {
+        intent: "goal_conversation",
+        needs_web: false,
+        needs_user_data: true,
+        state: null,
+        entities: [],
+        confidence: 0.8,
+        fallback: true,
+        timeout_fallback: e?.message?.includes("timeout") || false,
+      };
+    }
+
+    // Heuristic fallback if available
+    const heuristic = financialConceptHeuristic(message);
+    if (heuristic) {
+      console.log(
+        "✅ [TEST] Using heuristic fallback after classification error"
+      );
+      return {
+        ...heuristic,
+        fallback: true,
+        timeout_fallback: e?.message?.includes("timeout") || false,
+      };
+    }
+
+    // Default fallback for any classification error
+    console.log("🔄 [TEST] Using default ask_personalized fallback");
+    return {
+      intent: "ask_personalized",
+      needs_web: false,
+      needs_user_data: true,
+      state: null,
+      entities: [],
+      confidence: 0.1,
+      fallback: true,
+      timeout_fallback: e?.message?.includes("timeout") || false,
+    };
+  }
+}
+
+// Test function
+async function testSingleMessage(message) {
+  try {
+    console.log(`\n🧪 Testing: "${message}"`);
+
+    const startTime = Date.now();
+
+    // Call the classification function directly
+    const classification = await handleClassify(message, {
+      user_id: "79952f35-b607-40d6-a32e-d81386882eb7",
+    });
+    const responseTime = Date.now() - startTime;
+
+    console.log("📊 Classification Results:");
+    console.log(`  Intent: ${classification.intent}`);
+    console.log(`  needs_web: ${classification.needs_web}`);
+    console.log(`  needs_user_data: ${classification.needs_user_data}`);
+    console.log(`  confidence: ${classification.confidence}`);
+    console.log(`  response_time: ${responseTime}ms`);
+
+    if (classification.entities && classification.entities.length > 0) {
+      console.log(`  entities: ${JSON.stringify(classification.entities)}`);
+    }
+
+    if (classification.state) {
+      console.log(`  state: ${classification.state}`);
+    }
+
+    if (classification.fallback) {
+      console.log(`  ⚠️  FALLBACK USED`);
+    }
+
+    if (classification.timeout_fallback) {
+      console.log(`  ⏰ TIMEOUT FALLBACK USED`);
+    }
+
+    // Analysis
+    console.log("\n🔍 Analysis:");
+    if (classification.intent === "ask_personalized") {
+      console.log("  ✅ Correctly identified as personal financial query");
+    } else if (classification.intent === "goal_conversation") {
+      console.log("  ✅ Correctly identified as goal-related query");
+    } else if (classification.intent === "off_topic") {
+      console.log("  ✅ Correctly identified as off-topic (non-financial)");
+    }
+
+    if (classification.needs_web) {
+      console.log(
+        "  🌐 Web search will be triggered (good for current info queries)"
+      );
+    } else {
+      console.log("  📊 No web search needed (good for personal data queries)");
+    }
+
+    if (classification.needs_user_data) {
+      console.log("  👤 User data will be fetched (good for personal queries)");
+    } else {
+      console.log("  🌍 No user data needed (good for general info queries)");
+    }
+
+    if (classification.confidence >= 0.8) {
+      console.log("  🎯 High confidence classification");
+    } else if (classification.confidence >= 0.6) {
+      console.log("  ⚠️  Medium confidence classification");
+    } else {
+      console.log("  ❌ Low confidence classification");
+    }
+
+    // Specific analysis for different query types
+    const lowerMessage = message.toLowerCase();
+
+    // Roth IRA queries
+    if (lowerMessage.includes("roth ira") && lowerMessage.includes("limit")) {
+      if (classification.needs_web) {
+        console.log(
+          "  🎯 PERFECT! Roth IRA limit query correctly triggers web search"
+        );
+      } else {
+        console.log(
+          "  ❌ ISSUE! Roth IRA limit query should trigger web search but doesn't"
+        );
+      }
+    }
+
+    // Off-topic queries
+    if (
+      lowerMessage.includes("weather") ||
+      lowerMessage.includes("cook") ||
+      lowerMessage.includes("movie")
+    ) {
+      if (classification.intent === "off_topic") {
+        console.log("  🎯 PERFECT! Off-topic query correctly identified");
+      } else {
+        console.log(
+          "  ❌ ISSUE! Off-topic query should be classified as off_topic"
+        );
+      }
+    }
+
+    // Goal queries
+    if (
+      lowerMessage.includes("save") &&
+      (lowerMessage.includes("goal") || lowerMessage.includes("want"))
+    ) {
+      if (classification.intent === "goal_conversation") {
+        console.log("  🎯 PERFECT! Goal query correctly identified");
+      } else {
+        console.log(
+          "  ❌ ISSUE! Goal query should be classified as goal_conversation"
+        );
+      }
+    }
+
+    // Personal financial queries
+    if (
+      lowerMessage.includes("spend") ||
+      lowerMessage.includes("net worth") ||
+      lowerMessage.includes("transaction")
+    ) {
+      if (
+        classification.intent === "ask_personalized" &&
+        classification.needs_user_data
+      ) {
+        console.log(
+          "  🎯 PERFECT! Personal financial query correctly identified"
+        );
+      } else {
+        console.log(
+          "  ❌ ISSUE! Personal financial query should need user data"
+        );
+      }
+    }
+
+    return { classification, responseTime };
+  } catch (error) {
+    console.log(`❌ ERROR: ${error.message}`);
+    return { error: error.message };
+  }
+}
+
+// Run if called directly
+if (
+  typeof window === "undefined" &&
+  import.meta.url === `file://${process.argv[1]}`
+) {
+  const userMessage = process.argv[2];
+
+  if (userMessage) {
+    console.log("🚀 Testing Single Statement");
+    console.log(`Testing: "${userMessage}"`);
+    console.log("=".repeat(50));
+
+    testSingleMessage(userMessage).catch(console.error);
+  } else {
+    console.log(
+      'Usage: node test_classification_direct.js "Your message here"'
+    );
+  }
+}
+
+export { testSingleMessage, handleClassify };

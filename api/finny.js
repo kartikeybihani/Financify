@@ -1595,72 +1595,211 @@ function cleanResponseFormatting(response) {
   return cleaned.trim();
 }
 
-// === WEB SEARCH DETECTION ===
-// Detect if a query needs fresh web data
-
-function detectWebSearchNeeded(message, slots) {
+// === ENHANCED WEB SEARCH DETECTION ===
+// Enhanced web search detection patterns
+function detectWebSearchNeeded(message) {
   const lowerMessage = message.toLowerCase();
 
-  // Keywords that typically need current web data
+  // Production-optimized web search keywords
   const webKeywords = [
-    "latest",
+    // Year indicators
     "2025",
     "2024",
-    "updated",
+    "current",
+    "latest",
     "recent",
-    "Roth IRA",
-    "ira",
-    "Roth",
-    "roth ira limit",
+    "updated",
+    "today",
+
+    // Financial limits & rates
+    "roth ira",
+    "ira limit",
+    "contribution limit",
     "401k limit",
+    "hsa limit",
     "tax bracket",
     "interest rate",
-    "inflation rate",
-    "fed rate",
     "mortgage rate",
+    "fed rate",
+    "inflation rate",
     "cd rate",
     "savings rate",
     "credit card rate",
-    "tax rule",
-    "deduction",
     "standard deduction",
-    "contribution limit",
-    "hsa limit",
-    "social security",
-    "medicare",
-    "medicaid",
-    "stimulus",
-    "economic",
-    "market trend",
-    "housing market",
+
+    // Market & economic data
     "stock market",
+    "housing market",
+    "market trend",
+    "economic",
     "crypto",
     "bitcoin",
     "ethereum",
     "regulation",
     "policy",
+
+    // Government & institutions
     "federal",
     "state",
     "irs",
     "treasury",
     "fed",
-    "fomc",
+    "social security",
+    "medicare",
+
+    // Question patterns
+    "what is the current",
+    "what are the current",
+    "what's the current",
+    "what is the latest",
+    "what are the latest",
+    "what's the latest",
+    "what are the best",
+    "what's the best",
+    "current rates",
+    "latest news",
   ];
 
-  // Check if message contains web-related keywords
-  const hasWebKeywords = webKeywords.some((keyword) =>
-    lowerMessage.includes(keyword)
-  );
+  return webKeywords.some((keyword) => lowerMessage.includes(keyword));
+}
 
-  // Check for time-sensitive queries
-  const hasTimeSensitiveTerms =
-    /(current|latest|new|updated|202[45]|this year)/i.test(message);
+// Enhanced off-topic detection
+function detectOffTopic(message) {
+  const lower = message.toLowerCase();
 
-  // Check for regulatory/policy queries
-  const hasRegulatoryTerms =
-    /(limit|rule|regulation|policy|bracket|rate)/i.test(message);
+  // Strong off-topic indicators (specific patterns)
+  const offTopicPatterns = [
+    // Weather & environment
+    "what's the weather",
+    "weather today",
+    "weather forecast",
+    "temperature today",
+    "is it raining",
+    "is it sunny",
+    "weather like",
+    "what's the weather like",
 
-  return hasWebKeywords || (hasTimeSensitiveTerms && hasRegulatoryTerms);
+    // Cooking & food
+    "how to cook",
+    "recipe for",
+    "cooking",
+    "baking",
+    "kitchen",
+    "meal prep",
+    "what to eat",
+    "restaurant",
+    "food",
+    "dinner",
+    "lunch",
+    "breakfast",
+
+    // Entertainment
+    "what movie",
+    "watch",
+    "netflix",
+    "tv show",
+    "entertainment",
+    "cinema",
+    "actor",
+    "actress",
+    "director",
+    "oscar",
+    "award",
+    "film",
+
+    // Sports
+    "football",
+    "soccer",
+    "basketball",
+    "baseball",
+    "tennis",
+    "golf",
+    "sports",
+    "game",
+    "team",
+    "player",
+    "score",
+    "match",
+    "tournament",
+    "championship",
+
+    // General chat
+    "hello",
+    "hi",
+    "hey",
+    "how are you",
+    "what's up",
+    "good morning",
+    "good evening",
+    "joke",
+    "funny",
+    "laugh",
+    "humor",
+    "tell me a joke",
+    "amuse me",
+
+    // Technical support
+    "computer",
+    "laptop",
+    "phone",
+    "internet",
+    "wifi",
+    "password",
+    "login",
+    "software",
+    "app",
+    "download",
+    "install",
+    "update",
+    "virus",
+    "bug",
+
+    // Academic
+    "homework",
+    "assignment",
+    "school",
+    "university",
+    "college",
+    "study",
+    "exam",
+    "test",
+    "grade",
+    "teacher",
+    "professor",
+    "student",
+
+    // Travel & geography
+    "travel",
+    "vacation",
+    "trip",
+    "hotel",
+    "flight",
+    "airport",
+    "passport",
+    "country",
+    "city",
+    "capital",
+    "geography",
+    "map",
+    "location",
+
+    // Health & medical
+    "doctor",
+    "hospital",
+    "medicine",
+    "sick",
+    "illness",
+    "health",
+    "medical",
+    "pain",
+    "ache",
+    "symptoms",
+    "diagnosis",
+    "treatment",
+    "therapy",
+  ];
+
+  return offTopicPatterns.some((pattern) => lower.includes(pattern));
 }
 
 // === CONTEXT PLANNER ===
@@ -2384,534 +2523,6 @@ async function buildContextPacks(userId, needs, slots) {
   return { packs, gaps, contextHeader };
 }
 
-// Pre-classification filtering for obvious non-financial queries
-function isObviousNonFinancial(message) {
-  const lowerMessage = message.toLowerCase().trim();
-
-  // Finance override: if message mentions common financial terms, skip off-topic filter
-  const financeTerms = [
-    "spend",
-    "spent",
-    "spending",
-    "transaction",
-    "transactions",
-    "budget",
-    "savings",
-    "income",
-    "expense",
-    "expenses",
-    "category",
-    "categories",
-    "food",
-    "travel",
-    "groceries",
-    "rent",
-    "uber",
-    // Investment and market terms
-    "stock",
-    "stocks",
-    "investment",
-    "investments",
-    "invest",
-    "investing",
-    "portfolio",
-    "market",
-    "markets",
-    "trading",
-    "trade",
-    "ticker",
-    "share",
-    "shares",
-    "dividend",
-    "dividends",
-    "earnings",
-    "revenue",
-    "profit",
-    "loss",
-    "price",
-    "valuation",
-    "analyst",
-    "analysts",
-    "forecast",
-    "forecasts",
-    "outlook",
-    "sector",
-    "sectors",
-    "industry",
-    "industries",
-    "company",
-    "companies",
-    "corporate",
-    "financial",
-    "finance",
-    "banking",
-    "bank",
-    "credit",
-    "debt",
-    "loan",
-    "loans",
-    "mortgage",
-    "interest",
-    "rate",
-    "rates",
-    "yield",
-    "bond",
-    "bonds",
-    "fund",
-    "funds",
-    "etf",
-    "etfs",
-    "mutual",
-    "retirement",
-    "401k",
-    "ira",
-    "roth",
-    "traditional",
-    "tax",
-    "taxes",
-    "deduction",
-    "deductions",
-    "refund",
-    "insurance",
-    "policy",
-    "policies",
-    "premium",
-    "coverage",
-    "claim",
-    "claims",
-    "crypto",
-    "cryptocurrency",
-    "bitcoin",
-    "ethereum",
-    "blockchain",
-    "nft",
-    "nfts",
-    "defi",
-    "trading",
-    "exchange",
-    "exchanges",
-    "broker",
-    "brokers",
-    "brokerage",
-    "account",
-    "accounts",
-    "balance",
-    "balances",
-    "asset",
-    "assets",
-    "liability",
-    "liabilities",
-    "equity",
-    "capital",
-    "cash",
-    "money",
-    "dollar",
-    "dollars",
-    "currency",
-    "currencies",
-    "inflation",
-    "deflation",
-    "recession",
-    "depression",
-    "bull",
-    "bear",
-    "volatility",
-    "risk",
-    "risks",
-    "return",
-    "returns",
-    "performance",
-    "growth",
-    "decline",
-    "crash",
-    "rally",
-    "correction",
-    "bubble",
-    "valuation",
-    "pe",
-    "p/e",
-    "ratio",
-    "ratios",
-    "eps",
-    "revenue",
-    "sales",
-    "profit",
-    "profits",
-    "margin",
-    "margins",
-    "ebitda",
-    "cash flow",
-    "cashflow",
-    "balance sheet",
-    "income statement",
-    "quarterly",
-    "quarter",
-    "annual",
-    "yearly",
-    "fiscal",
-    "guidance",
-    "guidance",
-    "upgrade",
-    "downgrade",
-    "rating",
-    "ratings",
-    "buy",
-    "sell",
-    "hold",
-    "strong buy",
-    "strong sell",
-    "overweight",
-    "underweight",
-    "neutral",
-    "outperform",
-    "underperform",
-    "sector",
-    "sectors",
-    "industry",
-    "industries",
-    "semiconductor",
-    "semiconductors",
-    "tech",
-    "technology",
-    "software",
-    "hardware",
-    "ai",
-    "artificial intelligence",
-    "cloud",
-    "saas",
-    "biotech",
-    "pharma",
-    "pharmaceutical",
-    "healthcare",
-    "energy",
-    "oil",
-    "news",
-    "latest",
-    "update",
-    "updates",
-    "trends",
-    "trend",
-    "analysis",
-    "analyst",
-    "analysts",
-    "report",
-    "reports",
-    "earnings",
-    "quarterly",
-    "quarter",
-    "annual",
-    "yearly",
-    "fiscal",
-    "guidance",
-    "outlook",
-    "forecast",
-    "forecasts",
-    "performance",
-    "growth",
-    "decline",
-    "crash",
-    "rally",
-    "correction",
-    "bubble",
-    "valuation",
-    "pe",
-    "p/e",
-    "ratio",
-    "ratios",
-    "eps",
-    "revenue",
-    "sales",
-    "profit",
-    "profits",
-    "margin",
-    "margins",
-    "ebitda",
-    "cash flow",
-    "cashflow",
-    "balance sheet",
-    "income statement",
-    "upgrade",
-    "downgrade",
-    "rating",
-    "ratings",
-    "buy",
-    "sell",
-    "hold",
-    "strong buy",
-    "strong sell",
-    "overweight",
-    "underweight",
-    "neutral",
-    "outperform",
-    "underperform",
-    "gas",
-    "renewable",
-    "solar",
-    "wind",
-    "utilities",
-    "consumer",
-    "retail",
-    "automotive",
-    "aerospace",
-    "defense",
-    "materials",
-    "mining",
-    "real estate",
-    "reit",
-    "reits",
-    "financial services",
-    "fintech",
-    "payment",
-    "payments",
-    "lending",
-    "credit card",
-    "credit cards",
-    "debit card",
-    "debit cards",
-    "banking",
-    "fintech",
-    "robo",
-    "advisor",
-    "advisors",
-    "wealth",
-    "management",
-    "hedge",
-    "fund",
-    "funds",
-    "private",
-    "equity",
-    "venture",
-    "capital",
-    "ipo",
-    "spac",
-    "spacs",
-    "merger",
-    "acquisition",
-    "takeover",
-    "buyout",
-    "spin",
-    "off",
-    "split",
-    "splits",
-    "dividend",
-    "dividends",
-    "yield",
-    "yields",
-    "payout",
-    "payouts",
-    "buyback",
-    "buybacks",
-    "share",
-    "repurchase",
-    "repurchases",
-    "amd",
-    "nvidia",
-    "intel",
-    "apple",
-    "microsoft",
-    "google",
-    "amazon",
-    "meta",
-    "tesla",
-    "netflix",
-    "uber",
-    "lyft",
-    "airbnb",
-    "zoom",
-    "salesforce",
-    "oracle",
-    "ibm",
-    "cisco",
-    "qualcomm",
-    "broadcom",
-    "adobe",
-    "paypal",
-    "square",
-    "stripe",
-    "coinbase",
-    "robinhood",
-    "webull",
-    "etrade",
-    "fidelity",
-    "schwab",
-    "vanguard",
-    "blackrock",
-    "goldman",
-    "sachs",
-    "jpmorgan",
-    "jpm",
-    "morgan",
-    "stanley",
-    "wells",
-    "fargo",
-    "bank",
-    "of",
-    "america",
-    "bofa",
-    "citigroup",
-    "citi",
-    "american",
-    "express",
-    "amex",
-    "visa",
-    "mastercard",
-    "discover",
-    "capital",
-    "one",
-    "chase",
-    "us",
-    "bank",
-    "pnc",
-    "truist",
-    "regions",
-    "huntington",
-    "keybank",
-    "citizens",
-    "bank",
-    "m&t",
-    "bank",
-    "comerica",
-    "zions",
-    "bancorp",
-    "first",
-    "citizens",
-    "bancshares",
-    "new",
-    "york",
-    "community",
-    "bancorp",
-    "east",
-    "west",
-    "bancorp",
-    "south",
-    "state",
-    "bancorp",
-    "north",
-    "state",
-    "bancorp",
-    "midwest",
-    "bancorp",
-    "southwest",
-    "bancorp",
-    "northeast",
-    "bancorp",
-    "southeast",
-    "bancorp",
-    "northwest",
-    "bancorp",
-    "southwest",
-    "bancorp",
-    "central",
-    "bancorp",
-    "regional",
-    "bancorp",
-    "community",
-    "bancorp",
-    "local",
-    "bancorp",
-    "state",
-    "bancorp",
-    "national",
-    "bancorp",
-    "federal",
-    "bancorp",
-    "united",
-    "bancorp",
-    "american",
-    "bancorp",
-    "first",
-    "bancorp",
-    "second",
-    "bancorp",
-    "third",
-    "bancorp",
-    "fourth",
-    "bancorp",
-    "fifth",
-    "bancorp",
-    "sixth",
-    "bancorp",
-    "seventh",
-    "bancorp",
-    "eighth",
-    "bancorp",
-    "ninth",
-    "bancorp",
-    "tenth",
-    "bancorp",
-  ];
-  if (financeTerms.some((t) => lowerMessage.includes(t))) {
-    return { isOffTopic: false };
-  }
-
-  // Weather queries
-  if (
-    lowerMessage.includes("weather") ||
-    lowerMessage.includes("temperature") ||
-    lowerMessage.includes("rain") ||
-    lowerMessage.includes("sunny") ||
-    lowerMessage.includes("forecast")
-  ) {
-    return { isOffTopic: true, category: "weather" };
-  }
-
-  // General greetings and small talk
-  if (
-    lowerMessage.match(
-      /^(hi|hello|hey|good morning|good afternoon|good evening|how are you|what's up|how's it going|what's the vibe|how's the vibe|what's good|how are things|how's everything)$/
-    )
-  ) {
-    return { isOffTopic: true, category: "greeting" };
-  }
-
-  // Casual conversation and vibe check
-  if (
-    lowerMessage.includes("vibe") ||
-    lowerMessage.includes("what's good") ||
-    lowerMessage.includes("how are things") ||
-    lowerMessage.includes("how's everything") ||
-    lowerMessage.includes("how's it going") ||
-    lowerMessage.includes("what's happening") ||
-    lowerMessage.includes("how's your day")
-  ) {
-    return { isOffTopic: true, category: "greeting" };
-  }
-
-  // Non-financial questions
-  if (
-    lowerMessage.includes("recipe") ||
-    lowerMessage.includes("cooking") ||
-    lowerMessage.includes("movie") ||
-    lowerMessage.includes("travel guide")
-  ) {
-    return { isOffTopic: true, category: "lifestyle" };
-  }
-
-  // Technical support (non-financial)
-  if (
-    lowerMessage.includes("how to use") ||
-    lowerMessage.includes("app not working") ||
-    lowerMessage.includes("bug") ||
-    lowerMessage.includes("error") ||
-    lowerMessage.includes("login") ||
-    lowerMessage.includes("password")
-  ) {
-    return { isOffTopic: true, category: "technical" };
-  }
-
-  // Philosophical or general questions
-  if (
-    lowerMessage.includes("meaning of life") ||
-    lowerMessage.includes("purpose") ||
-    lowerMessage.includes("love") ||
-    lowerMessage.includes("happiness")
-  ) {
-    return { isOffTopic: true, category: "philosophy" };
-  }
-
-  return { isOffTopic: false };
-}
-
 // Heuristic: detect clearly in-scope financial concept questions to avoid false off-topic
 function financialConceptHeuristic(raw) {
   const text = (raw || "").toLowerCase();
@@ -3009,13 +2620,10 @@ async function handleClassify(message, context) {
     return cachedResult;
   }
 
-  // Pre-filter for obvious non-financial queries
-  const preFilter = isObviousNonFinancial(text);
-  if (preFilter.isOffTopic) {
-    console.log(
-      "🚫 [FINNY] Pre-filtered as non-financial query:",
-      preFilter.category
-    );
+  // Check for off-topic first (highest priority)
+  const offTopicHeuristic = detectOffTopic(text);
+  if (offTopicHeuristic) {
+    console.log("✅ [FINNY] Heuristic detected off-topic query");
     const result = {
       intent: "off_topic",
       needs_web: false,
@@ -3023,10 +2631,25 @@ async function handleClassify(message, context) {
       state: null,
       entities: [],
       confidence: 0.9,
-      category: preFilter.category,
-      preFiltered: true,
+      heuristic: true,
     };
-    // Cache the pre-filter result
+    setCachedClassification(text, result);
+    return result;
+  }
+
+  // Enhanced heuristic for web search detection
+  const webSearchHeuristic = detectWebSearchNeeded(text);
+  if (webSearchHeuristic) {
+    console.log("✅ [FINNY] Heuristic detected web search needed");
+    const result = {
+      intent: "ask_personalized",
+      needs_web: true,
+      needs_user_data: false,
+      state: null,
+      entities: [],
+      confidence: 0.9,
+      heuristic: true,
+    };
     setCachedClassification(text, result);
     return result;
   }
@@ -3080,70 +2703,34 @@ async function handleClassify(message, context) {
         body: JSON.stringify({
           model: OPENROUTER_MODEL,
           temperature: 0.1,
-          max_tokens: 150, // Limit response size for faster processing
+          max_tokens: 200, // Limit response size for faster processing
           top_p: 0.9, // Add top_p for better stability
           messages: [
             {
               role: "system",
               content: [
-                "You are Financify's intent router with strict financial scope boundaries.",
-                "Classify one user message into exactly one intent.",
+                "You are Financify's intent router. Classify user messages into financial intents.",
+                "",
                 "Intents:",
-                "- ask_personalized  question about the user's money that needs their data",
-                "- calc_projection  what if or plan math",
-                "- goal_conversation  goal creation, advice, or management",
-                "- off_topic  non-financial queries that should be redirected",
+                "- ask_personalized: personal financial questions needing user data",
+                "- goal_conversation: saving goals, targets, aspirations",
+                "- off_topic: non-financial queries (weather, cooking, movies, sports)",
                 "",
-                "Rules:",
-                "- **SCOPE BOUNDARIES**: Only handle financial topics. Non-financial queries (weather, recipes, movies, sports, general chat, technical support) should be classified as `off_topic`.",
-                "- **INVESTMENT NEWS IS FINANCIAL**: Stock news, company updates, earnings reports, industry analysis, market trends, and sector performance are ALL financial topics. Use `ask_personalized` with `needs_web=true`.",
-                "- **Intents are primary; flags can combine.** Return exactly one `intent`, but `needs_user_data` and `needs_web` may be **true** together.",
-                "- **OFF-TOPIC DETECTION**: If message is clearly non-financial (weather, cooking, entertainment, sports, general greetings, technical issues), use `intent=off_topic`.",
-                "- **CONCEPT EXPLANATIONS ARE IN-SCOPE**: General finance concepts (e.g., 'difference between credit and debit card') are financial. Do not mark them off_topic.",
-                "- If the message asks 'rent vs buy in <city/state>' → `ask_personalized` (needs_web=true, needs_user_data=true) - this is a personal financial decision requiring user data.",
-                "- If affordability, FIRE, retirement planning, or financial projections choose ask_personalized",
-                "- If it needs the user's actual data choose ask_personalized",
-                "- If purely personal (spend, net worth, goals) → `ask_personalized` (needs_user_data=true, needs_web=false).",
-                "- If asking about current rates, limits, rules, or regulations (Roth IRA limits, 401k limits, tax brackets, interest rates) → `ask_personalized` (needs_web=true, needs_user_data=false).",
-                "- **CURRENT FINANCIAL INFO**: Questions about 2024/2025 limits, current rates, recent changes, or 'what is the current...' → needs_web=true",
-                "- If asking about credit card recommendations, applications, or which credit cards to get → `ask_personalized` (needs_web=true, needs_user_data=true) - this requires both current card offers and user's financial profile.",
-                "- **GOAL CONVERSATIONS**: If message mentions saving, goals, targets, aspirations, or asks about goal feasibility → `goal_conversation` (needs_user_data=true)",
-                "- If ambiguous but potentially financial, choose ask_personalized",
-                "- **DEFAULT TO FINANCIAL**: When in doubt between financial and non-financial, prefer financial intent.",
+                "CRITICAL RULES:",
+                "- Questions about 2024/2025 limits, current rates, 'what is the current...' → needs_web=true",
+                "- Roth IRA limits, 401k limits, tax brackets, interest rates → needs_web=true",
+                "- Stock news, market trends, current rates → needs_web=true",
+                "- Personal spending, net worth, transactions → needs_user_data=true",
+                "- Saving goals, targets, aspirations → goal_conversation",
                 "",
-                "Sample inputs and expected intent:",
-                '"Set a 2000 emergency fund by March" → goal_conversation',
-                '"I want to save $5000 for a house down payment" → goal_conversation',
-                '"Should I buy a Rolex or save for a house?" → goal_conversation',
-                '"How much did I spend on Uber last month" → ask_personalized',
-                '"How are you" or "What\'s up" or "Am I normal?" → ask_personalized (financial wellness)',
-                '"What\'s the weather like?" → off_topic',
-                '"How do I cook pasta?" → off_topic',
-                '"What movie should I watch?" → off_topic',
-                '"Difference between Roth and traditional IRA" → ask_personalized',
-                '"What is the Roth IRA contribution limit for 2025?" → ask_personalized, needs_web:true, needs_user_data:false',
-                '"Difference between credit and debit card?" → ask_personalized, needs_user_data:false, needs_web:false',
-                '"What are the best credit cards I can get?" → ask_personalized, needs_web:true, needs_user_data:true',
-                '"Which credit card should I apply for?" → ask_personalized, needs_web:true, needs_user_data:true',
-                '"Rent vs buy in Phoenix at 7%" → ask_personalized, needs_web:true, needs_user_data:true, state:"AZ"',
-                '"Can I hit FIRE by 35" → ask_personalized',
-                '"Will I have enough to retire" → ask_personalized',
-                '"Can I achieve my financial goals" → goal_conversation',
-                '"What\'s the latest news on semiconductor industry and AMD especially?" → ask_personalized, needs_web:true, needs_user_data:false',
-                '"How is Tesla stock performing today?" → ask_personalized, needs_web:true, needs_user_data:false',
-                '"What are analysts saying about Apple earnings?" → ask_personalized, needs_web:true, needs_user_data:false',
-                '"Latest trends in the tech sector" → ask_personalized, needs_web:true, needs_user_data:false',
+                "Examples:",
+                '"What is the Roth IRA limit for 2025?" → ask_personalized, needs_web:true, needs_user_data:false',
+                '"How much did I spend last month?" → ask_personalized, needs_web:false, needs_user_data:true',
+                '"I want to save $5000 for a house" → goal_conversation, needs_web:false, needs_user_data:true',
+                '"What\'s the weather?" → off_topic, needs_web:false, needs_user_data:false',
                 "",
-                "**IMPORTANT**: Return ONLY a JSON object with this EXACT structure:",
-                "{",
-                '  "intent": "ask_personalized" | "goal_conversation" | "off_topic",',
-                '  "needs_web": boolean,',
-                '  "needs_user_data": boolean,',
-                '  "state": string | null (two-letter US state code like "CA" or null),',
-                '  "entities": string[],',
-                '  "confidence": number (0 to 1)',
-                "}",
-                "No markdown, no code blocks, no extra text. Just the JSON object.",
+                "Return ONLY JSON:",
+                '{"intent": "ask_personalized|goal_conversation|off_topic", "needs_web": boolean, "needs_user_data": boolean, "state": null, "entities": [], "confidence": 0.0-1.0}',
               ].join("\n"),
             },
             {
@@ -3185,7 +2772,43 @@ async function handleClassify(message, context) {
       cleanContent = cleanContent.slice(7).trim();
     }
 
-    const out = JSON.parse(cleanContent);
+    // Handle incomplete JSON responses
+    let out;
+    try {
+      out = JSON.parse(cleanContent);
+    } catch (parseError) {
+      console.log("❌ [FINNY] JSON parse error, trying to fix incomplete JSON");
+      console.log("❌ [FINNY] Raw content was:", cleanContent);
+
+      // Try to extract intent from malformed JSON
+      const intentMatch = cleanContent.match(/"intent"\s*:\s*"([^"]+)"/);
+      const needsWebMatch = cleanContent.match(
+        /"needs_web"\s*:\s*(true|false)/
+      );
+      const needsUserDataMatch = cleanContent.match(
+        /"needs_user_data"\s*:\s*(true|false)/
+      );
+      const confidenceMatch = cleanContent.match(
+        /"confidence"\s*:\s*([0-9.]+)/
+      );
+
+      if (intentMatch) {
+        console.log("✅ [FINNY] Extracted intent from malformed JSON");
+        out = {
+          intent: intentMatch[1],
+          needs_web: needsWebMatch ? needsWebMatch[1] === "true" : false,
+          needs_user_data: needsUserDataMatch
+            ? needsUserDataMatch[1] === "true"
+            : false,
+          state: null,
+          entities: [],
+          confidence: confidenceMatch ? parseFloat(confidenceMatch[1]) : 0.8,
+          malformed_json: true,
+        };
+      } else {
+        throw new Error("Malformed JSON response");
+      }
+    }
     console.log("🔍 [FINNY] Parsed classification result:", out);
 
     // Defensive post-process so your app never crashes
@@ -3222,6 +2845,61 @@ async function handleClassify(message, context) {
       console.log(
         "⏰ [FINNY] Classification timed out after 4 seconds, using fallback"
       );
+    }
+
+    // Enhanced heuristic fallbacks in priority order
+
+    // 1. Off-topic detection (highest priority)
+    if (detectOffTopic(message)) {
+      console.log("✅ [FINNY] Using off-topic heuristic fallback");
+      return {
+        intent: "off_topic",
+        needs_web: false,
+        needs_user_data: false,
+        state: null,
+        entities: [],
+        confidence: 0.9,
+        fallback: true,
+        timeout_fallback: e?.message?.includes("timeout") || false,
+      };
+    }
+
+    // 2. Web search detection
+    const webSearchHeuristic = detectWebSearchNeeded(message);
+    if (webSearchHeuristic) {
+      console.log("✅ [FINNY] Using web search heuristic fallback");
+      return {
+        intent: "ask_personalized",
+        needs_web: true,
+        needs_user_data: false,
+        state: null,
+        entities: [],
+        confidence: 0.8,
+        fallback: true,
+        timeout_fallback: e?.message?.includes("timeout") || false,
+      };
+    }
+
+    // 3. Goal conversation detection
+    const lowerMessage = message.toLowerCase();
+    if (
+      lowerMessage.includes("save") &&
+      (lowerMessage.includes("goal") ||
+        lowerMessage.includes("target") ||
+        lowerMessage.includes("plan") ||
+        lowerMessage.includes("want"))
+    ) {
+      console.log("✅ [FINNY] Using goal conversation heuristic fallback");
+      return {
+        intent: "goal_conversation",
+        needs_web: false,
+        needs_user_data: true,
+        state: null,
+        entities: [],
+        confidence: 0.8,
+        fallback: true,
+        timeout_fallback: e?.message?.includes("timeout") || false,
+      };
     }
 
     // Heuristic fallback if available
