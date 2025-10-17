@@ -434,7 +434,9 @@ function shouldRunMemoryExtraction(message, intent = "ask_personalized") {
       /(months?|years?|by\s+\d{4}|in\s+\d{4}|next\s+(year|\d+\s*years?))/i.test(
         m
       );
-    const hasOccupation = /(work as|i am a|i'm a)\s+[a-z\s]+/.test(m);
+    const hasOccupation =
+      /(work as|i am a|i'm a)\s+[a-z\s]+/.test(m) ||
+      /(studying|study)\s+[a-z\s]+/.test(m);
     const hasLocation = /(live in|based in|from)\s+[a-z\s]+/.test(m);
     const hasConstraint =
       /(student loan|student debt|credit card debt|medical debt|personal loan|car loan)/.test(
@@ -456,7 +458,7 @@ function shouldRunMemoryExtraction(message, intent = "ask_personalized") {
 
     // Require at least one grounded signal, two if intent isn't explicitly goal-related
     if (intent === "goal_conversation") return groundedSignals >= 1;
-    return groundedSignals >= 2;
+    return groundedSignals >= 1;
   } catch {
     return false;
   }
@@ -683,7 +685,7 @@ function localPersonalSignalGate(m) {
     const text = (m || "").toLowerCase();
     if (!text) return false;
     const edu =
-      /(college|university|degree|bachelor|masters|phd|cs degree|computer science|student)/i.test(
+      /(college|university|degree|bachelor|masters|phd|cs degree|computer science|student|studying|study)/i.test(
         text
       );
     const occ =
