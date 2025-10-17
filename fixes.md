@@ -44,6 +44,39 @@
 ### SPENDING
 - TBD
 
+### MEMORY — ✅ COMPLETED
+- ✅ Gated extraction (strict)
+  - Runs only for first‑person disclosures with grounded signals (age, dependents, amounts, timeframe, occupation, location, hard constraints)
+  - Additional personal-signal gate: immigration/moving/stress/education/occupation
+  - Applies during ask flow and off-topic responses (off-topic is also gated)
+
+- ✅ Validator using KEY_SYNONYMS
+  - Small model validator receives full `KEY_SYNONYMS`
+  - Allowed keys = union(intent-allowlist, `Object.keys(KEY_SYNONYMS)`)
+  - Post-filters: evidence required; goals/constraints must be grounded; confidence ≥ 0.8; value must be non-empty string
+
+- ✅ Deterministic fallback (when validator returns nothing)
+  - Extracts: age, sanitized location, child count, house down-payment goal (amount/timeframe)
+
+- ✅ Merge + filter
+  - Merge validator + fallback
+  - Dedupe by `type+key`
+  - Drop unknown/empty values and low confidence
+
+- ✅ Saving to Supabase (no dry-run)
+  - Skips exact duplicates (same `type+key+value`)
+  - 30‑day cooldown per `type+key` before overwrite
+  - Always updates memory summary after saves
+
+- ✅ Latency and logging
+  - Conversation logging runs asynchronously after sending the response (ask/classify/off-topic)
+  - Memory saves remain awaited; can be made async later if needed
+
+- ✅ Cleanup
+  - Removed deprecated `extractMemoriesWithSmallModel`
+  - Removed all dry-run logic from Finny
+  - Removed session summary LLM features and references from Finny
+
 ### CHAT
 - Update the progress status in more detail, not just high-level "looking up the data" or "looking up the web" or "getting your transactions".
 - Add more progress status as Finny works through things like understanding the question and then taking a look at transactions or taking a look at net worth.
@@ -55,6 +88,7 @@
 - Do not keep thinking for so long — keep it under 13–14 seconds.
 
 ### SESSION
+- My end goal is that Finny knows about what we have been talking about in that particular chat session. For example, if I ask Finny what's going on with Apple stock and then I ask it later, will it be a good addition to my portfolio? It should already know what we have been talking about. That's my whole goal. We can figure out different ways for this. Let me know.
 - Make sure that `sessionSummary` is run after sending the response to the user.
 - Then, if it is the same chat, just add that summary in the user context for the next question or query of the user.
 

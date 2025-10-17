@@ -3,7 +3,6 @@ import { createClient } from "@supabase/supabase-js";
 import fetch from "node-fetch";
 import crypto from "crypto";
 import { handleGoalConversation } from "./goals.js";
-import { KEY_SYNONYMS } from "../src/constants/keySynonyms.js";
 import { braveSearch } from "../lib/websearch/brave.js";
 
 // Utilities
@@ -399,112 +398,419 @@ function quickExtract(message) {
 
 // Goal handler functions moved to goals.js
 
-// Memory extraction using small model (parallel processing)
-async function extractMemoriesWithSmallModel(message, hints) {
+// Hybrid memory extraction gating — cheap pre-checks before any LLM call
+function shouldRunMemoryExtraction(message, intent = "ask_personalized") {
   try {
-    const extractionPrompt = `
-Extract user information and map to these exact keys:
-${JSON.stringify(KEY_SYNONYMS, null, 2)}
+    const m = (message || "").toLowerCase();
+    if (!m) return false;
 
-User message: "${message}"
-Pre-detected hints: ${JSON.stringify(hints)}
+    // Block obvious non-personal requests
+    const genericAdvice = [
+      "which credit card",
+      "best credit card",
+      "what credit card",
+      "rent vs buy",
+      "what's the best",
+      "which is better",
+      "compare",
+      "comparison",
+      "rate",
+      "rates",
+      "news",
+      "limit",
+      "limits",
+    ];
+    if (genericAdvice.some((k) => m.includes(k))) return false;
 
-Return ONLY valid JSON (no markdown, no code blocks, no explanations). Do not wrap in \`\`\`json\`\`\` blocks:
-{"memories": [
-  {"type": "profile_trait", "key": "profile_trait.family.marital_status", "value": "married", "confidence": 0.9}
-]}
+    // Only allow when first-person disclosures + grounded signals appear
+    const firstPerson = /\b(i|i'm|im|i am|my|we|we're|we are)\b/.test(m);
+    if (!firstPerson) return false;
 
-RULES:
-1. Use the provided keys when possible
-2. For interests, hobbies, or traits not in the list, create new keys using this pattern:
-   - profile_trait.interests.{interest_name} (e.g., "profile_trait.interests.art", "profile_trait.interests.soccer")
-   - profile_trait.hobbies.{hobby_name} (e.g., "profile_trait.hobbies.pottery", "profile_trait.hobbies.dancing")
-   - profile_trait.skills.{skill_name} (e.g., "profile_trait.skills.cooking", "profile_trait.skills.photography")
-3. For unmapped information, use context_signal.unmapped
-4. Only extract information with confidence >= 0.7
-`;
-
-    const response = await fetch(
-      "https://openrouter.ai/api/v1/chat/completions",
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${process.env.OPENROUTER_GROK_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: SMALLER_MODEL,
-          temperature: 0.1, // Low for consistent extraction
-          max_tokens: 1200, // Small response
-          messages: [
-            {
-              role: "system",
-              content:
-                "You are a memory extraction specialist. Return only valid JSON.",
-            },
-            { role: "user", content: extractionPrompt },
-          ],
-        }),
-      }
-    );
-
-    const data = await response.json();
-    const content = data.choices?.[0]?.message?.content;
-
-    if (!content) {
-      return hints; // Fallback to hints
-    }
-
-    try {
-      // Clean the content to handle markdown code blocks
-      let cleanContent = content.trim();
-
-      // Remove markdown code blocks if present
-      if (cleanContent.startsWith("```json")) {
-        cleanContent = cleanContent
-          .replace(/^```json\s*/, "")
-          .replace(/\s*```$/, "");
-      } else if (cleanContent.startsWith("```")) {
-        cleanContent = cleanContent
-          .replace(/^```\s*/, "")
-          .replace(/\s*```$/, "");
-      }
-
-      const parsed = JSON.parse(cleanContent);
-      const extractedMemories = parsed.memories || [];
-
-      // Combine hints with extracted memories
-      const allMemories = [...hints, ...extractedMemories];
-
-      // Filter by confidence and remove duplicates
-      const uniqueMemories = allMemories.filter(
-        (memory, index, self) =>
-          memory.confidence >= 0.7 &&
-          index ===
-            self.findIndex(
-              (m) => m.key === memory.key && m.type === memory.type
-            )
+    // Grounded signals: age, dependents, amounts, timeframe, occupation, location, hard constraints
+    const hasAge = /(\d{2})\s*(years?\s*old|yo)\b/.test(m);
+    const hasDependents = /dependents?|kids?|children/.test(m);
+    const hasAmount = /\$?\d{2,}(,\d{3})*(\.\d+)?/.test(m);
+    const hasTimeframe =
+      /(months?|years?|by\s+\d{4}|in\s+\d{4}|next\s+(year|\d+\s*years?))/i.test(
+        m
+      );
+    const hasOccupation = /(work as|i am a|i'm a)\s+[a-z\s]+/.test(m);
+    const hasLocation = /(live in|based in|from)\s+[a-z\s]+/.test(m);
+    const hasConstraint =
+      /(student loan|student debt|credit card debt|medical debt|personal loan|car loan)/.test(
+        m
       );
 
-      // Log what memories were extracted (major console log #1)
-      console.log(
-        `🧠 [MEMORY] Extracted ${uniqueMemories.length} memories:`,
-        uniqueMemories.map(
-          (m) =>
-            `${m.type}.${m.key}: ${m.value?.substring(0, 50)}${
-              m.value?.length > 50 ? "..." : ""
-            }`
-        )
-      );
-      return uniqueMemories;
-    } catch (parseError) {
-      return hints; // Fallback to hints
-    }
-  } catch (error) {
-    return hints; // Fallback to hints
+    const groundedSignals = [
+      hasAge,
+      hasDependents,
+      hasAmount,
+      hasTimeframe,
+      hasOccupation,
+      hasLocation,
+      hasConstraint,
+    ].filter(Boolean).length;
+
+    // Local personal-signal gate (immigration/moving/stress/education/occupation)
+    if (localPersonalSignalGate(m)) return true;
+
+    // Require at least one grounded signal, two if intent isn't explicitly goal-related
+    if (intent === "goal_conversation") return groundedSignals >= 1;
+    return groundedSignals >= 2;
+  } catch {
+    return false;
   }
 }
 
+// === Deterministic fallback extraction helpers ===
+function cleanValue(v) {
+  if (!v) return null;
+  const s = String(v).trim().toLowerCase();
+  if (s === "unknown" || s === "n/a" || s === "na" || s === "none") return null;
+  return String(v);
+}
+
+function sanitizeLocation(raw) {
+  if (!raw) return raw;
+  let s = String(raw).trim();
+  s = s.replace(/\s*(,|;).*$/g, "");
+  s = s.replace(/\s+and\b[\s\S]*$/i, "");
+  s = s.replace(
+    /\s+(planning|plan|thinking|saving|want|to\s+buy|buy|down payment|target)\b[\s\S]*$/i,
+    ""
+  );
+  s = s.replace(/\s+in\s+\d+\s+(years?|months?|yrs?|mos?)\b[\s\S]*$/i, "");
+  s = s.replace(/\s+/g, " ");
+  return s.trim();
+}
+
+function parseAmount(raw) {
+  if (!raw) return null;
+  const m = raw
+    .toLowerCase()
+    .match(/\$?([0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?)([km])?/i);
+  if (!m) return null;
+  let n = parseFloat(m[1].replace(/,/g, ""));
+  if (m[2] === "k") n *= 1000;
+  if (m[2] === "m") n *= 1000000;
+  return Math.round(n);
+}
+
+function extractAmount(message) {
+  const re = /(\$?[0-9][0-9,]*(?:\.[0-9]+)?[km]?)/gi;
+  const candidates = [];
+  let m;
+  const lower = message.toLowerCase();
+  const MONEY_HINTS = [
+    "$",
+    "k",
+    "m",
+    "save",
+    "saving",
+    "target",
+    "down payment",
+    "budget",
+  ];
+  const TIME_HINTS = [
+    "year",
+    "years",
+    "yr",
+    "y",
+    "month",
+    "months",
+    "mo",
+    "mos",
+  ];
+  while ((m = re.exec(message)) !== null) {
+    const token = m[1];
+    const start = m.index;
+    const end = start + token.length;
+    const around = lower.slice(
+      Math.max(0, start - 16),
+      Math.min(lower.length, end + 16)
+    );
+    const hasMoneySignal =
+      token.includes("$") ||
+      /[km]$/i.test(token.trim()) ||
+      MONEY_HINTS.some((h) => around.includes(h));
+    const hasTimeSignal = TIME_HINTS.some((h) => around.includes(h));
+    if (hasTimeSignal && !hasMoneySignal) continue;
+    const value = parseAmount(token);
+    if (value)
+      candidates.push({ value, hasSuffix: /[km]$/i.test(token.trim()) });
+  }
+  if (candidates.length === 0) return null;
+  const withSuffix = candidates.filter((c) => c.hasSuffix);
+  if (withSuffix.length > 0) return Math.max(...withSuffix.map((c) => c.value));
+  return Math.max(...candidates.map((c) => c.value));
+}
+
+function extractTimeframeYears(message) {
+  const m = message.toLowerCase().match(/(\d+)\s*(years?|yrs?|y)/);
+  if (m) return parseInt(m[1], 10);
+  const m2 = message.toLowerCase().match(/(\d+)\s*(months?|mos?|m)/);
+  if (m2) return Math.max(1, Math.round(parseInt(m2[1], 10) / 12));
+  if (/next\s+year/i.test(message)) return 1;
+  return null;
+}
+
+function extractAge(message) {
+  const m = message.toLowerCase().match(/\b(i am|i'm|im)\s*(\d{1,2})\b/);
+  if (m) return parseInt(m[2], 10);
+  return null;
+}
+
+function fallbackExtractCandidates(message, hints) {
+  const lower = (message || "").toLowerCase();
+  const out = [];
+
+  const kidsCountMatch = lower.match(/(\b\d+\b)\s*(kids?|children)/);
+  if (kidsCountMatch) {
+    const numKids = parseInt(kidsCountMatch[1], 10);
+    if (!Number.isNaN(numKids)) {
+      out.push({
+        type: "profile_trait",
+        key: "profile_trait.family.children",
+        value: numKids === 1 ? "has 1 child" : `has ${numKids} children`,
+        confidence: 0.9,
+        grounded: true,
+        evidence: [kidsCountMatch[0]],
+      });
+    }
+  }
+
+  const age = extractAge(message);
+  if (age && age >= 13 && age <= 100) {
+    out.push({
+      type: "profile_trait",
+      key: "profile_trait.age",
+      value: String(age),
+      confidence: 0.9,
+      grounded: true,
+      evidence: [String(age)],
+    });
+  }
+
+  const locMatch = lower.match(/(live in|based in|from)\s+([a-z\s]+)/i);
+  if (locMatch) {
+    const loc = sanitizeLocation(locMatch[2].trim());
+    if (loc && loc.length <= 40)
+      out.push({
+        type: "profile_trait",
+        key: "profile_trait.location",
+        value: loc,
+        confidence: 0.85,
+        grounded: true,
+        evidence: [locMatch[0]],
+      });
+  }
+  const hintLoc = (hints || []).find((h) => h.key === "profile_trait.location");
+  if (hintLoc)
+    out.push({
+      type: "profile_trait",
+      key: "profile_trait.location",
+      value: sanitizeLocation(hintLoc.value),
+      confidence: hintLoc.confidence || 0.8,
+      grounded: true,
+      evidence: [hintLoc.value],
+    });
+
+  if (/(house|home|buy a house|down payment)/i.test(message)) {
+    const amount = extractAmount(message);
+    const years = extractTimeframeYears(message);
+    const parts = [];
+    if (amount) parts.push(`target $${amount}`);
+    if (years) parts.push(`in ${years} year${years > 1 ? "s" : ""}`);
+    const val = parts.length ? parts.join(", ") : "planning to buy a house";
+    out.push({
+      type: "goal",
+      key: "goal.financial.house_down_payment",
+      value: val,
+      confidence: 0.85,
+      grounded: !!(amount || years),
+      evidence: [val],
+    });
+  }
+
+  const married = (hints || []).find(
+    (h) => h.key === "profile_trait.family.marital_status"
+  );
+  if (married)
+    out.push({
+      type: "profile_trait",
+      key: married.key,
+      value: married.value,
+      confidence: married.confidence || 0.85,
+      grounded: true,
+      evidence: [married.value],
+    });
+
+  const hintKids = (hints || []).find((h) => h.key === "goal.family.children");
+  if (hintKids && !kidsCountMatch) {
+    out.push({
+      type: "profile_trait",
+      key: "profile_trait.family.children",
+      value: "has children",
+      confidence: hintKids.confidence || 0.8,
+      grounded: true,
+      evidence: [hintKids.value],
+    });
+  }
+
+  const ccDebt = (hints || []).find(
+    (h) => h.key === "constraint.debt.credit_card"
+  );
+  if (ccDebt)
+    out.push({
+      type: "constraint",
+      key: ccDebt.key,
+      value: ccDebt.value,
+      confidence: ccDebt.confidence || 0.85,
+      grounded: true,
+      evidence: [ccDebt.value],
+    });
+
+  const unique = out.filter(
+    (m, i, self) =>
+      i === self.findIndex((x) => x.type === m.type && x.key === m.key)
+  );
+  return unique;
+}
+
+// Local gate for additional personal signals
+function localPersonalSignalGate(m) {
+  try {
+    const text = (m || "").toLowerCase();
+    if (!text) return false;
+    const edu =
+      /(college|university|degree|bachelor|masters|phd|cs degree|computer science|student)/i.test(
+        text
+      );
+    const occ =
+      /(run|own|operate|freelance|freelancer|founder|entrepreneur|business|work as|i'm a|i am a|engineer|nurse|teacher|designer|developer)/i.test(
+        text
+      );
+    const imm =
+      /(visa|immigration|work authorization|green card|h1b|h-1b|opt|cpt|f1|j1|asylum)/i.test(
+        text
+      );
+    const move = /(moving to|relocating to|moved to)/i.test(text);
+    const stress =
+      /(stressed|anxious|worried)\s+about\s+(money|bills|debt)/i.test(text);
+    return edu || occ || imm || move || stress;
+  } catch {
+    return false;
+  }
+}
+
+// LLM validator with strict schema + postfilters (whitelist + thresholds)
+async function validateMemoriesWithSmallModel(
+  message,
+  hints,
+  intent = "ask_personalized"
+) {
+  const allowedByIntent = {
+    ask_personalized: new Set([
+      // profile
+      "profile_trait.age",
+      "profile_trait.location",
+      "profile_trait.occupation",
+      "profile_trait.education",
+      "profile_trait.family.marital_status",
+      "profile_trait.family.relationship_status",
+      "profile_trait.family.living_situation",
+      // constraints
+      "constraint.debt.student_loans",
+      "constraint.debt.credit_card",
+      // goals
+      "goal.family.children",
+      "goal.financial.house_down_payment",
+      // context
+      "context_signal.financial_stress",
+      "context_signal.immigration_status",
+    ]),
+    goal_conversation: new Set([
+      "goal.family.children",
+      "goal.financial.house_down_payment",
+      "constraint.debt.student_loans",
+      "constraint.debt.credit_card",
+      "profile_trait.location",
+      "profile_trait.occupation",
+      "profile_trait.education",
+    ]),
+  };
+
+  // Use KEY_SYNONYMS to guide extraction, but keep an intent gate for safety
+  const intentAllowed =
+    allowedByIntent[intent] || allowedByIntent.ask_personalized;
+  const synonymKeys = new Set(Object.keys(KEY_SYNONYMS || {}));
+  const allowed = new Set([...(intentAllowed || []), ...synonymKeys]);
+
+  try {
+    const prompt = [
+      "You validate user memories. Return JSON only.",
+      "Only extract durable, advisor-grade facts with evidence from the message.",
+      "Include an evidence array of the exact spans that justify each memory.",
+      "Reject generic interests/hobbies unless tied to financial impact.",
+      "Schema: {memories:[{type,key,value,confidence,evidence:[], grounded:boolean}]}",
+      "Grounded means the fact is supported by concrete signals (amount/date/age/state/role).",
+      // Provide synonyms map to improve key normalization/mapping
+      `Synonyms map: ${JSON.stringify(KEY_SYNONYMS, null, 2)}`,
+      `Allowed keys: ${JSON.stringify(Array.from(allowed))}`,
+      `Message: ${message}`,
+      `Hints: ${JSON.stringify(hints)}`,
+    ].join("\n");
+
+    const r = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${process.env.OPENROUTER_GROK_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: SMALLER_MODEL,
+        temperature: 0.1,
+        max_tokens: 600,
+        response_format: { type: "json_object" },
+        messages: [
+          { role: "system", content: "Return ONLY valid JSON per schema." },
+          { role: "user", content: prompt },
+        ],
+      }),
+    });
+    if (!r.ok) return [];
+    const data = await r.json();
+    let content = data.choices?.[0]?.message?.content || "";
+    if (content.startsWith("```"))
+      content = content.replace(/^```json?\s*|\s*```$/g, "");
+    const parsed = JSON.parse(content);
+    const raw = Array.isArray(parsed?.memories) ? parsed.memories : [];
+
+    // Merge with hints, then filter
+    const merged = [...hints, ...raw];
+    const filtered = merged.filter((m) => {
+      const key = m.key || "";
+      const conf = m.confidence != null ? m.confidence : m.confidence_score;
+      const grounded =
+        m.grounded === true ||
+        (Array.isArray(m.evidence) && m.evidence.length > 0);
+      if (!allowed.has(key)) return false;
+      if (!(conf >= 0.8)) return false;
+      if (!grounded) return false;
+      if (!m.value || typeof m.value !== "string") return false;
+      return true;
+    });
+
+    // Deduplicate by type+key
+    const unique = filtered.filter(
+      (m, i, self) =>
+        i === self.findIndex((x) => x.type === m.type && x.key === m.key)
+    );
+    return unique;
+  } catch {
+    return [];
+  }
+}
 // Conversation logging functionality with retry logic
 async function logConversation(conversationData) {
   console.log(
@@ -1134,9 +1440,7 @@ async function handleAsk(
       "",
       // Smart memory context with relevance-based selection
       // Session summary (short-term conversation memory)
-      ...(getSessionSummary(context.user_id)
-        ? [`Session summary: ${getSessionSummary(context.user_id)}`]
-        : []),
+      // Session summary removed
       ...(context.memory?.summary
         ? [`User context: ${context.memory.summary}`]
         : []),
@@ -1419,7 +1723,8 @@ async function handleAsk(
     const hints = quickExtract(message);
 
     // Parallel execution
-    const [resp, memoryExtraction] = await Promise.all([
+    let memoryExtraction = [];
+    const [resp] = await Promise.all([
       // Main response (existing LLM)
       fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
@@ -1441,10 +1746,45 @@ async function handleAsk(
           ],
         }),
       }),
-
-      // Memory extraction (small model)
-      extractMemoriesWithSmallModel(message, hints),
     ]);
+
+    // Hybrid memory extraction: pre-gate + validator + deterministic fallback
+    if (shouldRunMemoryExtraction(message, intent)) {
+      const validated = await validateMemoriesWithSmallModel(
+        message,
+        hints,
+        intent
+      );
+      let merged = validated || [];
+      if (!merged || merged.length === 0) {
+        const fallback = fallbackExtractCandidates(message, hints);
+        if (fallback.length > 0) merged = fallback;
+      } else {
+        const fallback = fallbackExtractCandidates(message, hints);
+        if (fallback.length > 0) {
+          const seen = new Set(merged.map((m) => `${m.type}|${m.key}`));
+          for (const f of fallback) {
+            const k = `${f.type}|${f.key}`;
+            if (!seen.has(k)) merged.push(f);
+          }
+        }
+      }
+
+      // Filter unknown/empty values and enforce high confidence
+      memoryExtraction = (merged || [])
+        .filter((m) => m && typeof m.value === "string" && cleanValue(m.value))
+        .filter((m) => {
+          const conf = m.confidence != null ? m.confidence : m.confidence_score;
+          return conf >= 0.8;
+        })
+        .filter(
+          (m, i, self) =>
+            i === self.findIndex((x) => x.type === m.type && x.key === m.key)
+        );
+    } else {
+      memoryExtraction = [];
+      console.log("🧠 [MEMORY] Skipping extraction (gates not satisfied)");
+    }
 
     timings.llm_ms = Date.now() - llmT0;
     toolsUsed.push({
@@ -1465,16 +1805,16 @@ async function handleAsk(
     const cleanText =
       data.choices?.[0]?.message?.content ?? "I'm not sure yet. Ask me again?";
 
-    // Background memory save (non-blocking)
+    // Save memories (skip when none)
     if (memoryExtraction.length > 0) {
       console.log(
-        `🧠 [FINNY] Saving ${memoryExtraction.length} memories synchronously:`,
-        memoryExtraction
+        `🧠 [FINNY] Prepared ${memoryExtraction.length} memory candidates`
       );
       try {
         await saveMemoryCandidates(context?.user_id, memoryExtraction);
-        console.log("🧠 [FINNY] Memory save completed successfully");
-      } catch (error) {}
+      } catch (error) {
+        console.log("🧠 [FINNY] Memory save failed:", error?.message);
+      }
     } else {
       console.log("🧠 [FINNY] No memories to save");
     }
@@ -1525,18 +1865,10 @@ async function handleAsk(
       },
     };
 
-    // Log conversation synchronously (wait for it)
-    await logConversation(conversationData);
+    // Log conversation asynchronously to avoid adding latency
+    setImmediate(() => logConversation(conversationData));
 
-    // Asynchronously refresh session summary using LLM (short-term memory)
-    setImmediate(() =>
-      updateSessionSummaryLLM(
-        context?.user_id,
-        getSessionSummary(context?.user_id),
-        message,
-        cleanedMessage
-      )
-    );
+    // Session summary update removed
 
     return response;
   } catch (error) {
@@ -2965,8 +3297,8 @@ async function handleClassify(message, context) {
     // Cache the result for future use
     setCachedClassification(text, out);
 
-    // Log conversation synchronously
-    await logConversation(conversationData);
+    // Log conversation asynchronously to reduce latency
+    setImmediate(() => logConversation(conversationData));
 
     return out;
   } catch (e) {
@@ -3200,6 +3532,53 @@ async function handleOffTopic(message, context) {
       data.choices?.[0]?.message?.content ||
       "I'd love to help you with your finances! What financial questions can I answer for you today?";
 
+    // Off-topic: also run gated memory extraction/saving if strong personal facts are present
+    try {
+      const hints = quickExtract(message);
+      if (shouldRunMemoryExtraction(message, "ask_personalized")) {
+        const validated = await validateMemoriesWithSmallModel(
+          message,
+          hints,
+          "ask_personalized"
+        );
+        let merged = validated || [];
+        const fallback = fallbackExtractCandidates(message, hints);
+        if (!merged || merged.length === 0) {
+          if (fallback.length > 0) merged = fallback;
+        } else if (fallback.length > 0) {
+          const seen = new Set(merged.map((m) => `${m.type}|${m.key}`));
+          for (const f of fallback) {
+            const k = `${f.type}|${f.key}`;
+            if (!seen.has(k)) merged.push(f);
+          }
+        }
+
+        const toSave = (merged || [])
+          .filter(
+            (m) => m && typeof m.value === "string" && cleanValue(m.value)
+          )
+          .filter((m) => {
+            const conf =
+              m.confidence != null ? m.confidence : m.confidence_score;
+            return conf >= 0.8;
+          })
+          .filter(
+            (m, i, self) =>
+              i === self.findIndex((x) => x.type === m.type && x.key === m.key)
+          );
+
+        if (toSave.length > 0 && context?.user_id) {
+          try {
+            await saveMemoryCandidates(context.user_id, toSave);
+          } catch (e) {
+            console.log("🧠 [FINNY] Off-topic memory save failed:", e?.message);
+          }
+        }
+      }
+    } catch (e) {
+      // Non-fatal
+    }
+
     // Log the off-topic interaction
     const conversationData = {
       user_message: message,
@@ -3216,8 +3595,8 @@ async function handleOffTopic(message, context) {
       redirection_suggestions: redirectionSuggestions,
     };
 
-    // Log conversation synchronously
-    await logConversation(conversationData);
+    // Log conversation asynchronously
+    setImmediate(() => logConversation(conversationData));
 
     return {
       text: cleanResponseFormatting(content),
@@ -4402,90 +4781,6 @@ async function forceRefreshUserData(userId) {
 const memoryCache = new Map();
 const MEMORY_CACHE_TTL = 10 * 60 * 1000; // 10 minutes
 
-// In-memory cache for short session summaries (per user)
-const sessionSummaryCache = new Map(); // key: userId, value: { summary, timestamp }
-const SESSION_SUMMARY_TTL = 15 * 60 * 1000; // 15 minutes
-
-function getSessionSummary(userId) {
-  if (!userId) return "";
-  const entry = sessionSummaryCache.get(userId);
-  if (!entry) return "";
-  if (Date.now() - entry.timestamp > SESSION_SUMMARY_TTL) {
-    sessionSummaryCache.delete(userId);
-    return "";
-  }
-  return entry.summary || "";
-}
-
-function setSessionSummary(userId, summary) {
-  if (!userId || typeof summary !== "string") return;
-  const trimmed = summary.trim().slice(0, 600); // hard cap
-  sessionSummaryCache.set(userId, { summary: trimmed, timestamp: Date.now() });
-}
-
-async function updateSessionSummaryLLM(
-  userId,
-  previousSummary,
-  userMessage,
-  assistantMessage
-) {
-  try {
-    if (!userId) return;
-    console.log(
-      "🧠 [SUMMARY] Starting session summary update via LLM for user:",
-      userId
-    );
-    const prompt = [
-      "You are a session summarizer for a financial assistant.",
-      "Goal: Maintain a concise running summary with only crucial facts needed for follow-ups.",
-      "Keep it short (<= 400 chars). Do NOT repeat pleasantries, disclaimers, or formatting.",
-      "Prioritize: last discussed stock ticker/company, spending category + period, explicit numbers (amounts, dates), and any active goal details.",
-      "Avoid: verbose narrative, unrelated small talk, URLs, or markdown.",
-      "",
-      `Previous summary: ${previousSummary || ""}`,
-      "Latest exchange:",
-      `User: ${userMessage}`,
-      `Assistant: ${assistantMessage}`,
-      "",
-      "Return ONLY the updated summary text with no extra words.",
-    ].join("\n");
-
-    const r = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${process.env.OPENROUTER_GROK_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: SUMMARY_MODEL,
-        temperature: 0.2,
-        max_tokens: 280,
-        messages: [
-          {
-            role: "system",
-            content: "You return only a concise session summary string.",
-          },
-          { role: "user", content: prompt },
-        ],
-      }),
-    });
-    if (!r.ok) {
-      console.log("🧠 [SUMMARY] LLM request failed with status:", r.status);
-      return;
-    }
-    const data = await r.json();
-    const content = data.choices?.[0]?.message?.content?.trim();
-    if (!content) {
-      console.log("🧠 [SUMMARY] No summary content returned by LLM");
-      return;
-    }
-    setSessionSummary(userId, content);
-    console.log("🧠 [SUMMARY] Session summary updated:", content);
-  } catch (e) {
-    // Non-fatal: ignore summarization errors
-  }
-}
-
 // Lightweight session state (goal_flow, etc.) with TTL
 const sessionStateCache = new Map(); // key: userId, value: { state, timestamp }
 const SESSION_STATE_TTL = 15 * 60 * 1000; // 15 minutes
@@ -4535,34 +4830,6 @@ function setCachedMemory(userId, data) {
 
 function invalidateMemoryCache(userId) {
   memoryCache.delete(userId);
-}
-
-function getMemoryCacheStats() {
-  const now = Date.now();
-  const stats = {
-    totalEntries: memoryCache.size,
-    validEntries: 0,
-    expiredEntries: 0,
-    entries: [],
-  };
-
-  for (const [userId, entry] of memoryCache.entries()) {
-    const isExpired = now - entry.timestamp > MEMORY_CACHE_TTL;
-    if (isExpired) {
-      stats.expiredEntries++;
-    } else {
-      stats.validEntries++;
-    }
-
-    stats.entries.push({
-      userId,
-      age: now - entry.timestamp,
-      memoryCount: entry.data?.totalCount || 0,
-      hasSummary: !!entry.data?.summary,
-    });
-  }
-
-  return stats;
 }
 
 // Smart memory selection for optimal context building
@@ -4876,6 +5143,20 @@ async function saveMemoryCandidates(userId, candidates) {
     let skippedCount = 0;
     const errors = [];
 
+    // Preload existing user memories for duplicate checking and cooldown
+    let existingMemories = [];
+    try {
+      const { data: existing } = await supabase
+        .from("user_memories")
+        .select("memory_type, key, value, updated_at")
+        .eq("user_id", userId)
+        .or("expires_at.is.null,expires_at.gt.now()");
+      existingMemories = Array.isArray(existing) ? existing : [];
+    } catch (e) {}
+
+    const COOLDOWN_DAYS = 30;
+    const cooldownMs = COOLDOWN_DAYS * 24 * 60 * 60 * 1000;
+
     for (const candidate of candidates) {
       // Map memory types to database format (support both old and new categories)
       const memoryTypeMap = {
@@ -4905,6 +5186,21 @@ async function saveMemoryCandidates(userId, candidates) {
         continue;
       }
 
+      // Skip duplicate (same type+key+value) and enforce cooldown for overwrites
+      const existing = existingMemories.find(
+        (m) => m.memory_type === memoryType && m.key === candidate.key
+      );
+      if (existing) {
+        const sameValue = String(existing.value) === String(redactedValue);
+        const recent =
+          existing.updated_at &&
+          Date.now() - new Date(existing.updated_at).getTime() < cooldownMs;
+        if (sameValue || recent) {
+          skippedCount++;
+          continue;
+        }
+      }
+
       // Upsert memory
       const memoryData = {
         user_id: userId,
@@ -4921,11 +5217,7 @@ async function saveMemoryCandidates(userId, candidates) {
           .upsert(memoryData, {
             onConflict: "user_id,memory_type,key",
           });
-
-        if (error) {
-          throw error;
-        }
-
+        if (error) throw error;
         savedCount++;
         console.log(`🧠 [FINNY] Saved memory: ${memoryType}:${candidate.key}`);
       } catch (supabaseError) {
@@ -5039,7 +5331,7 @@ async function updateMemorySummary(userId) {
 
 async function generateMemorySummary(memories, userId) {
   if (!memories || memories.length === 0) {
-    return "I haven't learned much about you yet. Keep chatting with me so I can better understand your financial situation and goals!";
+    return "I haven't learned much about you yet. Keep chatting so I can better understand your finances and goals.";
   }
 
   // Get the most recent summary to avoid repeating information
@@ -5085,7 +5377,7 @@ async function generateMemorySummary(memories, userId) {
       (pref) => !previousSummary.toLowerCase().includes(pref.toLowerCase())
     );
     if (newPreferences.length > 0) {
-      newInfo.push(`New preferences: ${newPreferences.join(", ")}`);
+      newInfo.push(`Preferences: ${newPreferences.slice(0, 3).join(", ")}`);
     }
   }
 
@@ -5165,7 +5457,7 @@ async function generateMemorySummary(memories, userId) {
       }
 
       if (profileParts.length > 0) {
-        newInfo.push(`New profile info: ${profileParts.join(", ")}`);
+        newInfo.push(`Profile: ${profileParts.join(", ")}`);
       }
     }
   }
@@ -5178,7 +5470,7 @@ async function generateMemorySummary(memories, userId) {
         !previousSummary.toLowerCase().includes(context.toLowerCase())
     );
     if (newContext.length > 0) {
-      newInfo.push(`New context: ${newContext.join(", ")}`);
+      newInfo.push(`Context: ${newContext.slice(0, 2).join(", ")}`);
     }
   }
 
@@ -5252,5 +5544,473 @@ async function generateMemorySummary(memories, userId) {
     }
   }
 
-  return newInfo.join(". ") + ".";
+  const sentence = newInfo.join(". ") + ".";
+  return sentence.length > 220 ? sentence.slice(0, 217) + "..." : sentence;
 }
+
+const KEY_SYNONYMS = {
+  // === PROFILE TRAITS ===
+  "profile_trait.age": {
+    synonyms: ["age", "years old", "turning", "birthday", "young", "old"],
+    examples: ["I'm 25", "turning 30", "young professional", "fresh grad"],
+  },
+
+  "profile_trait.location": {
+    synonyms: [
+      "live in",
+      "from",
+      "based in",
+      "located",
+      "city",
+      "state",
+      "moved to",
+    ],
+    examples: [
+      "I live in Austin",
+      "from California",
+      "based in NYC",
+      "moved to Seattle",
+    ],
+  },
+
+  "profile_trait.occupation": {
+    synonyms: [
+      "work as",
+      "job",
+      "career",
+      "profession",
+      "engineer",
+      "teacher",
+      "nurse",
+      "manager",
+      "developer",
+      "consultant",
+      "freelancer",
+      "entrepreneur",
+      "ai engineer",
+      "data scientist",
+      "machine learning",
+      "tech lead",
+    ],
+    examples: [
+      "I'm a software engineer",
+      "work in marketing",
+      "freelance designer",
+      "startup founder",
+      "ai engineer",
+      "data scientist",
+    ],
+  },
+
+  "profile_trait.education": {
+    synonyms: [
+      "graduated",
+      "degree",
+      "college",
+      "university",
+      "masters",
+      "phd",
+      "studying",
+      "student",
+      "dropout",
+    ],
+    examples: [
+      "graduated from UCLA",
+      "have a business degree",
+      "studying computer science",
+      "college dropout",
+    ],
+  },
+
+  "profile_trait.family.marital_status": {
+    synonyms: [
+      "married",
+      "wife",
+      "husband",
+      "spouse",
+      "partner",
+      "single",
+      "divorced",
+      "widowed",
+      "engaged",
+      "dating",
+      "relationship",
+    ],
+    examples: [
+      "my wife",
+      "husband and I",
+      "married to",
+      "single",
+      "in a relationship",
+      "my partner",
+    ],
+  },
+
+  "profile_trait.family.relationship_status": {
+    synonyms: [
+      "girlfriend",
+      "boyfriend",
+      "dating",
+      "seeing someone",
+      "exclusive",
+      "casual",
+      "long distance",
+      "living together",
+    ],
+    examples: [
+      "my girlfriend",
+      "dating someone",
+      "seeing this person",
+      "long distance relationship",
+    ],
+  },
+
+  "profile_trait.family.children": {
+    synonyms: [
+      "kids",
+      "children",
+      "baby",
+      "babies",
+      "toddler",
+      "teenager",
+      "son",
+      "daughter",
+      "parent",
+      "mom",
+      "dad",
+    ],
+    examples: [
+      "have kids",
+      "my son",
+      "parent of two",
+      "expecting a baby",
+      "new mom",
+    ],
+  },
+
+  "profile_trait.family.living_situation": {
+    synonyms: [
+      "live with",
+      "roommate",
+      "roommates",
+      "parents",
+      "alone",
+      "by myself",
+      "with friends",
+      "renting",
+      "owning",
+      "apartment",
+      "house",
+    ],
+    examples: [
+      "live with my parents",
+      "have roommates",
+      "live alone",
+      "renting an apartment",
+      "own my house",
+    ],
+  },
+
+  // === CONSTRAINTS ===
+  "constraint.income.household_type": {
+    synonyms: [
+      "single income",
+      "dual income",
+      "unemployed",
+      "jobless",
+      "between jobs",
+      "part time",
+      "full time",
+      "freelance",
+      "gig work",
+    ],
+    examples: [
+      "only I work",
+      "both of us work",
+      "lost my job",
+      "between jobs",
+      "part time job",
+    ],
+  },
+
+  "constraint.income.salary_range": {
+    synonyms: [
+      "make",
+      "earn",
+      "salary",
+      "income",
+      "pay",
+      "wage",
+      "hourly",
+      "annual",
+      "six figures",
+      "minimum wage",
+    ],
+    examples: [
+      "make $50k",
+      "earn six figures",
+      "minimum wage job",
+      "hourly worker",
+      "annual salary",
+    ],
+  },
+
+  "constraint.debt.student_loans": {
+    synonyms: [
+      "student loans",
+      "student debt",
+      "college debt",
+      "education loans",
+      "federal loans",
+      "private loans",
+      "paying off loans",
+    ],
+    examples: [
+      "have student loans",
+      "student debt",
+      "paying off college",
+      "federal student loans",
+    ],
+  },
+
+  "constraint.debt.credit_card": {
+    synonyms: [
+      "credit card debt",
+      "credit cards",
+      "high interest",
+      "paying minimum",
+      "credit score",
+      "debt",
+    ],
+    examples: [
+      "credit card debt",
+      "high interest debt",
+      "paying minimums",
+      "bad credit",
+    ],
+  },
+
+  "constraint.debt.other": {
+    synonyms: [
+      "car loan",
+      "auto loan",
+      "mortgage",
+      "personal loan",
+      "medical debt",
+      "hospital bills",
+    ],
+    examples: ["car payment", "mortgage", "medical bills", "personal loan"],
+  },
+
+  "constraint.family_obligation.parents_support": {
+    synonyms: [
+      "support my parents",
+      "help my parents",
+      "parents need help",
+      "taking care of parents",
+      "family support",
+      "send money home",
+    ],
+    examples: [
+      "helping my parents",
+      "supporting my family",
+      "send money home",
+      "taking care of parents",
+    ],
+  },
+
+  "constraint.family_obligation.siblings": {
+    synonyms: [
+      "help my siblings",
+      "support my brother",
+      "sister needs help",
+      "family member",
+      "relative",
+    ],
+    examples: [
+      "helping my brother",
+      "supporting my sister",
+      "family member needs help",
+    ],
+  },
+
+  "constraint.health.medical": {
+    synonyms: [
+      "medical bills",
+      "health insurance",
+      "doctor visits",
+      "prescription",
+      "therapy",
+      "mental health",
+    ],
+    examples: [
+      "medical expenses",
+      "health insurance costs",
+      "therapy bills",
+      "prescription costs",
+    ],
+  },
+
+  // === GOALS ===
+  // Goal synonyms moved to goals.js
+
+  // === PREFERENCES ===
+  "preference.risk_tolerance": {
+    synonyms: [
+      "risk",
+      "conservative",
+      "aggressive",
+      "safe",
+      "risky",
+      "cautious",
+      "bold",
+    ],
+    examples: [
+      "I'm conservative with money",
+      "take risks",
+      "play it safe",
+      "aggressive investor",
+    ],
+  },
+
+  "preference.spending.lifestyle": {
+    synonyms: [
+      "frugal",
+      "cheap",
+      "splurge",
+      "treat myself",
+      "budget",
+      "save money",
+      "spend money",
+    ],
+    examples: [
+      "I'm frugal",
+      "like to splurge",
+      "budget everything",
+      "treat myself",
+    ],
+  },
+
+  "preference.investment.style": {
+    synonyms: [
+      "hands on",
+      "hands off",
+      "set it and forget it",
+      "active",
+      "passive",
+      "diy",
+      "robo advisor",
+    ],
+    examples: [
+      "hands on investor",
+      "set and forget",
+      "diy investing",
+      "robo advisor",
+    ],
+  },
+
+  // === CONTEXT SIGNALS ===
+  "context_signal.life_event.job_change": {
+    synonyms: [
+      "new job",
+      "started",
+      "got hired",
+      "first day",
+      "promotion",
+      "laid off",
+      "fired",
+    ],
+    examples: [
+      "started new job",
+      "got promoted",
+      "laid off",
+      "first day at work",
+    ],
+  },
+
+  "context_signal.life_event.moving": {
+    synonyms: [
+      "moved",
+      "relocated",
+      "new apartment",
+      "new house",
+      "packing",
+      "unpacking",
+    ],
+    examples: ["just moved", "new apartment", "relocated to", "packing up"],
+  },
+
+  "context_signal.life_event.relationship": {
+    synonyms: [
+      "broke up",
+      "got together",
+      "moved in",
+      "engaged",
+      "married",
+      "divorced",
+    ],
+    examples: [
+      "broke up with",
+      "started dating",
+      "moved in together",
+      "got engaged",
+    ],
+  },
+
+  "context_signal.life_event.family": {
+    synonyms: [
+      "pregnant",
+      "had a baby",
+      "family member died",
+      "parents divorced",
+      "sibling got married",
+    ],
+    examples: [
+      "expecting a baby",
+      "had a baby",
+      "family member passed",
+      "parents divorced",
+    ],
+  },
+
+  "context_signal.financial_stress": {
+    synonyms: [
+      "stressed",
+      "worried",
+      "anxious",
+      "overwhelmed",
+      "drowning",
+      "struggling",
+      "can't afford",
+    ],
+    examples: [
+      "stressed about money",
+      "worried about bills",
+      "can't afford",
+      "struggling financially",
+    ],
+  },
+
+  "context_signal.financial_win": {
+    synonyms: [
+      "got a raise",
+      "bonus",
+      "tax refund",
+      "sold something",
+      "inheritance",
+      "lottery",
+    ],
+    examples: ["got a raise", "tax refund", "sold my car", "inherited money"],
+  },
+};
+
+// Named exports for testing
+export {
+  quickExtract,
+  shouldRunMemoryExtraction,
+  validateMemoriesWithSmallModel,
+  selectRelevantMemories,
+  loadUserMemory,
+  saveMemoryCandidates,
+  generateMemorySummary,
+};
