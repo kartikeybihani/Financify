@@ -2755,7 +2755,7 @@ async function handleClassify(message, context) {
         body: JSON.stringify({
           model: OPENROUTER_MODEL,
           temperature: 0.1,
-          max_tokens: 200, // Limit response size for faster processing
+          max_tokens: 300, // Allow slightly longer responses for stability
           top_p: 0.9, // Add top_p for better stability
           messages: [
             {

@@ -424,7 +424,7 @@ async function handleClassify(message, context) {
         body: JSON.stringify({
           model: OPENROUTER_MODEL,
           temperature: 0.1,
-          max_tokens: 200,
+          max_tokens: 300,
           top_p: 0.9,
           messages: [
             {
