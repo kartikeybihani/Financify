@@ -751,17 +751,20 @@ async function validateMemoriesWithSmallModel(
 
   try {
     const prompt = [
-      "You validate user memories. Return JSON only.",
-      "Only extract durable, advisor-grade facts with evidence from the message.",
-      "Include an evidence array of the exact spans that justify each memory.",
-      "Reject generic interests/hobbies unless tied to financial impact.",
-      "Schema: {memories:[{type,key,value,confidence,evidence:[], grounded:boolean}]}",
-      "Grounded means the fact is supported by concrete signals (amount/date/age/state/role).",
-      // Provide synonyms map to improve key normalization/mapping
-      `Synonyms map: ${JSON.stringify(KEY_SYNONYMS, null, 2)}`,
-      `Allowed keys: ${JSON.stringify(Array.from(allowed))}`,
+      // Compact, token-efficient rules
+      "Return ONLY JSON: {memories:[{type,key,value,confidence,evidence:[],grounded:true|false}]}.",
+      "Extract durable facts useful to a financial advisor.",
+      "Grounded = explicit span in text for age/date/amount/state/role/education.",
+      "Normalize values (e.g., age '20' not '20 years old').",
+      "Rules:",
+      "- 'I'm 20' / 'I'm a 20 year old' / '20 yo' → profile_trait.age='20' (evidence span).",
+      "- 'studying X' / 'major in X' → profile_trait.education='studying X' (span).",
+      "- If studying implies student, add profile_trait.occupation='student' (evidence span contains 'studying'/'student').",
+      "- 'I work as' / 'I'm a <profession>' → profile_trait.occupation='<profession>'.",
+      "Confidence ∈ [0.8,1.0] only when explicit. If unsure, omit.",
+      "No hobbies unless financially relevant.",
+      'Example→ Input: I\'m a 20 year old studying cs and finance. Output: {"memories":[{"type":"profile_trait","key":"profile_trait.age","value":"20","confidence":0.95,"evidence":["20 year old"],"grounded":true},{"type":"profile_trait","key":"profile_trait.education","value":"studying cs and finance","confidence":0.9,"evidence":["studying cs and finance"],"grounded":true},{"type":"profile_trait","key":"profile_trait.occupation","value":"student","confidence":0.85,"evidence":["studying"],"grounded":true}]}',
       `Message: ${message}`,
-      `Hints: ${JSON.stringify(hints)}`,
     ].join("\n");
 
     const r = await fetch("https://openrouter.ai/api/v1/chat/completions", {
@@ -772,8 +775,8 @@ async function validateMemoriesWithSmallModel(
       },
       body: JSON.stringify({
         model: SMALLER_MODEL,
-        temperature: 0.1,
-        max_tokens: 600,
+        temperature: 0.0,
+        max_tokens: 220,
         response_format: { type: "json_object" },
         messages: [
           { role: "system", content: "Return ONLY valid JSON per schema." },
