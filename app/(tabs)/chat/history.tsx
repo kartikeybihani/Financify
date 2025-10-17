@@ -126,7 +126,7 @@ const styles = {
     marginBottom: responsivePadding(6),
   },
   sessionTitle: {
-    fontSize: responsiveFontSize(15),
+    fontSize: responsiveFontSize(14),
     fontWeight: "600" as const,
     color: "#fff",
     flex: 1,
@@ -154,6 +154,7 @@ const styles = {
     fontSize: responsiveFontSize(13),
     color: "rgba(255, 255, 255, 0.7)",
     lineHeight: responsiveFontSize(18),
+    paddingRight: responsivePadding(45),
   },
   loadingContainer: {
     flex: 1,
@@ -235,7 +236,7 @@ const HistoryCard: React.FC<HistoryCardProps> = ({ session, onPress }) => {
   });
 
   const previewText = lastFinnyMessage
-    ? `Finny: ${lastFinnyMessage.substring(0, 60)}${
+    ? `${lastFinnyMessage.substring(0, 60)}${
         lastFinnyMessage.length > 60 ? "..." : ""
       }`
     : session.first_message;
@@ -254,7 +255,7 @@ const HistoryCard: React.FC<HistoryCardProps> = ({ session, onPress }) => {
           {formatRelativeTime(session.created_at)}
         </Text>
       </View>
-      <Text style={styles.sessionPreview} numberOfLines={2}>
+      <Text style={styles.sessionPreview} numberOfLines={3}>
         {previewText}
       </Text>
     </TouchableOpacity>
