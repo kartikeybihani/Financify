@@ -1067,7 +1067,8 @@ export default async function handler(req, res) {
           message,
           safeContext,
           "ask_personalized",
-          classification
+          classification,
+          conversationContext
         );
         break;
       case "off_topic":
@@ -1196,7 +1197,8 @@ async function handleAsk(
   message,
   context,
   intent = "ask_personalized",
-  classificationResult = null
+  classificationResult = null,
+  conversationContext = null
 ) {
   console.log("🔍 [FINNY] Starting ask handler for message:", message);
   const startTime = Date.now();
@@ -1349,7 +1351,7 @@ async function handleAsk(
             console.log("🔍 [STOCK CONTEXT] Detecting topic for stock query");
             const topicDetection = detectConversationTopic(
               message,
-              conversationContext // Use the loaded context (null for first message)
+              context?.conversationContext // Use the context from the safe context object
             );
             const contextMetadata = {
               active_topic: topicDetection?.topic || "investment_analysis",
