@@ -1060,7 +1060,11 @@ export default async function handler(req, res) {
 
     switch (action) {
       case "classify":
-        response = await handleClassify(message, safeContext);
+        response = await handleClassify(
+          message,
+          safeContext,
+          conversationContext
+        );
         break;
       case "ask":
         response = await handleAsk(
@@ -1072,7 +1076,11 @@ export default async function handler(req, res) {
         );
         break;
       case "off_topic":
-        response = await handleOffTopic(message, safeContext);
+        response = await handleOffTopic(
+          message,
+          safeContext,
+          conversationContext
+        );
         break;
       case "goal_conversation": {
         // If there's active goal_flow in session, pass it in context
@@ -2287,12 +2295,14 @@ function detectOffTopic(message) {
 
   // Ambiguous generic noun: if contains "bank" without financial context keywords, treat as off-topic
   if (
-    lower.includes("bank") &&
-    !/account|loan|interest|branch|routing|checking|savings|credit|debit/.test(
-      lower
-    )
+    lower.includes("bank") ||
+    lower.includes("loan") ||
+    (lower.includes("debt") &&
+      !/account|loan|interest|branch|routing|checking|savings|credit|debit/.test(
+        lower
+      ))
   ) {
-    return true;
+    return false;
   }
 
   // Strong off-topic indicators (specific patterns)
@@ -2317,18 +2327,9 @@ function detectOffTopic(message) {
     "what's the weather like",
 
     // Cooking & food
-    "how to cook",
     "recipe for",
     "cooking",
     "baking",
-    "kitchen",
-    "meal prep",
-    "what to eat",
-    "restaurant",
-    "food",
-    "dinner",
-    "lunch",
-    "breakfast",
 
     // Entertainment
     "what movie",
@@ -2343,22 +2344,6 @@ function detectOffTopic(message) {
     "oscar",
     "award",
     "film",
-
-    // Sports
-    "football",
-    "soccer",
-    "basketball",
-    "baseball",
-    "tennis",
-    "golf",
-    "sports",
-    "game",
-    "team",
-    "player",
-    "score",
-    "match",
-    "tournament",
-    "championship",
 
     // General chat
     "hello",
@@ -2404,36 +2389,6 @@ function detectOffTopic(message) {
     "teacher",
     "professor",
     "student",
-
-    // Travel & geography
-    "travel",
-    "vacation",
-    "trip",
-    "hotel",
-    "flight",
-    "airport",
-    "passport",
-    "country",
-    "city",
-    "capital",
-    "geography",
-    "map",
-    "location",
-
-    // Health & medical
-    "doctor",
-    "hospital",
-    "medicine",
-    "sick",
-    "illness",
-    "health",
-    "medical",
-    "pain",
-    "ache",
-    "symptoms",
-    "diagnosis",
-    "treatment",
-    "therapy",
   ];
 
   return offTopicPatterns.some((pattern) => lower.includes(pattern));
@@ -3556,7 +3511,7 @@ function detectGoalIntent(message, conversationContext) {
   return null;
 }
 
-async function handleClassify(message, context) {
+async function handleClassify(message, context, conversationContext = null) {
   console.log(
     "🔍 [FINNY] Starting classification in handleClassify for message:",
     message
@@ -3588,23 +3543,6 @@ async function handleClassify(message, context) {
     return cachedResult;
   }
 
-  // Check for off-topic first (highest priority)
-  const offTopicHeuristic = detectOffTopic(text);
-  if (offTopicHeuristic) {
-    console.log("✅ [FINNY] Heuristic detected off-topic query");
-    const result = {
-      intent: "off_topic",
-      needs_web: false,
-      needs_user_data: false,
-      state: null,
-      entities: [],
-      confidence: 0.9,
-      heuristic: true,
-    };
-    setCachedClassification(text, result);
-    return result;
-  }
-
   // Check for goal intent (before LLM call for efficiency)
   const goalDetection = detectGoalIntent(text, context?.conversation_context);
   if (goalDetection) {
@@ -3623,24 +3561,7 @@ async function handleClassify(message, context) {
     return result;
   }
 
-  // Enhanced heuristic for web search detection
-  const webSearchHeuristic = detectWebSearchNeeded(text);
-  if (webSearchHeuristic) {
-    console.log("✅ [FINNY] Heuristic detected web search needed");
-    const result = {
-      intent: "ask_personalized",
-      needs_web: true,
-      needs_user_data: false,
-      state: null,
-      entities: [],
-      confidence: 0.9,
-      heuristic: true,
-    };
-    setCachedClassification(text, result);
-    return result;
-  }
-
-  // Positive heuristic for common financial concept questions (with combined flags)
+  // Positive heuristic for common financial concept questions (BEFORE off-topic detection)
   const heuristic = financialConceptHeuristic(text);
   if (heuristic) {
     // If both personal data and web recency patterns, set both flags
@@ -3665,6 +3586,40 @@ async function handleClassify(message, context) {
       })
     );
     return merged;
+  }
+
+  // Enhanced heuristic for web search detection
+  const webSearchHeuristic = detectWebSearchNeeded(text);
+  if (webSearchHeuristic) {
+    console.log("✅ [FINNY] Heuristic detected web search needed");
+    const result = {
+      intent: "ask_personalized",
+      needs_web: true,
+      needs_user_data: false,
+      state: null,
+      entities: [],
+      confidence: 0.9,
+      heuristic: true,
+    };
+    setCachedClassification(text, result);
+    return result;
+  }
+
+  // Check for off-topic LAST (after financial heuristics)
+  const offTopicHeuristic = detectOffTopic(text);
+  if (offTopicHeuristic) {
+    console.log("✅ [FINNY] Heuristic detected off-topic query");
+    const result = {
+      intent: "off_topic",
+      needs_web: false,
+      needs_user_data: false,
+      state: null,
+      entities: [],
+      confidence: 0.9,
+      heuristic: true,
+    };
+    setCachedClassification(text, result);
+    return result;
   }
 
   try {
@@ -3933,9 +3888,32 @@ async function handleClassify(message, context) {
   }
 }
 
-async function handleOffTopic(message, context) {
+async function handleOffTopic(message, context, conversationContext = null) {
   console.log("🚫 [FINNY] Handling off-topic query:", message);
   const startTime = Date.now();
+
+  // 🔍 CONVERSATION CONTEXT AWARENESS
+  // If we have conversation context, this might not actually be off-topic
+  if (conversationContext?.active_topic || conversationContext?.last_entity) {
+    console.log(
+      "🔍 [OFF_TOPIC] Conversation context detected, this might be a continuation:"
+    );
+    console.log("  - Active topic:", conversationContext.active_topic);
+    console.log("  - Last entity:", conversationContext.last_entity);
+
+    // If we have an active financial conversation, redirect to ask_personalized
+    // to maintain conversation flow
+    console.log(
+      "🔍 [OFF_TOPIC] Redirecting to ask_personalized to maintain conversation flow"
+    );
+    return await handleAsk(
+      message,
+      context,
+      "ask_personalized",
+      null,
+      conversationContext
+    );
+  }
 
   const category = context?.category || "general";
   const userProfile = context?.profile || {};
@@ -4090,7 +4068,24 @@ async function handleOffTopic(message, context) {
                 netWorthData
                   ? `\n\nUser's financial situation: Net worth ${netWorthData.formatted.net_worth} (${netWorthData.formatted.liquid_assets} liquid, ${netWorthData.formatted.investments_total} invested, ${netWorthData.formatted.total_liabilities} liabilities)`
                   : ""
-              }\n\nUse the user's memory context and financial situation to make the redirection more personal and relevant to their situation.`,
+              }${
+                conversationContext?.active_topic
+                  ? `\n\n--- Conversation Context ---\nActive topic: ${
+                      conversationContext.active_topic
+                    }${
+                      conversationContext.last_entity &&
+                      Object.keys(conversationContext.last_entity).length > 0
+                        ? `\nLast entity: ${JSON.stringify(
+                            conversationContext.last_entity
+                          )}`
+                        : ""
+                    }${
+                      conversationContext.pending_action
+                        ? `\nPending action: ${conversationContext.pending_action}`
+                        : ""
+                    }`
+                  : ""
+              }\n\nUse the user's memory context, financial situation, and conversation context to make the redirection more personal and relevant to their situation.`,
             },
           ],
         }),
