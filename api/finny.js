@@ -1959,10 +1959,27 @@ async function handleAsk(
           /\bshould.*pay.*debt first/i,
           /\btoo expensive/i,
           /\bdon[\u2019\']?t have enough/i,
+          /\bwouldn[\u2019\']?t be.*realistic/i,
+          /\blarge shortfall/i,
+          /\bputting.*financial.*health.*at risk/i,
+          /\bnot.*realistic.*purchase/i,
+          /\bwould.*be.*putting.*risk/i,
+          /\bcan[\u2019\']?t.*realistically/i,
+          /\bnot.*financially.*viable/i,
         ];
 
         const seemsUnaffordable = negativeAffordabilityIndicators.some(
           (pattern) => pattern.test(responseText)
+        );
+
+        console.log(
+          `🔍 [FINNY] Affordability check - Response text: "${responseText.substring(
+            0,
+            200
+          )}..."`
+        );
+        console.log(
+          `🔍 [FINNY] Affordability check - Seems unaffordable: ${seemsUnaffordable}`
         );
 
         if (seemsUnaffordable) {
