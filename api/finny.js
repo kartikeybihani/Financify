@@ -1962,17 +1962,19 @@ async function handleAsk(
       );
     }
 
-    // Update conversation context asynchronously
+    // Update conversation context SYNCHRONOUSLY to ensure it's saved before response
     if (context?.chat_id) {
-      setImmediate(() =>
-        updateConversationContext(
-          context.user_id,
-          context.chat_id,
-          message,
-          response.message, // Use updated message with goal offer
-          contextMetadata
-        )
+      console.log(
+        "🔍 [CONTEXT SAVE] Saving context synchronously before response"
       );
+      await updateConversationContext(
+        context.user_id,
+        context.chat_id,
+        message,
+        response.message, // Use updated message with goal offer
+        contextMetadata
+      );
+      console.log("✅ [CONTEXT SAVE] Context saved successfully");
     }
 
     return response;
@@ -3169,16 +3171,35 @@ function detectConversationTopic(message, conversationContext) {
     /\b(robinhood|webull|fidelity|vanguard|schwab)\b/i.test(text) ||
     /\b(should i buy|is.*good|worth.*investing|add.*portfolio)\b/i.test(text)
   ) {
-    const stockMatch = text.match(
+    // Enhanced stock symbol detection - look for ticker symbols (1-5 uppercase letters)
+    const tickerMatch = text.match(/\b([A-Z]{1,5})\b/);
+    const companyMatch = text.match(
       /\b(apple|aapl|tesla|tsla|bitcoin|btc|ethereum|eth|microsoft|msft|google|googl|amazon|amzn|meta|fb|nvidia|nvda)\b/i
     );
+    const stockMatch = tickerMatch || companyMatch;
     const amountMatch = text.match(/\$?([0-9,]+)/);
+
+    console.log("🔍 [SYMBOL DEBUG] Symbol extraction:");
+    console.log("  - Ticker match:", tickerMatch);
+    console.log("  - Company match:", companyMatch);
+    console.log(
+      "  - Final symbol:",
+      stockMatch
+        ? tickerMatch
+          ? tickerMatch[1]
+          : companyMatch[1].toUpperCase()
+        : null
+    );
 
     return {
       topic: "investment_analysis",
       entity: {
         type: "investment",
-        symbol: stockMatch ? stockMatch[1].toUpperCase() : null,
+        symbol: stockMatch
+          ? tickerMatch
+            ? tickerMatch[1]
+            : companyMatch[1].toUpperCase()
+          : null,
         amount: amountMatch
           ? parseFloat(amountMatch[1].replace(/,/g, ""))
           : null,
