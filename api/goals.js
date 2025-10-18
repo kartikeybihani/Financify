@@ -907,7 +907,7 @@ async function handleGoalCreation(extraction, context, message) {
   const goalName = slots.label || "goal";
 
   // Build smart prompt based on what's missing
-  let message = "";
+  let promptMessage = "";
   let needsAmount = missing.includes("target_amount");
   let needsDate = missing.includes("target_date");
   let needsLabel = missing.includes("label");
@@ -916,40 +916,40 @@ async function handleGoalCreation(extraction, context, message) {
   if (missing.length === 1) {
     // Only one thing missing - ask specifically
     if (needsLabel) {
-      message =
+      promptMessage =
         "🎯 What should we call this goal? (e.g., Emergency fund, Dream vacation, New car)";
     } else if (needsAmount) {
-      message = `💰 How much do you want to save for your ${goalName}? (e.g., $5000)`;
+      promptMessage = `💰 How much do you want to save for your ${goalName}? (e.g., $5000)`;
     } else if (needsDate) {
-      message = `⏰ When do you want to reach your ${goalName}? (e.g., by January 2026 or in 2 years)`;
+      promptMessage = `⏰ When do you want to reach your ${goalName}? (e.g., by January 2026 or in 2 years)`;
     } else if (needsCategory) {
-      message =
+      promptMessage =
         "📂 Which category fits best? (emergency_fund, vacation, car, house_down_payment, education, retirement, wedding, debt_payoff, investment, other)";
     }
   } else if (missing.length === 2) {
     // Two things missing - ask for both together
     if (needsAmount && needsDate) {
-      message = `💰⏰ How much do you want to save for your ${goalName} and when do you want to reach it? (e.g., $5000 by summer 2025)`;
+      promptMessage = `💰⏰ How much do you want to save for your ${goalName} and when do you want to reach it? (e.g., $5000 by summer 2025)`;
     } else if (needsLabel && needsAmount) {
-      message =
+      promptMessage =
         "🎯💰 What should we call this goal and how much do you want to save? (e.g., Hawaii vacation for $5000)";
     } else if (needsLabel && needsDate) {
-      message =
+      promptMessage =
         "🎯⏰ What should we call this goal and when do you want to reach it? (e.g., Hawaii vacation by summer 2025)";
     } else if (needsAmount && needsCategory) {
-      message = `💰📂 How much do you want to save for your ${goalName} and what category? (e.g., $5000 for vacation)`;
+      promptMessage = `💰📂 How much do you want to save for your ${goalName} and what category? (e.g., $5000 for vacation)`;
     } else if (needsDate && needsCategory) {
-      message = `⏰📂 When do you want to reach your ${goalName} and what category? (e.g., by summer 2025 for vacation)`;
+      promptMessage = `⏰📂 When do you want to reach your ${goalName} and what category? (e.g., by summer 2025 for vacation)`;
     } else if (needsLabel && needsCategory) {
-      message =
+      promptMessage =
         "🎯📂 What should we call this goal and what category? (e.g., Hawaii vacation)";
     }
   } else if (missing.length >= 3) {
     // Multiple things missing - ask for the most important ones
     if (needsAmount && needsDate) {
-      message = `💰⏰ How much do you want to save for your ${goalName} and when do you want to reach it? (e.g., $5000 by summer 2025)`;
+      promptMessage = `💰⏰ How much do you want to save for your ${goalName} and when do you want to reach it? (e.g., $5000 by summer 2025)`;
     } else {
-      message = `🎯💰⏰ Tell me more about your goal: what should we call it, how much do you want to save, and when? (e.g., Hawaii vacation for $5000 by summer 2025)`;
+      promptMessage = `🎯💰⏰ Tell me more about your goal: what should we call it, how much do you want to save, and when? (e.g., Hawaii vacation for $5000 by summer 2025)`;
     }
   }
 
@@ -978,7 +978,7 @@ async function handleGoalCreation(extraction, context, message) {
   );
 
   return {
-    message: message,
+    message: promptMessage,
     type: "assistant",
     intent: "goal_conversation",
     goal_flow: {
