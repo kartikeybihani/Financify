@@ -986,6 +986,24 @@ export default async function handler(req, res) {
     ? await getConversationContext(finalUserId, chatId)
     : null;
 
+  // 🔍 DEBUG: Log conversation context loading
+  console.log("🔍 [CONTEXT DEBUG] Loading conversation context:");
+  console.log("  - Chat ID:", chatId);
+  console.log("  - User ID:", finalUserId);
+  console.log("  - Context loaded:", conversationContext ? "YES" : "NO");
+  if (conversationContext) {
+    console.log("  - Active topic:", conversationContext.active_topic);
+    console.log(
+      "  - Last entity:",
+      JSON.stringify(conversationContext.last_entity)
+    );
+    console.log("  - Pending action:", conversationContext.pending_action);
+    console.log(
+      "  - Last messages count:",
+      conversationContext.last_messages?.length || 0
+    );
+  }
+
   const sessionState = getSessionState(finalUserId);
   const safeContext = {
     ...(context || {}),
@@ -1777,6 +1795,32 @@ async function handleAsk(
         }),
       }),
     ]);
+
+    // 🔍 DEBUG: Log context extraction after LLM call
+    console.log("🔍 [CONTEXT DEBUG] After LLM call:");
+    console.log("  - Message:", message);
+    console.log("  - Context provided:", contextNote ? "YES" : "NO");
+    if (contextNote) {
+      console.log(
+        "  - Context content:",
+        contextNote.substring(0, 200) + "..."
+      );
+    }
+    console.log(
+      "  - Conversation context loaded:",
+      context?.conversationContext ? "YES" : "NO"
+    );
+    if (context?.conversationContext) {
+      console.log(
+        "  - Active topic:",
+        context.conversationContext.active_topic
+      );
+      console.log("  - Last entity:", context.conversationContext.last_entity);
+      console.log(
+        "  - Pending action:",
+        context.conversationContext.pending_action
+      );
+    }
 
     // Hybrid memory extraction: pre-gate + validator + deterministic fallback
     if (shouldRunMemoryExtraction(message, intent)) {
@@ -3099,6 +3143,21 @@ function financialConceptHeuristic(raw) {
 function detectConversationTopic(message, conversationContext) {
   const text = message.toLowerCase();
 
+  // 🔍 DEBUG: Log topic detection
+  console.log("🔍 [TOPIC DEBUG] Detecting conversation topic:");
+  console.log("  - Message:", message);
+  console.log(
+    "  - Conversation context:",
+    conversationContext ? "EXISTS" : "NULL"
+  );
+  if (conversationContext) {
+    console.log("  - Active topic:", conversationContext.active_topic);
+    console.log(
+      "  - Last entity:",
+      JSON.stringify(conversationContext.last_entity)
+    );
+  }
+
   // 1. INVESTMENT & STOCKS (Gen Z loves crypto and stocks)
   if (
     /\b(stock|stocks|invest|investment|portfolio|trading|buy|sell)\b/i.test(
@@ -3280,7 +3339,19 @@ function detectConversationTopic(message, conversationContext) {
       /\b(what about|tell me more|explain)\b/i,
     ];
 
-    if (continuationPatterns.some((pattern) => pattern.test(text))) {
+    const hasContinuationPattern = continuationPatterns.some((pattern) =>
+      pattern.test(text)
+    );
+    console.log("🔍 [CONTINUATION DEBUG] Checking continuation patterns:");
+    console.log("  - Has continuation pattern:", hasContinuationPattern);
+    console.log("  - Active topic:", conversationContext.active_topic);
+    console.log(
+      "  - Last entity:",
+      JSON.stringify(conversationContext.last_entity)
+    );
+
+    if (hasContinuationPattern) {
+      console.log("✅ [CONTINUATION] Pattern detected, inheriting context");
       return {
         topic: conversationContext.active_topic,
         entity: conversationContext.last_entity || {},
@@ -4627,6 +4698,7 @@ function formatPlannedStockResponse(exec) {
         : surprise && parseFloat(surprise) < 0
         ? "📉"
         : "📊";
+    lines.push("\n");
     lines.push(
       `Recent earnings: EPS ${eps != null ? eps : "n/a"}${
         surprise ? ` (surprise ${surprise}) ${surpriseEmoji}` : ""
@@ -5353,10 +5425,26 @@ async function updateConversationContext(
 ) {
   if (!userId || !chatId) return;
 
+  // 🔍 DEBUG: Log context update
+  console.log("🔍 [CONTEXT UPDATE DEBUG] Updating conversation context:");
+  console.log("  - User ID:", userId);
+  console.log("  - Chat ID:", chatId);
+  console.log("  - Message:", userMessage);
+  console.log("  - Metadata:", JSON.stringify(metadata));
+
   try {
     // Load existing context
     const existingContext =
       (await getConversationContext(userId, chatId)) || {};
+
+    console.log("  - Existing context loaded:", existingContext ? "YES" : "NO");
+    if (existingContext) {
+      console.log("  - Existing active topic:", existingContext.active_topic);
+      console.log(
+        "  - Existing last entity:",
+        JSON.stringify(existingContext.last_entity)
+      );
+    }
 
     // Add new messages (keep last 5 exchanges = 10 messages)
     const messages = existingContext.last_messages || [];
@@ -5383,7 +5471,20 @@ async function updateConversationContext(
       last_entity: metadata.last_entity || existingContext.last_entity || {},
     };
 
+    console.log("  - Final updated context:");
+    console.log("    - Active topic:", updatedContext.active_topic);
+    console.log(
+      "    - Last entity:",
+      JSON.stringify(updatedContext.last_entity)
+    );
+    console.log("    - Pending action:", updatedContext.pending_action);
+    console.log(
+      "    - Messages count:",
+      updatedContext.last_messages?.length || 0
+    );
+
     await saveConversationContext(userId, chatId, updatedContext);
+    console.log("✅ [CONTEXT UPDATE] Context saved successfully");
   } catch (e) {
     console.error("❌ [CONVERSATION] Error updating context:", e);
   }
