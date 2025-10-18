@@ -982,14 +982,35 @@ export default async function handler(req, res) {
   const chatId = req.body.chat_id || context?.chat_id; // Get chat_id from request
 
   // Load conversation context from Supabase (if chat_id provided)
-  const conversationContext = chatId
-    ? await getConversationContext(finalUserId, chatId)
-    : null;
+  // Skip context loading for first message in chat session
+  let conversationContext = null;
+  let isFirstMessage = false;
+
+  if (chatId) {
+    // Check if this is the first message by looking for existing context
+    const existingContext = await getConversationContext(finalUserId, chatId);
+    if (
+      !existingContext ||
+      !existingContext.last_messages ||
+      existingContext.last_messages.length === 0
+    ) {
+      isFirstMessage = true;
+      console.log(
+        "🔍 [CONTEXT DEBUG] First message in chat session - skipping context loading"
+      );
+    } else {
+      conversationContext = existingContext;
+      console.log(
+        "🔍 [CONTEXT DEBUG] Continuing conversation - loading context"
+      );
+    }
+  }
 
   // 🔍 DEBUG: Log conversation context loading
   console.log("🔍 [CONTEXT DEBUG] Loading conversation context:");
   console.log("  - Chat ID:", chatId);
   console.log("  - User ID:", finalUserId);
+  console.log("  - Is first message:", isFirstMessage);
   console.log("  - Context loaded:", conversationContext ? "YES" : "NO");
   if (conversationContext) {
     console.log("  - Active topic:", conversationContext.active_topic);
@@ -1319,6 +1340,50 @@ async function handleAsk(
                 },
               })
             );
+
+            // 🔍 DEBUG: Save conversation context for stock queries
+            console.log("🔍 [STOCK CONTEXT] Saving context for stock query");
+
+            // Extract topic and entity for stock queries
+            console.log("🔍 [STOCK CONTEXT] Detecting topic for stock query");
+            const topicDetection = detectConversationTopic(
+              message,
+              conversationContext // Use the loaded context (null for first message)
+            );
+            const contextMetadata = {
+              active_topic: topicDetection?.topic || "investment_analysis",
+              last_entity: topicDetection?.entity || {
+                type: "investment",
+                symbol: stockData.ticker,
+              },
+              pending_action: topicDetection?.pending_action || null,
+            };
+
+            console.log(
+              "🔍 [STOCK CONTEXT] Topic detection result:",
+              topicDetection
+            );
+            console.log(
+              "🔍 [STOCK CONTEXT] Stock data ticker:",
+              stockData.ticker
+            );
+            console.log(
+              "🔍 [STOCK CONTEXT] Context metadata:",
+              contextMetadata
+            );
+
+            // Save conversation context synchronously
+            if (context?.chat_id) {
+              console.log("🔍 [STOCK CONTEXT] Saving context synchronously");
+              await updateConversationContext(
+                context.user_id,
+                context.chat_id,
+                message,
+                response.message,
+                contextMetadata
+              );
+              console.log("✅ [STOCK CONTEXT] Context saved successfully");
+            }
 
             return response;
           }
@@ -1945,7 +2010,7 @@ async function handleAsk(
     // Detect conversation topic and extract relevant entities
     const topicDetection = detectConversationTopic(
       message,
-      context?.conversation_context
+      conversationContext // Use the loaded context (null for first message)
     );
     const contextMetadata = {
       active_topic: topicDetection.topic,
