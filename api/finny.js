@@ -3299,27 +3299,6 @@ function detectConversationTopic(message, conversationContext) {
   };
 }
 
-function detectGoalIntent(message, conversationContext) {
-  const lower = message.toLowerCase();
-  const amountMatch = text.match(/\$?([0-9,]+)/);
-  const cardMatch = text.match(/\b(credit card|card|loan)\b/i);
-
-  return {
-    topic: "debt_management",
-    entity: {
-      type: "debt",
-      amount: amountMatch ? parseFloat(amountMatch[1].replace(/,/g, "")) : null,
-      debt_type: cardMatch ? cardMatch[1] : "general",
-      action: /\b(should i pay|pay.*down)\b/i.test(text)
-        ? "payment_advice"
-        : null,
-    },
-    pending_action: /\b(should i pay|pay.*down)\b/i.test(text)
-      ? "debt_advice"
-      : null,
-  };
-}
-
 async function handleClassify(message, context) {
   console.log(
     "🔍 [FINNY] Starting classification in handleClassify for message:",
