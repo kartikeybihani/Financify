@@ -8,6 +8,7 @@ import {
   UIManager,
   Animated,
   Easing,
+  TouchableOpacity,
   Dimensions,
   Linking,
 } from "react-native";
@@ -150,6 +151,11 @@ interface ChatMessageProps {
       action: string;
       style?: "primary" | "secondary";
     }>;
+    goalOffer?: {
+      item: string;
+      amount: number | null;
+      showButton: boolean;
+    };
   };
   showSender?: boolean;
   onAction?: (action: string) => void;
@@ -374,6 +380,38 @@ export const ChatMessageComponent = ({
             </LinearGradient>
           </View>
         </View>
+
+        {/* Goal offer button */}
+        {message.goalOffer && message.goalOffer.showButton && (
+          <View
+            style={{
+              marginLeft: 12,
+              marginTop: 8,
+            }}
+          >
+            <TouchableOpacity
+              onPress={() => onAction?.("create_goal")}
+              style={{
+                backgroundColor: "#4A90E2",
+                paddingHorizontal: 16,
+                paddingVertical: 12,
+                borderRadius: 20,
+                alignSelf: "flex-start",
+              }}
+            >
+              <Text
+                style={{
+                  color: "white",
+                  fontWeight: "600",
+                  fontSize: 14,
+                }}
+              >
+                wanna create a new goal?
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
         {/* Action buttons below the bubble */}
         <View
           style={{

@@ -2013,6 +2013,13 @@ async function handleAsk(
             `💡 [FINNY] Adding goal offer for unaffordable item: ${contextMetadata.last_entity.value}`
           );
           response.message += `\n\n💡 **Want me to help you save for this?** I can create a savings goal to track your progress toward ${contextMetadata.last_entity.value}. Just say "yes" or "create a goal" and I'll set it up!`;
+
+          // Add goal offer metadata for frontend button
+          response.goal_offer = {
+            item: contextMetadata.last_entity.value,
+            amount: contextMetadata.last_entity.amount,
+            show_button: true,
+          };
         }
       }
     }

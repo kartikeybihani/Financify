@@ -453,7 +453,8 @@ export const useChat = () => {
         console.log("🔍 [FRONTEND] Ask response details:", {
           message: data.message,
           hasGoalOffer: data.message?.includes("💡") || data.message?.includes("Want me to help you save"),
-          messageLength: data.message?.length || 0
+          messageLength: data.message?.length || 0,
+          goalOffer: data.goal_offer
         });
       }
       
@@ -509,7 +510,24 @@ export const useChat = () => {
         console.log(`📥 Total response time: ${totalResponseDuration}ms (${(totalResponseDuration / 1000).toFixed(2)}s) at ${ptTime} PT`);
       }
       
-      await pushChatWithDelay("finny", message);
+      // Check if this response includes a goal offer
+      if (data.goal_offer && data.goal_offer.show_button) {
+        // Create message with goal offer data
+        const goalOfferMessage: ChatMessage = {
+          id: `finny-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          sender: "finny",
+          text: message,
+          timestamp: Date.now(),
+          goalOffer: {
+            item: data.goal_offer.item,
+            amount: data.goal_offer.amount,
+            showButton: true
+          }
+        };
+        setChatMessages((prev) => [...prev, goalOfferMessage]);
+      } else {
+        await pushChatWithDelay("finny", message);
+      }
     } catch (error) {
       logger.error("AI error:", error);
       setProgressStatus(""); // Clear progress status
