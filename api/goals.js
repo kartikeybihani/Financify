@@ -735,15 +735,30 @@ async function handleGoalCreation(extraction, context, message) {
   const priorFlow = context?.goal_flow || {};
   const priorSlots = priorFlow.slots || {};
 
-  // Merge extracted data with prior slots
+  // Get data from conversation context if available (e.g., from affordability check)
+  const conversationEntity = context?.conversation_context?.last_entity;
+  const contextLabel = conversationEntity?.value || null;
+  const contextAmount = conversationEntity?.amount || null;
+
+  // Merge extracted data with prior slots and conversation context
   const slots = {
-    label: priorSlots.label || extraction.extracted.label || null,
+    label:
+      priorSlots.label || extraction.extracted.label || contextLabel || null,
     target_amount:
-      priorSlots.target_amount || extraction.extracted.target_amount || null,
+      priorSlots.target_amount ||
+      extraction.extracted.target_amount ||
+      contextAmount ||
+      null,
     target_date:
       priorSlots.target_date || extraction.extracted.target_date || null,
     category: priorSlots.category || extraction.extracted.category || null,
   };
+
+  console.log(`🎯 [GOAL] Creating goal with slots:`, {
+    label: slots.label,
+    amount: slots.target_amount,
+    from_context: contextLabel || contextAmount ? true : false,
+  });
 
   // Check what's missing
   const missing = [];

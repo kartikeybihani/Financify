@@ -48,7 +48,17 @@
   - Tightened goal classification patterns (no more false positives)
   - Goal inquiries now correctly route to ask_personalized
   - "Can I afford X?" → "Yes" flow now works correctly
-  - See: CONVERSATION_CONTEXT_IMPLEMENTATION.md and QUICK_START_GUIDE.md
+  - See: CONVERSATION_CONTEXT_IMPLEMENTATION.md and GOAL_CONTEXT_FIXES.md
+
+- ✅ FIXED: Affordability query → Goal creation flow
+  - Detects affordability queries ("Can I afford X?")
+  - Extracts item name and amount automatically
+  - Saves pending_action and last_entity to context
+  - Adds explicit goal offer to response when unaffordable
+  - Supports vague references like "add that goal", "create that", "set it up"
+  - Pre-fills goal creation with context (item + amount)
+  - Works even when LLM classification fails (fallback with context)
+  - See: GOAL_CONTEXT_FIXES.md for complete details
 
 ### SPENDING
 - TBD

@@ -1917,6 +1917,47 @@ async function handleAsk(
     // Log conversation asynchronously to avoid adding latency
     setImmediate(() => logConversation(conversationData));
 
+    // Detect if this is an affordability query that should offer goal creation
+    const isAffordabilityQuery =
+      /\bcan\s+i\s+afford/i.test(message) ||
+      /\bshould\s+i\s+buy/i.test(message) ||
+      /\bis\s+it\s+affordable/i.test(message);
+
+    const contextMetadata = {};
+
+    // If affordability query, extract item and amount for potential goal creation
+    if (isAffordabilityQuery) {
+      const amountMatch = message.match(/\$\s*([0-9,]+)/);
+      const itemMatch = message.match(
+        /\b(a|an|the)\s+(?:\$\s*[0-9,]+\s+)?([A-Za-z0-9\s]+?)(?:\?|$|\s+for|\s+at)/i
+      );
+
+      if (amountMatch || itemMatch) {
+        contextMetadata.pending_action = "goal_creation_offer";
+        contextMetadata.last_entity = {
+          type: "item",
+          value: itemMatch ? itemMatch[2].trim() : "purchase",
+          amount: amountMatch
+            ? parseFloat(amountMatch[1].replace(/,/g, ""))
+            : null,
+          source: "affordability_query",
+        };
+        contextMetadata.active_topic = "affordability_check";
+
+        // Add explicit goal offer to response if item seems unaffordable
+        const responseText = cleanedMessage.toLowerCase();
+        if (
+          responseText.includes("out of reach") ||
+          responseText.includes("can't afford") ||
+          responseText.includes("way out of reach") ||
+          responseText.includes("not affordable") ||
+          responseText.includes("beyond your budget")
+        ) {
+          response.message += `\n\n💡 **Want me to help you save for this?** I can create a savings goal to track your progress toward ${contextMetadata.last_entity.value}. Just say "yes" or "create a goal" and I'll set it up!`;
+        }
+      }
+    }
+
     // Update conversation context asynchronously
     if (context?.chat_id) {
       setImmediate(() =>
@@ -1924,8 +1965,8 @@ async function handleAsk(
           context.user_id,
           context.chat_id,
           message,
-          cleanedMessage,
-          {} // No special metadata for regular ask
+          response.message, // Use updated message with goal offer
+          contextMetadata
         )
       );
     }
@@ -3100,7 +3141,31 @@ function financialConceptHeuristic(raw) {
 function detectGoalIntent(message, conversationContext) {
   const lower = message.toLowerCase();
 
-  // 1. EXPLICIT goal creation patterns (high confidence)
+  // 1. VAGUE REFERENCE with context (highest priority - "add that goal", "create that", "set it up")
+  const vagueReferencePatterns = [
+    /\b(?:add|create|set|make)\s+(?:that|it|this)\s*(?:goal)?/i,
+    /\b(?:yes|yeah|yep|sure|okay),?\s*(?:create|add|set)(?:\s+(?:that|it|the)\s+goal)?/i,
+    /\bset\s+(?:it|that)\s+up/i,
+    /\bgo\s+ahead/i,
+  ];
+
+  if (
+    conversationContext?.pending_action === "goal_creation_offer" &&
+    conversationContext?.last_entity?.value
+  ) {
+    if (vagueReferencePatterns.some((p) => p.test(message))) {
+      console.log(
+        "✅ [GOAL] Vague reference with context detected (e.g., 'add that goal')"
+      );
+      return {
+        intent: "goal_conversation",
+        confidence: 0.98,
+        reason: "vague_reference_with_context",
+      };
+    }
+  }
+
+  // 2. EXPLICIT goal creation patterns (high confidence)
   const explicitGoalPatterns = [
     /\b(?:create|set|add|make)\s+(?:a\s+)?(?:new\s+)?goal/i,
     /\bgoal\s+(?:for|to)\s+(?:save|buy)/i,
@@ -3117,7 +3182,7 @@ function detectGoalIntent(message, conversationContext) {
     };
   }
 
-  // 2. CONFIRMATION of pending goal offer (context-aware)
+  // 3. CONFIRMATION of pending goal offer (context-aware)
   if (conversationContext?.pending_action === "goal_creation_offer") {
     const affirmative =
       /\b(yes|yeah|yep|sure|okay|go ahead|do it|create it)\b/i;
@@ -3510,13 +3575,15 @@ async function handleClassify(message, context) {
       };
     }
 
-    // 3. Goal conversation detection (using tightened detection)
+    // 3. Goal conversation detection (using tightened detection with context)
     const goalDetection = detectGoalIntent(
       message,
       context?.conversation_context
     );
     if (goalDetection && goalDetection.intent === "goal_conversation") {
-      console.log("✅ [FINNY] Using goal conversation heuristic fallback");
+      console.log(
+        `✅ [FINNY] Using goal conversation heuristic fallback (reason: ${goalDetection.reason})`
+      );
       return {
         intent: "goal_conversation",
         needs_web: false,
@@ -3526,6 +3593,7 @@ async function handleClassify(message, context) {
         confidence: goalDetection.confidence,
         fallback: true,
         timeout_fallback: e?.message?.includes("timeout") || false,
+        detection_reason: goalDetection.reason,
       };
     }
 
