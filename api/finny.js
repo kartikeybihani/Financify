@@ -1945,14 +1945,30 @@ async function handleAsk(
         contextMetadata.active_topic = "affordability_check";
 
         // Add explicit goal offer to response if item seems unaffordable
+        // Check multiple negative affordability indicators
         const responseText = cleanedMessage.toLowerCase();
-        if (
-          responseText.includes("out of reach") ||
-          responseText.includes("can't afford") ||
-          responseText.includes("way out of reach") ||
-          responseText.includes("not affordable") ||
-          responseText.includes("beyond your budget")
-        ) {
+        const negativeAffordabilityIndicators = [
+          /\bcan[\u2019\']?t afford/i,
+          /\bway out of reach/i,
+          /\bout of reach/i,
+          /\bnot affordable/i,
+          /\bbeyond your budget/i,
+          /\bno,?\s+you\s+can[\u2019\']?t/i,
+          /\byou[\u2019\']?re short by/i,
+          /\byou[\u2019\']?ll need to/i,
+          /\bshould.*pay.*debt first/i,
+          /\btoo expensive/i,
+          /\bdon[\u2019\']?t have enough/i,
+        ];
+
+        const seemsUnaffordable = negativeAffordabilityIndicators.some(
+          (pattern) => pattern.test(responseText)
+        );
+
+        if (seemsUnaffordable) {
+          console.log(
+            `💡 [FINNY] Adding goal offer for unaffordable item: ${contextMetadata.last_entity.value}`
+          );
           response.message += `\n\n💡 **Want me to help you save for this?** I can create a savings goal to track your progress toward ${contextMetadata.last_entity.value}. Just say "yes" or "create a goal" and I'll set it up!`;
         }
       }
