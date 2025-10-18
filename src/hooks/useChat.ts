@@ -16,6 +16,7 @@ export const useChat = () => {
   const [progressStatus, setProgressStatus] = useState<string>("");
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [isNewSession, setIsNewSession] = useState(true);
+  const [chatId, setChatId] = useState<string>(() => `chat_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`);
   const appStateRef = useRef(AppState.currentState);
 
   useEffect(() => {
@@ -69,6 +70,8 @@ export const useChat = () => {
       setChatMessages(finnyConstants.INITIAL_CHAT_MESSAGES);
       setCurrentSessionId(null);
       setIsNewSession(true);
+      // Generate new chat_id for fresh conversation
+      setChatId(`chat_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`);
       // Chat cleared and storage reset
     } catch (error) {
       logger.error("Error clearing chat:", error);
@@ -166,6 +169,8 @@ export const useChat = () => {
       setCurrentSessionId(null);
       setIsNewSession(true);
       setShowNudges(true);
+      // Generate new chat_id for fresh conversation
+      setChatId(`chat_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`);
       logger.info("Started new chat session");
     } catch (error) {
       logger.error("Error starting new session:", error);
@@ -364,6 +369,7 @@ export const useChat = () => {
         body: JSON.stringify({
           action: "classify",
           message: messageText,
+          chat_id: chatId, // Send chat_id for conversation context
           // client context no longer carries user_id; server derives it
           context: {}
         }),
@@ -414,6 +420,7 @@ export const useChat = () => {
           body: JSON.stringify({
             action: "ask",
             message: messageText,
+            chat_id: chatId, // Send chat_id for conversation context
             context: {},
             classification: classifyData
           }),
@@ -429,6 +436,7 @@ export const useChat = () => {
           body: JSON.stringify({
             action: goalFlow?.active ? "goal" : classifyData.intent,
             message: messageText,
+            chat_id: chatId, // Send chat_id for conversation context
             context: goalFlow ? { goal_flow: goalFlow } : {}
           }),
         });
@@ -510,6 +518,7 @@ export const useChat = () => {
     progressStatus,
     currentSessionId,
     isNewSession,
+    chatId, // Export chatId
     clearChat,
     pushChat,
     pushChatWithDelay,

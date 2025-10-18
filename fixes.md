@@ -41,6 +41,15 @@
   - Added specific patterns for goal-related queries
   - Tested: Correctly identifies goal conversations vs current goal inquiries
 
+- ✅ FIXED: Conversation context for goal flows
+  - Implemented Supabase-backed conversation context system
+  - Added chat_id tracking for conversation continuity
+  - Added router override for pending action confirmations
+  - Tightened goal classification patterns (no more false positives)
+  - Goal inquiries now correctly route to ask_personalized
+  - "Can I afford X?" → "Yes" flow now works correctly
+  - See: CONVERSATION_CONTEXT_IMPLEMENTATION.md and QUICK_START_GUIDE.md
+
 ### SPENDING
 - TBD
 
@@ -76,6 +85,14 @@
   - Removed deprecated `extractMemoriesWithSmallModel`
   - Removed all dry-run logic from Finny
   - Removed session summary LLM features and references from Finny
+
+- ✅ FIXED: Off-topic memory extraction
+  - Changed off-topic path to always run LLM-based validator (no gating, no hints, no fallbacks)
+  - Streamlined validator prompt for token efficiency (220 max_tokens, temperature 0.0)
+  - Enhanced prompt to explicitly capture age from "I'm a 20 year old" and education from "studying X"
+  - Added few-shot example and deterministic JSON output
+  - Added test script `test_offtopic_memory.js` for direct validation testing
+  - Now consistently extracts age, education, and occupation from off-topic queries
 
 ### CHAT
 - Update the progress status in more detail, not just high-level "looking up the data" or "looking up the web" or "getting your transactions".

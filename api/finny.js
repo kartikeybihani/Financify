@@ -979,13 +979,23 @@ export default async function handler(req, res) {
   // Build safe context that overrides any client-provided user_id
   // But fall back to client-provided user_id if no JWT token is present (for testing)
   const finalUserId = serverUserId || context?.user_id;
+  const chatId = req.body.chat_id || context?.chat_id; // Get chat_id from request
+
+  // Load conversation context from Supabase (if chat_id provided)
+  const conversationContext = chatId
+    ? await getConversationContext(finalUserId, chatId)
+    : null;
+
   const sessionState = getSessionState(finalUserId);
   const safeContext = {
     ...(context || {}),
     user_id: finalUserId,
+    chat_id: chatId,
     profile: userProfile,
     // carry session short-term state into handlers
     session: sessionState,
+    // NEW: Add conversation context
+    conversation_context: conversationContext,
     // NEW: Add memory reading
     memory: await loadUserMemory(finalUserId),
   };
@@ -994,6 +1004,37 @@ export default async function handler(req, res) {
     return res
       .status(400)
       .json({ error: "Missing required parameter: action" });
+  }
+
+  // === ROUTER OVERRIDE: Check pending actions BEFORE classification ===
+  if (action === "classify" && conversationContext?.pending_action) {
+    console.log(
+      `🎯 [ROUTER] Checking pending action: ${conversationContext.pending_action}`
+    );
+
+    const lower = (message || "").toLowerCase();
+
+    // Handle goal creation offer confirmation/rejection
+    if (conversationContext.pending_action === "goal_creation_offer") {
+      const affirmative =
+        /\b(yes|yeah|yep|sure|okay|go ahead|do it|create it)\b/i.test(lower);
+      const negative = /\b(no|nope|cancel|nevermind|nah)\b/i.test(lower);
+
+      if (affirmative || negative) {
+        console.log(
+          `✅ [ROUTER] Routing to goal_conversation due to pending action response`
+        );
+        // Override classification - route directly to goal conversation
+        return res.status(200).json({
+          intent: "goal_conversation",
+          needs_web: false,
+          needs_user_data: true,
+          confidence: 0.95,
+          router_override: true,
+          pending_action: conversationContext.pending_action,
+        });
+      }
+    }
   }
 
   try {
@@ -1876,7 +1917,18 @@ async function handleAsk(
     // Log conversation asynchronously to avoid adding latency
     setImmediate(() => logConversation(conversationData));
 
-    // Session summary update removed
+    // Update conversation context asynchronously
+    if (context?.chat_id) {
+      setImmediate(() =>
+        updateConversationContext(
+          context.user_id,
+          context.chat_id,
+          message,
+          cleanedMessage,
+          {} // No special metadata for regular ask
+        )
+      );
+    }
 
     return response;
   } catch (error) {
@@ -3043,6 +3095,94 @@ function financialConceptHeuristic(raw) {
   return null;
 }
 
+// === GOAL DETECTION FUNCTION ===
+
+function detectGoalIntent(message, conversationContext) {
+  const lower = message.toLowerCase();
+
+  // 1. EXPLICIT goal creation patterns (high confidence)
+  const explicitGoalPatterns = [
+    /\b(?:create|set|add|make)\s+(?:a\s+)?(?:new\s+)?goal/i,
+    /\bgoal\s+(?:for|to)\s+(?:save|buy)/i,
+    /\bsave\s+\$?\d+[k]?\s+(?:for|toward)/i, // "save $5000 for"
+    /\btarget\s+(?:amount|of)\s+\$?\d+/i, // "target amount $5000"
+  ];
+
+  if (explicitGoalPatterns.some((p) => p.test(message))) {
+    console.log("✅ [GOAL] Explicit goal creation detected");
+    return {
+      intent: "goal_conversation",
+      confidence: 0.95,
+      reason: "explicit_creation",
+    };
+  }
+
+  // 2. CONFIRMATION of pending goal offer (context-aware)
+  if (conversationContext?.pending_action === "goal_creation_offer") {
+    const affirmative =
+      /\b(yes|yeah|yep|sure|okay|go ahead|do it|create it)\b/i;
+    const negative = /\b(no|nope|cancel|nevermind|nah)\b/i;
+
+    if (affirmative.test(lower)) {
+      console.log("✅ [GOAL] Affirmative response to goal offer");
+      return {
+        intent: "goal_conversation",
+        confidence: 0.95,
+        reason: "pending_confirmation",
+      };
+    }
+    if (negative.test(lower)) {
+      console.log("✅ [GOAL] Negative response to goal offer");
+      return {
+        intent: "goal_conversation",
+        confidence: 0.95,
+        reason: "pending_rejection",
+      };
+    }
+  }
+
+  // 3. INQUIRY about existing goals (should be ask_personalized, NOT goal_conversation)
+  const goalInquiryPatterns = [
+    /\b(?:what are|show|list|tell me|display)\s+(?:my\s+)?(?:current\s+)?goals?\b/i,
+    /\bam\s+i\s+on\s+track.*goals?\b/i,
+    /\bgoal\s+(?:progress|status|update)/i,
+    /\bhow.*doing.*goals?\b/i,
+  ];
+
+  if (goalInquiryPatterns.some((p) => p.test(message))) {
+    console.log(
+      "✅ [GOAL] Goal inquiry detected → routing to ask_personalized"
+    );
+    return {
+      intent: "ask_personalized",
+      confidence: 0.9,
+      reason: "goal_inquiry",
+    };
+  }
+
+  // 4. NOT goal creation - general financial queries
+  const nonGoalPatterns = [
+    /\bcan\s+i\s+afford/i, // Affordability check
+    /\bshould\s+i\s+buy/i, // Purchase advice
+    /\bwhat.*(?:spend|spent)/i, // Spending analysis
+    /\bhow\s+much.*(?:spend|spent)/i, // Spending questions
+    /\bwhere.*(?:money|spending)/i, // Transaction queries
+    /\bshow.*(?:transactions|spending)/i, // Transaction display
+  ];
+
+  if (nonGoalPatterns.some((p) => p.test(message))) {
+    console.log("✅ [GOAL] Non-goal financial query detected");
+    return {
+      intent: "ask_personalized",
+      confidence: 0.9,
+      reason: "non_goal_query",
+    };
+  }
+
+  // Default: no strong signal, let LLM decide
+  return null;
+}
+
 async function handleClassify(message, context) {
   console.log(
     "🔍 [FINNY] Starting classification in handleClassify for message:",
@@ -3087,6 +3227,24 @@ async function handleClassify(message, context) {
       entities: [],
       confidence: 0.9,
       heuristic: true,
+    };
+    setCachedClassification(text, result);
+    return result;
+  }
+
+  // Check for goal intent (before LLM call for efficiency)
+  const goalDetection = detectGoalIntent(text, context?.conversation_context);
+  if (goalDetection) {
+    console.log(`✅ [FINNY] Goal detection heuristic: ${goalDetection.reason}`);
+    const result = {
+      intent: goalDetection.intent,
+      needs_web: false,
+      needs_user_data: true,
+      state: null,
+      entities: [],
+      confidence: goalDetection.confidence,
+      heuristic: true,
+      reason: goalDetection.reason,
     };
     setCachedClassification(text, result);
     return result;
@@ -3352,15 +3510,12 @@ async function handleClassify(message, context) {
       };
     }
 
-    // 3. Goal conversation detection
-    const lowerMessage = message.toLowerCase();
-    if (
-      lowerMessage.includes("save") &&
-      (lowerMessage.includes("goal") ||
-        lowerMessage.includes("target") ||
-        lowerMessage.includes("plan") ||
-        lowerMessage.includes("want"))
-    ) {
+    // 3. Goal conversation detection (using tightened detection)
+    const goalDetection = detectGoalIntent(
+      message,
+      context?.conversation_context
+    );
+    if (goalDetection && goalDetection.intent === "goal_conversation") {
       console.log("✅ [FINNY] Using goal conversation heuristic fallback");
       return {
         intent: "goal_conversation",
@@ -3368,7 +3523,7 @@ async function handleClassify(message, context) {
         needs_user_data: true,
         state: null,
         entities: [],
-        confidence: 0.8,
+        confidence: goalDetection.confidence,
         fallback: true,
         timeout_fallback: e?.message?.includes("timeout") || false,
       };
@@ -4917,6 +5072,135 @@ function mergeSessionState(userId, partial) {
   if (!userId) return;
   const current = getSessionState(userId);
   setSessionState(userId, { ...current, ...(partial || {}) });
+}
+
+// === CONVERSATION CONTEXT FUNCTIONS (Supabase-backed) ===
+
+// Load conversation context from Supabase
+async function getConversationContext(userId, chatId) {
+  if (!userId || !chatId) {
+    console.log("⚠️ [CONVERSATION] Missing userId or chatId");
+    return null;
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from("conversation_context")
+      .select("*")
+      .eq("chat_id", chatId)
+      .eq("user_id", userId)
+      .gt("expires_at", new Date().toISOString())
+      .single();
+
+    if (error) {
+      if (error.code === "PGRST116") {
+        // No rows found - this is normal for new conversations
+        console.log(
+          `💬 [CONVERSATION] No context found for chat_id: ${chatId}`
+        );
+        return null;
+      }
+      console.error("❌ [CONVERSATION] Error loading context:", error);
+      return null;
+    }
+
+    console.log(`✅ [CONVERSATION] Context loaded for chat_id: ${chatId}`);
+    return {
+      last_messages: data.last_messages || [],
+      pending_action: data.pending_action || null,
+      pending_action_payload: data.pending_action_payload || {},
+      active_topic: data.active_topic || null,
+      last_entity: data.last_entity || {},
+    };
+  } catch (e) {
+    console.error("❌ [CONVERSATION] Unexpected error loading context:", e);
+    return null;
+  }
+}
+
+// Save/update conversation context to Supabase
+async function saveConversationContext(userId, chatId, context) {
+  if (!userId || !chatId) {
+    console.log("⚠️ [CONVERSATION] Cannot save - missing userId or chatId");
+    return;
+  }
+
+  try {
+    const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString(); // 30 min from now
+
+    const contextRow = {
+      user_id: userId,
+      chat_id: chatId,
+      last_messages: context.last_messages || [],
+      pending_action: context.pending_action || null,
+      pending_action_payload: context.pending_action_payload || {},
+      active_topic: context.active_topic || null,
+      last_entity: context.last_entity || {},
+      updated_at: new Date().toISOString(),
+      expires_at: expiresAt,
+    };
+
+    const { error } = await supabase
+      .from("conversation_context")
+      .upsert(contextRow, {
+        onConflict: "chat_id",
+      });
+
+    if (error) {
+      console.error("❌ [CONVERSATION] Error saving context:", error);
+      return;
+    }
+
+    console.log(`✅ [CONVERSATION] Context saved for chat_id: ${chatId}`);
+  } catch (e) {
+    console.error("❌ [CONVERSATION] Unexpected error saving context:", e);
+  }
+}
+
+// Update conversation context after each exchange
+async function updateConversationContext(
+  userId,
+  chatId,
+  userMessage,
+  finnyResponse,
+  metadata = {}
+) {
+  if (!userId || !chatId) return;
+
+  try {
+    // Load existing context
+    const existingContext =
+      (await getConversationContext(userId, chatId)) || {};
+
+    // Add new messages (keep last 5 exchanges = 10 messages)
+    const messages = existingContext.last_messages || [];
+    messages.push(
+      { role: "user", text: userMessage, timestamp: Date.now() },
+      { role: "assistant", text: finnyResponse, timestamp: Date.now() }
+    );
+
+    // Keep only last 10 messages (5 exchanges)
+    const updatedMessages = messages.slice(-10);
+
+    // Merge with new metadata
+    const updatedContext = {
+      last_messages: updatedMessages,
+      pending_action:
+        metadata.pending_action !== undefined
+          ? metadata.pending_action
+          : existingContext.pending_action,
+      pending_action_payload:
+        metadata.pending_action_payload ||
+        existingContext.pending_action_payload ||
+        {},
+      active_topic: metadata.active_topic || existingContext.active_topic,
+      last_entity: metadata.last_entity || existingContext.last_entity || {},
+    };
+
+    await saveConversationContext(userId, chatId, updatedContext);
+  } catch (e) {
+    console.error("❌ [CONVERSATION] Error updating context:", e);
+  }
 }
 
 // Cache entry structure: { data, timestamp }
