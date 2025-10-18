@@ -1898,7 +1898,7 @@ async function handleAsk(
     // Detect conversation topic and extract relevant entities
     const topicDetection = detectConversationTopic(
       message,
-      conversationContext
+      context?.conversation_context
     );
     const contextMetadata = {
       active_topic: topicDetection.topic,

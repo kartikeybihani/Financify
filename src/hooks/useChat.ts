@@ -449,12 +449,12 @@ export const useChat = () => {
       logger.info("🤖 [CHAT] API Response:", data);
       
       // Additional logging for ask responses
-      if (classifyData.intent === "ask_personalized") {
-        console.log("🔍 [FRONTEND] Ask response details:", {
-          message: data.message,
-          messageLength: data.message?.length || 0
-        });
-      }
+      // if (classifyData.intent === "ask_personalized") {
+      //   console.log("🔍 [FRONTEND] Ask response details:", {
+      //     message: data.message,
+      //     messageLength: data.message?.length || 0
+      //   });
+      // }
       
       
       // Handle structured data as regular messages - no splitting or expandable logic
