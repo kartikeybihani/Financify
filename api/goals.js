@@ -113,14 +113,18 @@ function parseCurrencyAmount(text) {
 function parseTargetDate(text) {
   if (!text) return null;
   const now = new Date();
+
+  // Use original text - typo handling is now done at the flow level
+  let normalizedText = text.toLowerCase();
+
   // Patterns like "by Dec", "by December 15", "by 12/31/2025", "by December 2025", "next month", "in 6 weeks"
-  const byDate = text.match(
+  const byDate = normalizedText.match(
     /\bby\s+([a-zA-Z]+\s+\d{1,2}(?:,\s*\d{4})?|\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{2,4})?|[a-zA-Z]+\s+\d{4}|[a-zA-Z]+)\b/i
   );
-  const onDate = text.match(
+  const onDate = normalizedText.match(
     /\b(on|by)\s+(\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{2,4})?)\b/i
   );
-  const monthOnly = text.match(
+  const monthOnly = normalizedText.match(
     /\bby\s+(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t)?(?:ember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b/i
   );
   const nextMonth = /\bnext\s+month\b/i.test(text);
@@ -399,6 +403,44 @@ async function extractGoalIntent(message, context) {
     const userGoals = context?.goals || [];
     const userIncome = context?.summary?.netWorth || 0;
     const userSpending = context?.transactions?.spendByCategory || [];
+    const activeGoalFlow = context?.goal_flow;
+
+    // If there's an active goal flow, this message is likely continuing the goal conversation
+    const isContinuingGoalFlow = activeGoalFlow && activeGoalFlow.active;
+
+    // Check for goal-related keywords
+    const goalKeywords = [
+      "goal",
+      "save",
+      "saving",
+      "target",
+      "amount",
+      "date",
+      "timeline",
+      "budget",
+      "vacation",
+      "trip",
+      "car",
+      "house",
+      "emergency",
+      "fund",
+      "retirement",
+      "summer",
+      "winter",
+      "spring",
+      "fall",
+      "next year",
+      "month",
+      "dollar",
+      "money",
+      "reach",
+      "achieve",
+      "plan",
+    ];
+
+    const hasGoalKeywords = goalKeywords.some((keyword) =>
+      message.toLowerCase().includes(keyword)
+    );
 
     const extractionPrompt = `
 Analyze this message for goal-related intent and extract information:
@@ -414,6 +456,10 @@ User context:
     )}
 - Net worth: $${userIncome}
 - Recent spending categories: ${JSON.stringify(userSpending.slice(0, 5))}
+- Active goal flow: ${
+      isContinuingGoalFlow ? "YES - user is continuing goal setup" : "NO"
+    }
+- Has goal keywords: ${hasGoalKeywords ? "YES" : "NO"}
 
 Return ONLY valid JSON (no markdown, no code blocks, no explanations). Do not wrap in \`\`\`json\`\`\` blocks:
 {
@@ -432,12 +478,14 @@ Return ONLY valid JSON (no markdown, no code blocks, no explanations). Do not wr
 }
 
 RULES:
-1. If message mentions saving, goals, targets, aspirations, or asks about goal feasibility → goal intent
-2. Extract amounts in dollars (e.g., "$5000", "5k", "five thousand")
-3. Extract dates (e.g., "by March", "in 6 months", "next year", "2025-12-31")
-4. Guess category from goal name if not specified
-5. Set needs_advice=true if asking for financial advice about goals
-6. Set needs_encouragement=true if user seems uncertain or needs motivation
+1. If there's an active goal flow OR message mentions saving, goals, targets, aspirations → goal intent (high confidence)
+2. If message contains time references (next year, summer, months) during goal flow → likely goal_create
+3. Extract amounts in dollars (e.g., "$5000", "5k", "five thousand")
+4. Extract dates (e.g., "by March", "in 6 months", "next year", "2025-12-31") - handle typos like "summaer"
+5. Guess category from goal name if not specified
+6. Set needs_advice=true if asking for financial advice about goals
+7. Set needs_encouragement=true if user seems uncertain or needs motivation
+8. IMPORTANT: If active goal flow exists, classify as goal_create with high confidence unless clearly unrelated
 `;
 
     const response = await fetch(
@@ -737,8 +785,17 @@ async function handleGoalCreation(extraction, context, message) {
 
   // Get data from conversation context if available (e.g., from affordability check)
   const conversationEntity = context?.conversation_context?.last_entity;
-  const contextLabel = conversationEntity?.value || null;
-  const contextAmount = conversationEntity?.amount || null;
+  const conversationTopic = context?.conversation_context?.active_topic;
+
+  // Only use context if it's relevant to goal creation
+  // e.g., if we were discussing a specific item (Rolex, MacBook) for affordability
+  const isRelevantContext =
+    conversationTopic === "budget_planning" &&
+    conversationEntity?.type === "purchase" &&
+    conversationEntity?.value;
+
+  const contextLabel = isRelevantContext ? conversationEntity?.value : null;
+  const contextAmount = isRelevantContext ? conversationEntity?.amount : null;
 
   // Merge extracted data with prior slots and conversation context
   const slots = {
@@ -753,6 +810,11 @@ async function handleGoalCreation(extraction, context, message) {
       priorSlots.target_date || extraction.extracted.target_date || null,
     category: priorSlots.category || extraction.extracted.category || null,
   };
+
+  // Auto-categorize if we have a label but no category
+  if (slots.label && !slots.category) {
+    slots.category = guessGoalCategory(slots.label);
+  }
 
   console.log(`🎯 [GOAL] Creating goal with slots:`, {
     label: slots.label,
@@ -796,6 +858,11 @@ async function handleGoalCreation(extraction, context, message) {
             action: "modify",
             style: "secondary",
           },
+          {
+            label: "Cancel Goal",
+            action: "cancel_goal",
+            style: "secondary",
+          },
         ],
       };
     }
@@ -823,6 +890,11 @@ async function handleGoalCreation(extraction, context, message) {
             action: "modify",
             style: "secondary",
           },
+          {
+            label: "Cancel Goal",
+            action: "cancel_goal",
+            style: "secondary",
+          },
         ],
       };
     }
@@ -831,23 +903,82 @@ async function handleGoalCreation(extraction, context, message) {
     return await createGoalFromSlots(slots, context, analysis);
   }
 
-  // Missing information - ask for it
-  const prompts = {
-    label:
-      "🎯 What should we call this goal? (e.g., Emergency fund, Dream vacation, New car)",
-    target_amount: `💰 How much do you want to save for your ${
-      slots.label || "goal"
-    }? (e.g., $5000)`,
-    target_date: `⏰ When do you want to reach your ${
-      slots.label || "goal"
-    }? (e.g., by January 2026 or in 2 years)`,
-    category:
-      "📂 Which category fits best? (emergency_fund, vacation, car, house_down_payment, education, retirement, wedding, debt_payoff, investment, other)",
-  };
+  // Missing information - ask for it intelligently
+  const goalName = slots.label || "goal";
 
-  const nextKey = missing[0];
+  // Build smart prompt based on what's missing
+  let message = "";
+  let needsAmount = missing.includes("target_amount");
+  let needsDate = missing.includes("target_date");
+  let needsLabel = missing.includes("label");
+  let needsCategory = missing.includes("category");
+
+  if (missing.length === 1) {
+    // Only one thing missing - ask specifically
+    if (needsLabel) {
+      message =
+        "🎯 What should we call this goal? (e.g., Emergency fund, Dream vacation, New car)";
+    } else if (needsAmount) {
+      message = `💰 How much do you want to save for your ${goalName}? (e.g., $5000)`;
+    } else if (needsDate) {
+      message = `⏰ When do you want to reach your ${goalName}? (e.g., by January 2026 or in 2 years)`;
+    } else if (needsCategory) {
+      message =
+        "📂 Which category fits best? (emergency_fund, vacation, car, house_down_payment, education, retirement, wedding, debt_payoff, investment, other)";
+    }
+  } else if (missing.length === 2) {
+    // Two things missing - ask for both together
+    if (needsAmount && needsDate) {
+      message = `💰⏰ How much do you want to save for your ${goalName} and when do you want to reach it? (e.g., $5000 by summer 2025)`;
+    } else if (needsLabel && needsAmount) {
+      message =
+        "🎯💰 What should we call this goal and how much do you want to save? (e.g., Hawaii vacation for $5000)";
+    } else if (needsLabel && needsDate) {
+      message =
+        "🎯⏰ What should we call this goal and when do you want to reach it? (e.g., Hawaii vacation by summer 2025)";
+    } else if (needsAmount && needsCategory) {
+      message = `💰📂 How much do you want to save for your ${goalName} and what category? (e.g., $5000 for vacation)`;
+    } else if (needsDate && needsCategory) {
+      message = `⏰📂 When do you want to reach your ${goalName} and what category? (e.g., by summer 2025 for vacation)`;
+    } else if (needsLabel && needsCategory) {
+      message =
+        "🎯📂 What should we call this goal and what category? (e.g., Hawaii vacation)";
+    }
+  } else if (missing.length >= 3) {
+    // Multiple things missing - ask for the most important ones
+    if (needsAmount && needsDate) {
+      message = `💰⏰ How much do you want to save for your ${goalName} and when do you want to reach it? (e.g., $5000 by summer 2025)`;
+    } else {
+      message = `🎯💰⏰ Tell me more about your goal: what should we call it, how much do you want to save, and when? (e.g., Hawaii vacation for $5000 by summer 2025)`;
+    }
+  }
+
+  // Add skip button if only category is missing (optional field)
+  const actions = [];
+  if (missing.length === 1 && needsCategory) {
+    actions.push({
+      label: "Skip Category",
+      action: "skip_category",
+      style: "secondary",
+    });
+  }
+
+  // Always add start over and cancel buttons
+  actions.push(
+    {
+      label: "Start Over",
+      action: "start_over_goal",
+      style: "secondary",
+    },
+    {
+      label: "Cancel Goal",
+      action: "cancel_goal",
+      style: "secondary",
+    }
+  );
+
   return {
-    message: prompts[nextKey],
+    message: message,
     type: "assistant",
     intent: "goal_conversation",
     goal_flow: {
@@ -856,6 +987,7 @@ async function handleGoalCreation(extraction, context, message) {
       stage: "collecting",
       active: true,
     },
+    actions: actions,
   };
 }
 

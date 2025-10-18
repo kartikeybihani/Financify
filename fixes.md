@@ -60,6 +60,37 @@
   - Works even when LLM classification fails (fallback with context)
   - See: GOAL_CONTEXT_FIXES.md for complete details
 
+- ✅ FIXED: Smart context usage in goal creation
+  - **Problem**: Goal creation was using ANY conversation context, including debt management
+  - **Example**: After discussing $100k student loans, "Create Hawaii vacation goal" used $100k amount
+  - **Fix**: Added relevance checking - only uses context for budget_planning + purchase type
+  - **Result**: Goal creation now ignores irrelevant context (debt) but uses relevant context (Rolex affordability)
+
+### CONVERSATION CONTEXT — ✅ COMPLETED
+- ✅ FIXED: Classification order for financial topics
+  - **Problem**: `financialConceptHeuristic` was running AFTER `detectOffTopic`
+  - **Result**: "I have $100000 in student loans" now correctly classified as `ask_personalized` instead of `off_topic`
+
+- ✅ FIXED: Conversation context passed to all handlers
+  - **Problem**: Only `handleAsk` received conversation context
+  - **Fix**: Updated all handlers to receive `conversationContext` parameter
+  - **Result**: All handlers can now make intelligent decisions based on conversation history
+
+- ✅ FIXED: Web search context priority
+  - **Problem**: `enhanceSearchQuery` prioritized user holdings over conversation context
+  - **Fix**: Made web search conversation context aware
+  - **Result**: "Should I add it to my portfolio?" searches for AAPL news, not VOO news
+
+- ✅ FIXED: Off-topic system prompt with conversation context
+  - **Problem**: Off-topic responses didn't have access to conversation context
+  - **Fix**: Added conversation context to off-topic system prompt
+  - **Result**: Off-topic responses can make smarter redirections based on conversation history
+
+- ✅ FIXED: Smart context usage in goal creation
+  - **Problem**: Goal creation used ANY conversation context (including debt management)
+  - **Fix**: Added relevance checking - only uses context for budget_planning + purchase type
+  - **Result**: Goal creation ignores irrelevant context but uses relevant context appropriately
+
 ### SPENDING
 - TBD
 
@@ -133,5 +164,9 @@
 - ✅ 98% accuracy with sub-second response times
 - ✅ Robust error handling and fallback mechanisms
 - ✅ Comprehensive test suite created and validated
+- ✅ **NEW**: Complete conversation context system implemented
+- ✅ **NEW**: Smart context usage across all handlers
+- ✅ **NEW**: Continuation patterns working perfectly
+- ✅ **NEW**: Context-aware goal creation and web search
 
 

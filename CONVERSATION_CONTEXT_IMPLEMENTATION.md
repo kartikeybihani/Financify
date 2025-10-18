@@ -331,7 +331,55 @@ GROUP BY pending_action;
 
 ## Files Modified
 
-1. `api/finny.js` - Added context functions, goal detection, router override
-2. `src/hooks/useChat.ts` - Added chat_id generation and sending
-3. Created: `conversation_context` table in Supabase
+1. `api/finny.js` - Added context functions, goal detection, router override, conversation context to all handlers
+2. `api/goals.js` - Added smart context usage for goal creation
+3. `src/hooks/useChat.ts` - Added chat_id generation and sending
+4. Created: `conversation_context` table in Supabase
+
+## Recent Fixes (Latest Updates)
+
+### ✅ Fixed Classification Order
+- **Problem**: `financialConceptHeuristic` was running AFTER `detectOffTopic`, so financial topics like "student loans" were classified as off-topic
+- **Fix**: Moved `financialConceptHeuristic` BEFORE `detectOffTopic` in classification flow
+- **Result**: "I have $100000 in student loans" now correctly classified as `ask_personalized` instead of `off_topic`
+
+### ✅ Added Conversation Context to All Handlers
+- **Problem**: Only `handleAsk` received conversation context, other handlers couldn't make intelligent decisions
+- **Fix**: Updated all handler calls to pass `conversationContext`:
+  - `handleClassify(message, safeContext, conversationContext)`
+  - `handleOffTopic(message, safeContext, conversationContext)`
+  - `handleGoalConversation(message, safeContext, conversationContext)`
+- **Result**: All handlers now have access to conversation context for smarter decisions
+
+### ✅ Smart Context Usage in Goal Creation
+- **Problem**: Goal creation was blindly using ANY conversation context, including debt management context
+- **Example**: After discussing $100k student loans, creating "Hawaii vacation" goal used $100k amount
+- **Fix**: Added relevance checking in `goals.js`:
+  ```javascript
+  const isRelevantContext = conversationTopic === "budget_planning" && 
+    conversationEntity?.type === "purchase" && 
+    conversationEntity?.value;
+  ```
+- **Result**: Goal creation only uses context when relevant (e.g., "Can I afford Rolex?" → "Create goal for it")
+
+### ✅ Enhanced Off-Topic System Prompt
+- **Problem**: Off-topic responses didn't have access to conversation context
+- **Fix**: Added conversation context to off-topic system prompt:
+  ```javascript
+  --- Conversation Context ---
+  Active topic: investment_analysis
+  Last entity: {"symbol":"AAPL"}
+  ```
+- **Result**: Off-topic responses can now make smarter redirections based on conversation history
+
+### ✅ Fixed Web Search Context Priority
+- **Problem**: `enhanceSearchQuery` was prioritizing user holdings over conversation context
+- **Fix**: Made `enhanceSearchQuery` conversation context aware:
+  ```javascript
+  if (context?.conversationContext?.active_topic === "investment_analysis" && 
+      context?.conversationContext?.last_entity?.symbol) {
+    return `${contextSymbol} latest news`;
+  }
+  ```
+- **Result**: "Should I add it to my portfolio?" searches for AAPL news, not VOO news
 

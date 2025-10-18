@@ -368,17 +368,13 @@ export default function FinnySettingsScreen() {
           text: "Delete",
           style: "destructive",
           onPress: async () => {
-            try {
-              await clearChat();
-              router.replace("/(tabs)/chat");
-              // Alert.alert(
-              //   "Success",
-              //   "Chat history has been cleared successfully."
-              // );
-            } catch (error) {
-              console.error("Error clearing chat:", error);
-              Alert.alert("Error", "Failed to clear chat. Please try again.");
-            }
+            // Clear chat messages immediately for instant UI feedback
+            await clearChat();
+
+            // Navigate back to chat screen immediately
+            router.replace("/(tabs)/chat");
+
+            // Database operations happen in the background via clearChat()
           },
         },
       ]

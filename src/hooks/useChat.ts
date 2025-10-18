@@ -64,15 +64,18 @@ export const useChat = () => {
 
   const clearChat = async () => {
     try {
-      // Save current session to database before clearing
-      await saveCurrentSession();
+      // Clear UI immediately for smooth UX
       await AsyncStorage.removeItem("chatMessages");
       setChatMessages(finnyConstants.INITIAL_CHAT_MESSAGES);
       setCurrentSessionId(null);
       setIsNewSession(true);
       // Generate new chat_id for fresh conversation
       setChatId(`chat_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`);
-      // Chat cleared and storage reset
+      
+      // Save current session to database in the background (don't await)
+      saveCurrentSession().catch(error => {
+        logger.error("Background database save failed:", error);
+      });
     } catch (error) {
       logger.error("Error clearing chat:", error);
     }

@@ -1046,6 +1046,16 @@ export default async function handler(req, res) {
       .json({ error: "Missing required parameter: action" });
   }
 
+  // === FLOW STATE CHECK: Bypass classification for active goal flows ===
+  const activeGoalFlow = sessionState?.goal_flow;
+  if (action === "classify" && activeGoalFlow && activeGoalFlow.active) {
+    console.log(
+      `🎯 [FLOW] Active goal flow detected - bypassing classification`
+    );
+    // Override action to go directly to goal_conversation
+    action = "goal_conversation";
+  }
+
   // === ROUTER OVERRIDE: Check pending actions BEFORE classification ===
   if (action === "classify" && conversationContext?.pending_action) {
     console.log(
@@ -1083,11 +1093,55 @@ export default async function handler(req, res) {
         );
         break;
       case "goal_conversation": {
-        // If there's active goal_flow in session, pass it in context
-        if (safeContext?.session?.goal_flow) {
-          safeContext.goal_flow = safeContext.session.goal_flow;
+        // Check for goal action buttons
+        if (message === "cancel_goal") {
+          response = {
+            message: "No worries, I canceled the goal setup!",
+            type: "assistant",
+            intent: "goal_conversation",
+            goal_flow: { active: false },
+          };
+        } else if (message === "start_over_goal") {
+          response = {
+            message:
+              "Sure! Let's start over. What goal would you like to create?",
+            type: "assistant",
+            intent: "goal_conversation",
+            goal_flow: { active: false }, // Reset the flow
+          };
+        } else if (message === "skip_category") {
+          // Set category to "other" and continue with goal creation
+          const currentFlow = safeContext?.session?.goal_flow;
+          if (currentFlow && currentFlow.slots) {
+            const updatedSlots = { ...currentFlow.slots, category: "other" };
+            response = await handleGoalCreation(
+              { extracted: updatedSlots },
+              {
+                ...safeContext,
+                goal_flow: { ...currentFlow, slots: updatedSlots },
+              },
+              message
+            );
+          } else {
+            response = {
+              message: "I couldn't find your goal details. Let's start over.",
+              type: "assistant",
+              intent: "goal_conversation",
+              goal_flow: { active: false },
+            };
+          }
+        } else {
+          // If there's active goal_flow in session, pass it in context
+          if (safeContext?.session?.goal_flow) {
+            safeContext.goal_flow = safeContext.session.goal_flow;
+          }
+          response = await handleGoalConversation(
+            message,
+            safeContext,
+            conversationContext
+          );
         }
-        response = await handleGoalConversation(message, safeContext);
+
         // Persist any goal_flow updates returned by the handler
         if (response?.goal_flow) {
           mergeSessionState(finalUserId, { goal_flow: response.goal_flow });
@@ -3452,6 +3506,10 @@ function detectConversationTopic(message, conversationContext) {
 function detectGoalIntent(message, conversationContext) {
   const lower = message.toLowerCase();
 
+  // Check if there's an active goal flow in session state
+  const activeGoalFlow = conversationContext?.goal_flow;
+  const isContinuingGoalFlow = activeGoalFlow && activeGoalFlow.active;
+
   // 1. EXPLICIT goal creation patterns (high confidence)
   const explicitGoalPatterns = [
     /\b(?:create|set|add|make)\s+(?:a\s+)?(?:new\s+)?goal/i,
@@ -3467,6 +3525,32 @@ function detectGoalIntent(message, conversationContext) {
       confidence: 0.95,
       reason: "explicit_creation",
     };
+  }
+
+  // 1.5. If there's an active goal flow, any response is likely goal-related
+  if (isContinuingGoalFlow) {
+    // Check if it's clearly off-topic
+    const offTopicKeywords = [
+      "weather",
+      "movie",
+      "sports",
+      "food",
+      "joke",
+      "hello",
+      "how are you",
+    ];
+    const isOffTopic = offTopicKeywords.some((keyword) =>
+      lower.includes(keyword)
+    );
+
+    if (!isOffTopic) {
+      console.log("✅ [GOAL] Continuing active goal flow detected");
+      return {
+        intent: "goal_conversation",
+        confidence: 0.85,
+        reason: "continuing_goal_flow",
+      };
+    }
   }
 
   // 2. INQUIRY about existing goals (should be ask_personalized, NOT goal_conversation)
