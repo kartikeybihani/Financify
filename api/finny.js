@@ -1197,6 +1197,9 @@ async function handleAsk(
 
           // Try deep query first
           if (looksLikeStockDeepQuery(message)) {
+            console.log(
+              "🔍 [STOCK] Deep query detected, using advanced analysis"
+            );
             stockPlan = await planStockRequest(message);
             const exec = await executeStockPlan(stockPlan || {}, message);
             if (!exec.error && exec.data?.current != null) {
@@ -4618,9 +4621,15 @@ function formatPlannedStockResponse(exec) {
       e?.epsSurprisePercent != null
         ? `${Number(e.epsSurprisePercent).toFixed(1)}%`
         : null;
+    const surpriseEmoji =
+      surprise && parseFloat(surprise) > 0
+        ? "🚀"
+        : surprise && parseFloat(surprise) < 0
+        ? "📉"
+        : "📊";
     lines.push(
       `Recent earnings: EPS ${eps != null ? eps : "n/a"}${
-        surprise ? ` (surprise ${surprise})` : ""
+        surprise ? ` (surprise ${surprise}) ${surpriseEmoji}` : ""
       }`
     );
   }
@@ -4843,7 +4852,9 @@ function buildStockDataSummary(stockData, stockPlan = null) {
 
   let summary = `${name} (${stockData.ticker})\n`;
   summary += "\n";
-  summary += `\nCurrent price: ${cur} (${dp} today)\n`;
+  summary += `\nCurrent price: ${cur} (${dp} today) ${
+    dp && dp.includes("-") ? "📉" : "📈"
+  }\n`;
 
   if (pt) summary += `\nAnalyst price target: ${pt}\n`;
 
@@ -4865,12 +4876,12 @@ function buildStockDataSummary(stockData, stockPlan = null) {
     const holdPct = ((100 * totals[2]) / sum).toFixed(0);
     const sellPct = ((100 * (totals[3] + totals[4])) / sum).toFixed(0);
     summary += "\n";
-    summary += `Analyst sentiment: ${buyPct}% Buy, ${holdPct}% Hold, ${sellPct}% Sell\n`;
+    summary += `Analyst sentiment: ${buyPct}% Buy, ${holdPct}% Hold, ${sellPct}% Sell 💼\n`;
   }
 
   if (stockData.profile?.finnhubIndustry) {
     summary += "\n";
-    summary += `Industry: ${stockData.profile.finnhubIndustry}\n`;
+    summary += `Industry: ${stockData.profile.finnhubIndustry} 🏭\n`;
   }
 
   // Key metrics
@@ -4919,7 +4930,7 @@ function buildStockDataSummary(stockData, stockPlan = null) {
   // Recent news
   if (Array.isArray(stockData.news) && stockData.news.length > 0) {
     summary += "\n";
-    summary += "Recent headlines:\n";
+    summary += "Recent headlines 📰:\n";
     stockData.news.slice(0, 2).forEach((n) => {
       if (n.headline) summary += `- ${n.headline}\n`;
     });
