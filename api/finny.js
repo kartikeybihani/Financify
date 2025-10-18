@@ -1048,12 +1048,13 @@ export default async function handler(req, res) {
 
   // === FLOW STATE CHECK: Bypass classification for active goal flows ===
   const activeGoalFlow = sessionState?.goal_flow;
+  let finalAction = action; // Create mutable copy
   if (action === "classify" && activeGoalFlow && activeGoalFlow.active) {
     console.log(
       `🎯 [FLOW] Active goal flow detected - bypassing classification`
     );
     // Override action to go directly to goal_conversation
-    action = "goal_conversation";
+    finalAction = "goal_conversation";
   }
 
   // === ROUTER OVERRIDE: Check pending actions BEFORE classification ===
@@ -1068,7 +1069,7 @@ export default async function handler(req, res) {
   try {
     let response;
 
-    switch (action) {
+    switch (finalAction) {
       case "classify":
         response = await handleClassify(
           message,

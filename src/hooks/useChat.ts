@@ -407,7 +407,7 @@ export const useChat = () => {
       } else if (classifyData.intent === "goal") {
         setProgressStatus("Setting up your goal...");
       } else {
-        setProgressStatus("Processing your request...");
+        setProgressStatus("Brewing up solutions...");
       }
 
       // 2) Route to appropriate handler based on classification
