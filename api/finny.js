@@ -1034,7 +1034,8 @@ export default async function handler(req, res) {
     // carry session short-term state into handlers
     session: sessionState,
     // NEW: Add conversation context
-    conversation_context: conversationContext,
+    conversationContext: conversationContext,
+    conversation_context: conversationContext, // Keep both for compatibility
     // NEW: Add memory reading
     memory: await loadUserMemory(finalUserId),
   };
@@ -2010,7 +2011,7 @@ async function handleAsk(
     // Detect conversation topic and extract relevant entities
     const topicDetection = detectConversationTopic(
       message,
-      conversationContext // Use the loaded context (null for first message)
+      context?.conversationContext // Use the context from the safe context object
     );
     const contextMetadata = {
       active_topic: topicDetection.topic,
