@@ -1130,6 +1130,22 @@ async function enhanceSearchQuery(message, context) {
       return message;
     }
 
+    // 🔍 CONVERSATION CONTEXT AWARENESS
+    // If we have an active conversation context with a specific stock,
+    // prioritize that over user's existing holdings
+    if (
+      context?.conversationContext?.active_topic === "investment_analysis" &&
+      context?.conversationContext?.last_entity?.symbol
+    ) {
+      const contextSymbol = context.conversationContext.last_entity.symbol;
+      console.log(
+        `🔍 [ENHANCE] Conversation context detected: ${contextSymbol}, prioritizing over user holdings`
+      );
+
+      // Return search query for the conversation context stock
+      return `${contextSymbol} latest news`;
+    }
+
     console.log(
       "🔍 [ENHANCE] Detected personal investment query, fetching user holdings..."
     );
@@ -1829,6 +1845,27 @@ async function handleAsk(
       });
     }
 
+    // Add conversation context if available
+    if (conversationContext?.active_topic || conversationContext?.last_entity) {
+      contextLines.push("\n--- Conversation Context ---");
+      if (conversationContext.active_topic) {
+        contextLines.push(`Active topic: ${conversationContext.active_topic}`);
+      }
+      if (
+        conversationContext.last_entity &&
+        Object.keys(conversationContext.last_entity).length > 0
+      ) {
+        contextLines.push(
+          `Last entity: ${JSON.stringify(conversationContext.last_entity)}`
+        );
+      }
+      if (conversationContext.pending_action) {
+        contextLines.push(
+          `Pending action: ${conversationContext.pending_action}`
+        );
+      }
+    }
+
     const contextNote = contextLines.join("\n");
     console.log("🔍 [FINNY] Context note:", contextNote);
 
@@ -1857,7 +1894,7 @@ async function handleAsk(
             { role: "system", content: system },
             {
               role: "user",
-              content: `User: ${message}\n\nContext:\n${contextNote}`,
+              content: `Context:\n${contextNote}\n\nUser: ${message}`,
             },
           ],
         }),
