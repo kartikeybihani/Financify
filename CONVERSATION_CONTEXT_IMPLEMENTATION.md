@@ -1,7 +1,7 @@
 # Conversation Context Implementation
 
 ## Overview
-Implemented a conversation context system to maintain state across messages, enabling better goal flow management and contextual responses.
+Implemented a comprehensive conversation context system with intelligent topic detection to maintain state across messages, enabling multi-topic financial conversations and contextual responses.
 
 ## What Was Implemented
 
@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS public.conversation_context (
   last_messages JSONB DEFAULT '[]'::jsonb,
   pending_action TEXT, -- 'goal_creation_offer', 'goal_confirmation', etc.
   pending_action_payload JSONB DEFAULT '{}'::jsonb,
-  active_topic TEXT, -- 'rolex_affordability', 'stock_inquiry', etc.
+  active_topic TEXT, -- 'investment_analysis', 'budget_planning', 'debt_management', etc.
   last_entity JSONB DEFAULT '{}'::jsonb, -- {type: 'item', value: 'Rolex', amount: 15000}
   
   -- Timestamps
@@ -76,17 +76,27 @@ CREATE POLICY "Users can delete their own conversation context"
 - `saveConversationContext(userId, chatId, context)` - Save/update context
 - `updateConversationContext(userId, chatId, userMessage, finnyResponse, metadata)` - Update after each exchange
 
+#### Added Topic Detection Function
+- `detectConversationTopic(message, conversationContext)` - Intelligent topic classification
+  - Investment & stock analysis detection
+  - Budget & spending planning detection
+  - Debt management detection
+  - Savings & goals detection
+  - Income optimization detection
+  - Tax planning detection
+  - Continuation pattern detection for follow-ups
+
 #### Added Goal Detection Function
 - `detectGoalIntent(message, conversationContext)` - Tightened goal classification
   - Explicit goal creation patterns
-  - Context-aware confirmation detection
   - Goal inquiry vs. creation distinction
   - Non-goal query filtering
 
-#### Router Override
-- Checks `pending_action` before classification
-- Routes confirmations directly to goal handler
-- Prevents misclassification of "yes/no" responses
+#### Automatic Context Population
+- Detects conversation topics automatically
+- Extracts relevant entities (stocks, amounts, items)
+- Sets pending actions based on user intent
+- Maintains context continuity across messages
 
 #### Updated Main Handler
 - Loads `chat_id` from request
@@ -108,91 +118,158 @@ const [chatId, setChatId] = useState<string>(() =>
 - `startNewSession()` - Generates new chat_id
 - All API calls now send `chat_id`
 
+## Topic Detection System
+
+### 7 Core Financial Topics
+
+| Topic | Gen Z Questions | Entity Extraction |
+|-------|----------------|-------------------|
+| **💰 Investment Analysis** | "Should I buy Apple stock?", "Is Bitcoin worth it?", "Add to portfolio?" | Symbol, amount, action |
+| **💸 Budget Planning** | "Can I afford this?", "Where's my money going?", "Track expenses" | Item, amount, category |
+| **💳 Debt Management** | "Should I pay off credit card?", "Debt free plan?", "Interest rates" | Amount, debt type, action |
+| **🎯 Savings Planning** | "How much to save?", "Emergency fund?", "Goal amount" | Amount, goal type, timeframe |
+| **💼 Income Optimization** | "Salary negotiation?", "Side hustle income?", "How much make?" | Amount, source, action |
+| **🧾 Tax Planning** | "Tax deductions?", "W2 questions?", "Refund amount?" | Amount, tax type, action |
+| **🔄 Continuation** | "What about it?", "Should I?", "Tell me more" | Inherits from context |
+
+### Example: Apple Stock Conversation
+
+**Before (Broken):**
+```
+User: "Tell me about Apple stock"
+→ No topic detection
+→ Context: {active_topic: null}
+
+User: "Should I add it to my portfolio?"  
+→ System doesn't know "it" = Apple stock
+→ Poor continuity
+```
+
+**After (Fixed):**
+```
+User: "Tell me about Apple stock"
+→ Topic: "investment_analysis"
+→ Entity: {symbol: "AAPL", type: "investment"}
+→ Context: {active_topic: "investment_analysis", last_entity: {symbol: "AAPL"}}
+
+User: "Should I add it to my portfolio?"
+→ Continuation pattern detected
+→ Inherits: {active_topic: "investment_analysis", last_entity: {symbol: "AAPL"}}
+→ Perfect continuity! 🎉
+```
+
 ## How It Works
 
-### Flow Example: "Can I afford a Rolex?" → "Yes" → Goal Created
+### Flow Example: Multi-Topic Financial Conversation
 
-1. **First Message: "Can I afford a Rolex?"**
-   - Frontend sends: `{action: "classify", message: "Can I afford a Rolex?", chat_id: "chat_123..."}`
-   - Backend detects: `ask_personalized` (affordability query, NOT goal)
-   - Response: "Yes, you can afford it! Want to create a savings goal?"
+1. **Investment Discussion: "Tell me about Apple stock"**
+   - Frontend sends: `{action: "classify", message: "Tell me about Apple stock", chat_id: "chat_123..."}`
+   - Backend detects: `ask_personalized` + topic: "investment_analysis"
+   - Response: "Apple (AAPL) is currently at $252.29..."
    - Context saved: 
      ```json
      {
-       "pending_action": "goal_creation_offer",
-       "last_entity": {"type": "item", "value": "Rolex", "amount": 15000},
+       "active_topic": "investment_analysis",
+       "last_entity": {"type": "investment", "symbol": "AAPL"},
        "last_messages": [...]
      }
      ```
 
-2. **Second Message: "Yes"**
-   - Frontend sends: `{action: "classify", message: "Yes", chat_id: "chat_123..."}`
-   - Backend loads context, sees `pending_action: "goal_creation_offer"`
-   - **Router override** detects affirmative + pending action
-   - Routes directly to `goal_conversation` (bypasses classification)
-   - Goal creation starts with context from Rolex conversation
+2. **Follow-up: "Should I add it to my portfolio?"**
+   - Frontend sends: `{action: "classify", message: "Should I add it to my portfolio?", chat_id: "chat_123..."}`
+   - Backend loads context, detects continuation pattern "it"
+   - Inherits: `active_topic: "investment_analysis", last_entity: {symbol: "AAPL"}`
+   - Perfect continuity - knows "it" = Apple stock
+   - Response: "Based on your portfolio, adding Apple could..."
 
-3. **Goal Flow**
-   - Uses `last_entity` to pre-fill goal details
-   - Asks for missing information
-   - Creates goal when complete
-   - Clears `pending_action` after completion
+3. **Budget Discussion: "Can I afford a $2000 MacBook?"**
+   - New topic detected: "budget_planning"
+   - Entity extracted: {item: "MacBook", amount: 2000}
+   - Context updated with new topic and entity
 
 ## Key Improvements
 
 ### Before
-- ❌ "I want to see my goals" → Misclassified as `goal_conversation`
-- ❌ "Can I afford X?" → Sometimes classified as goal creation
-- ❌ "Yes" after any message → Unclear intent
-- ❌ No conversation memory
+- ❌ "Tell me about Apple stock" → No topic detection
+- ❌ "Should I add it to my portfolio?" → Doesn't know "it" = Apple
+- ❌ No conversation memory across topics
+- ❌ Poor context continuity
 
 ### After
-- ✅ "I want to see my goals" → Correctly routed to `ask_personalized`
-- ✅ "Can I afford X?" → Never classified as goal creation
-- ✅ "Yes" after goal offer → Correctly routed to goal creation
-- ✅ 5 message history maintained per conversation
-- ✅ 30-minute session TTL
+- ✅ "Tell me about Apple stock" → Topic: "investment_analysis", Entity: {symbol: "AAPL"}
+- ✅ "Should I add it to my portfolio?" → Perfect continuity, knows "it" = Apple
+- ✅ Multi-topic conversations work seamlessly
+- ✅ 7 financial topics automatically detected
+- ✅ Entity extraction for stocks, amounts, items, etc.
+- ✅ 30-minute session TTL with context inheritance
 
-## Goal Detection Patterns
+## Topic Detection Patterns
 
-### Routes to `goal_conversation`:
-- "create a goal"
-- "set a goal for..."
-- "save $5000 for..."
-- "target amount of..."
-- "yes" (when pending_action = 'goal_creation_offer')
+### Investment Analysis:
+- "Should I buy Apple stock?"
+- "Is Bitcoin worth investing?"
+- "Add Tesla to my portfolio?"
+- "Robinhood vs Webull?"
 
-### Routes to `ask_personalized`:
-- "what are my goals?"
-- "show my goals"
-- "am I on track with my goals?"
-- "can I afford..."
-- "should I buy..."
-- "how much did I spend..."
+### Budget Planning:
+- "Can I afford this $500 jacket?"
+- "Where's all my money going?"
+- "Track my spending better"
+- "Cut subscription costs"
+
+### Debt Management:
+- "Should I pay off my credit card?"
+- "Debt free by 25?"
+- "Interest rate too high?"
+
+### Savings Planning:
+- "How much emergency fund?"
+- "Save for vacation?"
+- "Goal amount realistic?"
+
+### Income Optimization:
+- "Salary negotiation tips?"
+- "Side hustle income?"
+- "How much should I make?"
+
+### Tax Planning:
+- "Tax deductions for freelancers?"
+- "W2 vs 1099 questions?"
+- "Refund amount estimate?"
+
+### Continuation Patterns:
+- "What about it?" (inherits context)
+- "Should I?" (inherits context)
+- "Tell me more" (inherits context)
 
 ## Testing
 
 ### Test Queries
 ```
-1. "Can I afford a $15,000 Rolex?" 
-   → ask_personalized (affordability check)
-   → Response offers goal creation
+1. "Tell me about Apple stock"
+   → ask_personalized + topic: "investment_analysis"
+   → Entity: {symbol: "AAPL", type: "investment"}
 
-2. "Yes" (after above)
-   → goal_conversation (router override)
-   → Goal creation flow starts
+2. "Should I add it to my portfolio?" (after above)
+   → Continuation pattern detected
+   → Inherits: {active_topic: "investment_analysis", last_entity: {symbol: "AAPL"}}
+   → Perfect continuity
 
-3. "What are my goals?"
-   → ask_personalized (goal inquiry, NOT creation)
-   → Lists existing goals
+3. "Can I afford a $2000 MacBook?"
+   → ask_personalized + topic: "budget_planning"
+   → Entity: {item: "MacBook", amount: 2000, type: "purchase"}
 
-4. "I want to save $5000 for vacation by June 2026"
-   → goal_conversation (explicit goal creation)
-   → Goal creation flow starts
+4. "Should I pay off my credit card?"
+   → ask_personalized + topic: "debt_management"
+   → Entity: {type: "debt", debt_type: "credit card"}
 
-5. "Am I on track to complete my goals?"
-   → ask_personalized (goal analysis, NOT creation)
-   → Analyzes goal progress
+5. "How much should I save for emergency fund?"
+   → ask_personalized + topic: "savings_planning"
+   → Entity: {goal_type: "emergency", type: "savings_goal"}
+
+6. "What about it?" (after any topic)
+   → Continuation pattern
+   → Inherits previous topic and entity
 ```
 
 ## Session Management

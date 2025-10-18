@@ -38,11 +38,6 @@ export interface ChatMessage {
     action: "goal_confirm" | "goal_decline" | string;
     style?: "primary" | "secondary";
   }>;
-  goalOffer?: {
-    item: string;
-    amount: number | null;
-    showButton: boolean;
-  };
 }
 
 export type Intent =

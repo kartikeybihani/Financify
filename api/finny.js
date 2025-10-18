@@ -1013,28 +1013,6 @@ export default async function handler(req, res) {
     );
 
     const lower = (message || "").toLowerCase();
-
-    // Handle goal creation offer confirmation/rejection
-    if (conversationContext.pending_action === "goal_creation_offer") {
-      const affirmative =
-        /\b(yes|yeah|yep|sure|okay|go ahead|do it|create it)\b/i.test(lower);
-      const negative = /\b(no|nope|cancel|nevermind|nah)\b/i.test(lower);
-
-      if (affirmative || negative) {
-        console.log(
-          `✅ [ROUTER] Routing to goal_conversation due to pending action response`
-        );
-        // Override classification - route directly to goal conversation
-        return res.status(200).json({
-          intent: "goal_conversation",
-          needs_web: false,
-          needs_user_data: true,
-          confidence: 0.95,
-          router_override: true,
-          pending_action: conversationContext.pending_action,
-        });
-      }
-    }
   }
 
   try {
@@ -1917,126 +1895,24 @@ async function handleAsk(
     // Log conversation asynchronously to avoid adding latency
     setImmediate(() => logConversation(conversationData));
 
-    // Detect if this is an affordability query that should offer goal creation
-    const isAffordabilityQuery =
-      /\bcan\s+i\s+afford/i.test(message) ||
-      /\bshould\s+i\s+buy/i.test(message) ||
-      /\bis\s+it\s+affordable/i.test(message);
+    // Detect conversation topic and extract relevant entities
+    const topicDetection = detectConversationTopic(
+      message,
+      conversationContext
+    );
+    const contextMetadata = {
+      active_topic: topicDetection.topic,
+      last_entity: topicDetection.entity,
+      pending_action: topicDetection.pending_action,
+    };
 
-    const contextMetadata = {};
-
-    // If affordability query, extract item and amount for potential goal creation
-    if (isAffordabilityQuery) {
-      const amountMatch = message.match(/\$\s*([0-9,]+)/);
-      const itemMatch = message.match(
-        /\b(a|an|the)\s+(?:\$\s*[0-9,]+\s+)?([A-Za-z0-9\s]+?)(?:\?|$|\s+for|\s+at)/i
+    // Log topic detection for debugging
+    if (topicDetection.topic) {
+      console.log(`🎯 [TOPIC] Detected: ${topicDetection.topic}`);
+      console.log(`🎯 [TOPIC] Entity:`, topicDetection.entity);
+      console.log(
+        `🎯 [TOPIC] Pending action: ${topicDetection.pending_action}`
       );
-
-      if (amountMatch || itemMatch) {
-        contextMetadata.pending_action = "goal_creation_offer";
-        contextMetadata.last_entity = {
-          type: "item",
-          value: itemMatch ? itemMatch[2].trim() : "purchase",
-          amount: amountMatch
-            ? parseFloat(amountMatch[1].replace(/,/g, ""))
-            : null,
-          source: "affordability_query",
-        };
-        contextMetadata.active_topic = "affordability_check";
-
-        // Add explicit goal offer to response if item seems unaffordable
-        // Check multiple negative affordability indicators
-        const responseText = cleanedMessage.toLowerCase();
-        const negativeAffordabilityIndicators = [
-          /\bcan[\u2019\']?t afford/i,
-          /\bway out of reach/i,
-          /\bout of reach/i,
-          /\bnot affordable/i,
-          /\bbeyond your budget/i,
-          /\bno,?\s+you\s+can[\u2019\']?t/i,
-          /\byou[\u2019\']?re short by/i,
-          /\byou[\u2019\']?ll need to/i,
-          /\bshould.*pay.*debt first/i,
-          /\btoo expensive/i,
-          /\bdon[\u2019\']?t have enough/i,
-          /\bwouldn[\u2019\']?t be.*realistic/i,
-          /\blarge shortfall/i,
-          /\bputting.*financial.*health.*at risk/i,
-          /\bnot.*realistic.*purchase/i,
-          /\bwould.*be.*putting.*risk/i,
-          /\bcan[\u2019\']?t.*realistically/i,
-          /\bnot.*financially.*viable/i,
-          // Additional patterns from your logs
-          /\byou[\u2019\']?re not.*in.*position/i,
-          /\bstretching.*yourself/i,
-          /\bnot.*quite.*in.*position/i,
-          /\bwithout.*stretching/i,
-          /\bprobably.*not.*good.*fit/i,
-          /\bnot.*a.*good.*fit/i,
-          /\bwould.*need.*to.*pull/i,
-          /\bwipe.*out.*your.*savings/i,
-          /\bcutting.*into.*future.*growth/i,
-          /\btrigger.*taxes.*or.*penalties/i,
-          /\bnot.*easily.*cashed/i,
-          /\bwould.*still.*owe/i,
-          /\btoo.*much.*risk/i,
-          /\blot.*of.*risk/i,
-          // New patterns from your latest logs
-          /\bfar.*beyond.*what.*you.*can.*comfortably/i,
-          /\bwell.*beyond.*what.*you.*can.*comfortably/i,
-          /\bbeyond.*what.*you.*can.*comfortably/i,
-          /\bcomfortably.*afford/i,
-          /\bwell.*beyond.*what.*you.*can/i,
-          /\bfar.*beyond.*what.*you.*can/i,
-          /\bbeyond.*what.*you.*can/i,
-          /\bwould.*still.*be.*short/i,
-          /\bstill.*be.*short.*by/i,
-          /\bleaving.*you.*without.*cushion/i,
-          /\bwithout.*cushion/i,
-        ];
-
-        const seemsUnaffordable = negativeAffordabilityIndicators.some(
-          (pattern) => pattern.test(responseText)
-        );
-
-        console.log(
-          `🔍 [FINNY] Affordability check - Response text: "${responseText.substring(
-            0,
-            200
-          )}..."`
-        );
-        console.log(
-          `🔍 [FINNY] Affordability check - Seems unaffordable: ${seemsUnaffordable}`
-        );
-        console.log(
-          `🔍 [FINNY] Full response text for pattern matching: "${responseText}"`
-        );
-
-        // Debug: Show which patterns matched
-        if (seemsUnaffordable) {
-          const matchedPatterns = negativeAffordabilityIndicators.filter(
-            (pattern) => pattern.test(responseText)
-          );
-          console.log(
-            `🎯 [FINNY] Matched patterns:`,
-            matchedPatterns.map((p) => p.toString())
-          );
-        }
-
-        if (seemsUnaffordable) {
-          console.log(
-            `💡 [FINNY] Adding goal offer for unaffordable item: ${contextMetadata.last_entity.value}`
-          );
-          response.message += `\n\n💡 **Want me to help you save for this?** I can create a savings goal to track your progress toward ${contextMetadata.last_entity.value}. Just say "yes" or "create a goal" and I'll set it up!`;
-
-          // Add goal offer metadata for frontend button
-          response.goal_offer = {
-            item: contextMetadata.last_entity.value,
-            amount: contextMetadata.last_entity.amount,
-            show_button: true,
-          };
-        }
-      }
     }
 
     // Update conversation context asynchronously
@@ -3217,36 +3093,211 @@ function financialConceptHeuristic(raw) {
   return null;
 }
 
-// === GOAL DETECTION FUNCTION ===
+function detectConversationTopic(message, conversationContext) {
+  const text = message.toLowerCase();
 
-function detectGoalIntent(message, conversationContext) {
-  const lower = message.toLowerCase();
-
-  // 1. VAGUE REFERENCE with context (highest priority - "add that goal", "create that", "set it up")
-  const vagueReferencePatterns = [
-    /\b(?:add|create|set|make)\s+(?:that|it|this)\s*(?:goal)?/i,
-    /\b(?:yes|yeah|yep|sure|okay),?\s*(?:create|add|set)(?:\s+(?:that|it|the)\s+goal)?/i,
-    /\bset\s+(?:it|that)\s+up/i,
-    /\bgo\s+ahead/i,
-  ];
-
+  // 1. INVESTMENT & STOCKS (Gen Z loves crypto and stocks)
   if (
-    conversationContext?.pending_action === "goal_creation_offer" &&
-    conversationContext?.last_entity?.value
+    /\b(stock|stocks|invest|investment|portfolio|trading|buy|sell)\b/i.test(
+      text
+    ) ||
+    /\b(apple|aapl|tesla|tsla|bitcoin|btc|ethereum|eth|crypto|cryptocurrency)\b/i.test(
+      text
+    ) ||
+    /\b(robinhood|webull|fidelity|vanguard|schwab)\b/i.test(text) ||
+    /\b(should i buy|is.*good|worth.*investing|add.*portfolio)\b/i.test(text)
   ) {
-    if (vagueReferencePatterns.some((p) => p.test(message))) {
-      console.log(
-        "✅ [GOAL] Vague reference with context detected (e.g., 'add that goal')"
-      );
+    const stockMatch = text.match(
+      /\b(apple|aapl|tesla|tsla|bitcoin|btc|ethereum|eth|microsoft|msft|google|googl|amazon|amzn|meta|fb|nvidia|nvda)\b/i
+    );
+    const amountMatch = text.match(/\$?([0-9,]+)/);
+
+    return {
+      topic: "investment_analysis",
+      entity: {
+        type: "investment",
+        symbol: stockMatch ? stockMatch[1].toUpperCase() : null,
+        amount: amountMatch
+          ? parseFloat(amountMatch[1].replace(/,/g, ""))
+          : null,
+        action: /\bshould i buy\b/i.test(text) ? "buy_consideration" : null,
+      },
+      pending_action: /\bshould i buy\b/i.test(text)
+        ? "investment_advice"
+        : null,
+    };
+  }
+
+  // 2. BUDGET & SPENDING (Gen Z tracks every dollar)
+  if (
+    /\b(budget|spending|expense|money|dollar|dollars)\b/i.test(text) ||
+    /\b(where.*money|how much.*spend|track.*expenses|cut.*costs)\b/i.test(
+      text
+    ) ||
+    /\b(afford|can i buy|should i buy|worth it)\b/i.test(text)
+  ) {
+    const amountMatch = text.match(/\$?([0-9,]+)/);
+    const itemMatch = text.match(
+      /\b(a|an|the)\s+(?:\$?[0-9,]+\s+)?([a-z0-9\s]+?)(?:\?|$|\s+for|\s+at)/i
+    );
+
+    return {
+      topic: "budget_planning",
+      entity: {
+        type: "purchase",
+        item: itemMatch ? itemMatch[2].trim() : null,
+        amount: amountMatch
+          ? parseFloat(amountMatch[1].replace(/,/g, ""))
+          : null,
+        category:
+          /\b(food|groceries|entertainment|subscription|rent|housing)\b/i.test(
+            text
+          )
+            ? text.match(
+                /\b(food|groceries|entertainment|subscription|rent|housing)\b/i
+              )[1]
+            : null,
+      },
+      pending_action: /\b(afford|can i buy)\b/i.test(text)
+        ? "affordability_check"
+        : null,
+    };
+  }
+
+  // 3. DEBT & CREDIT (Gen Z is debt-conscious)
+  if (
+    /\b(debt|credit|card|loan|pay.*off|balance|interest|apr)\b/i.test(text) ||
+    /\b(should i pay|pay.*down|debt.*free|credit.*score)\b/i.test(text)
+  ) {
+    const amountMatch = text.match(/\$?([0-9,]+)/);
+    const cardMatch = text.match(/\b(credit card|card|loan)\b/i);
+
+    return {
+      topic: "debt_management",
+      entity: {
+        type: "debt",
+        amount: amountMatch
+          ? parseFloat(amountMatch[1].replace(/,/g, ""))
+          : null,
+        debt_type: cardMatch ? cardMatch[1] : "general",
+        action: /\b(should i pay|pay.*down)\b/i.test(text)
+          ? "payment_advice"
+          : null,
+      },
+      pending_action: /\b(should i pay|pay.*down)\b/i.test(text)
+        ? "debt_advice"
+        : null,
+    };
+  }
+
+  // 4. SAVINGS & GOALS (Gen Z plans for the future)
+  if (
+    /\b(save|saving|goal|goals|target|emergency|fund|cushion)\b/i.test(text) ||
+    /\b(how much.*save|save.*for|goal.*amount|emergency.*fund)\b/i.test(text)
+  ) {
+    const amountMatch = text.match(/\$?([0-9,]+)/);
+    const goalMatch = text.match(
+      /\b(emergency|vacation|car|house|wedding|retirement)\b/i
+    );
+
+    return {
+      topic: "savings_planning",
+      entity: {
+        type: "savings_goal",
+        amount: amountMatch
+          ? parseFloat(amountMatch[1].replace(/,/g, ""))
+          : null,
+        goal_type: goalMatch ? goalMatch[1] : "general",
+        timeframe: /\b(month|year|months|years)\b/i.test(text)
+          ? text.match(/\b(\d+)\s*(month|year|months|years)\b/i)
+          : null,
+      },
+      pending_action: /\b(how much.*save|save.*for)\b/i.test(text)
+        ? "savings_advice"
+        : null,
+    };
+  }
+
+  // 5. INCOME & CAREER (Gen Z side hustles)
+  if (
+    /\b(salary|income|pay|paycheck|raise|bonus|side.*hustle|freelance)\b/i.test(
+      text
+    ) ||
+    /\b(how much.*make|negotiate|salary.*negotiation)\b/i.test(text)
+  ) {
+    const amountMatch = text.match(/\$?([0-9,]+)/);
+
+    return {
+      topic: "income_optimization",
+      entity: {
+        type: "income",
+        amount: amountMatch
+          ? parseFloat(amountMatch[1].replace(/,/g, ""))
+          : null,
+        source: /\b(salary|side.*hustle|freelance|bonus)\b/i.test(text)
+          ? text.match(/\b(salary|side.*hustle|freelance|bonus)\b/i)[1]
+          : "general",
+      },
+      pending_action: /\b(negotiate|how much.*make)\b/i.test(text)
+        ? "income_advice"
+        : null,
+    };
+  }
+
+  // 6. TAXES & DEDUCTIONS (Gen Z is tax-savvy)
+  if (
+    /\b(tax|taxes|deduction|refund|w2|1099|filing)\b/i.test(text) ||
+    /\b(how much.*tax|tax.*return|deductible)\b/i.test(text)
+  ) {
+    const amountMatch = text.match(/\$?([0-9,]+)/);
+
+    return {
+      topic: "tax_planning",
+      entity: {
+        type: "tax",
+        amount: amountMatch
+          ? parseFloat(amountMatch[1].replace(/,/g, ""))
+          : null,
+        tax_type: /\b(deduction|refund|w2|1099)\b/i.test(text)
+          ? text.match(/\b(deduction|refund|w2|1099)\b/i)[1]
+          : "general",
+      },
+      pending_action: /\b(how much.*tax|deductible)\b/i.test(text)
+        ? "tax_advice"
+        : null,
+    };
+  }
+
+  // 7. CONTINUATION PATTERNS (Follow-up questions)
+  if (conversationContext?.active_topic) {
+    // If we have an active topic, check for continuation patterns
+    const continuationPatterns = [
+      /\b(it|this|that|them)\b/i,
+      /\b(should i|can i|is it|how about)\b/i,
+      /\b(what about|tell me more|explain)\b/i,
+    ];
+
+    if (continuationPatterns.some((pattern) => pattern.test(text))) {
       return {
-        intent: "goal_conversation",
-        confidence: 0.98,
-        reason: "vague_reference_with_context",
+        topic: conversationContext.active_topic,
+        entity: conversationContext.last_entity || {},
+        pending_action: conversationContext.pending_action,
       };
     }
   }
 
-  // 2. EXPLICIT goal creation patterns (high confidence)
+  // Default: no specific topic detected
+  return {
+    topic: null,
+    entity: {},
+    pending_action: null,
+  };
+}
+
+function detectGoalIntent(message, conversationContext) {
+  const lower = message.toLowerCase();
+
+  // 1. EXPLICIT goal creation patterns (high confidence)
   const explicitGoalPatterns = [
     /\b(?:create|set|add|make)\s+(?:a\s+)?(?:new\s+)?goal/i,
     /\bgoal\s+(?:for|to)\s+(?:save|buy)/i,
@@ -3263,31 +3314,7 @@ function detectGoalIntent(message, conversationContext) {
     };
   }
 
-  // 3. CONFIRMATION of pending goal offer (context-aware)
-  if (conversationContext?.pending_action === "goal_creation_offer") {
-    const affirmative =
-      /\b(yes|yeah|yep|sure|okay|go ahead|do it|create it)\b/i;
-    const negative = /\b(no|nope|cancel|nevermind|nah)\b/i;
-
-    if (affirmative.test(lower)) {
-      console.log("✅ [GOAL] Affirmative response to goal offer");
-      return {
-        intent: "goal_conversation",
-        confidence: 0.95,
-        reason: "pending_confirmation",
-      };
-    }
-    if (negative.test(lower)) {
-      console.log("✅ [GOAL] Negative response to goal offer");
-      return {
-        intent: "goal_conversation",
-        confidence: 0.95,
-        reason: "pending_rejection",
-      };
-    }
-  }
-
-  // 3. INQUIRY about existing goals (should be ask_personalized, NOT goal_conversation)
+  // 2. INQUIRY about existing goals (should be ask_personalized, NOT goal_conversation)
   const goalInquiryPatterns = [
     /\b(?:what are|show|list|tell me|display)\s+(?:my\s+)?(?:current\s+)?goals?\b/i,
     /\bam\s+i\s+on\s+track.*goals?\b/i,
@@ -3306,7 +3333,7 @@ function detectGoalIntent(message, conversationContext) {
     };
   }
 
-  // 4. NOT goal creation - general financial queries
+  // 3. NOT goal creation - general financial queries
   const nonGoalPatterns = [
     /\bcan\s+i\s+afford/i, // Affordability check
     /\bshould\s+i\s+buy/i, // Purchase advice
@@ -5034,7 +5061,6 @@ async function getCachedDataWithFallback(
   );
   try {
     const freshData = await fallbackFn();
-
     await setCachedData(type, identifier, freshData, userSpecific);
 
     return {

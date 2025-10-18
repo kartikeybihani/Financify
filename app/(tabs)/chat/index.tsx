@@ -361,9 +361,6 @@ export default function ChatScreen() {
             onAction={async (action) => {
               if (action === "confirm" || action === "cancel") {
                 await handleSend(action);
-              } else if (action === "create_goal") {
-                // Trigger goal creation flow
-                await handleSend("create a goal");
               }
             }}
           />
