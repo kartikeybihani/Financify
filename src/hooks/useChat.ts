@@ -448,6 +448,15 @@ export const useChat = () => {
       // Finny response received
       logger.info("🤖 [CHAT] API Response:", data);
       
+      // Additional logging for ask responses to debug goal offers
+      if (classifyData.intent === "ask_personalized") {
+        console.log("🔍 [FRONTEND] Ask response details:", {
+          message: data.message,
+          hasGoalOffer: data.message?.includes("💡") || data.message?.includes("Want me to help you save"),
+          messageLength: data.message?.length || 0
+        });
+      }
+      
       
       // Handle structured data as regular messages - no splitting or expandable logic
 
