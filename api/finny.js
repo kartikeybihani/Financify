@@ -1981,6 +1981,18 @@ async function handleAsk(
           /\bwould.*still.*owe/i,
           /\btoo.*much.*risk/i,
           /\blot.*of.*risk/i,
+          // New patterns from your latest logs
+          /\bfar.*beyond.*what.*you.*can.*comfortably/i,
+          /\bwell.*beyond.*what.*you.*can.*comfortably/i,
+          /\bbeyond.*what.*you.*can.*comfortably/i,
+          /\bcomfortably.*afford/i,
+          /\bwell.*beyond.*what.*you.*can/i,
+          /\bfar.*beyond.*what.*you.*can/i,
+          /\bbeyond.*what.*you.*can/i,
+          /\bwould.*still.*be.*short/i,
+          /\bstill.*be.*short.*by/i,
+          /\bleaving.*you.*without.*cushion/i,
+          /\bwithout.*cushion/i,
         ];
 
         const seemsUnaffordable = negativeAffordabilityIndicators.some(
@@ -1995,6 +2007,9 @@ async function handleAsk(
         );
         console.log(
           `🔍 [FINNY] Affordability check - Seems unaffordable: ${seemsUnaffordable}`
+        );
+        console.log(
+          `🔍 [FINNY] Full response text for pattern matching: "${responseText}"`
         );
 
         // Debug: Show which patterns matched
