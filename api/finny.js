@@ -3211,8 +3211,6 @@ function financialConceptHeuristic(raw) {
 }
 
 function detectConversationTopic(message, conversationContext) {
-  const text = message.toLowerCase();
-
   // 🔍 DEBUG: Log topic detection
   console.log("🔍 [TOPIC DEBUG] Detecting conversation topic:");
   console.log("  - Message:", message);
@@ -3228,7 +3226,20 @@ function detectConversationTopic(message, conversationContext) {
     );
   }
 
-  // 1. INVESTMENT & STOCKS (Gen Z loves crypto and stocks)
+  // SIMPLIFIED: Just return the loaded context if it exists
+  if (conversationContext) {
+    console.log("✅ [CONTEXT] Using existing conversation context");
+    return {
+      topic: conversationContext.active_topic,
+      entity: conversationContext.last_entity || {},
+      pending_action: conversationContext.pending_action,
+    };
+  }
+
+  // FALLBACK: If no context exists, try to detect new topics (for first messages)
+  const text = message.toLowerCase();
+
+  // Basic investment detection for first messages only
   if (
     /\b(stock|stocks|invest|investment|portfolio|trading|buy|sell)\b/i.test(
       text
@@ -3279,181 +3290,33 @@ function detectConversationTopic(message, conversationContext) {
     };
   }
 
-  // 2. BUDGET & SPENDING (Gen Z tracks every dollar)
-  if (
-    /\b(budget|spending|expense|money|dollar|dollars)\b/i.test(text) ||
-    /\b(where.*money|how much.*spend|track.*expenses|cut.*costs)\b/i.test(
-      text
-    ) ||
-    /\b(afford|can i buy|should i buy|worth it)\b/i.test(text)
-  ) {
-    const amountMatch = text.match(/\$?([0-9,]+)/);
-    const itemMatch = text.match(
-      /\b(a|an|the)\s+(?:\$?[0-9,]+\s+)?([a-z0-9\s]+?)(?:\?|$|\s+for|\s+at)/i
-    );
-
-    return {
-      topic: "budget_planning",
-      entity: {
-        type: "purchase",
-        item: itemMatch ? itemMatch[2].trim() : null,
-        amount: amountMatch
-          ? parseFloat(amountMatch[1].replace(/,/g, ""))
-          : null,
-        category:
-          /\b(food|groceries|entertainment|subscription|rent|housing)\b/i.test(
-            text
-          )
-            ? text.match(
-                /\b(food|groceries|entertainment|subscription|rent|housing)\b/i
-              )[1]
-            : null,
-      },
-      pending_action: /\b(afford|can i buy)\b/i.test(text)
-        ? "affordability_check"
-        : null,
-    };
-  }
-
-  // 3. DEBT & CREDIT (Gen Z is debt-conscious)
-  if (
-    /\b(debt|credit|card|loan|pay.*off|balance|interest|apr)\b/i.test(text) ||
-    /\b(should i pay|pay.*down|debt.*free|credit.*score)\b/i.test(text)
-  ) {
-    const amountMatch = text.match(/\$?([0-9,]+)/);
-    const cardMatch = text.match(/\b(credit card|card|loan)\b/i);
-
-    return {
-      topic: "debt_management",
-      entity: {
-        type: "debt",
-        amount: amountMatch
-          ? parseFloat(amountMatch[1].replace(/,/g, ""))
-          : null,
-        debt_type: cardMatch ? cardMatch[1] : "general",
-        action: /\b(should i pay|pay.*down)\b/i.test(text)
-          ? "payment_advice"
-          : null,
-      },
-      pending_action: /\b(should i pay|pay.*down)\b/i.test(text)
-        ? "debt_advice"
-        : null,
-    };
-  }
-
-  // 4. SAVINGS & GOALS (Gen Z plans for the future)
-  if (
-    /\b(save|saving|goal|goals|target|emergency|fund|cushion)\b/i.test(text) ||
-    /\b(how much.*save|save.*for|goal.*amount|emergency.*fund)\b/i.test(text)
-  ) {
-    const amountMatch = text.match(/\$?([0-9,]+)/);
-    const goalMatch = text.match(
-      /\b(emergency|vacation|car|house|wedding|retirement)\b/i
-    );
-
-    return {
-      topic: "savings_planning",
-      entity: {
-        type: "savings_goal",
-        amount: amountMatch
-          ? parseFloat(amountMatch[1].replace(/,/g, ""))
-          : null,
-        goal_type: goalMatch ? goalMatch[1] : "general",
-        timeframe: /\b(month|year|months|years)\b/i.test(text)
-          ? text.match(/\b(\d+)\s*(month|year|months|years)\b/i)
-          : null,
-      },
-      pending_action: /\b(how much.*save|save.*for)\b/i.test(text)
-        ? "savings_advice"
-        : null,
-    };
-  }
-
-  // 5. INCOME & CAREER (Gen Z side hustles)
-  if (
-    /\b(salary|income|pay|paycheck|raise|bonus|side.*hustle|freelance)\b/i.test(
-      text
-    ) ||
-    /\b(how much.*make|negotiate|salary.*negotiation)\b/i.test(text)
-  ) {
-    const amountMatch = text.match(/\$?([0-9,]+)/);
-
-    return {
-      topic: "income_optimization",
-      entity: {
-        type: "income",
-        amount: amountMatch
-          ? parseFloat(amountMatch[1].replace(/,/g, ""))
-          : null,
-        source: /\b(salary|side.*hustle|freelance|bonus)\b/i.test(text)
-          ? text.match(/\b(salary|side.*hustle|freelance|bonus)\b/i)[1]
-          : "general",
-      },
-      pending_action: /\b(negotiate|how much.*make)\b/i.test(text)
-        ? "income_advice"
-        : null,
-    };
-  }
-
-  // 6. TAXES & DEDUCTIONS (Gen Z is tax-savvy)
-  if (
-    /\b(tax|taxes|deduction|refund|w2|1099|filing)\b/i.test(text) ||
-    /\b(how much.*tax|tax.*return|deductible)\b/i.test(text)
-  ) {
-    const amountMatch = text.match(/\$?([0-9,]+)/);
-
-    return {
-      topic: "tax_planning",
-      entity: {
-        type: "tax",
-        amount: amountMatch
-          ? parseFloat(amountMatch[1].replace(/,/g, ""))
-          : null,
-        tax_type: /\b(deduction|refund|w2|1099)\b/i.test(text)
-          ? text.match(/\b(deduction|refund|w2|1099)\b/i)[1]
-          : "general",
-      },
-      pending_action: /\b(how much.*tax|deductible)\b/i.test(text)
-        ? "tax_advice"
-        : null,
-    };
-  }
-
-  // 7. CONTINUATION PATTERNS (Follow-up questions)
-  if (conversationContext?.active_topic) {
-    // If we have an active topic, check for continuation patterns
-    const continuationPatterns = [
-      /\b(it|this|that|them)\b/i,
-      /\b(should i|can i|is it|how about)\b/i,
-      /\b(what about|tell me more|explain)\b/i,
-    ];
-
-    const hasContinuationPattern = continuationPatterns.some((pattern) =>
-      pattern.test(text)
-    );
-    console.log("🔍 [CONTINUATION DEBUG] Checking continuation patterns:");
-    console.log("  - Has continuation pattern:", hasContinuationPattern);
-    console.log("  - Active topic:", conversationContext.active_topic);
-    console.log(
-      "  - Last entity:",
-      JSON.stringify(conversationContext.last_entity)
-    );
-
-    if (hasContinuationPattern) {
-      console.log("✅ [CONTINUATION] Pattern detected, inheriting context");
-      return {
-        topic: conversationContext.active_topic,
-        entity: conversationContext.last_entity || {},
-        pending_action: conversationContext.pending_action,
-      };
-    }
-  }
-
-  // Default: no specific topic detected
+  // Default: no specific topic detected for first messages
+  console.log("🔍 [TOPIC] No specific topic detected for first message");
   return {
     topic: null,
     entity: {},
     pending_action: null,
+  };
+}
+
+function detectGoalIntent(message, conversationContext) {
+  const lower = message.toLowerCase();
+  const amountMatch = text.match(/\$?([0-9,]+)/);
+  const cardMatch = text.match(/\b(credit card|card|loan)\b/i);
+
+  return {
+    topic: "debt_management",
+    entity: {
+      type: "debt",
+      amount: amountMatch ? parseFloat(amountMatch[1].replace(/,/g, "")) : null,
+      debt_type: cardMatch ? cardMatch[1] : "general",
+      action: /\b(should i pay|pay.*down)\b/i.test(text)
+        ? "payment_advice"
+        : null,
+    },
+    pending_action: /\b(should i pay|pay.*down)\b/i.test(text)
+      ? "debt_advice"
+      : null,
   };
 }
 
