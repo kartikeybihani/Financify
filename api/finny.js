@@ -3299,6 +3299,68 @@ function detectConversationTopic(message, conversationContext) {
   };
 }
 
+function detectGoalIntent(message, conversationContext) {
+  const lower = message.toLowerCase();
+
+  // 1. EXPLICIT goal creation patterns (high confidence)
+  const explicitGoalPatterns = [
+    /\b(?:create|set|add|make)\s+(?:a\s+)?(?:new\s+)?goal/i,
+    /\bgoal\s+(?:for|to)\s+(?:save|buy)/i,
+    /\bsave\s+\$?\d+[k]?\s+(?:for|toward)/i, // "save $5000 for"
+    /\btarget\s+(?:amount|of)\s+\$?\d+/i, // "target amount $5000"
+  ];
+
+  if (explicitGoalPatterns.some((p) => p.test(message))) {
+    console.log("✅ [GOAL] Explicit goal creation detected");
+    return {
+      intent: "goal_conversation",
+      confidence: 0.95,
+      reason: "explicit_creation",
+    };
+  }
+
+  // 2. INQUIRY about existing goals (should be ask_personalized, NOT goal_conversation)
+  const goalInquiryPatterns = [
+    /\b(?:what are|show|list|tell me|display)\s+(?:my\s+)?(?:current\s+)?goals?\b/i,
+    /\bam\s+i\s+on\s+track.*goals?\b/i,
+    /\bgoal\s+(?:progress|status|update)/i,
+    /\bhow.*doing.*goals?\b/i,
+  ];
+
+  if (goalInquiryPatterns.some((p) => p.test(message))) {
+    console.log(
+      "✅ [GOAL] Goal inquiry detected → routing to ask_personalized"
+    );
+    return {
+      intent: "ask_personalized",
+      confidence: 0.9,
+      reason: "goal_inquiry",
+    };
+  }
+
+  // 3. NOT goal creation - general financial queries
+  const nonGoalPatterns = [
+    /\bcan\s+i\s+afford/i, // Affordability check
+    /\bshould\s+i\s+buy/i, // Purchase advice
+    /\bwhat.*(?:spend|spent)/i, // Spending analysis
+    /\bhow\s+much.*(?:spend|spent)/i, // Spending questions
+    /\bwhere.*(?:money|spending)/i, // Transaction queries
+    /\bshow.*(?:transactions|spending)/i, // Transaction display
+  ];
+
+  if (nonGoalPatterns.some((p) => p.test(message))) {
+    console.log("✅ [GOAL] Non-goal financial query detected");
+    return {
+      intent: "ask_personalized",
+      confidence: 0.9,
+      reason: "non_goal_query",
+    };
+  }
+
+  // Default: no strong signal, let LLM decide
+  return null;
+}
+
 async function handleClassify(message, context) {
   console.log(
     "🔍 [FINNY] Starting classification in handleClassify for message:",
