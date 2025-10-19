@@ -1274,11 +1274,6 @@ async function createGoalFromSlots(
           style: "primary",
         },
         {
-          label: "✏️ Edit Details",
-          action: "edit_goal",
-          style: "secondary",
-        },
-        {
           label: "❌ Cancel",
           action: "cancel_goal",
           style: "secondary",

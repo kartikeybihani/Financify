@@ -359,7 +359,15 @@ export default function ChatScreen() {
             prevSender={prev as any}
             nextSender={next as any}
             onAction={async (action) => {
-              if (action === "confirm" || action === "cancel") {
+              console.log("🎯 [ACTION] Button clicked:", action);
+              // Handle all goal flow actions
+              if (
+                action === "confirm" ||
+                action === "cancel" ||
+                action === "confirm_create_goal" ||
+                action === "cancel_goal" ||
+                action === "start_over_goal"
+              ) {
                 await handleSend(action);
               }
             }}

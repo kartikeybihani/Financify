@@ -1114,7 +1114,8 @@ export default async function handler(req, res) {
         // Check for goal action buttons
         if (message === "cancel_goal") {
           response = {
-            message: "No worries, I canceled the goal setup!",
+            message:
+              "No worries! Let me know if you have any other questions. 😊",
             type: "assistant",
             intent: "goal_conversation",
             goal_flow: { active: false },

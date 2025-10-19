@@ -369,14 +369,32 @@ export const ChatMessageComponent = ({
               end={{ x: 1, y: 1 }}
               style={[styles.finnyMessageBubble, bubbleRadii]}
             >
-              <Text
-                onTextLayout={onTextLayout}
-                style={[styles.messageText, styles.finnyMessageText]}
-              >
-                {parseTextWithLinks(message.text, [
-                  styles.messageText,
-                  styles.finnyMessageText,
-                ])}
+              <Text style={[styles.messageText, styles.finnyMessageText]}>
+                {message.text.split("\n").map((line, lineIdx) => (
+                  <React.Fragment key={lineIdx}>
+                    {lineIdx > 0 && <Text>{"\n"}</Text>}
+                    <Text
+                      onTextLayout={lineIdx === 0 ? onTextLayout : undefined}
+                    >
+                      {line.split(/(\*\*[^*]+\*\*)/).map((chunk, idx) => {
+                        if (chunk.startsWith("**") && chunk.endsWith("**")) {
+                          return (
+                            <Text key={idx} style={styles.boldText}>
+                              {parseTextWithLinks(
+                                chunk.slice(2, -2),
+                                styles.boldText
+                              )}
+                            </Text>
+                          );
+                        }
+                        return parseTextWithLinks(chunk, [
+                          styles.messageText,
+                          styles.finnyMessageText,
+                        ]);
+                      })}
+                    </Text>
+                  </React.Fragment>
+                ))}
               </Text>
             </LinearGradient>
           </View>
@@ -442,10 +460,7 @@ export const ChatMessageComponent = ({
                   <LinearGradient
                     colors={
                       btn.style === "primary"
-                        ? [
-                            "rgba(74, 144, 226, 0.7)",
-                            "rgba(74, 144, 226, 0.85)",
-                          ]
+                        ? ["#4A90E2", "#5BA3F5", "#6BB6FF"]
                         : [
                             "rgba(255, 255, 255, 0.15)",
                             "rgba(255, 255, 255, 0.08)",
@@ -454,28 +469,19 @@ export const ChatMessageComponent = ({
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 1 }}
                     style={{
-                      paddingHorizontal: responsivePadding(12),
-                      paddingVertical: responsivePadding(8),
+                      paddingHorizontal: responsivePadding(14),
+                      paddingVertical: responsivePadding(10),
                       borderRadius: 20,
                       flexDirection: "row",
                       alignItems: "center",
                       justifyContent: "center",
                       shadowColor: btn.style === "primary" ? "#4A90E2" : "#000",
-                      shadowOffset: { width: 0, height: 2 },
-                      shadowOpacity: btn.style === "primary" ? 0.25 : 0.1,
-                      shadowRadius: 4,
-                      elevation: 3,
+                      shadowOffset: { width: 0, height: 3 },
+                      shadowOpacity: btn.style === "primary" ? 0.4 : 0.1,
+                      shadowRadius: 6,
+                      elevation: 4,
                       opacity: clicked ? 0.5 : 1,
-                      borderWidth: 1,
-                      borderColor:
-                        btn.style === "primary"
-                          ? "rgba(74, 144, 226, 0.4)"
-                          : "rgba(255, 255, 255, 0.2)",
-                      // Glassy effect
-                      backgroundColor:
-                        btn.style === "primary"
-                          ? "rgba(74, 144, 226, 0.3)"
-                          : "rgba(255, 255, 255, 0.1)",
+                      borderWidth: 0,
                     }}
                   >
                     <Text
