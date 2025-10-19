@@ -381,7 +381,8 @@ function parseTargetDate(text) {
   }
 
   // Handle seasonal terms and "next" patterns
-  if (!d) {
+  // Check if d is null/undefined OR an invalid date object
+  if (!d || isNaN(d.getTime())) {
     if (nextYear) {
       d = new Date(now.getFullYear() + 1, 0, 1); // January 1st of next year
     } else if (nextSeason && nextSeason[1]) {
@@ -389,34 +390,25 @@ function parseTargetDate(text) {
       const currentYear = now.getFullYear();
       const currentMonth = now.getMonth(); // 0-based (Oct = 9)
 
-      // Define seasonal months (using middle of season)
-      const seasonalMonths = {
-        spring: 3, // April
-        summer: 6, // July
-        fall: 9, // October
-        autumn: 9, // October
-        winter: 12, // December (will be handled as next year)
+      // Define seasonal mid dates
+      const seasonalDates = {
+        spring: { month: 3, day: 15 }, // Mid-April
+        summer: { month: 6, day: 15 }, // Mid-July
+        fall: { month: 9, day: 15 }, // Mid-October
+        autumn: { month: 9, day: 15 }, // Mid-October
+        winter: { month: 0, day: 15 }, // Mid-January
       };
 
+      const seasonDate = seasonalDates[season];
       let targetYear = currentYear;
-      let targetMonth = seasonalMonths[season];
 
-      // If it's currently October 2025 and user says "next fall"
-      // Target should be fall 2026 (October 2026)
-      if (season === "fall" || season === "autumn") {
-        targetYear = currentYear + 1;
-        targetMonth = 9; // October
-      } else if (season === "winter") {
-        targetYear = currentYear + 1;
-        targetMonth = 11; // December (0-based)
-      } else {
-        // For spring/summer, check if we've passed that season this year
-        if (currentMonth >= targetMonth) {
-          targetYear = currentYear + 1;
-        }
-      }
+      // "next" season always means the next occurrence
+      // Since it's currently October 2025 and user says "next summer"
+      // Target should be summer 2026 (mid-July 2026)
+      // Always increment to next year when "next" is used
+      targetYear = currentYear + 1;
 
-      d = new Date(targetYear, targetMonth, 1);
+      d = new Date(targetYear, seasonDate.month, seasonDate.day);
     } else if (nextMonthPattern && nextMonthPattern[1]) {
       const monthName = nextMonthPattern[1].toLowerCase();
       const monthMap = {
@@ -1269,7 +1261,7 @@ async function createGoalFromSlots(
       },
       actions: [
         {
-          label: "✅ Create Goal",
+          label: "✅ Confirm Goal",
           action: "confirm_create_goal",
           style: "primary",
         },

@@ -360,7 +360,7 @@ export default function ChatScreen() {
             nextSender={next as any}
             onAction={async (action) => {
               console.log("🎯 [ACTION] Button clicked:", action);
-              // Handle all goal flow actions
+              // Handle goal flow actions silently (don't show action string in chat)
               if (
                 action === "confirm" ||
                 action === "cancel" ||
@@ -368,7 +368,10 @@ export default function ChatScreen() {
                 action === "cancel_goal" ||
                 action === "start_over_goal"
               ) {
-                await handleSend(action);
+                setIsTyping(true);
+                // Send action to backend without displaying it as user message
+                await handleUserMessage(action);
+                setIsTyping(false);
               }
             }}
           />

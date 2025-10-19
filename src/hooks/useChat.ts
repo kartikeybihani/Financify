@@ -468,7 +468,7 @@ export const useChat = () => {
       }
 
       // Response status: ${res.status}
-      setProgressStatus("Generating your personalized response...");
+      // setProgressStatus("Generating your personalized response...");
       const data = await res.json();
       // Finny response received
       logger.info("🤖 [CHAT] API Response:", data);
