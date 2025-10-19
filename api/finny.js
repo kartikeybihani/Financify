@@ -7,7 +7,6 @@ import { braveSearch } from "../lib/websearch/brave.js";
 import {
   resolveTickerForQuery,
   fetchStockSnapshot,
-  formatStockResponse,
   buildStockDataSummary,
   fetchJson,
 } from "../lib/stocks.js";
@@ -4876,100 +4875,6 @@ async function executeStockPlan(plan, message) {
   }
 
   return { ticker, planWants: wants, data: base, extra };
-}
-
-function formatPlannedStockResponse(exec) {
-  const d = exec.data;
-  const wants = new Set(exec.planWants || []);
-  let out = buildStockDataSummary(d, { wants: exec.planWants });
-  const lines = [];
-
-  // Append requested items succinctly
-  if (wants.has("market_cap") && d.profile?.marketCapitalization != null) {
-    lines.push(
-      `Market cap: $${Number(d.profile.marketCapitalization).toLocaleString()}`
-    );
-  }
-  if (wants.has("volume") && d.metrics?.volume) {
-    lines.push(`Volume: ${Number(d.metrics.volume).toLocaleString()}`);
-  }
-  if (wants.has("52w")) {
-    const hi = d.metrics?.["52WeekHigh"];
-    const lo = d.metrics?.["52WeekLow"];
-    if (hi || lo)
-      lines.push(
-        `52-week range: ${lo ? `$${Number(lo).toFixed(2)}` : "?"} - ${
-          hi ? `$${Number(hi).toFixed(2)}` : "?"
-        }`
-      );
-  }
-  if (wants.has("dividend")) {
-    const y = d.metrics?.dividendYieldIndicatedAnnual;
-    const dps = d.metrics?.dividendPerShareTTM;
-    if (y || dps)
-      lines.push(
-        `Dividend: ${dps ? `$${Number(dps).toFixed(2)} TTM` : "n/a"}${
-          y ? ` (${Number(y * 100).toFixed(2)}% yield)` : ""
-        }`
-      );
-  }
-  if (
-    wants.has("earnings") &&
-    Array.isArray(exec.extra?.earnings) &&
-    exec.extra.earnings.length > 0
-  ) {
-    const e = exec.extra.earnings[0];
-    const eps = e?.epsActual != null ? e.epsActual : e?.eps ? e.eps : null;
-    const surprise =
-      e?.epsSurprisePercent != null
-        ? `${Number(e.epsSurprisePercent).toFixed(1)}%`
-        : null;
-    const surpriseEmoji =
-      surprise && parseFloat(surprise) > 0
-        ? "🚀"
-        : surprise && parseFloat(surprise) < 0
-        ? "📉"
-        : "📊";
-    lines.push("\n");
-    lines.push(
-      `Recent earnings: EPS ${eps != null ? eps : "n/a"}${
-        surprise ? ` (surprise ${surprise}) ${surpriseEmoji}` : ""
-      }`
-    );
-  }
-  if (
-    wants.has("filings") &&
-    Array.isArray(exec.extra?.filings) &&
-    exec.extra.filings.length > 0
-  ) {
-    const f = exec.extra.filings
-      .slice(0, 2)
-      .map((x) => x.form)
-      .join(", ");
-    lines.push(`Recent filings: ${f}`);
-  }
-  if (
-    wants.has("insider") &&
-    Array.isArray(exec.extra?.insider?.data) &&
-    exec.extra.insider.data.length > 0
-  ) {
-    const t = exec.extra.insider.data.slice(0, 2);
-    lines.push(
-      `Insider trades: ${t
-        .map(
-          (x) =>
-            `${x.name || "Insider"} ${
-              x.change >= 0 ? "bought" : "sold"
-            } ${Math.abs(x.change)} shares`
-        )
-        .join("; ")}`
-    );
-  }
-
-  if (lines.length > 0) {
-    out += "\n\nMore details:\n- " + lines.join("\n- ");
-  }
-  return out;
 }
 
 async function generateConversationalStockResponse(
