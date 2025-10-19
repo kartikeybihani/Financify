@@ -437,7 +437,7 @@ export const useChat = () => {
             "Authorization": `Bearer ${accessToken}`
           },
           body: JSON.stringify({
-            action: goalFlow?.active ? "goal" : classifyData.intent,
+            action: goalFlow?.active ? "goal_conversation" : classifyData.intent,
             message: messageText,
             chat_id: chatId, // Send chat_id for conversation context
             context: goalFlow ? { goal_flow: goalFlow } : {}
@@ -470,12 +470,13 @@ export const useChat = () => {
         message = `**Projection Results**\n\nTarget: $${proj.swr_target.toLocaleString()}\nProjected: $${proj.projected_nest_egg.toLocaleString()}\nYears to target: ${proj.years_to_target}\n\n${proj.notes.join('\n')}`;
       } else if ((data.intent === "ask_personalized" || data.type === "assistant") && data.message) {
         message = data.message;
-      } else if (data.intent === "goal") {
+      } else if (data.intent === "goal_conversation") {
         // Persist flow state if provided
-        if (data.flow && data.flow.active) setGoalFlow(data.flow);
+        if (data.goal_flow && data.goal_flow.active) setGoalFlow(data.goal_flow);
         else setGoalFlow(null);
+        
         // Handle goal messages with actions
-        if (data.type === "action" && data.actions) {
+        if (data.type === "assistant" && data.actions && data.actions.length > 0) {
           // Create action message
           const actionMessage: ChatMessage = {
             id: `finny-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,

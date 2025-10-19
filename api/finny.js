@@ -1131,6 +1131,35 @@ export default async function handler(req, res) {
               goal_flow: { active: false },
             };
           }
+        } else if (message === "confirm_create_goal") {
+          // User confirmed goal creation - actually create the goal
+          const currentFlow = safeContext?.session?.goal_flow;
+          if (currentFlow && currentFlow.slots && currentFlow.analysis) {
+            // Import the createGoalFromSlots function and call it without confirmation
+            const { createGoalFromSlots } = await import("./goals.js");
+            response = await createGoalFromSlots(
+              currentFlow.slots,
+              safeContext,
+              currentFlow.analysis,
+              false
+            );
+          } else {
+            response = {
+              message: "I couldn't find your goal details. Let's start over.",
+              type: "assistant",
+              intent: "goal_conversation",
+              goal_flow: { active: false },
+            };
+          }
+        } else if (message === "edit_goal") {
+          // User wants to edit goal details - restart collection
+          response = {
+            message:
+              "Sure! Let's edit your goal details. What would you like to change?",
+            type: "assistant",
+            intent: "goal_conversation",
+            goal_flow: { active: false }, // Reset the flow
+          };
         } else {
           // If there's active goal_flow in session, pass it in context
           if (safeContext?.session?.goal_flow) {
