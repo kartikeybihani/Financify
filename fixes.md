@@ -140,12 +140,12 @@
 - Add more progress status as Finny works through things like understanding the question and then taking a look at transactions or taking a look at net worth.
 - If possible, add it. Otherwise, the current version is fine for progress status.
 
-### TIMING
+### TIMING - Could be fixed.
 - Set a timeout system: do not work for more than 13–14 seconds for an answer.
 - If you don’t get an answer, give a basic response like `Sorry, I wasn’t able to do something`.
 - Do not keep thinking for so long — keep it under 13–14 seconds.
 
-### SESSION
+### SESSION - probably fixed?
 - My end goal is that Finny knows about what we have been talking about in that particular chat session. For example, if I ask Finny what's going on with Apple stock and then I ask it later, will it be a good addition to my portfolio? It should already know what we have been talking about. That's my whole goal. We can figure out different ways for this. Let me know.
 - Make sure that `sessionSummary` is run after sending the response to the user.
 - Then, if it is the same chat, just add that summary in the user context for the next question or query of the user.
