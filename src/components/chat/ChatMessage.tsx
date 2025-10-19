@@ -151,6 +151,11 @@ interface ChatMessageProps {
       action: string;
       style?: "primary" | "secondary";
     }>;
+    goalOffer?: {
+      item: string;
+      amount: number | null;
+      showButton: boolean;
+    };
   };
   showSender?: boolean;
   onAction?: (action: string) => void;

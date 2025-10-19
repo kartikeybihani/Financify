@@ -147,10 +147,14 @@ function parseTargetDate(text) {
   const standaloneMonthOnly = text.match(
     /\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t)?(?:ember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b/i
   );
-  
+
   // Handle "next" + seasonal terms and years
-  const nextSeason = normalizedText.match(/\bnext\s+(spring|summer|fall|autumn|winter|year)\b/i);
-  const nextMonthPattern = normalizedText.match(/\bnext\s+(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t)?(?:ember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b/i);
+  const nextSeason = normalizedText.match(
+    /\bnext\s+(spring|summer|fall|autumn|winter|year)\b/i
+  );
+  const nextMonthPattern = normalizedText.match(
+    /\bnext\s+(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t)?(?:ember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b/i
+  );
   const nextYear = /\bnext\s+year\b/i.test(normalizedText);
   const inYear = normalizedText.match(/\bin\s+(\d{4})\b/i);
 
@@ -384,25 +388,25 @@ function parseTargetDate(text) {
       const season = nextSeason[1].toLowerCase();
       const currentYear = now.getFullYear();
       const currentMonth = now.getMonth(); // 0-based (Oct = 9)
-      
+
       // Define seasonal months (using middle of season)
       const seasonalMonths = {
         spring: 3, // April
-        summer: 6, // July  
-        fall: 9,   // October
+        summer: 6, // July
+        fall: 9, // October
         autumn: 9, // October
-        winter: 12 // December (will be handled as next year)
+        winter: 12, // December (will be handled as next year)
       };
-      
+
       let targetYear = currentYear;
       let targetMonth = seasonalMonths[season];
-      
+
       // If it's currently October 2025 and user says "next fall"
       // Target should be fall 2026 (October 2026)
-      if (season === 'fall' || season === 'autumn') {
+      if (season === "fall" || season === "autumn") {
         targetYear = currentYear + 1;
         targetMonth = 9; // October
-      } else if (season === 'winter') {
+      } else if (season === "winter") {
         targetYear = currentYear + 1;
         targetMonth = 11; // December (0-based)
       } else {
@@ -411,26 +415,46 @@ function parseTargetDate(text) {
           targetYear = currentYear + 1;
         }
       }
-      
+
       d = new Date(targetYear, targetMonth, 1);
     } else if (nextMonthPattern && nextMonthPattern[1]) {
       const monthName = nextMonthPattern[1].toLowerCase();
       const monthMap = {
-        jan: 0, january: 0, feb: 1, february: 1, mar: 2, march: 2,
-        apr: 3, april: 3, may: 4, jun: 5, june: 5, jul: 6, july: 6,
-        aug: 7, august: 7, sep: 8, sept: 8, september: 8,
-        oct: 9, october: 9, nov: 10, november: 10, dec: 11, december: 11
+        jan: 0,
+        january: 0,
+        feb: 1,
+        february: 1,
+        mar: 2,
+        march: 2,
+        apr: 3,
+        april: 3,
+        may: 4,
+        jun: 5,
+        june: 5,
+        jul: 6,
+        july: 6,
+        aug: 7,
+        august: 7,
+        sep: 8,
+        sept: 8,
+        september: 8,
+        oct: 9,
+        october: 9,
+        nov: 10,
+        november: 10,
+        dec: 11,
+        december: 11,
       };
       const monthNum = monthMap[monthName];
       if (monthNum !== undefined) {
         let targetYear = now.getFullYear();
         let targetMonth = monthNum;
-        
+
         // If the month has passed this year, target next year
         if (now.getMonth() >= targetMonth) {
           targetYear = now.getFullYear() + 1;
         }
-        
+
         d = new Date(targetYear, targetMonth, 1);
       }
     } else if (inYear && inYear[1]) {
