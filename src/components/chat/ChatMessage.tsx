@@ -15,6 +15,7 @@ import {
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import * as WebBrowser from "expo-web-browser";
+import { Svg, Path } from "react-native-svg";
 
 // Enable LayoutAnimation for Android
 if (Platform.OS === "android") {
@@ -121,6 +122,94 @@ const parseTextWithLinks = (text: string, textStyle: any) => {
   });
 };
 
+// Helper to pick the corner color that meets the tail
+const pickTailColor = (colors: string[], side: "left" | "right") => {
+  if (side === "right") {
+    // For user messages, use the end color (darker)
+    return colors[colors.length - 1];
+  } else {
+    // For Finny messages, use a darker version of the first color
+    const baseColor = colors[1];
+    // Darken the color by reducing brightness
+    if (baseColor.startsWith("#")) {
+      // Convert hex to RGB, darken, and convert back
+      const hex = baseColor.slice(1);
+      const r = Math.max(0, parseInt(hex.substr(0, 2), 16) - 30);
+      const g = Math.max(0, parseInt(hex.substr(2, 2), 16) - 30);
+      const b = Math.max(0, parseInt(hex.substr(4, 2), 16) - 30);
+      return `#${r.toString(16).padStart(2, "0")}${g
+        .toString(16)
+        .padStart(2, "0")}${b.toString(16).padStart(2, "0")}`;
+    }
+    return baseColor;
+  }
+};
+
+// SVG tail component with iMessage-style teardrop
+const BubbleTail = ({
+  side,
+  color,
+}: {
+  side: "left" | "right";
+  color: string;
+}) => {
+  // Different configs for left and right
+  const config =
+    side === "right"
+      ? {
+          width: 36,
+          height: 20,
+          offset: -16,
+          viewBox: "0 0 36 20",
+          flipX: -1,
+          // Much wider and shorter, very thick at top
+          path: "M36,0 L36,12 Q34,12 30,14 Q26,16 22,18 Q16,20 8,20 Q12,18 16,16 Q20,14 24,12 Q28,10 32,6 Q34,3 36,0 Z",
+          shadowPath: "M36,1 Q34,6 30,10 Q26,14 22,16 Q16,18 8,20",
+        }
+      : {
+          width: 40,
+          height: 20,
+          offset: -20,
+          viewBox: "0 0 40 20",
+          flipX: 1,
+          // Even wider for left side, very thick
+          path: "M40,0 L40,14 Q38,14 34,16 Q30,18 25,19 Q18,20 8,20 Q12,18 18,16 Q24,14 30,12 Q34,8 38,4 Q39,2 40,0 Z",
+          shadowPath: "M40,1 Q38,7 34,12 Q30,16 25,18 Q18,19 8,20",
+        };
+
+  return (
+    <View
+      pointerEvents="none"
+      style={{
+        position: "absolute",
+        bottom: side === "left" ? 7 : 0,
+        right: side === "right" ? config.offset : undefined,
+        left: side === "left" ? config.offset : undefined,
+        width: config.width,
+        height: config.height,
+      }}
+    >
+      <Svg
+        width={config.width}
+        height={config.height}
+        viewBox={config.viewBox}
+        style={{ transform: [{ scaleX: config.flipX }] }}
+      >
+        {/* Shadow path */}
+        <Path
+          d={config.shadowPath}
+          fill="none"
+          stroke="rgba(0,0,0,0.2)"
+          strokeWidth="2"
+          strokeLinecap="round"
+        />
+        {/* Main tail - very thick at connection point */}
+        <Path d={config.path} fill={color} />
+      </Svg>
+    </View>
+  );
+};
+
 // Responsive calculations
 const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
 const isSmallScreen = screenWidth < 375;
@@ -184,19 +273,13 @@ function getBubbleRadii({
   const isUser = sender === "user";
 
   if (isFirstInGroup && isLastInGroup) {
-    return isUser
-      ? {
-          borderTopLeftRadius: r,
-          borderTopRightRadius: 3, // Sharp edge for user messages
-          borderBottomLeftRadius: r,
-          borderBottomRightRadius: r,
-        }
-      : {
-          borderTopLeftRadius: r,
-          borderTopRightRadius: r,
-          borderBottomLeftRadius: r,
-          borderBottomRightRadius: r,
-        };
+    // Even radii all around - tail does the pointing
+    return {
+      borderTopLeftRadius: r,
+      borderTopRightRadius: r,
+      borderBottomLeftRadius: r,
+      borderBottomRightRadius: r,
+    };
   }
 
   if (isFirstInGroup) {
@@ -219,7 +302,7 @@ function getBubbleRadii({
     return isUser
       ? {
           borderTopLeftRadius: r,
-          borderTopRightRadius: 3, // Sharp edge for user messages
+          borderTopRightRadius: r,
           borderBottomLeftRadius: r,
           borderBottomRightRadius: r,
         }
@@ -227,7 +310,7 @@ function getBubbleRadii({
           borderTopLeftRadius: r,
           borderTopRightRadius: r,
           borderBottomLeftRadius: r,
-          borderBottomRightRadius: mid,
+          borderBottomRightRadius: r,
         };
   }
 
@@ -302,6 +385,9 @@ export const ChatMessageComponent = ({
   };
 
   if (isUser) {
+    const userGradient = ["#2A3A4A", "#1A2A3A"] as const;
+    const userTailColor = pickTailColor([...userGradient], "right");
+
     return (
       <Animated.View
         style={[
@@ -314,10 +400,14 @@ export const ChatMessageComponent = ({
         ]}
       >
         <LinearGradient
-          colors={["#2A3A4A", "#1A2A3A"]}
+          colors={userGradient}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
-          style={[styles.userMessageBubble, bubbleRadii]}
+          style={[
+            styles.userMessageBubble,
+            bubbleRadii,
+            { paddingBottom: responsivePadding(10) },
+          ]}
         >
           <Text
             onTextLayout={onTextLayout}
@@ -328,8 +418,9 @@ export const ChatMessageComponent = ({
               styles.userMessageText,
             ])}
           </Text>
-          {isLastInGroup && <View style={styles.userMessageTail} />}
         </LinearGradient>
+        {/* Tail only if last in group */}
+        {isLastInGroup && <BubbleTail side="right" color={userTailColor} />}
       </Animated.View>
     );
   }
@@ -341,6 +432,9 @@ export const ChatMessageComponent = ({
     message.actions.length > 0
   ) {
     const [clicked, setClicked] = useState(false);
+    const finnyGradient = ["#1A3A5A", "#2E5A8A", "#4A90E2"] as const;
+    const finnyTailColor = pickTailColor([...finnyGradient], "left");
+
     return (
       <Animated.View
         style={{
@@ -364,10 +458,18 @@ export const ChatMessageComponent = ({
         <View style={styles.finnyMessageRow}>
           <View style={styles.finnyMessageContainer}>
             <LinearGradient
-              colors={["#1A3A5A", "#2E5A8A", "#4A90E2"]}
+              colors={finnyGradient}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
-              style={[styles.finnyMessageBubble, bubbleRadii]}
+              style={[
+                styles.finnyMessageBubble,
+                bubbleRadii,
+                { paddingBottom: responsivePadding(10) },
+                !isFirstInGroup &&
+                  !isLastInGroup &&
+                  styles.finnyMessageBubbleGrouped,
+                isLastInGroup && styles.finnyMessageBubbleLastInGroup,
+              ]}
             >
               <Text style={[styles.messageText, styles.finnyMessageText]}>
                 {message.text.split("\n").map((line, lineIdx) => (
@@ -397,6 +499,8 @@ export const ChatMessageComponent = ({
                 ))}
               </Text>
             </LinearGradient>
+            {/* Tail only if last in group */}
+            {isLastInGroup && <BubbleTail side="left" color={finnyTailColor} />}
           </View>
         </View>
         {/* Action buttons below the bubble */}
@@ -507,6 +611,8 @@ export const ChatMessageComponent = ({
 
   // Display message as single string (no splitting)
   const messageText = message.text;
+  const finnyGradient = ["#1A3A5A", "#2E5A8A", "#4A90E2"] as const;
+  const finnyTailColor = pickTailColor([...finnyGradient], "left");
 
   return (
     <Animated.View
@@ -532,10 +638,18 @@ export const ChatMessageComponent = ({
         <Animated.View style={styles.finnyMessageRow}>
           <View style={styles.finnyMessageContainer}>
             <LinearGradient
-              colors={["#1A3A5A", "#2E5A8A", "#4A90E2"]}
+              colors={finnyGradient}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
-              style={[styles.finnyMessageBubble, bubbleRadii]}
+              style={[
+                styles.finnyMessageBubble,
+                bubbleRadii,
+                { paddingBottom: responsivePadding(10) },
+                !isFirstInGroup &&
+                  !isLastInGroup &&
+                  styles.finnyMessageBubbleGrouped,
+                isLastInGroup && styles.finnyMessageBubbleLastInGroup,
+              ]}
             >
               <Text style={[styles.messageText, styles.finnyMessageText]}>
                 {messageText.split("\n").map((line, lineIdx) => (
@@ -565,6 +679,8 @@ export const ChatMessageComponent = ({
                 ))}
               </Text>
             </LinearGradient>
+            {/* Tail only if last in group */}
+            {isLastInGroup && <BubbleTail side="left" color={finnyTailColor} />}
           </View>
         </Animated.View>
       )}
@@ -576,16 +692,17 @@ const styles = StyleSheet.create({
   messageContainer: {
     maxWidth: isSmallScreen ? "95%" : "90%",
     marginVertical: responsivePadding(1),
+    overflow: "visible",
   },
   userMessageContainer: {
     alignSelf: "flex-end",
     marginRight: responsivePadding(16),
     marginLeft: responsiveWidth(15),
     marginTop: responsivePadding(8),
+    overflow: "visible",
   },
   userMessageBubble: {
-    borderRadius: 12,
-    borderTopRightRadius: 3,
+    borderRadius: 18,
     paddingHorizontal: responsivePadding(12),
     paddingVertical: responsivePadding(8),
     shadowColor: "#000",
@@ -597,29 +714,19 @@ const styles = StyleSheet.create({
     shadowRadius: 2,
     elevation: 2,
     position: "relative",
-  },
-  userMessageTail: {
-    position: "absolute",
-    right: -6,
-    bottom: 8,
-    width: 0,
-    height: 0,
-    borderLeftWidth: 6,
-    borderLeftColor: "#1A2A3A",
-    borderTopWidth: 6,
-    borderTopColor: "transparent",
-    borderBottomWidth: 6,
-    borderBottomColor: "transparent",
+    overflow: "visible",
   },
   finnyMessageRow: {
     flexDirection: "row",
     alignItems: "flex-start",
     marginBottom: responsivePadding(1),
+    overflow: "visible",
   },
   finnyMessageContainer: {
     flex: 1,
     marginLeft: responsivePadding(12),
     marginRight: responsiveWidth(15),
+    overflow: "visible",
   },
   finnyMessageBubble: {
     paddingHorizontal: responsivePadding(12),
@@ -629,17 +736,24 @@ const styles = StyleSheet.create({
       width: 0,
       height: 1,
     },
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.08,
     shadowRadius: 2,
     elevation: 2,
     marginBottom: responsivePadding(2),
-    borderRadius: 12,
-    borderBottomLeftRadius: 1,
+    borderRadius: 18,
+    position: "relative",
+    overflow: "visible",
+  },
+  finnyMessageBubbleGrouped: {
+    marginBottom: responsivePadding(8),
+  },
+  finnyMessageBubbleLastInGroup: {
+    marginBottom: responsivePadding(13),
   },
   messageText: {
     fontSize: responsiveFontSize(14),
     lineHeight: responsiveFontSize(18),
-    letterSpacing: -0.1,
+    letterSpacing: 0,
     fontFamily: Platform.OS === "ios" ? "SF Pro Text" : "System",
   },
   userMessageText: {
