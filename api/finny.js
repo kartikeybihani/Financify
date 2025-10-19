@@ -1715,6 +1715,18 @@ async function handleAsk(
       "- NEVER make meta-references to data sources or summaries. Avoid phrases like 'matching the summary', 'as shown in your summary', 'according to your data', or 'based on your financial summary'.",
       "- Present information as if it's naturally known, without mentioning where you got it from or how you accessed it.",
       "",
+      "RESPONSE STRUCTURE FOR BETTER MESSAGE SPLITTING:",
+      "- For GOAL queries: Structure as 'Here's your current goals:' followed by all goals in bullet points in ONE cohesive message, then separate message for progress commentary",
+      "- For INVESTMENT advice: Group related bullet points (sector overlap, risk tolerance, diversification) together in logical chunks",
+      "- Use clear section breaks with phrases like 'Bottom line:', 'Heads up:', 'Hit me up if you need help' to create natural split points",
+      "- Keep related content together - don't split mid-concept or mid-sentence",
+      "- End with actionable next steps or encouragement in a separate message when appropriate",
+      "",
+      "GOAL QUERY DETECTION:",
+      "- If user asks about their goals (current goals, my goals, goal progress, etc.), this is a personal data query",
+      "- For goal queries, do NOT include any source links or external references",
+      "- Focus purely on their personal goal data and provide encouragement/advice without external sources",
+      "",
       "CRITICAL FORMATTING RULES:",
       "- NEVER use markdown headers (no ###, ##, #) or hashtags",
       "- NEVER use numbered headers with emojis (like ### 1️⃣)",
@@ -2189,8 +2201,8 @@ function splitLongResponse(text) {
     return [{ type: "text", content: text }];
   }
 
-  // If response is short enough, return as single message (reduced threshold for 40% shorter responses)
-  if (text.length <= 250) {
+  // If response is short enough, return as single message (increased threshold for better UX)
+  if (text.length <= 400) {
     return [{ type: "text", content: text }];
   }
 
@@ -2259,6 +2271,23 @@ function findBreakpoints(text) {
     });
   });
 
+  // Priority 5: Sentence boundaries (after periods, exclamation marks, question marks)
+  const sentenceEndings = [...text.matchAll(/[.!?]\s+/g)];
+  sentenceEndings.forEach((match) => {
+    // Only add if it's not already captured by higher priority breakpoints
+    const position = match.index + match[0].length;
+    const alreadyExists = breakpoints.some(
+      (bp) => Math.abs(bp.position - position) < 5
+    );
+    if (!alreadyExists) {
+      breakpoints.push({
+        position: position,
+        priority: 5,
+        type: "sentence_boundary",
+      });
+    }
+  });
+
   // Priority 4: Section headers (common transition phrases)
   const sectionHeaders = [
     "bottom line",
@@ -2269,6 +2298,10 @@ function findBreakpoints(text) {
     "practical next steps",
     "key takeaways",
     "summary",
+    "heads up",
+    "hit me up",
+    "sources:",
+    "source:",
   ];
 
   sectionHeaders.forEach((header) => {
@@ -2306,19 +2339,19 @@ function createChunks(text, breakpoints) {
     // Check if this breakpoint would create a good chunk size
     const chunkLength = potentialEnd - currentStart;
 
-    // Ideal chunk size: 120-200 characters for Gen Z (40% shorter responses)
-    if (chunkLength >= 120 && chunkLength <= 200) {
+    // Ideal chunk size: 200-350 characters for better UX (increased from 120-200)
+    if (chunkLength >= 200 && chunkLength <= 350) {
       chunks.push(text.slice(currentStart, potentialEnd));
       currentStart = potentialEnd;
       currentEnd = potentialEnd;
     }
     // If chunk would be too small, keep looking for better breakpoint
-    else if (chunkLength < 200) {
+    else if (chunkLength < 350) {
       currentEnd = potentialEnd;
       continue;
     }
     // If chunk would be too large, use the previous breakpoint
-    else if (chunkLength > 200 && currentEnd > currentStart) {
+    else if (chunkLength > 350 && currentEnd > currentStart) {
       chunks.push(text.slice(currentStart, currentEnd));
       currentStart = currentEnd;
       currentEnd = potentialEnd;
@@ -2336,13 +2369,13 @@ function createChunks(text, breakpoints) {
   // Ensure no chunk is too long (fallback safety)
   const finalChunks = [];
   chunks.forEach((chunk) => {
-    if (chunk.length > 250) {
-      // Emergency split at sentence boundaries
+    if (chunk.length > 400) {
+      // Emergency split at sentence boundaries - NEVER split mid-sentence
       const sentences = chunk.split(/(?<=[.!?])\s+/);
       let currentSentenceChunk = "";
 
       sentences.forEach((sentence) => {
-        if (currentSentenceChunk.length + sentence.length > 250) {
+        if (currentSentenceChunk.length + sentence.length > 400) {
           if (currentSentenceChunk.trim()) {
             finalChunks.push(currentSentenceChunk.trim());
           }
