@@ -22,6 +22,7 @@ import {
   saveMemoryCandidates,
   updateMemorySummary,
   generateMemorySummary,
+  validateMemoriesWithSmallModel,
 } from "./memory.js";
 
 // Utilities
@@ -725,119 +726,7 @@ function localPersonalSignalGate(m) {
   }
 }
 
-// LLM validator with strict schema + postfilters (whitelist + thresholds)
-async function validateMemoriesWithSmallModel(
-  message,
-  hints,
-  intent = "ask_personalized"
-) {
-  const allowedByIntent = {
-    ask_personalized: new Set([
-      // profile
-      "profile_trait.age",
-      "profile_trait.location",
-      "profile_trait.occupation",
-      "profile_trait.education",
-      "profile_trait.family.marital_status",
-      "profile_trait.family.relationship_status",
-      "profile_trait.family.living_situation",
-      // constraints
-      "constraint.debt.student_loans",
-      "constraint.debt.credit_card",
-      // goals
-      "goal.family.children",
-      "goal.financial.house_down_payment",
-      // context
-      "context_signal.financial_stress",
-      "context_signal.immigration_status",
-    ]),
-    goal_conversation: new Set([
-      "goal.family.children",
-      "goal.financial.house_down_payment",
-      "constraint.debt.student_loans",
-      "constraint.debt.credit_card",
-      "profile_trait.location",
-      "profile_trait.occupation",
-      "profile_trait.education",
-    ]),
-  };
-
-  // Use KEY_SYNONYMS to guide extraction, but keep an intent gate for safety
-  const intentAllowed =
-    allowedByIntent[intent] || allowedByIntent.ask_personalized;
-  const synonymKeys = new Set(Object.keys(KEY_SYNONYMS || {}));
-  const allowed = new Set([...(intentAllowed || []), ...synonymKeys]);
-
-  try {
-    const prompt = [
-      // Compact, token-efficient rules
-      "Return ONLY JSON: {memories:[{type,key,value,confidence,evidence:[],grounded:true|false}]}.",
-      "Extract durable facts useful to a financial advisor.",
-      "Grounded = explicit span in text for age/date/amount/state/role/education.",
-      "Normalize values (e.g., age '20' not '20 years old').",
-      "Rules:",
-      "- 'I'm 20' / 'I'm a 20 year old' / '20 yo' → profile_trait.age='20' (evidence span).",
-      "- 'studying X' / 'major in X' → profile_trait.education='studying X' (span).",
-      "- If studying implies student, add profile_trait.occupation='student' (evidence span contains 'studying'/'student').",
-      "- 'I work as' / 'I'm a <profession>' → profile_trait.occupation='<profession>'.",
-      "Confidence ∈ [0.8,1.0] only when explicit. If unsure, omit.",
-      "No hobbies unless financially relevant.",
-      'Example→ Input: I\'m a 20 year old studying cs and finance. Output: {"memories":[{"type":"profile_trait","key":"profile_trait.age","value":"20","confidence":0.95,"evidence":["20 year old"],"grounded":true},{"type":"profile_trait","key":"profile_trait.education","value":"studying cs and finance","confidence":0.9,"evidence":["studying cs and finance"],"grounded":true},{"type":"profile_trait","key":"profile_trait.occupation","value":"student","confidence":0.85,"evidence":["studying"],"grounded":true}]}',
-      `Message: ${message}`,
-    ].join("\n");
-
-    const r = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${process.env.OPENROUTER_GROK_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: SMALLER_MODEL,
-        temperature: 0.0,
-        max_tokens: 220,
-        response_format: { type: "json_object" },
-        messages: [
-          { role: "system", content: "Return ONLY valid JSON per schema." },
-          { role: "user", content: prompt },
-        ],
-      }),
-    });
-    if (!r.ok) return [];
-    const data = await r.json();
-    let content = data.choices?.[0]?.message?.content || "";
-    if (content.startsWith("```"))
-      content = content.replace(/^```json?\s*|\s*```$/g, "");
-    const parsed = JSON.parse(content);
-    const raw = Array.isArray(parsed?.memories) ? parsed.memories : [];
-
-    // Merge with hints, then filter
-    const merged = [...hints, ...raw];
-    const filtered = merged.filter((m) => {
-      const key = m.key || "";
-      const conf = m.confidence != null ? m.confidence : m.confidence_score;
-      const grounded =
-        m.grounded === true ||
-        (Array.isArray(m.evidence) && m.evidence.length > 0);
-      if (!allowed.has(key)) return false;
-      if (!(conf >= 0.8)) return false;
-      if (!grounded) return false;
-      if (!m.value || typeof m.value !== "string") return false;
-      return true;
-    });
-
-    console.log("🔍 [FINNY] Filtered memories:", filtered);
-
-    // Deduplicate by type+key
-    const unique = filtered.filter(
-      (m, i, self) =>
-        i === self.findIndex((x) => x.type === m.type && x.key === m.key)
-    );
-    return unique;
-  } catch {
-    return [];
-  }
-}
+// validateMemoriesWithSmallModel moved to memory.js
 // Conversation logging functionality with retry logic
 async function logConversation(conversationData) {
   console.log(
