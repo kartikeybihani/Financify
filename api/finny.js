@@ -1585,6 +1585,20 @@ async function handleAsk(
       "- Use the user's name when available to create personal connection",
       "- Focus on financial empowerment and positive outcomes",
       "",
+      "GEN Z COMMUNICATION STYLE:",
+      "- Keep responses concise (150-200 words max per message)",
+      "- Use direct, conversational language (avoid corporate jargon)",
+      "- Be engaging but professional (not overly casual)",
+      "- Use strategic emojis sparingly (📊 for data, 💰 for money, 🎯 for goals)",
+      "- Say 'Hey!' instead of 'Hello' for greetings",
+      "- Use 'I'd say' instead of 'I think' for opinions",
+      "- Use 'But' instead of 'However' for transitions",
+      "- Use 'Plus' instead of 'Additionally' for extra points",
+      "- Use 'Heads up' instead of 'It's important to note'",
+      "- End with casual but professional phrases like 'Hit me up if you need anything'",
+      "- Keep financial terminology intact (volatility, sector concentration, etc.)",
+      "- Maintain professional credibility while being more engaging and casual",
+      "",
       "EMPATHETIC ENGAGEMENT:",
       "- ALWAYS acknowledge and engage with personal information users share, even if not directly financial",
       "- Show genuine interest in their life, studies, career, location, hobbies, or experiences",
@@ -2175,8 +2189,8 @@ function splitLongResponse(text) {
     return [{ type: "text", content: text }];
   }
 
-  // If response is short enough, return as single message
-  if (text.length <= 400) {
+  // If response is short enough, return as single message (reduced threshold for 40% shorter responses)
+  if (text.length <= 250) {
     return [{ type: "text", content: text }];
   }
 
@@ -2292,8 +2306,8 @@ function createChunks(text, breakpoints) {
     // Check if this breakpoint would create a good chunk size
     const chunkLength = potentialEnd - currentStart;
 
-    // Ideal chunk size: 200-350 characters for Gen Z
-    if (chunkLength >= 200 && chunkLength <= 350) {
+    // Ideal chunk size: 120-200 characters for Gen Z (40% shorter responses)
+    if (chunkLength >= 120 && chunkLength <= 200) {
       chunks.push(text.slice(currentStart, potentialEnd));
       currentStart = potentialEnd;
       currentEnd = potentialEnd;
@@ -2304,7 +2318,7 @@ function createChunks(text, breakpoints) {
       continue;
     }
     // If chunk would be too large, use the previous breakpoint
-    else if (chunkLength > 350 && currentEnd > currentStart) {
+    else if (chunkLength > 200 && currentEnd > currentStart) {
       chunks.push(text.slice(currentStart, currentEnd));
       currentStart = currentEnd;
       currentEnd = potentialEnd;
@@ -2322,13 +2336,13 @@ function createChunks(text, breakpoints) {
   // Ensure no chunk is too long (fallback safety)
   const finalChunks = [];
   chunks.forEach((chunk) => {
-    if (chunk.length > 400) {
+    if (chunk.length > 250) {
       // Emergency split at sentence boundaries
       const sentences = chunk.split(/(?<=[.!?])\s+/);
       let currentSentenceChunk = "";
 
       sentences.forEach((sentence) => {
-        if (currentSentenceChunk.length + sentence.length > 400) {
+        if (currentSentenceChunk.length + sentence.length > 250) {
           if (currentSentenceChunk.trim()) {
             finalChunks.push(currentSentenceChunk.trim());
           }
@@ -2348,6 +2362,9 @@ function createChunks(text, breakpoints) {
 
   return finalChunks;
 }
+
+// === GEN Z LANGUAGE ENHANCEMENT ===
+// This function is now removed - Gen Z language is handled via prompt engineering
 
 // === ENHANCED WEB SEARCH DETECTION ===
 // Enhanced web search detection patterns
