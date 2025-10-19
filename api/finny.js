@@ -3847,55 +3847,34 @@ async function handleClassify(message, context, conversationContext = null) {
     try {
       out = JSON.parse(cleanContent);
     } catch (parseError) {
-      console.log("❌ [FINNY] JSON parse error, trying to fix incomplete JSON");
+      console.log("❌ [FINNY] JSON parse error, using fallback classification");
       console.log("❌ [FINNY] Raw content was:", cleanContent);
 
-      // Try to extract intent from malformed JSON
-      const intentMatch = cleanContent.match(/"intent"\s*:\s*"([^"]+)"/);
-      const needsWebMatch = cleanContent.match(
-        /"needs_web"\s*:\s*(true|false)/
-      );
-      const needsUserDataMatch = cleanContent.match(
-        /"needs_user_data"\s*:\s*(true|false)/
-      );
-      const confidenceMatch = cleanContent.match(
-        /"confidence"\s*:\s*([0-9.]+)/
-      );
-
-      if (intentMatch) {
-        console.log("✅ [FINNY] Extracted intent from malformed JSON");
+      // Use goal detection fallback instead of trying to parse malformed JSON
+      const goalDetection = detectGoalIntent(message, conversationContext);
+      if (goalDetection && goalDetection.intent === "goal_conversation") {
+        console.log("✅ [FINNY] Using goal detection fallback");
         out = {
-          intent: intentMatch[1],
-          needs_web: needsWebMatch ? needsWebMatch[1] === "true" : false,
-          needs_user_data: needsUserDataMatch
-            ? needsUserDataMatch[1] === "true"
-            : false,
+          intent: "goal_conversation",
+          needs_web: false,
+          needs_user_data: true,
           state: null,
           entities: [],
-          confidence: confidenceMatch ? parseFloat(confidenceMatch[1]) : 0.8,
-          malformed_json: true,
+          confidence: goalDetection.confidence,
+          fallback: true,
+          detection_reason: goalDetection.reason,
         };
       } else {
-        // Try to extract from the weird format we're seeing
-        const weirdIntentMatch = cleanContent.match(/ask_personalized/);
-        const weirdNeedsWebMatch = cleanContent.match(/false/);
-        const weirdNeedsUserDataMatch = cleanContent.match(/true/);
-        const weirdConfidenceMatch = cleanContent.match(/0\.95/);
-
-        if (weirdIntentMatch) {
-          console.log("✅ [FINNY] Extracted from weird malformed JSON format");
-          out = {
-            intent: "ask_personalized",
-            needs_web: weirdNeedsWebMatch ? false : false,
-            needs_user_data: weirdNeedsUserDataMatch ? true : false,
-            state: null,
-            entities: [],
-            confidence: weirdConfidenceMatch ? 0.95 : 0.8,
-            malformed_json: true,
-          };
-        } else {
-          throw new Error("Malformed JSON response");
-        }
+        // Default fallback
+        out = {
+          intent: "ask_personalized",
+          needs_web: false,
+          needs_user_data: true,
+          state: null,
+          entities: [],
+          confidence: 0.8,
+          fallback: true,
+        };
       }
     }
     console.log("🔍 [FINNY] Parsed classification result:", out);
