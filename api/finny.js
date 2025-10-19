@@ -3666,12 +3666,30 @@ async function handleClassify(message, context, conversationContext = null) {
   // Check cache first
   const cachedResult = getCachedClassification(text);
   if (cachedResult) {
-    console.log(
-      `⚡ [FINNY] Using cached classification result (${
-        Date.now() - startTime
-      }ms)`
-    );
-    return cachedResult;
+    // Validate cached result structure before using it
+    if (
+      cachedResult.intent &&
+      typeof cachedResult.intent === "string" &&
+      cachedResult.needs_web !== undefined &&
+      cachedResult.needs_user_data !== undefined
+    ) {
+      console.log(
+        `⚡ [FINNY] Using cached classification result (${
+          Date.now() - startTime
+        }ms)`
+      );
+      return cachedResult;
+    } else {
+      console.log(
+        "⚠️ [FINNY] Cached classification is malformed, invalidating cache"
+      );
+      // Clear the malformed cached entry
+      const key = generateClassificationCacheKey(text);
+      classificationCache.delete(key);
+      console.log(
+        "✅ [FINNY] Malformed cache entry cleared, proceeding with fresh classification"
+      );
+    }
   }
 
   // Check for goal intent (before LLM call for efficiency)
@@ -3846,8 +3864,30 @@ async function handleClassify(message, context, conversationContext = null) {
     let out;
     try {
       out = JSON.parse(cleanContent);
+
+      // VALIDATION: Check if the parsed result has the correct structure
+      // If 'intent' field is missing or has wrong type, treat as malformed
+      if (!out.intent || typeof out.intent !== "string") {
+        console.log(
+          "❌ [FINNY] Malformed classification result - missing or invalid 'intent' field"
+        );
+        console.log("❌ [FINNY] Malformed structure:", out);
+        throw new Error("Invalid classification structure");
+      }
+
+      // Check if required fields exist
+      if (out.needs_web === undefined || out.needs_user_data === undefined) {
+        console.log(
+          "❌ [FINNY] Malformed classification result - missing required fields"
+        );
+        console.log("❌ [FINNY] Malformed structure:", out);
+        throw new Error("Missing required classification fields");
+      }
     } catch (parseError) {
-      console.log("❌ [FINNY] JSON parse error, using fallback classification");
+      console.log(
+        "❌ [FINNY] JSON parse/validation error, using fallback classification"
+      );
+      console.log("❌ [FINNY] Error:", parseError.message);
       console.log("❌ [FINNY] Raw content was:", cleanContent);
 
       // Use goal detection fallback instead of trying to parse malformed JSON
@@ -3877,7 +3917,7 @@ async function handleClassify(message, context, conversationContext = null) {
         };
       }
     }
-    console.log("🔍 [FINNY] Parsed classification result:", out);
+    console.log("🔍 [FINNY] Validated classification result:", out);
 
     // Defensive post-process so your app never crashes
     if (!out.state || typeof out.state !== "string") out.state = null;
