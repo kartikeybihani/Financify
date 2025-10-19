@@ -334,6 +334,7 @@ export const ChatMessageComponent = ({
     );
   }
 
+  // Check for action type and buttons
   if (
     message.type === "action" &&
     message.actions &&
@@ -386,8 +387,9 @@ export const ChatMessageComponent = ({
             flexDirection: "row",
             alignItems: "center",
             marginLeft: 12,
-            marginTop: 8,
-            gap: responsivePadding(8),
+            marginTop: 6,
+            gap: responsivePadding(6),
+            flexWrap: "wrap",
           }}
         >
           {message.actions.map((btn, idx) => {
@@ -415,89 +417,81 @@ export const ChatMessageComponent = ({
             };
 
             return (
-              <View
+              <Animated.View
                 key={btn.action}
                 style={{
-                  flex: 1,
-                  maxWidth: isSmallScreen ? "45%" : "40%",
+                  opacity: fadeAnim,
+                  transform: [{ scale: pressAnim }],
                 }}
               >
-                <Animated.View
+                <TouchableOpacity
+                  onPress={() => {
+                    if (!clicked && onAction) {
+                      setClicked(true);
+                      onAction(btn.action);
+                    }
+                  }}
+                  onPressIn={handlePressIn}
+                  onPressOut={handlePressOut}
+                  activeOpacity={0.7}
                   style={{
-                    opacity: fadeAnim,
-                    width: "100%",
-                    transform: [{ scale: pressAnim }],
+                    marginRight: 6,
+                    marginBottom: 4,
                   }}
                 >
                   <LinearGradient
                     colors={
                       btn.style === "primary"
                         ? [
-                            "rgba(74, 144, 226, 0.95)",
-                            "rgba(74, 144, 226, 0.8)",
-                            "rgba(74, 144, 226, 0.9)",
+                            "rgba(74, 144, 226, 0.7)",
+                            "rgba(74, 144, 226, 0.85)",
                           ]
                         : [
-                            "rgba(255, 255, 255, 0.25)",
-                            "rgba(255, 255, 255, 0.12)",
-                            "rgba(255, 255, 255, 0.18)",
+                            "rgba(255, 255, 255, 0.15)",
+                            "rgba(255, 255, 255, 0.08)",
                           ]
                     }
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 1 }}
                     style={{
-                      paddingHorizontal: responsivePadding(16),
-                      paddingVertical: responsivePadding(12),
-                      borderRadius: 14,
-                      marginRight: responsivePadding(8),
+                      paddingHorizontal: responsivePadding(12),
+                      paddingVertical: responsivePadding(8),
+                      borderRadius: 20,
                       flexDirection: "row",
                       alignItems: "center",
                       justifyContent: "center",
                       shadowColor: btn.style === "primary" ? "#4A90E2" : "#000",
-                      shadowOffset: { width: 0, height: 6 },
-                      shadowOpacity: btn.style === "primary" ? 0.35 : 0.15,
-                      shadowRadius: 12,
-                      elevation: 12,
-                      opacity: clicked ? 0.6 : 1,
-                      borderWidth: 1.5,
+                      shadowOffset: { width: 0, height: 2 },
+                      shadowOpacity: btn.style === "primary" ? 0.25 : 0.1,
+                      shadowRadius: 4,
+                      elevation: 3,
+                      opacity: clicked ? 0.5 : 1,
+                      borderWidth: 1,
                       borderColor:
                         btn.style === "primary"
-                          ? "rgba(74, 144, 226, 0.7)"
-                          : "rgba(255, 59, 48, 0.5)",
-                      width: "100%",
-                      alignSelf: "flex-start",
-                      minHeight: 44,
+                          ? "rgba(74, 144, 226, 0.4)"
+                          : "rgba(255, 255, 255, 0.2)",
+                      // Glassy effect
+                      backgroundColor:
+                        btn.style === "primary"
+                          ? "rgba(74, 144, 226, 0.3)"
+                          : "rgba(255, 255, 255, 0.1)",
                     }}
                   >
                     <Text
-                      onPress={() => {
-                        if (!clicked && onAction) {
-                          setClicked(true);
-                          onAction(btn.action);
-                        }
-                      }}
-                      onPressIn={handlePressIn}
-                      onPressOut={handlePressOut}
                       style={{
-                        fontSize: responsiveFontSize(14),
-                        fontWeight: "700",
-                        color: btn.style === "primary" ? "#FFFFFF" : "#FF3B30",
-                        letterSpacing: 0.5,
+                        fontSize: responsiveFontSize(12),
+                        fontWeight: "600",
+                        color: btn.style === "primary" ? "#FFFFFF" : "#E0E0E0",
+                        letterSpacing: 0.3,
                         textAlign: "center",
-                        flex: 1,
-                        textShadowColor:
-                          btn.style === "primary"
-                            ? "rgba(0, 0, 0, 0.3)"
-                            : "rgba(0, 0, 0, 0.1)",
-                        textShadowOffset: { width: 0, height: 1 },
-                        textShadowRadius: 2,
                       }}
                     >
                       {btn.label}
                     </Text>
                   </LinearGradient>
-                </Animated.View>
-              </View>
+                </TouchableOpacity>
+              </Animated.View>
             );
           })}
         </View>

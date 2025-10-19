@@ -64,18 +64,30 @@ export const useChat = () => {
 
   const clearChat = async () => {
     try {
+      console.log("🧹 [CLEAR_CHAT] Clearing all chat data and context");
+      
       // Clear UI immediately for smooth UX
       await AsyncStorage.removeItem("chatMessages");
       setChatMessages(finnyConstants.INITIAL_CHAT_MESSAGES);
       setCurrentSessionId(null);
       setIsNewSession(true);
-      // Generate new chat_id for fresh conversation
-      setChatId(`chat_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`);
+      setShowNudges(true);
+      
+      // 🔥 IMPORTANT: Clear goal flow state
+      setGoalFlow(null);
+      console.log("🔥 [CLEAR_CHAT] Goal flow cleared");
+      
+      // Generate new chat_id for fresh conversation (backend uses this to clear context)
+      const newChatId = `chat_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
+      setChatId(newChatId);
+      console.log("🆕 [CLEAR_CHAT] New chat ID generated:", newChatId);
       
       // Save current session to database in the background (don't await)
       saveCurrentSession().catch(error => {
         logger.error("Background database save failed:", error);
       });
+      
+      console.log("✅ [CLEAR_CHAT] Chat cleared successfully");
     } catch (error) {
       logger.error("Error clearing chat:", error);
     }
@@ -166,14 +178,24 @@ export const useChat = () => {
   // Start new session
   const startNewSession = async () => {
     try {
+      console.log("🆕 [NEW_SESSION] Starting new session");
+      
       await saveCurrentSession();
       await AsyncStorage.removeItem('chatMessages');
       setChatMessages(finnyConstants.INITIAL_CHAT_MESSAGES);
       setCurrentSessionId(null);
       setIsNewSession(true);
       setShowNudges(true);
+      
+      // 🔥 IMPORTANT: Clear goal flow state for fresh session
+      setGoalFlow(null);
+      console.log("🔥 [NEW_SESSION] Goal flow cleared");
+      
       // Generate new chat_id for fresh conversation
-      setChatId(`chat_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`);
+      const newChatId = `chat_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
+      setChatId(newChatId);
+      console.log("🆕 [NEW_SESSION] New chat ID generated:", newChatId);
+      
       logger.info("Started new chat session");
     } catch (error) {
       logger.error("Error starting new session:", error);
@@ -451,15 +473,6 @@ export const useChat = () => {
       // Finny response received
       logger.info("🤖 [CHAT] API Response:", data);
       
-      // Additional logging for ask responses
-      // if (classifyData.intent === "ask_personalized") {
-      //   console.log("🔍 [FRONTEND] Ask response details:", {
-      //     message: data.message,
-      //     messageLength: data.message?.length || 0
-      //   });
-      // }
-      
-      
       // Handle structured data as regular messages - no splitting or expandable logic
 
       // Handle different response types based on intent
@@ -468,15 +481,18 @@ export const useChat = () => {
         // Format projection response for display
         const proj = data.projection;
         message = `**Projection Results**\n\nTarget: $${proj.swr_target.toLocaleString()}\nProjected: $${proj.projected_nest_egg.toLocaleString()}\nYears to target: ${proj.years_to_target}\n\n${proj.notes.join('\n')}`;
-      } else if ((data.intent === "ask_personalized" || data.type === "assistant") && data.message) {
-        message = data.message;
       } else if (data.intent === "goal_conversation") {
-        // Persist flow state if provided
-        if (data.goal_flow && data.goal_flow.active) setGoalFlow(data.goal_flow);
-        else setGoalFlow(null);
+        // CHECK GOAL CONVERSATION FIRST before generic assistant type check!
         
-        // Handle goal messages with actions
-        if (data.type === "assistant" && data.actions && data.actions.length > 0) {
+        // Persist flow state if provided
+        if (data.goal_flow && data.goal_flow.active) {
+          setGoalFlow(data.goal_flow);
+        } else {
+          setGoalFlow(null);
+        }
+        
+        // Handle goal messages with actions - check for actions regardless of type
+        if (data.actions && Array.isArray(data.actions) && data.actions.length > 0) {
           // Create action message
           const actionMessage: ChatMessage = {
             id: `finny-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
@@ -486,14 +502,19 @@ export const useChat = () => {
             type: "action",
             actions: data.actions,
           };
+          
           // Add typing delay for action messages
           setIsTyping(true);
           await new Promise((resolve) => setTimeout(resolve, 1000 + Math.random() * 1000));
           pushChat(actionMessage);
           setIsTyping(false);
+          
           return; // Don't process as regular message
         }
         message = data.message || "Let's set a goal.";
+      } else if ((data.intent === "ask_personalized" || data.type === "assistant") && data.message) {
+        // Generic assistant/ask responses (must come AFTER goal_conversation check)
+        message = data.message;
       } else if (data.intent === "off_topic" && data.text) {
         // Handle off-topic queries with redirection
         message = data.text;

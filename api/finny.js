@@ -1046,6 +1046,23 @@ export default async function handler(req, res) {
       .json({ error: "Missing required parameter: action" });
   }
 
+  // === CHAT SESSION CHECK: Clear session state if new chat session ===
+  const lastChatId = sessionState?.last_chat_id;
+  if (lastChatId && chatId && lastChatId !== chatId) {
+    console.log(
+      `🆕 [SESSION] New chat detected (old: ${lastChatId}, new: ${chatId}) - clearing session state`
+    );
+    // Clear session state for fresh conversation
+    setSessionState(finalUserId, { last_chat_id: chatId });
+    // Reload clean session state
+    sessionState = getSessionState(finalUserId);
+    console.log("✅ [SESSION] Session state cleared for new chat");
+  } else if (chatId && !lastChatId) {
+    // First message in this session - store chat_id
+    console.log(`📝 [SESSION] Storing chat_id for session: ${chatId}`);
+    mergeSessionState(finalUserId, { last_chat_id: chatId });
+  }
+
   // === FLOW STATE CHECK: Bypass classification for active goal flows ===
   const activeGoalFlow = sessionState?.goal_flow;
   let finalAction = action; // Create mutable copy
