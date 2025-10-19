@@ -1025,7 +1025,7 @@ export default async function handler(req, res) {
     );
   }
 
-  const sessionState = getSessionState(finalUserId);
+  let sessionState = getSessionState(finalUserId);
   const safeContext = {
     ...(context || {}),
     user_id: finalUserId,
