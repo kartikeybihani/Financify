@@ -2029,9 +2029,14 @@ async function handleAsk(
         : cleanText
     );
 
+    // Split long responses into digestible chunks for better UX
+    const splitMessages = splitLongResponse(cleanedMessage);
+
     const response = {
-      message: cleanedMessage,
+      message:
+        splitMessages.length === 1 ? splitMessages[0].content : splitMessages,
       type: "assistant",
+      isSplit: splitMessages.length > 1,
     };
 
     // Log the conversation
@@ -2161,6 +2166,187 @@ function cleanResponseFormatting(response) {
   cleaned = cleaned.replace(/^#+\s*$/gm, "");
 
   return cleaned.trim();
+}
+
+// === SMART MESSAGE SPLITTING ===
+// Split long responses into digestible chunks for Gen Z users
+function splitLongResponse(text) {
+  if (!text || typeof text !== "string") {
+    return [{ type: "text", content: text }];
+  }
+
+  // If response is short enough, return as single message
+  if (text.length <= 400) {
+    return [{ type: "text", content: text }];
+  }
+
+  console.log(
+    `[Message Splitting] Response length: ${text.length} characters - splitting needed`
+  );
+
+  // Find all potential breakpoints with priority scoring
+  const breakpoints = findBreakpoints(text);
+
+  if (breakpoints.length === 0) {
+    console.log(
+      `[Message Splitting] No good breakpoints found - sending as single message`
+    );
+    return [{ type: "text", content: text }];
+  }
+
+  // Split into chunks using best breakpoints
+  const chunks = createChunks(text, breakpoints);
+
+  console.log(
+    `[Message Splitting] Created ${chunks.length} chunks:`,
+    chunks.map((c) => `${c.length} chars`)
+  );
+
+  return chunks.map((chunk) => ({
+    type: "text",
+    content: chunk.trim(),
+  }));
+}
+
+// Find natural breakpoints in text with priority scoring
+function findBreakpoints(text) {
+  const breakpoints = [];
+
+  // Priority 1: Double line breaks (\n\n) - highest priority
+  const doubleLineBreaks = [...text.matchAll(/\n\n/g)];
+  doubleLineBreaks.forEach((match) => {
+    breakpoints.push({
+      position: match.index + 2, // Position after \n\n
+      priority: 1,
+      type: "double_line_break",
+    });
+  });
+
+  // Priority 2: Single line breaks (\n) - medium priority
+  const singleLineBreaks = [...text.matchAll(/\n/g)];
+  singleLineBreaks.forEach((match) => {
+    // Skip if it's part of \n\n (already captured above)
+    if (text[match.index + 1] !== "\n") {
+      breakpoints.push({
+        position: match.index + 1,
+        priority: 2,
+        type: "single_line_break",
+      });
+    }
+  });
+
+  // Priority 3: Bullet points (- or •)
+  const bulletPoints = [...text.matchAll(/^[\s]*[-•]\s/gm)];
+  bulletPoints.forEach((match) => {
+    breakpoints.push({
+      position: match.index + match[0].length,
+      priority: 3,
+      type: "bullet_point",
+    });
+  });
+
+  // Priority 4: Section headers (common transition phrases)
+  const sectionHeaders = [
+    "bottom line",
+    "what you can do",
+    "quick tips",
+    "next steps",
+    "timeline",
+    "practical next steps",
+    "key takeaways",
+    "summary",
+  ];
+
+  sectionHeaders.forEach((header) => {
+    const regex = new RegExp(`\\b${header}\\b`, "gi");
+    const matches = [...text.matchAll(regex)];
+    matches.forEach((match) => {
+      breakpoints.push({
+        position: match.index,
+        priority: 4,
+        type: "section_header",
+        header: header,
+      });
+    });
+  });
+
+  // Sort by position, then by priority (lower number = higher priority)
+  return breakpoints.sort((a, b) => {
+    if (a.position !== b.position) {
+      return a.position - b.position;
+    }
+    return a.priority - b.priority;
+  });
+}
+
+// Create optimal chunks using breakpoints
+function createChunks(text, breakpoints) {
+  const chunks = [];
+  let currentStart = 0;
+  let currentEnd = 0;
+
+  for (let i = 0; i < breakpoints.length; i++) {
+    const breakpoint = breakpoints[i];
+    const potentialEnd = breakpoint.position;
+
+    // Check if this breakpoint would create a good chunk size
+    const chunkLength = potentialEnd - currentStart;
+
+    // Ideal chunk size: 200-350 characters for Gen Z
+    if (chunkLength >= 200 && chunkLength <= 350) {
+      chunks.push(text.slice(currentStart, potentialEnd));
+      currentStart = potentialEnd;
+      currentEnd = potentialEnd;
+    }
+    // If chunk would be too small, keep looking for better breakpoint
+    else if (chunkLength < 200) {
+      currentEnd = potentialEnd;
+      continue;
+    }
+    // If chunk would be too large, use the previous breakpoint
+    else if (chunkLength > 350 && currentEnd > currentStart) {
+      chunks.push(text.slice(currentStart, currentEnd));
+      currentStart = currentEnd;
+      currentEnd = potentialEnd;
+    }
+  }
+
+  // Handle the last chunk
+  if (currentStart < text.length) {
+    const lastChunk = text.slice(currentStart);
+    if (lastChunk.trim().length > 0) {
+      chunks.push(lastChunk);
+    }
+  }
+
+  // Ensure no chunk is too long (fallback safety)
+  const finalChunks = [];
+  chunks.forEach((chunk) => {
+    if (chunk.length > 400) {
+      // Emergency split at sentence boundaries
+      const sentences = chunk.split(/(?<=[.!?])\s+/);
+      let currentSentenceChunk = "";
+
+      sentences.forEach((sentence) => {
+        if (currentSentenceChunk.length + sentence.length > 400) {
+          if (currentSentenceChunk.trim()) {
+            finalChunks.push(currentSentenceChunk.trim());
+          }
+          currentSentenceChunk = sentence;
+        } else {
+          currentSentenceChunk += (currentSentenceChunk ? " " : "") + sentence;
+        }
+      });
+
+      if (currentSentenceChunk.trim()) {
+        finalChunks.push(currentSentenceChunk.trim());
+      }
+    } else {
+      finalChunks.push(chunk);
+    }
+  });
+
+  return finalChunks;
 }
 
 // === ENHANCED WEB SEARCH DETECTION ===

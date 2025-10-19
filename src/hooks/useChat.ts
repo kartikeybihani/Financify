@@ -327,6 +327,39 @@ export const useChat = () => {
     }
   };
 
+  // Handle split messages with Gen Z-optimized timing
+  const handleSplitMessages = async (splitMessages: Array<{type: string, content: string}>) => {
+    try {
+      console.log(`[Frontend] Processing ${splitMessages.length} split messages`);
+      
+      for (let i = 0; i < splitMessages.length; i++) {
+        const messageObj = splitMessages[i];
+        
+        // Show typing indicator for each message (Gen Z expects this)
+        setIsTyping(true);
+        
+        // Gen Z-optimized delay: 1.2 seconds (faster than 1.5s for better engagement)
+        const delay = 1200 + Math.random() * 300; // 1.2-1.5s range
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        
+        setIsTyping(false);
+        
+        // Push the message
+        pushChat("finny", messageObj.content);
+        
+        // Small pause between messages (but not after the last one)
+        if (i < splitMessages.length - 1) {
+          await new Promise((resolve) => setTimeout(resolve, 300));
+        }
+      }
+      
+      console.log(`[Frontend] Completed sending ${splitMessages.length} split messages`);
+    } catch (error) {
+      logger.error("Error handling split messages:", error);
+      setIsTyping(false);
+    }
+  };
+
   const handleUserMessage = async (messageText: string, startTime?: number) => {
     setIsTyping(true); // Start typing indicator immediately
     await handleFinnyResponse(messageText, startTime);
@@ -533,7 +566,13 @@ export const useChat = () => {
         console.log(`📥 Total response time: ${totalResponseDuration}ms (${(totalResponseDuration / 1000).toFixed(2)}s) at ${ptTime} PT`);
       }
       
-      await pushChatWithDelay("finny", message);
+      // Handle split messages for better UX
+      if (data.isSplit && Array.isArray(data.message)) {
+        console.log(`[Frontend] Received ${data.message.length} split messages`);
+        await handleSplitMessages(data.message);
+      } else {
+        await pushChatWithDelay("finny", message);
+      }
     } catch (error) {
       logger.error("AI error:", error);
       setProgressStatus(""); // Clear progress status
