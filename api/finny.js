@@ -2194,15 +2194,15 @@ function cleanResponseFormatting(response) {
   return cleaned.trim();
 }
 
-// === SMART MESSAGE SPLITTING ===
-// Split long responses into digestible chunks for Gen Z users
+// === SIMPLE MESSAGE SPLITTING ===
+// Split long responses using only natural boundaries (double line breaks, complete sentences)
 function splitLongResponse(text) {
   if (!text || typeof text !== "string") {
     return [{ type: "text", content: text }];
   }
 
-  // If response is short enough, return as single message (increased threshold for better UX)
-  if (text.length <= 400) {
+  // If response is short enough, return as single message
+  if (text.length <= 600) {
     return [{ type: "text", content: text }];
   }
 
@@ -2210,190 +2210,89 @@ function splitLongResponse(text) {
     `[Message Splitting] Response length: ${text.length} characters - splitting needed`
   );
 
-  // Find all potential breakpoints with priority scoring
-  const breakpoints = findBreakpoints(text);
+  // Try to split at double line breaks first (natural paragraph boundaries)
+  const paragraphs = text.split(/\n\s*\n/);
 
-  if (breakpoints.length === 0) {
-    console.log(
-      `[Message Splitting] No good breakpoints found - sending as single message`
-    );
-    return [{ type: "text", content: text }];
-  }
+  if (paragraphs.length > 1) {
+    const chunks = [];
+    let currentChunk = "";
 
-  // Split into chunks using best breakpoints
-  const chunks = createChunks(text, breakpoints);
+    for (const paragraph of paragraphs) {
+      const trimmedParagraph = paragraph.trim();
 
-  console.log(
-    `[Message Splitting] Created ${chunks.length} chunks:`,
-    chunks.map((c) => `${c.length} chars`)
-  );
-
-  return chunks.map((chunk) => ({
-    type: "text",
-    content: chunk.trim(),
-  }));
-}
-
-// Find natural breakpoints in text with priority scoring
-function findBreakpoints(text) {
-  const breakpoints = [];
-
-  // Priority 1: Double line breaks (\n\n) - highest priority
-  const doubleLineBreaks = [...text.matchAll(/\n\n/g)];
-  doubleLineBreaks.forEach((match) => {
-    breakpoints.push({
-      position: match.index + 2, // Position after \n\n
-      priority: 1,
-      type: "double_line_break",
-    });
-  });
-
-  // Priority 2: Single line breaks (\n) - medium priority
-  const singleLineBreaks = [...text.matchAll(/\n/g)];
-  singleLineBreaks.forEach((match) => {
-    // Skip if it's part of \n\n (already captured above)
-    if (text[match.index + 1] !== "\n") {
-      breakpoints.push({
-        position: match.index + 1,
-        priority: 2,
-        type: "single_line_break",
-      });
-    }
-  });
-
-  // Priority 3: Bullet points (- or •)
-  const bulletPoints = [...text.matchAll(/^[\s]*[-•]\s/gm)];
-  bulletPoints.forEach((match) => {
-    breakpoints.push({
-      position: match.index + match[0].length,
-      priority: 3,
-      type: "bullet_point",
-    });
-  });
-
-  // Priority 5: Sentence boundaries (after periods, exclamation marks, question marks)
-  const sentenceEndings = [...text.matchAll(/[.!?]\s+/g)];
-  sentenceEndings.forEach((match) => {
-    // Only add if it's not already captured by higher priority breakpoints
-    const position = match.index + match[0].length;
-    const alreadyExists = breakpoints.some(
-      (bp) => Math.abs(bp.position - position) < 5
-    );
-    if (!alreadyExists) {
-      breakpoints.push({
-        position: position,
-        priority: 5,
-        type: "sentence_boundary",
-      });
-    }
-  });
-
-  // Priority 4: Section headers (common transition phrases)
-  const sectionHeaders = [
-    "bottom line",
-    "what you can do",
-    "quick tips",
-    "next steps",
-    "timeline",
-    "practical next steps",
-    "key takeaways",
-    "summary",
-    "heads up",
-    "hit me up",
-    "sources:",
-    "source:",
-  ];
-
-  sectionHeaders.forEach((header) => {
-    const regex = new RegExp(`\\b${header}\\b`, "gi");
-    const matches = [...text.matchAll(regex)];
-    matches.forEach((match) => {
-      breakpoints.push({
-        position: match.index,
-        priority: 4,
-        type: "section_header",
-        header: header,
-      });
-    });
-  });
-
-  // Sort by position, then by priority (lower number = higher priority)
-  return breakpoints.sort((a, b) => {
-    if (a.position !== b.position) {
-      return a.position - b.position;
-    }
-    return a.priority - b.priority;
-  });
-}
-
-// Create optimal chunks using breakpoints
-function createChunks(text, breakpoints) {
-  const chunks = [];
-  let currentStart = 0;
-  let currentEnd = 0;
-
-  for (let i = 0; i < breakpoints.length; i++) {
-    const breakpoint = breakpoints[i];
-    const potentialEnd = breakpoint.position;
-
-    // Check if this breakpoint would create a good chunk size
-    const chunkLength = potentialEnd - currentStart;
-
-    // Ideal chunk size: 200-350 characters for better UX (increased from 120-200)
-    if (chunkLength >= 200 && chunkLength <= 350) {
-      chunks.push(text.slice(currentStart, potentialEnd));
-      currentStart = potentialEnd;
-      currentEnd = potentialEnd;
-    }
-    // If chunk would be too small, keep looking for better breakpoint
-    else if (chunkLength < 350) {
-      currentEnd = potentialEnd;
-      continue;
-    }
-    // If chunk would be too large, use the previous breakpoint
-    else if (chunkLength > 350 && currentEnd > currentStart) {
-      chunks.push(text.slice(currentStart, currentEnd));
-      currentStart = currentEnd;
-      currentEnd = potentialEnd;
-    }
-  }
-
-  // Handle the last chunk
-  if (currentStart < text.length) {
-    const lastChunk = text.slice(currentStart);
-    if (lastChunk.trim().length > 0) {
-      chunks.push(lastChunk);
-    }
-  }
-
-  // Ensure no chunk is too long (fallback safety)
-  const finalChunks = [];
-  chunks.forEach((chunk) => {
-    if (chunk.length > 400) {
-      // Emergency split at sentence boundaries - NEVER split mid-sentence
-      const sentences = chunk.split(/(?<=[.!?])\s+/);
-      let currentSentenceChunk = "";
-
-      sentences.forEach((sentence) => {
-        if (currentSentenceChunk.length + sentence.length > 400) {
-          if (currentSentenceChunk.trim()) {
-            finalChunks.push(currentSentenceChunk.trim());
-          }
-          currentSentenceChunk = sentence;
-        } else {
-          currentSentenceChunk += (currentSentenceChunk ? " " : "") + sentence;
-        }
-      });
-
-      if (currentSentenceChunk.trim()) {
-        finalChunks.push(currentSentenceChunk.trim());
+      // If adding this paragraph would exceed 500 chars, start a new chunk
+      if (
+        currentChunk.length + trimmedParagraph.length > 500 &&
+        currentChunk.trim()
+      ) {
+        chunks.push(currentChunk.trim());
+        currentChunk = trimmedParagraph;
+      } else {
+        currentChunk += (currentChunk ? "\n\n" : "") + trimmedParagraph;
       }
-    } else {
-      finalChunks.push(chunk);
     }
-  });
 
-  return finalChunks;
+    // Add the last chunk
+    if (currentChunk.trim()) {
+      chunks.push(currentChunk.trim());
+    }
+
+    // If we have multiple chunks, return them
+    if (chunks.length > 1) {
+      console.log(
+        `[Message Splitting] Split into ${chunks.length} chunks using paragraph boundaries`
+      );
+      return chunks.map((chunk) => ({
+        type: "text",
+        content: chunk,
+      }));
+    }
+  }
+
+  // If no good paragraph boundaries or still too long, split at complete sentences only
+  const sentences = text.split(/(?<=[.!?])\s+/);
+
+  if (sentences.length > 1) {
+    const chunks = [];
+    let currentChunk = "";
+
+    for (const sentence of sentences) {
+      const trimmedSentence = sentence.trim();
+
+      // If adding this sentence would exceed 500 chars, start a new chunk
+      if (
+        currentChunk.length + trimmedSentence.length > 500 &&
+        currentChunk.trim()
+      ) {
+        chunks.push(currentChunk.trim());
+        currentChunk = trimmedSentence;
+      } else {
+        currentChunk += (currentChunk ? " " : "") + trimmedSentence;
+      }
+    }
+
+    // Add the last chunk
+    if (currentChunk.trim()) {
+      chunks.push(currentChunk.trim());
+    }
+
+    // Only return multiple chunks if we actually have them
+    if (chunks.length > 1) {
+      console.log(
+        `[Message Splitting] Split into ${chunks.length} chunks using sentence boundaries`
+      );
+      return chunks.map((chunk) => ({
+        type: "text",
+        content: chunk,
+      }));
+    }
+  }
+
+  // If all else fails and it's still too long, send as single message
+  console.log(
+    `[Message Splitting] Could not find good split points - sending as single message`
+  );
+  return [{ type: "text", content: text }];
 }
 
 // === GEN Z LANGUAGE ENHANCEMENT ===

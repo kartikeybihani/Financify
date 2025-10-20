@@ -398,9 +398,21 @@ export default function HomeScreen() {
       }
     );
 
+    // Set up event listener for auth state changes (token refresh)
+    const authSubscription = DeviceEventEmitter.addListener(
+      "authStateChanged",
+      async (data) => {
+        if (data && data.event === "TOKEN_REFRESHED") {
+          logger.info("🔄 [HOME] Token refreshed, reinitializing app...");
+          await initializeApp();
+        }
+      }
+    );
+
     return () => {
       financialSubscription.remove();
       goalsSubscription.remove();
+      authSubscription.remove();
     };
   }, []);
 

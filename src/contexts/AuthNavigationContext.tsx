@@ -8,6 +8,7 @@ import React, {
 } from "react";
 import { Session } from "@supabase/supabase-js";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { DeviceEventEmitter } from "react-native";
 import { supabase } from "@/src/lib/supabase/supabase";
 import logger from "@/src/utils/logger";
 
@@ -284,6 +285,15 @@ export const AuthNavigationProvider: React.FC<AuthNavigationProviderProps> = ({
           setSession(null);
           return;
         }
+
+        // Emit event to notify components about token refresh
+        DeviceEventEmitter.emit("authStateChanged", {
+          event,
+          session: newSession,
+        });
+
+        // Also update navigation state to ensure UI is in sync
+        await updateNavigationState(newSession);
       }
 
       // Update session

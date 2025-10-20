@@ -1,6 +1,7 @@
 // hooks/useAccountBalances.ts
 
 import { useState, useEffect, useCallback } from "react";
+import { DeviceEventEmitter } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Account } from "@/src/types/plaid";
 import { getAllUserAccounts } from "@/src/utils/plaid";
@@ -170,6 +171,23 @@ export function useAccountBalances() {
   // Initialize on mount
   useEffect(() => {
     loadBalancesWithCache();
+  }, []);
+
+  // Listen for auth state changes (token refresh)
+  useEffect(() => {
+    const authSubscription = DeviceEventEmitter.addListener(
+      "authStateChanged",
+      async (data) => {
+        if (data && data.event === "TOKEN_REFRESHED") {
+          logger.info("🔄 [BALANCES] Token refreshed, reloading balances...");
+          await loadBalancesWithCache();
+        }
+      }
+    );
+
+    return () => {
+      authSubscription.remove();
+    };
   }, []);
 
   // Memoized categorized account arrays for performance

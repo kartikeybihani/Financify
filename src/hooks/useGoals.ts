@@ -23,6 +23,23 @@ export function useGoals(pushChat: (sender: "user" | "finny", message: string) =
     loadGoalsWithCache();
   }, []);
 
+  // Listen for auth state changes (token refresh)
+  useEffect(() => {
+    const authSubscription = DeviceEventEmitter.addListener(
+      "authStateChanged",
+      async (data) => {
+        if (data && data.event === "TOKEN_REFRESHED") {
+          logger.info("🔄 [GOALS] Token refreshed, reloading goals...");
+          await loadGoalsWithCache();
+        }
+      }
+    );
+
+    return () => {
+      authSubscription.remove();
+    };
+  }, []);
+
   // Cache management functions
   const saveGoalsToCache = async (goals: Goal[]): Promise<void> => {
     try {
