@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   Modal,
   View,
@@ -9,10 +9,11 @@ import {
   StyleSheet,
   Platform,
   KeyboardAvoidingView,
+  ScrollView,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
-interface EditNameModalProps {
+interface EditOccupationModalProps {
   visible: boolean;
   value: string;
   onChange: (val: string) => void;
@@ -20,38 +21,59 @@ interface EditNameModalProps {
   onSave: (val: string) => Promise<void>;
 }
 
-export default function EditNameModal({
+export default function EditOccupationModal({
   visible,
   value,
   onChange,
   onCancel,
   onSave,
-}: EditNameModalProps) {
+}: EditOccupationModalProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [name, setName] = useState(value);
+  const [newOccupation, setNewOccupation] = useState("");
+
+  // Refs for auto-focus
+  const occupationRef = useRef<TextInput>(null);
+
+  // Auto-focus input when modal opens
+  useEffect(() => {
+    if (visible && occupationRef.current) {
+      setTimeout(() => occupationRef.current?.focus(), 300);
+    }
+  }, [visible]);
+
+  // Update local state when value prop changes
+  useEffect(() => {
+    if (visible) {
+      setNewOccupation(value);
+    }
+  }, [visible, value]);
 
   const handleCancel = () => {
-    setName(value);
+    setNewOccupation("");
     setError("");
     onCancel();
   };
 
   const handleSave = async () => {
-    if (!name.trim()) {
-      setError("Please enter your name.");
+    if (!newOccupation.trim()) {
+      setError("Please enter your occupation.");
       return;
     }
-    if (name === value) {
-      setError("Please enter a different name.");
+    if (newOccupation === value) {
+      setError("Please enter a different occupation.");
+      return;
+    }
+    if (newOccupation.length > 300) {
+      setError("Occupation must be 300 characters or less.");
       return;
     }
     setLoading(true);
     setError("");
     try {
-      await onSave(name);
+      await onSave(newOccupation);
     } catch (e: any) {
-      setError(e.message || "Error updating name");
+      setError(e.message || "Error updating occupation");
     } finally {
       setLoading(false);
     }
@@ -63,50 +85,70 @@ export default function EditNameModal({
         style={styles.overlay}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
+        enabled
       >
         <View style={styles.sheet}>
-          <TouchableOpacity
-            style={styles.closeIcon}
-            onPress={handleCancel}
-            disabled={loading}
+          <ScrollView
+            contentContainerStyle={styles.scrollContent}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
           >
-            <Ionicons name="close" size={28} color="#B4B4B4" />
-          </TouchableOpacity>
-          <Text style={styles.title}>Update your name</Text>
-          <Text style={styles.subtitle}>This is what we will call you.</Text>
-          <TextInput
-            value={name}
-            onChangeText={setName}
-            style={styles.input}
-            placeholder="Enter your name"
-            placeholderTextColor="#B4B4B4"
-            editable={!loading}
-          />
-          {error ? <Text style={styles.error}>{error}</Text> : null}
-          <View style={styles.buttonRow}>
             <TouchableOpacity
-              style={[styles.button, styles.cancelButton]}
+              style={styles.closeIcon}
               onPress={handleCancel}
               disabled={loading}
             >
-              <Text style={styles.cancelButtonText}>Cancel</Text>
+              <Ionicons name="close" size={28} color="#B4B4B4" />
             </TouchableOpacity>
-            <TouchableOpacity
-              style={[
-                styles.button,
-                styles.saveButton,
-                loading && { opacity: 0.7 },
-              ]}
-              onPress={handleSave}
-              disabled={loading}
-            >
-              {loading ? (
-                <ActivityIndicator color="#000" />
-              ) : (
-                <Text style={styles.saveButtonText}>Save</Text>
-              )}
-            </TouchableOpacity>
-          </View>
+            <Text style={styles.title}>Edit Occupation</Text>
+            <Text style={styles.subtitle}>
+              Tell us a little about yourself and what do you profession{"\n"}
+              Helps finny get to know you better!
+            </Text>
+            <TextInput
+              ref={occupationRef}
+              value={newOccupation}
+              onChangeText={setNewOccupation}
+              style={[styles.input, { minHeight: 50, maxHeight: 120 }]}
+              placeholder="Enter your occupation"
+              placeholderTextColor="#B4B4B4"
+              autoCapitalize="words"
+              editable={!loading}
+              returnKeyType="done"
+              onSubmitEditing={handleSave}
+              multiline
+              textAlignVertical="top"
+              maxLength={300}
+            />
+            <Text style={styles.characterCount}>
+              {newOccupation.length}/300 characters
+            </Text>
+            {error ? <Text style={styles.error}>{error}</Text> : null}
+            <View style={styles.buttonRow}>
+              <TouchableOpacity
+                style={[styles.button, styles.cancelButton]}
+                onPress={handleCancel}
+                disabled={loading}
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.button,
+                  styles.saveButton,
+                  loading && { opacity: 0.7 },
+                ]}
+                onPress={handleSave}
+                disabled={loading}
+              >
+                {loading ? (
+                  <ActivityIndicator color="#000" />
+                ) : (
+                  <Text style={styles.saveButtonText}>Update</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </ScrollView>
         </View>
       </KeyboardAvoidingView>
     </Modal>
@@ -123,12 +165,10 @@ const styles = StyleSheet.create({
   sheet: {
     width: "100%",
     maxWidth: 500,
-    minHeight: 300,
+    maxHeight: "90%",
     backgroundColor: "rgba(24, 28, 36, 0.95)",
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
-    padding: 32,
-    alignItems: "center",
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.1)",
     shadowColor: "#000",
@@ -136,6 +176,11 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 24,
     elevation: 12,
+  },
+  scrollContent: {
+    padding: 32,
+    alignItems: "center",
+    minHeight: 300,
   },
   closeIcon: {
     position: "absolute",
@@ -162,6 +207,7 @@ const styles = StyleSheet.create({
     color: "#B4B4B4",
     marginBottom: 22,
     textAlign: "center",
+    lineHeight: 20,
   },
   input: {
     width: "100%",
@@ -172,7 +218,7 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 16,
     padding: 16,
-    marginBottom: 10,
+    marginBottom: 8,
     shadowColor: "#000",
     shadowOffset: {
       width: 0,
@@ -181,6 +227,12 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 2,
     elevation: 2,
+  },
+  characterCount: {
+    fontSize: 12,
+    color: "#888",
+    alignSelf: "flex-end",
+    marginBottom: 16,
   },
   error: {
     color: "#ff4444",
@@ -193,7 +245,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     width: "100%",
     marginTop: "auto",
-    marginBottom: 20,
+    marginBottom: 10,
     gap: 16,
   },
   button: {

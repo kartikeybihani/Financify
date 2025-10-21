@@ -5,6 +5,7 @@ import {
   StyleSheet,
   TouchableOpacity,
   ScrollView,
+  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -12,7 +13,7 @@ import { useRouter, useLocalSearchParams } from "expo-router";
 import { supabase } from "@/src/lib/supabase/supabase";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import EditEmailModal from "@/src/components/menu/EditEmailModal";
-import EditNameModal from "@/src/components/menu/EditNameModal";
+import EditOccupationModal from "@/src/components/menu/EditOccupationModal";
 import logger from "@/src/utils/logger";
 
 export default function PersonalInfoScreen() {
@@ -20,9 +21,9 @@ export default function PersonalInfoScreen() {
   const { userName } = useLocalSearchParams();
   const [userData, setUserData] = useState<any>(null);
   const [showEmailModal, setShowEmailModal] = useState(false);
+  const [showOccupationModal, setShowOccupationModal] = useState(false);
   const [newEmail, setNewEmail] = useState("");
-  const [newName, setNewName] = useState("");
-  const [showNameModal, setShowNameModal] = useState(false);
+  const [newOccupation, setNewOccupation] = useState("");
   const [occupation, setOccupation] = useState<string>("");
   const [profileAge, setProfileAge] = useState<number | null>(null);
   const [firstName, setFirstName] = useState<string>("");
@@ -72,52 +73,46 @@ export default function PersonalInfoScreen() {
 
   const handleSaveEmail = async (email: string) => {
     try {
-      const { data, error } = await supabase.auth.updateUser({
-        email,
-      });
+      const { data, error } = await supabase.auth.updateUser(
+        { email },
+        {
+          emailRedirectTo: "https://financify.ing/auth-redirect.html",
+        }
+      );
       if (error) throw error;
-      const updatedUserData = { ...userData, email };
-      setUserData(updatedUserData);
-      await AsyncStorage.setItem("userData", JSON.stringify(updatedUserData));
-      setShowEmailModal(false);
+
+      // Show success message with instructions
+      Alert.alert(
+        "Email Change Requested",
+        "We've sent confirmation links to your new email address. Please click the confirmation link from Supabase Auth.",
+        [
+          {
+            text: "OK",
+            onPress: () => {
+              setShowEmailModal(false);
+            },
+          },
+        ]
+      );
     } catch (error: any) {
       throw error;
     }
   };
 
-  const handleSaveName = async (name: string) => {
+  const handleSaveOccupation = async (occupationValue: string) => {
     try {
-      const fullName = (name || "").trim();
-      const parts = fullName.split(/\s+/);
-      const first = parts[0] || "";
-      const last = parts.slice(1).join(" ") || "";
+      const { data, error } = await supabase
+        .from("profiles")
+        .update({ occupation: occupationValue })
+        .eq("id", userData?.id);
 
-      // Update profiles split name
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (user?.id) {
-        await supabase
-          .from("profiles")
-          .update({ first_name: first, last_name: last })
-          .eq("id", user.id);
-      }
+      if (error) throw error;
 
-      // Mirror to auth metadata full_name for legacy consumers
-      const { error: authErr } = await supabase.auth.updateUser({
-        data: { full_name: fullName },
-      });
-      if (authErr) throw authErr;
+      setOccupation(occupationValue);
+      setShowOccupationModal(false);
+      setNewOccupation("");
 
-      const updatedUserData = {
-        ...userData,
-        user_metadata: { ...userData.user_metadata, full_name: fullName },
-      };
-      setUserData(updatedUserData);
-      await AsyncStorage.setItem("userData", JSON.stringify(updatedUserData));
-      setFirstName(first);
-      setLastName(last);
-      setShowNameModal(false);
+      Alert.alert("Success", "Occupation updated successfully!");
     } catch (error: any) {
       throw error;
     }
@@ -186,15 +181,7 @@ export default function PersonalInfoScreen() {
                 ? `${firstName}${lastName ? " " + lastName : ""}`
                 : userData?.user_metadata?.full_name ||
                   userName ||
-                  "Not available") as string,
-              () => {
-                const current =
-                  firstName || lastName
-                    ? `${firstName}${lastName ? " " + lastName : ""}`
-                    : userData?.user_metadata?.full_name || "";
-                setNewName(current);
-                setShowNameModal(true);
-              }
+                  "Not available") as string
             )}
             <View style={styles.divider} />
             {renderInfoItem(
@@ -210,7 +197,11 @@ export default function PersonalInfoScreen() {
             {renderInfoItem(
               "briefcase-outline",
               "Occupation",
-              occupation || "Not available"
+              occupation || "Not available",
+              () => {
+                setNewOccupation(occupation || "");
+                setShowOccupationModal(true);
+              }
             )}
             <View style={styles.divider} />
             <View style={styles.horizontalFields}>
@@ -235,18 +226,6 @@ export default function PersonalInfoScreen() {
         </View>
       </ScrollView>
 
-      {/* Name Edit Modal */}
-      <EditNameModal
-        visible={showNameModal}
-        value={userData?.user_metadata?.full_name || userName || ""}
-        onChange={setNewName}
-        onCancel={() => {
-          setShowNameModal(false);
-          setNewName("");
-        }}
-        onSave={handleSaveName}
-      />
-
       {/* Email Edit Modal */}
       <EditEmailModal
         visible={showEmailModal}
@@ -259,7 +238,17 @@ export default function PersonalInfoScreen() {
         onSave={handleSaveEmail}
       />
 
-      {/* Removed phone modal; occupation is read-only from profiles */}
+      {/* Occupation Edit Modal */}
+      <EditOccupationModal
+        visible={showOccupationModal}
+        value={newOccupation}
+        onChange={setNewOccupation}
+        onCancel={() => {
+          setShowOccupationModal(false);
+          setNewOccupation("");
+        }}
+        onSave={handleSaveOccupation}
+      />
     </SafeAreaView>
   );
 }

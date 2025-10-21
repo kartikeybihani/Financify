@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   Modal,
   View,
@@ -7,10 +7,9 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   StyleSheet,
-  Alert,
   Platform,
-  Animated,
   KeyboardAvoidingView,
+  ScrollView,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
@@ -31,63 +30,43 @@ export default function EditEmailModal({
 }: EditEmailModalProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [email, setEmail] = useState(value);
-  const [verificationCode, setVerificationCode] = useState("");
-  const [showVerification, setShowVerification] = useState(false);
-  const [slideAnim] = useState(new Animated.Value(0));
+  const [newEmail, setNewEmail] = useState("");
+
+  // Refs for auto-focus
+  const newEmailRef = useRef<TextInput>(null);
+
+  // Auto-focus input when modal opens
+  useEffect(() => {
+    if (visible && newEmailRef.current) {
+      setTimeout(() => newEmailRef.current?.focus(), 300);
+    }
+  }, [visible]);
 
   const handleCancel = () => {
-    setShowVerification(false);
-    setVerificationCode("");
-    setEmail(value);
+    setNewEmail("");
     setError("");
-    slideAnim.setValue(0);
     onCancel();
   };
 
-  const handleContinue = async () => {
-    if (!email.trim()) {
-      setError("Please enter an email address.");
+  const handleSave = async () => {
+    if (!newEmail.trim()) {
+      setError("Please enter a new email address.");
       return;
     }
-    if (email === value) {
+    if (newEmail === value) {
       setError("Please enter a different email address.");
       return;
     }
     // Email validation regex
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
+    if (!emailRegex.test(newEmail)) {
       setError("Please enter a valid email address.");
       return;
     }
     setLoading(true);
     setError("");
     try {
-      // Here you would typically trigger sending verification code
-      // For now we'll just simulate it
-      setShowVerification(true);
-      Animated.timing(slideAnim, {
-        toValue: 1,
-        duration: 300,
-        useNativeDriver: true,
-      }).start();
-    } catch (e: any) {
-      setError(e.message || "Error sending verification code");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleSave = async () => {
-    if (!verificationCode.trim() || verificationCode.length !== 6) {
-      setError("Please enter a valid 6-digit code.");
-      return;
-    }
-    setLoading(true);
-    setError("");
-    try {
-      // Here you would verify the code before saving
-      await onSave(email);
+      await onSave(newEmail);
     } catch (e: any) {
       setError(e.message || "Error updating email");
     } finally {
@@ -95,125 +74,70 @@ export default function EditEmailModal({
     }
   };
 
-  const renderEmailInput = () => (
-    <Animated.View
-      style={[
-        styles.inputContainer,
-        {
-          transform: [
-            {
-              translateX: slideAnim.interpolate({
-                inputRange: [0, 1],
-                outputRange: [0, -500],
-              }),
-            },
-          ],
-          opacity: slideAnim.interpolate({
-            inputRange: [0, 1],
-            outputRange: [1, 0],
-          }),
-        },
-      ]}
-    >
-      <Text style={styles.subtitle}>
-        We'll send a confirmation to your new address.
-      </Text>
-      <TextInput
-        value={email}
-        onChangeText={setEmail}
-        style={styles.input}
-        placeholder="Enter new email"
-        placeholderTextColor="#B4B4B4"
-        keyboardType="email-address"
-        autoCapitalize="none"
-        editable={!loading}
-      />
-    </Animated.View>
-  );
-
-  const renderVerificationInput = () => (
-    <Animated.View
-      style={[
-        styles.inputContainer,
-        {
-          transform: [
-            {
-              translateX: slideAnim.interpolate({
-                inputRange: [0, 1],
-                outputRange: [500, 0],
-              }),
-            },
-          ],
-          opacity: slideAnim.interpolate({
-            inputRange: [0, 1],
-            outputRange: [0, 1],
-          }),
-        },
-      ]}
-    >
-      <Text style={styles.subtitle}>
-        Please enter the verification code we sent to you
-      </Text>
-      <TextInput
-        value={verificationCode}
-        onChangeText={(text) =>
-          setVerificationCode(text.replace(/[^0-9]/g, "").slice(0, 6))
-        }
-        style={styles.input}
-        placeholder="Enter 6-digit code"
-        placeholderTextColor="#B4B4B4"
-        keyboardType="number-pad"
-        maxLength={6}
-        editable={!loading}
-      />
-    </Animated.View>
-  );
-
   return (
     <Modal visible={visible} transparent animationType="slide">
       <KeyboardAvoidingView
         style={styles.overlay}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
+        enabled
       >
         <View style={styles.sheet}>
-          <TouchableOpacity
-            style={styles.closeIcon}
-            onPress={handleCancel}
-            disabled={loading}
+          <ScrollView
+            contentContainerStyle={styles.scrollContent}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
           >
-            <Ionicons name="close" size={28} color="#B4B4B4" />
-          </TouchableOpacity>
-          <Text style={styles.title}>Update your email</Text>
-          {renderEmailInput()}
-          {renderVerificationInput()}
-          {error ? <Text style={styles.error}>{error}</Text> : null}
-          <View style={styles.buttonRow}>
             <TouchableOpacity
-              style={[styles.button, styles.cancelButton]}
+              style={styles.closeIcon}
               onPress={handleCancel}
               disabled={loading}
             >
-              <Text style={styles.cancelButtonText}>Cancel</Text>
+              <Ionicons name="close" size={28} color="#B4B4B4" />
             </TouchableOpacity>
-            <TouchableOpacity
-              style={[
-                styles.button,
-                styles.saveButton,
-                loading && { opacity: 0.7 },
-              ]}
-              onPress={showVerification ? handleSave : handleContinue}
-              disabled={loading}
-            >
-              {loading ? (
-                <ActivityIndicator color="#000" />
-              ) : (
-                <Text style={styles.saveButtonText}>
-                  {showVerification ? "Save" : "Continue"}
-                </Text>
-              )}
-            </TouchableOpacity>
-          </View>
+            <Text style={styles.title}>Change Email Address</Text>
+            <Text style={styles.subtitle}>
+              We'll send a confirmation link to verify the change.
+            </Text>
+            <TextInput
+              ref={newEmailRef}
+              value={newEmail}
+              onChangeText={setNewEmail}
+              style={styles.input}
+              placeholder="Enter new email"
+              placeholderTextColor="#B4B4B4"
+              keyboardType="email-address"
+              autoCapitalize="none"
+              editable={!loading}
+              returnKeyType="done"
+              onSubmitEditing={handleSave}
+            />
+            {error ? <Text style={styles.error}>{error}</Text> : null}
+            <View style={styles.buttonRow}>
+              <TouchableOpacity
+                style={[styles.button, styles.cancelButton]}
+                onPress={handleCancel}
+                disabled={loading}
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.button,
+                  styles.saveButton,
+                  loading && { opacity: 0.7 },
+                ]}
+                onPress={handleSave}
+                disabled={loading}
+              >
+                {loading ? (
+                  <ActivityIndicator color="#000" />
+                ) : (
+                  <Text style={styles.saveButtonText}>Update Email</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </ScrollView>
         </View>
       </KeyboardAvoidingView>
     </Modal>
@@ -230,12 +154,10 @@ const styles = StyleSheet.create({
   sheet: {
     width: "100%",
     maxWidth: 500,
-    minHeight: 340,
+    maxHeight: "90%",
     backgroundColor: "rgba(24, 28, 36, 0.95)",
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
-    padding: 32,
-    alignItems: "center",
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.1)",
     shadowColor: "#000",
@@ -243,6 +165,11 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 24,
     elevation: 12,
+  },
+  scrollContent: {
+    padding: 32,
+    alignItems: "center",
+    minHeight: 300,
   },
   closeIcon: {
     position: "absolute",
@@ -269,13 +196,7 @@ const styles = StyleSheet.create({
     color: "#B4B4B4",
     marginBottom: 22,
     textAlign: "center",
-  },
-  inputContainer: {
-    width: "100%",
-    position: "absolute",
-    top: 100,
-    left: 32,
-    right: 32,
+    lineHeight: 20,
   },
   input: {
     width: "100%",
@@ -286,7 +207,7 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 16,
     padding: 16,
-    marginBottom: 10,
+    marginBottom: 25,
     shadowColor: "#000",
     shadowOffset: {
       width: 0,
@@ -307,7 +228,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     width: "100%",
     marginTop: "auto",
-    marginBottom: 20,
+    marginBottom: 10,
     gap: 16,
   },
   button: {
