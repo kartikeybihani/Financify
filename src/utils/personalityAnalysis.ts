@@ -122,7 +122,7 @@ export function analyzeSpendingPersonality(
   };
 
   // Find the highest scoring personality
-  const topPersonality = Object.entries(scores).reduce((a, b) => scores[a[0]] > scores[b[0]] ? a : b);
+  const topPersonality = Object.entries(scores).reduce((a, b) => scores[a[0] as keyof typeof scores] > scores[b[0] as keyof typeof scores] ? a : b);
   const [personalityKey, score] = topPersonality;
   
   // Get personality details

@@ -216,7 +216,7 @@ export default StyleSheet.create({
   },
   chatContainer: {
     flex: 1,
-    paddingBottom: responsiveHeight(12),
+    paddingBottom: responsiveHeight(6),
   },
   chatScroll: {
     flex: 1,
@@ -261,10 +261,10 @@ export default StyleSheet.create({
   inputBar: {
     flexDirection: "row",
     alignItems: "center",
-    paddingLeft: responsivePadding(8),
+    paddingLeft: responsivePadding(18),
     paddingRight: responsivePadding(8),
     backgroundColor: "#1f1f1f",
-    borderRadius: 24,
+    borderRadius: 30,
     paddingBottom: responsivePadding(4),
     marginHorizontal: responsivePadding(10),
     marginBottom: 0,

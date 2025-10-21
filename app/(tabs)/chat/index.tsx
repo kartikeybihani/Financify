@@ -56,6 +56,7 @@ export default function ChatScreen() {
   const [isTyping, setIsTyping] = useState(false);
   const [showStartersModal, setShowStartersModal] = useState(false);
   const [dimensions, setDimensions] = useState(Dimensions.get("window"));
+  const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
   const atBottomRef = useRef(true);
   const contentHeights = useRef({ content: 0, view: 0 });
 
@@ -65,6 +66,27 @@ export default function ChatScreen() {
       setDimensions(window);
     });
     return () => subscription?.remove();
+  }, []);
+
+  // Handle keyboard state changes
+  useEffect(() => {
+    const keyboardDidShowListener = Keyboard.addListener(
+      "keyboardDidShow",
+      () => {
+        setIsKeyboardOpen(true);
+      }
+    );
+    const keyboardDidHideListener = Keyboard.addListener(
+      "keyboardDidHide",
+      () => {
+        setIsKeyboardOpen(false);
+      }
+    );
+
+    return () => {
+      keyboardDidShowListener?.remove();
+      keyboardDidHideListener?.remove();
+    };
   }, []);
 
   // Auto-scroll to bottom when user comes to this screen (every time)
@@ -515,9 +537,9 @@ export default function ChatScreen() {
               style={[
                 styles.inputBarContainer,
                 {
-                  paddingBottom:
-                    Math.max(insets.bottom, responsivePadding(8)) +
-                    responsivePadding(8),
+                  paddingBottom: isKeyboardOpen
+                    ? responsivePadding(10)
+                    : Math.max(insets.bottom, responsivePadding(10)),
                 },
               ]}
             >
