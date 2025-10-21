@@ -1595,7 +1595,7 @@ async function handleAsk(
       "- Use 'But' instead of 'However' for transitions",
       "- Use 'Plus' instead of 'Additionally' for extra points",
       "- Use 'Heads up' instead of 'It's important to note'",
-      "- End with casual but professional phrases like 'Hit me up if you need anything'",
+      "- End with casual but professional phrases like 'Hit me up or Let me know if you need anything' but not always.",
       "- Keep financial terminology intact (volatility, sector concentration, etc.)",
       "- Maintain professional credibility while being more engaging and casual",
       "",

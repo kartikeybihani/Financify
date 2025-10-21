@@ -128,20 +128,8 @@ const pickTailColor = (colors: string[], side: "left" | "right") => {
     // For user messages, use the end color (darker)
     return colors[colors.length - 1];
   } else {
-    // For Finny messages, use a darker version of the first color
-    const baseColor = colors[1];
-    // Darken the color by reducing brightness
-    if (baseColor.startsWith("#")) {
-      // Convert hex to RGB, darken, and convert back
-      const hex = baseColor.slice(1);
-      const r = Math.max(0, parseInt(hex.substr(0, 2), 16) - 30);
-      const g = Math.max(0, parseInt(hex.substr(2, 2), 16) - 30);
-      const b = Math.max(0, parseInt(hex.substr(4, 2), 16) - 30);
-      return `#${r.toString(16).padStart(2, "0")}${g
-        .toString(16)
-        .padStart(2, "0")}${b.toString(16).padStart(2, "0")}`;
-    }
-    return baseColor;
+    // For Finny messages, use the darkest color from the gradient
+    return colors[0];
   }
 };
 
@@ -167,14 +155,14 @@ const BubbleTail = ({
           shadowPath: "M36,1 Q34,6 30,10 Q26,14 22,16 Q16,18 8,20",
         }
       : {
-          width: 40,
-          height: 20,
-          offset: -20,
-          viewBox: "0 0 40 20",
+          width: 32,
+          height: 16,
+          offset: -14,
+          viewBox: "0 0 32 16",
           flipX: 1,
-          // Even wider for left side, very thick
-          path: "M40,0 L40,14 Q38,14 34,16 Q30,18 25,19 Q18,20 8,20 Q12,18 18,16 Q24,14 30,12 Q34,8 38,4 Q39,2 40,0 Z",
-          shadowPath: "M40,1 Q38,7 34,12 Q30,16 25,18 Q18,19 8,20",
+          // Smaller tail for left side
+          path: "M32,0 L32,12 Q30,12 26,14 Q22,16 18,17 Q12,18 6,18 Q10,16 16,14 Q22,12 26,8 Q29,4 32,0 Z",
+          shadowPath: "M32,1 Q30,6 26,10 Q22,14 18,15 Q12,16 6,18",
         };
 
   return (
@@ -182,7 +170,7 @@ const BubbleTail = ({
       pointerEvents="none"
       style={{
         position: "absolute",
-        bottom: side === "left" ? 7 : 0,
+        bottom: side === "left" ? 15 : -2,
         right: side === "right" ? config.offset : undefined,
         left: side === "left" ? config.offset : undefined,
         width: config.width,
@@ -745,10 +733,10 @@ const styles = StyleSheet.create({
     overflow: "visible",
   },
   finnyMessageBubbleGrouped: {
-    marginBottom: responsivePadding(8),
+    marginBottom: responsivePadding(16),
   },
   finnyMessageBubbleLastInGroup: {
-    marginBottom: responsivePadding(13),
+    marginBottom: responsivePadding(20),
   },
   messageText: {
     fontSize: responsiveFontSize(14),

@@ -836,10 +836,15 @@ export default function InsightsScreen() {
         (a, b) => b[1].amount - a[1].amount
       );
 
+      // Filter out Internal Transfer categories
+      const filteredCategories = sortedCategories.filter(
+        ([category]) => category !== "INTERNAL_TRANSFER"
+      );
+
       // Debug: Log all categories found
       console.log("🔍 DEBUG: All categories found in current month expenses:");
-      console.log("Total categories:", sortedCategories.length);
-      sortedCategories.forEach(([category, data], index) => {
+      console.log("Total categories:", filteredCategories.length);
+      filteredCategories.forEach(([category, data], index) => {
         console.log(
           `${index + 1}. ${category}: $${data.amount.toFixed(
             2
@@ -847,7 +852,7 @@ export default function InsightsScreen() {
         );
       });
 
-      setCategoryBreakdown(sortedCategories);
+      setCategoryBreakdown(filteredCategories);
 
       // Store current month transactions for category detail modal
       setCurrentMonthTransactions(currentMonthExpenses);
