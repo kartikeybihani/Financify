@@ -603,7 +603,7 @@ export const useChat = () => {
       }
 
       // Show initial progress
-      setProgressStatus("Let me see what I can do");
+      setProgressStatus("Brewing up some financial wisdom...");
 
       // Fetch session once and reuse the access token for all requests in this flow
       const { data: sessionData } = await supabase.auth.getSession();

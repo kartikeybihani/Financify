@@ -3129,7 +3129,7 @@ async function createOptimizedFetchOperations(userId, needs, slots) {
 
   // 1. Financial summary operation (always needed for base context)
   if (needs.includes("summary_min")) {
-    const cachedSummary = await getCachedUserData("financial_summary", userId);
+    const cachedSummary = await getCachedUserData("summary_min", userId);
 
     if (cachedSummary) {
       addOperation("summary_min", {
@@ -3593,7 +3593,7 @@ function processCashflowData(results) {
 async function cacheOperationData(operation, data) {
   switch (operation.type) {
     case "summary_min":
-      await setCachedUserData("financial_summary", operation.userId, data);
+      await setCachedUserData("summary_min", operation.userId, data);
       break;
     case "spend_total":
       await setCachedUserData("spend_data", operation.userId, data, {
