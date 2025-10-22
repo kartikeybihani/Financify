@@ -294,81 +294,126 @@ export const useChat = () => {
     }
   };
 
-  // Handle streaming response from API
-  const handleStreamingResponse = async (response: Response) => {
-    console.log("🔄 [STREAMING] Starting to handle streaming response");
-    
-    if (!response.body) {
-      console.error("❌ [STREAMING] No response body available");
-      throw new Error('No response body');
-    }
-
-    // First, let's try to get the response as text to debug
-    try {
-      const responseText = await response.text();
-      console.log("🔍 [STREAMING] Raw response text:", responseText.substring(0, 500) + "...");
-      
-      // Parse the SSE format manually
-      const lines = responseText.split('\n');
+  // Handle streaming response using XMLHttpRequest (works in React Native!)
+  const handleStreamingResponseXHR = (url: string, requestBody: any, accessToken: string) => {
+    return new Promise<void>((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      let receivedLength = 0;
+      let buffer = '';
       let currentMessage = '';
       let messageId = `finny-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-      
-      for (const line of lines) {
-        if (line.trim() === '') continue; // Skip empty lines
-        
-        if (line.startsWith('event: ')) {
-          const event = line.slice(7).trim();
-          console.log("📡 [STREAMING] Event:", event);
-          continue;
-        }
-        
-        if (line.startsWith('data: ')) {
-          const dataString = line.slice(6).trim();
-          if (dataString === '') continue; // Skip empty data
-          
-          try {
-            const data = JSON.parse(dataString);
-            console.log("📦 [STREAMING] Data received:", data);
-            
-            if (data.status) {
-              setProgressStatus(data.status);
-              setIsTyping(true); // Keep typing indicator on during progress updates
-            } else if (data.text) {
-              // Stream text chunks
-              currentMessage += data.text;
-              pushChat({
-                id: messageId,
-                sender: "finny",
-                text: currentMessage,
-                timestamp: Date.now(),
-                type: "text",
-                isStreaming: true
-              });
-            } else if (data.message) {
-              // Complete response
-              pushChat({
-                id: messageId,
-                sender: "finny",
-                text: data.message,
-                timestamp: Date.now(),
-                type: "text",
-                isStreaming: false
-              });
-            }
-          } catch (parseError) {
-            console.error("❌ [STREAMING] JSON parse error:", parseError);
-            console.error("❌ [STREAMING] Problematic data string:", dataString);
-            // Try to continue with the next line
+
+      console.log("🔄 [STREAMING] Starting XMLHttpRequest streaming");
+
+      xhr.open('POST', url, true);
+      xhr.setRequestHeader('Content-Type', 'application/json');
+      xhr.setRequestHeader('Authorization', `Bearer ${accessToken}`);
+
+      // This is the magic - onprogress gets called as data arrives!
+      xhr.onprogress = () => {
+        const newData = xhr.responseText.substring(receivedLength);
+        receivedLength = xhr.responseText.length;
+        buffer += newData;
+
+        // Process complete lines (SSE format)
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (line.trim() === '') continue;
+
+          if (line.startsWith('event: ')) {
+            const event = line.slice(7).trim();
+            console.log("📡 [STREAMING] Event:", event);
             continue;
           }
+
+          if (line.startsWith('data: ')) {
+            const dataString = line.slice(6).trim();
+            if (dataString === '') continue;
+
+            try {
+              const data = JSON.parse(dataString);
+              console.log("📦 [STREAMING] Data chunk:", data);
+
+              if (data.status) {
+                setProgressStatus(data.status);
+                setIsTyping(true);
+              } else if (data.text) {
+                // Stream text chunks with space between
+                currentMessage += (currentMessage ? ' ' : '') + data.text;
+                
+                // Update the message in real-time
+                setChatMessages(prev => {
+                  const existingIndex = prev.findIndex(msg => msg.id === messageId);
+                  if (existingIndex >= 0) {
+                    const updated = [...prev];
+                    updated[existingIndex] = {
+                      ...updated[existingIndex],
+                      text: currentMessage,
+                      isStreaming: true
+                    };
+                    return updated;
+                  } else {
+                    return [...prev, {
+                      id: messageId,
+                      sender: "finny",
+                      text: currentMessage,
+                      timestamp: Date.now(),
+                      type: "text",
+                      isStreaming: true
+                    }];
+                  }
+                });
+              } else if (data.message) {
+                // Final complete response
+                setChatMessages(prev => {
+                  const existingIndex = prev.findIndex(msg => msg.id === messageId);
+                  if (existingIndex >= 0) {
+                    const updated = [...prev];
+                    updated[existingIndex] = {
+                      ...updated[existingIndex],
+                      text: data.message,
+                      isStreaming: false
+                    };
+                    return updated;
+                  } else {
+                    return [...prev, {
+                      id: messageId,
+                      sender: "finny",
+                      text: data.message,
+                      timestamp: Date.now(),
+                      type: "text",
+                      isStreaming: false
+                    }];
+                  }
+                });
+              }
+            } catch (parseError) {
+              console.error("❌ [STREAMING] JSON parse error:", parseError);
+            }
+          }
         }
-      }
-      
-      console.log("✅ [STREAMING] Stream processing completed");
-    } catch (error) {
-      console.error("❌ [STREAMING] Error processing stream:", error);
-      throw error;
-    }
+      };
+
+      xhr.onloadend = () => {
+        // Process any remaining data
+        if (buffer.trim()) {
+          console.log("🔚 [STREAMING] Processing final buffer:", buffer);
+        }
+        console.log("✅ [STREAMING] Stream completed");
+        setProgressStatus("");
+        setIsTyping(false);
+        resolve();
+      };
+
+      xhr.onerror = () => {
+        console.error("❌ [STREAMING] XHR error");
+        reject(new Error('Streaming request failed'));
+      };
+
+      xhr.send(JSON.stringify(requestBody));
+    });
   };
 
   const pushMultipleMessages = async (messages: ChatMessage[]) => {
@@ -453,9 +498,8 @@ export const useChat = () => {
         return;
       }
 
-      // IMPORTANT: React Native's fetch doesn't support response.body for streaming
-      // Disable streaming for now until we implement a proper solution
-      const useStreaming = false;
+      // Use streaming for better UX - implemented with XMLHttpRequest
+      const useStreaming = true;
 
       // Check if user wants to clear cache
       if (messageText.toLowerCase().includes("clear cache") || 
@@ -547,9 +591,41 @@ export const useChat = () => {
       }
 
       // 2) Route to appropriate handler based on classification
+      // Use XMLHttpRequest for streaming, fetch for regular responses
+      if (useStreaming) {
+        console.log("🔄 [STREAMING] Using XMLHttpRequest for streaming");
+        const requestBody = !goalFlow?.active && classifyData.intent === "ask_personalized" 
+          ? {
+              action: "ask",
+              message: messageText,
+              chat_id: chatId,
+              context: {},
+              classification: classifyData,
+              stream: true
+            }
+          : {
+              action: goalFlow?.active ? "goal_conversation" : classifyData.intent,
+              message: messageText,
+              chat_id: chatId,
+              context: goalFlow ? { goal_flow: goalFlow } : {},
+              stream: true
+            };
+
+        try {
+          await handleStreamingResponseXHR(`${BASE_URL}/api/finny`, requestBody, accessToken);
+          return; // Done with streaming, exit early
+        } catch (streamError) {
+          console.error("❌ [STREAMING] Streaming failed:", streamError);
+          pushChat("finny", "Something went wrong. Try again later.");
+          setProgressStatus("");
+          setIsTyping(false);
+          return;
+        }
+      }
+
+      // Regular fetch for non-streaming requests
       let res;
       if (!goalFlow?.active && classifyData.intent === "ask_personalized") {
-        // For personalized questions, call the ask handler
         res = await fetch(`${BASE_URL}/api/finny`, {
           method: "POST",
           headers: { 
@@ -559,14 +635,13 @@ export const useChat = () => {
           body: JSON.stringify({
             action: "ask",
             message: messageText,
-            chat_id: chatId, // Send chat_id for conversation context
+            chat_id: chatId,
             context: {},
             classification: classifyData,
-            stream: useStreaming
+            stream: false
           }),
         });
       } else {
-        // For other intents (goal, etc.), route directly
         res = await fetch(`${BASE_URL}/api/finny`, {
           method: "POST",
           headers: { 
@@ -576,39 +651,16 @@ export const useChat = () => {
           body: JSON.stringify({
             action: goalFlow?.active ? "goal_conversation" : classifyData.intent,
             message: messageText,
-            chat_id: chatId, // Send chat_id for conversation context
+            chat_id: chatId,
             context: goalFlow ? { goal_flow: goalFlow } : {},
-            stream: useStreaming
+            stream: false
           }),
         });
       }
 
-      // Handle streaming vs regular response
-      const contentType = res.headers.get('content-type');
-      console.log("🔍 [STREAMING DEBUG] Response content-type:", contentType);
-      console.log("🔍 [STREAMING DEBUG] useStreaming:", useStreaming);
-      
-      if (useStreaming && contentType?.includes('text/event-stream')) {
-        console.log("🔄 [STREAMING] Handling streaming response");
-        try {
-          // Handle streaming response
-          await handleStreamingResponse(res);
-          setProgressStatus(""); // Clear progress status
-          setIsTyping(false); // Stop typing indicator
-          return;
-        } catch (streamError) {
-          console.error("❌ [STREAMING] Streaming failed:", streamError);
-          // For streaming errors, we can't fall back to JSON since the body is consumed
-          pushChat("finny", "Something went wrong. Try again later.");
-          setProgressStatus("");
-          setIsTyping(false);
-          return;
-        }
-      } else {
-        console.log("📄 [STREAMING] Handling regular JSON response");
-        // Handle regular JSON response
-        const data = await res.json();
-        logger.info("🤖 [CHAT] API Response:", data);
+      // Handle regular JSON response
+      const data = await res.json();
+      logger.info("🤖 [CHAT] API Response:", data);
       
       // Handle structured data as regular messages - no splitting or expandable logic
 
@@ -670,14 +722,13 @@ export const useChat = () => {
         console.log(`📥 Total response time: ${totalResponseDuration}ms (${(totalResponseDuration / 1000).toFixed(2)}s) at ${ptTime} PT`);
       }
       
-        // Handle split messages for better UX
-        if (data.isSplit && Array.isArray(data.message)) {
-          console.log(`[Frontend] Received ${data.message.length} split messages`);
-          await handleSplitMessages(data.message);
-        } else {
-          await pushChatWithDelay("finny", message);
-        }
-      } // Close the else block for regular JSON response
+      // Handle split messages for better UX
+      if (data.isSplit && Array.isArray(data.message)) {
+        console.log(`[Frontend] Received ${data.message.length} split messages`);
+        await handleSplitMessages(data.message);
+      } else {
+        await pushChatWithDelay("finny", message);
+      }
     } catch (error) {
       logger.error("AI error:", error);
       setProgressStatus(""); // Clear progress status

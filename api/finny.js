@@ -4880,7 +4880,7 @@ function sendStreamEvent(res, event, data) {
 }
 
 // Helper function to stream text chunks
-async function streamTextChunks(res, text, chunkSize = 50) {
+async function streamTextChunks(res, text, chunkSize = 15) {
   if (!text || typeof text !== "string") return;
 
   const words = text.split(" ");
@@ -4894,8 +4894,8 @@ async function streamTextChunks(res, text, chunkSize = 50) {
       sendStreamEvent(res, "text_chunk", { text: currentChunk });
       currentChunk = "";
 
-      // Small delay to simulate natural typing
-      await delay(50 + Math.random() * 100);
+      // Tiny delay for smooth streaming (network latency provides natural delay)
+      await delay(20 + Math.random() * 30);
     }
   }
 }
