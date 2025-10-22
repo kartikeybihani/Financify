@@ -185,21 +185,22 @@ async function setPersistentCache(dataType, userId, data, params = {}) {
       ).toISOString()}, TTL: ${ttl}ms`
     );
 
-    // Use upsert with conflict resolution to prevent duplicates
-    const { error } = await supabase.from("context_cache").upsert(
-      {
-        cache_key: key,
-        user_id: userId,
-        data_type: dataType,
-        cache_data: data,
-        expires_at: expires_at,
-        created_at: new Date().toISOString(),
-      },
-      {
-        onConflict: "cache_key,user_id", // Handle conflicts on these columns
-        ignoreDuplicates: false, // Update existing entries instead of ignoring
-      }
-    );
+    // First, delete any existing entries with the same cache_key and user_id
+    await supabase
+      .from("context_cache")
+      .delete()
+      .eq("cache_key", key)
+      .eq("user_id", userId);
+
+    // Then insert the new entry
+    const { error } = await supabase.from("context_cache").insert({
+      cache_key: key,
+      user_id: userId,
+      data_type: dataType,
+      cache_data: data,
+      expires_at: expires_at,
+      created_at: new Date().toISOString(),
+    });
 
     if (error) {
       console.error(
@@ -641,29 +642,49 @@ async function cleanupExistingDuplicates() {
   try {
     console.log("🧹 [CACHE] Cleaning up existing duplicate cache entries...");
 
-    // Get all cache keys with duplicates
-    const { data: duplicates, error } = await supabase
+    // Get all cache entries and find duplicates manually
+    const { data: allEntries, error } = await supabase
       .from("context_cache")
-      .select("cache_key, user_id, count(*)")
-      .group("cache_key, user_id")
-      .having("count(*) > 1");
+      .select("cache_key, user_id");
 
     if (error) {
       console.error("❌ [CACHE] Error finding duplicates:", error);
       return;
     }
 
-    if (duplicates && duplicates.length > 0) {
+    if (!allEntries || allEntries.length === 0) {
+      console.log("✅ [CACHE] No cache entries found");
+      return;
+    }
+
+    // Group by cache_key and user_id to find duplicates
+    const duplicates = {};
+    for (const entry of allEntries) {
+      const key = `${entry.cache_key}_${entry.user_id}`;
+      if (!duplicates[key]) {
+        duplicates[key] = [];
+      }
+      duplicates[key].push(entry);
+    }
+
+    // Find entries with duplicates
+    const duplicateKeys = Object.keys(duplicates).filter(
+      (key) => duplicates[key].length > 1
+    );
+
+    if (duplicateKeys.length > 0) {
       console.log(
-        `🧹 [CACHE] Found ${duplicates.length} cache keys with duplicates`
+        `🧹 [CACHE] Found ${duplicateKeys.length} cache keys with duplicates`
       );
 
       // Clean up each duplicate set
-      for (const duplicate of duplicates) {
-        await cleanupDuplicateCacheEntries(
-          duplicate.cache_key,
-          duplicate.user_id
-        );
+      for (const key of duplicateKeys) {
+        const [cacheKey, userId] = key
+          .split("_")
+          .slice(0, -1)
+          .join("_")
+          .split("_");
+        await cleanupDuplicateCacheEntries(cacheKey, userId);
       }
 
       console.log("✅ [CACHE] Existing duplicates cleaned up");
@@ -3423,9 +3444,17 @@ async function buildContextPacks(userId, needs, slots) {
           isCached: true,
         });
         prebuiltContexts[need] = cachedData;
-        // Store summary_min data as packs.base for context building
+        // Store data in the correct pack structure for context building
         if (need === "summary_min") {
           packs.base = cachedData;
+        } else if (need === "invest_holdings") {
+          packs.invest = cachedData;
+        } else if (need === "goals_overview") {
+          packs.goals = cachedData;
+        } else if (need === "cashflow_monthly") {
+          packs.cashflow = cachedData;
+        } else if (need === "spend_total") {
+          packs.spend = cachedData;
         } else {
           packs[need] = cachedData;
         }
