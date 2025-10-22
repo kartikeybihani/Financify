@@ -2032,9 +2032,20 @@ async function handleAsk(
     ].join("\n");
 
     // Build context from packs
+    console.log("🔍 [CONTEXT] Building context from packs:", {
+      packsKeys: Object.keys(packs),
+      hasBase: !!packs.base,
+      baseKeys: packs.base ? Object.keys(packs.base) : [],
+    });
     const contextLines = [contextHeader];
 
     if (packs.base) {
+      console.log("🔍 [CONTEXT] Building context from packs.base:", {
+        hasBase: !!packs.base,
+        baseKeys: Object.keys(packs.base || {}),
+        netWorth: packs.base?.netWorth,
+        liquidAssets: packs.base?.liquidAssets,
+      });
       contextLines.push("Financial Summary:");
       contextLines.push(`Net Worth: $${packs.base.netWorth}`);
       contextLines.push(`Liquid Assets: $${packs.base.liquidAssets}`);
