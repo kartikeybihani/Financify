@@ -99,6 +99,74 @@ const CLASSIFICATION_CACHE_TTL = 60 * 60 * 1000; // 1 hour in milliseconds
 // Data cache - in-memory cache for user data with different TTLs
 const dataCache = new Map();
 
+// Persistent cache using Supabase for cross-instance sharing
+async function getPersistentCache(dataType, userId, params = {}) {
+  try {
+    const key = generateDataCacheKey(dataType, userId, params);
+    const { data, error } = await supabase
+      .from("context_cache")
+      .select("*")
+      .eq("cache_key", key)
+      .eq("user_id", userId)
+      .single();
+
+    if (error || !data) {
+      return null;
+    }
+
+    // Check if expired
+    if (Date.now() > data.expires_at) {
+      // Clean up expired entry
+      await supabase
+        .from("context_cache")
+        .delete()
+        .eq("cache_key", key)
+        .eq("user_id", userId);
+      return null;
+    }
+
+    console.log(`✅ [PERSISTENT_CACHE] Cache HIT for ${dataType} (${key})`);
+    return data.cache_data;
+  } catch (error) {
+    console.error(
+      `❌ [PERSISTENT_CACHE] Error getting cache for ${dataType}:`,
+      error
+    );
+    return null;
+  }
+}
+
+async function setPersistentCache(dataType, userId, data, params = {}) {
+  try {
+    const key = generateDataCacheKey(dataType, userId, params);
+    const ttl = params.ttl || CACHE_TTL[dataType] || 5 * 60 * 1000;
+    const expires_at = Date.now() + ttl;
+
+    const { error } = await supabase.from("context_cache").upsert({
+      cache_key: key,
+      user_id: userId,
+      data_type: dataType,
+      cache_data: data,
+      expires_at: expires_at,
+      created_at: new Date().toISOString(),
+    });
+
+    if (error) {
+      console.error(
+        `❌ [PERSISTENT_CACHE] Error setting cache for ${dataType}:`,
+        error
+      );
+    } else {
+      console.log(`✅ [PERSISTENT_CACHE] Cache SET for ${dataType} (${key})`);
+    }
+  } catch (error) {
+    console.error(
+      `❌ [PERSISTENT_CACHE] Error setting cache for ${dataType}:`,
+      error
+    );
+  }
+}
+
 // Cache TTLs for different data types (in milliseconds)
 const CACHE_TTL = {
   financial_summary: 5 * 60 * 1000, // 5 minutes
@@ -204,29 +272,52 @@ function generateDataCacheKey(dataType, userId, params = {}) {
 }
 
 // Get cached user data
-function getCachedUserData(dataType, userId, params = {}) {
+async function getCachedUserData(dataType, userId, params = {}) {
   const key = generateDataCacheKey(dataType, userId, params);
-  const cached = dataCache.get(key);
 
+  // First check in-memory cache
+  const cached = dataCache.get(key);
   if (cached && Date.now() < cached.expires_at) {
-    console.log(`✅ [DATA_CACHE] Cache HIT for ${dataType} (${key})`);
+    console.log(`✅ [DATA_CACHE] In-memory cache HIT for ${dataType} (${key})`);
     return cached.data;
   }
 
   if (cached) {
-    console.log(`⏰ [DATA_CACHE] Cache EXPIRED for ${dataType} (${key})`);
+    console.log(
+      `⏰ [DATA_CACHE] In-memory cache EXPIRED for ${dataType} (${key})`
+    );
     dataCache.delete(key);
+  }
+
+  // Fallback to persistent cache
+  console.log(
+    `🔍 [DATA_CACHE] Checking persistent cache for ${dataType} (${key})`
+  );
+  const persistentData = await getPersistentCache(dataType, userId, params);
+  if (persistentData) {
+    // Store in in-memory cache for faster access
+    const ttl = params.ttl || CACHE_TTL[dataType] || 5 * 60 * 1000;
+    dataCache.set(key, {
+      data: persistentData,
+      expires_at: Date.now() + ttl,
+      cached_at: Date.now(),
+      dataType,
+      userId,
+      params,
+    });
+    return persistentData;
   }
 
   return null;
 }
 
 // Set cached user data
-function setCachedUserData(dataType, userId, data, params = {}) {
+async function setCachedUserData(dataType, userId, data, params = {}) {
   const key = generateDataCacheKey(dataType, userId, params);
   const ttl = params.ttl || CACHE_TTL[dataType] || 5 * 60 * 1000; // Use provided ttl or default
   const expires_at = Date.now() + ttl;
 
+  // Store in in-memory cache
   dataCache.set(key, {
     data,
     expires_at,
@@ -235,6 +326,9 @@ function setCachedUserData(dataType, userId, data, params = {}) {
     userId,
     params,
   });
+
+  // Store in persistent cache for cross-instance sharing
+  await setPersistentCache(dataType, userId, data, params);
 
   const ttlMinutes = Math.round(ttl / (60 * 1000));
   console.log(
@@ -2937,7 +3031,7 @@ async function buildContextPacks(userId, needs, slots) {
     const remainingNeeds = [];
 
     for (const need of needs) {
-      const cachedData = getCachedUserData(need, userId);
+      const cachedData = await getCachedUserData(need, userId);
       if (cachedData) {
         console.log(`✅ [FINNY] Using pre-built context for: ${need}`);
         console.log(`🔍 [FINNY] Pre-built data for ${need}:`, {
@@ -2972,7 +3066,7 @@ async function buildContextPacks(userId, needs, slots) {
     );
 
     // OPTIMIZED: Create optimized fetch operations with better batching
-    const fetchOperations = createOptimizedFetchOperations(
+    const fetchOperations = await createOptimizedFetchOperations(
       userId,
       remainingNeeds,
       slots
@@ -3021,7 +3115,7 @@ async function buildContextPacks(userId, needs, slots) {
 }
 
 // OPTIMIZED: Create optimized fetch operations to avoid redundancy
-function createOptimizedFetchOperations(userId, needs, slots) {
+async function createOptimizedFetchOperations(userId, needs, slots) {
   const operations = [];
   const operationKeys = new Set(); // Prevent duplicate operations
 
@@ -3035,7 +3129,7 @@ function createOptimizedFetchOperations(userId, needs, slots) {
 
   // 1. Financial summary operation (always needed for base context)
   if (needs.includes("summary_min")) {
-    const cachedSummary = getCachedUserData("financial_summary", userId);
+    const cachedSummary = await getCachedUserData("financial_summary", userId);
 
     if (cachedSummary) {
       addOperation("summary_min", {
@@ -3081,7 +3175,7 @@ function createOptimizedFetchOperations(userId, needs, slots) {
   // 2. Spend data operation (only if period is provided)
   if (needs.includes("spend_total") && slots?.period) {
     const cacheKey = `spend_data_${slots.period.start}_${slots.period.end}`;
-    const cachedSpend = getCachedUserData("spend_data", userId, {
+    const cachedSpend = await getCachedUserData("spend_data", userId, {
       period: slots.period,
     });
 
@@ -3121,7 +3215,7 @@ function createOptimizedFetchOperations(userId, needs, slots) {
   // 3. Category transactions operation (OPTIMIZED: Combine category_details and txns_by_category)
   if (slots?.category && slots?.period) {
     const cacheKey = `category_transactions_${slots.category}_${slots.period.start}_${slots.period.end}`;
-    const cachedCategoryTxns = getCachedUserData(
+    const cachedCategoryTxns = await getCachedUserData(
       "category_transactions",
       userId,
       {
@@ -3171,7 +3265,7 @@ function createOptimizedFetchOperations(userId, needs, slots) {
 
   // 4. Investment holdings operation
   if (needs.includes("invest_holdings")) {
-    const cachedInvest = getCachedUserData("investments_all", userId);
+    const cachedInvest = await getCachedUserData("investments_all", userId);
 
     if (cachedInvest) {
       addOperation("invest_holdings", {
@@ -3202,7 +3296,7 @@ function createOptimizedFetchOperations(userId, needs, slots) {
 
   // 5. Goals overview operation
   if (needs.includes("goals_overview")) {
-    const cachedGoals = getCachedUserData("goals_overview", userId, {
+    const cachedGoals = await getCachedUserData("goals_overview", userId, {
       limit: 10,
     });
 
@@ -3235,7 +3329,7 @@ function createOptimizedFetchOperations(userId, needs, slots) {
 
   // 6. Cashflow monthly operation
   if (needs.includes("cashflow_monthly")) {
-    const cachedCashflow = getCachedUserData("cashflow_monthly", userId, {
+    const cachedCashflow = await getCachedUserData("cashflow_monthly", userId, {
       months: 3,
     });
 
@@ -3294,7 +3388,7 @@ async function executeFetchOperation(operation) {
 
     if (processedData) {
       // Cache the processed data
-      cacheOperationData(operation, processedData);
+      await cacheOperationData(operation, processedData);
       return { success: true, data: processedData, cached: false };
     } else {
       return { success: false, error: "No valid data returned" };
@@ -3496,32 +3590,32 @@ function processCashflowData(results) {
 }
 
 // OPTIMIZED: Cache operation data
-function cacheOperationData(operation, data) {
+async function cacheOperationData(operation, data) {
   switch (operation.type) {
     case "summary_min":
-      setCachedUserData("financial_summary", operation.userId, data);
+      await setCachedUserData("financial_summary", operation.userId, data);
       break;
     case "spend_total":
-      setCachedUserData("spend_data", operation.userId, data, {
+      await setCachedUserData("spend_data", operation.userId, data, {
         period: operation.period,
       });
       break;
     case "category_transactions":
-      setCachedUserData("category_transactions", operation.userId, data, {
+      await setCachedUserData("category_transactions", operation.userId, data, {
         category: operation.category,
         period: operation.period,
       });
       break;
     case "invest_holdings":
-      setCachedUserData("investments_all", operation.userId, data);
+      await setCachedUserData("investments_all", operation.userId, data);
       break;
     case "goals_overview":
-      setCachedUserData("goals_overview", operation.userId, data, {
+      await setCachedUserData("goals_overview", operation.userId, data, {
         limit: 10,
       });
       break;
     case "cashflow_monthly":
-      setCachedUserData("cashflow_monthly", operation.userId, data, {
+      await setCachedUserData("cashflow_monthly", operation.userId, data, {
         months: 3,
       });
       break;
@@ -3957,9 +4051,14 @@ async function handlePrebuildContext(userId) {
 
     // Cache base context for 5 minutes
     if (baseContext && baseContext.packs && baseContext.packs.summary_min) {
-      setCachedUserData("summary_min", userId, baseContext.packs.summary_min, {
-        ttl: 5 * 60 * 1000,
-      });
+      await setCachedUserData(
+        "summary_min",
+        userId,
+        baseContext.packs.summary_min,
+        {
+          ttl: 5 * 60 * 1000,
+        }
+      );
       console.log("✅ [PREBUILD] Base context cached successfully");
       console.log("🔍 [PREBUILD] Base context data:", {
         hasNetWorth: !!baseContext.packs.summary_min.net_worth,
@@ -3985,7 +4084,7 @@ async function handlePrebuildContext(userId) {
         investContext.packs &&
         investContext.packs.invest_holdings
       ) {
-        setCachedUserData(
+        await setCachedUserData(
           "invest_holdings",
           userId,
           investContext.packs.invest_holdings,
@@ -4016,7 +4115,7 @@ async function handlePrebuildContext(userId) {
         goalsContext.packs &&
         goalsContext.packs.goals_overview
       ) {
-        setCachedUserData(
+        await setCachedUserData(
           "goals_overview",
           userId,
           goalsContext.packs.goals_overview,
@@ -4046,7 +4145,7 @@ async function handlePrebuildContext(userId) {
         cashflowContext.packs &&
         cashflowContext.packs.cashflow_monthly
       ) {
-        setCachedUserData(
+        await setCachedUserData(
           "cashflow_monthly",
           userId,
           cashflowContext.packs.cashflow_monthly,
@@ -4075,7 +4174,7 @@ async function handlePrebuildContext(userId) {
         spendContext.packs &&
         spendContext.packs.spend_total
       ) {
-        setCachedUserData(
+        await setCachedUserData(
           "spend_total",
           userId,
           spendContext.packs.spend_total,
@@ -5915,7 +6014,7 @@ async function getNetWorthData(userId) {
   }
 
   // Check cache first
-  const cached = getCachedUserData("net_worth", userId);
+  const cached = await getCachedUserData("net_worth", userId);
   if (cached) {
     console.log("✅ [NET_WORTH] Using cached net worth data");
     return cached;
@@ -5970,7 +6069,7 @@ async function getNetWorthData(userId) {
     };
 
     // Cache the processed data
-    setCachedUserData("net_worth", userId, processedData);
+    await setCachedUserData("net_worth", userId, processedData);
     console.log("💾 [NET_WORTH] Cached net worth data");
 
     return processedData;
