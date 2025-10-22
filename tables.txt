@@ -61,6 +61,22 @@ CREATE TABLE public.chat_sessions (
   CONSTRAINT chat_sessions_pkey PRIMARY KEY (id),
   CONSTRAINT chat_sessions_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
 );
+CREATE TABLE public.conversation_context (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL,
+  chat_id text NOT NULL UNIQUE,
+  last_messages jsonb DEFAULT '[]'::jsonb,
+  pending_action text,
+  pending_action_payload jsonb DEFAULT '{}'::jsonb,
+  active_topic text,
+  last_entity jsonb DEFAULT '{}'::jsonb,
+  goal_flow jsonb DEFAULT '{}'::jsonb,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  expires_at timestamp with time zone DEFAULT (now() + '00:30:00'::interval),
+  CONSTRAINT conversation_context_pkey PRIMARY KEY (id),
+  CONSTRAINT conversation_context_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
+);
 CREATE TABLE public.conversation_logs (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL,

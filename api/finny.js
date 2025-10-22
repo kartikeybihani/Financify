@@ -2940,6 +2940,11 @@ async function buildContextPacks(userId, needs, slots) {
       const cachedData = getCachedUserData(need, userId);
       if (cachedData) {
         console.log(`✅ [FINNY] Using pre-built context for: ${need}`);
+        console.log(`🔍 [FINNY] Pre-built data for ${need}:`, {
+          hasData: !!cachedData,
+          dataKeys: Object.keys(cachedData || {}),
+          isCached: true,
+        });
         prebuiltContexts[need] = cachedData;
         packs[need] = cachedData;
       } else {
@@ -3950,12 +3955,19 @@ async function handlePrebuildContext(userId) {
     console.log("📦 [PREBUILD] Building base context pack...");
     const baseContext = await buildContextPacks(userId, ["summary_min"], {});
 
-    // Cache base context for 15 minutes
+    // Cache base context for 5 minutes
     if (baseContext && baseContext.packs && baseContext.packs.summary_min) {
       setCachedUserData("summary_min", userId, baseContext.packs.summary_min, {
-        ttl: 15 * 60 * 1000,
+        ttl: 5 * 60 * 1000,
       });
       console.log("✅ [PREBUILD] Base context cached successfully");
+      console.log("🔍 [PREBUILD] Base context data:", {
+        hasNetWorth: !!baseContext.packs.summary_min.net_worth,
+        hasTransactions: !!baseContext.packs.summary_min.recent_transactions,
+        hasSpendByCategory: !!baseContext.packs.summary_min.spend_by_category,
+      });
+    } else {
+      console.log("❌ [PREBUILD] Base context failed to build or cache");
     }
 
     // Build other context packs in background (after base is ready)
@@ -3977,9 +3989,16 @@ async function handlePrebuildContext(userId) {
           "invest_holdings",
           userId,
           investContext.packs.invest_holdings,
-          { ttl: 15 * 60 * 1000 }
+          { ttl: 5 * 60 * 1000 }
         );
         console.log("✅ [PREBUILD] Investment context cached");
+        console.log("🔍 [PREBUILD] Investment context data:", {
+          hasHoldings: !!investContext.packs.invest_holdings.holdings,
+          holdingsCount:
+            investContext.packs.invest_holdings.holdings?.length || 0,
+        });
+      } else {
+        console.log("❌ [PREBUILD] Investment context failed to build");
       }
     } catch (error) {
       console.error("❌ [PREBUILD] Investment context failed:", error);
@@ -4001,9 +4020,15 @@ async function handlePrebuildContext(userId) {
           "goals_overview",
           userId,
           goalsContext.packs.goals_overview,
-          { ttl: 15 * 60 * 1000 }
+          { ttl: 5 * 60 * 1000 }
         );
         console.log("✅ [PREBUILD] Goals context cached");
+        console.log("🔍 [PREBUILD] Goals context data:", {
+          hasGoals: !!goalsContext.packs.goals_overview.goals,
+          goalsCount: goalsContext.packs.goals_overview.goals?.length || 0,
+        });
+      } else {
+        console.log("❌ [PREBUILD] Goals context failed to build");
       }
     } catch (error) {
       console.error("❌ [PREBUILD] Goals context failed:", error);
@@ -4025,9 +4050,16 @@ async function handlePrebuildContext(userId) {
           "cashflow_monthly",
           userId,
           cashflowContext.packs.cashflow_monthly,
-          { ttl: 15 * 60 * 1000 }
+          { ttl: 5 * 60 * 1000 }
         );
         console.log("✅ [PREBUILD] Cashflow context cached");
+        console.log("🔍 [PREBUILD] Cashflow context data:", {
+          hasCashflow: !!cashflowContext.packs.cashflow_monthly.cashflow,
+          cashflowMonths:
+            cashflowContext.packs.cashflow_monthly.cashflow?.length || 0,
+        });
+      } else {
+        console.log("❌ [PREBUILD] Cashflow context failed to build");
       }
     } catch (error) {
       console.error("❌ [PREBUILD] Cashflow context failed:", error);
@@ -4048,10 +4080,17 @@ async function handlePrebuildContext(userId) {
           userId,
           spendContext.packs.spend_total,
           {
-            ttl: 15 * 60 * 1000,
+            ttl: 5 * 60 * 1000,
           }
         );
         console.log("✅ [PREBUILD] Spend context cached");
+        console.log("🔍 [PREBUILD] Spend context data:", {
+          hasSpendSummary: !!spendContext.packs.spend_total.spend_summary,
+          totalSpend:
+            spendContext.packs.spend_total.spend_summary?.total_spend || 0,
+        });
+      } else {
+        console.log("❌ [PREBUILD] Spend context failed to build");
       }
     } catch (error) {
       console.error("❌ [PREBUILD] Spend context failed:", error);

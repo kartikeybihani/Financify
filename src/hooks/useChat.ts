@@ -655,7 +655,21 @@ export const useChat = () => {
       } else if (classifyData.intent === "goal") {
         setProgressStatus("Setting up your goal...");
       } else {
-        setProgressStatus("Brewing up solutions...");
+        // Fun but warm messages for other intents
+        const warmMessages = [
+          "Brewing up some financial wisdom... ☕",
+          "Crunching numbers with love... 💕",
+          "Getting your financial story ready... 📖",
+          "Preparing something special for you... ✨",
+          "Working my magic on your money matters... 🪄",
+          "Crafting the perfect financial insight... 🎨",
+          "Putting together your financial puzzle... 🧩",
+          "Whipping up some financial advice... 👨‍🍳",
+          "Polishing your financial gems... 💎",
+          "Weaving your financial tapestry... 🧵"
+        ];
+        const randomWarmMessage = warmMessages[Math.floor(Math.random() * warmMessages.length)];
+        setProgressStatus(randomWarmMessage);
       }
 
       // 2) Route to appropriate handler based on classification
