@@ -497,7 +497,7 @@ function detectGoalIntent(message, conversationContext) {
     return {
       intent: "goal_conversation",
       confidence: 0.95,
-      reason: "explicit_creation",
+      reason: "goal_creation",
     };
   }
 
@@ -534,7 +534,7 @@ function detectGoalIntent(message, conversationContext) {
     return {
       intent: "ask_personalized",
       confidence: 0.9,
-      reason: "goal_inquiry",
+      reason: "data_query",
     };
   }
 
@@ -546,6 +546,8 @@ function detectGoalIntent(message, conversationContext) {
     /\bhow\s+much.*(?:spend|spent)/i, // Spending questions
     /\bwhere.*(?:money|spending)/i, // Transaction queries
     /\bshow.*(?:transactions|spending)/i, // Transaction display
+    /\bafford.*\$\d+/i, // "afford $1000" patterns
+    /\bafford.*\d+[k]/i, // "afford 5k" patterns
   ];
 
   if (nonGoalPatterns.some((p) => p.test(message))) {
@@ -553,7 +555,7 @@ function detectGoalIntent(message, conversationContext) {
     return {
       intent: "ask_personalized",
       confidence: 0.9,
-      reason: "non_goal_query",
+      reason: "financial_analysis",
     };
   }
 
@@ -705,21 +707,21 @@ async function handleClassify(message, context, conversationContext = null) {
                 "Intents:",
                 "- ask_personalized: user's finances (spending, accounts, goals, investments)",
                 "- goal_conversation: saving/targets/feasibility conversations",
-                "- off_topic: non-financial (weather, cooking, movies, sports, tech support)",
+                "- off_topic: non-financial (weather, love, relationships, etc)",
                 "",
                 "Flag rules (can combine):",
                 "- needs_user_data=true when the answer requires the user's actual data (spend, net worth, accounts, goals, personal recommendations)",
                 "- needs_web=true when the answer requires current/2024-2025 info (limits, rates, brackets, market/news, card offers)",
                 "",
                 "CRITICAL: Investment advice queries should NEVER need web search:",
-                "- 'Investment advice' → needs_web:false, needs_user_data:true",
-                "- 'What should I invest in?' → needs_web:false, needs_user_data:true",
-                "- 'Portfolio advice' → needs_web:false, needs_user_data:true",
-                "- 'Investment recommendations' → needs_web:false, needs_user_data:true",
-                "- 'Analyze my investment strategy' → needs_web:false, needs_user_data:true",
+                "- 'Investment advice' → intent:ask_personalized, needs_web:false, needs_user_data:true",
+                "- 'What should I invest in?' → intent:ask_personalized, needs_web:false, needs_user_data:true",
+                "- 'Portfolio advice' → intent:ask_personalized, needs_web:false, needs_user_data:true",
+                "- 'Investment recommendations' → intent:ask_personalized, needs_web:false, needs_user_data:true",
+                "- 'Analyze my investment strategy' → intent:ask_personalized, needs_web:false, needs_user_data:true",
                 "",
                 "CRITICAL: Goal queries should NEVER need web search:",
-                "- 'Show my goals/Current goals' → needs_web:false, needs_user_data:true",
+                "- 'Show my goals/Current goals' → intent:goal_conversation, needs_web:false, needs_user_data:true",
                 "",
                 "Examples:",
                 '"What is the Roth IRA limit for 2025?" → {intent:"ask_personalized", needs_web:true, needs_user_data:false}',
@@ -728,6 +730,7 @@ async function handleClassify(message, context, conversationContext = null) {
                 '"Which credit card should I get?" → {intent:"ask_personalized", needs_web:true, needs_user_data:true}',
                 '"Rent vs buy in Phoenix at 7% for me" → {intent:"ask_personalized", needs_web:true, needs_user_data:true, state:"AZ"}',
                 '"What\'s the weather?" → {intent:"off_topic", needs_web:false, needs_user_data:false}',
+                '"Can I afford a $10000 watch?" → {intent:"goal_conversation", needs_web:false, needs_user_data:true}',
                 "",
                 "Return ONLY JSON (no code fences, no commentary):",
                 '{"intent":"ask_personalized|goal_conversation|off_topic","needs_web":true|false,"needs_user_data":true|false,"state":null|"AZ","entities":[],"confidence":0.0-1.0}',
