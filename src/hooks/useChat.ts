@@ -303,71 +303,71 @@ export const useChat = () => {
       throw new Error('No response body');
     }
 
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-    let currentMessage = '';
-    let messageId = `finny-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-
+    // First, let's try to get the response as text to debug
     try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) {
-          console.log("✅ [STREAMING] Stream completed");
-          break;
+      const responseText = await response.text();
+      console.log("🔍 [STREAMING] Raw response text:", responseText.substring(0, 500) + "...");
+      
+      // Parse the SSE format manually
+      const lines = responseText.split('\n');
+      let currentMessage = '';
+      let messageId = `finny-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      
+      for (const line of lines) {
+        if (line.trim() === '') continue; // Skip empty lines
+        
+        if (line.startsWith('event: ')) {
+          const event = line.slice(7).trim();
+          console.log("📡 [STREAMING] Event:", event);
+          continue;
         }
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-
-        for (const line of lines) {
-          if (line.startsWith('event: ')) {
-            const event = line.slice(7);
-            console.log("📡 [STREAMING] Event:", event);
-            continue;
-          }
+        
+        if (line.startsWith('data: ')) {
+          const dataString = line.slice(6).trim();
+          if (dataString === '') continue; // Skip empty data
           
-          if (line.startsWith('data: ')) {
-            try {
-              const data = JSON.parse(line.slice(6));
-              console.log("📦 [STREAMING] Data received:", data);
-              
-              if (data.status) {
-                setProgressStatus(data.status);
-                setIsTyping(true); // Keep typing indicator on during progress updates
-              } else if (data.text) {
-                // Stream text chunks
-                currentMessage += data.text;
-                pushChat({
-                  id: messageId,
-                  sender: "finny",
-                  text: currentMessage,
-                  timestamp: Date.now(),
-                  type: "text",
-                  isStreaming: true
-                });
-              } else if (data.message || data.text) {
-                // Complete response
-                const finalMessage = data.message || data.text;
-                pushChat({
-                  id: messageId,
-                  sender: "finny",
-                  text: finalMessage,
-                  timestamp: Date.now(),
-                  type: "text",
-                  isStreaming: false
-                });
-              }
-            } catch (parseError) {
-              console.error("❌ [STREAMING] JSON parse error:", parseError, "Line:", line);
+          try {
+            const data = JSON.parse(dataString);
+            console.log("📦 [STREAMING] Data received:", data);
+            
+            if (data.status) {
+              setProgressStatus(data.status);
+              setIsTyping(true); // Keep typing indicator on during progress updates
+            } else if (data.text) {
+              // Stream text chunks
+              currentMessage += data.text;
+              pushChat({
+                id: messageId,
+                sender: "finny",
+                text: currentMessage,
+                timestamp: Date.now(),
+                type: "text",
+                isStreaming: true
+              });
+            } else if (data.message) {
+              // Complete response
+              pushChat({
+                id: messageId,
+                sender: "finny",
+                text: data.message,
+                timestamp: Date.now(),
+                type: "text",
+                isStreaming: false
+              });
             }
+          } catch (parseError) {
+            console.error("❌ [STREAMING] JSON parse error:", parseError);
+            console.error("❌ [STREAMING] Problematic data string:", dataString);
+            // Try to continue with the next line
+            continue;
           }
         }
       }
-    } finally {
-      reader.releaseLock();
-      console.log("🔒 [STREAMING] Reader released");
+      
+      console.log("✅ [STREAMING] Stream processing completed");
+    } catch (error) {
+      console.error("❌ [STREAMING] Error processing stream:", error);
+      throw error;
     }
   };
 
@@ -453,8 +453,9 @@ export const useChat = () => {
         return;
       }
 
-      // Check if we should use streaming (default to true for better UX)
-      const useStreaming = true;
+      // IMPORTANT: React Native's fetch doesn't support response.body for streaming
+      // Disable streaming for now until we implement a proper solution
+      const useStreaming = false;
 
       // Check if user wants to clear cache
       if (messageText.toLowerCase().includes("clear cache") || 
@@ -596,11 +597,12 @@ export const useChat = () => {
           setIsTyping(false); // Stop typing indicator
           return;
         } catch (streamError) {
-          console.error("❌ [STREAMING] Streaming failed, falling back to regular response:", streamError);
-          // Fallback: try to get the response as JSON
-          const data = await res.json();
-          logger.info("🤖 [CHAT] API Response (fallback):", data);
-          // Continue with regular processing below
+          console.error("❌ [STREAMING] Streaming failed:", streamError);
+          // For streaming errors, we can't fall back to JSON since the body is consumed
+          pushChat("finny", "Something went wrong. Try again later.");
+          setProgressStatus("");
+          setIsTyping(false);
+          return;
         }
       } else {
         console.log("📄 [STREAMING] Handling regular JSON response");

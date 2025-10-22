@@ -1145,9 +1145,18 @@ export default async function handler(req, res) {
         status: "Processing your request...",
       });
 
-      // Stream the response text if it exists
-      if (response.message || response.text) {
-        const textToStream = response.message || response.text;
+      // Extract the text to stream from the response
+      let textToStream = null;
+      if (typeof response.message === "string") {
+        textToStream = response.message;
+      } else if (typeof response.text === "string") {
+        textToStream = response.text;
+      } else if (Array.isArray(response.message)) {
+        // Handle split messages
+        textToStream = response.message.map((m) => m.content || m).join("\n\n");
+      }
+
+      if (textToStream) {
         console.log(
           "🔄 [STREAMING] Streaming text:",
           textToStream.substring(0, 100) + "..."
