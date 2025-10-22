@@ -302,6 +302,7 @@ export const useChat = () => {
       let buffer = '';
       let currentMessage = '';
       let messageId = `finny-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      let currentEvent = '';
 
       console.log("🔄 [STREAMING] Starting XMLHttpRequest streaming");
 
@@ -325,6 +326,8 @@ export const useChat = () => {
           if (line.startsWith('event: ')) {
             const event = line.slice(7).trim();
             console.log("📡 [STREAMING] Event:", event);
+            // Store the event type for the next data line
+            currentEvent = event;
             continue;
           }
 
@@ -335,6 +338,49 @@ export const useChat = () => {
             try {
               const data = JSON.parse(dataString);
               console.log("📦 [STREAMING] Data chunk:", data);
+              console.log("🔍 [STREAMING] Current event:", currentEvent);
+              console.log("🔍 [STREAMING] Data keys:", Object.keys(data));
+              console.log("🔍 [STREAMING] Has actions?", !!data.actions);
+              console.log("🔍 [STREAMING] Has message?", !!data.message);
+              console.log("🔍 [STREAMING] Data type:", data.type);
+
+              // Handle complete event (final response with actions)
+              if (currentEvent === 'complete') {
+                console.log("🎯 [STREAMING] Complete event received:", data);
+                const finalMessage = data.message || currentMessage;
+                if (finalMessage && typeof finalMessage === 'string' && finalMessage.trim()) {
+                  setChatMessages(prev => {
+                    const existingIndex = prev.findIndex(msg => msg.id === messageId);
+                    if (existingIndex >= 0) {
+                      const updated = [...prev];
+                      updated[existingIndex] = {
+                        ...updated[existingIndex],
+                        text: finalMessage,
+                        isStreaming: false,
+                        // Preserve actions if present in the complete response
+                        ...(data.actions && { actions: data.actions }),
+                        ...(data.type && { type: data.type })
+                      };
+                      console.log("🔄 [STREAMING] Updated existing message with complete response:", updated[existingIndex]);
+                      return updated;
+                    } else {
+                      const completedMessage: ChatMessage = {
+                        id: messageId,
+                        sender: "finny" as const,
+                        text: finalMessage,
+                        timestamp: Date.now(),
+                        type: data.actions && data.actions.length > 0 ? "action" as const : (data.type === "action" ? "action" as const : "text" as const),
+                        isStreaming: false,
+                        // Preserve actions if present in the complete response
+                        ...(data.actions && { actions: data.actions })
+                      };
+                      console.log("✨ [STREAMING] Created new message with complete response:", completedMessage);
+                      return [...prev, completedMessage];
+                    }
+                  });
+                }
+                return; // Skip other processing for complete event
+              }
 
               if (data.status) {
                 setProgressStatus(data.status);
@@ -342,52 +388,74 @@ export const useChat = () => {
               } else if (data.text) {
                 // Stream text chunks with space between
                 currentMessage += (currentMessage ? ' ' : '') + data.text;
+                console.log("📝 [STREAMING] Current message:", currentMessage);
                 
-                // Update the message in real-time
-                setChatMessages(prev => {
-                  const existingIndex = prev.findIndex(msg => msg.id === messageId);
-                  if (existingIndex >= 0) {
-                    const updated = [...prev];
-                    updated[existingIndex] = {
-                      ...updated[existingIndex],
-                      text: currentMessage,
-                      isStreaming: true
-                    };
-                    return updated;
-                  } else {
-                    return [...prev, {
-                      id: messageId,
-                      sender: "finny",
-                      text: currentMessage,
-                      timestamp: Date.now(),
-                      type: "text",
-                      isStreaming: true
-                    }];
-                  }
-                });
+                // Only update if we have actual text content
+                if (currentMessage && currentMessage.trim()) {
+                  // Update the message in real-time
+                  setChatMessages(prev => {
+                    const existingIndex = prev.findIndex(msg => msg.id === messageId);
+                    if (existingIndex >= 0) {
+                      const updated = [...prev];
+                      updated[existingIndex] = {
+                        ...updated[existingIndex],
+                        text: currentMessage,
+                        isStreaming: true
+                      };
+                      console.log("🔄 [STREAMING] Updated existing message:", updated[existingIndex]);
+                      return updated;
+                    } else {
+                      const newMessage: ChatMessage = {
+                        id: messageId,
+                        sender: "finny" as const,
+                        text: currentMessage,
+                        timestamp: Date.now(),
+                        type: "text" as const,
+                        isStreaming: true
+                      };
+                      console.log("✨ [STREAMING] Created new message:", newMessage);
+                      return [...prev, newMessage];
+                    }
+                  });
+                }
               } else if (data.message) {
-                // Final complete response
-                setChatMessages(prev => {
-                  const existingIndex = prev.findIndex(msg => msg.id === messageId);
-                  if (existingIndex >= 0) {
-                    const updated = [...prev];
-                    updated[existingIndex] = {
-                      ...updated[existingIndex],
-                      text: data.message,
-                      isStreaming: false
-                    };
-                    return updated;
-                  } else {
-                    return [...prev, {
-                      id: messageId,
-                      sender: "finny",
-                      text: data.message,
-                      timestamp: Date.now(),
-                      type: "text",
-                      isStreaming: false
-                    }];
-                  }
-                });
+                // Final complete response - handle both text and actions
+                const finalMessage = data.message || currentMessage;
+                console.log("🎯 [STREAMING] Final message:", finalMessage);
+                console.log("🎯 [STREAMING] Actions:", data.actions);
+                console.log("🎯 [STREAMING] Type:", data.type);
+                
+                if (finalMessage && typeof finalMessage === 'string' && finalMessage.trim()) {
+                  setChatMessages(prev => {
+                    const existingIndex = prev.findIndex(msg => msg.id === messageId);
+                    if (existingIndex >= 0) {
+                      const updated = [...prev];
+                      updated[existingIndex] = {
+                        ...updated[existingIndex],
+                        text: finalMessage,
+                        isStreaming: false,
+                        // Preserve actions if present in the complete response
+                        ...(data.actions && { actions: data.actions }),
+                        ...(data.type && { type: data.type })
+                      };
+                      console.log("🔄 [STREAMING] Updated existing message with actions:", updated[existingIndex]);
+                      return updated;
+                    } else {
+                      const completedMessage: ChatMessage = {
+                        id: messageId,
+                        sender: "finny" as const,
+                        text: finalMessage,
+                        timestamp: Date.now(),
+                        type: data.actions && data.actions.length > 0 ? "action" as const : (data.type === "action" ? "action" as const : "text" as const),
+                        isStreaming: false,
+                        // Preserve actions if present in the complete response
+                        ...(data.actions && { actions: data.actions })
+                      };
+                      console.log("✨ [STREAMING] Created new message with actions:", completedMessage);
+                      return [...prev, completedMessage];
+                    }
+                  });
+                }
               }
             } catch (parseError) {
               console.error("❌ [STREAMING] JSON parse error:", parseError);

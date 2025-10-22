@@ -374,6 +374,7 @@ export default function ChatScreen() {
           (flatListData as any)[index + 1]?.type === "message"
             ? (flatListData as any)[index + 1]?.message?.sender
             : null;
+
         return (
           <ChatMessageComponent
             message={message}
@@ -382,12 +383,20 @@ export default function ChatScreen() {
             nextSender={next as any}
             onAction={async (action) => {
               console.log("🎯 [ACTION] Button clicked:", action);
-              // Handle goal flow actions silently (don't show action string in chat)
+
+              // Handle cancel actions immediately without API calls
+              if (action === "cancel" || action === "cancel_goal") {
+                pushChat(
+                  "finny",
+                  "No worries! Let me know if you have any other questions. 😊"
+                );
+                return;
+              }
+
+              // Handle other goal flow actions silently (don't show action string in chat)
               if (
                 action === "confirm" ||
-                action === "cancel" ||
                 action === "confirm_create_goal" ||
-                action === "cancel_goal" ||
                 action === "start_over_goal"
               ) {
                 setIsTyping(true);

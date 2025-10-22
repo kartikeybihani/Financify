@@ -413,12 +413,8 @@ export const ChatMessageComponent = ({
     );
   }
 
-  // Check for action type and buttons
-  if (
-    message.type === "action" &&
-    message.actions &&
-    message.actions.length > 0
-  ) {
+  // Check for action buttons (regardless of type, as long as actions exist)
+  if (message.actions && message.actions.length > 0) {
     const [clicked, setClicked] = useState(false);
     const finnyGradient = ["#1A3A5A", "#2E5A8A", "#4A90E2"] as const;
     const finnyTailColor = pickTailColor([...finnyGradient], "left");
@@ -598,7 +594,14 @@ export const ChatMessageComponent = ({
   }
 
   // Display message as single string (no splitting)
-  const messageText = message.text;
+  // Defensive: handle undefined/null text during streaming
+  const messageText = message?.text ?? "";
+
+  // Don't render if there's no text at all
+  if (!messageText || messageText.trim() === "") {
+    return null;
+  }
+
   const finnyGradient = ["#1A3A5A", "#2E5A8A", "#4A90E2"] as const;
   const finnyTailColor = pickTailColor([...finnyGradient], "left");
 
@@ -609,7 +612,7 @@ export const ChatMessageComponent = ({
         transform: [{ scale: scaleAnim }, { translateY: slideAnim }],
       }}
     >
-      {showSender && messageText && (
+      {showSender && (
         <Animated.View
           style={[
             styles.senderNameContainer,
@@ -622,56 +625,52 @@ export const ChatMessageComponent = ({
           <Text style={styles.senderName}>Finny</Text>
         </Animated.View>
       )}
-      {messageText && (
-        <Animated.View style={styles.finnyMessageRow}>
-          <View style={styles.finnyMessageContainer}>
-            <LinearGradient
-              colors={finnyGradient}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={[
-                styles.finnyMessageBubble,
-                bubbleRadii,
-                { paddingBottom: responsivePadding(10) },
-                !isFirstInGroup &&
-                  !isLastInGroup &&
-                  styles.finnyMessageBubbleGrouped,
-                isLastInGroup && styles.finnyMessageBubbleLastInGroup,
-              ]}
-            >
-              <Text style={[styles.messageText, styles.finnyMessageText]}>
-                {messageText.split("\n").map((line, lineIdx) => (
-                  <React.Fragment key={lineIdx}>
-                    {lineIdx > 0 && <Text>{"\n"}</Text>}
-                    <Text
-                      onTextLayout={lineIdx === 0 ? onTextLayout : undefined}
-                    >
-                      {line.split(/(\*\*[^*]+\*\*)/).map((chunk, idx) => {
-                        if (chunk.startsWith("**") && chunk.endsWith("**")) {
-                          return (
-                            <Text key={idx} style={styles.boldText}>
-                              {parseTextWithLinks(
-                                chunk.slice(2, -2),
-                                styles.boldText
-                              )}
-                            </Text>
-                          );
-                        }
-                        return parseTextWithLinks(chunk, [
-                          styles.messageText,
-                          styles.finnyMessageText,
-                        ]);
-                      })}
-                    </Text>
-                  </React.Fragment>
-                ))}
-              </Text>
-            </LinearGradient>
-            {/* Tail only if last in group */}
-            {isLastInGroup && <BubbleTail side="left" color={finnyTailColor} />}
-          </View>
-        </Animated.View>
-      )}
+      <Animated.View style={styles.finnyMessageRow}>
+        <View style={styles.finnyMessageContainer}>
+          <LinearGradient
+            colors={finnyGradient}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={[
+              styles.finnyMessageBubble,
+              bubbleRadii,
+              { paddingBottom: responsivePadding(10) },
+              !isFirstInGroup &&
+                !isLastInGroup &&
+                styles.finnyMessageBubbleGrouped,
+              isLastInGroup && styles.finnyMessageBubbleLastInGroup,
+            ]}
+          >
+            <Text style={[styles.messageText, styles.finnyMessageText]}>
+              {messageText.split("\n").map((line, lineIdx) => (
+                <React.Fragment key={lineIdx}>
+                  {lineIdx > 0 && <Text>{"\n"}</Text>}
+                  <Text onTextLayout={lineIdx === 0 ? onTextLayout : undefined}>
+                    {line.split(/(\*\*[^*]+\*\*)/).map((chunk, idx) => {
+                      if (chunk.startsWith("**") && chunk.endsWith("**")) {
+                        return (
+                          <Text key={idx} style={styles.boldText}>
+                            {parseTextWithLinks(
+                              chunk.slice(2, -2),
+                              styles.boldText
+                            )}
+                          </Text>
+                        );
+                      }
+                      return parseTextWithLinks(chunk, [
+                        styles.messageText,
+                        styles.finnyMessageText,
+                      ]);
+                    })}
+                  </Text>
+                </React.Fragment>
+              ))}
+            </Text>
+          </LinearGradient>
+          {/* Tail only if last in group */}
+          {isLastInGroup && <BubbleTail side="left" color={finnyTailColor} />}
+        </View>
+      </Animated.View>
     </Animated.View>
   );
 };
