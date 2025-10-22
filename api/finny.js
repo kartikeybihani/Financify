@@ -847,6 +847,19 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
+  // Check if client wants streaming response
+  const wantsStreaming = req.body.stream === true;
+  if (wantsStreaming) {
+    // Set SSE headers for streaming
+    res.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Headers": "Cache-Control",
+    });
+  }
+
   const { action, message, context, classification, ...otherParams } = req.body;
   console.log("📝 [FINNY] Action:", action);
   // Avoid logging full message/context to reduce PII exposure
@@ -1123,7 +1136,26 @@ export default async function handler(req, res) {
         return res.status(400).json({ error: "Invalid action" });
     }
 
-    res.status(200).json(response);
+    // Handle streaming vs regular response
+    if (wantsStreaming) {
+      // Send progress events first
+      sendStreamEvent(res, "progress", {
+        status: "Processing your request...",
+      });
+
+      // Stream the response text if it exists
+      if (response.message || response.text) {
+        const textToStream = response.message || response.text;
+        sendStreamEvent(res, "progress", { status: "Generating response..." });
+        await streamTextChunks(res, textToStream);
+      }
+
+      // Send final complete response
+      sendStreamEvent(res, "complete", response);
+      res.end();
+    } else {
+      res.status(200).json(response);
+    }
     console.log("🔍 [FINNY] Response:", response);
   } catch (error) {
     console.error("❌ [FINNY] Error:", error);
@@ -3713,15 +3745,7 @@ function detectGoalIntent(message, conversationContext) {
   // 1.5. If there's an active goal flow, any response is likely goal-related
   if (isContinuingGoalFlow) {
     // Check if it's clearly off-topic
-    const offTopicKeywords = [
-      "weather",
-      "movie",
-      "sports",
-      "food",
-      "joke",
-      "hello",
-      "how are you",
-    ];
+    const offTopicKeywords = ["weather"];
     const isOffTopic = offTopicKeywords.some((keyword) =>
       lower.includes(keyword)
     );
@@ -4825,6 +4849,34 @@ const pendingRequests = new Map();
 
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Helper function to send streaming events
+function sendStreamEvent(res, event, data) {
+  if (res.writableEnded) return;
+  res.write(`event: ${event}\n`);
+  res.write(`data: ${JSON.stringify(data)}\n\n`);
+}
+
+// Helper function to stream text chunks
+async function streamTextChunks(res, text, chunkSize = 50) {
+  if (!text || typeof text !== "string") return;
+
+  const words = text.split(" ");
+  let currentChunk = "";
+
+  for (let i = 0; i < words.length; i++) {
+    currentChunk += (currentChunk ? " " : "") + words[i];
+
+    // Send chunk when we reach chunkSize words or at the end
+    if (currentChunk.split(" ").length >= chunkSize || i === words.length - 1) {
+      sendStreamEvent(res, "text_chunk", { text: currentChunk });
+      currentChunk = "";
+
+      // Small delay to simulate natural typing
+      await delay(50 + Math.random() * 100);
+    }
+  }
 }
 
 async function runNextQueued() {

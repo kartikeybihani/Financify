@@ -33,6 +33,7 @@ export interface ChatMessage {
   text: string;
   timestamp?: number;
   type?: "text" | "action";
+  isStreaming?: boolean; // New field to indicate if message is being streamed
   actions?: Array<{
     label: string;
     action: "goal_confirm" | "goal_decline" | string;

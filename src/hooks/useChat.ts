@@ -294,6 +294,68 @@ export const useChat = () => {
     }
   };
 
+  // Handle streaming response from API
+  const handleStreamingResponse = async (response: Response) => {
+    const reader = response.body?.getReader();
+    if (!reader) throw new Error('No response body');
+
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let currentMessage = '';
+    let messageId = `finny-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (line.startsWith('event: ')) {
+            const event = line.slice(7);
+            continue;
+          }
+          
+          if (line.startsWith('data: ')) {
+            const data = JSON.parse(line.slice(6));
+            
+            if (data.status) {
+              setProgressStatus(data.status);
+              setIsTyping(true); // Keep typing indicator on during progress updates
+            } else if (data.text) {
+              // Stream text chunks
+              currentMessage += data.text;
+              pushChat({
+                id: messageId,
+                sender: "finny",
+                text: currentMessage,
+                timestamp: Date.now(),
+                type: "text",
+                isStreaming: true
+              });
+            } else if (data.message || data.text) {
+              // Complete response
+              const finalMessage = data.message || data.text;
+              pushChat({
+                id: messageId,
+                sender: "finny",
+                text: finalMessage,
+                timestamp: Date.now(),
+                type: "text",
+                isStreaming: false
+              });
+            }
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+  };
+
   const pushMultipleMessages = async (messages: ChatMessage[]) => {
     try {
       if (!messages || messages.length === 0) {
@@ -363,7 +425,7 @@ export const useChat = () => {
   const handleUserMessage = async (messageText: string, startTime?: number) => {
     setIsTyping(true); // Start typing indicator immediately
     await handleFinnyResponse(messageText, startTime);
-    setIsTyping(false); // Stop typing indicator after response
+    // Note: setIsTyping(false) is now handled within handleFinnyResponse for streaming
   };
 
   const handleFinnyResponse = async (messageText: string, startTime?: number) => {
@@ -375,6 +437,9 @@ export const useChat = () => {
         pushChat("finny", "Please log in to get personalized financial advice.");
         return;
       }
+
+      // Check if we should use streaming (default to true for better UX)
+      const useStreaming = true;
 
       // Check if user wants to clear cache
       if (messageText.toLowerCase().includes("clear cache") || 
@@ -480,7 +545,8 @@ export const useChat = () => {
             message: messageText,
             chat_id: chatId, // Send chat_id for conversation context
             context: {},
-            classification: classifyData
+            classification: classifyData,
+            stream: useStreaming
           }),
         });
       } else {
@@ -495,16 +561,23 @@ export const useChat = () => {
             action: goalFlow?.active ? "goal_conversation" : classifyData.intent,
             message: messageText,
             chat_id: chatId, // Send chat_id for conversation context
-            context: goalFlow ? { goal_flow: goalFlow } : {}
+            context: goalFlow ? { goal_flow: goalFlow } : {},
+            stream: useStreaming
           }),
         });
       }
 
-      // Response status: ${res.status}
-      // setProgressStatus("Generating your personalized response...");
-      const data = await res.json();
-      // Finny response received
-      logger.info("🤖 [CHAT] API Response:", data);
+      // Handle streaming vs regular response
+      if (useStreaming && res.headers.get('content-type')?.includes('text/event-stream')) {
+        // Handle streaming response
+        await handleStreamingResponse(res);
+        setProgressStatus(""); // Clear progress status
+        setIsTyping(false); // Stop typing indicator
+        return;
+      } else {
+        // Handle regular JSON response
+        const data = await res.json();
+        logger.info("🤖 [CHAT] API Response:", data);
       
       // Handle structured data as regular messages - no splitting or expandable logic
 
@@ -566,13 +639,14 @@ export const useChat = () => {
         console.log(`📥 Total response time: ${totalResponseDuration}ms (${(totalResponseDuration / 1000).toFixed(2)}s) at ${ptTime} PT`);
       }
       
-      // Handle split messages for better UX
-      if (data.isSplit && Array.isArray(data.message)) {
-        console.log(`[Frontend] Received ${data.message.length} split messages`);
-        await handleSplitMessages(data.message);
-      } else {
-        await pushChatWithDelay("finny", message);
-      }
+        // Handle split messages for better UX
+        if (data.isSplit && Array.isArray(data.message)) {
+          console.log(`[Frontend] Received ${data.message.length} split messages`);
+          await handleSplitMessages(data.message);
+        } else {
+          await pushChatWithDelay("finny", message);
+        }
+      } // Close the else block for regular JSON response
     } catch (error) {
       logger.error("AI error:", error);
       setProgressStatus(""); // Clear progress status
