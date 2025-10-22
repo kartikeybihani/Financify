@@ -1138,6 +1138,8 @@ export default async function handler(req, res) {
 
     // Handle streaming vs regular response
     if (wantsStreaming) {
+      console.log("🔄 [STREAMING] Starting streaming response");
+
       // Send progress events first
       sendStreamEvent(res, "progress", {
         status: "Processing your request...",
@@ -1146,13 +1148,23 @@ export default async function handler(req, res) {
       // Stream the response text if it exists
       if (response.message || response.text) {
         const textToStream = response.message || response.text;
+        console.log(
+          "🔄 [STREAMING] Streaming text:",
+          textToStream.substring(0, 100) + "..."
+        );
         sendStreamEvent(res, "progress", { status: "Generating response..." });
         await streamTextChunks(res, textToStream);
+      } else {
+        console.log(
+          "⚠️ [STREAMING] No text to stream in response:",
+          Object.keys(response)
+        );
       }
 
       // Send final complete response
       sendStreamEvent(res, "complete", response);
       res.end();
+      console.log("✅ [STREAMING] Streaming completed");
     } else {
       res.status(200).json(response);
     }

@@ -296,9 +296,14 @@ export const useChat = () => {
 
   // Handle streaming response from API
   const handleStreamingResponse = async (response: Response) => {
-    const reader = response.body?.getReader();
-    if (!reader) throw new Error('No response body');
+    console.log("🔄 [STREAMING] Starting to handle streaming response");
+    
+    if (!response.body) {
+      console.error("❌ [STREAMING] No response body available");
+      throw new Error('No response body');
+    }
 
+    const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
     let currentMessage = '';
@@ -307,7 +312,10 @@ export const useChat = () => {
     try {
       while (true) {
         const { done, value } = await reader.read();
-        if (done) break;
+        if (done) {
+          console.log("✅ [STREAMING] Stream completed");
+          break;
+        }
 
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split('\n');
@@ -316,43 +324,50 @@ export const useChat = () => {
         for (const line of lines) {
           if (line.startsWith('event: ')) {
             const event = line.slice(7);
+            console.log("📡 [STREAMING] Event:", event);
             continue;
           }
           
           if (line.startsWith('data: ')) {
-            const data = JSON.parse(line.slice(6));
-            
-            if (data.status) {
-              setProgressStatus(data.status);
-              setIsTyping(true); // Keep typing indicator on during progress updates
-            } else if (data.text) {
-              // Stream text chunks
-              currentMessage += data.text;
-              pushChat({
-                id: messageId,
-                sender: "finny",
-                text: currentMessage,
-                timestamp: Date.now(),
-                type: "text",
-                isStreaming: true
-              });
-            } else if (data.message || data.text) {
-              // Complete response
-              const finalMessage = data.message || data.text;
-              pushChat({
-                id: messageId,
-                sender: "finny",
-                text: finalMessage,
-                timestamp: Date.now(),
-                type: "text",
-                isStreaming: false
-              });
+            try {
+              const data = JSON.parse(line.slice(6));
+              console.log("📦 [STREAMING] Data received:", data);
+              
+              if (data.status) {
+                setProgressStatus(data.status);
+                setIsTyping(true); // Keep typing indicator on during progress updates
+              } else if (data.text) {
+                // Stream text chunks
+                currentMessage += data.text;
+                pushChat({
+                  id: messageId,
+                  sender: "finny",
+                  text: currentMessage,
+                  timestamp: Date.now(),
+                  type: "text",
+                  isStreaming: true
+                });
+              } else if (data.message || data.text) {
+                // Complete response
+                const finalMessage = data.message || data.text;
+                pushChat({
+                  id: messageId,
+                  sender: "finny",
+                  text: finalMessage,
+                  timestamp: Date.now(),
+                  type: "text",
+                  isStreaming: false
+                });
+              }
+            } catch (parseError) {
+              console.error("❌ [STREAMING] JSON parse error:", parseError, "Line:", line);
             }
           }
         }
       }
     } finally {
       reader.releaseLock();
+      console.log("🔒 [STREAMING] Reader released");
     }
   };
 
@@ -568,13 +583,27 @@ export const useChat = () => {
       }
 
       // Handle streaming vs regular response
-      if (useStreaming && res.headers.get('content-type')?.includes('text/event-stream')) {
-        // Handle streaming response
-        await handleStreamingResponse(res);
-        setProgressStatus(""); // Clear progress status
-        setIsTyping(false); // Stop typing indicator
-        return;
+      const contentType = res.headers.get('content-type');
+      console.log("🔍 [STREAMING DEBUG] Response content-type:", contentType);
+      console.log("🔍 [STREAMING DEBUG] useStreaming:", useStreaming);
+      
+      if (useStreaming && contentType?.includes('text/event-stream')) {
+        console.log("🔄 [STREAMING] Handling streaming response");
+        try {
+          // Handle streaming response
+          await handleStreamingResponse(res);
+          setProgressStatus(""); // Clear progress status
+          setIsTyping(false); // Stop typing indicator
+          return;
+        } catch (streamError) {
+          console.error("❌ [STREAMING] Streaming failed, falling back to regular response:", streamError);
+          // Fallback: try to get the response as JSON
+          const data = await res.json();
+          logger.info("🤖 [CHAT] API Response (fallback):", data);
+          // Continue with regular processing below
+        }
       } else {
+        console.log("📄 [STREAMING] Handling regular JSON response");
         // Handle regular JSON response
         const data = await res.json();
         logger.info("🤖 [CHAT] API Response:", data);
