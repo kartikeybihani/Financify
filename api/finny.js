@@ -1336,9 +1336,15 @@ async function handleAsk(
               "🔍 [STOCK] Deep query detected, using advanced analysis"
             );
             stockPlan = await planStockRequest(message);
+            console.log("🔍 [STOCK] Stock plan result:", stockPlan);
             const exec = await executeStockPlan(stockPlan || {}, message);
+            console.log("🔍 [STOCK] Execute result:", exec);
             if (!exec.error && exec.data?.current != null) {
               stockData = exec;
+            } else {
+              console.log(
+                "🔍 [STOCK] Stock plan failed, falling back to simple query"
+              );
             }
           } else {
             // Simple stock query
@@ -5098,6 +5104,12 @@ function looksLikeStockDeepQuery(message) {
 
 async function planStockRequest(message) {
   try {
+    console.log("🔍 [STOCK_PLANNER] Using model:", OPENROUTER_MODEL);
+    console.log(
+      "🔍 [STOCK_PLANNER] API key present:",
+      !!process.env.OPENROUTER_GROK_KEY
+    );
+
     const r = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -5105,7 +5117,7 @@ async function planStockRequest(message) {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: OPENROUTER_MODEL,
+        model: OPENROUTER_MODEL || "meta-llama/llama-3.3-8b-instruct:free",
         temperature: 0.1,
         messages: [
           {
@@ -5210,11 +5222,16 @@ async function planStockRequest(message) {
 }
 
 async function executeStockPlan(plan, message) {
+  console.log("🔍 [EXECUTE_STOCK] Plan:", plan);
   const wants = plan?.wants || [];
   const preferredTicker = plan?.ticker_candidates?.[0] || null;
+  console.log("🔍 [EXECUTE_STOCK] Preferred ticker:", preferredTicker);
+
   const { ticker } = preferredTicker
     ? { ticker: preferredTicker }
     : await resolveTickerForQuery(message);
+
+  console.log("🔍 [EXECUTE_STOCK] Final ticker:", ticker);
   if (!ticker) return { error: "Could not resolve ticker" };
 
   // Base snapshot always
