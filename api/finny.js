@@ -1482,6 +1482,62 @@ async function handleAsk(
             }
 
             return response;
+          } else {
+            // Stock APIs failed, use fallback analysis
+            console.log(
+              "🔄 [FALLBACK] Stock APIs failed, using fallback analysis"
+            );
+            const fallbackResponse = await generateFallbackStockAnalysis(
+              null, // ticker will be extracted from message
+              message,
+              userProfile,
+              userMemory
+            );
+
+            const response = {
+              message: cleanResponseFormatting(fallbackResponse),
+              type: "assistant",
+            };
+
+            // Log fallback usage
+            setImmediate(() =>
+              logConversation({
+                user_message: redactPII(message),
+                finny_response: redactPII(fallbackResponse),
+                timestamp: new Date().toISOString(),
+                user_id: context?.user_id || "unknown",
+                intent: "ask_personalized",
+                entities: [],
+                confidence: 0.7,
+                response_time_ms: Date.now() - startTime,
+                sources_used: ["fallback_analysis"],
+                cached: false,
+                request_id: generateRequestId(),
+                metrics: {
+                  intent: "ask_personalized",
+                  latency_ms: { total: Date.now() - startTime },
+                  tools_used: [
+                    {
+                      name: "fallback_analysis",
+                      latency_ms: Date.now() - startTime,
+                      cache_hit: false,
+                    },
+                  ],
+                  model: OPENROUTER_MODEL,
+                  cache_hits: {},
+                  tokens: null,
+                },
+                context_used: {
+                  user_profile: userProfile,
+                  user_memory: userMemory ? "loaded" : "none",
+                  investment_holdings: investmentHoldings ? "loaded" : "none",
+                  conversation_context: conversationContext ? "loaded" : "none",
+                },
+                fallback_used: true,
+              })
+            );
+
+            return response;
           }
         }
       } catch (e) {
@@ -5057,9 +5113,20 @@ async function planStockRequest(message) {
         },
       }),
     });
+
+    if (!r.ok) {
+      console.error(
+        `❌ [STOCK_PLANNER] HTTP Error: ${r.status} ${r.statusText}`
+      );
+      return null;
+    }
+
     const data = await r.json();
     const content = data.choices?.[0]?.message?.content;
-    if (!content) return null;
+    if (!content) {
+      console.error("❌ [STOCK_PLANNER] No content in response");
+      return null;
+    }
 
     // Strip markdown code blocks if present
     let cleanContent = content;
@@ -5136,6 +5203,216 @@ async function generateConversationalStockResponse(
 ) {
   // Use deterministic summary only; no additional prompting
   return buildStockDataSummary(stockData, stockPlan);
+}
+
+// Fallback function for when stock APIs fail
+async function generateFallbackStockAnalysis(
+  ticker,
+  userMessage,
+  userProfile,
+  userMemory
+) {
+  console.log(`🔄 [FALLBACK] Generating fallback analysis for ${ticker}`);
+
+  // Extract ticker from message if not provided
+  const extractedTicker = ticker || extractTickerFromMessage(userMessage);
+  if (!extractedTicker) {
+    return "I'd be happy to help with stock analysis, but I need a specific ticker symbol. Could you provide the stock symbol you'd like me to analyze?";
+  }
+
+  // Use web search as fallback for current data
+  try {
+    const searchQuery = `${extractedTicker} stock analysis market cap financials`;
+    const webResults = await limitedBraveSearch(searchQuery);
+
+    if (webResults && webResults.length > 0) {
+      const analysis = await generateStockAnalysisFromWebData(
+        extractedTicker,
+        webResults,
+        userMessage
+      );
+      return analysis;
+    }
+  } catch (error) {
+    console.error("❌ [FALLBACK] Web search failed:", error);
+  }
+
+  // Final fallback using training data
+  return generateTrainingDataStockAnalysis(extractedTicker, userMessage);
+}
+
+function extractTickerFromMessage(message) {
+  // Look for common ticker patterns
+  const tickerMatch = message.match(/\b[A-Z]{1,5}\b/g);
+  if (tickerMatch) {
+    return tickerMatch.find((t) => t !== "USD" && t !== "ETF" && t !== "API");
+  }
+  return null;
+}
+
+async function generateStockAnalysisFromWebData(
+  ticker,
+  webResults,
+  userMessage
+) {
+  const context = webResults
+    .slice(0, 3)
+    .map((r) => r.content)
+    .join("\n\n");
+
+  const analysisPrompt = `Based on the following web search results about ${ticker}, provide a comprehensive stock analysis focusing on market cap, financial performance, and key metrics. Be specific and data-driven.
+
+Web Results:
+${context}
+
+User Query: ${userMessage}
+
+Provide a detailed analysis including:
+- Current market cap and valuation
+- Key financial metrics (P/E, P/S, etc.)
+- Recent performance and trends
+- Analyst sentiment if available
+- Investment considerations`;
+
+  try {
+    const response = await fetch(
+      "https://openrouter.ai/api/v1/chat/completions",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${process.env.OPENROUTER_GROK_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: OPENROUTER_MODEL,
+          temperature: 0.3,
+          messages: [
+            {
+              role: "system",
+              content:
+                "You are a financial analyst providing detailed stock analysis. Use the provided web data to give comprehensive insights about the company's financial position, market cap, and investment potential.",
+            },
+            { role: "user", content: analysisPrompt },
+          ],
+        }),
+      }
+    );
+
+    if (response.ok) {
+      const data = await response.json();
+      return (
+        data.choices?.[0]?.message?.content ||
+        generateTrainingDataStockAnalysis(ticker, userMessage)
+      );
+    }
+  } catch (error) {
+    console.error("❌ [FALLBACK] Analysis generation failed:", error);
+  }
+
+  return generateTrainingDataStockAnalysis(ticker, userMessage);
+}
+
+function generateTrainingDataStockAnalysis(ticker, userMessage) {
+  // Use training data knowledge for common stocks
+  const stockKnowledge = {
+    BRO: {
+      name: "Brown & Brown, Inc.",
+      description:
+        "Brown & Brown, Inc. is a leading insurance brokerage firm offering a range of insurance products and services.",
+      marketCap: "Approximately $29 billion",
+      industry: "Insurance",
+      keyMetrics: "Strong financial performance with consistent revenue growth",
+      analysis:
+        "Brown & Brown is a well-established insurance brokerage with strong market position and consistent growth.",
+    },
+    AAPL: {
+      name: "Apple Inc.",
+      description:
+        "Apple Inc. designs, manufactures, and markets smartphones, personal computers, tablets, wearables, and accessories worldwide.",
+      marketCap: "Over $3 trillion",
+      industry: "Technology",
+      keyMetrics: "High profitability with strong brand loyalty",
+      analysis:
+        "Apple is a technology giant with dominant market position in smartphones and services.",
+    },
+    MSFT: {
+      name: "Microsoft Corporation",
+      description:
+        "Microsoft Corporation develops, licenses, and supports software, services, devices, and solutions worldwide.",
+      marketCap: "Over $3 trillion",
+      industry: "Technology",
+      keyMetrics: "Strong cloud computing presence with Azure",
+      analysis:
+        "Microsoft is a technology leader with strong cloud and enterprise software presence.",
+    },
+    GOOGL: {
+      name: "Alphabet Inc. (Google)",
+      description:
+        "Alphabet Inc. is a multinational technology conglomerate that owns Google and other subsidiaries.",
+      marketCap: "Over $2 trillion",
+      industry: "Technology",
+      keyMetrics: "Dominant search engine and advertising platform",
+      analysis:
+        "Alphabet is a technology leader with strong positions in search, advertising, and cloud computing.",
+    },
+    AMZN: {
+      name: "Amazon.com Inc.",
+      description:
+        "Amazon.com Inc. is a multinational technology company focusing on e-commerce, cloud computing, and digital streaming.",
+      marketCap: "Over $1.5 trillion",
+      industry: "Technology/Retail",
+      keyMetrics: "Leading e-commerce platform and AWS cloud services",
+      analysis:
+        "Amazon is a dominant force in e-commerce and cloud computing with AWS.",
+    },
+    TSLA: {
+      name: "Tesla Inc.",
+      description:
+        "Tesla Inc. designs, develops, manufactures, and sells electric vehicles and energy storage systems.",
+      marketCap: "Over $800 billion",
+      industry: "Automotive/Energy",
+      keyMetrics: "Leading electric vehicle manufacturer",
+      analysis:
+        "Tesla is a pioneer in electric vehicles and renewable energy technology.",
+    },
+  };
+
+  const stock = stockKnowledge[ticker.toUpperCase()];
+  if (!stock) {
+    return `I'd be happy to provide analysis for ${ticker}, but I don't have current real-time data available. For the most accurate and up-to-date information about ${ticker}'s market cap, financials, and performance, I'd recommend checking financial websites or your brokerage platform.
+
+In the meantime, here's what I can tell you about stock analysis in general:
+- **Market Cap** = share price × shares outstanding
+- It's a key metric for understanding company size and valuation
+- Large-cap stocks (>$10B) tend to be more stable
+- Mid-cap stocks ($2B-$10B) often offer growth potential
+- Small-cap stocks (<$2B) can be more volatile but have growth potential
+
+Would you like me to help you understand any specific financial metrics or analysis techniques?`;
+  }
+
+  return `## ${stock.name} (${ticker}) Analysis
+
+**Company Overview:**
+${stock.description}
+
+**Market Cap:** ${stock.marketCap}
+
+**Industry:** ${stock.industry}
+
+**Key Insights:**
+${stock.analysis}
+
+**Important Note:** This analysis is based on general knowledge and may not reflect the most current market conditions. For real-time data, current prices, and the most up-to-date financial metrics, I'd recommend checking your brokerage platform or financial websites.
+
+**Key Metrics to Consider:**
+- **P/E Ratio:** Price-to-earnings ratio indicates valuation relative to earnings
+- **Revenue Growth:** Year-over-year revenue growth trends
+- **Profit Margins:** Operating and net profit margins
+- **Debt-to-Equity:** Financial leverage and stability
+- **Dividend Yield:** Income potential for investors
+
+Would you like me to explain any of these metrics in more detail, or help you understand how to evaluate stocks in general?`;
 }
 
 // Enhanced caching functions with different TTLs for different data types
@@ -5423,6 +5700,9 @@ export {
   selectRelevantMemories,
   loadUserMemory,
   saveMemoryCandidates,
+  generateFallbackStockAnalysis,
+  extractTickerFromMessage,
+  generateTrainingDataStockAnalysis,
   generateMemorySummary,
   getNetWorthData,
   formatNetWorthCurrency,
