@@ -2779,528 +2779,61 @@ function extractSlots(message) {
 async function buildContextPacks(userId, needs, slots) {
   const packs = {};
   const gaps = [];
+  const startTime = Date.now();
 
   try {
-    // Create array of fetch promises based on needs
-    const fetchPromises = [];
-    const fetchMetadata = [];
-
-    // 1. Financial summary fetch promise
-    if (needs.includes("summary_min")) {
-      // Check cache first
-      const cachedSummary = getCachedUserData("financial_summary", userId);
-
-      if (cachedSummary) {
-        fetchPromises.push(Promise.resolve(cachedSummary));
-        fetchMetadata.push({ type: "summary_min", userId, cached: true });
-      } else {
-        // Parallel RPCs for base pack: net worth, recent txns, category spend (last 30d)
-        fetchPromises.push(
-          (async () => {
-            const now = new Date();
-            const past = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-            const p_start = past.toISOString().split("T")[0];
-            const p_end = now.toISOString().split("T")[0];
-
-            const [netWorthRes, recentRes, spendCatRes] = await Promise.all([
-              withTimeout(
-                supabase.rpc("get_net_worth", { p_user_id: userId }),
-                2000,
-                null
-              ).catch(() => null),
-              withTimeout(
-                supabase.rpc("get_recent_transactions", {
-                  p_user_id: userId,
-                  p_limit: 5,
-                }),
-                2000,
-                null
-              ).catch(() => null),
-              withTimeout(
-                supabase.rpc("get_spend_by_category", {
-                  p_user_id: userId,
-                  p_start,
-                  p_end,
-                }),
-                2000,
-                null
-              ).catch(() => null),
-            ]);
-
-            const net = netWorthRes?.data?.[0] || null;
-            const recent = Array.isArray(recentRes?.data) ? recentRes.data : [];
-            const spendCats = Array.isArray(spendCatRes?.data)
-              ? spendCatRes.data
-              : [];
-
-            if (!net) return null;
-
-            const processedData = {
-              netWorth: Number(net.net_worth || 0),
-              liquidAssets: Number(net.liquid_assets || 0),
-              investmentsTotal: Number(net.investments_total || 0),
-              totalLiabilities: Number(net.total_liabilities || 0),
-              recentTransactions: recent.slice(0, 5).map((txn) => ({
-                date: txn.date,
-                amount: txn.amount,
-                merchant: txn.merchant || txn.name,
-              })),
-              spendByCategory: spendCats,
-              accounts: Array.isArray(net.bank_accounts)
-                ? net.bank_accounts
-                : [],
-            };
-
-            return processedData;
-          })()
-        );
-        fetchMetadata.push({ type: "summary_min", userId, cached: false });
-      }
+    // OPTIMIZED: Pre-validate needs and slots to avoid unnecessary work
+    if (!userId || !needs || needs.length === 0) {
+      console.log("⚠️ [FINNY] No valid needs provided, returning empty packs");
+      return {
+        packs,
+        gaps,
+        contextHeader: "CONTEXT_PACKS_INCLUDED: []\nDATA_GAPS: []",
+      };
     }
 
-    // 2. Spend data fetch promise
-    if (needs.includes("spend_total") && slots.period) {
-      // Check cache first
-      const cachedSpend = getCachedUserData("spend_data", userId, {
-        period: slots.period,
-      });
-
-      if (cachedSpend) {
-        // Use cached data
-        fetchPromises.push(Promise.resolve(cachedSpend));
-        fetchMetadata.push({
-          type: "spend_total",
-          userId,
-          period: slots.period,
-          cached: true,
-        });
-      } else {
-        // Fetch fresh data
-        fetchPromises.push(
-          withTimeout(
-            supabase.rpc("get_spend_summary", {
-              p_user_id: userId,
-              p_start: slots.period.start,
-              p_end: slots.period.end,
-            }),
-            2000,
-            null
-          ).catch((error) => {
-            console.error("❌ [FINNY] Spend summary fetch failed:", error);
-            return null;
-          })
-        );
-        fetchMetadata.push({
-          type: "spend_total",
-          userId,
-          period: slots.period,
-          cached: false,
-        });
-      }
-    }
-
-    // 3. Category transactions fetch promise (detailed)
-    if (slots.category && slots.period) {
-      // Check cache first
-      const cachedCategoryTxns = getCachedUserData(
-        "category_transactions",
-        userId,
-        {
-          category: slots.category,
-          period: slots.period,
-        }
-      );
-
-      if (cachedCategoryTxns) {
-        // Use cached data
-        fetchPromises.push(Promise.resolve(cachedCategoryTxns));
-        fetchMetadata.push({
-          type: "category_details",
-          userId,
-          category: slots.category,
-          period: slots.period,
-          cached: true,
-        });
-      } else {
-        // Fetch fresh data
-        fetchPromises.push(
-          withTimeout(
-            supabase.rpc("get_transactions_by_category", {
-              p_user_id: userId,
-              p_category: slots.category,
-              p_start: slots.period.start,
-              p_end: slots.period.end,
-            }),
-            2000,
-            null
-          ).catch((error) => {
-            console.error(
-              "❌ [FINNY] Category transactions fetch failed:",
-              error
-            );
-            return null;
-          })
-        );
-        fetchMetadata.push({
-          type: "category_details",
-          userId,
-          category: slots.category,
-          period: slots.period,
-          cached: false,
-        });
-      }
-    }
-
-    // 4. Transactions by category fetch promise (for spend pack)
-    if (needs.includes("txns_by_category") && slots.category && slots.period) {
-      // Check cache first (reuse category_transactions cache)
-      const cachedTxns = getCachedUserData("category_transactions", userId, {
-        category: slots.category,
-        period: slots.period,
-      });
-
-      if (cachedTxns) {
-        // Use cached data
-        fetchPromises.push(Promise.resolve(cachedTxns));
-        fetchMetadata.push({
-          type: "txns_by_category",
-          userId,
-          category: slots.category,
-          period: slots.period,
-          cached: true,
-        });
-      } else {
-        // Fetch fresh data
-        fetchPromises.push(
-          withTimeout(
-            supabase.rpc("get_transactions_by_category", {
-              p_user_id: userId,
-              p_category: slots.category,
-              p_start: slots.period.start,
-              p_end: slots.period.end,
-            }),
-            2000,
-            null
-          ).catch((error) => {
-            console.error(
-              "❌ [FINNY] Transactions by category fetch failed:",
-              error
-            );
-            return null;
-          })
-        );
-        fetchMetadata.push({
-          type: "txns_by_category",
-          userId,
-          category: slots.category,
-          period: slots.period,
-          cached: false,
-        });
-      }
-    }
-
-    // 5. Investment holdings fetch promise
-    if (needs.includes("invest_holdings")) {
-      // Check cache first (consolidated investments)
-      const cachedInvest = getCachedUserData("investments_all", userId);
-
-      if (cachedInvest) {
-        fetchPromises.push(Promise.resolve(cachedInvest));
-        fetchMetadata.push({ type: "invest_holdings", userId, cached: true });
-      } else {
-        fetchPromises.push(
-          withTimeout(
-            supabase.rpc("get_investment_overview", {
-              p_user_id: userId,
-            }),
-            2000,
-            null
-          ).catch((error) => {
-            console.error(
-              "❌ [FINNY] Investment overview fetch failed:",
-              error
-            );
-            return null;
-          })
-        );
-        fetchMetadata.push({ type: "invest_holdings", userId, cached: false });
-      }
-    }
-
-    // 6. Goals overview fetch promise
-    if (needs.includes("goals_overview")) {
-      // Check cache first
-      const cachedGoals = getCachedUserData("goals_overview", userId, {
-        limit: 10,
-      });
-
-      if (cachedGoals) {
-        // Use cached data
-        fetchPromises.push(Promise.resolve(cachedGoals));
-        fetchMetadata.push({ type: "goals_overview", userId, cached: true });
-      } else {
-        // Fetch fresh data
-        fetchPromises.push(
-          withTimeout(
-            supabase.rpc("get_goals_overview", {
-              p_user_id: userId,
-              p_limit: 10,
-            }),
-            2000,
-            null
-          ).catch((error) => {
-            console.error("❌ [FINNY] Goals overview fetch failed:", error);
-            return null;
-          })
-        );
-        fetchMetadata.push({ type: "goals_overview", userId, cached: false });
-      }
-    }
-
-    // 7. Cashflow monthly fetch promise
-    if (needs.includes("cashflow_monthly")) {
-      // Check cache first
-      const cachedCashflow = getCachedUserData("cashflow_monthly", userId, {
-        months: 3,
-      });
-
-      if (cachedCashflow) {
-        // Use cached data
-        fetchPromises.push(Promise.resolve(cachedCashflow));
-        fetchMetadata.push({ type: "cashflow_monthly", userId, cached: true });
-      } else {
-        // Fetch fresh data
-        fetchPromises.push(
-          withTimeout(
-            supabase.rpc("get_cashflow_monthly", {
-              p_user_id: userId,
-              p_months: 3,
-            }),
-            2000,
-            null
-          ).catch((error) => {
-            console.error("❌ [FINNY] Cashflow monthly fetch failed:", error);
-            return null;
-          })
-        );
-        fetchMetadata.push({ type: "cashflow_monthly", userId, cached: false });
-      }
-    }
-
-    // Execute all fetches in parallel
     console.log(
-      `🚀 [FINNY] Executing ${fetchPromises.length} data fetches in parallel...`
+      `🚀 [FINNY] Building context packs for needs: [${needs.join(", ")}]`
     );
-    const startTime = Date.now();
 
-    const results = await Promise.allSettled(fetchPromises);
-    const fetchTime = Date.now() - startTime;
+    // OPTIMIZED: Create optimized fetch operations with better batching
+    const fetchOperations = createOptimizedFetchOperations(
+      userId,
+      needs,
+      slots
+    );
 
-    console.log(`✅ [FINNY] All data fetches completed in ${fetchTime}ms`);
-
-    // Process results and build packs
-    for (let i = 0; i < results.length; i++) {
-      const result = results[i];
-      const metadata = fetchMetadata[i];
-
-      if (result.status === "fulfilled" && result.value !== null) {
-        const data = result.value;
-
-        switch (metadata.type) {
-          case "summary_min":
-            if (metadata.cached) {
-              packs.base = data;
-            } else if (data) {
-              packs.base = data;
-              setCachedUserData("financial_summary", metadata.userId, data);
-            } else {
-              gaps.push("summary_min");
-            }
-            break;
-
-          case "spend_total":
-            if (metadata.cached) {
-              // Data is already processed from cache
-              packs.spend = data;
-            } else if (data?.data) {
-              const processedData = {
-                total: data.data.total_spend || 0,
-                count: data.data.txn_count || 0,
-                period: `${metadata.period.start} to ${metadata.period.end}`,
-              };
-              packs.spend = processedData;
-
-              // Cache the processed data
-              setCachedUserData("spend_data", metadata.userId, processedData, {
-                period: metadata.period,
-              });
-            } else {
-              gaps.push("spend_total");
-            }
-            break;
-
-          case "category_details":
-            if (metadata.cached) {
-              // Data is already processed from cache
-              packs.categoryDetails = data;
-            } else if (data?.data && data.data.length > 0) {
-              const processedData = {
-                category: metadata.category,
-                transactions: data.data.map((txn) => ({
-                  date: txn.date,
-                  amount: txn.amount,
-                  name: txn.name,
-                  merchant: txn.merchant_name || txn.name,
-                  category: txn.category,
-                })),
-                period: `${metadata.period.start} to ${metadata.period.end}`,
-              };
-              packs.categoryDetails = processedData;
-
-              // Cache the processed data
-              setCachedUserData(
-                "category_transactions",
-                metadata.userId,
-                processedData,
-                {
-                  category: metadata.category,
-                  period: metadata.period,
-                }
-              );
-            }
-            break;
-
-          case "txns_by_category":
-            if (metadata.cached) {
-              // Data is already processed from cache
-              packs.spend = data;
-            } else if (data?.data) {
-              const processedData = {
-                ...packs.spend,
-                category: metadata.category,
-                transactions: (data.data || []).slice(0, 20).map((txn) => ({
-                  date: txn.date,
-                  amount: txn.amount,
-                  merchant: txn.merchant_name || txn.name,
-                })),
-              };
-              packs.spend = processedData;
-
-              // Cache the processed data
-              setCachedUserData(
-                "category_transactions",
-                metadata.userId,
-                processedData,
-                {
-                  category: metadata.category,
-                  period: metadata.period,
-                }
-              );
-            } else {
-              gaps.push("txns_by_category");
-            }
-            break;
-
-          case "invest_holdings":
-            if (metadata.cached) {
-              packs.invest = data;
-            } else if (data?.data) {
-              // data.data is jsonb: { holdings: [], balances: [], options: [] }
-              const payload = data.data || {};
-              const processedData = {
-                holdings: Array.isArray(payload.holdings)
-                  ? payload.holdings.map((h) => ({
-                      symbol: h.symbol,
-                      description: h.description,
-                      units: h.units,
-                      market_value: h.market_value,
-                    }))
-                  : [],
-                balances: Array.isArray(payload.balances)
-                  ? payload.balances
-                  : [],
-                options: Array.isArray(payload.options) ? payload.options : [],
-              };
-              packs.invest = processedData;
-              setCachedUserData(
-                "investments_all",
-                metadata.userId,
-                processedData
-              );
-            } else {
-              gaps.push("invest_holdings");
-            }
-            break;
-
-          case "goals_overview":
-            if (metadata.cached) {
-              // Data is already processed from cache
-              packs.goals = data;
-            } else if (data?.data) {
-              const processedData = {
-                goals: (data.data || []).map((goal) => ({
-                  label: goal.label,
-                  current_amount: goal.current_amount,
-                  target_amount: goal.target_amount,
-                  progress_pct: goal.progress_pct,
-                  target_date: goal.target_date,
-                })),
-              };
-              packs.goals = processedData;
-
-              // Cache the processed data
-              setCachedUserData(
-                "goals_overview",
-                metadata.userId,
-                processedData,
-                {
-                  limit: 10,
-                }
-              );
-            } else {
-              gaps.push("goals_overview");
-            }
-            break;
-
-          case "cashflow_monthly":
-            if (metadata.cached) {
-              // Data is already processed from cache
-              packs.goals = data;
-            } else if (data?.data) {
-              const processedData = {
-                ...packs.goals,
-                cashflow: (data.data || []).map((cf) => ({
-                  month: cf.month,
-                  income: cf.income,
-                  expense: cf.expense,
-                  net: cf.net,
-                })),
-              };
-              packs.goals = processedData;
-
-              // Cache the processed data
-              setCachedUserData(
-                "cashflow_monthly",
-                metadata.userId,
-                processedData,
-                { months: 3 }
-              );
-            } else {
-              gaps.push("cashflow_monthly");
-            }
-            break;
-        }
-      } else {
-        // Handle failed promises
-        console.error(
-          `❌ [FINNY] Fetch failed for ${metadata.type}:`,
-          result.reason
-        );
-        gaps.push(metadata.type);
-      }
+    if (fetchOperations.length === 0) {
+      console.log(
+        "⚠️ [FINNY] No fetch operations needed, returning empty packs"
+      );
+      return {
+        packs,
+        gaps,
+        contextHeader: "CONTEXT_PACKS_INCLUDED: []\nDATA_GAPS: []",
+      };
     }
+
+    // OPTIMIZED: Execute all operations in parallel with better error handling
+    console.log(
+      `🚀 [FINNY] Executing ${fetchOperations.length} optimized fetch operations in parallel...`
+    );
+
+    const results = await Promise.allSettled(
+      fetchOperations.map((op) => executeFetchOperation(op))
+    );
+
+    const fetchTime = Date.now() - startTime;
+    console.log(`✅ [FINNY] All fetch operations completed in ${fetchTime}ms`);
+
+    // OPTIMIZED: Process results with better error handling and caching
+    processFetchResults(results, fetchOperations, packs, gaps);
   } catch (error) {
-    console.error("Error building context packs:", error);
+    console.error("❌ [FINNY] Error building context packs:", error);
+    // Add all needs as gaps if there's a critical error
+    needs.forEach((need) => {
+      if (!gaps.includes(need)) gaps.push(need);
+    });
   }
 
   const includedPacks = Object.keys(packs);
@@ -3309,6 +2842,514 @@ async function buildContextPacks(userId, needs, slots) {
     .join(", ")}]\nDATA_GAPS: [${gaps.map((g) => `"${g}"`).join(", ")}]`;
 
   return { packs, gaps, contextHeader };
+}
+
+// OPTIMIZED: Create optimized fetch operations to avoid redundancy
+function createOptimizedFetchOperations(userId, needs, slots) {
+  const operations = [];
+  const operationKeys = new Set(); // Prevent duplicate operations
+
+  // Helper function to add operation if not already added
+  const addOperation = (key, operation) => {
+    if (!operationKeys.has(key)) {
+      operationKeys.add(key);
+      operations.push(operation);
+    }
+  };
+
+  // 1. Financial summary operation (always needed for base context)
+  if (needs.includes("summary_min")) {
+    const cachedSummary = getCachedUserData("financial_summary", userId);
+
+    if (cachedSummary) {
+      addOperation("summary_min", {
+        key: "summary_min",
+        type: "summary_min",
+        userId,
+        cached: true,
+        data: cachedSummary,
+        priority: 1, // High priority
+      });
+    } else {
+      addOperation("summary_min", {
+        key: "summary_min",
+        type: "summary_min",
+        userId,
+        cached: false,
+        priority: 1,
+        fetchers: [
+          {
+            name: "net_worth",
+            rpc: "get_net_worth",
+            params: { p_user_id: userId },
+          },
+          {
+            name: "recent_transactions",
+            rpc: "get_recent_transactions",
+            params: { p_user_id: userId, p_limit: 5 },
+          },
+          {
+            name: "spend_by_category",
+            rpc: "get_spend_by_category",
+            params: {
+              p_user_id: userId,
+              p_start: getDateRange(30).start,
+              p_end: getDateRange(30).end,
+            },
+          },
+        ],
+      });
+    }
+  }
+
+  // 2. Spend data operation (only if period is provided)
+  if (needs.includes("spend_total") && slots?.period) {
+    const cacheKey = `spend_data_${slots.period.start}_${slots.period.end}`;
+    const cachedSpend = getCachedUserData("spend_data", userId, {
+      period: slots.period,
+    });
+
+    if (cachedSpend) {
+      addOperation(cacheKey, {
+        key: cacheKey,
+        type: "spend_total",
+        userId,
+        period: slots.period,
+        cached: true,
+        data: cachedSpend,
+        priority: 2,
+      });
+    } else {
+      addOperation(cacheKey, {
+        key: cacheKey,
+        type: "spend_total",
+        userId,
+        period: slots.period,
+        cached: false,
+        priority: 2,
+        fetchers: [
+          {
+            name: "spend_summary",
+            rpc: "get_spend_summary",
+            params: {
+              p_user_id: userId,
+              p_start: slots.period.start,
+              p_end: slots.period.end,
+            },
+          },
+        ],
+      });
+    }
+  }
+
+  // 3. Category transactions operation (OPTIMIZED: Combine category_details and txns_by_category)
+  if (slots?.category && slots?.period) {
+    const cacheKey = `category_transactions_${slots.category}_${slots.period.start}_${slots.period.end}`;
+    const cachedCategoryTxns = getCachedUserData(
+      "category_transactions",
+      userId,
+      {
+        category: slots.category,
+        period: slots.period,
+      }
+    );
+
+    if (cachedCategoryTxns) {
+      // Use cached data for both category_details and txns_by_category needs
+      addOperation(cacheKey, {
+        key: cacheKey,
+        type: "category_transactions",
+        userId,
+        category: slots.category,
+        period: slots.period,
+        cached: true,
+        data: cachedCategoryTxns,
+        priority: 2,
+        servesNeeds: ["category_details", "txns_by_category"], // This operation serves both needs
+      });
+    } else {
+      addOperation(cacheKey, {
+        key: cacheKey,
+        type: "category_transactions",
+        userId,
+        category: slots.category,
+        period: slots.period,
+        cached: false,
+        priority: 2,
+        servesNeeds: ["category_details", "txns_by_category"],
+        fetchers: [
+          {
+            name: "category_transactions",
+            rpc: "get_transactions_by_category",
+            params: {
+              p_user_id: userId,
+              p_category: slots.category,
+              p_start: slots.period.start,
+              p_end: slots.period.end,
+            },
+          },
+        ],
+      });
+    }
+  }
+
+  // 4. Investment holdings operation
+  if (needs.includes("invest_holdings")) {
+    const cachedInvest = getCachedUserData("investments_all", userId);
+
+    if (cachedInvest) {
+      addOperation("invest_holdings", {
+        key: "invest_holdings",
+        type: "invest_holdings",
+        userId,
+        cached: true,
+        data: cachedInvest,
+        priority: 3,
+      });
+    } else {
+      addOperation("invest_holdings", {
+        key: "invest_holdings",
+        type: "invest_holdings",
+        userId,
+        cached: false,
+        priority: 3,
+        fetchers: [
+          {
+            name: "investment_overview",
+            rpc: "get_investment_overview",
+            params: { p_user_id: userId },
+          },
+        ],
+      });
+    }
+  }
+
+  // 5. Goals overview operation
+  if (needs.includes("goals_overview")) {
+    const cachedGoals = getCachedUserData("goals_overview", userId, {
+      limit: 10,
+    });
+
+    if (cachedGoals) {
+      addOperation("goals_overview", {
+        key: "goals_overview",
+        type: "goals_overview",
+        userId,
+        cached: true,
+        data: cachedGoals,
+        priority: 3,
+      });
+    } else {
+      addOperation("goals_overview", {
+        key: "goals_overview",
+        type: "goals_overview",
+        userId,
+        cached: false,
+        priority: 3,
+        fetchers: [
+          {
+            name: "goals_overview",
+            rpc: "get_goals_overview",
+            params: { p_user_id: userId, p_limit: 10 },
+          },
+        ],
+      });
+    }
+  }
+
+  // 6. Cashflow monthly operation
+  if (needs.includes("cashflow_monthly")) {
+    const cachedCashflow = getCachedUserData("cashflow_monthly", userId, {
+      months: 3,
+    });
+
+    if (cachedCashflow) {
+      addOperation("cashflow_monthly", {
+        key: "cashflow_monthly",
+        type: "cashflow_monthly",
+        userId,
+        cached: true,
+        data: cachedCashflow,
+        priority: 3,
+      });
+    } else {
+      addOperation("cashflow_monthly", {
+        key: "cashflow_monthly",
+        type: "cashflow_monthly",
+        userId,
+        cached: false,
+        priority: 3,
+        fetchers: [
+          {
+            name: "cashflow_monthly",
+            rpc: "get_cashflow_monthly",
+            params: { p_user_id: userId, p_months: 3 },
+          },
+        ],
+      });
+    }
+  }
+
+  // OPTIMIZED: Sort operations by priority (critical data first)
+  return operations.sort((a, b) => a.priority - b.priority);
+}
+
+// OPTIMIZED: Execute a single fetch operation with proper error handling
+async function executeFetchOperation(operation) {
+  if (operation.cached) {
+    return { success: true, data: operation.data, cached: true };
+  }
+
+  try {
+    // Execute all fetchers for this operation in parallel
+    const fetcherPromises = operation.fetchers.map((fetcher) =>
+      withTimeout(supabase.rpc(fetcher.rpc, fetcher.params), 2000, null).catch(
+        (error) => {
+          console.error(`❌ [FINNY] ${fetcher.name} fetch failed:`, error);
+          return null;
+        }
+      )
+    );
+
+    const results = await Promise.all(fetcherPromises);
+
+    // Process results based on operation type
+    const processedData = processOperationData(operation, results);
+
+    if (processedData) {
+      // Cache the processed data
+      cacheOperationData(operation, processedData);
+      return { success: true, data: processedData, cached: false };
+    } else {
+      return { success: false, error: "No valid data returned" };
+    }
+  } catch (error) {
+    console.error(`❌ [FINNY] Operation ${operation.key} failed:`, error);
+    return { success: false, error: error.message };
+  }
+}
+
+// OPTIMIZED: Process fetch results with better error handling and caching
+function processFetchResults(results, operations, packs, gaps) {
+  for (let i = 0; i < results.length; i++) {
+    const result = results[i];
+    const operation = operations[i];
+
+    if (result.status === "fulfilled" && result.value.success) {
+      const { data, cached } = result.value;
+
+      // Process data based on operation type
+      switch (operation.type) {
+        case "summary_min":
+          packs.base = data;
+          break;
+        case "spend_total":
+          packs.spend = data;
+          break;
+        case "category_transactions":
+          // This operation can serve both category_details and txns_by_category
+          if (operation.servesNeeds?.includes("category_details")) {
+            packs.categoryDetails = data;
+          }
+          if (operation.servesNeeds?.includes("txns_by_category")) {
+            packs.spend = { ...packs.spend, ...data };
+          }
+          break;
+        case "invest_holdings":
+          packs.invest = data;
+          break;
+        case "goals_overview":
+          packs.goals = data;
+          break;
+        case "cashflow_monthly":
+          packs.cashflow = data;
+          break;
+      }
+    } else {
+      // Handle failed operations
+      const error =
+        result.status === "rejected" ? result.reason : result.value?.error;
+      console.error(`❌ [FINNY] Operation ${operation.key} failed:`, error);
+
+      // Add to gaps based on what needs this operation was serving
+      if (operation.servesNeeds) {
+        operation.servesNeeds.forEach((need) => {
+          if (!gaps.includes(need)) gaps.push(need);
+        });
+      } else {
+        if (!gaps.includes(operation.type)) gaps.push(operation.type);
+      }
+    }
+  }
+}
+
+// OPTIMIZED: Helper function to get date range
+function getDateRange(daysAgo) {
+  const now = new Date();
+  const past = new Date(now.getTime() - daysAgo * 24 * 60 * 60 * 1000);
+  return {
+    start: past.toISOString().split("T")[0],
+    end: now.toISOString().split("T")[0],
+  };
+}
+
+// OPTIMIZED: Process operation data based on type
+function processOperationData(operation, results) {
+  switch (operation.type) {
+    case "summary_min":
+      return processSummaryData(results);
+    case "spend_total":
+      return processSpendData(operation, results);
+    case "category_transactions":
+      return processCategoryTransactionsData(operation, results);
+    case "invest_holdings":
+      return processInvestmentData(results);
+    case "goals_overview":
+      return processGoalsData(results);
+    case "cashflow_monthly":
+      return processCashflowData(results);
+    default:
+      return null;
+  }
+}
+
+// OPTIMIZED: Process summary data from multiple RPC calls
+function processSummaryData(results) {
+  const [netWorthRes, recentRes, spendCatRes] = results;
+
+  const net = netWorthRes?.data?.[0] || null;
+  if (!net) return null;
+
+  const recent = Array.isArray(recentRes?.data) ? recentRes.data : [];
+  const spendCats = Array.isArray(spendCatRes?.data) ? spendCatRes.data : [];
+
+  return {
+    netWorth: Number(net.net_worth || 0),
+    liquidAssets: Number(net.liquid_assets || 0),
+    investmentsTotal: Number(net.investments_total || 0),
+    totalLiabilities: Number(net.total_liabilities || 0),
+    recentTransactions: recent.slice(0, 5).map((txn) => ({
+      date: txn.date,
+      amount: txn.amount,
+      merchant: txn.merchant || txn.name,
+    })),
+    spendByCategory: spendCats,
+    accounts: Array.isArray(net.bank_accounts) ? net.bank_accounts : [],
+  };
+}
+
+// OPTIMIZED: Process spend data
+function processSpendData(operation, results) {
+  const [spendRes] = results;
+  if (!spendRes?.data) return null;
+
+  return {
+    total: spendRes.data.total_spend || 0,
+    count: spendRes.data.txn_count || 0,
+    period: `${operation.period.start} to ${operation.period.end}`,
+  };
+}
+
+// OPTIMIZED: Process category transactions data
+function processCategoryTransactionsData(operation, results) {
+  const [txnRes] = results;
+  if (!txnRes?.data || txnRes.data.length === 0) return null;
+
+  return {
+    category: operation.category,
+    transactions: txnRes.data.map((txn) => ({
+      date: txn.date,
+      amount: txn.amount,
+      name: txn.name,
+      merchant: txn.merchant_name || txn.name,
+      category: txn.category,
+    })),
+    period: `${operation.period.start} to ${operation.period.end}`,
+  };
+}
+
+// OPTIMIZED: Process investment data
+function processInvestmentData(results) {
+  const [investRes] = results;
+  if (!investRes?.data) return null;
+
+  const payload = investRes.data || {};
+  return {
+    holdings: Array.isArray(payload.holdings)
+      ? payload.holdings.map((h) => ({
+          symbol: h.symbol,
+          description: h.description,
+          units: h.units,
+          market_value: h.market_value,
+        }))
+      : [],
+    balances: Array.isArray(payload.balances) ? payload.balances : [],
+    options: Array.isArray(payload.options) ? payload.options : [],
+  };
+}
+
+// OPTIMIZED: Process goals data
+function processGoalsData(results) {
+  const [goalsRes] = results;
+  if (!goalsRes?.data) return null;
+
+  return {
+    goals: (goalsRes.data || []).map((goal) => ({
+      label: goal.label,
+      current_amount: goal.current_amount,
+      target_amount: goal.target_amount,
+      progress_pct: goal.progress_pct,
+      target_date: goal.target_date,
+    })),
+  };
+}
+
+// OPTIMIZED: Process cashflow data
+function processCashflowData(results) {
+  const [cashflowRes] = results;
+  if (!cashflowRes?.data) return null;
+
+  return {
+    cashflow: (cashflowRes.data || []).map((cf) => ({
+      month: cf.month,
+      income: cf.income,
+      expense: cf.expense,
+      net: cf.net,
+    })),
+  };
+}
+
+// OPTIMIZED: Cache operation data
+function cacheOperationData(operation, data) {
+  switch (operation.type) {
+    case "summary_min":
+      setCachedUserData("financial_summary", operation.userId, data);
+      break;
+    case "spend_total":
+      setCachedUserData("spend_data", operation.userId, data, {
+        period: operation.period,
+      });
+      break;
+    case "category_transactions":
+      setCachedUserData("category_transactions", operation.userId, data, {
+        category: operation.category,
+        period: operation.period,
+      });
+      break;
+    case "invest_holdings":
+      setCachedUserData("investments_all", operation.userId, data);
+      break;
+    case "goals_overview":
+      setCachedUserData("goals_overview", operation.userId, data, {
+        limit: 10,
+      });
+      break;
+    case "cashflow_monthly":
+      setCachedUserData("cashflow_monthly", operation.userId, data, {
+        months: 3,
+      });
+      break;
+  }
 }
 
 // Heuristic: detect clearly in-scope financial concept questions to avoid false off-topic
