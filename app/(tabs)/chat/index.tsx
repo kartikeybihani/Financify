@@ -23,6 +23,7 @@ import { useRouter, useFocusEffect } from "expo-router";
 import { ChatMessageComponent } from "@/src/components/chat/ChatMessage";
 import { NudgeGrid } from "@/src/components/chat/NudgeGrid";
 import { useChatContext } from "@/src/contexts/ChatContext";
+import { supabase } from "@/src/lib/supabase/supabase";
 import styles from "@/src/styles/chatStyles";
 import TypingIndicator from "@/src/components/chat/TypingIndicator";
 import ConversationStartersModal from "@/src/components/chat/ConversationStartersModal";
@@ -96,6 +97,10 @@ export default function ChatScreen() {
       const timer = setTimeout(() => {
         scrollToAbsoluteBottom();
       }, 150);
+
+      // Trigger context pre-building when user enters chat tab
+      triggerContextPrebuild();
+
       return () => clearTimeout(timer);
     }, [])
   );
@@ -264,6 +269,65 @@ export default function ChatScreen() {
     inputRange: [0, 0.5, 1],
     outputRange: [1, 1.1, 1],
   });
+
+  // Trigger context pre-building when user enters chat tab
+  const triggerContextPrebuild = async () => {
+    try {
+      console.log("🚀 [CONTEXT_PREBUILD] Starting context pre-building...");
+
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user?.id) {
+        console.log("⚠️ [CONTEXT_PREBUILD] No user ID, skipping pre-build");
+        return;
+      }
+
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData?.session?.access_token || "";
+
+      if (!accessToken) {
+        console.log(
+          "⚠️ [CONTEXT_PREBUILD] No access token, skipping pre-build"
+        );
+        return;
+      }
+
+      const BASE_URL =
+        process.env.EXPO_PUBLIC_APP_BASE_URL ||
+        "https://financify-rose.vercel.app";
+
+      // Call the pre-build API in the background (don't await)
+      fetch(`${BASE_URL}/api/finny`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          action: "prebuild_context",
+        }),
+      })
+        .then(async (response) => {
+          if (response.ok) {
+            const result = await response.json();
+            console.log(
+              "✅ [CONTEXT_PREBUILD] Context pre-built successfully:",
+              result
+            );
+          } else {
+            console.log(
+              "⚠️ [CONTEXT_PREBUILD] Pre-build failed, will fallback to on-demand"
+            );
+          }
+        })
+        .catch((error) => {
+          console.log("⚠️ [CONTEXT_PREBUILD] Pre-build error:", error);
+        });
+    } catch (error) {
+      console.log("⚠️ [CONTEXT_PREBUILD] Pre-build setup error:", error);
+    }
+  };
 
   const handleSend = async (nudgeText?: string) => {
     const messageText = nudgeText || userInput;

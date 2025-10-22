@@ -32,7 +32,7 @@ export default function Index() {
       return <Redirect href="/(onboarding-complete)" />;
 
     case NavigationState.AUTHENTICATED:
-      return <Redirect href="/(tabs)/chat" />;
+      return <Redirect href="/(tabs)" />;
 
     default:
       return <Redirect href="/(auth)/welcome" />;

@@ -224,7 +224,7 @@ function getCachedUserData(dataType, userId, params = {}) {
 // Set cached user data
 function setCachedUserData(dataType, userId, data, params = {}) {
   const key = generateDataCacheKey(dataType, userId, params);
-  const ttl = CACHE_TTL[dataType] || 5 * 60 * 1000; // Default 5 minutes
+  const ttl = params.ttl || CACHE_TTL[dataType] || 5 * 60 * 1000; // Use provided ttl or default
   const expires_at = Date.now() + ttl;
 
   dataCache.set(key, {
@@ -1132,6 +1132,9 @@ export default async function handler(req, res) {
         }
         break;
       }
+      case "prebuild_context":
+        response = await handlePrebuildContext(finalUserId);
+        break;
       default:
         return res.status(400).json({ error: "Invalid action" });
     }
@@ -2928,14 +2931,45 @@ async function buildContextPacks(userId, needs, slots) {
       };
     }
 
+    // OPTIMIZATION: Check for pre-built context first
+    console.log("🔍 [FINNY] Checking for pre-built context...");
+    const prebuiltContexts = {};
+    const remainingNeeds = [];
+
+    for (const need of needs) {
+      const cachedData = getCachedUserData(need, userId);
+      if (cachedData) {
+        console.log(`✅ [FINNY] Using pre-built context for: ${need}`);
+        prebuiltContexts[need] = cachedData;
+        packs[need] = cachedData;
+      } else {
+        console.log(`⚠️ [FINNY] No pre-built context for: ${need}, will fetch`);
+        remainingNeeds.push(need);
+      }
+    }
+
+    // If all contexts are pre-built, return early
+    if (remainingNeeds.length === 0) {
+      console.log("🎯 [FINNY] All contexts pre-built, returning cached data");
+      return {
+        packs,
+        gaps,
+        contextHeader: `CONTEXT_PACKS_INCLUDED: [${needs.join(
+          ", "
+        )}]\nDATA_GAPS: []`,
+      };
+    }
+
     console.log(
-      `🚀 [FINNY] Building context packs for needs: [${needs.join(", ")}]`
+      `🚀 [FINNY] Building context packs for remaining needs: [${remainingNeeds.join(
+        ", "
+      )}]`
     );
 
     // OPTIMIZED: Create optimized fetch operations with better batching
     const fetchOperations = createOptimizedFetchOperations(
       userId,
-      needs,
+      remainingNeeds,
       slots
     );
 
@@ -2973,7 +3007,8 @@ async function buildContextPacks(userId, needs, slots) {
   }
 
   const includedPacks = Object.keys(packs);
-  const contextHeader = `CONTEXT_PACKS_INCLUDED: [${includedPacks
+  const allContexts = [...needs]; // Include all original needs
+  const contextHeader = `CONTEXT_PACKS_INCLUDED: [${allContexts
     .map((p) => `"${p}"`)
     .join(", ")}]\nDATA_GAPS: [${gaps.map((g) => `"${g}"`).join(", ")}]`;
 
@@ -3904,6 +3939,150 @@ function detectGoalIntent(message, conversationContext) {
 
   // Default: no strong signal, let LLM decide
   return null;
+}
+
+async function handlePrebuildContext(userId) {
+  console.log("🚀 [PREBUILD] Starting context pre-building for user:", userId);
+  const startTime = Date.now();
+
+  try {
+    // Build base context pack first (highest priority)
+    console.log("📦 [PREBUILD] Building base context pack...");
+    const baseContext = await buildContextPacks(userId, ["summary_min"], {});
+
+    // Cache base context for 15 minutes
+    if (baseContext && baseContext.packs && baseContext.packs.summary_min) {
+      setCachedUserData("summary_min", userId, baseContext.packs.summary_min, {
+        ttl: 15 * 60 * 1000,
+      });
+      console.log("✅ [PREBUILD] Base context cached successfully");
+    }
+
+    // Build other context packs in background (after base is ready)
+    console.log("🔄 [PREBUILD] Starting background context building...");
+
+    // Build investment context
+    try {
+      const investContext = await buildContextPacks(
+        userId,
+        ["invest_holdings"],
+        {}
+      );
+      if (
+        investContext &&
+        investContext.packs &&
+        investContext.packs.invest_holdings
+      ) {
+        setCachedUserData(
+          "invest_holdings",
+          userId,
+          investContext.packs.invest_holdings,
+          { ttl: 15 * 60 * 1000 }
+        );
+        console.log("✅ [PREBUILD] Investment context cached");
+      }
+    } catch (error) {
+      console.error("❌ [PREBUILD] Investment context failed:", error);
+    }
+
+    // Build goals context
+    try {
+      const goalsContext = await buildContextPacks(
+        userId,
+        ["goals_overview"],
+        {}
+      );
+      if (
+        goalsContext &&
+        goalsContext.packs &&
+        goalsContext.packs.goals_overview
+      ) {
+        setCachedUserData(
+          "goals_overview",
+          userId,
+          goalsContext.packs.goals_overview,
+          { ttl: 15 * 60 * 1000 }
+        );
+        console.log("✅ [PREBUILD] Goals context cached");
+      }
+    } catch (error) {
+      console.error("❌ [PREBUILD] Goals context failed:", error);
+    }
+
+    // Build cashflow context
+    try {
+      const cashflowContext = await buildContextPacks(
+        userId,
+        ["cashflow_monthly"],
+        {}
+      );
+      if (
+        cashflowContext &&
+        cashflowContext.packs &&
+        cashflowContext.packs.cashflow_monthly
+      ) {
+        setCachedUserData(
+          "cashflow_monthly",
+          userId,
+          cashflowContext.packs.cashflow_monthly,
+          { ttl: 15 * 60 * 1000 }
+        );
+        console.log("✅ [PREBUILD] Cashflow context cached");
+      }
+    } catch (error) {
+      console.error("❌ [PREBUILD] Cashflow context failed:", error);
+    }
+
+    // Build spend context for last 30 days
+    try {
+      const spendContext = await buildContextPacks(userId, ["spend_total"], {
+        period: getDateRange(30),
+      });
+      if (
+        spendContext &&
+        spendContext.packs &&
+        spendContext.packs.spend_total
+      ) {
+        setCachedUserData(
+          "spend_total",
+          userId,
+          spendContext.packs.spend_total,
+          {
+            ttl: 15 * 60 * 1000,
+          }
+        );
+        console.log("✅ [PREBUILD] Spend context cached");
+      }
+    } catch (error) {
+      console.error("❌ [PREBUILD] Spend context failed:", error);
+    }
+
+    const totalTime = Date.now() - startTime;
+    console.log(
+      `🎯 [PREBUILD] Context pre-building completed in ${totalTime}ms`
+    );
+
+    return {
+      success: true,
+      message: "Context pre-built successfully",
+      baseContextReady: true,
+      backgroundContexts: [
+        "invest_holdings",
+        "goals_overview",
+        "cashflow_monthly",
+        "spend_total",
+      ],
+      buildTime: totalTime,
+    };
+  } catch (error) {
+    console.error("❌ [PREBUILD] Context pre-building failed:", error);
+    return {
+      success: false,
+      message:
+        "Context pre-building failed, will fallback to on-demand building",
+      error: error.message,
+    };
+  }
 }
 
 async function handleClassify(message, context, conversationContext = null) {

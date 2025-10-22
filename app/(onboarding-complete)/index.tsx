@@ -397,7 +397,7 @@ export default function FinalScreen() {
       logOnboardingEvent({ stage: "final", action: "complete" });
 
       setTimeout(() => {
-        router.replace("/(tabs)/chat" as any);
+        router.replace("/(tabs)/index" as any);
       }, 1200);
     } catch (error) {
       logger.error("Error completing onboarding:", error);
