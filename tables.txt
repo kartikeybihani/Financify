@@ -61,6 +61,17 @@ CREATE TABLE public.chat_sessions (
   CONSTRAINT chat_sessions_pkey PRIMARY KEY (id),
   CONSTRAINT chat_sessions_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
 );
+CREATE TABLE public.context_cache (
+  id integer NOT NULL DEFAULT nextval('context_cache_id_seq'::regclass),
+  cache_key character varying NOT NULL,
+  user_id uuid NOT NULL,
+  data_type character varying NOT NULL,
+  cache_data jsonb NOT NULL,
+  expires_at bigint NOT NULL,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT context_cache_pkey PRIMARY KEY (id)
+);
 CREATE TABLE public.conversation_context (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL,

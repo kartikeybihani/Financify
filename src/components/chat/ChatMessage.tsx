@@ -1,4 +1,11 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, {
+  useEffect,
+  useRef,
+  useState,
+  memo,
+  useMemo,
+  useCallback,
+} from "react";
 import {
   View,
   Text,
@@ -90,6 +97,11 @@ const generateLinkText = (url: string, context: string = "") => {
 
 // Function to parse text and render links with elegant text
 const parseTextWithLinks = (text: string, textStyle: any) => {
+  // Early return if no URLs found
+  if (!URL_REGEX.test(text)) {
+    return text;
+  }
+
   const parts = text.split(URL_REGEX);
   let linkCounter = 0;
 
@@ -310,113 +322,313 @@ function getBubbleRadii({
   } as const;
 }
 
-export const ChatMessageComponent = ({
-  message,
-  showSender = true,
-  onAction,
-  prevSender,
-  nextSender,
-}: ChatMessageProps) => {
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const scaleAnim = useRef(new Animated.Value(0.8)).current;
-  const slideAnim = useRef(new Animated.Value(20)).current;
-  const [lineCount, setLineCount] = useState(1);
+export const ChatMessageComponent = memo(
+  ({
+    message,
+    showSender = true,
+    onAction,
+    prevSender,
+    nextSender,
+  }: ChatMessageProps) => {
+    const fadeAnim = useRef(new Animated.Value(0)).current;
+    const scaleAnim = useRef(new Animated.Value(0.8)).current;
+    const slideAnim = useRef(new Animated.Value(20)).current;
+    const [lineCount, setLineCount] = useState(1);
 
-  useEffect(() => {
-    // Enhanced entrance animation
-    Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 400,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }),
-      Animated.timing(scaleAnim, {
-        toValue: 1,
-        duration: 400,
-        easing: Easing.elastic(0.7),
-        useNativeDriver: true,
-      }),
-      Animated.timing(slideAnim, {
-        toValue: 0,
-        duration: 400,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }),
-    ]).start();
-
-    LayoutAnimation.configureNext(
-      LayoutAnimation.create(
-        300,
-        LayoutAnimation.Types.easeInEaseOut,
-        LayoutAnimation.Properties.opacity
-      )
+    // Memoize expensive calculations
+    const isUser = useMemo(() => message.sender === "user", [message.sender]);
+    const isFirstInGroup = useMemo(
+      () => prevSender !== message.sender,
+      [prevSender, message.sender]
     );
-  }, []);
+    const isLastInGroup = useMemo(
+      () => nextSender !== message.sender,
+      [nextSender, message.sender]
+    );
+    const isSingleLine = useMemo(() => lineCount <= 1, [lineCount]);
 
-  const isUser = message.sender === "user";
-  const isFirstInGroup = prevSender !== message.sender;
-  const isLastInGroup = nextSender !== message.sender;
-  const isSingleLine = lineCount <= 1;
+    const bubbleRadii = useMemo(
+      () =>
+        getBubbleRadii({
+          sender: message.sender,
+          isFirstInGroup,
+          isLastInGroup,
+          isSingleLine,
+        }),
+      [message.sender, isFirstInGroup, isLastInGroup, isSingleLine]
+    );
 
-  const bubbleRadii = getBubbleRadii({
-    sender: message.sender,
-    isFirstInGroup,
-    isLastInGroup,
-    isSingleLine,
-  });
+    // Memoize gradient colors
+    const userGradient = useMemo(() => ["#2A3A4A", "#1A2A3A"] as const, []);
+    const finnyGradient = useMemo(
+      () => ["#1A3A5A", "#2E5A8A", "#4A90E2"] as const,
+      []
+    );
 
-  const onTextLayout = (e: any) => {
-    // e.nativeEvent.lines is available on RN Text layout events
-    const lines = (e?.nativeEvent?.lines as any[]) || [];
-    setLineCount(lines.length > 0 ? lines.length : 1);
-  };
+    const onTextLayout = useCallback((e: any) => {
+      // e.nativeEvent.lines is available on RN Text layout events
+      const lines = (e?.nativeEvent?.lines as any[]) || [];
+      setLineCount(lines.length > 0 ? lines.length : 1);
+    }, []);
 
-  if (isUser) {
-    const userGradient = ["#2A3A4A", "#1A2A3A"] as const;
-    const userTailColor = pickTailColor([...userGradient], "right");
+    useEffect(() => {
+      // Simplified entrance animation for better performance
+      Animated.parallel([
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 300, // Reduced duration
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        Animated.timing(scaleAnim, {
+          toValue: 1,
+          duration: 300, // Reduced duration
+          easing: Easing.out(Easing.cubic), // Simplified easing
+          useNativeDriver: true,
+        }),
+        Animated.timing(slideAnim, {
+          toValue: 0,
+          duration: 300, // Reduced duration
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+      ]).start();
 
-    return (
-      <Animated.View
-        style={[
-          styles.messageContainer,
-          styles.userMessageContainer,
-          {
-            opacity: fadeAnim,
-            transform: [{ scale: scaleAnim }, { translateY: slideAnim }],
-          },
-        ]}
-      >
-        <LinearGradient
-          colors={userGradient}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
+      // Remove LayoutAnimation for better performance
+    }, []);
+
+    if (isUser) {
+      const userTailColor = pickTailColor([...userGradient], "right");
+
+      return (
+        <Animated.View
           style={[
-            styles.userMessageBubble,
-            bubbleRadii,
-            { paddingBottom: responsivePadding(10) },
+            styles.messageContainer,
+            styles.userMessageContainer,
+            {
+              opacity: fadeAnim,
+              transform: [{ scale: scaleAnim }, { translateY: slideAnim }],
+            },
           ]}
         >
-          <Text
-            onTextLayout={onTextLayout}
-            style={[styles.messageText, styles.userMessageText]}
+          <LinearGradient
+            colors={userGradient}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={[
+              styles.userMessageBubble,
+              bubbleRadii,
+              { paddingBottom: responsivePadding(10) },
+            ]}
           >
-            {parseTextWithLinks(message.text, [
-              styles.messageText,
-              styles.userMessageText,
-            ])}
-          </Text>
-        </LinearGradient>
-        {/* Tail only if last in group */}
-        {isLastInGroup && <BubbleTail side="right" color={userTailColor} />}
-      </Animated.View>
-    );
-  }
+            <Text
+              onTextLayout={onTextLayout}
+              style={[styles.messageText, styles.userMessageText]}
+            >
+              {parseTextWithLinks(message.text, [
+                styles.messageText,
+                styles.userMessageText,
+              ])}
+            </Text>
+          </LinearGradient>
+          {/* Tail only if last in group */}
+          {isLastInGroup && <BubbleTail side="right" color={userTailColor} />}
+        </Animated.View>
+      );
+    }
 
-  // Check for action buttons (regardless of type, as long as actions exist)
-  if (message.actions && message.actions.length > 0) {
-    const [clicked, setClicked] = useState(false);
-    const finnyGradient = ["#1A3A5A", "#2E5A8A", "#4A90E2"] as const;
+    // Check for action buttons (regardless of type, as long as actions exist)
+    if (message.actions && message.actions.length > 0) {
+      const [clicked, setClicked] = useState(false);
+      const finnyTailColor = pickTailColor([...finnyGradient], "left");
+
+      return (
+        <Animated.View
+          style={{
+            opacity: fadeAnim,
+            transform: [{ scale: scaleAnim }, { translateY: slideAnim }],
+          }}
+        >
+          {showSender && (
+            <Animated.View
+              style={[
+                styles.senderNameContainer,
+                {
+                  opacity: fadeAnim,
+                  transform: [{ translateY: slideAnim }],
+                },
+              ]}
+            >
+              <Text style={styles.senderName}>Finny</Text>
+            </Animated.View>
+          )}
+          <View style={styles.finnyMessageRow}>
+            <View style={styles.finnyMessageContainer}>
+              <LinearGradient
+                colors={finnyGradient}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={[
+                  styles.finnyMessageBubble,
+                  bubbleRadii,
+                  { paddingBottom: responsivePadding(10) },
+                  !isFirstInGroup &&
+                    !isLastInGroup &&
+                    styles.finnyMessageBubbleGrouped,
+                  isLastInGroup && styles.finnyMessageBubbleLastInGroup,
+                ]}
+              >
+                <Text style={[styles.messageText, styles.finnyMessageText]}>
+                  {message.text.split("\n").map((line, lineIdx) => (
+                    <React.Fragment key={lineIdx}>
+                      {lineIdx > 0 && <Text>{"\n"}</Text>}
+                      <Text
+                        onTextLayout={lineIdx === 0 ? onTextLayout : undefined}
+                      >
+                        {line.split(/(\*\*[^*]+\*\*)/).map((chunk, idx) => {
+                          if (chunk.startsWith("**") && chunk.endsWith("**")) {
+                            return (
+                              <Text key={idx} style={styles.boldText}>
+                                {parseTextWithLinks(
+                                  chunk.slice(2, -2),
+                                  styles.boldText
+                                )}
+                              </Text>
+                            );
+                          }
+                          return parseTextWithLinks(chunk, [
+                            styles.messageText,
+                            styles.finnyMessageText,
+                          ]);
+                        })}
+                      </Text>
+                    </React.Fragment>
+                  ))}
+                </Text>
+              </LinearGradient>
+              {/* Tail only if last in group */}
+              {isLastInGroup && (
+                <BubbleTail side="left" color={finnyTailColor} />
+              )}
+            </View>
+          </View>
+          {/* Action buttons below the bubble */}
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              marginLeft: 12,
+              marginTop: 6,
+              gap: responsivePadding(6),
+              flexWrap: "wrap",
+            }}
+          >
+            {message.actions.map((btn, idx) => {
+              const [isPressed, setIsPressed] = useState(false);
+              const pressAnim = useRef(new Animated.Value(1)).current;
+
+              const handlePressIn = () => {
+                setIsPressed(true);
+                Animated.spring(pressAnim, {
+                  toValue: 0.95,
+                  useNativeDriver: true,
+                  tension: 300,
+                  friction: 10,
+                }).start();
+              };
+
+              const handlePressOut = () => {
+                setIsPressed(false);
+                Animated.spring(pressAnim, {
+                  toValue: 1,
+                  useNativeDriver: true,
+                  tension: 300,
+                  friction: 10,
+                }).start();
+              };
+
+              return (
+                <Animated.View
+                  key={btn.action}
+                  style={{
+                    opacity: fadeAnim,
+                    transform: [{ scale: pressAnim }],
+                  }}
+                >
+                  <TouchableOpacity
+                    onPress={() => {
+                      if (!clicked && onAction) {
+                        setClicked(true);
+                        onAction(btn.action);
+                      }
+                    }}
+                    onPressIn={handlePressIn}
+                    onPressOut={handlePressOut}
+                    activeOpacity={0.7}
+                    style={{
+                      marginRight: 6,
+                      marginBottom: 4,
+                    }}
+                  >
+                    <LinearGradient
+                      colors={
+                        btn.style === "primary"
+                          ? ["#4A90E2", "#5BA3F5", "#6BB6FF"]
+                          : [
+                              "rgba(255, 255, 255, 0.15)",
+                              "rgba(255, 255, 255, 0.08)",
+                            ]
+                      }
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={{
+                        paddingHorizontal: responsivePadding(14),
+                        paddingVertical: responsivePadding(10),
+                        borderRadius: 20,
+                        flexDirection: "row",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        shadowColor:
+                          btn.style === "primary" ? "#4A90E2" : "#000",
+                        shadowOffset: { width: 0, height: 3 },
+                        shadowOpacity: btn.style === "primary" ? 0.4 : 0.1,
+                        shadowRadius: 6,
+                        elevation: 4,
+                        opacity: clicked ? 0.5 : 1,
+                        borderWidth: 0,
+                      }}
+                    >
+                      <Text
+                        style={{
+                          fontSize: responsiveFontSize(12),
+                          fontWeight: "600",
+                          color:
+                            btn.style === "primary" ? "#FFFFFF" : "#E0E0E0",
+                          letterSpacing: 0.3,
+                          textAlign: "center",
+                        }}
+                      >
+                        {btn.label}
+                      </Text>
+                    </LinearGradient>
+                  </TouchableOpacity>
+                </Animated.View>
+              );
+            })}
+          </View>
+        </Animated.View>
+      );
+    }
+
+    // Display message as single string (no splitting)
+    // Defensive: handle undefined/null text during streaming
+    const messageText = message?.text ?? "";
+
+    // Don't render if there's no text at all
+    if (!messageText || messageText.trim() === "") {
+      return null;
+    }
+
     const finnyTailColor = pickTailColor([...finnyGradient], "left");
 
     return (
@@ -439,7 +651,7 @@ export const ChatMessageComponent = ({
             <Text style={styles.senderName}>Finny</Text>
           </Animated.View>
         )}
-        <View style={styles.finnyMessageRow}>
+        <Animated.View style={styles.finnyMessageRow}>
           <View style={styles.finnyMessageContainer}>
             <LinearGradient
               colors={finnyGradient}
@@ -456,7 +668,7 @@ export const ChatMessageComponent = ({
               ]}
             >
               <Text style={[styles.messageText, styles.finnyMessageText]}>
-                {message.text.split("\n").map((line, lineIdx) => (
+                {messageText.split("\n").map((line, lineIdx) => (
                   <React.Fragment key={lineIdx}>
                     {lineIdx > 0 && <Text>{"\n"}</Text>}
                     <Text
@@ -486,194 +698,11 @@ export const ChatMessageComponent = ({
             {/* Tail only if last in group */}
             {isLastInGroup && <BubbleTail side="left" color={finnyTailColor} />}
           </View>
-        </View>
-        {/* Action buttons below the bubble */}
-        <View
-          style={{
-            flexDirection: "row",
-            alignItems: "center",
-            marginLeft: 12,
-            marginTop: 6,
-            gap: responsivePadding(6),
-            flexWrap: "wrap",
-          }}
-        >
-          {message.actions.map((btn, idx) => {
-            const [isPressed, setIsPressed] = useState(false);
-            const pressAnim = useRef(new Animated.Value(1)).current;
-
-            const handlePressIn = () => {
-              setIsPressed(true);
-              Animated.spring(pressAnim, {
-                toValue: 0.95,
-                useNativeDriver: true,
-                tension: 300,
-                friction: 10,
-              }).start();
-            };
-
-            const handlePressOut = () => {
-              setIsPressed(false);
-              Animated.spring(pressAnim, {
-                toValue: 1,
-                useNativeDriver: true,
-                tension: 300,
-                friction: 10,
-              }).start();
-            };
-
-            return (
-              <Animated.View
-                key={btn.action}
-                style={{
-                  opacity: fadeAnim,
-                  transform: [{ scale: pressAnim }],
-                }}
-              >
-                <TouchableOpacity
-                  onPress={() => {
-                    if (!clicked && onAction) {
-                      setClicked(true);
-                      onAction(btn.action);
-                    }
-                  }}
-                  onPressIn={handlePressIn}
-                  onPressOut={handlePressOut}
-                  activeOpacity={0.7}
-                  style={{
-                    marginRight: 6,
-                    marginBottom: 4,
-                  }}
-                >
-                  <LinearGradient
-                    colors={
-                      btn.style === "primary"
-                        ? ["#4A90E2", "#5BA3F5", "#6BB6FF"]
-                        : [
-                            "rgba(255, 255, 255, 0.15)",
-                            "rgba(255, 255, 255, 0.08)",
-                          ]
-                    }
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    style={{
-                      paddingHorizontal: responsivePadding(14),
-                      paddingVertical: responsivePadding(10),
-                      borderRadius: 20,
-                      flexDirection: "row",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      shadowColor: btn.style === "primary" ? "#4A90E2" : "#000",
-                      shadowOffset: { width: 0, height: 3 },
-                      shadowOpacity: btn.style === "primary" ? 0.4 : 0.1,
-                      shadowRadius: 6,
-                      elevation: 4,
-                      opacity: clicked ? 0.5 : 1,
-                      borderWidth: 0,
-                    }}
-                  >
-                    <Text
-                      style={{
-                        fontSize: responsiveFontSize(12),
-                        fontWeight: "600",
-                        color: btn.style === "primary" ? "#FFFFFF" : "#E0E0E0",
-                        letterSpacing: 0.3,
-                        textAlign: "center",
-                      }}
-                    >
-                      {btn.label}
-                    </Text>
-                  </LinearGradient>
-                </TouchableOpacity>
-              </Animated.View>
-            );
-          })}
-        </View>
+        </Animated.View>
       </Animated.View>
     );
   }
-
-  // Display message as single string (no splitting)
-  // Defensive: handle undefined/null text during streaming
-  const messageText = message?.text ?? "";
-
-  // Don't render if there's no text at all
-  if (!messageText || messageText.trim() === "") {
-    return null;
-  }
-
-  const finnyGradient = ["#1A3A5A", "#2E5A8A", "#4A90E2"] as const;
-  const finnyTailColor = pickTailColor([...finnyGradient], "left");
-
-  return (
-    <Animated.View
-      style={{
-        opacity: fadeAnim,
-        transform: [{ scale: scaleAnim }, { translateY: slideAnim }],
-      }}
-    >
-      {showSender && (
-        <Animated.View
-          style={[
-            styles.senderNameContainer,
-            {
-              opacity: fadeAnim,
-              transform: [{ translateY: slideAnim }],
-            },
-          ]}
-        >
-          <Text style={styles.senderName}>Finny</Text>
-        </Animated.View>
-      )}
-      <Animated.View style={styles.finnyMessageRow}>
-        <View style={styles.finnyMessageContainer}>
-          <LinearGradient
-            colors={finnyGradient}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={[
-              styles.finnyMessageBubble,
-              bubbleRadii,
-              { paddingBottom: responsivePadding(10) },
-              !isFirstInGroup &&
-                !isLastInGroup &&
-                styles.finnyMessageBubbleGrouped,
-              isLastInGroup && styles.finnyMessageBubbleLastInGroup,
-            ]}
-          >
-            <Text style={[styles.messageText, styles.finnyMessageText]}>
-              {messageText.split("\n").map((line, lineIdx) => (
-                <React.Fragment key={lineIdx}>
-                  {lineIdx > 0 && <Text>{"\n"}</Text>}
-                  <Text onTextLayout={lineIdx === 0 ? onTextLayout : undefined}>
-                    {line.split(/(\*\*[^*]+\*\*)/).map((chunk, idx) => {
-                      if (chunk.startsWith("**") && chunk.endsWith("**")) {
-                        return (
-                          <Text key={idx} style={styles.boldText}>
-                            {parseTextWithLinks(
-                              chunk.slice(2, -2),
-                              styles.boldText
-                            )}
-                          </Text>
-                        );
-                      }
-                      return parseTextWithLinks(chunk, [
-                        styles.messageText,
-                        styles.finnyMessageText,
-                      ]);
-                    })}
-                  </Text>
-                </React.Fragment>
-              ))}
-            </Text>
-          </LinearGradient>
-          {/* Tail only if last in group */}
-          {isLastInGroup && <BubbleTail side="left" color={finnyTailColor} />}
-        </View>
-      </Animated.View>
-    </Animated.View>
-  );
-};
+);
 
 const styles = StyleSheet.create({
   messageContainer: {

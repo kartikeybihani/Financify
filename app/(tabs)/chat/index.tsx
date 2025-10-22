@@ -191,19 +191,22 @@ export default function ChatScreen() {
   // FlatList key extractor
   const keyExtractor = useCallback((item: any) => item.id, []);
 
-  // Estimated item size for better performance
+  // Optimized item size calculation for better performance
   const getItemLayout = useCallback((data: any, index: number) => {
     const item = data?.[index];
-    let estimatedHeight = 60; // Default message height
+    let estimatedHeight = 80; // Increased default for better estimation
 
     if (item?.type === "nudges") {
-      estimatedHeight = 120; // Nudge grid height
+      estimatedHeight = 140; // Nudge grid height
     } else if (item?.type === "typing") {
-      estimatedHeight = 60; // Typing indicator height (increased for progress messages)
+      estimatedHeight = 80; // Typing indicator height
     } else if (item?.type === "message") {
-      // Estimate based on message text length
+      // More accurate estimation based on text length and actions
       const textLength = item.message?.text?.length || 0;
-      estimatedHeight = Math.max(60, Math.min(200, textLength * 0.5 + 60));
+      const hasActions = item.message?.actions?.length > 0;
+      const baseHeight = hasActions ? 100 : 60;
+      const textHeight = Math.max(40, Math.min(300, textLength * 0.4 + 40));
+      estimatedHeight = baseHeight + textHeight;
     }
 
     return {
@@ -416,7 +419,36 @@ export default function ChatScreen() {
     });
   }, []);
 
-  // FlatList render item function
+  // Memoized action handler to prevent recreation
+  const handleMessageAction = useCallback(
+    async (action: string) => {
+      console.log("🎯 [ACTION] Button clicked:", action);
+
+      // Handle cancel actions immediately without API calls
+      if (action === "cancel" || action === "cancel_goal") {
+        pushChat(
+          "finny",
+          "No worries! Let me know if you have any other questions. 😊"
+        );
+        return;
+      }
+
+      // Handle other goal flow actions silently (don't show action string in chat)
+      if (
+        action === "confirm" ||
+        action === "confirm_create_goal" ||
+        action === "start_over_goal"
+      ) {
+        setIsTyping(true);
+        // Send action to backend without displaying it as user message
+        await handleUserMessage(action);
+        setIsTyping(false);
+      }
+    },
+    [pushChat, handleUserMessage, setIsTyping]
+  );
+
+  // Optimized FlatList render item function
   const renderItem: ListRenderItem<any> = useCallback(
     ({ item, index }) => {
       if (item.type === "nudges") {
@@ -429,11 +461,12 @@ export default function ChatScreen() {
 
       if (item.type === "message") {
         const { message } = item;
-        const prev =
+        // Memoize sender calculations to avoid repeated array access
+        const prevSender =
           index > 0 && (flatListData as any)[index - 1]?.type === "message"
             ? (flatListData as any)[index - 1]?.message?.sender
             : null;
-        const next =
+        const nextSender =
           index < flatListData.length - 1 &&
           (flatListData as any)[index + 1]?.type === "message"
             ? (flatListData as any)[index + 1]?.message?.sender
@@ -442,40 +475,17 @@ export default function ChatScreen() {
         return (
           <ChatMessageComponent
             message={message}
-            showSender={message.sender === "finny" && prev !== "finny"}
-            prevSender={prev as any}
-            nextSender={next as any}
-            onAction={async (action) => {
-              console.log("🎯 [ACTION] Button clicked:", action);
-
-              // Handle cancel actions immediately without API calls
-              if (action === "cancel" || action === "cancel_goal") {
-                pushChat(
-                  "finny",
-                  "No worries! Let me know if you have any other questions. 😊"
-                );
-                return;
-              }
-
-              // Handle other goal flow actions silently (don't show action string in chat)
-              if (
-                action === "confirm" ||
-                action === "confirm_create_goal" ||
-                action === "start_over_goal"
-              ) {
-                setIsTyping(true);
-                // Send action to backend without displaying it as user message
-                await handleUserMessage(action);
-                setIsTyping(false);
-              }
-            }}
+            showSender={message.sender === "finny" && prevSender !== "finny"}
+            prevSender={prevSender as any}
+            nextSender={nextSender as any}
+            onAction={handleMessageAction}
           />
         );
       }
 
       return null;
     },
-    [handleSend, chatMessages]
+    [handleSend, progressStatus, flatListData, handleMessageAction]
   );
 
   return (
@@ -556,10 +566,10 @@ export default function ChatScreen() {
                     responsiveHeight(8),
                 }}
                 removeClippedSubviews={true}
-                maxToRenderPerBatch={10}
-                windowSize={10}
-                initialNumToRender={20}
-                updateCellsBatchingPeriod={100}
+                maxToRenderPerBatch={5} // Reduced for better performance
+                windowSize={5} // Reduced window size
+                initialNumToRender={10} // Reduced initial render
+                updateCellsBatchingPeriod={50} // Faster batching
                 // Additional performance optimizations
                 legacyImplementation={false}
                 disableVirtualization={false}
@@ -568,6 +578,12 @@ export default function ChatScreen() {
                 keyboardShouldPersistTaps="handled"
                 keyboardDismissMode="interactive"
                 showsVerticalScrollIndicator={false}
+                // Performance optimizations
+                maintainVisibleContentPosition={{
+                  minIndexForVisible: 0,
+                  autoscrollToTopThreshold: 10,
+                }}
+                getItemLayout={getItemLayout}
               />
 
               {showScrollButton && (
