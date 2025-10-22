@@ -4080,6 +4080,14 @@ async function handlePrebuildContext(userId) {
     // Build base context pack first (highest priority)
     console.log("📦 [PREBUILD] Building base context pack...");
     const baseContext = await buildContextPacks(userId, ["summary_min"], {});
+    console.log("🔍 [PREBUILD] Base context result:", {
+      hasBaseContext: !!baseContext,
+      hasPacks: !!baseContext?.packs,
+      hasSummaryMin: !!baseContext?.packs?.summary_min,
+      summaryMinKeys: baseContext?.packs?.summary_min
+        ? Object.keys(baseContext.packs.summary_min)
+        : [],
+    });
 
     // Cache base context for 5 minutes
     if (baseContext && baseContext.packs && baseContext.packs.summary_min) {
@@ -4099,6 +4107,11 @@ async function handlePrebuildContext(userId) {
       });
     } else {
       console.log("❌ [PREBUILD] Base context failed to build or cache");
+      console.log("🔍 [PREBUILD] Debug info:", {
+        baseContext: baseContext,
+        packs: baseContext?.packs,
+        summaryMin: baseContext?.packs?.summary_min,
+      });
     }
 
     // Build other context packs in background (after base is ready)
@@ -4237,6 +4250,7 @@ async function handlePrebuildContext(userId) {
       message: "Context pre-built successfully",
       baseContextReady: true,
       backgroundContexts: [
+        "summary_min",
         "invest_holdings",
         "goals_overview",
         "cashflow_monthly",
