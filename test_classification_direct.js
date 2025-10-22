@@ -386,12 +386,27 @@ function financialConceptHeuristic(text) {
     };
   }
 
-  // Strong web search indicators (only for financial topics)
-  if (detectWebSearchNeeded(text)) {
+  // Investment advice queries - should NOT need web search
+  const investmentAdvicePatterns = [
+    "investment advice",
+    "investing advice",
+    "investment recommendations",
+    "what should i invest in",
+    "investment suggestions",
+    "portfolio advice",
+    "investment guidance",
+    "investment help",
+    "investing help",
+    "what to invest in",
+    "investment tips",
+    "investing tips",
+  ];
+
+  if (investmentAdvicePatterns.some((pattern) => lower.includes(pattern))) {
     return {
       intent: "ask_personalized",
-      needs_web: true,
-      needs_user_data: false,
+      needs_web: false,
+      needs_user_data: true,
       state: null,
       entities: [],
       confidence: 0.9,
@@ -410,7 +425,10 @@ function financialConceptHeuristic(text) {
     lower.includes("account") ||
     lower.includes("my money") ||
     lower.includes("my financial") ||
-    lower.includes("my spending")
+    lower.includes("my spending") ||
+    lower.includes("my goals") ||
+    lower.includes("current goals") ||
+    lower.includes("what are my goals")
   ) {
     return {
       intent: "ask_personalized",
@@ -442,11 +460,109 @@ function financialConceptHeuristic(text) {
     };
   }
 
+  // Strong web search indicators (only for financial topics)
+  if (detectWebSearchNeeded(text)) {
+    return {
+      intent: "ask_personalized",
+      needs_web: true,
+      needs_user_data: false,
+      state: null,
+      entities: [],
+      confidence: 0.9,
+      heuristic: true,
+    };
+  }
+
   return null;
 }
 
-// Enhanced classification function with improved prompting
-async function handleClassify(message, context) {
+// Goal detection function from production
+function detectGoalIntent(message, conversationContext) {
+  const lower = message.toLowerCase();
+
+  // Check if there's an active goal flow in session state
+  const activeGoalFlow = conversationContext?.goal_flow;
+  const isContinuingGoalFlow = activeGoalFlow && activeGoalFlow.active;
+
+  // 1. EXPLICIT goal creation patterns (high confidence)
+  const explicitGoalPatterns = [
+    /\b(?:create|set|add|make)\s+(?:a\s+)?(?:new\s+)?goal/i,
+    /\bgoal\s+(?:for|to)\s+(?:save|buy)/i,
+    /\bsave\s+\$?\d+[k]?\s+(?:for|toward)/i, // "save $5000 for"
+    /\btarget\s+(?:amount|of)\s+\$?\d+/i, // "target amount $5000"
+  ];
+
+  if (explicitGoalPatterns.some((p) => p.test(message))) {
+    console.log("✅ [GOAL] Explicit goal creation detected");
+    return {
+      intent: "goal_conversation",
+      confidence: 0.95,
+      reason: "explicit_creation",
+    };
+  }
+
+  // 1.5. If there's an active goal flow, any response is likely goal-related
+  if (isContinuingGoalFlow) {
+    // Check if it's clearly off-topic
+    const offTopicKeywords = ["weather"];
+    const isOffTopic = offTopicKeywords.some((keyword) =>
+      lower.includes(keyword)
+    );
+
+    if (!isOffTopic) {
+      console.log("✅ [GOAL] Continuing active goal flow detected");
+      return {
+        intent: "goal_conversation",
+        confidence: 0.85,
+        reason: "continuing_goal_flow",
+      };
+    }
+  }
+
+  // 2. INQUIRY about existing goals (should be ask_personalized, NOT goal_conversation)
+  const goalInquiryPatterns = [
+    /\b(?:what are|show|list|tell me|display)\s+(?:my\s+)?(?:current\s+)?goals?\b/i,
+    /\bam\s+i\s+on\s+track.*goals?\b/i,
+    /\bgoal\s+(?:progress|status|update)/i,
+    /\bhow.*doing.*goals?\b/i,
+  ];
+
+  if (goalInquiryPatterns.some((p) => p.test(message))) {
+    console.log(
+      "✅ [GOAL] Goal inquiry detected → routing to ask_personalized"
+    );
+    return {
+      intent: "ask_personalized",
+      confidence: 0.9,
+      reason: "goal_inquiry",
+    };
+  }
+
+  // 3. NOT goal creation - general financial queries
+  const nonGoalPatterns = [
+    /\bcan\s+i\s+afford/i, // Affordability check
+    /\bshould\s+i\s+buy/i, // Purchase advice
+    /\bwhat.*(?:spend|spent)/i, // Spending analysis
+    /\bhow\s+much.*(?:spend|spent)/i, // Spending questions
+    /\bwhere.*(?:money|spending)/i, // Transaction queries
+    /\bshow.*(?:transactions|spending)/i, // Transaction display
+  ];
+
+  if (nonGoalPatterns.some((p) => p.test(message))) {
+    console.log("✅ [GOAL] Non-goal financial query detected");
+    return {
+      intent: "ask_personalized",
+      confidence: 0.9,
+      reason: "non_goal_query",
+    };
+  }
+
+  // Default: no strong signal, let LLM decide
+  return null;
+}
+
+// Production classification function from finny.js
+async function handleClassify(message, context, conversationContext = null) {
   console.log("🔍 [TEST] Starting classification for message:", message);
   const startTime = Date.now();
 
@@ -467,15 +583,80 @@ async function handleClassify(message, context) {
   // Check cache first
   const cachedResult = getCachedClassification(text);
   if (cachedResult) {
-    console.log(
-      `⚡ [TEST] Using cached classification result (${
-        Date.now() - startTime
-      }ms)`
-    );
-    return cachedResult;
+    // Validate cached result structure before using it
+    if (
+      cachedResult.intent &&
+      typeof cachedResult.intent === "string" &&
+      cachedResult.needs_web !== undefined &&
+      cachedResult.needs_user_data !== undefined
+    ) {
+      console.log(
+        `⚡ [TEST] Using cached classification result (${
+          Date.now() - startTime
+        }ms)`
+      );
+      return cachedResult;
+    } else {
+      console.log(
+        "⚠️ [TEST] Cached classification is malformed, invalidating cache"
+      );
+      // Clear the malformed cached entry
+      const key = generateClassificationCacheKey(text);
+      classificationCache.delete(key);
+      console.log(
+        "✅ [TEST] Malformed cache entry cleared, proceeding with fresh classification"
+      );
+    }
   }
 
-  // Check for off-topic first (highest priority)
+  // Check for goal intent (before LLM call for efficiency)
+  const goalDetection = detectGoalIntent(text, context?.conversation_context);
+  if (goalDetection) {
+    console.log(`✅ [TEST] Goal detection heuristic: ${goalDetection.reason}`);
+    const result = {
+      intent: goalDetection.intent,
+      needs_web: false,
+      needs_user_data: true,
+      state: null,
+      entities: [],
+      confidence: goalDetection.confidence,
+      heuristic: true,
+      reason: goalDetection.reason,
+    };
+    setCachedClassification(text, result);
+    return result;
+  }
+
+  // Positive heuristic for common financial concept questions (BEFORE off-topic detection)
+  const heuristic = financialConceptHeuristic(text);
+  if (heuristic) {
+    // If both personal data and web recency patterns, set both flags
+    const needsWebToo = detectWebSearchNeeded(text) === true;
+    const merged = needsWebToo ? { ...heuristic, needs_web: true } : heuristic;
+
+    console.log("✅ [TEST] Heuristic classified (with combined flags check)");
+    setCachedClassification(text, merged);
+    return merged;
+  }
+
+  // Enhanced heuristic for web search detection
+  const webSearchHeuristic = detectWebSearchNeeded(text);
+  if (webSearchHeuristic) {
+    console.log("✅ [TEST] Heuristic detected web search needed");
+    const result = {
+      intent: "ask_personalized",
+      needs_web: true,
+      needs_user_data: false,
+      state: null,
+      entities: [],
+      confidence: 0.9,
+      heuristic: true,
+    };
+    setCachedClassification(text, result);
+    return result;
+  }
+
+  // Check for off-topic LAST (after financial heuristics)
   const offTopicHeuristic = detectOffTopic(text);
   if (offTopicHeuristic) {
     console.log("✅ [TEST] Heuristic detected off-topic query");
@@ -492,18 +673,8 @@ async function handleClassify(message, context) {
     return result;
   }
 
-  // Positive heuristic for common financial concept questions (with combined flags)
-  const heuristic = financialConceptHeuristic(text);
-  if (heuristic) {
-    const needsWebToo = detectWebSearchNeeded(text) === true;
-    const merged = needsWebToo ? { ...heuristic, needs_web: true } : heuristic;
-    console.log("✅ [TEST] Heuristic classified (with combined flags check)");
-    setCachedClassification(text, merged);
-    return merged;
-  }
-
   try {
-    // Create a timeout promise that rejects after 8 seconds
+    // Create a timeout promise that rejects after 8 seconds (increased for stability)
     const timeoutPromise = new Promise((_, reject) => {
       setTimeout(
         () => reject(new Error("Classification timeout after 8 seconds")),
@@ -511,7 +682,7 @@ async function handleClassify(message, context) {
       );
     });
 
-    // Create the fetch promise with ENHANCED prompting
+    // Create the fetch promise
     const fetchPromise = fetch(
       "https://openrouter.ai/api/v1/chat/completions",
       {
@@ -523,22 +694,32 @@ async function handleClassify(message, context) {
         body: JSON.stringify({
           model: OPENROUTER_MODEL,
           temperature: 0.1,
-          max_tokens: 300,
-          top_p: 0.9,
+          max_tokens: 350, // Allow slightly longer responses for stability
+          top_p: 0.9, // Add top_p for better stability
           messages: [
             {
               role: "system",
               content: [
-                "You are Financify's intent router. Classify the user message into exactly one intent and set flags. Never answer off-topic (e.g., weather, ethics, feelings, philosophy, AI meta, culture).",
+                "You are Financify's intent router. Classify the user message into exactly one intent and set flags.",
                 "",
                 "Intents:",
-                "- ask_personalized: user’s finances (spending, accounts, goals, investments)",
+                "- ask_personalized: user's finances (spending, accounts, goals, investments)",
                 "- goal_conversation: saving/targets/feasibility conversations",
                 "- off_topic: non-financial (weather, cooking, movies, sports, tech support)",
                 "",
                 "Flag rules (can combine):",
                 "- needs_user_data=true when the answer requires the user's actual data (spend, net worth, accounts, goals, personal recommendations)",
                 "- needs_web=true when the answer requires current/2024-2025 info (limits, rates, brackets, market/news, card offers)",
+                "",
+                "CRITICAL: Investment advice queries should NEVER need web search:",
+                "- 'Investment advice' → needs_web:false, needs_user_data:true",
+                "- 'What should I invest in?' → needs_web:false, needs_user_data:true",
+                "- 'Portfolio advice' → needs_web:false, needs_user_data:true",
+                "- 'Investment recommendations' → needs_web:false, needs_user_data:true",
+                "- 'Analyze my investment strategy' → needs_web:false, needs_user_data:true",
+                "",
+                "CRITICAL: Goal queries should NEVER need web search:",
+                "- 'Show my goals/Current goals' → needs_web:false, needs_user_data:true",
                 "",
                 "Examples:",
                 '"What is the Roth IRA limit for 2025?" → {intent:"ask_personalized", needs_web:true, needs_user_data:false}',
@@ -547,12 +728,6 @@ async function handleClassify(message, context) {
                 '"Which credit card should I get?" → {intent:"ask_personalized", needs_web:true, needs_user_data:true}',
                 '"Rent vs buy in Phoenix at 7% for me" → {intent:"ask_personalized", needs_web:true, needs_user_data:true, state:"AZ"}',
                 '"What\'s the weather?" → {intent:"off_topic", needs_web:false, needs_user_data:false}',
-                '"How\'s the weather looking today?" → {intent:"off_topic", needs_web:false, needs_user_data:false}',
-                '"Is it ever acceptable to lie?" → {intent:"off_topic", needs_web:false, needs_user_data:false}',
-                '"I\'m feeling really down today; what should I do?" → {intent:"off_topic", needs_web:false, needs_user_data:false}',
-                '"What is the meaning of life?" → {intent:"off_topic", needs_web:false, needs_user_data:false}',
-                '"Do you know that you\'re an AI?" → {intent:"off_topic", needs_web:false, needs_user_data:false}',
-                '"What are the best practices for greeting someone in Japan?" → {intent:"off_topic", needs_web:false, needs_user_data:false}',
                 "",
                 "Return ONLY JSON (no code fences, no commentary):",
                 '{"intent":"ask_personalized|goal_conversation|off_topic","needs_web":true|false,"needs_user_data":true|false,"state":null|"AZ","entities":[],"confidence":0.0-1.0}',
@@ -583,7 +758,6 @@ async function handleClassify(message, context) {
     const data = await r.json();
     console.log("🔍 [TEST] Classification data:", data);
     const content = data.choices?.[0]?.message?.content;
-    console.log("🔍 [TEST] Raw content:", content);
     if (!content) {
       console.log("❌ [TEST] No content in response");
       throw new Error("No content");
@@ -602,59 +776,60 @@ async function handleClassify(message, context) {
     let out;
     try {
       out = JSON.parse(cleanContent);
+
+      // VALIDATION: Check if the parsed result has the correct structure
+      // If 'intent' field is missing or has wrong type, treat as malformed
+      if (!out.intent || typeof out.intent !== "string") {
+        console.log(
+          "❌ [TEST] Malformed classification result - missing or invalid 'intent' field"
+        );
+        console.log("❌ [TEST] Malformed structure:", out);
+        throw new Error("Invalid classification structure");
+      }
+
+      // Check if required fields exist
+      if (out.needs_web === undefined || out.needs_user_data === undefined) {
+        console.log(
+          "❌ [TEST] Malformed classification result - missing required fields"
+        );
+        console.log("❌ [TEST] Malformed structure:", out);
+        throw new Error("Missing required classification fields");
+      }
     } catch (parseError) {
-      console.log("❌ [TEST] JSON parse error, trying to fix incomplete JSON");
+      console.log(
+        "❌ [TEST] JSON parse/validation error, using fallback classification"
+      );
+      console.log("❌ [TEST] Error:", parseError.message);
       console.log("❌ [TEST] Raw content was:", cleanContent);
 
-      // Try to extract intent from malformed JSON
-      const intentMatch = cleanContent.match(/"intent"\s*:\s*"([^"]+)"/);
-      const needsWebMatch = cleanContent.match(
-        /"needs_web"\s*:\s*(true|false)/
-      );
-      const needsUserDataMatch = cleanContent.match(
-        /"needs_user_data"\s*:\s*(true|false)/
-      );
-      const confidenceMatch = cleanContent.match(
-        /"confidence"\s*:\s*([0-9.]+)/
-      );
-
-      if (intentMatch) {
-        console.log("✅ [TEST] Extracted intent from malformed JSON");
+      // Use goal detection fallback instead of trying to parse malformed JSON
+      const goalDetection = detectGoalIntent(message, conversationContext);
+      if (goalDetection && goalDetection.intent === "goal_conversation") {
+        console.log("✅ [TEST] Using goal detection fallback");
         out = {
-          intent: intentMatch[1],
-          needs_web: needsWebMatch ? needsWebMatch[1] === "true" : false,
-          needs_user_data: needsUserDataMatch
-            ? needsUserDataMatch[1] === "true"
-            : false,
+          intent: "goal_conversation",
+          needs_web: false,
+          needs_user_data: true,
           state: null,
           entities: [],
-          confidence: confidenceMatch ? parseFloat(confidenceMatch[1]) : 0.8,
-          malformed_json: true,
+          confidence: goalDetection.confidence,
+          fallback: true,
+          detection_reason: goalDetection.reason,
         };
       } else {
-        // Try to extract from the weird format we're seeing
-        const weirdIntentMatch = cleanContent.match(/ask_personalized/);
-        const weirdNeedsWebMatch = cleanContent.match(/false/);
-        const weirdNeedsUserDataMatch = cleanContent.match(/true/);
-        const weirdConfidenceMatch = cleanContent.match(/0\.95/);
-
-        if (weirdIntentMatch) {
-          console.log("✅ [TEST] Extracted from weird malformed JSON format");
-          out = {
-            intent: "ask_personalized",
-            needs_web: weirdNeedsWebMatch ? false : false,
-            needs_user_data: weirdNeedsUserDataMatch ? true : false,
-            state: null,
-            entities: [],
-            confidence: weirdConfidenceMatch ? 0.95 : 0.8,
-            malformed_json: true,
-          };
-        } else {
-          throw new Error("Malformed JSON response");
-        }
+        // Default fallback
+        out = {
+          intent: "ask_personalized",
+          needs_web: false,
+          needs_user_data: true,
+          state: null,
+          entities: [],
+          confidence: 0.8,
+          fallback: true,
+        };
       }
     }
-    console.log("🔍 [TEST] Parsed classification result:", out);
+    console.log("🔍 [TEST] Validated classification result:", out);
 
     // Defensive post-process so your app never crashes
     if (!out.state || typeof out.state !== "string") out.state = null;
@@ -707,25 +882,25 @@ async function handleClassify(message, context) {
       };
     }
 
-    // 3. Goal conversation detection
-    const lowerMessage = message.toLowerCase();
-    if (
-      lowerMessage.includes("save") &&
-      (lowerMessage.includes("goal") ||
-        lowerMessage.includes("target") ||
-        lowerMessage.includes("plan") ||
-        lowerMessage.includes("want"))
-    ) {
-      console.log("✅ [TEST] Using goal conversation heuristic fallback");
+    // 3. Goal conversation detection (using tightened detection with context)
+    const goalDetection = detectGoalIntent(
+      message,
+      context?.conversation_context
+    );
+    if (goalDetection && goalDetection.intent === "goal_conversation") {
+      console.log(
+        `✅ [TEST] Using goal conversation heuristic fallback (reason: ${goalDetection.reason})`
+      );
       return {
         intent: "goal_conversation",
         needs_web: false,
         needs_user_data: true,
         state: null,
         entities: [],
-        confidence: 0.8,
+        confidence: goalDetection.confidence,
         fallback: true,
         timeout_fallback: e?.message?.includes("timeout") || false,
+        detection_reason: goalDetection.reason,
       };
     }
 

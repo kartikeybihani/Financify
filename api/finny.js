@@ -3675,6 +3675,71 @@ function financialConceptHeuristic(raw) {
   const text = (raw || "").toLowerCase();
   if (!text) return null;
 
+  // Investment advice queries - should NOT need web search
+  const investmentAdvicePatterns = [
+    "investment advice",
+    "investing advice",
+    "investment recommendations",
+    "what should i invest in",
+    "investment suggestions",
+    "portfolio advice",
+    "investment guidance",
+    "investment help",
+    "investing help",
+    "what to invest in",
+    "investment tips",
+    "investing tips",
+  ];
+
+  if (investmentAdvicePatterns.some((pattern) => text.includes(pattern))) {
+    return {
+      intent: "ask_personalized",
+      needs_web: false,
+      needs_user_data: true,
+      state: null,
+      entities: [],
+      confidence: 0.9,
+      heuristic: true,
+    };
+  }
+
+  // Personal financial data queries - should NOT need web search
+  const personalFinancialPatterns = [
+    "my net worth",
+    "net worth",
+    "my spend",
+    "my spending",
+    "my transaction",
+    "my balance",
+    "my account",
+    "my money",
+    "my financial",
+    "how much did i",
+    "what did i spend",
+    "my expenses",
+    "my income",
+    "my assets",
+    "my goals",
+    "current goals",
+    "what are my goals",
+  ];
+
+  const isPersonalQuery = personalFinancialPatterns.some((pattern) =>
+    text.includes(pattern)
+  );
+
+  if (isPersonalQuery) {
+    return {
+      intent: "ask_personalized",
+      needs_web: false,
+      needs_user_data: true,
+      state: null,
+      entities: [],
+      confidence: 0.9,
+      heuristic: true,
+    };
+  }
+
   // If contains these finance keywords, treat as in-scope concept unless it's about app/tech
   const financeKeywords = [
     "credit",
@@ -3720,28 +3785,6 @@ function financialConceptHeuristic(raw) {
       text.includes("between"));
 
   if (vsOrDifference || hasFinanceKeyword) {
-    // Check if it's a personal financial query that needs user data
-    const personalFinancialPatterns = [
-      "my net worth",
-      "net worth",
-      "my spend",
-      "my spending",
-      "my transaction",
-      "my balance",
-      "my account",
-      "my money",
-      "my financial",
-      "how much did i",
-      "what did i spend",
-      "my expenses",
-      "my income",
-      "my assets",
-    ];
-
-    const isPersonalQuery = personalFinancialPatterns.some((pattern) =>
-      text.includes(pattern)
-    );
-
     // Classify based on whether it's personal or general
     return {
       intent: "ask_personalized",
@@ -4444,13 +4487,23 @@ async function handleClassify(message, context, conversationContext = null) {
                 "You are Financify's intent router. Classify the user message into exactly one intent and set flags.",
                 "",
                 "Intents:",
-                "- ask_personalized: user’s finances (spending, accounts, goals, investments)",
+                "- ask_personalized: user's finances (spending, accounts, goals, investments)",
                 "- goal_conversation: saving/targets/feasibility conversations",
                 "- off_topic: non-financial (weather, cooking, movies, sports, tech support)",
                 "",
                 "Flag rules (can combine):",
                 "- needs_user_data=true when the answer requires the user's actual data (spend, net worth, accounts, goals, personal recommendations)",
                 "- needs_web=true when the answer requires current/2024-2025 info (limits, rates, brackets, market/news, card offers)",
+                "",
+                "CRITICAL: Investment advice queries should NEVER need web search:",
+                "- 'Investment advice' → needs_web:false, needs_user_data:true",
+                "- 'What should I invest in?' → needs_web:false, needs_user_data:true",
+                "- 'Portfolio advice' → needs_web:false, needs_user_data:true",
+                "- 'Investment recommendations' → needs_web:false, needs_user_data:true",
+                "- 'Analyze my investment strategy' → needs_web:false, needs_user_data:true",
+                "",
+                "CRITICAL: Goal queries should NEVER need web search:",
+                "- 'Show my goals/Current goals' → needs_web:false, needs_user_data:true",
                 "",
                 "Examples:",
                 '"What is the Roth IRA limit for 2025?" → {intent:"ask_personalized", needs_web:true, needs_user_data:false}',
@@ -4459,7 +4512,6 @@ async function handleClassify(message, context, conversationContext = null) {
                 '"Which credit card should I get?" → {intent:"ask_personalized", needs_web:true, needs_user_data:true}',
                 '"Rent vs buy in Phoenix at 7% for me" → {intent:"ask_personalized", needs_web:true, needs_user_data:true, state:"AZ"}',
                 '"What\'s the weather?" → {intent:"off_topic", needs_web:false, needs_user_data:false}',
-                'Recent expenses/transactions → {intent:"ask_personalized", needs_web:false, needs_user_data:true}',
                 "",
                 "Return ONLY JSON (no code fences, no commentary):",
                 '{"intent":"ask_personalized|goal_conversation|off_topic","needs_web":true|false,"needs_user_data":true|false,"state":null|"AZ","entities":[],"confidence":0.0-1.0}',
