@@ -5105,7 +5105,7 @@ async function planStockRequest(message) {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: SMALLER_MODEL,
+        model: OPENROUTER_MODEL,
         temperature: 0.1,
         messages: [
           {
@@ -5169,9 +5169,11 @@ async function planStockRequest(message) {
     });
 
     if (!r.ok) {
+      const errorText = await r.text();
       console.error(
         `❌ [STOCK_PLANNER] HTTP Error: ${r.status} ${r.statusText}`
       );
+      console.error(`❌ [STOCK_PLANNER] Error details:`, errorText);
       return null;
     }
 
