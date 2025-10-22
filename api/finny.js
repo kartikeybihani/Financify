@@ -4298,6 +4298,7 @@ async function handleClassify(message, context, conversationContext = null) {
                 '"Which credit card should I get?" → {intent:"ask_personalized", needs_web:true, needs_user_data:true}',
                 '"Rent vs buy in Phoenix at 7% for me" → {intent:"ask_personalized", needs_web:true, needs_user_data:true, state:"AZ"}',
                 '"What\'s the weather?" → {intent:"off_topic", needs_web:false, needs_user_data:false}',
+                'Recent expenses/transactions → {intent:"ask_personalized", needs_web:false, needs_user_data:true}',
                 "",
                 "Return ONLY JSON (no code fences, no commentary):",
                 '{"intent":"ask_personalized|goal_conversation|off_topic","needs_web":true|false,"needs_user_data":true|false,"state":null|"AZ","entities":[],"confidence":0.0-1.0}',
