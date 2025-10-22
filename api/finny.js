@@ -198,16 +198,37 @@ async function setPersistentCache(dataType, userId, data, params = {}) {
   }
 }
 
-// Cache TTLs for different data types (in milliseconds)
+// OPTIMIZED: Unified cache TTL strategy for better performance
 const CACHE_TTL = {
+  // Fast-changing data (5 minutes) - in-memory priority
   financial_summary: 5 * 60 * 1000, // 5 minutes
-  summary_min: 15 * 60 * 1000, // 15 minutes
-  spend_data: 30 * 60 * 1000, // 30 minutes
-  investments_all: 6 * 60 * 60 * 1000, // 6 hours consolidated investments
-  goals_overview: 60 * 60 * 1000, // 60 minutes
-  cashflow_monthly: 30 * 60 * 1000, // 30 minutes
-  net_worth: 10 * 60 * 1000, // 10 minutes
+  summary_min: 5 * 60 * 1000, // 5 minutes (reduced from 15)
+  net_worth: 5 * 60 * 1000, // 5 minutes (reduced from 10)
+
+  // Medium-changing data (15 minutes)
+  spend_data: 15 * 60 * 1000, // 15 minutes (reduced from 30)
+  goals_overview: 15 * 60 * 1000, // 15 minutes (reduced from 60)
+  cashflow_monthly: 15 * 60 * 1000, // 15 minutes (reduced from 30)
+
+  // Slow-changing data (30-60 minutes)
+  investments_all: 60 * 60 * 1000, // 1 hour (reduced from 6 hours)
   category_transactions: 30 * 60 * 1000, // 30 minutes
+};
+
+// Cache strategy configuration
+const CACHE_STRATEGY = {
+  // In-memory cache settings
+  in_memory: {
+    max_size: 1000, // Maximum number of entries
+    cleanup_interval: 10 * 60 * 1000, // Cleanup every 10 minutes
+    ttl_multiplier: 0.5, // In-memory TTL is 50% of persistent TTL
+  },
+
+  // Persistent cache settings
+  persistent: {
+    cleanup_interval: 30 * 60 * 1000, // Cleanup every 30 minutes
+    batch_cleanup_size: 100, // Clean up 100 expired entries at a time
+  },
 };
 
 // Generate a cache key for classification
@@ -367,20 +388,192 @@ async function setCachedUserData(dataType, userId, data, params = {}) {
     `💾 [DATA_CACHE] Cached ${dataType} (${key}) - expires in ${ttlMinutes} minutes`
   );
 
-  // Clean up expired entries periodically (every 50 cache writes)
-  if (dataCache.size % 50 === 0) {
-    const now = Date.now();
-    let cleaned = 0;
-    for (const [key, value] of dataCache.entries()) {
-      if (now >= value.expires_at) {
-        dataCache.delete(key);
-        cleaned++;
-      }
-    }
-    if (cleaned > 0) {
-      console.log(`🧹 [DATA_CACHE] Cleaned up ${cleaned} expired entries`);
+  // Trigger cleanup if cache is getting large
+  if (dataCache.size > CACHE_STRATEGY.in_memory.max_size) {
+    console.log(`🧹 [CACHE] Cache size exceeded limit, triggering cleanup`);
+    await cleanupInMemoryCache();
+  }
+}
+
+// ===== CACHE CLEANUP & OPTIMIZATION FUNCTIONS =====
+
+// Clean up expired in-memory cache entries
+async function cleanupInMemoryCache() {
+  const now = Date.now();
+  let cleaned = 0;
+
+  for (const [key, value] of dataCache.entries()) {
+    if (now >= value.expires_at) {
+      dataCache.delete(key);
+      cleaned++;
     }
   }
+
+  if (cleaned > 0) {
+    console.log(`🧹 [CACHE] Cleaned up ${cleaned} expired in-memory entries`);
+  }
+
+  return cleaned;
+}
+
+// Clean up expired Supabase cache entries
+async function cleanupSupabaseCache() {
+  try {
+    const { error, count } = await supabase
+      .from("context_cache")
+      .delete()
+      .lt("expires_at", new Date().toISOString())
+      .select("id", { count: "exact" });
+
+    if (error) {
+      console.error("❌ [CACHE] Error cleaning Supabase cache:", error);
+      return 0;
+    }
+
+    console.log(
+      `🧹 [CACHE] Cleaned up ${count || 0} expired Supabase cache entries`
+    );
+    return count || 0;
+  } catch (error) {
+    console.error("❌ [CACHE] Supabase cleanup failed:", error);
+    return 0;
+  }
+}
+
+// Comprehensive cache cleanup (both in-memory and Supabase)
+async function cleanupAllCaches() {
+  console.log("🧹 [CACHE] Starting comprehensive cache cleanup...");
+
+  const inMemoryCleaned = await cleanupInMemoryCache();
+  const supabaseCleaned = await cleanupSupabaseCache();
+
+  console.log(
+    `✅ [CACHE] Cleanup complete - In-memory: ${inMemoryCleaned}, Supabase: ${supabaseCleaned}`
+  );
+
+  return {
+    inMemoryCleaned,
+    supabaseCleaned,
+    totalCleaned: inMemoryCleaned + supabaseCleaned,
+  };
+}
+
+// Smart cache invalidation for specific user or data type
+async function invalidateUserCache(userId, dataType = null) {
+  let invalidatedCount = 0;
+
+  if (dataType) {
+    // Invalidate specific data type
+    const keyPattern = `${dataType}_${userId}`;
+
+    // Remove from in-memory cache
+    for (const [key, value] of dataCache.entries()) {
+      if (key.startsWith(keyPattern)) {
+        dataCache.delete(key);
+        invalidatedCount++;
+      }
+    }
+
+    // Remove from Supabase cache
+    try {
+      const { error } = await supabase
+        .from("context_cache")
+        .delete()
+        .eq("user_id", userId)
+        .eq("data_type", dataType);
+
+      if (error) {
+        console.error("❌ [CACHE] Error invalidating Supabase cache:", error);
+      }
+    } catch (error) {
+      console.error("❌ [CACHE] Supabase invalidation failed:", error);
+    }
+
+    console.log(`🗑️ [CACHE] Invalidated ${dataType} cache for user ${userId}`);
+  } else {
+    // Invalidate all user data
+    for (const [key, value] of dataCache.entries()) {
+      if (key.includes(userId)) {
+        dataCache.delete(key);
+        invalidatedCount++;
+      }
+    }
+
+    // Remove all user data from Supabase
+    try {
+      const { error } = await supabase
+        .from("context_cache")
+        .delete()
+        .eq("user_id", userId);
+
+      if (error) {
+        console.error("❌ [CACHE] Error invalidating all user cache:", error);
+      }
+    } catch (error) {
+      console.error("❌ [CACHE] Supabase invalidation failed:", error);
+    }
+
+    console.log(`🗑️ [CACHE] Invalidated all cache for user ${userId}`);
+  }
+
+  return invalidatedCount;
+}
+
+// Pre-populate cache for common user data
+async function prePopulateUserCache(userId) {
+  console.log(`🚀 [CACHE] Pre-populating cache for user: ${userId}`);
+
+  const commonNeeds = ["summary_min", "invest_holdings", "goals_overview"];
+  const results = { success: 0, failed: 0 };
+
+  for (const need of commonNeeds) {
+    try {
+      // Check if already cached
+      const cached = await getCachedUserData(need, userId);
+      if (cached) {
+        console.log(`✅ [CACHE] ${need} already cached for user ${userId}`);
+        results.success++;
+        continue;
+      }
+
+      // Build context pack
+      const contextResult = await buildContextPacks(userId, [need], {});
+      if (contextResult && contextResult.packs && contextResult.packs[need]) {
+        console.log(`✅ [CACHE] Pre-populated ${need} for user ${userId}`);
+        results.success++;
+      } else {
+        console.log(
+          `⚠️ [CACHE] Failed to pre-populate ${need} for user ${userId}`
+        );
+        results.failed++;
+      }
+    } catch (error) {
+      console.error(`❌ [CACHE] Error pre-populating ${need}:`, error);
+      results.failed++;
+    }
+  }
+
+  console.log(
+    `📊 [CACHE] Pre-population complete - Success: ${results.success}, Failed: ${results.failed}`
+  );
+  return results;
+}
+
+// Initialize periodic cache cleanup
+function initializeCacheCleanup() {
+  console.log("🔄 [CACHE] Initializing periodic cache cleanup...");
+
+  // In-memory cache cleanup every 10 minutes
+  setInterval(async () => {
+    await cleanupInMemoryCache();
+  }, CACHE_STRATEGY.in_memory.cleanup_interval);
+
+  // Supabase cache cleanup every 30 minutes
+  setInterval(async () => {
+    await cleanupSupabaseCache();
+  }, CACHE_STRATEGY.persistent.cleanup_interval);
+
+  console.log("✅ [CACHE] Periodic cleanup initialized");
 }
 
 // Heuristic pre-pass for quick memory extraction (1ms)
@@ -965,6 +1158,9 @@ async function logConversation(conversationData) {
   }
 }
 
+// Initialize cache cleanup on server start
+initializeCacheCleanup();
+
 export default async function handler(req, res) {
   console.log("🤖 [FINNY] Request received:", req.method);
 
@@ -1051,6 +1247,14 @@ export default async function handler(req, res) {
       console.log(
         "🔍 [CONTEXT DEBUG] First message in chat session - skipping context loading"
       );
+
+      // Pre-populate cache for new chat sessions
+      console.log("🚀 [CACHE] Pre-populating cache for new chat session...");
+      setImmediate(() => {
+        prePopulateUserCache(finalUserId).catch((error) => {
+          console.error("❌ [CACHE] Pre-population failed:", error);
+        });
+      });
     } else {
       conversationContext = existingContext;
       console.log(
@@ -1435,282 +1639,6 @@ async function handleAsk(
   let degraded = false;
 
   try {
-    // 0) If this looks like a stock question, route to conversational stock handler
-    console.log(
-      "🔍 [STOCK_ROUTING] Checking if message looks like stock query:",
-      message
-    );
-    const isStockQuery = looksLikeStockQuery(message);
-    console.log("🔍 [STOCK_ROUTING] Result:", isStockQuery);
-
-    if (isStockQuery) {
-      try {
-        // Get user context for personalization
-        const userId = context?.user_id;
-        if (!userId) {
-          console.log(
-            "❌ [FINNY] No user_id for stock query, falling back to regular flow"
-          );
-          // Fall through to regular ask handler
-        } else {
-          // Load user context for stock queries
-          const userMemory = await loadUserMemory(userId);
-          const userProfile = context.profile || { name: null, age: null };
-
-          // Get investment holdings if available
-          const investmentHoldings = await getCachedUserData(
-            "investments_all",
-            userId
-          );
-
-          let stockData = null;
-          let stockPlan = null;
-
-          // Try deep query first
-          if (looksLikeStockDeepQuery(message)) {
-            console.log(
-              "🔍 [STOCK] Deep query detected, using advanced analysis"
-            );
-            stockPlan = await planStockRequest(message);
-            console.log("🔍 [STOCK] Stock plan result:", stockPlan);
-            const exec = await executeStockPlan(stockPlan || {}, message);
-            console.log("🔍 [STOCK] Execute result:", exec);
-            if (!exec.error && exec.data?.current != null) {
-              stockData = exec;
-            } else {
-              console.log(
-                "🔍 [STOCK] Stock plan failed, falling back to simple query"
-              );
-            }
-          } else {
-            // Simple stock query
-            const stockResponse = await getCachedDataWithFallback(
-              "stock_snapshot",
-              message.toLowerCase().trim(),
-              async () => {
-                const { ticker, queryUsed } = await resolveTickerForQuery(
-                  message
-                );
-                if (!ticker) {
-                  return {
-                    error: "Could not resolve ticker from query",
-                    queryUsed,
-                  };
-                }
-                const snapshot = await fetchStockSnapshot(ticker);
-                return { ...snapshot, ticker, queryUsed };
-              },
-              false
-            );
-
-            const data = stockResponse?.data || stockResponse;
-            if (data && !data.error && data.current) {
-              stockData = data;
-            }
-          }
-
-          if (stockData && stockData.current != null) {
-            // 🎯 MANUAL CONTEXT SETTING FOR STOCK QUERIES
-            // Set conversation context manually to save API calls
-            if (stockData.ticker) {
-              const manualContext = {
-                active_topic: "investment_analysis",
-                last_entity: {
-                  type: "investment",
-                  symbol: stockData.ticker,
-                  action: null,
-                  amount: null,
-                },
-                pending_action: null,
-              };
-
-              // Update conversation context if available
-              if (conversationContext) {
-                Object.assign(conversationContext, manualContext);
-                console.log("🎯 [STOCK] Manual context set:", manualContext);
-              }
-            }
-
-            // Generate conversational stock response
-            const conversationalResponse =
-              await generateConversationalStockResponse(
-                stockData,
-                message,
-                userProfile,
-                userMemory,
-                investmentHoldings,
-                stockPlan
-              );
-
-            const response = {
-              message: cleanResponseFormatting(conversationalResponse),
-              type: "assistant",
-            };
-
-            // Log with enhanced data
-            setImmediate(() =>
-              logConversation({
-                user_message: redactPII(message),
-                finny_response: redactPII(conversationalResponse),
-                timestamp: new Date().toISOString(),
-                user_id: context?.user_id || "unknown",
-                intent: "ask_personalized",
-                entities: [stockData.ticker, stockData.profile?.name].filter(
-                  Boolean
-                ),
-                confidence: 0.95,
-                response_time_ms: Date.now() - startTime,
-                sources_used: [
-                  "finnhub:quote",
-                  "finnhub:profile2",
-                  "finnhub:recommendation",
-                  stockData.priceTarget ? "finnhub:price-target" : null,
-                  stockPlan?.wants?.includes("earnings")
-                    ? "finnhub:earnings"
-                    : null,
-                  stockPlan?.wants?.includes("filings")
-                    ? "finnhub:filings"
-                    : null,
-                  stockPlan?.wants?.includes("insider")
-                    ? "finnhub:insider"
-                    : null,
-                ].filter(Boolean),
-                cached: false,
-                request_id: generateRequestId(),
-                metrics: {
-                  intent: "ask_personalized",
-                  latency_ms: { total: Date.now() - startTime },
-                  tools_used: [
-                    {
-                      name: "finnhub",
-                      latency_ms: Date.now() - startTime,
-                      cache_hit: false,
-                    },
-                    {
-                      name: "llm_conversational",
-                      latency_ms: 0, // Will be set by the function
-                      cache_hit: false,
-                    },
-                  ],
-                  model: OPENROUTER_MODEL,
-                  cache_hits: {},
-                  tokens: null,
-                  result: "success",
-                },
-              })
-            );
-
-            // 🔍 DEBUG: Save conversation context for stock queries
-            console.log("🔍 [STOCK CONTEXT] Saving context for stock query");
-
-            // Extract topic and entity for stock queries
-            console.log("🔍 [STOCK CONTEXT] Detecting topic for stock query");
-            const topicDetection = detectConversationTopic(
-              message,
-              context?.conversationContext // Use the context from the safe context object
-            );
-            const contextMetadata = {
-              active_topic: topicDetection?.topic || "investment_analysis",
-              last_entity: topicDetection?.entity || {
-                type: "investment",
-                symbol: stockData.ticker,
-              },
-              pending_action: topicDetection?.pending_action || null,
-            };
-
-            console.log(
-              "🔍 [STOCK CONTEXT] Topic detection result:",
-              topicDetection
-            );
-            console.log(
-              "🔍 [STOCK CONTEXT] Stock data ticker:",
-              stockData.ticker
-            );
-            console.log(
-              "🔍 [STOCK CONTEXT] Context metadata:",
-              contextMetadata
-            );
-
-            // Save conversation context synchronously
-            if (context?.chat_id) {
-              console.log("🔍 [STOCK CONTEXT] Saving context synchronously");
-              await updateConversationContext(
-                context.user_id,
-                context.chat_id,
-                message,
-                response.message,
-                contextMetadata
-              );
-              console.log("✅ [STOCK CONTEXT] Context saved successfully");
-            }
-
-            return response;
-          } else {
-            // Stock APIs failed, use fallback analysis
-            console.log(
-              "🔄 [FALLBACK] Stock APIs failed, using fallback analysis"
-            );
-            const fallbackResponse = await generateFallbackStockAnalysis(
-              null, // ticker will be extracted from message
-              message,
-              userProfile,
-              userMemory
-            );
-
-            const response = {
-              message: cleanResponseFormatting(fallbackResponse),
-              type: "assistant",
-            };
-
-            // Log fallback usage
-            setImmediate(() =>
-              logConversation({
-                user_message: redactPII(message),
-                finny_response: redactPII(fallbackResponse),
-                timestamp: new Date().toISOString(),
-                user_id: context?.user_id || "unknown",
-                intent: "ask_personalized",
-                entities: [],
-                confidence: 0.7,
-                response_time_ms: Date.now() - startTime,
-                sources_used: ["fallback_analysis"],
-                cached: false,
-                request_id: generateRequestId(),
-                metrics: {
-                  intent: "ask_personalized",
-                  latency_ms: { total: Date.now() - startTime },
-                  tools_used: [
-                    {
-                      name: "fallback_analysis",
-                      latency_ms: Date.now() - startTime,
-                      cache_hit: false,
-                    },
-                  ],
-                  model: OPENROUTER_MODEL,
-                  cache_hits: {},
-                  tokens: null,
-                },
-                context_used: {
-                  user_profile: userProfile,
-                  user_memory: userMemory ? "loaded" : "none",
-                  investment_holdings: investmentHoldings ? "loaded" : "none",
-                  conversation_context: conversationContext ? "loaded" : "none",
-                },
-                fallback_used: true,
-              })
-            );
-
-            return response;
-          }
-        }
-      } catch (e) {
-        console.log(
-          "ℹ️ [FINNY] Conversational stock handler failed, falling back:",
-          e?.message
-        );
-      }
-    }
-
     // 1) Get user_id from context
     const userId = context?.user_id;
 
@@ -1844,6 +1772,273 @@ async function handleAsk(
 
     console.log("📦 [FINNY] Context packs built:", Object.keys(packs));
     console.log("⚠️ [FINNY] Data gaps:", gaps);
+
+    // 3.5) Check if this is a stock query after building context packs
+    console.log(
+      "🔍 [STOCK_ROUTING] Checking if message looks like stock query:",
+      message
+    );
+    const isStockQuery = looksLikeStockQuery(message);
+    console.log("🔍 [STOCK_ROUTING] Result:", isStockQuery);
+
+    if (isStockQuery) {
+      try {
+        // Use the built context packs for stock queries
+        console.log("🔍 [STOCK] Using built context packs for stock analysis");
+        console.log("🔍 [STOCK] Available packs:", Object.keys(packs));
+
+        // Get user context for personalization
+        const userMemory = await loadUserMemory(userId);
+        const userProfile = context.profile || { name: null, age: null };
+
+        // Get investment holdings from context packs if available
+        const investmentHoldings =
+          packs.invest_holdings ||
+          (await getCachedUserData("investments_all", userId));
+
+        let stockData = null;
+        let stockPlan = null;
+
+        // Try deep query first
+        if (looksLikeStockDeepQuery(message)) {
+          console.log(
+            "🔍 [STOCK] Deep query detected, using advanced analysis"
+          );
+          stockPlan = await planStockRequest(message);
+          console.log("🔍 [STOCK] Stock plan result:", stockPlan);
+          const exec = await executeStockPlan(stockPlan || {}, message);
+          console.log("🔍 [STOCK] Execute result:", exec);
+          if (!exec.error && exec.data?.current != null) {
+            stockData = exec;
+          } else {
+            console.log(
+              "🔍 [STOCK] Stock plan failed, falling back to simple query"
+            );
+          }
+        } else {
+          // Simple stock query
+          const stockResponse = await getCachedDataWithFallback(
+            "stock_snapshot",
+            message.toLowerCase().trim(),
+            async () => {
+              const { ticker, queryUsed } = await resolveTickerForQuery(
+                message
+              );
+              if (!ticker) {
+                return {
+                  error: "Could not resolve ticker from query",
+                  queryUsed,
+                };
+              }
+              const snapshot = await fetchStockSnapshot(ticker);
+              return { ...snapshot, ticker, queryUsed };
+            },
+            false
+          );
+
+          const data = stockResponse?.data || stockResponse;
+          if (data && !data.error && data.current) {
+            stockData = data;
+          }
+        }
+
+        if (stockData && stockData.current != null) {
+          // 🎯 MANUAL CONTEXT SETTING FOR STOCK QUERIES
+          // Set conversation context manually to save API calls
+          if (stockData.ticker) {
+            const manualContext = {
+              active_topic: "investment_analysis",
+              last_entity: {
+                type: "investment",
+                symbol: stockData.ticker,
+                action: null,
+                amount: null,
+              },
+              pending_action: null,
+            };
+
+            // Update conversation context if available
+            if (conversationContext) {
+              Object.assign(conversationContext, manualContext);
+              console.log("🎯 [STOCK] Manual context set:", manualContext);
+            }
+          }
+
+          // Generate conversational stock response with context packs
+          const conversationalResponse =
+            await generateConversationalStockResponse(
+              stockData,
+              message,
+              userProfile,
+              userMemory,
+              investmentHoldings,
+              stockPlan
+            );
+
+          const response = {
+            message: cleanResponseFormatting(conversationalResponse),
+            type: "assistant",
+          };
+
+          // Log with enhanced data
+          setImmediate(() =>
+            logConversation({
+              user_message: redactPII(message),
+              finny_response: redactPII(conversationalResponse),
+              timestamp: new Date().toISOString(),
+              user_id: context?.user_id || "unknown",
+              intent: "ask_personalized",
+              entities: [stockData.ticker, stockData.profile?.name].filter(
+                Boolean
+              ),
+              confidence: 0.95,
+              response_time_ms: Date.now() - startTime,
+              sources_used: [
+                "finnhub:quote",
+                "finnhub:profile2",
+                "finnhub:recommendation",
+                stockData.priceTarget ? "finnhub:price-target" : null,
+                stockPlan?.wants?.includes("earnings")
+                  ? "finnhub:earnings"
+                  : null,
+                stockPlan?.wants?.includes("filings")
+                  ? "finnhub:filings"
+                  : null,
+                stockPlan?.wants?.includes("insider")
+                  ? "finnhub:insider"
+                  : null,
+              ].filter(Boolean),
+              cached: false,
+              request_id: generateRequestId(),
+              metrics: {
+                intent: "ask_personalized",
+                latency_ms: { total: Date.now() - startTime },
+                tools_used: [
+                  {
+                    name: "finnhub",
+                    latency_ms: Date.now() - startTime,
+                    cache_hit: false,
+                  },
+                  {
+                    name: "llm_conversational",
+                    latency_ms: 0, // Will be set by the function
+                    cache_hit: false,
+                  },
+                ],
+                model: InvestmentMODEL,
+                cache_hits: {},
+                tokens: null,
+                result: "success",
+              },
+            })
+          );
+
+          // 🔍 DEBUG: Save conversation context for stock queries
+          console.log("🔍 [STOCK CONTEXT] Saving context for stock query");
+
+          // Extract topic and entity for stock queries
+          console.log("🔍 [STOCK CONTEXT] Detecting topic for stock query");
+          const topicDetection = detectConversationTopic(
+            message,
+            context?.conversationContext // Use the context from the safe context object
+          );
+          const contextMetadata = {
+            active_topic: topicDetection?.topic || "investment_analysis",
+            last_entity: topicDetection?.entity || {
+              type: "investment",
+              symbol: stockData.ticker,
+            },
+            pending_action: topicDetection?.pending_action || null,
+          };
+
+          console.log(
+            "🔍 [STOCK CONTEXT] Topic detection result:",
+            topicDetection
+          );
+          console.log(
+            "🔍 [STOCK CONTEXT] Stock data ticker:",
+            stockData.ticker
+          );
+          console.log("🔍 [STOCK CONTEXT] Context metadata:", contextMetadata);
+
+          // Save conversation context synchronously
+          if (context?.chat_id) {
+            console.log("🔍 [STOCK CONTEXT] Saving context synchronously");
+            await updateConversationContext(
+              context.user_id,
+              context.chat_id,
+              message,
+              response.message,
+              contextMetadata
+            );
+            console.log("✅ [STOCK CONTEXT] Context saved successfully");
+          }
+
+          return response;
+        } else {
+          // Stock APIs failed, use fallback analysis
+          console.log(
+            "🔄 [FALLBACK] Stock APIs failed, using fallback analysis"
+          );
+          const fallbackResponse = await generateFallbackStockAnalysis(
+            null, // ticker will be extracted from message
+            message,
+            userProfile,
+            userMemory
+          );
+
+          const response = {
+            message: cleanResponseFormatting(fallbackResponse),
+            type: "assistant",
+          };
+
+          // Log fallback usage
+          setImmediate(() =>
+            logConversation({
+              user_message: redactPII(message),
+              finny_response: redactPII(fallbackResponse),
+              timestamp: new Date().toISOString(),
+              user_id: context?.user_id || "unknown",
+              intent: "ask_personalized",
+              entities: [],
+              confidence: 0.7,
+              response_time_ms: Date.now() - startTime,
+              sources_used: ["fallback_analysis"],
+              cached: false,
+              request_id: generateRequestId(),
+              metrics: {
+                intent: "ask_personalized",
+                latency_ms: { total: Date.now() - startTime },
+                tools_used: [
+                  {
+                    name: "fallback_analysis",
+                    latency_ms: Date.now() - startTime,
+                    cache_hit: false,
+                  },
+                ],
+                model: InvestmentMODEL,
+                cache_hits: {},
+                tokens: null,
+              },
+              context_used: {
+                user_profile: userProfile,
+                user_memory: userMemory ? "loaded" : "none",
+                investment_holdings: investmentHoldings ? "loaded" : "none",
+                conversation_context: conversationContext ? "loaded" : "none",
+              },
+              fallback_used: true,
+            })
+          );
+
+          return response;
+        }
+      } catch (e) {
+        console.log(
+          "ℹ️ [FINNY] Conversational stock handler failed, falling back:",
+          e?.message
+        );
+      }
+    }
 
     // 4) Build focused prompt using context packs
     const system = [
@@ -2772,18 +2967,6 @@ function detectOffTopic(message) {
     return true;
   }
 
-  // Ambiguous generic noun: if contains "bank" without financial context keywords, treat as off-topic
-  if (
-    lower.includes("bank") ||
-    lower.includes("loan") ||
-    (lower.includes("debt") &&
-      !/account|loan|interest|branch|routing|checking|savings|credit|debit/.test(
-        lower
-      ))
-  ) {
-    return false;
-  }
-
   // Strong off-topic indicators (specific patterns)
   const offTopicPatterns = [
     // Trust/meta questions
@@ -2932,10 +3115,16 @@ function extractSlots(message) {
   // Detect topic
   let topic;
   if (
-    lowerMessage.includes("spend") ||
+    lowerMessage.includes("spen") ||
     lowerMessage.includes("expense") ||
     lowerMessage.includes("food") ||
-    lowerMessage.includes("shopping")
+    lowerMessage.includes("shopping") ||
+    lowerMessage.includes("utilities") ||
+    lowerMessage.includes("internet") ||
+    lowerMessage.includes("phone") ||
+    lowerMessage.includes("cable") ||
+    lowerMessage.includes("rent") ||
+    lowerMessage.includes("mortgage")
   ) {
     topic = "spend";
   } else if (
@@ -2948,7 +3137,12 @@ function extractSlots(message) {
   } else if (
     lowerMessage.includes("account") ||
     lowerMessage.includes("balance") ||
-    lowerMessage.includes("bank")
+    lowerMessage.includes("bank") ||
+    lowerMessage.includes("credit card") ||
+    lowerMessage.includes("debit card") ||
+    lowerMessage.includes("loan") ||
+    lowerMessage.includes("mortgage") ||
+    lowerMessage.includes("rent")
   ) {
     topic = "accounts";
   } else if (
@@ -6108,24 +6302,14 @@ async function forceRefreshUserData(userId) {
       console.log("ℹ️ [CACHE] Postgres cache purge skipped:", e?.message);
     }
 
-    // NEW: Purge in-memory context caches for this user
+    // Use our new smart cache invalidation
     try {
-      const keysToDelete = [];
-      for (const [key, value] of dataCache.entries()) {
-        if (!value || typeof key !== "string") continue;
-        // Keys are of form: `${dataType}_${userId}` plus optional params suffix
-        if (key.includes(`_${userId}`)) {
-          keysToDelete.push(key);
-        }
-      }
-      keysToDelete.forEach((k) => dataCache.delete(k));
-      if (keysToDelete.length > 0) {
-        console.log(
-          `🧹 [DATA_CACHE] Purged ${keysToDelete.length} in-memory entries for user ${userId}`
-        );
-      }
+      const invalidatedCount = await invalidateUserCache(userId);
+      console.log(
+        `🗑️ [CACHE] Invalidated ${invalidatedCount} cache entries for user ${userId}`
+      );
     } catch (e) {
-      console.log("ℹ️ [CACHE] In-memory purge skipped:", e?.message);
+      console.log("ℹ️ [CACHE] Smart cache invalidation skipped:", e?.message);
     }
 
     console.log(`✅ [CACHE] Force refresh completed for user: ${userId}`);
