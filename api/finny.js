@@ -1368,6 +1368,27 @@ async function handleAsk(
           }
 
           if (stockData && stockData.current != null) {
+            // 🎯 MANUAL CONTEXT SETTING FOR STOCK QUERIES
+            // Set conversation context manually to save API calls
+            if (stockData.ticker) {
+              const manualContext = {
+                active_topic: "investment_analysis",
+                last_entity: {
+                  type: "investment",
+                  symbol: stockData.ticker,
+                  action: null,
+                  amount: null,
+                },
+                pending_action: null,
+              };
+
+              // Update conversation context if available
+              if (conversationContext) {
+                Object.assign(conversationContext, manualContext);
+                console.log("🎯 [STOCK] Manual context set:", manualContext);
+              }
+            }
+
             // Generate conversational stock response
             const conversationalResponse =
               await generateConversationalStockResponse(
@@ -5015,16 +5036,34 @@ async function limitedBraveSearch(query) {
 // === Stocks via Finnhub ===
 function looksLikeStockQuery(message) {
   const m = message.toLowerCase();
-  return (
-    /\b(stock|stocks|ticker|share|price|quote|buy|sell|valuation|pt|price target)\b/.test(
-      m
-    ) || /\b[A-Z]{1,5}\b/.test(message)
+
+  // Check for explicit stock-related keywords
+  const stockKeywords =
+    /\b(stock|stocks|ticker|share|shares|price|quote|buy|sell|valuation|pt|price target|market cap|pe ratio|earnings|dividend|analyst|recommendation|investment|invest|portfolio|trading|trader|investor)\b/;
+
+  // Check for company names or ticker symbols
+  const hasTickerSymbol = /\b[A-Z]{1,5}\b/.test(message);
+
+  // Check for natural language patterns that indicate stock interest
+  const naturalLanguagePatterns = [
+    /\b(tell me about|show me|get me|what about|how is|how are)\b.*\b(stock|company|corp|inc|ltd|llc)\b/i,
+    /\b(about|regarding|concerning)\b.*\b[A-Z]{1,5}\b/i,
+    /\b(should i buy|is.*good|worth.*investing|add.*portfolio)\b/i,
+    /\b(apple|microsoft|google|amazon|tesla|meta|nvidia|netflix|uber|airbnb|spotify|twitter|snapchat|zoom|palantir|snowflake|shopify|square|paypal|coinbase|robinhood|doordash|peloton)\b/i,
+  ];
+
+  const hasNaturalLanguage = naturalLanguagePatterns.some((pattern) =>
+    pattern.test(message)
   );
+
+  return stockKeywords.test(m) || hasTickerSymbol || hasNaturalLanguage;
 }
 
 function looksLikeStockDeepQuery(message) {
   const m = message.toLowerCase();
-  return (
+
+  // Original deep analysis triggers (specific financial metrics)
+  const deepAnalysisTriggers =
     m.includes("more") ||
     m.includes("market cap") ||
     m.includes("cap") ||
@@ -5038,8 +5077,23 @@ function looksLikeStockDeepQuery(message) {
     m.includes("insider") ||
     m.includes("target") ||
     m.includes("52w") ||
-    m.includes("52-week")
+    m.includes("52-week");
+
+  // Natural language stock queries that should use LLM-based approach
+  const naturalLanguageStockQueries = [
+    /\b(tell me about|show me|get me|what about|how is|how are)\b.*\b(stock|company|corp|inc|ltd|llc)\b/i,
+    /\b(about|regarding|concerning)\b.*\b[A-Z]{1,5}\b/i,
+    /\b(should i buy|is.*good|worth.*investing|add.*portfolio)\b/i,
+    /\b(apple|microsoft|google|amazon|tesla|meta|nvidia|netflix|uber|airbnb|spotify|twitter|snapchat|zoom|palantir|snowflake|shopify|square|paypal|coinbase|robinhood|doordash|peloton)\b/i,
+    /\b(analysis|analyze|research|researching)\b.*\b(stock|company|investment)\b/i,
+    /\b(performance|price|valuation|value|worth)\b.*\b(stock|company|investment)\b/i,
+  ];
+
+  const hasNaturalLanguage = naturalLanguageStockQueries.some((pattern) =>
+    pattern.test(message)
   );
+
+  return deepAnalysisTriggers || hasNaturalLanguage;
 }
 
 async function planStockRequest(message) {
@@ -5051,7 +5105,7 @@ async function planStockRequest(message) {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: OPENROUTER_MODEL,
+        model: SMALLER_MODEL,
         temperature: 0.1,
         messages: [
           {
