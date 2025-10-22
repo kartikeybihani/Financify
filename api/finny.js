@@ -107,12 +107,14 @@ async function getPersistentCache(dataType, userId, params = {}) {
       `🔍 [PERSISTENT_CACHE] Looking for ${dataType} with key: ${key}`
     );
 
+    // Use .limit(1) to handle potential duplicates and get the most recent one
     const { data, error } = await supabase
       .from("context_cache")
       .select("*")
       .eq("cache_key", key)
       .eq("user_id", userId)
-      .single();
+      .order("created_at", { ascending: false }) // Get most recent entry first
+      .limit(1);
 
     if (error) {
       console.log(
@@ -122,36 +124,46 @@ async function getPersistentCache(dataType, userId, params = {}) {
       return null;
     }
 
-    if (!data) {
+    if (!data || data.length === 0) {
       console.log(
         `❌ [PERSISTENT_CACHE] No data found for ${dataType} (${key})`
       );
       return null;
     }
 
+    const cacheEntry = data[0]; // Get the first (most recent) entry
+
     // Check if expired
     const now = Date.now();
     console.log(
       `🔍 [PERSISTENT_CACHE] Checking expiration for ${dataType}: now=${now}, expires=${
-        data.expires_at
-      }, expired=${now > data.expires_at}`
+        cacheEntry.expires_at
+      }, expired=${now > cacheEntry.expires_at}`
     );
 
-    if (now > data.expires_at) {
+    if (now > cacheEntry.expires_at) {
       console.log(
         `⏰ [PERSISTENT_CACHE] Cache EXPIRED for ${dataType} (${key})`
       );
-      // Clean up expired entry
-      await supabase
-        .from("context_cache")
-        .delete()
-        .eq("cache_key", key)
-        .eq("user_id", userId);
+      // Clean up ALL expired entries for this key
+      await cleanupDuplicateCacheEntries(key, userId);
       return null;
     }
 
+    // If there are duplicates, clean them up in the background
+    if (data.length > 1) {
+      console.log(
+        `🧹 [PERSISTENT_CACHE] Found ${data.length} duplicate entries, cleaning up...`
+      );
+      setImmediate(() => {
+        cleanupDuplicateCacheEntries(key, userId).catch((error) => {
+          console.error("❌ [PERSISTENT_CACHE] Cleanup failed:", error);
+        });
+      });
+    }
+
     console.log(`✅ [PERSISTENT_CACHE] Cache HIT for ${dataType} (${key})`);
-    return data.cache_data;
+    return cacheEntry.cache_data;
   } catch (error) {
     console.error(
       `❌ [PERSISTENT_CACHE] Error getting cache for ${dataType}:`,
@@ -173,14 +185,21 @@ async function setPersistentCache(dataType, userId, data, params = {}) {
       ).toISOString()}, TTL: ${ttl}ms`
     );
 
-    const { error } = await supabase.from("context_cache").upsert({
-      cache_key: key,
-      user_id: userId,
-      data_type: dataType,
-      cache_data: data,
-      expires_at: expires_at,
-      created_at: new Date().toISOString(),
-    });
+    // Use upsert with conflict resolution to prevent duplicates
+    const { error } = await supabase.from("context_cache").upsert(
+      {
+        cache_key: key,
+        user_id: userId,
+        data_type: dataType,
+        cache_data: data,
+        expires_at: expires_at,
+        created_at: new Date().toISOString(),
+      },
+      {
+        onConflict: "cache_key,user_id", // Handle conflicts on these columns
+        ignoreDuplicates: false, // Update existing entries instead of ignoring
+      }
+    );
 
     if (error) {
       console.error(
@@ -395,6 +414,53 @@ async function setCachedUserData(dataType, userId, data, params = {}) {
   }
 }
 
+// Clean up duplicate cache entries (keep only the most recent one)
+async function cleanupDuplicateCacheEntries(cacheKey, userId) {
+  try {
+    // Get all entries for this cache key
+    const { data: allEntries, error } = await supabase
+      .from("context_cache")
+      .select("*")
+      .eq("cache_key", cacheKey)
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      console.error("❌ [CACHE] Error fetching duplicate entries:", error);
+      return;
+    }
+
+    if (!allEntries || allEntries.length <= 1) {
+      return; // No duplicates to clean up
+    }
+
+    // Keep the most recent entry (first in the sorted list)
+    const entriesToDelete = allEntries.slice(1); // All except the first one
+
+    if (entriesToDelete.length > 0) {
+      const idsToDelete = entriesToDelete.map((entry) => entry.id);
+
+      const { error: deleteError } = await supabase
+        .from("context_cache")
+        .delete()
+        .in("id", idsToDelete);
+
+      if (deleteError) {
+        console.error(
+          "❌ [CACHE] Error deleting duplicate entries:",
+          deleteError
+        );
+      } else {
+        console.log(
+          `🧹 [CACHE] Cleaned up ${entriesToDelete.length} duplicate cache entries for key: ${cacheKey}`
+        );
+      }
+    }
+  } catch (error) {
+    console.error("❌ [CACHE] Error in cleanupDuplicateCacheEntries:", error);
+  }
+}
+
 // ===== CACHE CLEANUP & OPTIMIZATION FUNCTIONS =====
 
 // Clean up expired in-memory cache entries
@@ -523,7 +589,7 @@ async function invalidateUserCache(userId, dataType = null) {
 async function prePopulateUserCache(userId) {
   console.log(`🚀 [CACHE] Pre-populating cache for user: ${userId}`);
 
-  const commonNeeds = ["summary_min", "invest_holdings", "goals_overview"];
+  const commonNeeds = ["summary_min", "investments_all", "goals_overview"];
   const results = { success: 0, failed: 0 };
 
   for (const need of commonNeeds) {
@@ -536,9 +602,20 @@ async function prePopulateUserCache(userId) {
         continue;
       }
 
-      // Build context pack
-      const contextResult = await buildContextPacks(userId, [need], {});
-      if (contextResult && contextResult.packs && contextResult.packs[need]) {
+      // Build context pack - map the cache type to the need type
+      const needMapping = {
+        investments_all: "invest_holdings",
+        goals_overview: "goals_overview",
+        summary_min: "summary_min",
+      };
+      const needType = needMapping[need] || need;
+
+      const contextResult = await buildContextPacks(userId, [needType], {});
+      if (
+        contextResult &&
+        contextResult.packs &&
+        contextResult.packs[needType]
+      ) {
         console.log(`✅ [CACHE] Pre-populated ${need} for user ${userId}`);
         results.success++;
       } else {
@@ -559,9 +636,55 @@ async function prePopulateUserCache(userId) {
   return results;
 }
 
+// Clean up existing duplicate cache entries on startup
+async function cleanupExistingDuplicates() {
+  try {
+    console.log("🧹 [CACHE] Cleaning up existing duplicate cache entries...");
+
+    // Get all cache keys with duplicates
+    const { data: duplicates, error } = await supabase
+      .from("context_cache")
+      .select("cache_key, user_id, count(*)")
+      .group("cache_key, user_id")
+      .having("count(*) > 1");
+
+    if (error) {
+      console.error("❌ [CACHE] Error finding duplicates:", error);
+      return;
+    }
+
+    if (duplicates && duplicates.length > 0) {
+      console.log(
+        `🧹 [CACHE] Found ${duplicates.length} cache keys with duplicates`
+      );
+
+      // Clean up each duplicate set
+      for (const duplicate of duplicates) {
+        await cleanupDuplicateCacheEntries(
+          duplicate.cache_key,
+          duplicate.user_id
+        );
+      }
+
+      console.log("✅ [CACHE] Existing duplicates cleaned up");
+    } else {
+      console.log("✅ [CACHE] No existing duplicates found");
+    }
+  } catch (error) {
+    console.error("❌ [CACHE] Error cleaning up existing duplicates:", error);
+  }
+}
+
 // Initialize periodic cache cleanup
 function initializeCacheCleanup() {
   console.log("🔄 [CACHE] Initializing periodic cache cleanup...");
+
+  // Clean up existing duplicates on startup
+  setImmediate(() => {
+    cleanupExistingDuplicates().catch((error) => {
+      console.error("❌ [CACHE] Startup cleanup failed:", error);
+    });
+  });
 
   // In-memory cache cleanup every 10 minutes
   setInterval(async () => {
@@ -3278,8 +3401,20 @@ async function buildContextPacks(userId, needs, slots) {
     const prebuiltContexts = {};
     const remainingNeeds = [];
 
+    // Map needs to actual cache data types
+    const needToCacheTypeMapping = {
+      invest_holdings: "investments_all",
+      goals_overview: "goals_overview",
+      summary_min: "summary_min",
+      spend_total: "spend_data",
+      category_details: "category_transactions",
+      txns_by_category: "category_transactions",
+      cashflow_monthly: "cashflow_monthly",
+    };
+
     for (const need of needs) {
-      const cachedData = await getCachedUserData(need, userId);
+      const cacheType = needToCacheTypeMapping[need] || need;
+      const cachedData = await getCachedUserData(cacheType, userId);
       if (cachedData) {
         console.log(`✅ [FINNY] Using pre-built context for: ${need}`);
         console.log(`🔍 [FINNY] Pre-built data for ${need}:`, {
