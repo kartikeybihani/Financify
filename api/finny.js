@@ -2069,7 +2069,7 @@ async function handleAsk(
                     cache_hit: false,
                   },
                 ],
-                model: InvestmentMODEL,
+                model: "gpt-4o-mini",
                 cache_hits: {},
                 tokens: null,
                 result: "success",
@@ -2160,7 +2160,7 @@ async function handleAsk(
                     cache_hit: false,
                   },
                 ],
-                model: InvestmentMODEL,
+                model: SMALLER_MODEL,
                 cache_hits: {},
                 tokens: null,
               },
@@ -4187,7 +4187,35 @@ function detectConversationTopic(message, conversationContext) {
     );
   }
 
-  // 0. CONTINUATION PATTERNS (Check FIRST - highest priority)
+  // 0. TOPIC CLEARING PATTERNS (Check FIRST - highest priority)
+  // Clear active topic if the new message is clearly about a different topic
+  const topicClearingPatterns = [
+    // General financial advice patterns
+    /\b(emergency fund|emergency savings|savings|budget|budgeting|expenses|spending|debt|loan|mortgage|retirement|401k|ira)\b/i,
+    /\b(how much should i|what should i|financial planning|money management)\b/i,
+    /\b(save|saving|spend|spending|invest|investing)\b.*\b(money|dollars|amount)\b/i,
+    // Account balance patterns
+    /\b(account balance|checking|savings account|credit card|debit card)\b/i,
+    // Goal setting patterns
+    /\b(goal|goals|target|save for|planning for)\b/i,
+  ];
+
+  const hasTopicClearingPattern = topicClearingPatterns.some((pattern) =>
+    pattern.test(text)
+  );
+
+  if (hasTopicClearingPattern && conversationContext?.active_topic) {
+    console.log(
+      "🔄 [TOPIC CLEARING] Detected topic change, clearing active topic"
+    );
+    console.log("  - Previous topic:", conversationContext.active_topic);
+    console.log("  - New topic pattern detected");
+    // Clear the active topic to start fresh
+    conversationContext.active_topic = null;
+    conversationContext.last_entity = null;
+  }
+
+  // 1. CONTINUATION PATTERNS (Check AFTER topic clearing)
   if (conversationContext?.active_topic) {
     // If we have an active topic, check for continuation patterns
     const continuationPatterns = [
@@ -5862,12 +5890,29 @@ function looksLikeStockQuery(message) {
     return false;
   }
 
+  // Check for general financial advice that should NOT go to stock analysis
+  const generalFinancialPatterns = [
+    /\b(emergency fund|emergency savings|savings|budget|budgeting|expenses|spending|debt|loan|mortgage|retirement|401k|ira)\b/i,
+    /\b(how much should i|what should i|financial planning|money management)\b/i,
+    /\b(save|saving|spend|spending|invest|investing)\b.*\b(money|dollars|amount)\b/i,
+  ];
+
+  // If it's general financial advice, don't route to stock analysis
+  if (generalFinancialPatterns.some((pattern) => pattern.test(message))) {
+    console.log(
+      "🎯 [STOCK_ROUTING] General financial advice query detected, NOT routing to stock analysis"
+    );
+    return false;
+  }
+
   // Check for explicit stock analysis keywords (more specific)
   const stockAnalysisKeywords =
     /\b(stock|stocks|ticker|share|shares|price|quote|buy|sell|valuation|pt|price target|market cap|pe ratio|earnings|dividend|analyst|recommendation|trading|trader)\b/;
 
-  // Check for company names or ticker symbols
-  const hasTickerSymbol = /\b[A-Z]{1,5}\b/.test(message);
+  // Check for company names or ticker symbols (but be more strict)
+  const hasTickerSymbol =
+    /\b[A-Z]{1,5}\b/.test(message) &&
+    /\b(stock|share|ticker|quote|price|analysis)\b/i.test(message);
 
   // Check for natural language patterns that indicate stock analysis interest
   const naturalLanguagePatterns = [
