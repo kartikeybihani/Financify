@@ -3083,7 +3083,12 @@ async function buildContextPacks(userId, needs, slots) {
           isCached: true,
         });
         prebuiltContexts[need] = cachedData;
-        packs[need] = cachedData;
+        // Store summary_min data as packs.base for context building
+        if (need === "summary_min") {
+          packs.base = cachedData;
+        } else {
+          packs[need] = cachedData;
+        }
       } else {
         console.log(`⚠️ [FINNY] No pre-built context for: ${need}, will fetch`);
         remainingNeeds.push(need);
