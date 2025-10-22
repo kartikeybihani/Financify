@@ -1436,7 +1436,14 @@ async function handleAsk(
 
   try {
     // 0) If this looks like a stock question, route to conversational stock handler
-    if (looksLikeStockQuery(message)) {
+    console.log(
+      "🔍 [STOCK_ROUTING] Checking if message looks like stock query:",
+      message
+    );
+    const isStockQuery = looksLikeStockQuery(message);
+    console.log("🔍 [STOCK_ROUTING] Result:", isStockQuery);
+
+    if (isStockQuery) {
       try {
         // Get user context for personalization
         const userId = context?.user_id;
@@ -2948,7 +2955,11 @@ function extractSlots(message) {
     lowerMessage.includes("invest") ||
     lowerMessage.includes("portfolio") ||
     lowerMessage.includes("stock") ||
-    lowerMessage.includes("retirement")
+    lowerMessage.includes("retirement") ||
+    lowerMessage.includes("holdings") ||
+    lowerMessage.includes("what do i own") ||
+    lowerMessage.includes("my investments") ||
+    lowerMessage.includes("my portfolio")
   ) {
     topic = lowerMessage.includes("retirement") ? "retirement" : "invest";
   } else if (
@@ -5478,14 +5489,29 @@ async function limitedBraveSearch(query) {
 function looksLikeStockQuery(message) {
   const m = message.toLowerCase();
 
-  // Check for explicit stock-related keywords
-  const stockKeywords =
-    /\b(stock|stocks|ticker|share|shares|price|quote|buy|sell|valuation|pt|price target|market cap|pe ratio|earnings|dividend|analyst|recommendation|investment|invest|portfolio|trading|trader|investor)\b/;
+  // FIRST: Check for personal portfolio queries that should NOT go to stock analysis
+  const personalPortfolioPatterns = [
+    /\b(what holdings do i own|my holdings|my portfolio|my investments|my stocks|my shares|what do i own|show my portfolio|show my holdings|my investment portfolio|my stock portfolio)\b/i,
+    /\b(holdings|portfolio|investments)\b.*\b(do i have|do i own|my|mine|show me|what are)\b/i,
+    /\b(investment advice|investment help|portfolio advice|portfolio help)\b/i,
+  ];
+
+  // If it's a personal portfolio query, don't route to stock analysis
+  if (personalPortfolioPatterns.some((pattern) => pattern.test(message))) {
+    console.log(
+      "🎯 [STOCK_ROUTING] Personal portfolio query detected, NOT routing to stock analysis"
+    );
+    return false;
+  }
+
+  // Check for explicit stock analysis keywords (more specific)
+  const stockAnalysisKeywords =
+    /\b(stock|stocks|ticker|share|shares|price|quote|buy|sell|valuation|pt|price target|market cap|pe ratio|earnings|dividend|analyst|recommendation|trading|trader)\b/;
 
   // Check for company names or ticker symbols
   const hasTickerSymbol = /\b[A-Z]{1,5}\b/.test(message);
 
-  // Check for natural language patterns that indicate stock interest
+  // Check for natural language patterns that indicate stock analysis interest
   const naturalLanguagePatterns = [
     /\b(tell me about|show me|get me|what about|how is|how are)\b.*\b(stock|company|corp|inc|ltd|llc)\b/i,
     /\b(about|regarding|concerning)\b.*\b[A-Z]{1,5}\b/i,
@@ -5497,7 +5523,7 @@ function looksLikeStockQuery(message) {
     pattern.test(message)
   );
 
-  return stockKeywords.test(m) || hasTickerSymbol || hasNaturalLanguage;
+  return stockAnalysisKeywords.test(m) || hasTickerSymbol || hasNaturalLanguage;
 }
 
 function looksLikeStockDeepQuery(message) {
