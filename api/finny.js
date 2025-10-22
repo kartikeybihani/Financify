@@ -103,6 +103,10 @@ const dataCache = new Map();
 async function getPersistentCache(dataType, userId, params = {}) {
   try {
     const key = generateDataCacheKey(dataType, userId, params);
+    console.log(
+      `🔍 [PERSISTENT_CACHE] Looking for ${dataType} with key: ${key}`
+    );
+
     const { data, error } = await supabase
       .from("context_cache")
       .select("*")
@@ -110,12 +114,33 @@ async function getPersistentCache(dataType, userId, params = {}) {
       .eq("user_id", userId)
       .single();
 
-    if (error || !data) {
+    if (error) {
+      console.log(
+        `❌ [PERSISTENT_CACHE] Database error for ${dataType}:`,
+        error.message
+      );
+      return null;
+    }
+
+    if (!data) {
+      console.log(
+        `❌ [PERSISTENT_CACHE] No data found for ${dataType} (${key})`
+      );
       return null;
     }
 
     // Check if expired
-    if (Date.now() > data.expires_at) {
+    const now = Date.now();
+    console.log(
+      `🔍 [PERSISTENT_CACHE] Checking expiration for ${dataType}: now=${now}, expires=${
+        data.expires_at
+      }, expired=${now > data.expires_at}`
+    );
+
+    if (now > data.expires_at) {
+      console.log(
+        `⏰ [PERSISTENT_CACHE] Cache EXPIRED for ${dataType} (${key})`
+      );
       // Clean up expired entry
       await supabase
         .from("context_cache")
@@ -141,6 +166,12 @@ async function setPersistentCache(dataType, userId, data, params = {}) {
     const key = generateDataCacheKey(dataType, userId, params);
     const ttl = params.ttl || CACHE_TTL[dataType] || 5 * 60 * 1000;
     const expires_at = Date.now() + ttl;
+
+    console.log(
+      `💾 [PERSISTENT_CACHE] Setting cache for ${dataType} with key: ${key}, expires: ${new Date(
+        expires_at
+      ).toISOString()}, TTL: ${ttl}ms`
+    );
 
     const { error } = await supabase.from("context_cache").upsert({
       cache_key: key,
@@ -170,6 +201,7 @@ async function setPersistentCache(dataType, userId, data, params = {}) {
 // Cache TTLs for different data types (in milliseconds)
 const CACHE_TTL = {
   financial_summary: 5 * 60 * 1000, // 5 minutes
+  summary_min: 15 * 60 * 1000, // 15 minutes
   spend_data: 30 * 60 * 1000, // 30 minutes
   investments_all: 6 * 60 * 60 * 1000, // 6 hours consolidated investments
   goals_overview: 60 * 60 * 1000, // 60 minutes
