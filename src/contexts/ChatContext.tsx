@@ -20,6 +20,11 @@ interface ChatContextType {
     message: string
   ) => Promise<void>;
   handleUserMessage: (messageText: string, startTime?: number) => Promise<void>;
+  handleFinnyResponse: (
+    messageText: string,
+    startTime?: number
+  ) => Promise<void>;
+  handleActionButton: (action: string) => Promise<void>;
   startNewSession: () => Promise<void>;
   loadSession: (sessionId: string) => Promise<void>;
 }

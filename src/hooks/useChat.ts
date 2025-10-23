@@ -556,6 +556,65 @@ export const useChat = () => {
     // Note: setIsTyping(false) is now handled within handleFinnyResponse for streaming
   };
 
+  // Handle action button clicks without creating new messages
+  const handleActionButton = async (action: string) => {
+    const BASE_URL = process.env.EXPO_PUBLIC_APP_BASE_URL || "https://financify-rose.vercel.app";
+    try {
+      // Get user_id for the API calls
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user?.id) {
+        pushChat("finny", "Please log in to get personalized financial advice.");
+        return;
+      }
+
+      // Fetch session once and reuse the access token
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData?.session?.access_token || '';
+
+      // Send action to backend in existing conversation context
+      const res = await fetch(`${BASE_URL}/api/finny`, {
+        method: "POST",
+        headers: { 
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${accessToken}`
+        },
+        body: JSON.stringify({
+          action: "goal_conversation",
+          message: action,
+          chat_id: chatId,
+          context: goalFlow ? { goal_flow: goalFlow } : {},
+          stream: false
+        }),
+      });
+
+      const data = await res.json();
+      logger.info("🎯 [ACTION] API Response:", data);
+
+      // Create a new message with the response (don't update existing message)
+      if (data.message) {
+        const newMessage = {
+          id: `finny-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          sender: "finny" as const,
+          text: data.message,
+          timestamp: Date.now(),
+          type: data.actions && data.actions.length > 0 ? "action" as const : "text" as const,
+          ...(data.actions && { actions: data.actions })
+        };
+        
+        setChatMessages(prev => [...prev, newMessage]);
+        logger.info("🎯 [ACTION] Created new message:", newMessage);
+
+        // Update goal flow state if provided
+        if (data.goal_flow) {
+          setGoalFlow(data.goal_flow);
+        }
+      }
+    } catch (error) {
+      logger.error("❌ [ACTION] Error handling action button:", error);
+      pushChat("finny", "Something went wrong. Try again later.");
+    }
+  };
+
   const handleFinnyResponse = async (messageText: string, startTime?: number) => {
     const BASE_URL = process.env.EXPO_PUBLIC_APP_BASE_URL || "https://financify-rose.vercel.app";
     try {
@@ -834,6 +893,8 @@ export const useChat = () => {
     pushChatWithDelay,
     pushMultipleMessages,
     handleUserMessage,
+    handleFinnyResponse, // Export for action button handling
+    handleActionButton, // Export for action button handling
     startNewSession,
     loadSession,
   };

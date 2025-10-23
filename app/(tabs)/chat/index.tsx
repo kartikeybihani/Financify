@@ -148,6 +148,8 @@ export default function ChatScreen() {
     clearChat,
     pushChat,
     handleUserMessage,
+    handleFinnyResponse,
+    handleActionButton,
   } = useChatContext();
 
   // Prepare FlatList data with nudges and messages
@@ -437,15 +439,22 @@ export default function ChatScreen() {
       if (
         action === "confirm" ||
         action === "confirm_create_goal" ||
-        action === "start_over_goal"
+        action === "start_over_goal" ||
+        action === "skip_category"
       ) {
         setIsTyping(true);
-        // Send action to backend without displaying it as user message
-        await handleUserMessage(action);
+        // Send action directly to backend and update existing message
+        await handleActionButton(action);
         setIsTyping(false);
       }
     },
-    [pushChat, handleUserMessage, setIsTyping]
+    [
+      pushChat,
+      handleUserMessage,
+      handleFinnyResponse,
+      handleActionButton,
+      setIsTyping,
+    ]
   );
 
   // Optimized FlatList render item function

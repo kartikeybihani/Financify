@@ -145,6 +145,106 @@ const pickTailColor = (colors: string[], side: "left" | "right") => {
   }
 };
 
+// Separate component for action buttons to avoid conditional hooks
+const ActionButton = ({
+  btn,
+  onAction,
+  clicked,
+  setClicked,
+}: {
+  btn: any;
+  onAction?: (action: string) => void;
+  clicked: boolean;
+  setClicked: (value: boolean) => void;
+}) => {
+  const [isPressed, setIsPressed] = useState(false);
+  const pressAnim = useRef(new Animated.Value(1)).current;
+
+  const handlePressIn = () => {
+    setIsPressed(true);
+    Animated.spring(pressAnim, {
+      toValue: 0.95,
+      useNativeDriver: true,
+      tension: 300,
+      friction: 10,
+    }).start();
+  };
+
+  const handlePressOut = () => {
+    setIsPressed(false);
+    Animated.spring(pressAnim, {
+      toValue: 1,
+      useNativeDriver: true,
+      tension: 300,
+      friction: 10,
+    }).start();
+  };
+
+  const handlePress = () => {
+    if (!clicked && onAction) {
+      setClicked(true);
+      onAction(btn.action);
+    }
+  };
+
+  return (
+    <Animated.View
+      style={{
+        opacity: 1, // We'll handle fadeAnim in the parent component
+        transform: [{ scale: pressAnim }],
+      }}
+    >
+      <TouchableOpacity
+        onPress={handlePress}
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
+        activeOpacity={0.7}
+        style={{
+          marginRight: 6,
+          marginBottom: 4,
+        }}
+      >
+        <LinearGradient
+          colors={
+            btn.style === "primary"
+              ? ["#4A90E2", "#5BA3F5", "#6BB6FF"]
+              : ["rgba(255, 255, 255, 0.15)", "rgba(255, 255, 255, 0.08)"]
+          }
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={{
+            paddingHorizontal: responsivePadding(14),
+            paddingVertical: responsivePadding(10),
+            borderRadius: 20,
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "center",
+            shadowColor: btn.style === "primary" ? "#4A90E2" : "#000",
+            shadowOffset: { width: 0, height: 3 },
+            shadowOpacity: btn.style === "primary" ? 0.4 : 0.1,
+            shadowRadius: 6,
+            elevation: 4,
+            opacity: clicked ? 0.5 : 1,
+            borderWidth: 0,
+          }}
+        >
+          <Text
+            style={{
+              fontSize: responsiveFontSize(12),
+              fontWeight: "600",
+              color: btn.style === "primary" ? "#FFFFFF" : "#E0E0E0",
+              letterSpacing: 0.3,
+              textAlign: "center",
+            }}
+          >
+            {btn.label}
+          </Text>
+        </LinearGradient>
+      </TouchableOpacity>
+    </Animated.View>
+  );
+};
+
 // SVG tail component with iMessage-style teardrop
 const BubbleTail = ({
   side,
@@ -334,6 +434,7 @@ export const ChatMessageComponent = memo(
     const scaleAnim = useRef(new Animated.Value(0.8)).current;
     const slideAnim = useRef(new Animated.Value(20)).current;
     const [lineCount, setLineCount] = useState(1);
+    const [clicked, setClicked] = useState(false);
 
     // Memoize expensive calculations
     const isUser = useMemo(() => message.sender === "user", [message.sender]);
@@ -439,7 +540,6 @@ export const ChatMessageComponent = memo(
 
     // Check for action buttons (regardless of type, as long as actions exist)
     if (message.actions && message.actions.length > 0) {
-      const [clicked, setClicked] = useState(false);
       const finnyTailColor = pickTailColor([...finnyGradient], "left");
 
       return (
@@ -523,98 +623,15 @@ export const ChatMessageComponent = memo(
               flexWrap: "wrap",
             }}
           >
-            {message.actions.map((btn, idx) => {
-              const [isPressed, setIsPressed] = useState(false);
-              const pressAnim = useRef(new Animated.Value(1)).current;
-
-              const handlePressIn = () => {
-                setIsPressed(true);
-                Animated.spring(pressAnim, {
-                  toValue: 0.95,
-                  useNativeDriver: true,
-                  tension: 300,
-                  friction: 10,
-                }).start();
-              };
-
-              const handlePressOut = () => {
-                setIsPressed(false);
-                Animated.spring(pressAnim, {
-                  toValue: 1,
-                  useNativeDriver: true,
-                  tension: 300,
-                  friction: 10,
-                }).start();
-              };
-
-              return (
-                <Animated.View
-                  key={btn.action}
-                  style={{
-                    opacity: fadeAnim,
-                    transform: [{ scale: pressAnim }],
-                  }}
-                >
-                  <TouchableOpacity
-                    onPress={() => {
-                      if (!clicked && onAction) {
-                        setClicked(true);
-                        onAction(btn.action);
-                      }
-                    }}
-                    onPressIn={handlePressIn}
-                    onPressOut={handlePressOut}
-                    activeOpacity={0.7}
-                    style={{
-                      marginRight: 6,
-                      marginBottom: 4,
-                    }}
-                  >
-                    <LinearGradient
-                      colors={
-                        btn.style === "primary"
-                          ? ["#4A90E2", "#5BA3F5", "#6BB6FF"]
-                          : [
-                              "rgba(255, 255, 255, 0.15)",
-                              "rgba(255, 255, 255, 0.08)",
-                            ]
-                      }
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 1 }}
-                      style={{
-                        paddingHorizontal: responsivePadding(14),
-                        paddingVertical: responsivePadding(10),
-                        borderRadius: 20,
-                        flexDirection: "row",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        shadowColor:
-                          btn.style === "primary" ? "#4A90E2" : "#000",
-                        shadowOffset: { width: 0, height: 3 },
-                        shadowOpacity: btn.style === "primary" ? 0.4 : 0.1,
-                        shadowRadius: 6,
-                        elevation: 4,
-                        opacity: clicked ? 0.5 : 1,
-                        borderWidth: 0,
-                      }}
-                    >
-                      <Text
-                        style={{
-                          fontSize: responsiveFontSize(12),
-                          fontWeight: "600",
-                          color:
-                            btn.style === "primary" ? "#FFFFFF" : "#E0E0E0",
-                          letterSpacing: 0.3,
-                          textAlign: "center",
-                        }}
-                      >
-                        {btn.label}
-                      </Text>
-                    </LinearGradient>
-                  </TouchableOpacity>
-                </Animated.View>
-              );
-            })}
+            {message.actions.map((btn, idx) => (
+              <ActionButton
+                key={btn.action}
+                btn={btn}
+                onAction={onAction}
+                clicked={clicked}
+                setClicked={setClicked}
+              />
+            ))}
           </View>
         </Animated.View>
       );

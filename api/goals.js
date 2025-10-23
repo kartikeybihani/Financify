@@ -1375,7 +1375,12 @@ async function handleGoal(message, context) {
     (labelAlt && labelAlt[1]) ||
     (labelFromCreatePattern && labelFromCreatePattern[1]) ||
     extractLabel(message);
-  if (lbl) extracted.label = lbl.replace(/\s{2,}/g, " ").trim();
+  if (lbl) {
+    const trimmedLabel = lbl.replace(/\s{2,}/g, " ").trim();
+    // Capitalize first letter of goal label
+    extracted.label =
+      trimmedLabel.charAt(0).toUpperCase() + trimmedLabel.slice(1);
+  }
   if (extracted.label) extracted.category = guessGoalCategory(extracted.label);
 
   // Merge with prior
