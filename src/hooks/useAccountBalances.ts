@@ -8,6 +8,7 @@ import { getAllUserAccounts } from "@/src/utils/plaid";
 import { supabase } from "@/src/lib/supabase/supabase";
 import { useCashEntries } from "./useCashEntries";
 import logger from "@/src/utils/logger";
+import { getAuthenticatedUser } from "@/src/utils/auth";
 
 const BALANCES_CACHE_KEY = "cached_account_balances";
 const BALANCES_CACHE_TIMESTAMP_KEY = "cached_account_balances_timestamp";
@@ -121,12 +122,14 @@ export function useAccountBalances() {
         setLoading(true);
       }
       
-      const { data: { user } } = await supabase.auth.getUser();
+      const authResult = await getAuthenticatedUser();
       
-      if (!user?.id) {
+      if (!authResult?.user?.id) {
         logger.error("❌ [BALANCES] User not authenticated for refresh");
         return;
       }
+      
+      const user = authResult.user;
 
       logger.info("👤 [BALANCES] User ID for query:", user.id);
 
@@ -178,9 +181,12 @@ export function useAccountBalances() {
     const authSubscription = DeviceEventEmitter.addListener(
       "authStateChanged",
       async (data) => {
-        if (data && data.event === "TOKEN_REFRESHED") {
-          logger.info("🔄 [BALANCES] Token refreshed, reloading balances...");
-          await loadBalancesWithCache();
+        if (data && data.event === "TOKEN_REFRESHED" && data.validated) {
+          logger.info("🔄 [BALANCES] Token refreshed and validated, reloading balances...");
+          // Add small delay to ensure session is fully propagated
+          setTimeout(async () => {
+            await loadBalancesWithCache();
+          }, 200);
         }
       }
     );

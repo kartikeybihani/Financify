@@ -1814,9 +1814,6 @@ export default function InsightsScreen() {
                     onCategoryPress={handleCategoryPress}
                     formatCategoryName={formatCategoryFromHook}
                   />
-                  <Text style={[styles.sectionLabel, { marginTop: 32 }]}>
-                    Smart Insights
-                  </Text>
                 </Animated.View>
               )}
 

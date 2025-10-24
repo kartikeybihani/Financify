@@ -193,30 +193,8 @@ export default function ChatScreen() {
   // FlatList key extractor
   const keyExtractor = useCallback((item: any) => item.id, []);
 
-  // Optimized item size calculation for better performance
-  const getItemLayout = useCallback((data: any, index: number) => {
-    const item = data?.[index];
-    let estimatedHeight = 80; // Increased default for better estimation
-
-    if (item?.type === "nudges") {
-      estimatedHeight = 140; // Nudge grid height
-    } else if (item?.type === "typing") {
-      estimatedHeight = 80; // Typing indicator height
-    } else if (item?.type === "message") {
-      // More accurate estimation based on text length and actions
-      const textLength = item.message?.text?.length || 0;
-      const hasActions = item.message?.actions?.length > 0;
-      const baseHeight = hasActions ? 100 : 60;
-      const textHeight = Math.max(40, Math.min(300, textLength * 0.4 + 40));
-      estimatedHeight = baseHeight + textHeight;
-    }
-
-    return {
-      length: estimatedHeight,
-      offset: estimatedHeight * index,
-      index,
-    };
-  }, []);
+  // Remove getItemLayout to prevent layout calculation issues
+  // Let FlatList handle dynamic sizing naturally
 
   // Remove tagline-related code
   const mascotFlip = useRef(new Animated.Value(0)).current;
@@ -373,7 +351,8 @@ export default function ChatScreen() {
       contentHeights.current.content = contentHeight;
       contentHeights.current.view = scrollViewHeight;
 
-      const isAtBottom = currentOffset >= contentHeight - scrollViewHeight - 1;
+      // Use a more generous threshold to prevent flickering
+      const isAtBottom = currentOffset >= contentHeight - scrollViewHeight - 50;
       atBottomRef.current = isAtBottom;
       const shouldShow = !isAtBottom && contentHeight > scrollViewHeight;
 
@@ -382,8 +361,8 @@ export default function ChatScreen() {
         Animated.spring(scrollButtonAnimation, {
           toValue: shouldShow ? 1 : 0,
           useNativeDriver: true,
-          tension: 80,
-          friction: 9,
+          tension: 60, // Reduced for smoother animation
+          friction: 12, // Increased for more stable animation
         }).start();
       }
     },
@@ -551,7 +530,7 @@ export default function ChatScreen() {
                 onLayout={onLayout}
                 onContentSizeChange={onContentSizeChange}
                 onScroll={handleScroll}
-                scrollEventThrottle={16}
+                scrollEventThrottle={32}
                 onScrollToIndexFailed={(info) => {
                   // Wait for more items to render, then try again
                   setTimeout(() => {
@@ -574,25 +553,15 @@ export default function ChatScreen() {
                     Math.max(insets.bottom, responsivePadding(8)) +
                     responsiveHeight(8),
                 }}
-                removeClippedSubviews={true}
-                maxToRenderPerBatch={5} // Reduced for better performance
-                windowSize={5} // Reduced window size
-                initialNumToRender={10} // Reduced initial render
-                updateCellsBatchingPeriod={50} // Faster batching
-                // Additional performance optimizations
-                legacyImplementation={false}
-                disableVirtualization={false}
-                disableIntervalMomentum={true}
-                decelerationRate="normal"
+                removeClippedSubviews={false} // Disable to prevent layout issues
+                maxToRenderPerBatch={10} // Increased for smoother scrolling
+                windowSize={10} // Increased window size
+                initialNumToRender={15} // Increased initial render
+                updateCellsBatchingPeriod={100} // Slower batching for stability
                 keyboardShouldPersistTaps="handled"
                 keyboardDismissMode="interactive"
                 showsVerticalScrollIndicator={false}
-                // Performance optimizations
-                maintainVisibleContentPosition={{
-                  minIndexForVisible: 0,
-                  autoscrollToTopThreshold: 10,
-                }}
-                getItemLayout={getItemLayout}
+                // Remove maintainVisibleContentPosition to prevent conflicts
               />
 
               {showScrollButton && (

@@ -66,6 +66,7 @@ export const AuthNavigationProvider: React.FC<AuthNavigationProviderProps> = ({
 
   // Cache profile data in memory to avoid repeated DB calls
   const profileCache = useRef<Profile | null>(null);
+  const profileCacheUserId = useRef<string | null>(null);
   const isInitializedRef = useRef(false);
 
   // Deduplication for auth events
@@ -142,17 +143,19 @@ export const AuthNavigationProvider: React.FC<AuthNavigationProviderProps> = ({
     if (!currentSession?.user) {
       // No session = clear everything
       profileCache.current = null;
+      profileCacheUserId.current = null;
       setNavigationState(NavigationState.PRE_SIGNUP);
       setOnboardingStep(0);
       setOnboardingCompleted(false);
       return;
     }
 
-    // Fetch profile if not cached or session changed
+    // Fetch profile if not cached or user changed
     const userId = currentSession.user.id;
-    if (!profileCache.current) {
+    if (!profileCache.current || profileCacheUserId.current !== userId) {
       const profile = await fetchProfile(userId);
       profileCache.current = profile;
+      profileCacheUserId.current = userId;
     }
 
     const profile = profileCache.current;
@@ -180,6 +183,7 @@ export const AuthNavigationProvider: React.FC<AuthNavigationProviderProps> = ({
         "@investment_cache",
       ]);
       profileCache.current = null;
+      profileCacheUserId.current = null;
     } catch (error) {
       logger.error("Error clearing cache:", error);
     }
@@ -193,6 +197,7 @@ export const AuthNavigationProvider: React.FC<AuthNavigationProviderProps> = ({
     if (session?.user) {
       // Force refetch profile
       profileCache.current = null;
+      profileCacheUserId.current = null;
       await updateNavigationState(session);
     }
   };
@@ -272,24 +277,54 @@ export const AuthNavigationProvider: React.FC<AuthNavigationProviderProps> = ({
 
       logger.info(`🔐 Auth: ${event}`);
 
-      // Handle token refresh - validate user still exists
+      // Handle token refresh - validate user still exists with retry logic
       if (event === "TOKEN_REFRESHED" && newSession) {
-        const {
-          data: { user },
-          error,
-        } = await supabase.auth.getUser();
-        if (error || !user) {
-          logger.error("Invalid user on token refresh, signing out");
+        // Add delay to ensure Supabase has fully updated the session
+        await new Promise((resolve) => setTimeout(resolve, 100));
+
+        // Retry logic for getUser() to handle race conditions
+        let user = null;
+        let error = null;
+        let retryCount = 0;
+        const maxRetries = 3;
+
+        while (retryCount < maxRetries) {
+          const result = await supabase.auth.getUser();
+          user = result.data.user;
+          error = result.error;
+
+          if (user?.id || error) {
+            break; // Success or permanent error
+          }
+
+          retryCount++;
+          if (retryCount < maxRetries) {
+            logger.info(
+              `🔄 [AUTH] Token refresh retry ${retryCount}/${maxRetries}`
+            );
+            await new Promise((resolve) =>
+              setTimeout(resolve, 200 * retryCount)
+            );
+          }
+        }
+
+        if (error || !user?.id) {
+          logger.error(
+            "Invalid user on token refresh after retries, signing out"
+          );
+
+          // Direct sign out - don't try to validate again as it will fail
           await supabase.auth.signOut();
           await clearAllCache();
           setSession(null);
           return;
         }
 
-        // Emit event to notify components about token refresh
+        // Emit event to notify components about token refresh with validated session
         DeviceEventEmitter.emit("authStateChanged", {
           event,
           session: newSession,
+          validated: true,
         });
 
         // Also update navigation state to ensure UI is in sync

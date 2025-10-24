@@ -8,6 +8,7 @@ import { GoalInput } from "@/src/types/addGoalModalTypes";
 import { supabase } from "@/src/lib/supabase/supabase";
 import logger from "@/src/utils/logger";
 import { CACHE_CONFIG } from "@/src/shared/constants/cacheConfig";
+import { getAuthenticatedUser } from "@/src/utils/auth";
 
 const GOALS_CACHE_KEY = CACHE_CONFIG.KEYS.GOALS;
 const GOALS_CACHE_TIMESTAMP_KEY = CACHE_CONFIG.KEYS.GOALS_TIMESTAMP;
@@ -28,9 +29,12 @@ export function useGoals(pushChat: (sender: "user" | "finny", message: string) =
     const authSubscription = DeviceEventEmitter.addListener(
       "authStateChanged",
       async (data) => {
-        if (data && data.event === "TOKEN_REFRESHED") {
-          logger.info("🔄 [GOALS] Token refreshed, reloading goals...");
-          await loadGoalsWithCache();
+        if (data && data.event === "TOKEN_REFRESHED" && data.validated) {
+          logger.info("🔄 [GOALS] Token refreshed and validated, reloading goals...");
+          // Add small delay to ensure session is fully propagated
+          setTimeout(async () => {
+            await loadGoalsWithCache();
+          }, 200);
         }
       }
     );
@@ -139,12 +143,14 @@ export function useGoals(pushChat: (sender: "user" | "finny", message: string) =
         setLoading(true);
       }
       
-      const { data: { user } } = await supabase.auth.getUser();
+      const authResult = await getAuthenticatedUser();
       
-      if (!user?.id) {
+      if (!authResult?.user?.id) {
         logger.error("❌ [GOALS] User not authenticated for refresh");
         return;
       }
+      
+      const user = authResult.user;
 
       const { data: goals, error } = await supabase
         .from('goals')
@@ -184,13 +190,15 @@ export function useGoals(pushChat: (sender: "user" | "finny", message: string) =
     try {
       logger.info("🎯 [GOALS] Saving new goal:", goalInput);
       
-      const { data: { user } } = await supabase.auth.getUser();
+      const authResult = await getAuthenticatedUser();
       
-      if (!user?.id) {
+      if (!authResult?.user?.id) {
         logger.error("❌ [GOALS] User not authenticated");
         if (pushChat) pushChat("finny", "You need to be logged in to save goals.");
         return;
       }
+      
+      const user = authResult.user;
 
       const goalData = {
         user_id: user.id,

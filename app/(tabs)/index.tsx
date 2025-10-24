@@ -402,9 +402,14 @@ export default function HomeScreen() {
     const authSubscription = DeviceEventEmitter.addListener(
       "authStateChanged",
       async (data) => {
-        if (data && data.event === "TOKEN_REFRESHED") {
-          logger.info("🔄 [HOME] Token refreshed, reinitializing app...");
-          await initializeApp();
+        if (data && data.event === "TOKEN_REFRESHED" && data.validated) {
+          logger.info(
+            "🔄 [HOME] Token refreshed and validated, reinitializing app..."
+          );
+          // Add small delay to ensure session is fully propagated
+          setTimeout(async () => {
+            await initializeApp();
+          }, 200);
         }
       }
     );

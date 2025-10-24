@@ -4,7 +4,6 @@ import PersonalityBadge from "@/src/components/insights/PersonalityBadge";
 import SpendingBreakdown from "@/src/components/insights/SpendingBreakdown";
 import {
   analyzeSpendingPersonality,
-  generatePersonalityInsights,
   SpendingPersonality,
 } from "@/src/utils/personalityAnalysis";
 
@@ -45,27 +44,12 @@ export default function SpendingSection({
 
   // Analyze spending personality
   const personality = analyzeSpendingPersonality(categoryBreakdown, totalSpent);
-  const insights = generatePersonalityInsights(
-    personality,
-    categoryBreakdown,
-    totalSpent
-  );
 
   return (
     <View>
       <Text style={titleStyle}>Your Spending Personality</Text>
 
       <PersonalityBadge personality={personality} showDetails={true} />
-
-      {insights.length > 0 && (
-        <View style={styles.insightsContainer}>
-          {insights.map((insight, index) => (
-            <Text key={index} style={styles.insight}>
-              {insight}
-            </Text>
-          ))}
-        </View>
-      )}
 
       <SpendingBreakdown
         categoryBreakdown={categoryBreakdown}
@@ -76,16 +60,4 @@ export default function SpendingSection({
   );
 }
 
-const styles = StyleSheet.create({
-  insightsContainer: {
-    marginTop: 12,
-    marginBottom: 8,
-  },
-  insight: {
-    fontSize: 14,
-    color: "#666",
-    lineHeight: 20,
-    marginBottom: 4,
-    fontStyle: "italic",
-  },
-});
+const styles = StyleSheet.create({});

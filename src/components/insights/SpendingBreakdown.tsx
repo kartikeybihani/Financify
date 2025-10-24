@@ -101,63 +101,68 @@ const SpendingBreakdown: React.FC<SpendingBreakdownProps> = ({
         </View>
       </View>
 
-      {/* Top 3 Categories - Hero Display */}
-      <View style={styles.heroSection}>
-        <Text style={styles.sectionTitle}>Top Spending Categories</Text>
-        <View style={styles.heroGrid}>
-          {topCategories.map(([category, data], index) => (
-            <TouchableOpacity
-              key={category}
-              style={[styles.heroCard, { borderLeftColor: data.color }]}
-              onPress={() => onCategoryPress(category, data)}
-              activeOpacity={0.8}
-            >
-              <View style={styles.heroCardHeader}>
+      {/* Money Flow - Visual Storytelling */}
+      <View style={styles.moneyFlowSection}>
+        <Text style={styles.flowTitle}>Where Your Money Flows</Text>
+        <View style={styles.flowContainer}>
+          {/* Flowing Categories */}
+          <View style={styles.flowCategories}>
+            {topCategories.map(([category, data], index) => (
+              <View
+                key={`container-${category}`}
+                style={styles.flowCardContainer}
+              >
+                {/* Connection Line */}
                 <View
                   style={[
-                    styles.heroIcon,
-                    { backgroundColor: `${data.color}15` },
+                    styles.flowLine,
+                    {
+                      backgroundColor: data.color,
+                    },
                   ]}
+                />
+
+                <TouchableOpacity
+                  key={category}
+                  style={[
+                    styles.flowCard,
+                    {
+                      backgroundColor: data.color,
+                      transform: [
+                        { scale: 0.8 + (data.percentage / 100) * 0.4 },
+                      ],
+                    },
+                  ]}
+                  onPress={() => onCategoryPress(category, data)}
+                  activeOpacity={0.8}
                 >
-                  <Ionicons
-                    name={getCategoryIcon(category)}
-                    size={24}
-                    color={data.color}
-                  />
-                </View>
-                <View style={styles.heroRank}>
-                  <Text style={[styles.rankNumber, { color: data.color }]}>
-                    #{index + 1}
-                  </Text>
-                </View>
+                  <View style={styles.flowCardContent}>
+                    <View style={styles.flowIconContainer}>
+                      <Ionicons
+                        name={getCategoryIcon(category)}
+                        size={18}
+                        color="#fff"
+                      />
+                    </View>
+
+                    <Text style={styles.flowCategoryName} numberOfLines={1}>
+                      {formatCategoryName(category)}
+                    </Text>
+
+                    <Text style={styles.flowAmount}>
+                      ${data.amount.toLocaleString()}
+                    </Text>
+
+                    <View style={styles.flowPercentageContainer}>
+                      <Text style={styles.flowPercentage}>
+                        {data.percentage.toFixed(0)}%
+                      </Text>
+                    </View>
+                  </View>
+                </TouchableOpacity>
               </View>
-
-              <Text style={styles.heroCategoryName} numberOfLines={1}>
-                {formatCategoryName(category)}
-              </Text>
-
-              <Text style={styles.heroAmount}>
-                ${data.amount.toLocaleString()}
-              </Text>
-
-              <View style={styles.heroProgressContainer}>
-                <View style={styles.heroProgressBar}>
-                  <View
-                    style={[
-                      styles.heroProgressFill,
-                      {
-                        width: `${Math.min(data.percentage, 100)}%`,
-                        backgroundColor: data.color,
-                      },
-                    ]}
-                  />
-                </View>
-                <Text style={[styles.heroPercentage, { color: data.color }]}>
-                  {data.percentage.toFixed(0)}%
-                </Text>
-              </View>
-            </TouchableOpacity>
-          ))}
+            ))}
+          </View>
         </View>
       </View>
 
@@ -261,89 +266,95 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: "#4A90E2",
   },
-  heroSection: {
-    marginBottom: 24,
+  moneyFlowSection: {
+    marginBottom: 32,
+  },
+  flowTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#fff",
+    marginBottom: 20,
+    textAlign: "center",
+  },
+  flowContainer: {
+    alignItems: "center",
+    paddingTop: 8,
+    position: "relative",
+  },
+  flowCategories: {
+    flexDirection: "row",
+    justifyContent: "space-around",
+    alignItems: "center",
+    width: "100%",
+    paddingHorizontal: 20,
+  },
+  flowCardContainer: {
+    position: "relative",
+    alignItems: "center",
+  },
+  flowLine: {
+    position: "absolute",
+    top: -30,
+    left: "50%",
+    width: 2,
+    height: 30,
+    opacity: 0.6,
+    zIndex: 1,
+    transform: [{ translateX: -1 }],
+  },
+  flowCard: {
+    borderRadius: 20,
+    padding: 16,
+    minWidth: 80,
+    alignItems: "center",
+    position: "relative",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  flowCardContent: {
+    alignItems: "center",
+  },
+  flowIconContainer: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  flowCategoryName: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#fff",
+    textAlign: "center",
+    marginBottom: 4,
+  },
+  flowAmount: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#fff",
+    marginBottom: 6,
+  },
+  flowPercentageContainer: {
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  flowPercentage: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#fff",
   },
   sectionTitle: {
     fontSize: 16,
     fontWeight: "600",
     color: "#ccc",
     marginBottom: 16,
-  },
-  heroGrid: {
-    flexDirection: "row",
-    gap: 12,
-  },
-  heroCard: {
-    flex: 1,
-    backgroundColor: "#1f1f1f",
-    borderRadius: 16,
-    padding: 16,
-    borderLeftWidth: 4,
-    borderWidth: 1,
-    borderColor: "rgba(74, 144, 226, 0.1)",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  heroCardHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 12,
-  },
-  heroIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  heroRank: {
-    backgroundColor: "rgba(74, 144, 226, 0.15)",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "rgba(74, 144, 226, 0.3)",
-  },
-  rankNumber: {
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  heroCategoryName: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#fff",
-    marginBottom: 8,
-  },
-  heroAmount: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#fff",
-    marginBottom: 12,
-  },
-  heroProgressContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  heroProgressBar: {
-    flex: 1,
-    height: 6,
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
-    borderRadius: 3,
-    marginRight: 8,
-  },
-  heroProgressFill: {
-    height: "100%",
-    borderRadius: 3,
-  },
-  heroPercentage: {
-    fontSize: 12,
-    fontWeight: "600",
   },
   remainingSection: {
     marginBottom: 16,

@@ -2313,7 +2313,7 @@ async function handleAsk(
       "- ALWAYS prioritize web search results over training data for current information (rates, limits, rules, etc.)",
       "- If user asks about 'accounts', show individual account names, balances, and types from the provided account data",
       "- If user asks 'net worth' or 'what's my net worth', ALWAYS include a brief breakdown: show total plus top 2–3 contributors across assets and liabilities (e.g., cash, investments, credit card debt). Keep it concise, no long lists",
-      "- If user asks about 'investments' or 'holdings', then show the detailed holdings",
+      "- If user asks about 'investments' or 'holdings', then show ALL holdings with their symbols, descriptions, and market values. Do not limit to top ones - show the complete portfolio",
       "- If user asks for 'investment advice' or 'financial advice', focus on actionable recommendations, not data dumps",
       "- Keep responses conversational and encouraging, not overwhelming",
       "- Provide actionable advice that users can implement immediately",
@@ -2328,6 +2328,7 @@ async function handleAsk(
       "",
       "RESPONSE STRUCTURE FOR BETTER MESSAGE SPLITTING:",
       "- For GOAL queries: Structure as 'Here's your current goals:' followed by all goals in bullet points in ONE cohesive message, then separate message for progress commentary",
+      "- For INVESTMENT HOLDINGS queries: List ALL holdings with their details in bullet points. Do not limit to top holdings - show the complete portfolio",
       "- For INVESTMENT advice: Group related bullet points (sector overlap, risk tolerance, diversification) together in logical chunks",
       "- Use clear section breaks with phrases like 'Bottom line:', 'Heads up:', 'Hit me up if you need help' to create natural split points",
       "- Keep related content together - don't split mid-concept or mid-sentence",
@@ -2483,7 +2484,9 @@ async function handleAsk(
     }
 
     if (packs.invest?.holdings?.length > 0) {
-      contextLines.push("Investment holdings:");
+      contextLines.push(
+        `Investment holdings (${packs.invest.holdings.length} total):`
+      );
       packs.invest.holdings.forEach((holding) => {
         contextLines.push(
           `${holding.symbol} (${holding.description}): ${
