@@ -1,10 +1,14 @@
 PODS:
   - BVLinearGradient (2.8.3):
     - React-Core
+  - EXApplication (7.0.7):
+    - ExpoModulesCore
   - EXConstants (18.0.9):
     - ExpoModulesCore
   - EXJSONUtils (0.15.0)
   - EXManifests (1.0.8):
+    - ExpoModulesCore
+  - EXNotifications (0.32.12):
     - ExpoModulesCore
   - Expo (54.0.10):
     - ExpoModulesCore
@@ -2339,9 +2343,11 @@ PODS:
 
 DEPENDENCIES:
   - BVLinearGradient (from `../node_modules/react-native-linear-gradient`)
+  - EXApplication (from `../node_modules/expo-application/ios`)
   - EXConstants (from `../node_modules/expo-constants/ios`)
   - EXJSONUtils (from `../node_modules/expo-json-utils/ios`)
   - EXManifests (from `../node_modules/expo-manifests/ios`)
+  - EXNotifications (from `../node_modules/expo-notifications/ios`)
   - Expo (from `../node_modules/expo`)
   - expo-dev-client (from `../node_modules/expo-dev-client/ios`)
   - expo-dev-launcher (from `../node_modules/expo-dev-launcher`)
@@ -2453,12 +2459,16 @@ SPEC REPOS:
 EXTERNAL SOURCES:
   BVLinearGradient:
     :path: "../node_modules/react-native-linear-gradient"
+  EXApplication:
+    :path: "../node_modules/expo-application/ios"
   EXConstants:
     :path: "../node_modules/expo-constants/ios"
   EXJSONUtils:
     :path: "../node_modules/expo-json-utils/ios"
   EXManifests:
     :path: "../node_modules/expo-manifests/ios"
+  EXNotifications:
+    :path: "../node_modules/expo-notifications/ios"
   Expo:
     :path: "../node_modules/expo"
   expo-dev-client:
@@ -2667,9 +2677,11 @@ EXTERNAL SOURCES:
 
 SPEC CHECKSUMS:
   BVLinearGradient: 880f91a7854faff2df62518f0281afb1c60d49a3
+  EXApplication: a9d1c46d473d36f61302a9a81db2379441f3f094
   EXConstants: 59d46d25b89f88cc38291a56dbce4d550758f72d
   EXJSONUtils: 1d3e4590438c3ee593684186007028a14b3686cd
   EXManifests: 7469efed75d694ce3c43a6da9c6f3886f66d3c26
+  EXNotifications: 7aab54f0e5f3023122bc95699eaff7c52bacb559
   Expo: 3d042ea779f0053cce219e99a5d80ff5e87a986e
   expo-dev-client: b0363ce1f16a248d7c9b67ceaee2dbee058c1e05
   expo-dev-launcher: 903b23df8c217bfad6d3692fec0368074eb22dc0

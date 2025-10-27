@@ -5,11 +5,13 @@ import {
   TouchableOpacity,
   Platform,
   Dimensions,
+  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
+import { notificationService } from "@/src/utils/notificationService";
 
 interface FinnyCheckinScreenProps {
   onBack: () => void;
@@ -211,12 +213,62 @@ export default function FinnyCheckinScreen({
     },
   ];
 
-  const handleFrequencySelect = (
+  const handleFrequencySelect = async (
     frequency: "daily" | "3times" | "weekly" | "never"
   ) => {
     setSelectedFrequency(frequency);
-    // TODO: Save the selected frequency to user preferences
-    console.log("Selected frequency:", frequency);
+
+    try {
+      // Request notification permissions if not already granted
+      const hasPermission = await notificationService.requestPermissions();
+      if (!hasPermission) {
+        Alert.alert(
+          "Notification Permission Required",
+          "To receive check-in reminders, please enable notifications in your device settings.",
+          [{ text: "OK" }]
+        );
+        return;
+      }
+
+      // Save preferences and schedule notifications
+      const preferences = {
+        frequency,
+        enabled: frequency !== "never",
+      };
+
+      await notificationService.savePreferences(preferences);
+      await notificationService.scheduleNotifications(preferences);
+
+      console.log("Selected frequency:", frequency);
+
+      // Show confirmation
+      if (frequency !== "never") {
+        Alert.alert(
+          "Notifications Scheduled!",
+          `You'll receive Finny check-in reminders ${
+            frequency === "daily"
+              ? "daily"
+              : frequency === "3times"
+              ? "3 times a week"
+              : "weekly"
+          }.`,
+          [{ text: "OK" }]
+        );
+      } else {
+        Alert.alert(
+          "Notifications Disabled",
+          "You won't receive any check-in reminders.",
+          [{ text: "OK" }]
+        );
+      }
+    } catch (error) {
+      console.error("Error setting notification preferences:", error);
+      Alert.alert(
+        "Error",
+        "Failed to save notification preferences. Please try again.",
+        [{ text: "OK" }]
+      );
+    }
   };
 
   return (

@@ -16,12 +16,16 @@ import { runStorageMigrationV2 } from "@/src/utils/migrate";
 import logger from "@/src/utils/logger";
 import { ActionSheetProvider } from "@expo/react-native-action-sheet";
 import { setupGlobalErrorHandling } from "@/src/utils/errorBoundary";
+import { useNotificationSetup } from "@/src/hooks/useNotificationSetup";
 
 SplashScreen.preventAutoHideAsync();
 setupGlobalErrorHandling();
 
 function RootLayoutNav() {
   const { isLoading } = useAuthNavigation();
+
+  // Initialize notifications
+  useNotificationSetup();
 
   // Show loading screen only during initial auth check
   if (isLoading) {

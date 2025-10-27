@@ -68,6 +68,14 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
         resizeMode: "contain",
         backgroundColor: "#ffffff"
       }
+    ],
+    [
+      "expo-notifications",
+      {
+        icon: "./assets/images/mascotgpt.png",
+        color: "#4A90E2",
+        defaultChannel: "default"
+      }
     ]
   ],
   experiments: {
