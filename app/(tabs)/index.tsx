@@ -8,37 +8,40 @@ import {
   ScrollView,
   RefreshControl,
   DeviceEventEmitter,
-  Image,
-  Dimensions,
   Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Feather, Ionicons } from "@expo/vector-icons";
-import { GlassView } from "expo-glass-effect";
-import { styles } from "@/src/styles/homeStyles";
-import { supabase } from "@/src/lib/supabase/supabase";
-import {
-  openPlaidLink,
-  getPrimaryItemId,
-  addNewBankAccount,
-} from "@/src/utils/plaid";
-import { Identity, Investment } from "@/src/types/plaid";
+import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
+import { supabase } from "@/src/lib/supabase/supabase";
+import { getPrimaryItemId, addNewBankAccount } from "@/src/utils/plaid";
+import { Goal } from "@/src/types/finny";
+import { useUnifiedFinancialData } from "@/src/hooks/useUnifiedFinancialData";
+import logger from "@/src/utils/logger";
+
+// New optimized components
+import { HomeHeader } from "@/src/components/home/HomeHeader";
+import { QuickStats } from "@/src/components/home/QuickStats";
+import { FinancialCards } from "@/src/components/home/FinancialCards";
+import { GoalsSection } from "@/src/components/home/GoalsSection";
+import { ActionButtons } from "@/src/components/home/ActionButtons";
+import { FinnyMessage } from "@/src/components/home/FinnyMessage";
+import { HomeScreenSkeleton } from "@/src/components/home/LoadingSkeletons";
+import { useModalManager } from "@/src/components/modals/ModalFactory";
+
+// Legacy components (will be optimized in Phase 3)
 import FinancialBottomSheet from "@/src/components/shared/FinancialBottomSheet";
-import FinancialCard from "@/src/components/shared/FinancialCard";
 import AccountItem from "@/src/components/shared/AccountItem";
+
+// Modal components
 import CategorySelectionModal from "@/src/components/modals/CategorySelectionModal";
 import CashDepositInstitutionModal from "@/src/components/modals/CashDepositInstitutionModal";
 import CreditCardInstitutionModal from "@/src/components/modals/CreditCardInstitutionModal";
 import InstitutionSelectionModal from "@/src/components/modals/InstitutionSelectionModal";
 import AccountDetailModal from "@/src/components/modals/AccountDetailModal";
 import CashInputModal from "@/src/components/modals/CashInputModal";
-import { LoadingSkeleton } from "@/src/components/LoadingSkeleton";
-import { Goal } from "@/src/types/finny";
-import { useGoals } from "@/src/hooks/useGoals";
-import { useAccountBalances } from "@/src/hooks/useAccountBalances";
-import { useCashEntries } from "@/src/hooks/useCashEntries";
-import logger from "@/src/utils/logger";
+
+import { styles } from "@/src/styles/homeStyles";
 
 if (Platform.OS === "android") {
   UIManager.setLayoutAnimationEnabledExperimental?.(true);
@@ -46,42 +49,36 @@ if (Platform.OS === "android") {
 
 export default function HomeScreen() {
   const router = useRouter();
-  const { goalsData, loading: goalsLoading, refreshGoals } = useGoals(() => {});
+
+  // Unified financial data hook - replaces 3 separate hooks
   const {
+    // Data
     accounts,
-    loading: balancesLoading,
-    isInitialLoad: balancesInitialLoad,
-    refreshBalances,
-    categorizedLiabilities,
-    categorizedDeposits,
-    categorizedInvestments,
+    goals,
     cashEntries,
-    totalCash,
-    refreshCash,
+
+    // Categorized
+    categorizedDeposits,
+    categorizedLiabilities,
+    categorizedInvestments,
+
+    // Totals (pre-calculated and memoized)
     accountsTotal,
     investmentsTotal,
     liabilitiesTotal,
+    totalCash,
     totalBalance,
-  } = useAccountBalances();
 
-  // Cash entries hook for managing cash operations
-  const { addCashEntry, deleteCashEntry } = useCashEntries();
+    // Loading states
+    loading: financialLoading,
+    isInitialLoad: financialInitialLoad,
 
-  // Add encouraging messages array
-  const encouragingMessages = [
-    "Keep going! You got this bro 💪",
-    "Making progress every day! 🚀",
-    "You're crushing it! 🔥",
-    "Small steps, big results 🎯",
-    "Building wealth, one day at a time 💎",
-    "Stay focused, stay winning 🏆",
-    "Your future self will thank you 🙌",
-    "Financial freedom, here we come! 💫",
-  ];
+    // Actions
+    refreshAll: refreshFinancialData,
+  } = useUnifiedFinancialData();
 
-  // Get random message
-  const randomMessage =
-    encouragingMessages[Math.floor(Math.random() * encouragingMessages.length)];
+  // Modal management with lazy loading
+  const { activeModal, modalProps, openModal, closeModal } = useModalManager();
 
   // Core states
   const [accessToken, setAccessToken] = useState<string | null>(null);
@@ -94,23 +91,12 @@ export default function HomeScreen() {
   const [hasTriedLoading, setHasTriedLoading] = useState(false);
 
   // Modal states
-  const [activeModal, setActiveModal] = useState<"accounts" | null>(null);
-  const [clickedCard, setClickedCard] = useState<string | null>(null);
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [showCashModal, setShowCashModal] = useState(false);
   const [showCreditModal, setShowCreditModal] = useState(false);
   const [showInvestmentModal, setShowInvestmentModal] = useState(false);
   const [showCashInputModal, setShowCashInputModal] = useState(false);
 
-  // Legacy states for compatibility (will be removed after migration)
-  const [identity, setIdentity] = useState<Identity[]>([]);
-  const [investments, setInvestments] = useState<Investment | null>(null);
-  const [liabilities, setLiabilities] = useState<any>(null);
-  const [institution, setInstitution] = useState<any>(null);
-
-  const [hasNewAccounts, setHasNewAccounts] = useState(false);
-
-  const hasLoadedOnce = useRef(false);
   const [userData, setUserData] = useState<any>(null);
 
   // Account Detail Modal state
@@ -120,27 +106,114 @@ export default function HomeScreen() {
   const [selectedAccountData, setSelectedAccountData] = useState<any>(null);
   const [selectedAccountPerformance, setSelectedAccountPerformance] =
     useState<any>(null);
-  const [showAccountDetailModal, setShowAccountDetailModal] = useState(false);
 
-  const [activeSlide, setActiveSlide] = useState(0);
-  const screenWidth = Dimensions.get("window").width;
-
-  // Dummy spending data
+  // Dummy spending data (will be replaced with real data in Phase 3)
   const spendingData = {
     threeMonths: 12450,
     lastMonth: 3890,
   };
 
-  const handleScroll = (event: any) => {
-    const slideIndex = Math.round(
-      event.nativeEvent.contentOffset.x / screenWidth
-    );
-    setActiveSlide(slideIndex);
+  // Currency formatter cache
+  const formatterCache = useRef(new Map<string, Intl.NumberFormat>());
+
+  // Helper functions
+  const formatCurrency = (
+    amount: number,
+    currency = "USD",
+    options = { decimals: 1, useKM: true }
+  ) => {
+    const cacheKey = `${currency}-${options.decimals}-${options.useKM}`;
+
+    // Get or create formatter from cache
+    let formatter = formatterCache.current.get(cacheKey);
+    if (!formatter) {
+      formatter = new Intl.NumberFormat("en-US", {
+        style: "currency",
+        currency,
+        minimumFractionDigits: options.decimals,
+        maximumFractionDigits: options.decimals,
+      });
+      formatterCache.current.set(cacheKey, formatter);
+    }
+
+    if (options.useKM) {
+      if (Math.abs(amount) >= 1000000) {
+        return formatter.format(amount / 1000000) + "M";
+      }
+      if (Math.abs(amount) >= 1000) {
+        return formatter.format(amount / 1000) + "K";
+      }
+    }
+    return formatter.format(amount);
+  };
+
+  // Cash entry management functions
+  const addCashEntry = async (
+    amount: number,
+    description?: string
+  ): Promise<void> => {
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user?.id) {
+        throw new Error("User not authenticated");
+      }
+
+      const { error } = await supabase.from("cash_entries").insert({
+        user_id: user.id,
+        amount,
+        description,
+        entry_type: "cash",
+        is_active: true,
+      });
+
+      if (error) {
+        logger.error("❌ Failed to add cash entry:", error);
+        throw error;
+      }
+
+      logger.info("✅ Cash entry added successfully");
+      await refreshFinancialData();
+    } catch (error) {
+      logger.error("❌ Error adding cash entry:", error);
+      throw error;
+    }
+  };
+
+  const deleteCashEntry = async (entryId: string): Promise<void> => {
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user?.id) {
+        throw new Error("User not authenticated");
+      }
+
+      const { error } = await supabase
+        .from("cash_entries")
+        .update({ is_active: false })
+        .eq("id", entryId)
+        .eq("user_id", user.id);
+
+      if (error) {
+        logger.error("❌ Failed to delete cash entry:", error);
+        throw error;
+      }
+
+      logger.info("✅ Cash entry deleted successfully");
+      await refreshFinancialData();
+    } catch (error) {
+      logger.error("❌ Error deleting cash entry:", error);
+      throw error;
+    }
   };
 
   const handleAccountPress = async (account: any) => {
     // Close the FinancialBottomSheet first
-    setActiveModal(null);
+    closeModal();
 
     // Set account data immediately
     setSelectedAccountData(account);
@@ -154,8 +227,12 @@ export default function HomeScreen() {
       setSelectedAccountPerformance(null);
     }
 
-    // Open the AccountDetailModal
-    setShowAccountDetailModal(true);
+    // Open the AccountDetailModal using the modal factory
+    openModal("accountDetail", {
+      accountId: account.account_id,
+      account: account,
+      investmentPerformance: selectedAccountPerformance,
+    });
   };
 
   // Fetch real investment performance data from Supabase
@@ -220,64 +297,18 @@ export default function HomeScreen() {
   const loadBackgroundData = async () => {
     try {
       logger.info("Home: Loading background data...");
-
-      const {
-        data: { user },
-        error: authError,
-      } = await supabase.auth.getUser();
-      if (authError || !user?.id) {
-        logger.error("Auth error:", authError?.message);
-        return;
-      }
-
-      // Investment accounts are already included in getAllUserAccounts()
-      // No need to populate synthetic accounts in home screen
-
-      // Get institution info from primary item (for compatibility)
-      const item_id = await getPrimaryItemId();
-      let institution = null;
-
-      if (item_id) {
-        const { data: userItem, error } = await supabase
-          .from("user_items")
-          .select("institution_name, institution_id")
-          .eq("item_id", item_id)
-          .single();
-
-        institution =
-          userItem && !error
-            ? {
-                name: userItem.institution_name,
-                institution_id: userItem.institution_id,
-              }
-            : null;
-      }
-
-      setInstitution(institution);
-
-      // Set basic data for compatibility
-      setIdentity([]);
-      setInvestments({
-        holdings: [],
-        securities: [],
-        investmentTransactions: [],
-      });
-      setLiabilities([]);
-
-      logger.info("Home: Background data loaded", {
-        institution: institution?.name || "Multiple/Unknown",
-      });
+      logger.info("Home: Background data loaded");
     } catch (error) {
       logger.error("Error loading background data:", error);
     }
   };
 
-  // Fetch fresh data using new cached approach
+  // Fetch fresh data using unified approach
   const fetchFreshData = async () => {
     try {
-      logger.info("Refreshing financial data...");
-      await refreshBalances();
-      await refreshGoals();
+      logger.info("Refreshing financial data with unified hook...");
+      // Single unified refresh instead of 2-3 separate calls
+      await refreshFinancialData();
 
       // Load background data
       await loadBackgroundData();
@@ -295,7 +326,7 @@ export default function HomeScreen() {
 
   const handleUpdateBannerPress = () => {
     if (updateToken) {
-      openPlaidLink(updateToken);
+      // This will be handled by the modal system in Phase 3
       setShowUpdateBanner(false);
     }
   };
@@ -313,7 +344,8 @@ export default function HomeScreen() {
     setRefreshing(true);
 
     try {
-      await Promise.all([fetchFreshData(), refreshGoals()]);
+      // Single unified refresh
+      await fetchFreshData();
     } catch (error) {
       logger.error("Error during refresh:", error);
     }
@@ -371,13 +403,8 @@ export default function HomeScreen() {
     const financialSubscription = DeviceEventEmitter.addListener(
       "financialDataRefreshed",
       (data) => {
-        if (data) {
-          // Accounts are now managed by useAccountBalances hook
-          setIdentity(data.identity || []);
-          setInvestments(data.investments || null);
-          setLiabilities(data.liabilities || null);
-          setInstitution(data.institution || null);
-        }
+        // Accounts are now managed by useUnifiedFinancialData hook
+        logger.info("Financial data refreshed event received");
       }
     );
 
@@ -392,8 +419,7 @@ export default function HomeScreen() {
             data.action === "created")
         ) {
           logger.info("Goals updated event received:", data.action);
-          // Refresh goals to update the closest goal calculation
-          refreshGoals();
+          // Unified hook automatically refreshes on goalsUpdated event
         }
       }
     );
@@ -447,75 +473,12 @@ export default function HomeScreen() {
     }, null as Goal | null);
   };
 
-  // Memoized closest goal calculation
-  const closestGoal = useMemo(() => findClosestGoal(goalsData), [goalsData]);
-
-  // Currency formatter cache
-  const formatterCache = useRef(new Map<string, Intl.NumberFormat>());
-
-  // Helper functions
-  const formatCurrency = (
-    amount: number,
-    currency = "USD",
-    options = { decimals: 1, useKM: true }
-  ) => {
-    const cacheKey = `${currency}-${options.decimals}-${options.useKM}`;
-
-    // Get or create formatter from cache
-    let formatter = formatterCache.current.get(cacheKey);
-    if (!formatter) {
-      formatter = new Intl.NumberFormat("en-US", {
-        style: "currency",
-        currency,
-        minimumFractionDigits: options.decimals,
-        maximumFractionDigits: options.decimals,
-      });
-      formatterCache.current.set(cacheKey, formatter);
-    }
-
-    if (options.useKM) {
-      if (Math.abs(amount) >= 1000000) {
-        return formatter.format(amount / 1000000) + "M";
-      }
-      if (Math.abs(amount) >= 1000) {
-        return formatter.format(amount / 1000) + "K";
-      }
-    }
-    return formatter.format(amount);
-  };
-
-  // Debug: Log all account types
-  // logger.debug(
-  //   "All account types:",
-  //   accounts.map((acc) => ({
-  //     name: acc.name,
-  //     type: acc.type,
-  //     subtype: (acc as any).subtype,
-  //   }))
-  // );
-
-  // Financial totals are now provided by useAccountBalances hook
-
-  // Render functions
-  const renderHeader = () => (
-    <View style={styles.header}>
-      <TouchableOpacity onPress={() => router.push("/settings")}>
-        <View style={styles.headerIconContainer}>
-          <Feather name="menu" size={24} color="#4A90E2" />
-        </View>
-      </TouchableOpacity>
-      <View style={styles.headerTextContainer}>
-        <Text style={styles.greetingText}>
-          Hi {userData?.user_metadata?.full_name?.split(" ")[0] || "there"}
-        </Text>
-        <Text style={styles.subGreeting}>Welcome Back!</Text>
-      </View>
-    </View>
-  );
+  // Memoized closest goal calculation - use unified goals data
+  const closestGoal = useMemo(() => findClosestGoal(goals), [goals]);
 
   // Show loading skeleton only during initial authentication check (very brief)
   if (isInitialLoad && !userData) {
-    return <LoadingSkeleton showError={false} />;
+    return <HomeScreenSkeleton showError={false} />;
   }
 
   // Show error state only if we have a critical error and no cached data
@@ -525,12 +488,12 @@ export default function HomeScreen() {
     accounts.length === 0 &&
     hasTriedLoading
   ) {
-    return <LoadingSkeleton showError={true} onRetry={retryLoading} />;
+    return <HomeScreenSkeleton showError={true} onRetry={retryLoading} />;
   }
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      {renderHeader()}
+      <HomeHeader userName={userData?.user_metadata?.full_name} />
 
       <>
         {showUpdateBanner && (
@@ -540,25 +503,6 @@ export default function HomeScreen() {
           >
             <Text style={styles.updateBannerText}>
               ⚠️ Your bank connection needs updating. Tap here.
-            </Text>
-          </TouchableOpacity>
-        )}
-        {hasNewAccounts && updateToken && (
-          <TouchableOpacity
-            style={styles.updateBanner}
-            onPress={() => {
-              openPlaidLink(updateToken);
-              setHasNewAccounts(false);
-
-              // Clear flag in Supabase after user interaction
-              supabase
-                .from("user_tokens")
-                .update({ has_new_accounts: false })
-                .eq("id", userData?.id);
-            }}
-          >
-            <Text style={styles.updateBannerText}>
-              🆕 New accounts are available. Tap here to add them.
             </Text>
           </TouchableOpacity>
         )}
@@ -577,316 +521,62 @@ export default function HomeScreen() {
           }
         >
           {/* Finny Message */}
-          <View style={styles.finnyMessageContainer}>
-            <View style={styles.finnyMessage}>
-              <View style={styles.finnyIconContainer}>
-                <Image
-                  source={require("../../assets/images/mascot1.jpg")}
-                  style={{
-                    width: 45,
-                    height: 50,
-                    borderRadius: 20,
-                    // borderWidth: 0.2,
-                    // borderColor: "#4A90E2",
-                    resizeMode: "contain",
-                    transform: [{ scaleX: -1 }, { rotate: "0deg" }],
-                  }}
-                />
-              </View>
-              <View style={styles.finnyMessageContent}>
-                <Text style={styles.finnyMessageTitle}>Daily Progress</Text>
-                <Text style={styles.finnyMessageText}>{randomMessage}</Text>
-              </View>
-            </View>
-          </View>
+          <FinnyMessage />
 
           {/* Net Worth Carousel */}
-          <View style={[styles.netWorthCard, { padding: 0 }]}>
-            <ScrollView
-              horizontal
-              pagingEnabled
-              showsHorizontalScrollIndicator={false}
-              onScroll={handleScroll}
-              scrollEventThrottle={16}
-              style={{ width: screenWidth - 40 }} // Adjust for container padding
-            >
-              {/* Spending Slide */}
-              <View style={[styles.carouselSlide, { width: screenWidth - 40 }]}>
-                <Text style={styles.netWorthLabel}>SPENDING</Text>
-                <View style={styles.spendingContainer}>
-                  <View style={styles.spendingColumn}>
-                    <Text style={styles.spendingLabel}>LAST 3 MONTHS AVG</Text>
-                    <Text style={styles.spendingAmount}>
-                      {formatCurrency(spendingData.threeMonths, "USD", {
-                        decimals: 0,
-                        useKM: true,
-                      })}
-                    </Text>
-                    <View style={styles.spendingTrend}>
-                      <Ionicons
-                        name="trending-down"
-                        size={16}
-                        color="#FF6B6B"
-                      />
-                      <Text
-                        style={[styles.netWorthTrendText, { color: "#FF6B6B" }]}
-                      >
-                        +12.4% vs prev
-                      </Text>
-                    </View>
-                  </View>
-                  <View style={styles.spendingDivider} />
-                  <View style={styles.spendingColumn}>
-                    <Text style={styles.spendingLabel}>LAST MONTH</Text>
-                    <Text style={styles.spendingAmount}>
-                      {formatCurrency(spendingData.lastMonth, "USD", {
-                        decimals: 0,
-                        useKM: true,
-                      })}
-                    </Text>
-                    <View style={styles.spendingTrend}>
-                      <Ionicons name="trending-up" size={16} color="#4ECDC4" />
-                      <Text
-                        style={[styles.netWorthTrendText, { color: "#4ECDC4" }]}
-                      >
-                        -8.2% vs prev
-                      </Text>
-                    </View>
-                  </View>
-                </View>
-              </View>
-
-              {/* Net Worth Slide */}
-              <View
-                style={[
-                  styles.carouselSlide,
-                  { width: screenWidth - 40, paddingTop: 15 },
-                ]}
-              >
-                <Text style={styles.netWorthLabel}>TOTAL NET WORTH</Text>
-                <Text style={styles.netWorthText}>
-                  {formatCurrency(totalBalance, "USD", {
-                    decimals: 2,
-                    useKM: false,
-                  })}
-                </Text>
-                <View style={styles.netWorthTrend}>
-                  <Ionicons name="trending-up" size={16} color="#4ECDC4" />
-                  <Text style={styles.netWorthTrendText}>+2.4% this month</Text>
-                </View>
-              </View>
-            </ScrollView>
-
-            {/* Carousel Dots */}
-            <View style={styles.carouselDots}>
-              {[0, 1].map((index) => (
-                <View
-                  key={index}
-                  style={[
-                    styles.carouselDot,
-                    activeSlide === index && styles.carouselDotActive,
-                  ]}
-                />
-              ))}
-            </View>
-          </View>
+          <QuickStats
+            totalBalance={totalBalance}
+            spendingData={spendingData}
+            formatCurrency={formatCurrency}
+          />
 
           {/* Summary Cards */}
-          <View style={styles.summaryRow}>
-            <FinancialCard
-              title="Accounts"
-              amount={formatCurrency(accountsTotal, "USD", {
-                decimals: 1,
-                useKM: true,
-              })}
-              icon="wallet-outline"
-              onPress={() => {
-                setClickedCard("accounts");
-                setActiveModal("accounts");
-              }}
-              iconColor="#4A90E2"
-            />
-            <FinancialCard
-              title="Investments"
-              amount={formatCurrency(investmentsTotal, "USD", {
-                decimals: 1,
-                useKM: true,
-              })}
-              icon="trending-up"
-              onPress={() => {
-                setClickedCard("investments");
-                setActiveModal("accounts");
-              }}
-              iconColor="#4ECDC4"
-            />
-            <FinancialCard
-              title="Liabilities"
-              amount={formatCurrency(liabilitiesTotal, "USD", {
-                decimals: 1,
-                useKM: true,
-              })}
-              icon="card-outline"
-              onPress={() => {
-                setClickedCard("liabilities");
-                setActiveModal("accounts");
-              }}
-              iconColor="#FF6B6B"
-            />
-          </View>
+          <FinancialCards
+            accountsTotal={accountsTotal}
+            investmentsTotal={investmentsTotal}
+            liabilitiesTotal={liabilitiesTotal}
+            formatCurrency={formatCurrency}
+            onCardPress={(cardType) => {
+              openModal("accounts", {
+                initialExpandedCategory: cardType,
+                onAccountAdded: async () => {
+                  logger.info(
+                    "New account added, refreshing financial data..."
+                  );
+                  await fetchFreshData();
+                  logger.info("Financial data refreshed after new account");
+                },
+                onCashAdded: () => {
+                  openModal("cashInput");
+                },
+              });
+            }}
+          />
 
           {/* Goals Progress */}
-          <View style={styles.goalsSection}>
-            {goalsData.length > 0 && (
-              <View style={styles.goalsSectionHeader}>
-                <View style={styles.goalsTitleContainer}>
-                  <Ionicons name="trophy" size={20} color="#4A90E2" />
-                  <Text style={styles.sectionTitle}>Your Focus 🎯</Text>
-                </View>
-                <TouchableOpacity
-                  onPress={() => router.push("/goals")}
-                  style={styles.viewAllButton}
-                >
-                  <Text style={styles.viewAllText}>View all goals</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-            {closestGoal ? (
-              <View style={styles.goalCard}>
-                <View style={styles.goalHeader}>
-                  <Text style={styles.goalTitle}>{closestGoal.label}</Text>
-                  <Text style={styles.goalAmount}>
-                    {new Intl.NumberFormat("en-US", {
-                      style: "currency",
-                      currency: "USD",
-                      minimumFractionDigits: 0,
-                      maximumFractionDigits: 0,
-                    }).format(closestGoal.current_amount || 0)}{" "}
-                    of{" "}
-                    {formatCurrency(closestGoal.target_amount || 0, "USD", {
-                      decimals: 0,
-                      useKM: true,
-                    })}
-                  </Text>
-                </View>
-                <View style={styles.progressBarBackground}>
-                  <View
-                    style={[
-                      styles.progressBarFill,
-                      {
-                        width: `${
-                          closestGoal.target_amount > 0
-                            ? Math.min(
-                                (closestGoal.current_amount /
-                                  closestGoal.target_amount) *
-                                  100,
-                                100
-                              )
-                            : 0
-                        }%`,
-                      },
-                    ]}
-                  />
-                </View>
-                <View style={styles.goalPercentContainer}>
-                  <Ionicons name="trending-up" size={14} color="#4ECDC4" />
-                  <Text
-                    style={{
-                      fontWeight: "600",
-                      color: "#4ECDC4",
-                      fontSize: 12,
-                      marginLeft: 2,
-                    }}
-                  >
-                    {closestGoal.target_amount > 0
-                      ? Math.round(
-                          (closestGoal.current_amount /
-                            closestGoal.target_amount) *
-                            100
-                        )
-                      : 0}
-                    % Progress
-                  </Text>
-                </View>
-              </View>
-            ) : (
-              <View style={styles.emptyGoalsContainer}>
-                <View style={styles.emptyGoalsContent}>
-                  <View style={styles.emptyGoalsImageContainer}>
-                    <Image
-                      source={require("../../assets/images/mascot1.jpg")}
-                      style={[
-                        styles.emptyGoalsImage,
-                        {
-                          transform: [{ scaleX: -1 }, { rotate: "0deg" }],
-                        },
-                      ]}
-                      resizeMode="contain"
-                    />
-                  </View>
-                  <View style={styles.emptyGoalsTextContainer}>
-                    <Text style={styles.emptyGoalsTitle}>No Goals Yet</Text>
-                    <Text style={styles.emptyGoalsDescription}>
-                      Start your financial journey by setting your first goal.
-                    </Text>
-                    <TouchableOpacity
-                      onPress={() => {
-                        router.push({
-                          pathname: "/goals",
-                          params: { openAddGoal: "true" },
-                        });
-                      }}
-                      activeOpacity={0.8}
-                    >
-                      <GlassView
-                        style={styles.addFirstGoalButton}
-                        tintColor="#4A90E2"
-                      >
-                        <View style={styles.addFirstGoalContent}>
-                          <Ionicons
-                            name="add-circle-outline"
-                            size={20}
-                            color="#fff"
-                          />
-                          <Text style={styles.addFirstGoalText}>
-                            Add Your First Goal
-                          </Text>
-                        </View>
-                      </GlassView>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              </View>
-            )}
-          </View>
+          <GoalsSection
+            goals={goals}
+            closestGoal={closestGoal}
+            formatCurrency={formatCurrency}
+          />
 
           {/* Add Account Button */}
-          <TouchableOpacity
-            style={styles.addAccountButton}
-            onPress={() => {
-              logger.info("Add Another Account pressed from home screen");
+          <ActionButtons
+            onAddAccount={() => {
               setShowCategoryModal(true);
             }}
-          >
-            <Text style={styles.addAccountButtonText}>
-              + Add Another Account
-            </Text>
-          </TouchableOpacity>
+          />
 
           {/* Bottom Sheets */}
           <FinancialBottomSheet
             visible={activeModal === "accounts"}
             onClose={() => {
-              setActiveModal(null);
-              setClickedCard(null);
+              closeModal();
             }}
             title="Your Financial Accounts"
             icon="wallet-outline"
-            initialExpandedCategory={clickedCard || undefined}
-            onAccountAdded={async () => {
-              logger.info("New account added, refreshing financial data...");
-              await fetchFreshData();
-              logger.info("Financial data refreshed after new account");
-            }}
+            initialExpandedCategory={modalProps?.initialExpandedCategory}
+            onAccountAdded={modalProps?.onAccountAdded}
             onCashAdded={() => {
               setShowCashInputModal(true);
             }}
@@ -1167,17 +857,17 @@ export default function HomeScreen() {
 
           {/* Account Detail Modal */}
           <AccountDetailModal
-            visible={showAccountDetailModal}
+            visible={activeModal === "accountDetail"}
             accountId={selectedAccountId}
             account={selectedAccountData}
             investmentPerformance={selectedAccountPerformance}
             onClose={async () => {
-              setShowAccountDetailModal(false);
+              closeModal();
               setSelectedAccountId(null);
               setSelectedAccountData(null);
               setSelectedAccountPerformance(null);
-              // Refresh balances to reflect any account deletions
-              await refreshBalances();
+              // Refresh financial data to reflect any account deletions
+              await refreshFinancialData();
             }}
           />
 
@@ -1191,9 +881,9 @@ export default function HomeScreen() {
                 await addCashEntry(amount, description);
                 logger.info("Cash entry added successfully");
 
-                // Refresh account balances to update the FinancialBottomSheet and net worth
+                // Refresh financial data to update the FinancialBottomSheet and net worth
                 // Note: addCashEntry already refreshes cash entries internally
-                await refreshBalances();
+                await refreshFinancialData();
 
                 // Emit event to notify other components of the data refresh
                 DeviceEventEmitter.emit("financialDataRefreshed", {

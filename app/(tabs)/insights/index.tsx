@@ -20,6 +20,7 @@ import {
   RefreshControl,
   Animated,
   Platform,
+  Alert,
 } from "react-native";
 import { InteractionManager } from "react-native";
 import * as Haptics from "expo-haptics";
@@ -174,6 +175,11 @@ export default function InsightsScreen() {
     type: "cloud" | "manual" | "category_fix" | null;
     message: string;
   }>({ type: null, message: "" });
+  const [syncStatus, setSyncStatus] = useState<{
+    lastSync: string | null;
+    nextSync: string | null;
+    isAutomated: boolean;
+  }>({ lastSync: null, nextSync: null, isAutomated: false });
 
   // Enhanced filtering state
   const [showEnhancedFilterModal, setShowEnhancedFilterModal] = useState(false);
@@ -414,6 +420,8 @@ export default function InsightsScreen() {
         const hasStoredData = await loadData();
         // Load accounts for filter modal (non-blocking for first paint)
         loadUserAccounts(false);
+        // Load sync status
+        loadSyncStatus();
 
         if (!hasStoredData) {
           setIsLoading(true);
@@ -542,6 +550,41 @@ export default function InsightsScreen() {
       logger.error("Insights: Error fetching fresh data:", error);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  // Load sync status for automated syncs
+  const loadSyncStatus = async () => {
+    try {
+      const userId = await getUserId();
+      if (!userId) return;
+
+      const { data, error } = await supabase
+        .from("user_items")
+        .select("last_synced_at, last_automated_sync")
+        .eq("user_id", userId)
+        .eq("is_active", true)
+        .order("last_automated_sync", { ascending: false })
+        .limit(1)
+        .single();
+
+      if (error || !data) return;
+
+      const lastSync = data.last_automated_sync || data.last_synced_at;
+      if (lastSync) {
+        const lastSyncDate = new Date(lastSync);
+        const nextSyncDate = new Date(lastSyncDate);
+        nextSyncDate.setDate(nextSyncDate.getDate() + 1);
+        nextSyncDate.setHours(8, 0, 0, 0); // 8 AM ET
+
+        setSyncStatus({
+          lastSync: lastSyncDate.toLocaleString(),
+          nextSync: nextSyncDate.toLocaleString(),
+          isAutomated: !!data.last_automated_sync,
+        });
+      }
+    } catch (error) {
+      console.error("Error loading sync status:", error);
     }
   };
 
@@ -1713,6 +1756,27 @@ export default function InsightsScreen() {
               color="#4A90E2"
             />
           </TouchableOpacity>
+
+          {/* Sync Status Indicator */}
+          {syncStatus.lastSync && (
+            <TouchableOpacity
+              style={headerRefreshStyles.syncStatusButton}
+              onPress={() => {
+                // Show sync status details
+                Alert.alert(
+                  "Sync Status",
+                  `Last sync: ${syncStatus.lastSync}\nNext sync: ${syncStatus.nextSync}\n\nData syncs automatically every day at 8 AM ET.`,
+                  [{ text: "OK" }]
+                );
+              }}
+            >
+              <Ionicons
+                name={syncStatus.isAutomated ? "time-outline" : "sync-outline"}
+                size={16}
+                color="#4CAF50"
+              />
+            </TouchableOpacity>
+          )}
         </View>
       </View>
 

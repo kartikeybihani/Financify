@@ -20,6 +20,16 @@ export const headerRefreshStyles = StyleSheet.create({
   iconButtonDisabled: {
     opacity: 0.5,
   },
+  syncStatusButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "rgba(76, 175, 80, 0.1)",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "rgba(76, 175, 80, 0.3)",
+  },
 });
 
 // Update Modal Styles

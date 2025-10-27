@@ -156,14 +156,27 @@ export default async function handler(req, res) {
   if (req.method !== "POST")
     return res.status(405).json({ error: "Method not allowed" });
 
-  const { item_id } = req.body;
+  const { item_id, user_id } = req.body;
   if (!item_id) return res.status(400).json({ error: "Missing item_id" });
 
   try {
-    // 1) Get user_id and cursor for this Item
+    // 1) Get user_id and cursor for this Item (use provided user_id if available)
+    let userId = user_id;
+    if (!userId) {
+      const { data: item, error: fetchErr } = await supabase
+        .from("user_items")
+        .select("user_id, transactions_cursor")
+        .eq("item_id", item_id)
+        .single();
+      if (fetchErr || !item)
+        return res.status(404).json({ error: "Item not found" });
+      userId = item.user_id;
+    }
+
+    // Get cursor for this Item
     const { data: item, error: fetchErr } = await supabase
       .from("user_items")
-      .select("user_id, transactions_cursor")
+      .select("transactions_cursor")
       .eq("item_id", item_id)
       .single();
     if (fetchErr || !item)
@@ -174,7 +187,7 @@ export default async function handler(req, res) {
       "secure_get_plaid_token",
       {
         p_item_id: item_id,
-        p_user_id: item.user_id,
+        p_user_id: userId,
       }
     );
 
@@ -213,7 +226,7 @@ export default async function handler(req, res) {
     const { data: recurringStreams, error: streamsError } = await supabase
       .from("recurring_streams")
       .select("stream_id, transaction_ids, account_id")
-      .eq("user_id", item.user_id)
+      .eq("user_id", userId)
       .eq("is_active", true);
 
     if (streamsError) {
@@ -312,7 +325,7 @@ export default async function handler(req, res) {
         }
 
         return {
-          user_id: item.user_id,
+          user_id: userId,
           account_id: txn.account_id,
           plaid_transaction_id: txn.transaction_id,
           date: txn.date,

@@ -669,6 +669,28 @@ export const styles = StyleSheet.create({
     backgroundColor: "#4A90E2",
     width: 20,
   },
+
+  // Skeleton loading styles
+  skeletonText: {
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    borderRadius: 4,
+  },
+  financialCardSkeleton: {
+    flex: 1,
+    backgroundColor: "rgba(255, 255, 255, 0.05)",
+    borderRadius: 12,
+    padding: 16,
+    marginHorizontal: 4,
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 100,
+  },
+  modalLoadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+  },
 });
 
 export default styles;
