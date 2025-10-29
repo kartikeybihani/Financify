@@ -363,13 +363,11 @@ async function recalculatePortfolioMetricsFromDatabase(
       totalChangePercent: totalChangePercent.toFixed(2),
     });
 
-    // Update investment_balances with recalculated values
+    // Update investment_balances with recalculated totals but preserve previously computed day_change metrics
     const { error: updateError } = await supabase
       .from("investment_balances")
       .update({
         total_value: totalPortfolioValue,
-        day_change: totalDayChange,
-        day_change_percent: dayChangePercent,
         total_change: totalUnrealizedPL,
         total_change_percent: totalChangePercent,
         last_updated: new Date().toISOString(),
@@ -582,11 +580,11 @@ async function handleSnapTradeSync(res, userId, accountId) {
         const apiTotalValue =
           holdingsData?.total_value?.value || holdingsData?.total_value;
 
-        // Get existing balance data to preserve day change values if no new data available
+        // Get existing balance and previous portfolio value from DB before overwriting holdings
         const { data: existingBalance } = await supabase
           .from("investment_balances")
           .select(
-            "day_change, day_change_percent, total_change, total_change_percent"
+            "day_change, day_change_percent, total_change, total_change_percent, last_updated"
           )
           .eq("user_id", connection.user_id)
           .eq("snaptrade_user_id", connection.snaptrade_user_id)
@@ -594,8 +592,25 @@ async function handleSnapTradeSync(res, userId, accountId) {
           .eq("is_current", true)
           .single();
 
+        // Previous portfolio total value (from last synced holdings snapshot)
+        let previousPortfolioValue = 0;
+        try {
+          const { data: prevHoldings } = await supabase
+            .from("investment_holdings")
+            .select("market_value")
+            .eq("user_id", connection.user_id)
+            .eq("snaptrade_user_id", connection.snaptrade_user_id)
+            .eq("account_id", accountId)
+            .eq("is_active", true);
+          previousPortfolioValue = (prevHoldings || []).reduce(
+            (sum, row) => sum + (row.market_value || 0),
+            0
+          );
+        } catch (_) {
+          previousPortfolioValue = 0;
+        }
+
         // Calculate portfolio performance metrics
-        let totalDayChange = existingBalance?.day_change || 0;
         let totalUnrealizedPL = existingBalance?.total_change || 0;
         let totalPortfolioValue = 0;
 
@@ -604,16 +619,12 @@ async function handleSnapTradeSync(res, userId, accountId) {
           Array.isArray(holdingsData) &&
           holdingsData.length > 0
         ) {
-          // Reset to 0 only when we have new data to calculate from
-          totalDayChange = 0;
           totalUnrealizedPL = 0;
+          totalPortfolioValue = 0;
 
           holdingsData.forEach((holding) => {
             const marketValue = holding.market_value || 0;
-            const dayChange = holding.day_change || 0;
             const unrealizedPL = holding.unrealized_pl || 0;
-
-            totalDayChange += dayChange;
             totalUnrealizedPL += unrealizedPL;
             totalPortfolioValue += marketValue;
           });
@@ -644,11 +655,18 @@ async function handleSnapTradeSync(res, userId, accountId) {
           );
         }
 
-        // Calculate percentages
+        // Compute today's absolute change using securities-only values on both sides
+        // Use sum of holdings market_value (totalPortfolioValue) vs previousPortfolioValue for apples-to-apples
+        const computedDayChange =
+          holdingsData && Array.isArray(holdingsData) && holdingsData.length > 0
+            ? (totalPortfolioValue || 0) - (previousPortfolioValue || 0)
+            : existingBalance?.day_change || 0;
+
+        // Calculate percentages: use previous total as denominator for today % when available
         const dayChangePercent =
           holdingsData && Array.isArray(holdingsData) && holdingsData.length > 0
-            ? totalPortfolioValue > 0
-              ? (totalDayChange / totalPortfolioValue) * 100
+            ? previousPortfolioValue > 0
+              ? (computedDayChange / previousPortfolioValue) * 100
               : 0
             : existingBalance?.day_change_percent || 0;
         const totalChangePercent =
@@ -670,7 +688,7 @@ async function handleSnapTradeSync(res, userId, accountId) {
             holdingsCount: holdingsData?.length || 0,
             totalPortfolioValue: totalPortfolioValue.toFixed(2),
             totalValue: totalValue.toFixed(2),
-            totalDayChange: totalDayChange.toFixed(2),
+            totalDayChange: computedDayChange.toFixed(2),
             dayChangePercent: dayChangePercent.toFixed(2),
             totalUnrealizedPL: totalUnrealizedPL.toFixed(2),
             totalChangePercent: totalChangePercent.toFixed(2),
@@ -684,11 +702,12 @@ async function handleSnapTradeSync(res, userId, accountId) {
           currency_code: balance.currency?.code || "USD",
           cash: balance.cash || 0,
           buying_power: balance.buying_power || 0,
-          total_equity: balance.cash || 0,
+          total_equity:
+            balance.total_equity || totalValue || totalPortfolioValue || 0,
           total_margin_used: 0,
           total_margin_available: 0,
           // New performance columns
-          day_change: totalDayChange,
+          day_change: computedDayChange,
           day_change_percent: dayChangePercent,
           total_change: totalUnrealizedPL,
           total_change_percent: totalChangePercent,

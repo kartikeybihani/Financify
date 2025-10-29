@@ -120,7 +120,6 @@ CREATE TABLE public.goals (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL,
   label text NOT NULL,
-  description text,
   note text CHECK (char_length(note) <= 350),
   target_amount numeric NOT NULL CHECK (target_amount > 0::numeric),
   current_amount numeric DEFAULT 0.0 CHECK (current_amount >= 0::numeric),
@@ -129,6 +128,7 @@ CREATE TABLE public.goals (
   status text NOT NULL DEFAULT 'active'::text CHECK (status = ANY (ARRAY['active'::text, 'paused'::text, 'completed'::text])),
   created_at timestamp with time zone DEFAULT now(),
   updated_at timestamp with time zone DEFAULT now(),
+  manual_progress_total numeric NOT NULL DEFAULT 0,
   CONSTRAINT goals_pkey PRIMARY KEY (id),
   CONSTRAINT goals_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
 );
@@ -316,9 +316,11 @@ CREATE TABLE public.transactions (
   new_category text,
   recurring_stream_id text,
   if_recurring text DEFAULT 'unknown'::text CHECK (if_recurring = ANY (ARRAY['yes'::text, 'no'::text, 'unknown'::text])),
+  linked_goal_id uuid,
   CONSTRAINT transactions_pkey PRIMARY KEY (id),
   CONSTRAINT transactions_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id),
   CONSTRAINT transactions_account_id_fkey FOREIGN KEY (account_id) REFERENCES public.accounts(account_id),
+  CONSTRAINT transactions_linked_goal_id_fkey FOREIGN KEY (linked_goal_id) REFERENCES public.goals(id),
   CONSTRAINT fk_transactions_recurring_stream FOREIGN KEY (recurring_stream_id) REFERENCES public.recurring_streams(stream_id)
 );
 CREATE TABLE public.user_items (
