@@ -29,7 +29,7 @@ const PERSONALITY_ARCHETYPES = {
     badge: 'Culinary Adventurer',
     description: 'You\'re always discovering new flavors and experiences',
     traits: ['Curious about new cuisines', 'Values quality over quantity', 'Loves sharing food experiences'],
-    color: '#FF6B6B',
+    color: '#FF9F1C',
     emoji: '🍕',
     keywords: ['Food', 'Food & Dining', 'Dining Out', 'Restaurants']
   },
