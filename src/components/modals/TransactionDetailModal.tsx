@@ -176,6 +176,9 @@ export default function TransactionDetailModal({
             ),
             recurring_streams:recurring_stream_id (
               stream_id
+            ),
+            goal:linked_goal_id (
+              label
             )
           `
           )
@@ -193,6 +196,7 @@ export default function TransactionDetailModal({
               data.accounts?.user_items?.institution_name ||
               "Unknown Institution",
             account_mask: data.accounts?.mask,
+            goal_label: data.goal?.label || null,
           };
 
           setTransaction(transformedTransaction);
@@ -434,6 +438,82 @@ export default function TransactionDetailModal({
     setShowTransactionActionAlert(true);
   };
 
+  const handleSelectGoal = async (goalId: string, goalLabel: string) => {
+    try {
+      if (!transaction) return;
+      const txAmount = Math.abs(Number(transaction.amount) || 0);
+      const previousGoalId = (transaction as any)?.linked_goal_id || null;
+
+      // If moving from a different goal, decrement previous goal
+      if (previousGoalId && previousGoalId !== goalId) {
+        const { error: decErrRpc } = await supabase.rpc(
+          "increment_goal_amount",
+          { p_goal_id: previousGoalId, p_amount: -txAmount }
+        );
+        if (decErrRpc) {
+          const { data: prevGoal, error: prevReadErr } = await supabase
+            .from("goals")
+            .select("current_amount")
+            .eq("id", previousGoalId)
+            .single();
+          if (!prevReadErr) {
+            const prevAmt = Number(prevGoal?.current_amount || 0);
+            const newPrevAmt = Math.max(0, prevAmt - txAmount);
+            await supabase
+              .from("goals")
+              .update({ current_amount: newPrevAmt })
+              .eq("id", previousGoalId);
+          }
+        }
+      }
+      // Link transaction to goal
+      const { error: linkError } = await supabase
+        .from("transactions")
+        .update({ linked_goal_id: goalId })
+        .eq("id", transaction.id);
+      if (linkError) throw linkError;
+
+      // Increment goal progress (current_amount)
+      const { error: goalError } = await supabase.rpc(
+        "increment_goal_amount",
+        { p_goal_id: goalId, p_amount: txAmount }
+      );
+
+      if (goalError) {
+        // Fallback if RPC not present: read-then-update
+        const { data: goalData, error: readErr } = await supabase
+          .from("goals")
+          .select("current_amount")
+          .eq("id", goalId)
+          .single();
+        if (readErr) throw readErr;
+        const currentAmt = Number(goalData?.current_amount || 0);
+        const newAmt = currentAmt + txAmount;
+        const { error: updErr } = await supabase
+          .from("goals")
+          .update({ current_amount: newAmt })
+          .eq("id", goalId);
+        if (updErr) throw updErr;
+      }
+
+      // Update local state
+      setTransaction({
+        ...transaction,
+        linked_goal_id: goalId,
+        goal_label: goalLabel,
+      } as any);
+
+      DeviceEventEmitter.emit("transactionGoalLinked", {
+        transactionId: transaction.id,
+        goalId,
+      });
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    } catch (e) {
+      console.error("Error linking transaction to goal:", e);
+      Alert.alert("Error", "Failed to add to goal. Please try again.");
+    }
+  };
+
   const handleInternalTransferToggle = async () => {
     try {
       // Use the same logic as the UI to determine current state
@@ -632,7 +712,7 @@ export default function TransactionDetailModal({
                       {formatDate(transaction.date)}
                     </Text>
 
-                    {/* Category and Recurring Tags Container */}
+                    {/* Category and Recurring/Goal Tags Container */}
                     <View style={styles.tagsContainer}>
                       {/* Category Pill - Only show when NOT an internal transfer */}
                       {!(
@@ -704,6 +784,15 @@ export default function TransactionDetailModal({
                           <Text style={styles.recurringText}>RECURRING</Text>
                         </View>
                       )}
+
+                      {/* Goal Tag */}
+                      {(transaction as any)?.linked_goal_id && (
+                        <View style={styles.recurringTag}>
+                          <Text style={styles.recurringText}>
+                            {(transaction as any)?.goal_label || "Goal"}
+                          </Text>
+                        </View>
+                      )}
                     </View>
                   </View>
 
@@ -753,6 +842,7 @@ export default function TransactionDetailModal({
             transaction?.new_category === "INTERNAL_TRANSFER")
         }
         isRecurring={transaction?.if_recurring === "yes"}
+        onSelectGoal={handleSelectGoal}
       />
 
       {/* Account Detail Modal */}
