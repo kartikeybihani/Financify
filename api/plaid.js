@@ -827,17 +827,21 @@ async function handleSnapTradeSync(res, userId, accountId) {
           .map((holding) => {
             // CRITICAL: Extract symbol_id correctly from SnapTrade API structure
             // API structure: holding.symbol.id (position symbol ID) or holding.symbol.symbol.id (universal symbol ID)
-            // We use holding.symbol.id as it's the position-specific ID that matches our database
+            // We need to check BOTH to match existing holdings in database
             let symbolId = null;
+            let universalSymbolId = null;
             let symbolObj = null;
 
             if (holding.symbol?.id) {
               // Primary: Use position symbol ID (holding.symbol.id)
               symbolId = holding.symbol.id;
               symbolObj = holding.symbol.symbol || holding.symbol;
+              // Also extract universal symbol ID for matching
+              universalSymbolId = holding.symbol.symbol?.id || null;
             } else if (holding.symbol?.symbol?.id) {
               // Fallback: Use universal symbol ID if position ID not available
               symbolId = holding.symbol.symbol.id;
+              universalSymbolId = holding.symbol.symbol.id;
               symbolObj = holding.symbol.symbol;
             } else if (holding.symbol_id) {
               // Fallback: Direct symbol_id field
@@ -865,9 +869,19 @@ async function handleSnapTradeSync(res, userId, accountId) {
                 : null;
 
             // Find existing holding to get previous_market_value
+            // Match by symbol_id (position ID) OR universal symbol ID OR symbol string
             const existingHolding = existingHoldings?.find(
-              (eh) => eh.symbol_id === symbolId
+              (eh) =>
+                eh.symbol_id === symbolId ||
+                eh.symbol_id === universalSymbolId ||
+                (symbolString && eh.symbol === symbolString)
             );
+
+            // CRITICAL: If we found an existing holding by symbol string but symbol_id doesn't match,
+            // use the existing symbol_id from database to ensure upsert updates the correct row
+            // This prevents duplicates when API uses position IDs but DB has universal IDs
+            const finalSymbolId = existingHolding?.symbol_id || symbolId;
+
             const previousMarketValue =
               existingHolding?.previous_market_value ??
               existingHolding?.market_value ??
@@ -912,7 +926,7 @@ async function handleSnapTradeSync(res, userId, accountId) {
               user_id: connection.user_id,
               snaptrade_user_id: connection.snaptrade_user_id,
               account_id: accountId,
-              symbol_id: symbolId, // CRITICAL: Must be extracted correctly for comparison
+              symbol_id: finalSymbolId, // CRITICAL: Use existing DB symbol_id if found to prevent duplicates
               symbol: symbolString,
               description: symbolObj?.description || null,
               currency_code: holding.currency?.code || "USD",
