@@ -258,10 +258,21 @@ serve(async (req: Request) => {
         userSecret: user_secret
       });
 
-      const holdingsData = holdingsResponse.data;
+      const holdingsData = holdingsResponse?.data || {};
       console.log("📈 Holdings data received:", JSON.stringify(holdingsData, null, 2));
 
-      if (holdingsData && holdingsData.length > 0) {
+      // CRITICAL: Handle different response structures
+      // Holdings can be in positions array, or holdingsData itself might be an array
+      let positions: any[] = [];
+      if (Array.isArray(holdingsData)) {
+        positions = holdingsData;
+      } else if (holdingsData.positions && Array.isArray(holdingsData.positions)) {
+        positions = holdingsData.positions;
+      } else if (holdingsData.holdings && Array.isArray(holdingsData.holdings)) {
+        positions = holdingsData.holdings;
+      }
+
+      if (positions && positions.length > 0) {
         // Get existing holdings to read previous_market_value before updating
         const { data: existingHoldings } = await supabase
           .from("investment_holdings")
@@ -271,37 +282,65 @@ serve(async (req: Request) => {
           .eq("account_id", account_id)
           .eq("is_active", true);
 
-        const holdingsRows = holdingsData.map((holding: any) => {
-          const symbol = holding.symbol?.symbol || holding.symbol;
-          const marketValue = holding.units && holding.price ? holding.units * holding.price : null;
+        const holdingsRows = positions
+          .filter((holding: any) => holding && (holding.symbol || holding.symbol_id))
+          .map((holding: any) => {
+            // CRITICAL: Extract symbol_id correctly from SnapTrade API structure
+            // API structure: holding.symbol.id (position symbol ID) or holding.symbol.symbol.id (universal symbol ID)
+            // We use holding.symbol.id as it's the position-specific ID that matches our database
+            let symbolId: string | null = null;
+            let symbolObj: any = null;
+            
+            if (holding.symbol?.id) {
+              // Primary: Use position symbol ID (holding.symbol.id)
+              symbolId = holding.symbol.id;
+              symbolObj = holding.symbol.symbol || holding.symbol;
+            } else if (holding.symbol?.symbol?.id) {
+              // Fallback: Use universal symbol ID if position ID not available
+              symbolId = holding.symbol.symbol.id;
+              symbolObj = holding.symbol.symbol;
+            } else if (holding.symbol_id) {
+              // Fallback: Direct symbol_id field
+              symbolId = holding.symbol_id;
+              symbolObj = holding.symbol;
+            }
+            
+            // Extract symbol string
+            const symbolString = symbolObj?.symbol || symbolObj?.raw_symbol || holding.ticker || null;
 
-          // Find existing holding to get previous_market_value
-          const existingHolding = existingHoldings?.find(
-            (eh: any) => eh.symbol_id === symbol?.id
-          );
-          const previousMarketValue = existingHolding?.previous_market_value ?? existingHolding?.market_value ?? null;
+            if (!symbolId) {
+              console.warn("⚠️ Warning: Could not extract symbol_id for holding:", symbolString || "unknown");
+            }
 
-          // Calculate day_change and day_change_percent
-          let dayChange = null;
-          let dayChangePercent = null;
-          if (previousMarketValue !== null && previousMarketValue !== undefined && marketValue !== null) {
-            dayChange = marketValue - previousMarketValue;
-            dayChangePercent = previousMarketValue !== 0 
-              ? (dayChange / previousMarketValue) * 100 
-              : 0;
-          }
+            const marketValue = holding.units && holding.price ? holding.units * holding.price : null;
 
-          return {
-            user_id,
-            snaptrade_user_id,
-            account_id,
-            symbol_id: symbol?.id,
-            symbol: symbol?.symbol,
-            description: symbol?.description,
-            currency_code: holding.currency?.code || 'USD',
-            exchange_code: symbol?.exchange?.code,
-            exchange_name: symbol?.exchange?.name,
-            security_type: symbol?.type?.description,
+            // Find existing holding to get previous_market_value
+            const existingHolding = existingHoldings?.find(
+              (eh: any) => eh.symbol_id === symbolId
+            );
+            const previousMarketValue = existingHolding?.previous_market_value ?? existingHolding?.market_value ?? null;
+
+            // Calculate day_change and day_change_percent
+            let dayChange = null;
+            let dayChangePercent = null;
+            if (previousMarketValue !== null && previousMarketValue !== undefined && marketValue !== null) {
+              dayChange = marketValue - previousMarketValue;
+              dayChangePercent = previousMarketValue !== 0 
+                ? (dayChange / previousMarketValue) * 100 
+                : 0;
+            }
+
+            return {
+              user_id,
+              snaptrade_user_id,
+              account_id,
+              symbol_id: symbolId, // CRITICAL: Must be extracted correctly for comparison
+              symbol: symbolString,
+              description: symbolObj?.description || null,
+              currency_code: holding.currency?.code || 'USD',
+              exchange_code: symbolObj?.exchange?.code || null,
+              exchange_name: symbolObj?.exchange?.name || null,
+              security_type: symbolObj?.type?.description || null,
             units: holding.units || 0,
             price: holding.price,
             market_value: marketValue,
@@ -316,7 +355,8 @@ serve(async (req: Request) => {
             is_active: true,
             last_updated: new Date().toISOString()
           };
-        });
+          })
+          .filter((h: any) => h.symbol_id !== null); // CRITICAL: Filter out holdings without valid symbol_id
 
         const { error: holdingsErr } = await supabase
           .from("investment_holdings")
@@ -330,105 +370,98 @@ serve(async (req: Request) => {
 
         // CRITICAL: Mark holdings as inactive if they're no longer in the API response
         // This handles the case where stocks are sold
+        // SAFETY: Only run this AFTER successful upsert and only if we have valid symbol_ids
         if (holdingsRows.length > 0) {
-          console.log("🔄 Marking sold holdings as inactive...");
+          // CRITICAL: Wait a moment for upsert to fully commit to database
+          await new Promise((resolve) => setTimeout(resolve, 500));
           
-          // Get all symbol_ids from the API response
+          console.log("🔄 Checking for sold holdings to mark as inactive...");
+          
+          // Get all symbol_ids from the API response (these are the ACTIVE holdings)
           const activeSymbolIds = new Set(
             holdingsRows
               .map((h) => h.symbol_id)
-              .filter((id) => id !== null && id !== undefined)
+              .filter((id) => id !== null && id !== undefined && id !== "")
           );
           
-          console.log(`📊 Found ${activeSymbolIds.size} active holdings in API response`);
+          console.log(
+            `📊 Found ${activeSymbolIds.size} active holdings in API response:`,
+            Array.from(activeSymbolIds).slice(0, 5).join(", ") + (activeSymbolIds.size > 5 ? "..." : "")
+          );
           
-          // Get all currently active holdings from database
-          const { data: allActiveHoldings, error: fetchError } = await supabase
-            .from("investment_holdings")
-            .select("symbol_id, symbol")
-            .eq("user_id", user_id)
-            .eq("snaptrade_user_id", snaptrade_user_id)
-            .eq("account_id", account_id)
-            .eq("is_active", true);
-          
-          if (fetchError) {
-            console.error("❌ Error fetching active holdings:", fetchError);
-          } else if (allActiveHoldings && allActiveHoldings.length > 0) {
-            // Find holdings that are in DB but NOT in API response (sold stocks)
-            const soldHoldings = allActiveHoldings.filter(
-              (h) => !activeSymbolIds.has(h.symbol_id)
-            );
+          // SAFETY CHECK: Don't proceed if we have no valid symbol_ids
+          if (activeSymbolIds.size === 0) {
+            console.error("❌ CRITICAL: No valid symbol_ids found in API response - skipping deactivation to prevent data loss");
+            console.log("🔍 Debug - holdingsRows sample:", JSON.stringify(holdingsRows.slice(0, 2), null, 2));
+          } else {
+            // Get all currently active holdings from database (AFTER upsert)
+            const { data: allActiveHoldings, error: fetchError } = await supabase
+              .from("investment_holdings")
+              .select("symbol_id, symbol")
+              .eq("user_id", user_id)
+              .eq("snaptrade_user_id", snaptrade_user_id)
+              .eq("account_id", account_id)
+              .eq("is_active", true);
             
-            if (soldHoldings.length > 0) {
-              console.log(`🔴 Found ${soldHoldings.length} sold holdings to deactivate:`, 
-                soldHoldings.map((h) => h.symbol).join(", "));
+            if (fetchError) {
+              console.error("❌ Error fetching active holdings:", fetchError);
+              console.error("⚠️ SKIPPING deactivation to prevent data loss");
+            } else if (allActiveHoldings && allActiveHoldings.length > 0) {
+              console.log(`📊 Found ${allActiveHoldings.length} active holdings in database`);
               
-              const soldSymbolIds = soldHoldings.map((h) => h.symbol_id);
-              const { error: deactivateError } = await supabase
-                .from("investment_holdings")
-                .update({
-                  is_active: false,
-                  last_updated: new Date().toISOString(),
-                })
-                .eq("user_id", user_id)
-                .eq("snaptrade_user_id", snaptrade_user_id)
-                .eq("account_id", account_id)
-                .in("symbol_id", soldSymbolIds);
+              // Find holdings that are in DB but NOT in API response (sold stocks)
+              const soldHoldings = allActiveHoldings.filter(
+                (h) => h.symbol_id && !activeSymbolIds.has(h.symbol_id)
+              );
               
-              if (deactivateError) {
-                console.error("❌ Error marking sold holdings as inactive:", deactivateError);
+              // SAFETY CHECK: Don't deactivate if it would affect ALL holdings
+              if (soldHoldings.length === allActiveHoldings.length && activeSymbolIds.size > 0) {
+                console.error("❌ CRITICAL SAFETY CHECK FAILED: Would deactivate ALL holdings!");
+                console.error("🔍 Debug info:", {
+                  activeSymbolIdsCount: activeSymbolIds.size,
+                  activeSymbolIdsSample: Array.from(activeSymbolIds).slice(0, 3),
+                  dbHoldingsCount: allActiveHoldings.length,
+                  dbHoldingsSample: allActiveHoldings.slice(0, 3).map(h => ({ symbol: h.symbol, symbol_id: h.symbol_id })),
+                });
+                console.error("⚠️ ABORTING deactivation to prevent data loss - symbol_id mismatch detected");
+              } else if (soldHoldings.length > 0) {
+                console.log(
+                  `🔴 Found ${soldHoldings.length} sold holdings to deactivate:`,
+                  soldHoldings.map((h) => `${h.symbol} (${h.symbol_id})`).join(", ")
+                );
+                
+                const soldSymbolIds = soldHoldings.map((h) => h.symbol_id).filter(id => id);
+                const { error: deactivateError } = await supabase
+                  .from("investment_holdings")
+                  .update({
+                    is_active: false,
+                    last_updated: new Date().toISOString(),
+                  })
+                  .eq("user_id", user_id)
+                  .eq("snaptrade_user_id", snaptrade_user_id)
+                  .eq("account_id", account_id)
+                  .in("symbol_id", soldSymbolIds);
+                
+                if (deactivateError) {
+                  console.error("❌ Error marking sold holdings as inactive:", deactivateError);
+                } else {
+                  console.log(`✅ Successfully marked ${soldSymbolIds.length} sold holdings as inactive`);
+                }
               } else {
-                console.log(`✅ Successfully marked ${soldSymbolIds.length} sold holdings as inactive`);
+                console.log("✅ No sold holdings found - all holdings are still active");
               }
             } else {
-              console.log("✅ No sold holdings found - all holdings are still active");
+              console.log("ℹ️ No active holdings found in database to compare");
             }
           }
-        } else {
-          // If no holdings in API response, mark ALL holdings for this account as inactive
-          console.log("⚠️ No holdings in API response - marking all holdings as inactive");
-          const { error: deactivateAllError } = await supabase
-            .from("investment_holdings")
-            .update({
-              is_active: false,
-              last_updated: new Date().toISOString(),
-            })
-            .eq("user_id", user_id)
-            .eq("snaptrade_user_id", snaptrade_user_id)
-            .eq("account_id", account_id)
-            .eq("is_active", true);
-          
-          if (deactivateAllError) {
-            console.error("❌ Error marking all holdings as inactive:", deactivateAllError);
-          } else {
-            console.log("✅ All holdings marked as inactive");
-          }
         }
+        // SAFETY: Removed automatic deactivation when holdingsRows.length === 0
+        // This could happen if API returns empty array temporarily - better to preserve existing data
       } else {
         console.log("ℹ️ No holdings data to sync (empty or null response)");
-        
-        // If positions array is empty, mark all holdings as inactive
-        console.log("🔄 No positions found - marking all holdings as inactive");
-        try {
-          const { error: deactivateAllError } = await supabase
-            .from("investment_holdings")
-            .update({
-              is_active: false,
-              last_updated: new Date().toISOString(),
-            })
-            .eq("user_id", user_id)
-            .eq("snaptrade_user_id", snaptrade_user_id)
-            .eq("account_id", account_id)
-            .eq("is_active", true);
-          
-          if (deactivateAllError) {
-            console.error("❌ Error marking all holdings as inactive:", deactivateAllError);
-          } else {
-            console.log("✅ All holdings marked as inactive (no positions in API)");
-          }
-        } catch (error) {
-          console.error("❌ Error handling empty positions:", error);
-        }
+        // SAFETY: Don't automatically mark all holdings as inactive if positions array is empty
+        // This could be a temporary API issue - better to leave holdings as-is
+        console.log("⚠️ No positions found in API response - keeping existing holdings active (may be temporary API issue)");
       }
     } catch (error) {
       console.error("❌ Error syncing holdings:", error);
