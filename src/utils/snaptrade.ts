@@ -621,6 +621,33 @@ export const storeSnaptradeCredentials = async (
   try {
     logger.info("🔄 Storing SnapTrade credentials directly in database...");
     
+    // Try to get connection_id from SnapTrade API if not provided
+    let connectionId = metadata?.connection_id;
+    if (!connectionId) {
+      try {
+        logger.info("🔍 Fetching connection_id from SnapTrade API...");
+        // Call SnapTrade API to get connections/authorizations
+        const connectionsResponse = await callSnapTradeAPI("snaptrade_connections", {
+          userId: snaptradeUserId,
+          userSecret: userSecret,
+        });
+        
+        // Find the connection that matches this account
+        if (connectionsResponse?.data && Array.isArray(connectionsResponse.data)) {
+          const matchingConnection = connectionsResponse.data.find(
+            (conn: any) => conn.id === accountId || conn.account_id === accountId
+          );
+          if (matchingConnection?.id) {
+            connectionId = matchingConnection.id;
+            logger.info("✅ Found connection_id from API:", connectionId);
+          }
+        }
+      } catch (connError) {
+        logger.warn("⚠️ Could not fetch connection_id from API (will store without it):", connError);
+        // Continue without connection_id - it can be updated later
+      }
+    }
+    
     // Store directly in Supabase database
     const { data: connection, error } = await supabase
       .from("snaptrade_connections")
@@ -629,6 +656,7 @@ export const storeSnaptradeCredentials = async (
         snaptrade_user_id: snaptradeUserId,
         account_id: accountId,
         user_secret: userSecret,
+        connection_id: connectionId || null, // Store connection_id if available
         brokerage_name: metadata?.brokerage_name || "Unknown",
         account_name: metadata?.account_name || "Investment Account",
         account_type: metadata?.account_type || "investment",
@@ -668,6 +696,35 @@ export const storeSnaptradeCredentials = async (
     return { success: true, connection };
   } catch (error) {
     logger.error("❌ Failed to store SnapTrade credentials:", error);
+    throw error;
+  }
+};
+
+// === Check SnapTrade Connection Status ===
+export const checkSnaptradeConnectionStatus = async (userId: string, accountId: string) => {
+  try {
+    logger.info("🔍 Checking SnapTrade connection status...");
+    
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error("User not authenticated");
+
+    const res = await fetch(`${BASE_URL}/api/plaid`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ 
+        mode: "snaptrade_check_status", 
+        userId: user.id,
+        accountId: accountId
+      }),
+    });
+    
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Failed to check connection status");
+    
+    logger.info("✅ Connection status checked:", data);
+    return data;
+  } catch (error) {
+    logger.error("❌ Failed to check connection status:", error);
     throw error;
   }
 };
@@ -779,14 +836,28 @@ export const getSnaptradeConnectionsFromDB = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error("User not authenticated");
 
+    // Don't filter by is_active - we need to see disabled connections too
     const { data, error } = await supabase
       .from("snaptrade_connections")
       .select("*")
       .eq("user_id", user.id)
-      .eq("is_active", true)
       .order("last_synced_at", { ascending: false });
 
     if (error) throw error;
+    
+    // Debug logging to see connection status
+    if (data && data.length > 0) {
+      logger.info("📊 Connections loaded:", {
+        count: data.length,
+        statuses: data.map((c: any) => ({
+          account_id: c.account_id?.substring(0, 8) + "...",
+          is_active: c.is_active,
+          connection_status: c.connection_status,
+          connection_id: c.connection_id ? "exists" : "missing",
+        })),
+      });
+    }
+    
     return data;
   } catch (error) {
     logger.error("❌ Failed to get SnapTrade connections from DB:", error);

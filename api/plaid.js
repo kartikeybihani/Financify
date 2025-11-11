@@ -239,6 +239,12 @@ async function handleSnapTradeRequest(req, res, mode, params) {
         }
         return await handleSnapTradeRefresh(res, userId, accountId);
 
+      case "snaptrade_check_status":
+        if (!userId || !accountId) {
+          return res.status(400).json({ error: "Missing userId or accountId" });
+        }
+        return await handleSnapTradeCheckStatus(res, userId, accountId);
+
       default:
         return res.status(400).json({ error: "Invalid SnapTrade mode" });
     }
@@ -523,7 +529,7 @@ async function handleSnapTradeSync(res, userId, accountId) {
     const { data: connection, error: connErr } = await supabase
       .from("snaptrade_connections")
       .select(
-        "user_id, snaptrade_user_id, user_secret, connection_status, is_active"
+        "user_id, snaptrade_user_id, user_secret, connection_status, is_active, connection_id"
       )
       .eq("account_id", accountId)
       .single();
@@ -533,7 +539,7 @@ async function handleSnapTradeSync(res, userId, accountId) {
       throw new Error("SnapTrade connection not found");
     }
 
-    // Check if connection is disabled
+    // Check if connection is disabled in DB
     if (
       !connection.is_active ||
       connection.connection_status === "disabled" ||
@@ -547,6 +553,9 @@ async function handleSnapTradeSync(res, userId, accountId) {
         requiresReconnect: true,
       });
     }
+
+    // Try to actually sync - this will fail if connection is disabled in SnapTrade
+    // We'll catch the error and update the DB accordingly
 
     console.log("🔄 Found SnapTrade connection:", {
       user_id: connection.user_id,
@@ -1168,6 +1177,123 @@ async function handleSnapTradeRefresh(res, userId, accountId) {
     console.error("❌ SnapTrade refresh error:", error);
     return res.status(500).json({
       error: error.message || "Failed to trigger refresh",
+    });
+  }
+}
+
+async function handleSnapTradeCheckStatus(res, userId, accountId) {
+  try {
+    console.log("🔍 Checking SnapTrade connection status:", {
+      userId,
+      accountId,
+    });
+
+    // Get connection from DB
+    const { data: connection, error: connErr } = await supabase
+      .from("snaptrade_connections")
+      .select(
+        "user_id, snaptrade_user_id, user_secret, connection_id, connection_status, is_active, account_id"
+      )
+      .eq("user_id", userId)
+      .eq("account_id", accountId)
+      .single();
+
+    if (connErr || !connection) {
+      return res.status(404).json({ error: "Connection not found" });
+    }
+
+    // Try to fetch accounts - if this fails, connection is likely disabled
+    let actualStatus = "active";
+    let isActuallyActive = true;
+
+    try {
+      const Snaptrade = require("snaptrade-typescript-sdk").Snaptrade;
+      const isSandbox = process.env.SNAPTRADE_ENVIRONMENT === "sandbox";
+
+      const snaptrade = new Snaptrade({
+        clientId: isSandbox
+          ? process.env.SNAPTRADE_CLIENT_ID_DEV
+          : process.env.SNAPTRADE_CLIENT_ID,
+        consumerKey: isSandbox
+          ? process.env.SNAPTRADE_CONSUMER_KEY_DEV
+          : process.env.SNAPTRADE_CONSUMER_KEY,
+      });
+
+      // Try to list accounts - this will fail if connection is disabled
+      await snaptrade.accountInformation.listUserAccounts({
+        userId: connection.snaptrade_user_id,
+        userSecret: connection.user_secret,
+      });
+
+      console.log("✅ Connection is active in SnapTrade");
+    } catch (apiError) {
+      console.log("🔴 Connection check failed:", apiError.message);
+
+      // Check if error indicates disabled connection
+      if (
+        apiError.message?.includes("disabled") ||
+        apiError.status === 402 ||
+        apiError.response?.status === 402 ||
+        apiError.code === 3003
+      ) {
+        actualStatus = "disabled";
+        isActuallyActive = false;
+        console.log("🔴 Connection is disabled in SnapTrade");
+      } else {
+        // Some other error - don't change status
+        console.log(
+          "⚠️ Connection check error (not disabled):",
+          apiError.message
+        );
+      }
+    }
+
+    // Update DB if status differs
+    const statusChanged =
+      connection.is_active !== isActuallyActive ||
+      connection.connection_status !== actualStatus;
+
+    if (statusChanged) {
+      console.log("🔄 Updating connection status in DB:", {
+        old: {
+          is_active: connection.is_active,
+          status: connection.connection_status,
+        },
+        new: { is_active: isActuallyActive, status: actualStatus },
+      });
+
+      await supabase
+        .from("snaptrade_connections")
+        .update({
+          is_active: isActuallyActive,
+          connection_status: actualStatus,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("user_id", userId)
+        .eq("account_id", accountId);
+
+      console.log("✅ Connection status updated in DB");
+    }
+
+    return res.status(200).json({
+      success: true,
+      dbStatus: {
+        is_active: connection.is_active,
+        connection_status: connection.connection_status,
+      },
+      actualStatus: {
+        is_active: isActuallyActive,
+        connection_status: actualStatus,
+      },
+      statusChanged,
+      message: statusChanged
+        ? "Connection status updated"
+        : "Connection status matches",
+    });
+  } catch (error) {
+    console.error("❌ Error checking connection status:", error);
+    return res.status(500).json({
+      error: error.message || "Failed to check connection status",
     });
   }
 }

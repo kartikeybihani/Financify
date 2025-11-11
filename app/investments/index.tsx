@@ -26,6 +26,7 @@ import {
   getSnaptradeCredentialsWithFallback,
   syncSnaptradeInvestments,
   populateInvestmentAccountsInDB,
+  checkSnaptradeConnectionStatus,
 } from "@/src/utils/snaptrade";
 import { clearInvestmentCache } from "@/src/shared/utils/investmentCache";
 import { styles } from "@/src/styles/investmentsStyles";
@@ -173,9 +174,69 @@ export default function InvestmentsScreen({
             connection.connection_status === "disabled" ||
             connection.connection_status === "error";
 
+          logger.info("🔍 Connection status check:", {
+            account_id: connection.account_id?.substring(0, 8) + "...",
+            is_active: connection.is_active,
+            connection_status: connection.connection_status,
+            connection_id: connection.connection_id ? "exists" : "missing",
+            isDisabled,
+          });
+
           setConnectionStatus({
             isDisabled,
             connectionId: connection.connection_id || null,
+          });
+
+          // If DB shows active but we want to verify, check actual status
+          // Only check if connection appears active in DB (to catch mismatches)
+          if (
+            !isDisabled &&
+            connection.is_active &&
+            connection.connection_status === "active"
+          ) {
+            logger.info("🔍 Verifying connection status with SnapTrade API...");
+            try {
+              const statusCheck = await checkSnaptradeConnectionStatus(
+                connection.user_id || "",
+                connection.account_id
+              );
+
+              if (statusCheck.statusChanged) {
+                logger.warn(
+                  "⚠️ Connection status mismatch detected and updated:",
+                  statusCheck
+                );
+                // Reload connections to get updated status
+                const updatedConnections =
+                  await getSnaptradeConnectionsFromDB();
+                if (updatedConnections && updatedConnections.length > 0) {
+                  const updated = updatedConnections[0] as any;
+                  const updatedIsDisabled =
+                    !updated.is_active ||
+                    updated.connection_status === "disabled" ||
+                    updated.connection_status === "error";
+
+                  setConnectionStatus({
+                    isDisabled: updatedIsDisabled,
+                    connectionId: updated.connection_id || null,
+                  });
+                  setConnections(updatedConnections);
+                }
+              }
+            } catch (statusError) {
+              logger.warn(
+                "⚠️ Could not verify connection status:",
+                statusError
+              );
+              // Continue with DB status if check fails
+            }
+          }
+        } else {
+          // Reset if no connections
+          logger.info("🔍 No connections found, resetting status");
+          setConnectionStatus({
+            isDisabled: false,
+            connectionId: null,
           });
         }
 
