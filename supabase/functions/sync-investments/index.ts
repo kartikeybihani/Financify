@@ -287,17 +287,21 @@ serve(async (req: Request) => {
           .map((holding: any) => {
             // CRITICAL: Extract symbol_id correctly from SnapTrade API structure
             // API structure: holding.symbol.id (position symbol ID) or holding.symbol.symbol.id (universal symbol ID)
-            // We use holding.symbol.id as it's the position-specific ID that matches our database
+            // We need to check BOTH to match existing holdings in database
             let symbolId: string | null = null;
+            let universalSymbolId: string | null = null;
             let symbolObj: any = null;
             
             if (holding.symbol?.id) {
               // Primary: Use position symbol ID (holding.symbol.id)
               symbolId = holding.symbol.id;
               symbolObj = holding.symbol.symbol || holding.symbol;
+              // Also extract universal symbol ID for matching
+              universalSymbolId = holding.symbol.symbol?.id || null;
             } else if (holding.symbol?.symbol?.id) {
               // Fallback: Use universal symbol ID if position ID not available
               symbolId = holding.symbol.symbol.id;
+              universalSymbolId = holding.symbol.symbol.id;
               symbolObj = holding.symbol.symbol;
             } else if (holding.symbol_id) {
               // Fallback: Direct symbol_id field
@@ -315,10 +319,30 @@ serve(async (req: Request) => {
             const marketValue = holding.units && holding.price ? holding.units * holding.price : null;
 
             // Find existing holding to get previous_market_value
+            // Match by symbol_id (position ID) OR universal symbol ID OR symbol string
             const existingHolding = existingHoldings?.find(
-              (eh: any) => eh.symbol_id === symbolId
+              (eh: any) =>
+                eh.symbol_id === symbolId ||
+                eh.symbol_id === universalSymbolId ||
+                (symbolString && eh.symbol === symbolString)
             );
             const previousMarketValue = existingHolding?.previous_market_value ?? existingHolding?.market_value ?? null;
+            
+            // Log price updates for debugging
+            if (existingHolding && existingHolding.price !== holding.price) {
+              console.log(`💰 Price update for ${symbolString}:`, {
+                previous_price: existingHolding.price,
+                new_price: holding.price,
+                change: holding.price - existingHolding.price,
+                change_percent: existingHolding.price 
+                  ? ((holding.price - existingHolding.price) / existingHolding.price * 100).toFixed(2) + '%'
+                  : 'N/A'
+              });
+            } else if (!existingHolding) {
+              console.log(`💰 New holding price for ${symbolString}: $${holding.price}`);
+            } else if (existingHolding && existingHolding.price === holding.price) {
+              console.log(`💰 Price unchanged for ${symbolString}: $${holding.price}`);
+            }
 
             // Calculate day_change and day_change_percent
             let dayChange = null;
@@ -348,7 +372,7 @@ serve(async (req: Request) => {
             average_purchase_price: holding.average_purchase_price,
             total_cost_basis: holding.units && holding.average_purchase_price ? holding.units * holding.average_purchase_price : null,
             unrealized_pl: holding.open_pnl,
-            realized_pl: 0, // Not provided in API response
+            // NOTE: realized_pl is NOT in investment_holdings table (only in investment_options)
             day_change: dayChange,
             day_change_percent: dayChangePercent,
             total_percent_change: null, // Will be calculated by trigger: ((market_value - total_cost_basis) / total_cost_basis) * 100
@@ -377,21 +401,31 @@ serve(async (req: Request) => {
           
           console.log("🔄 Checking for sold holdings to mark as inactive...");
           
-          // Get all symbol_ids from the API response (these are the ACTIVE holdings)
+          // Get all symbol identifiers from the API response (these are the ACTIVE holdings)
+          // We need to match by BOTH symbol_id AND symbol string to handle ID mismatches
           const activeSymbolIds = new Set(
             holdingsRows
               .map((h) => h.symbol_id)
               .filter((id) => id !== null && id !== undefined && id !== "")
           );
-          
-          console.log(
-            `📊 Found ${activeSymbolIds.size} active holdings in API response:`,
-            Array.from(activeSymbolIds).slice(0, 5).join(", ") + (activeSymbolIds.size > 5 ? "..." : "")
+          const activeSymbols = new Set(
+            holdingsRows
+              .map((h) => h.symbol)
+              .filter((s) => s !== null && s !== undefined && s !== "")
           );
           
-          // SAFETY CHECK: Don't proceed if we have no valid symbol_ids
-          if (activeSymbolIds.size === 0) {
-            console.error("❌ CRITICAL: No valid symbol_ids found in API response - skipping deactivation to prevent data loss");
+          console.log(
+            `📊 Found ${activeSymbolIds.size} active holdings in API response (by ID):`,
+            Array.from(activeSymbolIds).slice(0, 5).join(", ") + (activeSymbolIds.size > 5 ? "..." : "")
+          );
+          console.log(
+            `📊 Found ${activeSymbols.size} active holdings in API response (by symbol):`,
+            Array.from(activeSymbols).slice(0, 5).join(", ") + (activeSymbols.size > 5 ? "..." : "")
+          );
+          
+          // SAFETY CHECK: Don't proceed if we have no valid identifiers
+          if (activeSymbolIds.size === 0 && activeSymbols.size === 0) {
+            console.error("❌ CRITICAL: No valid symbol_ids or symbols found in API response - skipping deactivation to prevent data loss");
             console.log("🔍 Debug - holdingsRows sample:", JSON.stringify(holdingsRows.slice(0, 2), null, 2));
           } else {
             // Get all currently active holdings from database (AFTER upsert)
@@ -410,9 +444,17 @@ serve(async (req: Request) => {
               console.log(`📊 Found ${allActiveHoldings.length} active holdings in database`);
               
               // Find holdings that are in DB but NOT in API response (sold stocks)
-              const soldHoldings = allActiveHoldings.filter(
-                (h) => h.symbol_id && !activeSymbolIds.has(h.symbol_id)
-              );
+              // Match by BOTH symbol_id AND symbol string to handle ID mismatches
+              const soldHoldings = allActiveHoldings.filter((h: any) => {
+                if (!h.symbol_id && !h.symbol) return false;
+                
+                // Check if holding exists in API by symbol_id OR symbol string
+                const existsById = h.symbol_id && activeSymbolIds.has(h.symbol_id);
+                const existsBySymbol = h.symbol && activeSymbols.has(h.symbol);
+                
+                // If it exists by either identifier, it's NOT sold
+                return !existsById && !existsBySymbol;
+              });
               
               // SAFETY CHECK: Don't deactivate if it would affect ALL holdings
               if (soldHoldings.length === allActiveHoldings.length && activeSymbolIds.size > 0) {

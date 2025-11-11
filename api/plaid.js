@@ -873,6 +873,26 @@ async function handleSnapTradeSync(res, userId, accountId) {
               existingHolding?.market_value ??
               null;
 
+            // Log price updates for debugging
+            if (existingHolding && existingHolding.price !== holding.price) {
+              console.log(`💰 Price update for ${symbolString}:`, {
+                previous_price: existingHolding.price,
+                new_price: holding.price,
+                change: holding.price - existingHolding.price,
+                change_percent: existingHolding.price
+                  ? (
+                      ((holding.price - existingHolding.price) /
+                        existingHolding.price) *
+                      100
+                    ).toFixed(2) + "%"
+                  : "N/A",
+              });
+            } else if (!existingHolding) {
+              console.log(
+                `💰 New holding price for ${symbolString}: $${holding.price}`
+              );
+            }
+
             // Calculate day_change and day_change_percent
             let dayChange = null;
             let dayChangePercent = null;
@@ -909,7 +929,7 @@ async function handleSnapTradeSync(res, userId, accountId) {
                   ? holding.units * holding.average_purchase_price
                   : null,
               unrealized_pl: holding.open_pnl,
-              realized_pl: 0,
+              // NOTE: realized_pl is NOT in investment_holdings table (only in investment_options)
               day_change: dayChange,
               day_change_percent: dayChangePercent,
               is_active: true,
@@ -968,23 +988,34 @@ async function handleSnapTradeSync(res, userId, accountId) {
 
             console.log("🔄 Checking for sold holdings to mark as inactive...");
 
-            // Get all symbol_ids from the API response (these are the ACTIVE holdings)
+            // Get all symbol identifiers from the API response (these are the ACTIVE holdings)
+            // We need to match by BOTH symbol_id AND symbol string to handle ID mismatches
             const activeSymbolIds = new Set(
               holdingsRows
                 .map((h) => h.symbol_id)
                 .filter((id) => id !== null && id !== undefined && id !== "")
             );
+            const activeSymbols = new Set(
+              holdingsRows
+                .map((h) => h.symbol)
+                .filter((s) => s !== null && s !== undefined && s !== "")
+            );
 
             console.log(
-              `📊 Found ${activeSymbolIds.size} active holdings in API response:`,
+              `📊 Found ${activeSymbolIds.size} active holdings in API response (by ID):`,
               Array.from(activeSymbolIds).slice(0, 5).join(", ") +
                 (activeSymbolIds.size > 5 ? "..." : "")
             );
+            console.log(
+              `📊 Found ${activeSymbols.size} active holdings in API response (by symbol):`,
+              Array.from(activeSymbols).slice(0, 5).join(", ") +
+                (activeSymbols.size > 5 ? "..." : "")
+            );
 
-            // SAFETY CHECK: Don't proceed if we have no valid symbol_ids
-            if (activeSymbolIds.size === 0) {
+            // SAFETY CHECK: Don't proceed if we have no valid identifiers
+            if (activeSymbolIds.size === 0 && activeSymbols.size === 0) {
               console.error(
-                "❌ CRITICAL: No valid symbol_ids found in API response - skipping deactivation to prevent data loss"
+                "❌ CRITICAL: No valid symbol_ids or symbols found in API response - skipping deactivation to prevent data loss"
               );
               console.log(
                 "🔍 Debug - holdingsRows sample:",
@@ -1010,9 +1041,19 @@ async function handleSnapTradeSync(res, userId, accountId) {
                 );
 
                 // Find holdings that are in DB but NOT in API response (sold stocks)
-                const soldHoldings = allActiveHoldings.filter(
-                  (h) => h.symbol_id && !activeSymbolIds.has(h.symbol_id)
-                );
+                // Match by BOTH symbol_id AND symbol string to handle ID mismatches
+                const soldHoldings = allActiveHoldings.filter((h) => {
+                  if (!h.symbol_id && !h.symbol) return false;
+
+                  // Check if holding exists in API by symbol_id OR symbol string
+                  const existsById =
+                    h.symbol_id && activeSymbolIds.has(h.symbol_id);
+                  const existsBySymbol =
+                    h.symbol && activeSymbols.has(h.symbol);
+
+                  // If it exists by either identifier, it's NOT sold
+                  return !existsById && !existsBySymbol;
+                });
 
                 // SAFETY CHECK: Don't deactivate if it would affect ALL holdings
                 if (
