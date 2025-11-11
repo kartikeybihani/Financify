@@ -327,8 +327,108 @@ serve(async (req: Request) => {
         } else {
           console.log("✅ Holdings synced successfully");
         }
+
+        // CRITICAL: Mark holdings as inactive if they're no longer in the API response
+        // This handles the case where stocks are sold
+        if (holdingsRows.length > 0) {
+          console.log("🔄 Marking sold holdings as inactive...");
+          
+          // Get all symbol_ids from the API response
+          const activeSymbolIds = new Set(
+            holdingsRows
+              .map((h) => h.symbol_id)
+              .filter((id) => id !== null && id !== undefined)
+          );
+          
+          console.log(`📊 Found ${activeSymbolIds.size} active holdings in API response`);
+          
+          // Get all currently active holdings from database
+          const { data: allActiveHoldings, error: fetchError } = await supabase
+            .from("investment_holdings")
+            .select("symbol_id, symbol")
+            .eq("user_id", user_id)
+            .eq("snaptrade_user_id", snaptrade_user_id)
+            .eq("account_id", account_id)
+            .eq("is_active", true);
+          
+          if (fetchError) {
+            console.error("❌ Error fetching active holdings:", fetchError);
+          } else if (allActiveHoldings && allActiveHoldings.length > 0) {
+            // Find holdings that are in DB but NOT in API response (sold stocks)
+            const soldHoldings = allActiveHoldings.filter(
+              (h) => !activeSymbolIds.has(h.symbol_id)
+            );
+            
+            if (soldHoldings.length > 0) {
+              console.log(`🔴 Found ${soldHoldings.length} sold holdings to deactivate:`, 
+                soldHoldings.map((h) => h.symbol).join(", "));
+              
+              const soldSymbolIds = soldHoldings.map((h) => h.symbol_id);
+              const { error: deactivateError } = await supabase
+                .from("investment_holdings")
+                .update({
+                  is_active: false,
+                  last_updated: new Date().toISOString(),
+                })
+                .eq("user_id", user_id)
+                .eq("snaptrade_user_id", snaptrade_user_id)
+                .eq("account_id", account_id)
+                .in("symbol_id", soldSymbolIds);
+              
+              if (deactivateError) {
+                console.error("❌ Error marking sold holdings as inactive:", deactivateError);
+              } else {
+                console.log(`✅ Successfully marked ${soldSymbolIds.length} sold holdings as inactive`);
+              }
+            } else {
+              console.log("✅ No sold holdings found - all holdings are still active");
+            }
+          }
+        } else {
+          // If no holdings in API response, mark ALL holdings for this account as inactive
+          console.log("⚠️ No holdings in API response - marking all holdings as inactive");
+          const { error: deactivateAllError } = await supabase
+            .from("investment_holdings")
+            .update({
+              is_active: false,
+              last_updated: new Date().toISOString(),
+            })
+            .eq("user_id", user_id)
+            .eq("snaptrade_user_id", snaptrade_user_id)
+            .eq("account_id", account_id)
+            .eq("is_active", true);
+          
+          if (deactivateAllError) {
+            console.error("❌ Error marking all holdings as inactive:", deactivateAllError);
+          } else {
+            console.log("✅ All holdings marked as inactive");
+          }
+        }
       } else {
         console.log("ℹ️ No holdings data to sync (empty or null response)");
+        
+        // If positions array is empty, mark all holdings as inactive
+        console.log("🔄 No positions found - marking all holdings as inactive");
+        try {
+          const { error: deactivateAllError } = await supabase
+            .from("investment_holdings")
+            .update({
+              is_active: false,
+              last_updated: new Date().toISOString(),
+            })
+            .eq("user_id", user_id)
+            .eq("snaptrade_user_id", snaptrade_user_id)
+            .eq("account_id", account_id)
+            .eq("is_active", true);
+          
+          if (deactivateAllError) {
+            console.error("❌ Error marking all holdings as inactive:", deactivateAllError);
+          } else {
+            console.log("✅ All holdings marked as inactive (no positions in API)");
+          }
+        } catch (error) {
+          console.error("❌ Error handling empty positions:", error);
+        }
       }
     } catch (error) {
       console.error("❌ Error syncing holdings:", error);
