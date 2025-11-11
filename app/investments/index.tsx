@@ -10,6 +10,7 @@ import {
   Modal,
   Dimensions,
   TouchableWithoutFeedback,
+  RefreshControl,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -123,6 +124,7 @@ export default function InvestmentsScreen({
     isDisabled: boolean;
     connectionId: string | null;
   }>({ isDisabled: false, connectionId: null });
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const hasData = useRef(
     preloadedData
       ? (preloadedData.holdings && preloadedData.holdings.length > 0) ||
@@ -489,7 +491,7 @@ export default function InvestmentsScreen({
   // Check connection status when screen comes into focus (catches webhook updates)
   useFocusEffect(
     React.useCallback(() => {
-      const checkConnectionStatusOnFocus = async () => {
+      const checkConnectionStatusAndReloadDataOnFocus = async () => {
         try {
           const {
             data: { user },
@@ -540,13 +542,26 @@ export default function InvestmentsScreen({
             });
 
             setConnections(updatedConnections);
+
+            // CRITICAL: Always reload all data when screen comes into focus to show any updates
+            // This ensures UI reflects database changes from webhooks or background syncs
+            // Even if last_synced_at didn't change, webhooks might have updated holdings/balances
+            if (!isDisabled) {
+              logger.info("🔄 Screen focused - reloading data to ensure UI reflects database state...");
+              await loadFromDbWithoutAutoSync();
+              logger.info("✅ Data reloaded on focus - UI now in sync with database");
+            }
+          } else {
+            // No connections - still try to reload in case data exists
+            logger.info("🔄 Screen focused - reloading data (no connections found)...");
+            await loadFromDbWithoutAutoSync();
           }
         } catch (error) {
-          logger.warn("⚠️ Error checking connection status on focus:", error);
+          logger.warn("⚠️ Error checking connection status and reloading data on focus:", error);
         }
       };
 
-      checkConnectionStatusOnFocus();
+      checkConnectionStatusAndReloadDataOnFocus();
     }, []) // Empty deps - we use functional setState to access current state
   );
 
@@ -669,15 +684,132 @@ export default function InvestmentsScreen({
           connectionId
         );
       } else {
-        const errorMsg =
-          err instanceof Error ? err.message : "Failed to sync investments";
-        logger.error("Failed to sync investments", err);
-        setSyncError(errorMsg);
+      const errorMsg =
+        err instanceof Error ? err.message : "Failed to sync investments";
+      logger.error("Failed to sync investments", err);
+      setSyncError(errorMsg);
       }
     } finally {
       isSyncInProgress.current = false;
       setIsSyncing(false);
       setIsLoading(false);
+    }
+  };
+
+  const handlePullToRefresh = async () => {
+    // CRITICAL: Prevent concurrent refresh operations
+    if (isSyncInProgress.current || isRefreshing) {
+      logger.warn("⚠️ Refresh already in progress, ignoring pull-to-refresh");
+      return;
+    }
+
+    setIsRefreshing(true);
+    setSyncError(null);
+
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) {
+        logger.error("User not authenticated for pull-to-refresh");
+        setIsRefreshing(false);
+        return;
+      }
+
+      // Check if we have connections
+      if (connections.length === 0) {
+        logger.info("No connections found, just reloading from DB...");
+        await loadFromDbWithoutAutoSync();
+        setIsRefreshing(false);
+        return;
+      }
+
+      const connection = connections[0];
+      
+      // Check if data is older than 24 hours
+      const now = new Date();
+      const lastSynced = connection.last_synced_at
+        ? new Date(connection.last_synced_at)
+        : null;
+      
+      const hoursSinceSync = lastSynced
+        ? (now.getTime() - lastSynced.getTime()) / (1000 * 60 * 60)
+        : Infinity;
+
+      logger.info("🔄 Pull-to-refresh triggered", {
+        lastSynced: lastSynced?.toISOString() || "never",
+        hoursSinceSync: hoursSinceSync.toFixed(2),
+        needsApiRefresh: hoursSinceSync > 24,
+      });
+
+      if (hoursSinceSync > 24) {
+        // Data is stale (>24 hours) - sync from SnapTrade API (not paid refresh endpoint)
+        logger.info("📡 Data is >24 hours old, syncing from SnapTrade API...");
+        
+        isSyncInProgress.current = true;
+        
+        try {
+          // Call sync endpoint (accounts API) - this fetches fresh data from SnapTrade
+          // NOTE: We do NOT call refreshSnaptradeInvestments here - that's only for manual refresh button
+          await syncSnaptradeInvestments(user.id, connection.account_id);
+          
+          // Reload from database after sync
+          await loadFromDbWithoutAutoSync();
+          
+          logger.info("✅ Pull-to-refresh completed - data synced from API");
+        } catch (err: any) {
+          // Check if this is a 402 disabled connection error
+          if (
+            err.statusCode === 402 ||
+            err.code === "CONNECTION_DISABLED" ||
+            err.requiresReconnect
+          ) {
+            logger.error("🔴 Connection disabled detected during pull-to-refresh", err);
+            
+            // Reload connections from DB
+            const updatedConnections = await getSnaptradeConnectionsFromDB();
+            setConnections(updatedConnections || []);
+            
+            const connectionId =
+              err.connectionId ||
+              (updatedConnections && updatedConnections.length > 0
+                ? updatedConnections[0].connection_id
+                : null) ||
+              (connections.length > 0 ? connections[0].connection_id : null);
+            
+            setConnectionStatus({
+              isDisabled: true,
+              connectionId: connectionId,
+            });
+            
+            setSyncError(
+              err.message ||
+                "Your investment account connection has been disabled. Please reconnect your account."
+            );
+          } else {
+            logger.error("❌ Error during pull-to-refresh sync:", err);
+            // Still reload from DB even if API call failed
+            await loadFromDbWithoutAutoSync();
+          }
+        } finally {
+          isSyncInProgress.current = false;
+        }
+      } else {
+        // Data is fresh (<24 hours) - just reload from database
+        logger.info("💾 Data is fresh (<24 hours), reloading from database...");
+        await loadFromDbWithoutAutoSync();
+        logger.info("✅ Pull-to-refresh completed - data reloaded from database");
+      }
+    } catch (error) {
+      logger.error("❌ Error during pull-to-refresh:", error);
+      // Try to reload from DB anyway
+      try {
+        await loadFromDbWithoutAutoSync();
+      } catch (dbError) {
+        logger.error("❌ Failed to reload from database:", dbError);
+      }
+    } finally {
+      setIsRefreshing(false);
     }
   };
 
@@ -1639,6 +1771,14 @@ export default function InvestmentsScreen({
               styles.content,
               { paddingTop: 0, marginTop: 0 },
             ]}
+            refreshControl={
+              <RefreshControl
+                refreshing={isRefreshing}
+                onRefresh={handlePullToRefresh}
+                tintColor="#4A90E2"
+                colors={["#4A90E2"]}
+              />
+            }
             showsVerticalScrollIndicator={false}
             overScrollMode="never"
             contentInsetAdjustmentBehavior="never"
