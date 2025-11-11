@@ -65,6 +65,7 @@ import {
   getSnaptradeOptionsFromDB,
   getSnaptradeBalancesFromDB,
   getSnaptradeConnectionsFromDB,
+  syncSnaptradeInvestments,
 } from "@/src/utils/snaptrade";
 import { forceFullResync } from "@/src/utils/categoryFix";
 import logger from "@/src/utils/logger";
@@ -437,6 +438,48 @@ export default function InsightsScreen() {
 
     initializeScreen();
   }, [getUserId]);
+
+  // Auto-refresh stale investment data (>24 hours old)
+  useEffect(() => {
+    const checkAndAutoSyncInvestments = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+
+        const connections = await getSnaptradeConnectionsFromDB();
+        if (!connections || connections.length === 0) return;
+
+        // Check if any connection has stale data (>24 hours)
+        const now = new Date();
+        const staleConnections = connections.filter((conn: any) => {
+          if (!conn.last_synced_at) return true; // Never synced
+          const lastSynced = new Date(conn.last_synced_at);
+          const hoursSinceSync = (now.getTime() - lastSynced.getTime()) / (1000 * 60 * 60);
+          return hoursSinceSync > 24;
+        });
+
+        if (staleConnections.length > 0) {
+          logger.info("Auto-syncing stale investment data...");
+          // Sync silently in background - don't show loading UI
+          for (const conn of staleConnections) {
+            try {
+              await syncSnaptradeInvestments(user.id, conn.account_id);
+            } catch (error) {
+              // Silently handle errors - don't show to user
+              logger.error("Auto-sync failed silently:", error);
+            }
+          }
+        }
+      } catch (error) {
+        // Silently handle errors - don't show to user
+        logger.error("Auto-refresh check failed silently:", error);
+      }
+    };
+
+    // Run check after component mounts, with a small delay to not block initial render
+    const timeoutId = setTimeout(checkAndAutoSyncInvestments, 1000);
+    return () => clearTimeout(timeoutId);
+  }, []);
 
   // Post-first-frame: check re-auth needs without blocking initial render
   useEffect(() => {

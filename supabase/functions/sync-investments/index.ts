@@ -163,19 +163,70 @@ serve(async (req: Request) => {
       console.log("💰 Balance data received:", JSON.stringify(balanceData, null, 2));
 
       if (balanceData && Array.isArray(balanceData) && balanceData.length > 0) {
-        const balanceRows = balanceData.map((balance: any) => ({
-          user_id,
-          snaptrade_user_id,
-          account_id,
-          currency_code: balance.currency?.code || 'USD',
-          cash: balance.cash || 0,
-          buying_power: balance.buying_power || 0,
-          total_equity: balance.cash || 0, // Using cash as total equity for now
-          total_margin_used: 0, // Not provided in API response
-          total_margin_available: 0, // Not provided in API response
-          is_current: true,
-          last_updated: new Date().toISOString()
-        }));
+        // Get existing balances to read previous_total_value before updating
+        const { data: existingBalances } = await supabase
+          .from("investment_balances")
+          .select("currency_code, previous_total_value, total_value")
+          .eq("user_id", user_id)
+          .eq("snaptrade_user_id", snaptrade_user_id)
+          .eq("account_id", account_id)
+          .eq("is_current", true);
+
+        // Calculate total holdings value from the holdings we'll sync (need to fetch holdings first)
+        // Note: We'll calculate this after holdings are synced, but for now use existing holdings
+        // The recalculatePortfolioMetricsFromDatabase function will fix this later
+        const { data: currentHoldings } = await supabase
+          .from("investment_holdings")
+          .select("market_value")
+          .eq("user_id", user_id)
+          .eq("snaptrade_user_id", snaptrade_user_id)
+          .eq("account_id", account_id)
+          .eq("is_active", true);
+
+        const totalHoldingsValue = (currentHoldings || []).reduce(
+          (sum: number, h: any) => sum + (h.market_value || 0),
+          0
+        );
+
+        const balanceRows = balanceData.map((balance: any) => {
+          const currencyCode = balance.currency?.code || 'USD';
+          const cash = balance.cash || 0;
+          const totalValue = totalHoldingsValue + cash;
+
+          // Find existing balance for this currency to get previous_total_value
+          const existingBalance = existingBalances?.find(
+            (eb: any) => eb.currency_code === currencyCode
+          );
+          const previousTotalValue = existingBalance?.previous_total_value ?? existingBalance?.total_value ?? null;
+
+          // Calculate day_change and day_change_percent
+          let dayChange = null;
+          let dayChangePercent = null;
+          if (previousTotalValue !== null && previousTotalValue !== undefined) {
+            dayChange = totalValue - previousTotalValue;
+            dayChangePercent = previousTotalValue !== 0 
+              ? (dayChange / previousTotalValue) * 100 
+              : 0;
+          }
+
+          return {
+            user_id,
+            snaptrade_user_id,
+            account_id,
+            currency_code: currencyCode,
+            cash: cash,
+            buying_power: balance.buying_power || 0,
+            total_equity: balance.cash || 0, // Using cash as total equity for now
+            total_margin_used: 0, // Not provided in API response
+            total_margin_available: 0, // Not provided in API response
+            total_value: totalValue,
+            previous_total_value: totalValue, // Set for next sync
+            day_change: dayChange,
+            day_change_percent: dayChangePercent,
+            is_current: true,
+            last_updated: new Date().toISOString()
+          };
+        });
 
         // Mark all previous balances as not current
         await supabase
@@ -214,8 +265,35 @@ serve(async (req: Request) => {
       console.log("📈 Holdings data received:", JSON.stringify(holdingsData, null, 2));
 
       if (holdingsData && holdingsData.length > 0) {
+        // Get existing holdings to read previous_market_value before updating
+        const { data: existingHoldings } = await supabase
+          .from("investment_holdings")
+          .select("symbol_id, previous_market_value, market_value")
+          .eq("user_id", user_id)
+          .eq("snaptrade_user_id", snaptrade_user_id)
+          .eq("account_id", account_id)
+          .eq("is_active", true);
+
         const holdingsRows = holdingsData.map((holding: any) => {
           const symbol = holding.symbol?.symbol || holding.symbol;
+          const marketValue = holding.units && holding.price ? holding.units * holding.price : null;
+
+          // Find existing holding to get previous_market_value
+          const existingHolding = existingHoldings?.find(
+            (eh: any) => eh.symbol_id === symbol?.id
+          );
+          const previousMarketValue = existingHolding?.previous_market_value ?? existingHolding?.market_value ?? null;
+
+          // Calculate day_change and day_change_percent
+          let dayChange = null;
+          let dayChangePercent = null;
+          if (previousMarketValue !== null && previousMarketValue !== undefined && marketValue !== null) {
+            dayChange = marketValue - previousMarketValue;
+            dayChangePercent = previousMarketValue !== 0 
+              ? (dayChange / previousMarketValue) * 100 
+              : 0;
+          }
+
           return {
             user_id,
             snaptrade_user_id,
@@ -230,13 +308,14 @@ serve(async (req: Request) => {
             security_type: symbol?.type?.description,
             units: holding.units || 0,
             price: holding.price,
-            market_value: holding.units && holding.price ? holding.units * holding.price : null,
+            market_value: marketValue,
+            previous_market_value: marketValue, // Set for next sync
             average_purchase_price: holding.average_purchase_price,
             total_cost_basis: holding.units && holding.average_purchase_price ? holding.units * holding.average_purchase_price : null,
             unrealized_pl: holding.open_pnl,
             realized_pl: 0, // Not provided in API response
-            day_change: null, // Not provided in API response
-            day_change_percent: null, // Not provided in API response
+            day_change: dayChange,
+            day_change_percent: dayChangePercent,
             total_percent_change: null, // Will be calculated by trigger: ((market_value - total_cost_basis) / total_cost_basis) * 100
             is_active: true,
             last_updated: new Date().toISOString()

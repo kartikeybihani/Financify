@@ -25,6 +25,7 @@ import {
   getSnaptradeConnectionsFromDB,
   getSnaptradeCredentialsWithFallback,
   syncSnaptradeInvestments,
+  refreshSnaptradeInvestments,
   populateInvestmentAccountsInDB,
   checkSnaptradeConnectionStatus,
 } from "@/src/utils/snaptrade";
@@ -181,6 +182,25 @@ export default function InvestmentsScreen({
             connection_id: connection.connection_id ? "exists" : "missing",
             isDisabled,
           });
+
+          // Auto-refresh stale investment data (>24 hours old) - silent background sync
+          if (!isDisabled) {
+            const now = new Date();
+            const lastSynced = connection.last_synced_at ? new Date(connection.last_synced_at) : null;
+            if (!lastSynced || (now.getTime() - lastSynced.getTime()) / (1000 * 60 * 60) > 24) {
+              logger.info("Auto-syncing stale investment data...");
+              // Sync silently in background - don't show loading UI
+              try {
+                const { data: { user } } = await supabase.auth.getUser();
+                if (user) {
+                  await syncSnaptradeInvestments(user.id, connection.account_id);
+                }
+              } catch (error) {
+                // Silently handle errors - don't show to user
+                logger.error("Auto-sync failed silently:", error);
+              }
+            }
+          }
 
           setConnectionStatus({
             isDisabled,
@@ -411,11 +431,15 @@ export default function InvestmentsScreen({
       }
 
       const first = connections[0];
-      logger.info("🔄 Starting investment sync...");
-      await syncSnaptradeInvestments(user.id, first.account_id);
+      logger.info("🔄 Starting investment refresh (paid endpoint)...");
+      await refreshSnaptradeInvestments(user.id, first.account_id);
 
       // Clear cache to ensure fresh data
       await clearInvestmentCache();
+
+      // Wait 3-5 seconds for webhook to process before reloading data
+      logger.info("⏳ Waiting for webhook to process refresh...");
+      await new Promise(resolve => setTimeout(resolve, 4000));
 
       // Mark sync time to force reload on next screen visit
       lastSyncTime.current = Date.now();
@@ -430,7 +454,7 @@ export default function InvestmentsScreen({
       logger.info("🔄 Updating investment accounts in main table...");
       await populateInvestmentAccountsInDB();
 
-      logger.info("✅ Investment sync completed successfully");
+      logger.info("✅ Investment refresh completed successfully");
     } catch (err) {
       const errorMsg =
         err instanceof Error ? err.message : "Failed to sync investments";

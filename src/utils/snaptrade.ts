@@ -770,6 +770,31 @@ export const syncSnaptradeInvestments = async (userId: string, accountId: string
   }
 };
 
+// === Refresh SnapTrade Investments (Paid Endpoint) ===
+export const refreshSnaptradeInvestments = async (userId: string, accountId: string) => {
+  try {
+    logger.info("🔄 Refreshing SnapTrade investments (paid endpoint)...");
+    
+    const res = await fetch(`${BASE_URL}/api/plaid`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ 
+        mode: "snaptrade_refresh", 
+        userId: userId,
+        accountId: accountId
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Failed to refresh SnapTrade investments");
+    
+    logger.info("✅ SnapTrade investments refresh triggered successfully");
+    return { success: true, ...data };
+  } catch (error) {
+    logger.error("❌ Failed to refresh SnapTrade investments:", error);
+    throw error;
+  }
+};
+
 // === Get SnapTrade Data from Database ===
 export const getSnaptradeHoldingsFromDB = async () => {
   try {
@@ -934,6 +959,7 @@ const snaptradeUtils = {
   
   // Sync operations
   syncSnaptradeInvestments,
+  refreshSnaptradeInvestments,
   
   // Database operations
   getSnaptradeHoldingsFromDB,
