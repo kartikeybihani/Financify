@@ -983,8 +983,7 @@ async function handleSnapTradeRefresh(res, userId, accountId) {
       );
     }
 
-    // Import SnapTrade SDK
-    const Snaptrade = require("snaptrade-typescript-sdk").Snaptrade;
+    // Use imported SnapTrade SDK
     const isSandbox = process.env.SNAPTRADE_ENVIRONMENT === "sandbox";
 
     const snaptrade = new Snaptrade({
@@ -1051,7 +1050,7 @@ async function handleSnapTradeCheckStatus(res, userId, accountId) {
     let isActuallyActive = true;
 
     try {
-      const Snaptrade = require("snaptrade-typescript-sdk").Snaptrade;
+      // Use imported SnapTrade SDK
       const isSandbox = process.env.SNAPTRADE_ENVIRONMENT === "sandbox";
 
       const snaptrade = new Snaptrade({
