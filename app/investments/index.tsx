@@ -28,6 +28,7 @@ import {
   refreshSnaptradeInvestments,
   populateInvestmentAccountsInDB,
   checkSnaptradeConnectionStatus,
+  getSnaptradeConnectionDetails,
 } from "@/src/utils/snaptrade";
 import { clearInvestmentCache } from "@/src/shared/utils/investmentCache";
 import { styles } from "@/src/styles/investmentsStyles";
@@ -455,11 +456,29 @@ export default function InvestmentsScreen({
       await populateInvestmentAccountsInDB();
 
       logger.info("✅ Investment refresh completed successfully");
-    } catch (err) {
-      const errorMsg =
-        err instanceof Error ? err.message : "Failed to sync investments";
-      logger.error("Failed to sync investments", err);
-      setSyncError(errorMsg);
+    } catch (err: any) {
+      // Check if this is a 402 disabled connection error
+      if (err.statusCode === 402 || err.code === "CONNECTION_DISABLED" || err.requiresReconnect) {
+        logger.error("🔴 Connection disabled detected, updating state...", err);
+        
+        // Update connection status to show reconnection UI
+        setConnectionStatus({
+          needsReconnection: true,
+          connectionId: err.connectionId || first?.connection_id || null,
+        });
+        
+        // Reload connections from DB to get updated status
+        const connections = await getSnaptradeConnectionsFromDB();
+        setConnections(connections || []);
+        
+        const errorMsg = err.message || "Your investment account connection has been disabled. Please reconnect your account.";
+        setSyncError(errorMsg);
+      } else {
+        const errorMsg =
+          err instanceof Error ? err.message : "Failed to sync investments";
+        logger.error("Failed to sync investments", err);
+        setSyncError(errorMsg);
+      }
     } finally {
       setIsSyncing(false);
       setIsLoading(false);

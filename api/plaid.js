@@ -245,6 +245,12 @@ async function handleSnapTradeRequest(req, res, mode, params) {
         }
         return await handleSnapTradeCheckStatus(res, userId, accountId);
 
+      case "snaptrade_get_connection_details":
+        if (!userId || !accountId) {
+          return res.status(400).json({ error: "Missing userId or accountId" });
+        }
+        return await handleSnapTradeGetConnectionDetails(res, userId, accountId);
+
       default:
         return res.status(400).json({ error: "Invalid SnapTrade mode" });
     }
@@ -961,22 +967,6 @@ async function handleSnapTradeRefresh(res, userId, accountId) {
       throw new Error("SnapTrade connection not found");
     }
 
-    // Check if connection is disabled
-    if (
-      !connection.is_active ||
-      connection.connection_status === "disabled" ||
-      connection.connection_status === "error"
-    ) {
-      return res.status(402).json({
-        error: "Connection is disabled",
-        code: "CONNECTION_DISABLED",
-        message:
-          "Your investment account connection has been disabled. Please reconnect your account to continue.",
-        requiresReconnect: true,
-        connectionId: connection.connection_id,
-      });
-    }
-
     if (!connection.connection_id) {
       throw new Error(
         "Connection ID (authorization_id) not found. Please reconnect your account."
@@ -995,7 +985,100 @@ async function handleSnapTradeRefresh(res, userId, accountId) {
         : process.env.SNAPTRADE_CONSUMER_KEY,
     });
 
-    // Call SnapTrade refresh endpoint
+    // STEP 1: Check actual connection status from SnapTrade API before attempting refresh
+    console.log("🔍 Checking connection status from SnapTrade API...");
+    try {
+      const connectionDetailsResponse = await snaptrade.connections.detailBrokerageAuthorization({
+        authorizationId: connection.connection_id,
+        userId: connection.snaptrade_user_id,
+        userSecret: connection.user_secret,
+      });
+
+      const connectionDetails = connectionDetailsResponse.data;
+      console.log("📊 Connection details from SnapTrade:", {
+        disabled: connectionDetails.disabled,
+        disabled_date: connectionDetails.disabled_date,
+        connection_id: connection.connection_id,
+      });
+
+      // If connection is disabled in SnapTrade, update our DB and return error
+      if (connectionDetails.disabled === true) {
+        console.log("🔴 Connection is disabled in SnapTrade, updating database...");
+        
+        // Update our database to reflect disabled status
+        await supabase
+          .from("snaptrade_connections")
+          .update({
+            is_active: false,
+            connection_status: "disabled",
+            updated_at: new Date().toISOString(),
+          })
+          .eq("user_id", userId)
+          .eq("account_id", accountId);
+
+        console.log("✅ Database updated with disabled status");
+
+        return res.status(402).json({
+          error: "Connection is disabled",
+          code: "CONNECTION_DISABLED",
+          message:
+            "Your investment account connection has been disabled. Please reconnect your account to continue.",
+          requiresReconnect: true,
+          connectionId: connection.connection_id,
+          disabledDate: connectionDetails.disabled_date,
+        });
+      }
+
+      console.log("✅ Connection is active, proceeding with refresh...");
+    } catch (statusCheckError) {
+      console.error("⚠️ Error checking connection status:", statusCheckError);
+      
+      // Check if this is a 402 error (disabled connection)
+      if (statusCheckError.status === 402 || statusCheckError.response?.status === 402) {
+        console.log("🔴 Connection is disabled (detected via 402 error), updating database...");
+        
+        // Update database to reflect disabled status
+        await supabase
+          .from("snaptrade_connections")
+          .update({
+            is_active: false,
+            connection_status: "disabled",
+            updated_at: new Date().toISOString(),
+          })
+          .eq("user_id", userId)
+          .eq("account_id", accountId);
+
+        return res.status(402).json({
+          error: "Connection is disabled",
+          code: "CONNECTION_DISABLED",
+          message:
+            "Your investment account connection has been disabled. Please reconnect your account to continue.",
+          requiresReconnect: true,
+          connectionId: connection.connection_id,
+        });
+      }
+      
+      // For other errors during status check, log but continue with refresh attempt
+      console.warn("⚠️ Could not verify connection status, attempting refresh anyway...");
+    }
+
+    // STEP 2: Also check our database status (in case webhook already updated it)
+    if (
+      !connection.is_active ||
+      connection.connection_status === "disabled" ||
+      connection.connection_status === "error"
+    ) {
+      return res.status(402).json({
+        error: "Connection is disabled",
+        code: "CONNECTION_DISABLED",
+        message:
+          "Your investment account connection has been disabled. Please reconnect your account to continue.",
+        requiresReconnect: true,
+        connectionId: connection.connection_id,
+      });
+    }
+
+    // STEP 3: Attempt refresh
     console.log(
       `🔄 Calling SnapTrade refresh for authorization: ${connection.connection_id}`
     );
@@ -1018,6 +1101,37 @@ async function handleSnapTradeRefresh(res, userId, accountId) {
     });
   } catch (error) {
     console.error("❌ SnapTrade refresh error:", error);
+    
+    // Check if this is a 402 error indicating disabled connection
+    if (error.status === 402 || error.response?.status === 402) {
+      console.log("🔴 Detected disabled connection via 402 error, updating database...");
+      
+      // Update database to mark connection as disabled
+      try {
+        await supabase
+          .from("snaptrade_connections")
+          .update({
+            is_active: false,
+            connection_status: "disabled",
+            updated_at: new Date().toISOString(),
+          })
+          .eq("user_id", userId)
+          .eq("account_id", accountId);
+        
+        console.log("✅ Database updated with disabled status");
+      } catch (dbError) {
+        console.error("❌ Failed to update database with disabled status:", dbError);
+      }
+
+      return res.status(402).json({
+        error: "Connection is disabled",
+        code: "CONNECTION_DISABLED",
+        message:
+          "Your investment account connection has been disabled. Please reconnect your account to continue.",
+        requiresReconnect: true,
+      });
+    }
+    
     return res.status(500).json({
       error: error.message || "Failed to trigger refresh",
     });
@@ -1137,6 +1251,136 @@ async function handleSnapTradeCheckStatus(res, userId, accountId) {
     console.error("❌ Error checking connection status:", error);
     return res.status(500).json({
       error: error.message || "Failed to check connection status",
+    });
+  }
+}
+
+async function handleSnapTradeGetConnectionDetails(res, userId, accountId) {
+  try {
+    console.log("🔍 Getting SnapTrade connection details:", {
+      userId,
+      accountId,
+    });
+
+    // Get connection from DB
+    const { data: connection, error: connErr } = await supabase
+      .from("snaptrade_connections")
+      .select(
+        "user_id, snaptrade_user_id, user_secret, connection_id, connection_status, is_active"
+      )
+      .eq("user_id", userId)
+      .eq("account_id", accountId)
+      .single();
+
+    if (connErr || !connection) {
+      return res.status(404).json({ error: "Connection not found" });
+    }
+
+    if (!connection.connection_id) {
+      return res.status(400).json({ 
+        error: "Connection ID not found",
+        message: "Please reconnect your account to continue."
+      });
+    }
+
+    // Use imported SnapTrade SDK
+    const isSandbox = process.env.SNAPTRADE_ENVIRONMENT === "sandbox";
+
+    const snaptrade = new Snaptrade({
+      clientId: isSandbox
+        ? process.env.SNAPTRADE_CLIENT_ID_DEV
+        : process.env.SNAPTRADE_CLIENT_ID,
+      consumerKey: isSandbox
+        ? process.env.SNAPTRADE_CONSUMER_KEY_DEV
+        : process.env.SNAPTRADE_CONSUMER_KEY,
+    });
+
+    try {
+      // Fetch connection details from SnapTrade API
+      const connectionDetailsResponse = await snaptrade.connections.detailBrokerageAuthorization({
+        authorizationId: connection.connection_id,
+        userId: connection.snaptrade_user_id,
+        userSecret: connection.user_secret,
+      });
+
+      const connectionDetails = connectionDetailsResponse.data;
+      console.log("📊 Connection details from SnapTrade:", {
+        disabled: connectionDetails.disabled,
+        disabled_date: connectionDetails.disabled_date,
+        name: connectionDetails.name,
+        type: connectionDetails.type,
+      });
+
+      // Update database if status differs
+      if (connectionDetails.disabled !== !connection.is_active) {
+        console.log("🔄 Updating database with SnapTrade status...");
+        await supabase
+          .from("snaptrade_connections")
+          .update({
+            is_active: !connectionDetails.disabled,
+            connection_status: connectionDetails.disabled ? "disabled" : "active",
+            updated_at: new Date().toISOString(),
+          })
+          .eq("user_id", userId)
+          .eq("account_id", accountId);
+        
+        console.log("✅ Database updated");
+      }
+
+      // If disabled, return 402
+      if (connectionDetails.disabled) {
+        return res.status(402).json({
+          error: "Connection is disabled",
+          code: "CONNECTION_DISABLED",
+          message: "Your investment account connection has been disabled. Please reconnect your account to continue.",
+          requiresReconnect: true,
+          connectionId: connection.connection_id,
+          disabled: true,
+          disabledDate: connectionDetails.disabled_date,
+          details: connectionDetails,
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        disabled: false,
+        connectionId: connection.connection_id,
+        details: connectionDetails,
+      });
+    } catch (apiError) {
+      console.error("❌ Error fetching connection details:", apiError);
+
+      // Check if this is a 402 error (disabled connection)
+      if (apiError.status === 402 || apiError.response?.status === 402) {
+        console.log("🔴 Connection is disabled (detected via 402 error)");
+        
+        // Update database
+        await supabase
+          .from("snaptrade_connections")
+          .update({
+            is_active: false,
+            connection_status: "disabled",
+            updated_at: new Date().toISOString(),
+          })
+          .eq("user_id", userId)
+          .eq("account_id", accountId);
+
+        return res.status(402).json({
+          error: "Connection is disabled",
+          code: "CONNECTION_DISABLED",
+          message: "Your investment account connection has been disabled. Please reconnect your account to continue.",
+          requiresReconnect: true,
+          connectionId: connection.connection_id,
+          disabled: true,
+        });
+      }
+
+      throw apiError;
+    }
+  } catch (error) {
+    console.error("❌ Error getting connection details:", error);
+    return res.status(500).json({
+      error: error.message || "Failed to get connection details",
     });
   }
 }

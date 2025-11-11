@@ -729,6 +729,47 @@ export const checkSnaptradeConnectionStatus = async (userId: string, accountId: 
   }
 };
 
+// === Get Connection Details from SnapTrade API ===
+export const getSnaptradeConnectionDetails = async (userId: string, accountId: string) => {
+  try {
+    logger.info("🔍 Getting connection details from SnapTrade API...");
+    
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error("User not authenticated");
+
+    const res = await fetch(`${BASE_URL}/api/plaid`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ 
+        mode: "snaptrade_get_connection_details", 
+        userId: user.id,
+        accountId: accountId
+      }),
+    });
+    
+    const data = await res.json();
+    
+    // Handle 402 error (disabled connection)
+    if (res.status === 402) {
+      logger.warn("🔴 Connection is disabled:", data);
+      return {
+        disabled: true,
+        requiresReconnect: true,
+        connectionId: data.connectionId,
+        message: data.message,
+      };
+    }
+    
+    if (!res.ok) throw new Error(data.error || "Failed to get connection details");
+    
+    logger.info("✅ Connection details retrieved:", data);
+    return data;
+  } catch (error) {
+    logger.error("❌ Failed to get connection details:", error);
+    throw error;
+  }
+};
+
 // === Sync SnapTrade Investments ===
 export const syncSnaptradeInvestments = async (userId: string, accountId: string) => {
   try {
@@ -785,7 +826,24 @@ export const refreshSnaptradeInvestments = async (userId: string, accountId: str
       }),
     });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Failed to refresh SnapTrade investments");
+    
+    // Check for 402 error (disabled connection)
+    if (res.status === 402) {
+      logger.error("🔴 Connection is disabled (402 error):", data);
+      
+      // Create a special error object with requiresReconnect flag
+      const disabledError: any = new Error(data.message || "Connection is disabled. Please reconnect your account.");
+      disabledError.code = data.code || "CONNECTION_DISABLED";
+      disabledError.requiresReconnect = data.requiresReconnect || true;
+      disabledError.connectionId = data.connectionId;
+      disabledError.statusCode = 402;
+      
+      throw disabledError;
+    }
+    
+    if (!res.ok) {
+      throw new Error(data.error || "Failed to refresh SnapTrade investments");
+    }
     
     logger.info("✅ SnapTrade investments refresh triggered successfully");
     return { success: true, ...data };
@@ -940,6 +998,8 @@ const snaptradeUtils = {
   getSnaptradeCredentialsWithFallback,
   refreshExpiredCredentials,
   getSnaptradeUserSecretFromDB,
+  checkSnaptradeConnectionStatus,
+  getSnaptradeConnectionDetails,
   
   // Account operations
   fetchSnaptradeAccounts,
