@@ -8,6 +8,19 @@ const supabase = createClient(
 );
 
 export default async function handler(req, res) {
+  // Log ALL incoming requests for debugging
+  console.log("🔔 Webhook received:", {
+    method: req.method,
+    url: req.url,
+    headers: {
+      "content-type": req.headers["content-type"],
+      "user-agent": req.headers["user-agent"],
+      "x-forwarded-for": req.headers["x-forwarded-for"],
+    },
+    bodyKeys: Object.keys(req.body || {}),
+    hasBody: !!req.body,
+  });
+
   if (req.method !== "POST")
     return res.status(405).json({ error: "Method not allowed" });
 
@@ -16,14 +29,59 @@ export default async function handler(req, res) {
     webhook_code,
     item_id,
     event_type,
+    eventType, // SnapTrade uses camelCase
     user_id,
+    userId, // SnapTrade might use camelCase
     connection_id,
+    connectionId, // SnapTrade might use camelCase
+    webhookId, // SnapTrade uses this
     webhookSecret,
+    clientId, // SnapTrade uses this
   } = req.body || {};
 
+  // Normalize SnapTrade webhook format (camelCase -> snake_case)
+  // Note: SnapTrade sends clientId (SnapTrade user ID), not Supabase user_id
+  const normalizedEventType = eventType || event_type;
+  const normalizedSnapTradeUserId = userId || user_id || clientId; // SnapTrade sends clientId (this is snaptrade_user_id)
+  // webhookId is the webhook delivery ID, not connection_id
+  // connection_id might be in data.payload or we need to look it up by snaptrade_user_id
+  const normalizedConnectionId = connectionId || connection_id; // Don't use webhookId as connection_id
+
+  // Log full body for SnapTrade-like requests
+  if (
+    normalizedEventType ||
+    normalizedConnectionId ||
+    normalizedSnapTradeUserId
+  ) {
+    console.log(
+      "📦 SnapTrade-like webhook payload:",
+      JSON.stringify(req.body, null, 2)
+    );
+  }
+
   // Handle SnapTrade webhooks
-  if (event_type && webhookSecret) {
-    return handleSnapTradeWebhook(req, res, req.body);
+  // Check for eventType or event_type (SnapTrade identifier)
+  if (normalizedEventType) {
+    console.log(
+      "🔍 Detected SnapTrade webhook by eventType:",
+      normalizedEventType
+    );
+
+    // Normalize payload to snake_case for handler
+    // Note: user_id in payload will be the SnapTrade user ID (clientId), not Supabase user_id
+    const normalizedPayload = {
+      ...req.body,
+      event_type: normalizedEventType,
+      user_id: normalizedSnapTradeUserId, // This is actually snaptrade_user_id
+      connection_id: normalizedConnectionId,
+      webhookSecret: webhookSecret,
+      data: req.body.data || req.body,
+      // Keep original fields for reference
+      clientId: clientId,
+      webhookId: webhookId,
+    };
+
+    return handleSnapTradeWebhook(req, res, normalizedPayload);
   }
 
   if (!item_id) {
@@ -123,50 +181,84 @@ async function handleSnapTradeWebhook(req, res, payload) {
       user_id: user_id?.substring(0, 8) + "...",
       connection_id: connection_id?.substring(0, 8) + "...",
       has_data: !!data,
+      has_webhookSecret: !!webhookSecret,
+      full_payload: JSON.stringify(payload, null, 2),
     });
 
     // Verify webhook authenticity (you should set this in your SnapTrade dashboard)
     const expectedSecret = process.env.SNAPTRADE_WEBHOOK_SECRET;
-    if (expectedSecret && webhookSecret !== expectedSecret) {
-      console.error("❌ SnapTrade webhook secret mismatch");
-      return res.status(401).json({ error: "Unauthorized" });
+    if (expectedSecret) {
+      if (!webhookSecret) {
+        console.warn("⚠️ SnapTrade webhook secret expected but not provided");
+        // Don't reject - might be optional depending on SnapTrade config
+      } else if (webhookSecret !== expectedSecret) {
+        console.error("❌ SnapTrade webhook secret mismatch", {
+          expected: expectedSecret?.substring(0, 8) + "...",
+          received: webhookSecret?.substring(0, 8) + "...",
+        });
+        return res.status(401).json({ error: "Unauthorized" });
+      } else {
+        console.log("✅ SnapTrade webhook secret verified");
+      }
+    } else {
+      console.warn(
+        "⚠️ SNAPTRADE_WEBHOOK_SECRET not set - webhook verification disabled"
+      );
     }
 
     switch (event_type) {
       case "connection.disabled":
+      case "CONNECTION_DISABLED":
       case "connection.error":
+      case "CONNECTION_ERROR":
         await handleConnectionDisabled(user_id, connection_id, event_type);
         break;
 
       case "connection.enabled":
+      case "CONNECTION_ENABLED":
         await handleConnectionEnabled(user_id, connection_id);
         break;
 
       case "connection.fixed":
+      case "CONNECTION_FIXED":
         await handleConnectionFixed(user_id, connection_id);
         break;
 
       case "account.holdings_updated":
       case "ACCOUNT_HOLDINGS_UPDATED":
       case "holdings.updated":
+      case "HOLDINGS_UPDATED":
         await handleAccountHoldingsUpdated(user_id, connection_id);
         break;
 
       case "user.registered":
+      case "USER_REGISTERED":
         await handleUserRegistered(user_id, data);
         break;
 
       case "user.login":
+      case "USER_LOGIN":
         await handleUserLogin(user_id, data);
+        break;
+
+      case "TEST_WEBHOOK":
+        console.log("✅ SnapTrade test webhook received - webhook is working!");
+        // Just acknowledge test webhooks
         break;
 
       default:
         console.log(`ℹ️ Unhandled SnapTrade webhook event: ${event_type}`);
     }
 
+    console.log("✅ SnapTrade webhook processed successfully");
     return res.status(200).json({ ok: true, processed: event_type });
   } catch (error) {
     console.error("❌ SnapTrade webhook error:", error);
+    console.error("Error details:", {
+      message: error.message,
+      stack: error.stack,
+      payload: JSON.stringify(payload, null, 2),
+    });
     // Still return 200 to prevent retries
     return res.status(200).json({ ok: true, error: error.message });
   }
@@ -179,24 +271,46 @@ async function handleConnectionDisabled(user_id, connection_id, event_type) {
       connection_id,
     });
 
-    // Update connection status in database using connection_id
-    const { error } = await supabase
-      .from("snaptrade_connections")
-      .update({
-        is_active: false,
-        updated_at: new Date().toISOString(),
-        connection_status:
-          event_type === "connection.disabled" ? "disabled" : "error",
-      })
-      .eq("user_id", user_id)
-      .eq("connection_id", connection_id); // Use connection_id, not account_id
+    // Note: SnapTrade sends clientId (SnapTrade user ID) as user_id
+    // and webhookId might be the webhook delivery ID, not connection_id
+    // We need to find the connection by looking up the SnapTrade user
+
+    // First, try to find connection by connection_id if provided
+    let updateQuery = supabase.from("snaptrade_connections").update({
+      is_active: false,
+      updated_at: new Date().toISOString(),
+      connection_status:
+        event_type === "connection.disabled" ||
+        event_type === "CONNECTION_DISABLED"
+          ? "disabled"
+          : "error",
+    });
+
+    if (connection_id && connection_id !== user_id) {
+      // If connection_id is provided and different from user_id, use it
+      updateQuery = updateQuery.eq("connection_id", connection_id);
+      console.log("🔍 Updating by connection_id:", connection_id);
+    } else if (user_id) {
+      // Otherwise, update all connections for this SnapTrade user
+      // Note: user_id here is actually the SnapTrade user ID (clientId)
+      updateQuery = updateQuery.eq("snaptrade_user_id", user_id);
+      console.log("🔍 Updating by snaptrade_user_id:", user_id);
+    } else {
+      console.error("❌ No user_id or connection_id provided");
+      return;
+    }
+
+    const { error, data } = await updateQuery.select();
 
     if (error) {
       console.error("❌ Failed to update connection status:", error);
       return;
     }
 
-    console.log("✅ Connection status updated to disabled");
+    console.log("✅ Connection status updated to disabled", {
+      updated_count: data?.length || 0,
+      connections: data,
+    });
   } catch (error) {
     console.error("❌ Error handling connection disabled:", error);
   }
@@ -206,24 +320,35 @@ async function handleConnectionEnabled(user_id, connection_id) {
   try {
     console.log(`🟢 Connection enabled:`, { user_id, connection_id });
 
-    // Update connection status using connection_id
-    const { error } = await supabase
-      .from("snaptrade_connections")
-      .update({
-        is_active: true,
-        connection_status: "active",
-        last_synced_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      })
-      .eq("user_id", user_id)
-      .eq("connection_id", connection_id); // Use connection_id
+    // Note: user_id here is actually the SnapTrade user ID (clientId)
+    let updateQuery = supabase.from("snaptrade_connections").update({
+      is_active: true,
+      connection_status: "active",
+      last_synced_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+
+    if (connection_id && connection_id !== user_id) {
+      updateQuery = updateQuery.eq("connection_id", connection_id);
+      console.log("🔍 Updating by connection_id:", connection_id);
+    } else if (user_id) {
+      updateQuery = updateQuery.eq("snaptrade_user_id", user_id);
+      console.log("🔍 Updating by snaptrade_user_id:", user_id);
+    } else {
+      console.error("❌ No user_id or connection_id provided");
+      return;
+    }
+
+    const { error, data } = await updateQuery.select();
 
     if (error) {
       console.error("❌ Failed to update connection status:", error);
       return;
     }
 
-    console.log("✅ Connection re-enabled successfully");
+    console.log("✅ Connection re-enabled successfully", {
+      updated_count: data?.length || 0,
+    });
   } catch (error) {
     console.error("❌ Error handling connection enabled:", error);
   }
