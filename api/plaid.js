@@ -624,7 +624,10 @@ async function handleSnapTradeSync(res, userId, accountId) {
           .single();
 
         // Get previous portfolio total value from previous_total_value column, fallback to total_value
-        const previousTotalValue = existingBalance?.previous_total_value ?? existingBalance?.total_value ?? null;
+        const previousTotalValue =
+          existingBalance?.previous_total_value ??
+          existingBalance?.total_value ??
+          null;
 
         // Calculate portfolio performance metrics
         let totalUnrealizedPL = existingBalance?.total_change || 0;
@@ -676,9 +679,10 @@ async function handleSnapTradeSync(res, userId, accountId) {
         let dayChangePercent = null;
         if (previousTotalValue !== null && previousTotalValue !== undefined) {
           computedDayChange = totalValue - previousTotalValue;
-          dayChangePercent = previousTotalValue !== 0 
-            ? (computedDayChange / previousTotalValue) * 100 
-            : 0;
+          dayChangePercent =
+            previousTotalValue !== 0
+              ? (computedDayChange / previousTotalValue) * 100
+              : 0;
         } else {
           // No previous value, preserve existing or set to null
           computedDayChange = existingBalance?.day_change ?? null;
@@ -803,18 +807,26 @@ async function handleSnapTradeSync(res, userId, accountId) {
 
           // Find existing holding to get previous_market_value
           const existingHolding = existingHoldings?.find(
-            (eh: any) => eh.symbol_id === symbol?.id
+            (eh) => eh.symbol_id === symbol?.id
           );
-          const previousMarketValue = existingHolding?.previous_market_value ?? existingHolding?.market_value ?? null;
+          const previousMarketValue =
+            existingHolding?.previous_market_value ??
+            existingHolding?.market_value ??
+            null;
 
           // Calculate day_change and day_change_percent
           let dayChange = null;
           let dayChangePercent = null;
-          if (previousMarketValue !== null && previousMarketValue !== undefined && currentMarketValue !== null) {
+          if (
+            previousMarketValue !== null &&
+            previousMarketValue !== undefined &&
+            currentMarketValue !== null
+          ) {
             dayChange = currentMarketValue - previousMarketValue;
-            dayChangePercent = previousMarketValue !== 0 
-              ? (dayChange / previousMarketValue) * 100 
-              : 0;
+            dayChangePercent =
+              previousMarketValue !== 0
+                ? (dayChange / previousMarketValue) * 100
+                : 0;
           }
 
           return {
@@ -845,8 +857,7 @@ async function handleSnapTradeSync(res, userId, accountId) {
             is_active: true,
             last_updated: new Date().toISOString(),
           };
-          })
-        );
+        });
 
         // Use upsert to handle existing holdings properly
         try {
