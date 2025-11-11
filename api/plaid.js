@@ -233,6 +233,12 @@ async function handleSnapTradeRequest(req, res, mode, params) {
         }
         return await handleSnapTradeSync(res, userId, accountId);
 
+      case "snaptrade_refresh":
+        if (!userId || !accountId) {
+          return res.status(400).json({ error: "Missing userId or accountId" });
+        }
+        return await handleSnapTradeRefresh(res, userId, accountId);
+
       default:
         return res.status(400).json({ error: "Invalid SnapTrade mode" });
     }
@@ -516,14 +522,30 @@ async function handleSnapTradeSync(res, userId, accountId) {
     // Get the snaptrade_user_id and user_secret from the database connection
     const { data: connection, error: connErr } = await supabase
       .from("snaptrade_connections")
-      .select("user_id, snaptrade_user_id, user_secret")
+      .select(
+        "user_id, snaptrade_user_id, user_secret, connection_status, is_active"
+      )
       .eq("account_id", accountId)
-      .eq("is_active", true)
       .single();
 
     if (connErr || !connection) {
       console.error("SnapTrade connection lookup error:", connErr);
       throw new Error("SnapTrade connection not found");
+    }
+
+    // Check if connection is disabled
+    if (
+      !connection.is_active ||
+      connection.connection_status === "disabled" ||
+      connection.connection_status === "error"
+    ) {
+      return res.status(402).json({
+        error: "Connection is disabled",
+        code: "CONNECTION_DISABLED",
+        message:
+          "Your investment account connection has been disabled. Please reconnect your account to continue.",
+        requiresReconnect: true,
+      });
     }
 
     console.log("🔄 Found SnapTrade connection:", {
@@ -1061,5 +1083,91 @@ async function handleSnapTradeSync(res, userId, accountId) {
   } catch (error) {
     console.error("❌ SnapTrade sync error:", error);
     throw error;
+  }
+}
+
+async function handleSnapTradeRefresh(res, userId, accountId) {
+  try {
+    console.log("🔄 Starting SnapTrade manual refresh for:", {
+      userId,
+      accountId,
+    });
+
+    // Get connection details including connection_id and status
+    const { data: connection, error: connErr } = await supabase
+      .from("snaptrade_connections")
+      .select(
+        "user_id, snaptrade_user_id, user_secret, connection_id, connection_status, is_active"
+      )
+      .eq("user_id", userId)
+      .eq("account_id", accountId)
+      .single();
+
+    if (connErr || !connection) {
+      console.error("SnapTrade connection lookup error:", connErr);
+      throw new Error("SnapTrade connection not found");
+    }
+
+    // Check if connection is disabled
+    if (
+      !connection.is_active ||
+      connection.connection_status === "disabled" ||
+      connection.connection_status === "error"
+    ) {
+      return res.status(402).json({
+        error: "Connection is disabled",
+        code: "CONNECTION_DISABLED",
+        message:
+          "Your investment account connection has been disabled. Please reconnect your account to continue.",
+        requiresReconnect: true,
+        connectionId: connection.connection_id,
+      });
+    }
+
+    if (!connection.connection_id) {
+      throw new Error(
+        "Connection ID (authorization_id) not found. Please reconnect your account."
+      );
+    }
+
+    // Import SnapTrade SDK
+    const Snaptrade = require("snaptrade-typescript-sdk").Snaptrade;
+    const isSandbox = process.env.SNAPTRADE_ENVIRONMENT === "sandbox";
+
+    const snaptrade = new Snaptrade({
+      clientId: isSandbox
+        ? process.env.SNAPTRADE_CLIENT_ID_DEV
+        : process.env.SNAPTRADE_CLIENT_ID,
+      consumerKey: isSandbox
+        ? process.env.SNAPTRADE_CONSUMER_KEY_DEV
+        : process.env.SNAPTRADE_CONSUMER_KEY,
+    });
+
+    // Call SnapTrade refresh endpoint
+    console.log(
+      `🔄 Calling SnapTrade refresh for authorization: ${connection.connection_id}`
+    );
+    const refreshResponse =
+      await snaptrade.connections.refreshBrokerageAuthorization({
+        authorizationId: connection.connection_id,
+        userId: connection.snaptrade_user_id,
+        userSecret: connection.user_secret,
+      });
+
+    console.log(
+      "✅ SnapTrade refresh triggered successfully:",
+      refreshResponse.data
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: "Refresh triggered successfully. Data will update shortly.",
+      detail: refreshResponse.data?.detail,
+    });
+  } catch (error) {
+    console.error("❌ SnapTrade refresh error:", error);
+    return res.status(500).json({
+      error: error.message || "Failed to trigger refresh",
+    });
   }
 }

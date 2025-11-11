@@ -230,7 +230,7 @@ export default async function handler(req, res) {
       // If userId and userSecret are provided, this is a login request
       if (userId && userSecret) {
         try {
-          const { broker } = req.body; // Get broker parameter from request
+          const { broker, reconnect } = req.body; // Get broker and reconnect parameters
 
           // Login the user to get redirect URI
           const loginParams = {
@@ -241,6 +241,11 @@ export default async function handler(req, res) {
           // Add broker parameter if provided
           if (broker) {
             loginParams.broker = broker;
+          }
+
+          // Add reconnect parameter if provided (for fixing disabled connections)
+          if (reconnect) {
+            loginParams.reconnect = reconnect; // This is the connection_id/authorization_id
           }
 
           const loginResponse =

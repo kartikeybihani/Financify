@@ -15,6 +15,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
+import * as WebBrowser from "expo-web-browser";
 import { supabase } from "@/src/lib/supabase/supabase";
 import logger from "@/src/utils/logger";
 import {
@@ -71,6 +72,9 @@ interface ConnectionRow {
   brokerage_name: string;
   account_name: string;
   last_synced_at: string | null;
+  connection_status?: string | null;
+  connection_id?: string | null;
+  is_active?: boolean;
 }
 
 // Helper function to get company logo URL
@@ -112,6 +116,10 @@ export default function InvestmentsScreen({
   const [holdingsSortBy, setHoldingsSortBy] =
     useState<string>("total_gain_loss");
   const [showSortModal, setShowSortModal] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState<{
+    isDisabled: boolean;
+    connectionId: string | null;
+  }>({ isDisabled: false, connectionId: null });
   const hasData = useRef(
     preloadedData
       ? (preloadedData.holdings && preloadedData.holdings.length > 0) ||
@@ -156,6 +164,21 @@ export default function InvestmentsScreen({
         setOptions(o || []);
         setBalances(b || []);
         setConnections(c || []);
+
+        // Check if connection is disabled
+        if (c && c.length > 0) {
+          const connection = c[0] as any;
+          const isDisabled =
+            !connection.is_active ||
+            connection.connection_status === "disabled" ||
+            connection.connection_status === "error";
+
+          setConnectionStatus({
+            isDisabled,
+            connectionId: connection.connection_id || null,
+          });
+        }
+
         hasData.current = true;
         setIsLoading(false);
         return true;
@@ -260,10 +283,38 @@ export default function InvestmentsScreen({
       setOptions(preloadedData.options || []);
       setBalances(preloadedData.balances || []);
       setConnections(preloadedData.connections || []);
+
+      // Check connection status from preloaded data
+      if (preloadedData.connections && preloadedData.connections.length > 0) {
+        const connection = preloadedData.connections[0] as any;
+        const isDisabled =
+          !connection.is_active ||
+          connection.connection_status === "disabled" ||
+          connection.connection_status === "error";
+
+        setConnectionStatus({
+          isDisabled,
+          connectionId: connection.connection_id || null,
+        });
+      } else {
+        // Reset connection status when there are no connections
+        setConnectionStatus({
+          isDisabled: false,
+          connectionId: null,
+        });
+      }
     }
   }, [preloadedData]);
 
   const handleSync = async () => {
+    // Check if connection is disabled
+    if (connectionStatus.isDisabled) {
+      setSyncError(
+        "Connection is disabled. Please reconnect your account first."
+      );
+      return;
+    }
+
     setIsSyncing(true);
     setIsLoading(true);
     setSyncError(null);
@@ -327,6 +378,54 @@ export default function InvestmentsScreen({
     } finally {
       setIsSyncing(false);
       setIsLoading(false);
+    }
+  };
+
+  const handleReconnect = async () => {
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) {
+        setSyncError("User not authenticated");
+        return;
+      }
+
+      const creds = await getSnaptradeCredentialsWithFallback();
+      if (!creds) {
+        setSyncError("No valid SnapTrade credentials found");
+        return;
+      }
+
+      if (!connectionStatus.connectionId) {
+        setSyncError("Connection ID not found");
+        return;
+      }
+
+      // Get userSecret from database
+      const { getSnaptradeUserSecretFromDB, reconnectSnaptradeConnection } =
+        await import("@/src/utils/snaptrade");
+      const userSecret = await getSnaptradeUserSecretFromDB(
+        user.id,
+        creds.userId,
+        connections[0]?.account_id || ""
+      );
+
+      // Call reconnect function
+      const response = await reconnectSnaptradeConnection(
+        creds.userId,
+        userSecret,
+        connectionStatus.connectionId
+      );
+
+      // Open browser with reconnect URL
+      if (response.redirectURI) {
+        await WebBrowser.openBrowserAsync(response.redirectURI, {
+          presentationStyle: WebBrowser.WebBrowserPresentationStyle.FORM_SHEET,
+        });
+      }
+    } catch (err) {
+      setSyncError(err instanceof Error ? err.message : "Failed to reconnect");
     }
   };
 
@@ -1079,6 +1178,24 @@ export default function InvestmentsScreen({
             contentInset={{ top: 0, left: 0, bottom: 0, right: 0 }}
             scrollIndicatorInsets={{ top: 0, left: 0, bottom: 0, right: 0 }}
           >
+            {connectionStatus.isDisabled && (
+              <View style={styles.disabledBanner}>
+                <Ionicons name="warning" size={20} color="#FF6B6B" />
+                <View style={styles.disabledBannerContent}>
+                  <Text style={styles.disabledBannerText}>
+                    Your investment account connection has been disabled. Please
+                    reconnect to continue.
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.reconnectButton}
+                    onPress={handleReconnect}
+                  >
+                    <Text style={styles.reconnectButtonText}>Reconnect</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+
             {renderPortfolioSummary()}
 
             {syncError && (

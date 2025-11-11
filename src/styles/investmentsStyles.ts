@@ -367,6 +367,40 @@ export const styles = StyleSheet.create({
   },
   
   // Error Container
+  disabledBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(255, 107, 107, 0.1)",
+    borderLeftWidth: 3,
+    borderLeftColor: "#FF6B6B",
+    padding: 16,
+    marginHorizontal: 16,
+    marginTop: 16,
+    marginBottom: 8,
+    borderRadius: 8,
+    gap: 12,
+  },
+  disabledBannerContent: {
+    flex: 1,
+  },
+  disabledBannerText: {
+    color: "#FF6B6B",
+    fontSize: FONTS.base,
+    marginBottom: 8,
+    lineHeight: 20,
+  },
+  reconnectButton: {
+    backgroundColor: "#FF6B6B",
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 6,
+    alignSelf: "flex-start",
+  },
+  reconnectButtonText: {
+    color: "#fff",
+    fontSize: FONTS.base,
+    fontWeight: "600",
+  },
   errorContainer: {
     flexDirection: "row",
     alignItems: "center",

@@ -142,6 +142,16 @@ async function handleSnapTradeWebhook(req, res, payload) {
         await handleConnectionEnabled(user_id, connection_id);
         break;
 
+      case "connection.fixed":
+        await handleConnectionFixed(user_id, connection_id);
+        break;
+
+      case "account.holdings_updated":
+      case "ACCOUNT_HOLDINGS_UPDATED":
+      case "holdings.updated":
+        await handleAccountHoldingsUpdated(user_id, connection_id);
+        break;
+
       case "user.registered":
         await handleUserRegistered(user_id, data);
         break;
@@ -169,7 +179,7 @@ async function handleConnectionDisabled(user_id, connection_id, event_type) {
       connection_id,
     });
 
-    // Update connection status in database
+    // Update connection status in database using connection_id
     const { error } = await supabase
       .from("snaptrade_connections")
       .update({
@@ -179,18 +189,14 @@ async function handleConnectionDisabled(user_id, connection_id, event_type) {
           event_type === "connection.disabled" ? "disabled" : "error",
       })
       .eq("user_id", user_id)
-      .eq("account_id", connection_id);
+      .eq("connection_id", connection_id); // Use connection_id, not account_id
 
     if (error) {
       console.error("❌ Failed to update connection status:", error);
       return;
     }
 
-    // You could trigger a notification to the user here
-    // For example, send a push notification or update a notification table
-    console.log(
-      "✅ Connection status updated, user should be notified to reconnect"
-    );
+    console.log("✅ Connection status updated to disabled");
   } catch (error) {
     console.error("❌ Error handling connection disabled:", error);
   }
@@ -200,7 +206,7 @@ async function handleConnectionEnabled(user_id, connection_id) {
   try {
     console.log(`🟢 Connection enabled:`, { user_id, connection_id });
 
-    // Update connection status in database
+    // Update connection status using connection_id
     const { error } = await supabase
       .from("snaptrade_connections")
       .update({
@@ -210,7 +216,7 @@ async function handleConnectionEnabled(user_id, connection_id) {
         updated_at: new Date().toISOString(),
       })
       .eq("user_id", user_id)
-      .eq("account_id", connection_id);
+      .eq("connection_id", connection_id); // Use connection_id
 
     if (error) {
       console.error("❌ Failed to update connection status:", error);
@@ -238,5 +244,105 @@ async function handleUserLogin(user_id, data) {
     // You could track login metrics or update last_login timestamp
   } catch (error) {
     console.error("❌ Error handling user login:", error);
+  }
+}
+
+async function handleConnectionFixed(user_id, connection_id) {
+  try {
+    console.log(`✅ Connection fixed:`, { user_id, connection_id });
+
+    // Update connection status to active
+    const { error } = await supabase
+      .from("snaptrade_connections")
+      .update({
+        is_active: true,
+        connection_status: "active",
+        last_synced_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq("user_id", user_id)
+      .eq("connection_id", connection_id);
+
+    if (error) {
+      console.error("❌ Failed to update connection status:", error);
+      return;
+    }
+
+    // Trigger sync to pull fresh data after reconnection
+    const SUPABASE_URL =
+      process.env.SUPABASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL;
+    const { data: connection } = await supabase
+      .from("snaptrade_connections")
+      .select("account_id, snaptrade_user_id")
+      .eq("user_id", user_id)
+      .eq("connection_id", connection_id)
+      .single();
+
+    if (connection) {
+      await fetch(`${SUPABASE_URL}/functions/v1/sync-investments`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${
+            process.env.SUPABASE_SERVICE_ROLE_KEY ||
+            process.env.EXPO_PUBLIC_SUPABASE_SERVICE_ROLE_KEY
+          }`,
+        },
+        body: JSON.stringify({
+          user_id,
+          snaptrade_user_id: connection.snaptrade_user_id,
+          account_id: connection.account_id,
+        }),
+      }).catch((e) =>
+        console.error("sync-investments function call failed", e)
+      );
+    }
+
+    console.log("✅ Connection fixed and sync triggered");
+  } catch (error) {
+    console.error("❌ Error handling connection fixed:", error);
+  }
+}
+
+async function handleAccountHoldingsUpdated(user_id, connection_id) {
+  try {
+    console.log(`📈 Account holdings updated:`, { user_id, connection_id });
+
+    // Get connection details to find account_id
+    const { data: connection, error } = await supabase
+      .from("snaptrade_connections")
+      .select("account_id, snaptrade_user_id")
+      .eq("user_id", user_id)
+      .eq("connection_id", connection_id)
+      .eq("is_active", true)
+      .single();
+
+    if (error || !connection) {
+      console.error("❌ Could not find connection for webhook:", error);
+      return;
+    }
+
+    // Call sync-investments Supabase function to pull fresh data
+    const SUPABASE_URL =
+      process.env.SUPABASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL;
+    await fetch(`${SUPABASE_URL}/functions/v1/sync-investments`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${
+          process.env.SUPABASE_SERVICE_ROLE_KEY ||
+          process.env.EXPO_PUBLIC_SUPABASE_SERVICE_ROLE_KEY
+        }`,
+      },
+      body: JSON.stringify({
+        user_id,
+        snaptrade_user_id: connection.snaptrade_user_id,
+        account_id: connection.account_id,
+      }),
+    }).catch((e) => console.error("sync-investments function call failed", e));
+
+    console.log("✅ Triggered sync after holdings update webhook");
+  } catch (error) {
+    console.error("❌ Error handling account holdings updated:", error);
   }
 }

@@ -121,9 +121,17 @@ export const handleSnapTradeRegister = async (userId: string) => {
 };
 
 // === Handle SnapTrade Login ===
-export const handleSnapTradeLogin = async (userId: string, userSecret: string, broker?: string) => {
+export const handleSnapTradeLogin = async (
+  userId: string, 
+  userSecret: string, 
+  broker?: string,
+  reconnect?: string // Add reconnect parameter
+) => {
   try {
-    logger.info("🔄 Logging in SnapTrade user:", userId, broker ? `with broker: ${broker}` : "without specific broker");
+    logger.info("🔄 Logging in SnapTrade user:", userId, 
+      broker ? `with broker: ${broker}` : "",
+      reconnect ? `reconnecting: ${reconnect}` : ""
+    );
     
     const params: any = { 
       userId: userId, 
@@ -135,12 +143,37 @@ export const handleSnapTradeLogin = async (userId: string, userSecret: string, b
       params.broker = broker;
     }
     
+    // Add reconnect parameter if provided (for fixing disabled connections)
+    if (reconnect) {
+      params.reconnect = reconnect; // connection_id/authorization_id
+    }
+    
     const response = await callSnapTradeAPI("snaptrade", params);
     
     logger.info("✅ SnapTrade user logged in successfully:", response);
     return response;
   } catch (error) {
     logger.error("❌ Failed to login SnapTrade user:", error);
+    throw error;
+  }
+};
+
+// === Reconnect SnapTrade Connection (Fix Disabled Connection) ===
+export const reconnectSnaptradeConnection = async (
+  userId: string,
+  userSecret: string,
+  connectionId: string
+) => {
+  try {
+    logger.info("🔧 Reconnecting SnapTrade connection:", { userId, connectionId });
+    
+    // Call login with reconnect parameter
+    const response = await handleSnapTradeLogin(userId, userSecret, undefined, connectionId);
+    
+    logger.info("✅ SnapTrade reconnect initiated successfully");
+    return response;
+  } catch (error) {
+    logger.error("❌ Failed to reconnect SnapTrade connection:", error);
     throw error;
   }
 };
@@ -806,6 +839,7 @@ const snaptradeUtils = {
   hasSnaptradeConnection,
   getSnaptradeConnectionStatus,
   clearSnaptradeConnection,
+  reconnectSnaptradeConnection,
   getStoredSnaptradeCredentials,
   getSnaptradeCredentialsWithFallback,
   refreshExpiredCredentials,
