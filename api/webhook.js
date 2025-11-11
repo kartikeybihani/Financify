@@ -387,7 +387,8 @@ async function handleConnectionFixed(user_id, connection_id) {
   try {
     console.log(`✅ Connection fixed:`, { user_id, connection_id });
 
-    // Update connection status to active
+    // Note: user_id here is the SnapTrade user_id (snaptrade_user_id), not Supabase user_id
+    // We need to find the connection by snaptrade_user_id and connection_id
     const { error } = await supabase
       .from("snaptrade_connections")
       .update({
@@ -396,7 +397,7 @@ async function handleConnectionFixed(user_id, connection_id) {
         last_synced_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       })
-      .eq("user_id", user_id)
+      .eq("snaptrade_user_id", user_id) // Use snaptrade_user_id, not user_id
       .eq("connection_id", connection_id);
 
     if (error) {
@@ -404,17 +405,20 @@ async function handleConnectionFixed(user_id, connection_id) {
       return;
     }
 
+    console.log("✅ Connection status updated to active in database");
+
     // Trigger sync to pull fresh data after reconnection
     const SUPABASE_URL =
       process.env.SUPABASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL;
     const { data: connection } = await supabase
       .from("snaptrade_connections")
-      .select("account_id, snaptrade_user_id")
-      .eq("user_id", user_id)
+      .select("user_id, account_id, snaptrade_user_id")
+      .eq("snaptrade_user_id", user_id) // Use snaptrade_user_id, not user_id
       .eq("connection_id", connection_id)
       .single();
 
     if (connection) {
+      console.log("🔄 Triggering sync after connection fixed...");
       await fetch(`${SUPABASE_URL}/functions/v1/sync-investments`, {
         method: "POST",
         headers: {
@@ -425,13 +429,15 @@ async function handleConnectionFixed(user_id, connection_id) {
           }`,
         },
         body: JSON.stringify({
-          user_id,
+          user_id: connection.user_id, // Use Supabase user_id from connection
           snaptrade_user_id: connection.snaptrade_user_id,
           account_id: connection.account_id,
         }),
       }).catch((e) =>
         console.error("sync-investments function call failed", e)
       );
+    } else {
+      console.warn("⚠️ Could not find connection to trigger sync");
     }
 
     console.log("✅ Connection fixed and sync triggered");
@@ -444,19 +450,32 @@ async function handleAccountHoldingsUpdated(user_id, connection_id) {
   try {
     console.log(`📈 Account holdings updated:`, { user_id, connection_id });
 
-    // Get connection details to find account_id
+    // Note: user_id here is the SnapTrade user_id (snaptrade_user_id), not Supabase user_id
+    // We need to find the connection by snaptrade_user_id and connection_id
     const { data: connection, error } = await supabase
       .from("snaptrade_connections")
-      .select("account_id, snaptrade_user_id")
-      .eq("user_id", user_id)
+      .select("user_id, account_id, snaptrade_user_id") // CRITICAL: Include user_id to get Supabase UUID
+      .eq("snaptrade_user_id", user_id) // CRITICAL: Use snaptrade_user_id, not user_id
       .eq("connection_id", connection_id)
       .eq("is_active", true)
       .single();
 
     if (error || !connection) {
       console.error("❌ Could not find connection for webhook:", error);
+      console.error("Query details:", {
+        snaptrade_user_id: user_id,
+        connection_id: connection_id,
+        error_code: error?.code,
+        error_message: error?.message,
+      });
       return;
     }
+
+    console.log("✅ Found connection for webhook:", {
+      supabase_user_id: connection.user_id,
+      account_id: connection.account_id,
+      snaptrade_user_id: connection.snaptrade_user_id,
+    });
 
     // Call sync-investments Supabase function to pull fresh data
     const SUPABASE_URL =
@@ -471,7 +490,7 @@ async function handleAccountHoldingsUpdated(user_id, connection_id) {
         }`,
       },
       body: JSON.stringify({
-        user_id,
+        user_id: connection.user_id, // CRITICAL: Use Supabase user_id from connection, not SnapTrade user_id
         snaptrade_user_id: connection.snaptrade_user_id,
         account_id: connection.account_id,
       }),

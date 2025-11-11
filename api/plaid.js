@@ -532,17 +532,28 @@ async function handleSnapTradeSync(res, userId, accountId) {
     console.log("🔄 Starting SnapTrade sync for:", { userId, accountId });
 
     // Get the snaptrade_user_id and user_secret from the database connection
+    // CRITICAL: Also filter by user_id to ensure user can only sync their own accounts
     const { data: connection, error: connErr } = await supabase
       .from("snaptrade_connections")
       .select(
         "user_id, snaptrade_user_id, user_secret, connection_status, is_active, connection_id"
       )
+      .eq("user_id", userId) // CRITICAL: Security check - ensure user owns this account
       .eq("account_id", accountId)
       .single();
 
     if (connErr || !connection) {
       console.error("SnapTrade connection lookup error:", connErr);
+      if (connErr?.code === "PGRST116") {
+        throw new Error("SnapTrade connection not found for this user");
+      }
       throw new Error("SnapTrade connection not found");
+    }
+
+    // CRITICAL: Additional security check
+    if (connection.user_id !== userId) {
+      console.error("❌ Security violation: User attempting to sync another user's account");
+      throw new Error("Unauthorized: Cannot sync this account");
     }
 
     // Check if connection is disabled in DB
@@ -783,14 +794,22 @@ async function handleSnapTradeSync(res, userId, accountId) {
           userSecret: connection.user_secret,
         });
 
-      const holdingsData = holdingsResponse.data;
+      const holdingsData = holdingsResponse?.data || {};
       console.log(
         "📈 Holdings data received:",
         JSON.stringify(holdingsData, null, 2)
       );
 
-      // Holdings are in the positions array
-      const positions = holdingsData.positions || [];
+      // CRITICAL: Handle different response structures
+      // Holdings can be in positions array, or holdingsData itself might be an array
+      let positions = [];
+      if (Array.isArray(holdingsData)) {
+        positions = holdingsData;
+      } else if (holdingsData.positions && Array.isArray(holdingsData.positions)) {
+        positions = holdingsData.positions;
+      } else if (holdingsData.holdings && Array.isArray(holdingsData.holdings)) {
+        positions = holdingsData.holdings;
+      }
       if (positions && positions.length > 0) {
         // Get existing holdings to read previous_market_value before updating
         const { data: existingHoldings } = await supabase
@@ -803,8 +822,12 @@ async function handleSnapTradeSync(res, userId, accountId) {
 
         // Process holdings with day change calculation using previous_market_value
         console.log("🔍 Calculating daily performance changes...");
-        const holdingsRows = positions.map((holding) => {
-          const symbol = holding.symbol?.symbol || holding.symbol;
+        const holdingsRows = positions
+          .filter((holding) => holding && (holding.symbol || holding.symbol_id)) // CRITICAL: Filter out invalid holdings
+          .map((holding) => {
+          // CRITICAL: Handle different symbol structures
+          const symbol = holding.symbol?.symbol || holding.symbol || holding.symbol_id;
+          const symbolId = holding.symbol?.id || holding.symbol_id || symbol?.id;
 
           const currentMarketValue =
             holding.units && holding.price
@@ -813,7 +836,7 @@ async function handleSnapTradeSync(res, userId, accountId) {
 
           // Find existing holding to get previous_market_value
           const existingHolding = existingHoldings?.find(
-            (eh) => eh.symbol_id === symbol?.id
+            (eh) => eh.symbol_id === symbolId || eh.symbol_id === symbol?.id
           );
           const previousMarketValue =
             existingHolding?.previous_market_value ??
@@ -839,8 +862,8 @@ async function handleSnapTradeSync(res, userId, accountId) {
             user_id: connection.user_id,
             snaptrade_user_id: connection.snaptrade_user_id,
             account_id: accountId,
-            symbol_id: symbol?.id,
-            symbol: symbol?.symbol,
+            symbol_id: symbolId || symbol?.id || null, // CRITICAL: Ensure symbol_id is set
+            symbol: symbol?.symbol || symbol || holding.ticker || null, // CRITICAL: Fallback symbol sources
             raw_symbol: symbol?.raw_symbol,
             description: symbol?.description,
             currency_code: holding.currency?.code || "USD",
@@ -927,12 +950,20 @@ async function handleSnapTradeSync(res, userId, accountId) {
       accountId
     );
 
-    // Update last_synced_at timestamp
-    await supabase
+    // CRITICAL: Only update last_synced_at if sync completed successfully
+    // This ensures we don't mark stale data as "fresh" if sync failed
+    const { error: updateError } = await supabase
       .from("snaptrade_connections")
       .update({ last_synced_at: new Date().toISOString() })
       .eq("snaptrade_user_id", connection.snaptrade_user_id)
       .eq("account_id", accountId);
+
+    if (updateError) {
+      console.error("⚠️ Failed to update last_synced_at (but sync completed):", updateError);
+      // Don't fail the whole sync if timestamp update fails
+    } else {
+      console.log("✅ Updated last_synced_at timestamp");
+    }
 
     console.log("✅ SnapTrade sync completed successfully");
     return res.status(200).json({
@@ -941,6 +972,45 @@ async function handleSnapTradeSync(res, userId, accountId) {
     });
   } catch (error) {
     console.error("❌ SnapTrade sync error:", error);
+    
+    // CRITICAL: Don't update last_synced_at on error - data is still stale
+    // This ensures auto-sync will retry next time
+    
+    // Check if this is a 402 error (disabled connection)
+    if (error.status === 402 || error.response?.status === 402) {
+      console.log("🔴 Sync failed due to disabled connection, updating database...");
+      
+      // Update database to mark connection as disabled
+      try {
+        const { data: connection } = await supabase
+          .from("snaptrade_connections")
+          .select("user_id")
+          .eq("account_id", accountId)
+          .single();
+          
+        if (connection) {
+          await supabase
+            .from("snaptrade_connections")
+            .update({
+              is_active: false,
+              connection_status: "disabled",
+              updated_at: new Date().toISOString(),
+            })
+            .eq("user_id", connection.user_id)
+            .eq("account_id", accountId);
+        }
+      } catch (dbError) {
+        console.error("❌ Failed to update connection status:", dbError);
+      }
+      
+      return res.status(402).json({
+        error: "Connection is disabled",
+        code: "CONNECTION_DISABLED",
+        message: "Your investment account connection has been disabled. Please reconnect your account to continue.",
+        requiresReconnect: true,
+      });
+    }
+    
     throw error;
   }
 }

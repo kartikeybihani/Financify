@@ -269,11 +269,13 @@ export const getSnaptradeCredentialsWithFallback = async () => {
       return null;
     }
     
+    // Note: We don't filter by is_active because we need credentials even for disabled connections
+    // (to enable reconnection). The credentials (userId, accountId) are the same regardless of status.
     const { data: connections, error } = await supabase
       .from("snaptrade_connections")
       .select("snaptrade_user_id, account_id")
       .eq("user_id", user.id)
-      .eq("is_active", true)
+      // Removed .eq("is_active", true) - we need credentials even for disabled connections
       .order("last_synced_at", { ascending: false })
       .limit(1);
     
@@ -296,7 +298,7 @@ export const getSnaptradeCredentialsWithFallback = async () => {
       return credentials;
     }
     
-    logger.info("❌ Step 2 FAILED: No active SnapTrade connections found in database");
+    logger.info("❌ Step 2 FAILED: No SnapTrade connections found in database");
     return null;
   } catch (error) {
     logger.error("❌ CRITICAL ERROR: Failed to get SnapTrade credentials with fallback:", error);
@@ -333,13 +335,15 @@ export const getSnaptradeUserSecretFromDB = async (userId: string, snaptradeUser
   try {
     logger.info("🔑 Retrieving userSecret from database...");
     
+    // Note: We don't filter by is_active because we need userSecret even for disabled connections
+    // (to enable reconnection). The userSecret is still valid even if the connection is disabled.
     const { data: connection, error } = await supabase
       .from("snaptrade_connections")
       .select("user_secret")
       .eq("user_id", userId)
       .eq("snaptrade_user_id", snaptradeUserId)
       .eq("account_id", accountId)
-      .eq("is_active", true)
+      // Removed .eq("is_active", true) - we need userSecret even for disabled connections
       .single();
     
     if (error || !connection?.user_secret) {

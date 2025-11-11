@@ -13,7 +13,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { useRouter, useFocusEffect } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import * as WebBrowser from "expo-web-browser";
 import { supabase } from "@/src/lib/supabase/supabase";
@@ -138,6 +138,68 @@ export default function InvestmentsScreen({
   // Track preloaded data to detect changes
   const lastPreloadedDataRef = useRef<any>(null);
 
+  // CRITICAL: Prevent concurrent syncs and infinite loops
+  const isSyncInProgress = useRef<boolean>(false);
+  const isAutoSyncInProgress = useRef<boolean>(false);
+
+  // Internal function to load data without triggering auto-sync (prevents infinite loops)
+  const loadFromDbWithoutAutoSync = async () => {
+    try {
+      logger.info("Investments: Loading data from Supabase (no auto-sync)...");
+
+      const [h, o, b, c] = await Promise.all([
+        getSnaptradeHoldingsFromDB(),
+        getSnaptradeOptionsFromDB(),
+        getSnaptradeBalancesFromDB(),
+        getSnaptradeConnectionsFromDB(),
+      ]);
+
+      const hasAnyData =
+        (h && h.length > 0) ||
+        (o && o.length > 0) ||
+        (b && b.length > 0) ||
+        (c && c.length > 0);
+
+      if (hasAnyData) {
+        logger.info(
+          `Investments: Loaded data from Supabase - Holdings: ${
+            h?.length || 0
+          }, Options: ${o?.length || 0}, Balances: ${
+            b?.length || 0
+          }, Connections: ${c?.length || 0}`
+        );
+        setHoldings(h || []);
+        setOptions(o || []);
+        setBalances(b || []);
+        setConnections(c || []);
+
+        // Check if connection is disabled (but don't trigger auto-sync)
+        if (c && c.length > 0) {
+          const connection = c[0] as any;
+          const isDisabled =
+            !connection.is_active ||
+            connection.connection_status === "disabled" ||
+            connection.connection_status === "error";
+
+          setConnectionStatus({
+            isDisabled,
+            connectionId: connection.connection_id || null,
+          });
+        } else {
+          setConnectionStatus({
+            isDisabled: false,
+            connectionId: null,
+          });
+        }
+      }
+
+      return hasAnyData;
+    } catch (error) {
+      logger.error("Error loading from database:", error);
+      return false;
+    }
+  };
+
   const loadFromDb = async () => {
     try {
       logger.info("Investments: Loading data from Supabase...");
@@ -185,20 +247,45 @@ export default function InvestmentsScreen({
           });
 
           // Auto-refresh stale investment data (>24 hours old) - silent background sync
-          if (!isDisabled) {
+          if (
+            !isDisabled &&
+            !isSyncInProgress.current &&
+            !isAutoSyncInProgress.current
+          ) {
             const now = new Date();
-            const lastSynced = connection.last_synced_at ? new Date(connection.last_synced_at) : null;
-            if (!lastSynced || (now.getTime() - lastSynced.getTime()) / (1000 * 60 * 60) > 24) {
-              logger.info("Auto-syncing stale investment data...");
+            const lastSynced = connection.last_synced_at
+              ? new Date(connection.last_synced_at)
+              : null;
+            if (
+              !lastSynced ||
+              (now.getTime() - lastSynced.getTime()) / (1000 * 60 * 60) > 24
+            ) {
+              logger.info(
+                "Auto-syncing stale investment data (>24 hours old)..."
+              );
               // Sync silently in background - don't show loading UI
+              isAutoSyncInProgress.current = true;
               try {
-                const { data: { user } } = await supabase.auth.getUser();
+                const {
+                  data: { user },
+                } = await supabase.auth.getUser();
                 if (user) {
-                  await syncSnaptradeInvestments(user.id, connection.account_id);
+                  await syncSnaptradeInvestments(
+                    user.id,
+                    connection.account_id
+                  );
+                  // Reload data after sync completes (but don't trigger another sync)
+                  logger.info("🔄 Reloading data after auto-sync...");
+                  // Use a flag to prevent recursive sync
+                  const wasAutoSync = true;
+                  await loadFromDbWithoutAutoSync();
+                  logger.info("✅ Auto-sync complete, data reloaded");
                 }
               } catch (error) {
                 // Silently handle errors - don't show to user
                 logger.error("Auto-sync failed silently:", error);
+              } finally {
+                isAutoSyncInProgress.current = false;
               }
             }
           }
@@ -217,8 +304,19 @@ export default function InvestmentsScreen({
           ) {
             logger.info("🔍 Verifying connection status with SnapTrade API...");
             try {
+              // CRITICAL: Get actual user_id from auth, not from connection (connection might not have it)
+              const {
+                data: { user: authUser },
+              } = await supabase.auth.getUser();
+              if (!authUser) {
+                logger.warn(
+                  "⚠️ Cannot verify connection status - user not authenticated"
+                );
+                return;
+              }
+
               const statusCheck = await checkSnaptradeConnectionStatus(
-                connection.user_id || "",
+                authUser.id,
                 connection.account_id
               );
 
@@ -388,7 +486,77 @@ export default function InvestmentsScreen({
     }
   }, [preloadedData]);
 
+  // Check connection status when screen comes into focus (catches webhook updates)
+  useFocusEffect(
+    React.useCallback(() => {
+      const checkConnectionStatusOnFocus = async () => {
+        try {
+          const {
+            data: { user },
+          } = await supabase.auth.getUser();
+          if (!user) return;
+
+          // Reload connections from database to check for status updates
+          const updatedConnections = await getSnaptradeConnectionsFromDB();
+          if (updatedConnections && updatedConnections.length > 0) {
+            const connection = updatedConnections[0] as any;
+            const isDisabled =
+              !connection.is_active ||
+              connection.connection_status === "disabled" ||
+              connection.connection_status === "error";
+
+            // Update connection status if it changed
+            setConnectionStatus((prev) => {
+              const wasDisabled = prev.isDisabled;
+
+              if (
+                prev.isDisabled !== isDisabled ||
+                prev.connectionId !== connection.connection_id
+              ) {
+                logger.info("🔄 Connection status updated on focus:", {
+                  wasDisabled: prev.isDisabled,
+                  nowDisabled: isDisabled,
+                  connectionId: connection.connection_id,
+                });
+
+                // If connection was disabled but is now active, reload data
+                if (wasDisabled && !isDisabled) {
+                  logger.info("✅ Connection reactivated! Reloading data...");
+                  // Reload data asynchronously (without triggering auto-sync)
+                  loadFromDbWithoutAutoSync().catch((err) =>
+                    logger.error(
+                      "Error reloading data after reactivation:",
+                      err
+                    )
+                  );
+                }
+
+                return {
+                  isDisabled,
+                  connectionId: connection.connection_id || null,
+                };
+              }
+              return prev;
+            });
+
+            setConnections(updatedConnections);
+          }
+        } catch (error) {
+          logger.warn("⚠️ Error checking connection status on focus:", error);
+        }
+      };
+
+      checkConnectionStatusOnFocus();
+    }, []) // Empty deps - we use functional setState to access current state
+  );
+
   const handleSync = async () => {
+    // CRITICAL: Prevent concurrent syncs
+    if (isSyncInProgress.current) {
+      logger.warn("⚠️ Sync already in progress, ignoring duplicate request");
+      return;
+    }
+
     // Check if connection is disabled
     if (connectionStatus.isDisabled) {
       setSyncError(
@@ -397,6 +565,7 @@ export default function InvestmentsScreen({
       return;
     }
 
+    isSyncInProgress.current = true;
     setIsSyncing(true);
     setIsLoading(true);
     setSyncError(null);
@@ -433,46 +602,72 @@ export default function InvestmentsScreen({
 
       const first = connections[0];
       logger.info("🔄 Starting investment refresh (paid endpoint)...");
+
+      // Step 1: Call paid refresh endpoint to trigger SnapTrade to update their cache
       await refreshSnaptradeInvestments(user.id, first.account_id);
 
       // Clear cache to ensure fresh data
       await clearInvestmentCache();
 
-      // Wait 3-5 seconds for webhook to process before reloading data
-      logger.info("⏳ Waiting for webhook to process refresh...");
-      await new Promise(resolve => setTimeout(resolve, 4000));
+      // Step 2: Wait for SnapTrade to process the refresh (they need time to update their cache)
+      logger.info("⏳ Waiting for SnapTrade to process refresh (5 seconds)...");
+      await new Promise((resolve) => setTimeout(resolve, 5000));
 
-      // Mark sync time to force reload on next screen visit
-      lastSyncTime.current = Date.now();
+      // Step 3: Now sync the fresh data from SnapTrade API to our database
+      logger.info("🔄 Syncing fresh data from SnapTrade API...");
+      await syncSnaptradeInvestments(user.id, first.account_id);
 
+      // Step 4: Reload data from database to show updated values (without triggering auto-sync)
       logger.info("🔄 Reloading data from database...");
-      const hasStoredData = await loadFromDb();
+      const hasStoredData = await loadFromDbWithoutAutoSync();
 
       if (hasStoredData) {
         hasData.current = true;
       }
 
+      // Step 5: Update investment accounts in main table
       logger.info("🔄 Updating investment accounts in main table...");
       await populateInvestmentAccountsInDB();
 
-      logger.info("✅ Investment refresh completed successfully");
+      logger.info(
+        "✅ Investment refresh completed successfully - data synced and reloaded"
+      );
     } catch (err: any) {
       // Check if this is a 402 disabled connection error
-      if (err.statusCode === 402 || err.code === "CONNECTION_DISABLED" || err.requiresReconnect) {
+      if (
+        err.statusCode === 402 ||
+        err.code === "CONNECTION_DISABLED" ||
+        err.requiresReconnect
+      ) {
         logger.error("🔴 Connection disabled detected, updating state...", err);
-        
+
+        // Reload connections from DB to get updated status
+        const updatedConnections = await getSnaptradeConnectionsFromDB();
+        setConnections(updatedConnections || []);
+
+        // Get connection_id from error, or from connections
+        const connectionId =
+          err.connectionId ||
+          (updatedConnections && updatedConnections.length > 0
+            ? updatedConnections[0].connection_id
+            : null) ||
+          (connections.length > 0 ? connections[0].connection_id : null);
+
         // Update connection status to show reconnection UI
         setConnectionStatus({
-          needsReconnection: true,
-          connectionId: err.connectionId || first?.connection_id || null,
+          isDisabled: true,
+          connectionId: connectionId,
         });
-        
-        // Reload connections from DB to get updated status
-        const connections = await getSnaptradeConnectionsFromDB();
-        setConnections(connections || []);
-        
-        const errorMsg = err.message || "Your investment account connection has been disabled. Please reconnect your account.";
+
+        const errorMsg =
+          err.message ||
+          "Your investment account connection has been disabled. Please reconnect your account.";
         setSyncError(errorMsg);
+
+        logger.info(
+          "🔴 Reconnection UI should now be visible with connectionId:",
+          connectionId
+        );
       } else {
         const errorMsg =
           err instanceof Error ? err.message : "Failed to sync investments";
@@ -480,35 +675,57 @@ export default function InvestmentsScreen({
         setSyncError(errorMsg);
       }
     } finally {
+      isSyncInProgress.current = false;
       setIsSyncing(false);
       setIsLoading(false);
     }
   };
 
   const handleReconnect = async () => {
+    // CRITICAL: Prevent concurrent reconnect attempts
+    if (isSyncInProgress.current) {
+      logger.warn(
+        "⚠️ Sync/reconnect already in progress, ignoring duplicate request"
+      );
+      return;
+    }
+
     try {
+      isSyncInProgress.current = true;
+      setIsSyncing(true);
+      setSyncError(null);
+
       const {
         data: { user },
       } = await supabase.auth.getUser();
       if (!user) {
         setSyncError("User not authenticated");
+        isSyncInProgress.current = false;
+        setIsSyncing(false);
         return;
       }
 
       const creds = await getSnaptradeCredentialsWithFallback();
       if (!creds) {
         setSyncError("No valid SnapTrade credentials found");
+        isSyncInProgress.current = false;
+        setIsSyncing(false);
         return;
       }
 
       if (!connectionStatus.connectionId) {
         setSyncError("Connection ID not found");
+        isSyncInProgress.current = false;
+        setIsSyncing(false);
         return;
       }
 
       // Get userSecret from database
-      const { getSnaptradeUserSecretFromDB, reconnectSnaptradeConnection } =
-        await import("@/src/utils/snaptrade");
+      const {
+        getSnaptradeUserSecretFromDB,
+        reconnectSnaptradeConnection,
+        getSnaptradeConnectionDetails,
+      } = await import("@/src/utils/snaptrade");
       const userSecret = await getSnaptradeUserSecretFromDB(
         user.id,
         creds.userId,
@@ -524,12 +741,158 @@ export default function InvestmentsScreen({
 
       // Open browser with reconnect URL
       if (response.redirectURI) {
-        await WebBrowser.openBrowserAsync(response.redirectURI, {
-          presentationStyle: WebBrowser.WebBrowserPresentationStyle.FORM_SHEET,
-        });
+        logger.info(
+          "🌐 Opening SnapTrade Connection Portal for reconnection..."
+        );
+        const browserResult = await WebBrowser.openBrowserAsync(
+          response.redirectURI,
+          {
+            presentationStyle:
+              WebBrowser.WebBrowserPresentationStyle.FORM_SHEET,
+          }
+        );
+
+        logger.info(
+          "🔙 Browser closed, checking connection status...",
+          browserResult
+        );
+
+        // CRITICAL: Handle browser cancellation
+        if (
+          browserResult.type === "cancel" ||
+          browserResult.type === "dismiss"
+        ) {
+          // Wait a moment for webhook to process (if it fires quickly)
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+
+          // Check connection status from SnapTrade API
+          try {
+            logger.info("🔍 Verifying connection status after reconnection...");
+            const connectionDetails = await getSnaptradeConnectionDetails(
+              user.id,
+              connections[0]?.account_id || ""
+            );
+
+            if (connectionDetails && !connectionDetails.disabled) {
+              logger.info("✅ Connection is now active! Updating UI...");
+
+              // Update connection status in UI
+              setConnectionStatus({
+                isDisabled: false,
+                connectionId: connectionStatus.connectionId,
+              });
+
+              // Reload connections from database to get updated status
+              const updatedConnections = await getSnaptradeConnectionsFromDB();
+              setConnections(updatedConnections || []);
+
+              // Reload all investment data (without triggering auto-sync)
+              logger.info("🔄 Reloading investment data after reconnection...");
+              await loadFromDbWithoutAutoSync();
+
+              // Trigger a sync to get fresh data
+              logger.info("🔄 Triggering sync after reconnection...");
+              try {
+                // CRITICAL: Ensure we have a valid account_id
+                const accountId =
+                  connections[0]?.account_id ||
+                  updatedConnections?.[0]?.account_id;
+                if (!accountId) {
+                  logger.error("❌ Cannot sync - no account_id found");
+                  setSyncError(
+                    "Account ID not found. Please refresh manually."
+                  );
+                  return;
+                }
+
+                await syncSnaptradeInvestments(user.id, accountId);
+
+                // Wait for sync to complete
+                await new Promise((resolve) => setTimeout(resolve, 3000));
+
+                // Reload data again after sync (without triggering auto-sync)
+                await loadFromDbWithoutAutoSync();
+
+                logger.info(
+                  "✅ Reconnection complete! Data synced successfully."
+                );
+                setSyncError(null);
+              } catch (syncErr) {
+                logger.warn(
+                  "⚠️ Sync after reconnection had issues (but connection is active):",
+                  syncErr
+                );
+                // Don't show error - connection is active, sync can happen later
+              }
+            } else {
+              logger.warn(
+                "⚠️ Connection still appears disabled. Webhook may not have fired yet."
+              );
+              logger.info(
+                "💡 User may need to wait a moment or refresh manually."
+              );
+
+              // Still update UI state optimistically - user completed auth
+              setConnectionStatus({
+                isDisabled: false,
+                connectionId: connectionStatus.connectionId,
+              });
+
+              // Reload connections
+              const updatedConnections = await getSnaptradeConnectionsFromDB();
+              setConnections(updatedConnections || []);
+
+              setSyncError(
+                "Reconnection completed. Please wait a moment and refresh to see updated data."
+              );
+            }
+          } catch (statusErr: any) {
+            logger.error(
+              "❌ Error checking connection status after reconnection:",
+              statusErr
+            );
+
+            // If it's a 402, connection might still be disabled
+            if (
+              statusErr.statusCode === 402 ||
+              statusErr.code === "CONNECTION_DISABLED"
+            ) {
+              setSyncError(
+                "Connection may still be processing. Please wait a moment and try refreshing."
+              );
+            } else {
+              // Other error - connection might be active but we can't verify
+              logger.warn(
+                "⚠️ Could not verify connection status, but user completed auth"
+              );
+              setConnectionStatus({
+                isDisabled: false,
+                connectionId: connectionStatus.connectionId,
+              });
+
+              // Reload connections optimistically
+              const updatedConnections = await getSnaptradeConnectionsFromDB();
+              setConnections(updatedConnections || []);
+
+              setSyncError(
+                "Reconnection completed. Please refresh to verify connection status."
+              );
+            }
+          }
+        } else {
+          // User cancelled browser before completing reconnection
+          logger.info("⚠️ User cancelled browser - reconnection not completed");
+          setSyncError("Reconnection cancelled. Please try again.");
+        }
+      } else {
+        setSyncError("No redirect URI received from SnapTrade");
       }
     } catch (err) {
+      logger.error("❌ Reconnection error:", err);
       setSyncError(err instanceof Error ? err.message : "Failed to reconnect");
+    } finally {
+      isSyncInProgress.current = false;
+      setIsSyncing(false);
     }
   };
 

@@ -165,15 +165,30 @@ export default function InstitutionSelectionModal({
 
         logger.info("🔗 WebBrowser result:", result);
 
-        // After the user completes the connection, fetch their accounts
-        if (result.type === "cancel") {
-          logger.info("🔄 User completed connection, fetching accounts...");
+        // After the browser closes, check if connection was successful
+        // Note: result.type === "cancel" means browser was dismissed (could be completed OR cancelled)
+        // We need to verify by checking if accounts exist
+        if (result.type === "cancel" || result.type === "dismiss") {
+          logger.info("🔄 Browser closed, verifying connection...");
+          
+          // Wait a moment for SnapTrade to process the connection
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+          
           try {
             const accounts = await fetchSnaptradeAccounts(
               registerResponse.userId,
               registerResponse.userSecret
             );
             logger.info("✅ Snaptrade accounts fetched:", accounts);
+            
+            // CRITICAL: Verify connection was actually successful
+            if (!accounts || accounts.length === 0) {
+              logger.warn("⚠️ No accounts found - user may have cancelled connection");
+              setIsConnecting(false);
+              setConnectingInstitution(null);
+              // Optionally show error message to user
+              return;
+            }
 
             // Store credentials securely in database
             try {
@@ -238,10 +253,20 @@ export default function InstitutionSelectionModal({
               }
             }
 
-            // Navigate to investments screen to show data
+            // CRITICAL: Close modal and refresh parent component to show new data
             setIsConnecting(false);
             setConnectingInstitution(null);
-            // router.push("/investments" as any);
+            
+            // Notify parent that connection was successful
+            if (onReopenFinancialSheet) {
+              // Small delay to ensure database updates are complete
+              setTimeout(() => {
+                onReopenFinancialSheet();
+              }, 1000);
+            }
+            
+            // Close the modal
+            onClose();
           } catch (accountError) {
             logger.error("❌ Failed to fetch accounts:", accountError);
 
@@ -374,14 +399,27 @@ export default function InstitutionSelectionModal({
 
         logger.info("🔗 WebBrowser result:", result);
 
-        if (result.type === "cancel") {
-          logger.info("🔄 User completed connection, fetching accounts...");
+        // After the browser closes, check if connection was successful
+        if (result.type === "cancel" || result.type === "dismiss") {
+          logger.info("🔄 Browser closed, verifying connection...");
+          
+          // Wait a moment for SnapTrade to process the connection
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+          
           try {
             const accounts = await fetchSnaptradeAccounts(
               registerResponse.userId,
               registerResponse.userSecret
             );
             logger.info("✅ Snaptrade accounts fetched:", accounts);
+            
+            // CRITICAL: Verify connection was actually successful
+            if (!accounts || accounts.length === 0) {
+              logger.warn("⚠️ No accounts found - user may have cancelled connection");
+              setIsConnecting(false);
+              setConnectingInstitution(null);
+              return;
+            }
 
             // Store credentials securely in database
             try {
@@ -435,15 +473,29 @@ export default function InstitutionSelectionModal({
               }
             }
 
+            // CRITICAL: Close modal and refresh parent component to show new data
             setIsConnecting(false);
             setConnectingInstitution(null);
-            // router.push("/investments" as any);
+            
+            // Notify parent that connection was successful
+            if (onReopenFinancialSheet) {
+              // Small delay to ensure database updates are complete
+              setTimeout(() => {
+                onReopenFinancialSheet();
+              }, 1000);
+            }
+            
+            // Close the modal
+            onClose();
           } catch (accountError) {
             logger.error("❌ Failed to fetch accounts:", accountError);
             setIsConnecting(false);
             setConnectingInstitution(null);
+            // Show error to user - connection may have failed
           }
         } else {
+          // Browser was opened but result type is unexpected
+          logger.warn("⚠️ Unexpected browser result type:", result.type);
           setIsConnecting(false);
           setConnectingInstitution(null);
         }
