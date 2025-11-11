@@ -31,21 +31,24 @@ export default async function handler(req, res) {
     event_type,
     eventType, // SnapTrade uses camelCase
     user_id,
-    userId, // SnapTrade might use camelCase
+    userId, // SnapTrade uses this
     connection_id,
     connectionId, // SnapTrade might use camelCase
-    webhookId, // SnapTrade uses this
+    webhookId, // SnapTrade uses this (webhook delivery ID)
+    brokerageAuthorizationId, // SnapTrade uses this for connection_id
     webhookSecret,
     clientId, // SnapTrade uses this
+    accountId, // SnapTrade uses this
   } = req.body || {};
 
   // Normalize SnapTrade webhook format (camelCase -> snake_case)
   // Note: SnapTrade sends clientId (SnapTrade user ID), not Supabase user_id
   const normalizedEventType = eventType || event_type;
-  const normalizedSnapTradeUserId = userId || user_id || clientId; // SnapTrade sends clientId (this is snaptrade_user_id)
-  // webhookId is the webhook delivery ID, not connection_id
-  // connection_id might be in data.payload or we need to look it up by snaptrade_user_id
-  const normalizedConnectionId = connectionId || connection_id; // Don't use webhookId as connection_id
+  const normalizedSnapTradeUserId = userId || user_id; // SnapTrade sends userId (SnapTrade user ID)
+  // brokerageAuthorizationId is the actual connection_id/authorization_id
+  // webhookId is just the webhook delivery ID, not connection_id
+  const normalizedConnectionId =
+    brokerageAuthorizationId || connectionId || connection_id;
 
   // Log full body for SnapTrade-like requests
   if (
@@ -68,17 +71,19 @@ export default async function handler(req, res) {
     );
 
     // Normalize payload to snake_case for handler
-    // Note: user_id in payload will be the SnapTrade user ID (clientId), not Supabase user_id
+    // Note: user_id in payload will be the SnapTrade user ID (userId), not Supabase user_id
     const normalizedPayload = {
       ...req.body,
       event_type: normalizedEventType,
-      user_id: normalizedSnapTradeUserId, // This is actually snaptrade_user_id
-      connection_id: normalizedConnectionId,
+      user_id: normalizedSnapTradeUserId, // This is actually snaptrade_user_id (SnapTrade userId)
+      connection_id: normalizedConnectionId, // This is brokerageAuthorizationId
       webhookSecret: webhookSecret,
+      accountId: accountId, // Keep accountId for account-specific events
       data: req.body.data || req.body,
       // Keep original fields for reference
       clientId: clientId,
       webhookId: webhookId,
+      brokerageAuthorizationId: brokerageAuthorizationId, // Keep original
     };
 
     return handleSnapTradeWebhook(req, res, normalizedPayload);
@@ -207,20 +212,26 @@ async function handleSnapTradeWebhook(req, res, payload) {
     }
 
     switch (event_type) {
-      case "connection.disabled":
-      case "CONNECTION_DISABLED":
-      case "connection.error":
-      case "CONNECTION_ERROR":
+      case "CONNECTION_BROKEN":
+      case "connection.broken":
+        // SnapTrade sends CONNECTION_BROKEN when connection is disabled/broken
         await handleConnectionDisabled(user_id, connection_id, event_type);
         break;
 
-      case "connection.enabled":
-      case "CONNECTION_ENABLED":
+      case "CONNECTION_FAILED":
+      case "connection.failed":
+        // Connection attempt failed
+        await handleConnectionDisabled(user_id, connection_id, event_type);
+        break;
+
+      case "CONNECTION_ADDED":
+      case "connection.added":
+        // New connection added - treat as enabled
         await handleConnectionEnabled(user_id, connection_id);
         break;
 
-      case "connection.fixed":
       case "CONNECTION_FIXED":
+      case "connection.fixed":
         await handleConnectionFixed(user_id, connection_id);
         break;
 
