@@ -261,7 +261,7 @@ export default function HomeScreen() {
       const { data: balanceData, error: balanceError } = await supabase
         .from("investment_balances")
         .select(
-          "day_change, day_change_percent, total_change, total_change_percent, total_equity"
+          "day_change, day_change_percent, total_change, total_change_percent, total_value"
         )
         .eq("user_id", userData?.id)
         .eq("snaptrade_user_id", connection.snaptrade_user_id)

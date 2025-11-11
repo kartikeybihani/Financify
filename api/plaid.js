@@ -673,14 +673,6 @@ async function handleSnapTradeSync(res, userId, accountId) {
         if (apiTotalValue && apiTotalValue > 0) {
           totalValue = apiTotalValue;
           console.log(`✅ Using API total_value: $${totalValue.toFixed(2)}`);
-        } else if (
-          balanceData[0]?.total_equity &&
-          balanceData[0].total_equity > 0
-        ) {
-          totalValue = balanceData[0].total_equity;
-          console.log(
-            `✅ Using balance total_equity: $${totalValue.toFixed(2)}`
-          );
         } else {
           // Fallback to sum of all stocks' market_value
           totalValue = totalPortfolioValue;
@@ -738,10 +730,6 @@ async function handleSnapTradeSync(res, userId, accountId) {
           currency_code: balance.currency?.code || "USD",
           cash: balance.cash || 0,
           buying_power: balance.buying_power || 0,
-          total_equity:
-            balance.total_equity || totalValue || totalPortfolioValue || 0,
-          total_margin_used: 0,
-          total_margin_available: 0,
           // New performance columns
           day_change: computedDayChange,
           day_change_percent: dayChangePercent,
@@ -864,7 +852,6 @@ async function handleSnapTradeSync(res, userId, accountId) {
             account_id: accountId,
             symbol_id: symbolId || symbol?.id || null, // CRITICAL: Ensure symbol_id is set
             symbol: symbol?.symbol || symbol || holding.ticker || null, // CRITICAL: Fallback symbol sources
-            raw_symbol: symbol?.raw_symbol,
             description: symbol?.description,
             currency_code: holding.currency?.code || "USD",
             exchange_code: symbol?.exchange?.code,

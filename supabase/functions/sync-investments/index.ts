@@ -216,9 +216,6 @@ serve(async (req: Request) => {
             currency_code: currencyCode,
             cash: cash,
             buying_power: balance.buying_power || 0,
-            total_equity: balance.cash || 0, // Using cash as total equity for now
-            total_margin_used: 0, // Not provided in API response
-            total_margin_available: 0, // Not provided in API response
             total_value: totalValue,
             previous_total_value: totalValue, // Set for next sync
             day_change: dayChange,
@@ -300,7 +297,6 @@ serve(async (req: Request) => {
             account_id,
             symbol_id: symbol?.id,
             symbol: symbol?.symbol,
-            raw_symbol: symbol?.raw_symbol,
             description: symbol?.description,
             currency_code: holding.currency?.code || 'USD',
             exchange_code: symbol?.exchange?.code,
