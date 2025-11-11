@@ -69,6 +69,9 @@ export default function SignupScreen() {
     });
 
     logger.info("Signup data: ", data);
+    if (error) {
+      logger.error("Signup error: ", error);
+    }
 
     setLoading(false);
 
@@ -77,25 +80,41 @@ export default function SignupScreen() {
         setFormError("User with this email already exists. Please login.");
         return;
       }
+      setFormError(
+        error.message || "An error occurred during signup. Please try again."
+      );
+      return;
+    }
+
+    // Check if email confirmation is required
+    if (!data.user || !data.session) {
+      Alert.alert(
+        "Check your email",
+        "We've sent you a confirmation email. Please check your inbox and click the confirmation link to complete your signup.",
+        [{ text: "OK" }]
+      );
       return;
     }
 
     // Create profiles row and route to intent
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (user?.id) {
+      if (data.user?.id) {
         await supabase.from("profiles").upsert(
           {
-            id: user.id,
+            id: data.user.id,
             onboarding_completed: false,
             onboarding_step: 1,
           },
           { onConflict: "id" }
         );
       }
-    } catch {}
+    } catch (profileError) {
+      logger.error("Error creating profile: ", profileError);
+      setFormError(
+        "Account created but failed to set up profile. Please try logging in."
+      );
+      return;
+    }
 
     router.replace("/onboarding-intent1" as any);
   };

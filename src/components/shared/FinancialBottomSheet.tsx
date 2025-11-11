@@ -27,6 +27,7 @@ interface CategoryData {
   icon: keyof typeof Ionicons.glyphMap;
   iconColor: string;
   items: React.ReactNode[];
+  totalAmount?: number;
 }
 
 interface FinancialBottomSheetProps {
@@ -435,7 +436,21 @@ export default function FinancialBottomSheet({
                               {category.title}
                             </Text>
                           </TouchableOpacity>
-                          <Text>{/* Total amount */}</Text>
+                          {category.items.length > 0 &&
+                          category.totalAmount !== undefined ? (
+                            <View style={styles.totalAmountContainer}>
+                              <Text style={styles.totalAmountText}>
+                                {new Intl.NumberFormat("en-US", {
+                                  style: "currency",
+                                  currency: "USD",
+                                  minimumFractionDigits: 0,
+                                  maximumFractionDigits: 0,
+                                }).format(category.totalAmount)}
+                              </Text>
+                            </View>
+                          ) : (
+                            <View style={{ width: 0 }} />
+                          )}
                           <TouchableOpacity
                             onPress={() => handleAddNewAccount(category.title)}
                             disabled={isAddingAccount}
@@ -730,6 +745,20 @@ const styles = StyleSheet.create({
     color: "#888",
     fontFamily: Platform.OS === "ios" ? "System" : "sans-serif",
     marginLeft: 8,
+  },
+  totalAmountContainer: {
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+    marginRight: 8,
+  },
+  totalAmountText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#aaa",
+    fontFamily: Platform.OS === "ios" ? "System" : "sans-serif",
+    letterSpacing: 0.3,
   },
   categoryContent: {
     marginTop: 0,

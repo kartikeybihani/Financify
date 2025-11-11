@@ -190,7 +190,7 @@ export default function GoalsScreen() {
       </View>
 
       {/* Test Notification Buttons */}
-      <View style={styles.testButtonContainer}>
+      {/* <View style={styles.testButtonContainer}>
         <TouchableOpacity
           style={styles.testButton}
           onPress={handleTestNotification}
@@ -220,7 +220,7 @@ export default function GoalsScreen() {
             {isTestingNotification ? "Sending..." : "Motivate"}
           </Text>
         </TouchableOpacity>
-      </View>
+      </View> */}
     </SafeAreaView>
   );
 }

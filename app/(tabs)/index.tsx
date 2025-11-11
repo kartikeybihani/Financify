@@ -476,6 +476,41 @@ export default function HomeScreen() {
   // Memoized closest goal calculation - use unified goals data
   const closestGoal = useMemo(() => findClosestGoal(goals), [goals]);
 
+  // Calculate category totals
+  const checkingsSavingsTotal = useMemo(() => {
+    return categorizedDeposits.reduce(
+      (sum, account) => sum + (account.balances?.current || 0),
+      0
+    );
+  }, [categorizedDeposits]);
+
+  const investmentsCategoryTotal = useMemo(() => {
+    return categorizedInvestments.reduce(
+      (sum, account) => sum + (account.balances?.current || 0),
+      0
+    );
+  }, [categorizedInvestments]);
+
+  const creditCardsTotal = useMemo(() => {
+    return categorizedLiabilities
+      .filter(
+        (acc) => acc.type === "credit" || (acc as any).subtype === "credit card"
+      )
+      .reduce((sum, account) => sum + (account.balances?.current || 0), 0);
+  }, [categorizedLiabilities]);
+
+  const loansTotal = useMemo(() => {
+    return categorizedLiabilities
+      .filter(
+        (acc) => acc.type === "loan" || (acc as any).subtype?.includes("loan")
+      )
+      .reduce((sum, account) => sum + (account.balances?.current || 0), 0);
+  }, [categorizedLiabilities]);
+
+  const cashTotal = useMemo(() => {
+    return cashEntries.reduce((sum, entry) => sum + (entry.amount || 0), 0);
+  }, [cashEntries]);
+
   // Show loading skeleton only during initial authentication check (very brief)
   if (isInitialLoad && !userData) {
     return <HomeScreenSkeleton showError={false} />;
@@ -602,6 +637,7 @@ export default function HomeScreen() {
                     onPress={() => handleAccountPress(account)}
                   />
                 )),
+                totalAmount: checkingsSavingsTotal,
               },
               {
                 title: "INVESTMENTS",
@@ -624,6 +660,7 @@ export default function HomeScreen() {
                     onPress={() => handleAccountPress(account)}
                   />
                 )),
+                totalAmount: investmentsCategoryTotal,
               },
               {
                 title: "CREDIT CARDS",
@@ -652,6 +689,7 @@ export default function HomeScreen() {
                       onPress={() => handleAccountPress(account)}
                     />
                   )),
+                totalAmount: creditCardsTotal,
               },
               {
                 title: "LOANS",
@@ -680,6 +718,7 @@ export default function HomeScreen() {
                       onPress={() => handleAccountPress(account)}
                     />
                   )),
+                totalAmount: loansTotal,
               },
               {
                 title: "CASH",
@@ -746,6 +785,7 @@ export default function HomeScreen() {
                     }}
                   />
                 )),
+                totalAmount: cashTotal,
               },
               {
                 title: "REAL ESTATE",
