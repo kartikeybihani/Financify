@@ -10,7 +10,7 @@ import {
   ActivityIndicator,
   ScrollView,
 } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons, AntDesign, Feather } from "@expo/vector-icons";
 import { GlassView } from "expo-glass-effect";
 import { LinearGradient } from "expo-linear-gradient";
 import { getTransactionsForRecurringStream } from "@/src/utils/plaid";
@@ -544,6 +544,23 @@ export default function RecurringSection({
     );
   }
 
+  const renderEmptyState = () => {
+    return (
+      <View style={styles.emptyStateContainer}>
+        <View style={styles.emptyStateContent}>
+          <View style={styles.emptyStateIconContainer}>
+            <Feather name="check" size={60} color="#4CAF50" />
+          </View>
+          <Text style={styles.emptyStateTitle}>All Clear!</Text>
+          <Text style={styles.emptyStateMessage}>
+            Great news! We didn't detect any recurring subscriptions or bills.
+            You're in control of your finances!
+          </Text>
+        </View>
+      </View>
+    );
+  };
+
   return (
     <View>
       <Text style={titleStyle}>Recurring Transactions</Text>
@@ -553,26 +570,30 @@ export default function RecurringSection({
           paddingBottom: 4,
         }}
       >
-        <View
-          style={{
-            flexDirection: "row",
-            flexWrap: "wrap",
-            justifyContent: "space-between",
-          }}
-        >
-          {data.map((it) => (
-            <View
-              key={
-                "spacer" in it
-                  ? (it as SpacerItem).id
-                  : (it as RecurringStream).stream_id
-              }
-              style={{ width: cardWidth, marginBottom: 18 }}
-            >
-              {renderCard({ item: it })}
-            </View>
-          ))}
-        </View>
+        {data.length === 0 ? (
+          renderEmptyState()
+        ) : (
+          <View
+            style={{
+              flexDirection: "row",
+              flexWrap: "wrap",
+              justifyContent: "space-between",
+            }}
+          >
+            {data.map((it) => (
+              <View
+                key={
+                  "spacer" in it
+                    ? (it as SpacerItem).id
+                    : (it as RecurringStream).stream_id
+                }
+                style={{ width: cardWidth, marginBottom: 18 }}
+              >
+                {renderCard({ item: it })}
+              </View>
+            ))}
+          </View>
+        )}
       </View>
     </View>
   );
@@ -849,5 +870,41 @@ const styles = StyleSheet.create({
     color: "#fff",
     marginTop: 16,
     fontWeight: "500",
+  },
+  // Empty State Styles
+  emptyStateContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 60,
+    paddingHorizontal: 32,
+  },
+  emptyStateContent: {
+    alignItems: "center",
+    justifyContent: "center",
+    maxWidth: 320,
+  },
+  emptyStateIconContainer: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: "rgba(76, 175, 80, 0.15)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 24,
+    borderWidth: 1,
+    borderColor: "rgba(76, 175, 80, 0.3)",
+  },
+  emptyStateTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: "#fff",
+    marginBottom: 12,
+    textAlign: "center",
+  },
+  emptyStateMessage: {
+    fontSize: 14,
+    color: "rgba(255, 255, 255, 0.7)",
+    textAlign: "center",
+    lineHeight: 22,
   },
 });

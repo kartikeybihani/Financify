@@ -1,17 +1,22 @@
 import React from "react";
 import { View, Text, StyleSheet } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+import { AntDesign } from "@expo/vector-icons";
 
 export default function CashFlowSection() {
   return (
     <View style={styles.container}>
-      <View style={styles.placeholderContainer}>
-        <Ionicons name="analytics-outline" size={48} color="#4A90E2" />
-        <Text style={styles.placeholderTitle}>Cash Flow Analysis</Text>
-        <Text style={styles.placeholderText}>
-          Coming soon! We're working on bringing you detailed cash flow insights
-          including income trends, expense patterns, and monthly comparisons.
-        </Text>
+      <View style={styles.emptyStateContainer}>
+        <View style={styles.emptyStateContent}>
+          <View style={styles.emptyStateIconContainer}>
+            <AntDesign name="line-chart" size={64} color="#4A90E2" />
+          </View>
+          <Text style={styles.emptyStateTitle}>Cash Flow Analysis</Text>
+          <Text style={styles.emptyStateMessage}>
+            Coming soon! We're working on bringing you detailed cash flow
+            insights including income trends, expense patterns, and monthly
+            comparisons.
+          </Text>
+        </View>
       </View>
     </View>
   );
@@ -19,26 +24,39 @@ export default function CashFlowSection() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  placeholderContainer: {
-    flex: 1,
+  emptyStateContainer: {
     alignItems: "center",
     justifyContent: "center",
     paddingVertical: 60,
-    paddingHorizontal: 40,
+    paddingHorizontal: 32,
   },
-  placeholderTitle: {
+  emptyStateContent: {
+    alignItems: "center",
+    justifyContent: "center",
+    maxWidth: 320,
+  },
+  emptyStateIconContainer: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: "rgba(74, 144, 226, 0.1)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 24,
+    borderWidth: 1,
+    borderColor: "rgba(74, 144, 226, 0.2)",
+  },
+  emptyStateTitle: {
     fontSize: 20,
-    fontWeight: "600",
+    fontWeight: "700",
     color: "#fff",
-    marginTop: 16,
     marginBottom: 12,
     textAlign: "center",
   },
-  placeholderText: {
-    fontSize: 16,
-    color: "#888",
+  emptyStateMessage: {
+    fontSize: 14,
+    color: "rgba(255, 255, 255, 0.7)",
     textAlign: "center",
-    lineHeight: 24,
-    maxWidth: 300,
+    lineHeight: 22,
   },
 });

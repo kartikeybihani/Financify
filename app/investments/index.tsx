@@ -13,7 +13,7 @@ import {
   RefreshControl,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons, AntDesign } from "@expo/vector-icons";
 import { useRouter, useFocusEffect } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import * as WebBrowser from "expo-web-browser";
@@ -1394,6 +1394,58 @@ export default function InvestmentsScreen({
     return `https://img.logo.dev/${domain}?token=pk_VDL82EqXQlGEUFN2v4q7Vg&retina=true`;
   };
 
+  // Check if user has no investments
+  const hasNoInvestments = () => {
+    if (isLoading) return false;
+
+    // Check if there are any holdings with market value > 0
+    const hasHoldings =
+      holdings.length > 0 && holdings.some((h) => (h.market_value || 0) > 0);
+
+    // Check if there are any options with market value > 0
+    const hasOptions =
+      options.length > 0 && options.some((o) => (o.market_value || 0) > 0);
+
+    // Check if there are any balances with total_value > 0
+    const hasBalances =
+      balances.length > 0 && balances.some((b) => (b.total_value || 0) > 0);
+
+    // If no holdings, no options, and no balances with value, show empty state
+    return !hasHoldings && !hasOptions && !hasBalances;
+  };
+
+  const renderEmptyState = () => {
+    return (
+      <View style={styles.emptyStateContainer}>
+        <View style={styles.emptyStateContent}>
+          <View style={styles.emptyStateIconContainer}>
+            <AntDesign name="bar-chart" size={64} color="#4A90E2" />
+          </View>
+          <Text style={styles.emptyStateTitle}>No Investments Yet</Text>
+          <Text style={styles.emptyStateMessage}>
+            Connect your investment account to start tracking your portfolio and
+            see your holdings in one place.
+          </Text>
+          <TouchableOpacity
+            style={styles.emptyStateButton}
+            onPress={handleAddInvestmentAccount}
+            activeOpacity={0.8}
+          >
+            <Ionicons
+              name="add-circle"
+              size={20}
+              color="#fff"
+              style={{ marginRight: 8 }}
+            />
+            <Text style={styles.emptyStateButtonText}>
+              Connect Investment Account
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  };
+
   const renderPortfolioSummary = () => {
     const lastConnection = connections.length > 0 ? connections[0] : null;
     const lastSyncDate = lastConnection?.last_synced_at
@@ -1939,18 +1991,24 @@ export default function InvestmentsScreen({
               </View>
             )}
 
-            {renderPortfolioSummary()}
+            {hasNoInvestments() && !isLoading ? (
+              renderEmptyState()
+            ) : (
+              <>
+                {renderPortfolioSummary()}
 
-            {syncError && (
-              <View style={styles.errorContainer}>
-                <Ionicons name="warning" size={16} color="#F44336" />
-                <Text style={styles.errorText}>{syncError}</Text>
-              </View>
+                {syncError && (
+                  <View style={styles.errorContainer}>
+                    <Ionicons name="warning" size={16} color="#F44336" />
+                    <Text style={styles.errorText}>{syncError}</Text>
+                  </View>
+                )}
+
+                {renderSecurityTypeChips()}
+                {renderHoldings()}
+                {renderOptions()}
+              </>
             )}
-
-            {renderSecurityTypeChips()}
-            {renderHoldings()}
-            {renderOptions()}
           </ScrollView>
         </View>
       </SafeAreaView>

@@ -195,9 +195,13 @@ export const AuthNavigationProvider: React.FC<AuthNavigationProviderProps> = ({
    */
   const refreshNavigationState = async () => {
     if (session?.user) {
-      // Force refetch profile
+      // Force refetch profile - clear cache first
       profileCache.current = null;
       profileCacheUserId.current = null;
+      
+      // Add small delay to ensure DB consistency after updates
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      
       await updateNavigationState(session);
     }
   };

@@ -46,6 +46,11 @@ import InsightsLoadingSkeleton from "@/src/components/insights/InsightsLoadingSk
 import SpendingSection from "@/src/components/insights/components/SpendingSection";
 import TransactionsSection from "@/src/components/insights/components/TransactionsSection";
 import CashFlowSection from "@/src/components/insights/components/CashFlowSection";
+import CategorySelectionModal from "@/src/components/modals/CategorySelectionModal";
+import CashDepositInstitutionModal from "@/src/components/modals/CashDepositInstitutionModal";
+import CreditCardInstitutionModal from "@/src/components/modals/CreditCardInstitutionModal";
+import InstitutionSelectionModal from "@/src/components/modals/InstitutionSelectionModal";
+import { addNewBankAccount } from "@/src/utils/plaid";
 import { supabase } from "@/src/lib/supabase/supabase";
 import InvestmentsScreen from "@/app/investments";
 import {
@@ -197,6 +202,12 @@ export default function InsightsScreen() {
   // Enhanced filtering state
   const [showEnhancedFilterModal, setShowEnhancedFilterModal] = useState(false);
   const [accounts, setAccounts] = useState<Account[]>([]);
+
+  // Account addition modal states
+  const [showCategoryModal, setShowCategoryModal] = useState(false);
+  const [showCashModal, setShowCashModal] = useState(false);
+  const [showCreditModal, setShowCreditModal] = useState(false);
+  const [showInvestmentModal, setShowInvestmentModal] = useState(false);
   const [filterOptions, setFilterOptions] = useState<FilterOptions>({
     accountIds: [],
     categoryIds: [],
@@ -2106,6 +2117,7 @@ export default function InsightsScreen() {
                     }}
                     formatDate={formatDate}
                     formatCategoryName={formatCategoryFromHook}
+                    onAddAccount={() => setShowCategoryModal(true)}
                   />
                 </Animated.View>
               )}
@@ -2187,6 +2199,87 @@ export default function InsightsScreen() {
               formatDate={formatDate}
             />
           )}
+
+          {/* Category Selection Modal */}
+          <CategorySelectionModal
+            visible={showCategoryModal}
+            onClose={() => setShowCategoryModal(false)}
+            onCategorySelect={(category) => {
+              setShowCategoryModal(false);
+              if (category === "cash_deposit") {
+                setShowCashModal(true);
+              } else if (category === "liabilities") {
+                setShowCreditModal(true);
+              } else if (category === "investments") {
+                setShowInvestmentModal(true);
+              } else if (category === "retirement") {
+                setShowInvestmentModal(true);
+              }
+            }}
+          />
+
+          {/* Cash Deposit Institution Modal */}
+          <CashDepositInstitutionModal
+            visible={showCashModal}
+            onClose={() => setShowCashModal(false)}
+            onInstitutionSelect={async (institutionId) => {
+              logger.info("Cash deposit institution selected:", institutionId);
+              try {
+                await addNewBankAccount(
+                  async (itemId) => {
+                    logger.info("Successfully added new cash account:", itemId);
+                    await fetchFreshData();
+                    await loadFilteredTransactions(filterOptions, true);
+                  },
+                  (error) => {
+                    logger.error("Failed to add new cash account:", error);
+                  }
+                );
+              } catch (error) {
+                logger.error("Error adding cash account:", error);
+              }
+            }}
+          />
+
+          {/* Credit Card Institution Modal */}
+          <CreditCardInstitutionModal
+            visible={showCreditModal}
+            onClose={() => setShowCreditModal(false)}
+            onInstitutionSelect={async (institutionId) => {
+              logger.info("Credit card institution selected:", institutionId);
+              try {
+                await addNewBankAccount(
+                  async (itemId) => {
+                    logger.info(
+                      "Successfully added new credit card account:",
+                      itemId
+                    );
+                    await fetchFreshData();
+                    await loadFilteredTransactions(filterOptions, true);
+                  },
+                  (error) => {
+                    logger.error(
+                      "Failed to add new credit card account:",
+                      error
+                    );
+                  }
+                );
+              } catch (error) {
+                logger.error("Error adding credit card account:", error);
+              }
+            }}
+          />
+
+          {/* Investment Institution Modal */}
+          <InstitutionSelectionModal
+            visible={showInvestmentModal}
+            onClose={() => setShowInvestmentModal(false)}
+            onInstitutionSelect={async (institutionId) => {
+              logger.info("Investment institution selected:", institutionId);
+              // Investment institutions are handled by the InstitutionSelectionModal itself
+              // which calls the Snaptrade connection logic
+            }}
+          />
         </ScrollView>
       )}
 

@@ -225,7 +225,7 @@ export default function AccountConnectionScreen() {
         "🧭 AccountConnectionScreen: Moving to final onboarding stage"
       );
 
-      // Update profiles step -> 4 (final)
+      // Update profiles step -> 4 (final screen next)
       try {
         const {
           data: { user },
@@ -328,7 +328,7 @@ export default function AccountConnectionScreen() {
                   <Ionicons name="time-outline" size={24} color="#4A90E2" />
                 </View>
                 <View style={styles.trustContent}>
-                  <Text style={styles.trustTitle}>Takes ~90 seconds</Text>
+                  <Text style={styles.trustTitle}>Takes ~60 seconds</Text>
                   <Text style={styles.trustSubtitle}>
                     See insights right after connecting
                   </Text>

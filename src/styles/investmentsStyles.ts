@@ -794,6 +794,65 @@ export const styles = StyleSheet.create({
     fontWeight: "600",
     letterSpacing: 0.3,
   },
+  
+  // Empty State Styles
+  emptyStateContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 32,
+    paddingVertical: 80,
+    minHeight: SCREEN_HEIGHT * 0.5,
+  },
+  emptyStateContent: {
+    alignItems: "center",
+    justifyContent: "center",
+    maxWidth: 320,
+  },
+  emptyStateIconContainer: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: "rgba(74, 144, 226, 0.1)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 24,
+    borderWidth: 1,
+    borderColor: "rgba(74, 144, 226, 0.2)",
+  },
+  emptyStateTitle: {
+    fontSize: FONTS.xl,
+    fontWeight: "700",
+    color: "#fff",
+    marginBottom: 12,
+    textAlign: "center",
+  },
+  emptyStateMessage: {
+    fontSize: FONTS.base,
+    color: "rgba(255, 255, 255, 0.7)",
+    textAlign: "center",
+    lineHeight: 22,
+    marginBottom: 32,
+  },
+  emptyStateButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#4A90E2",
+    paddingHorizontal: 24,
+    paddingVertical: 14,
+    borderRadius: 24,
+    shadowColor: "#4A90E2",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  emptyStateButtonText: {
+    color: "#fff",
+    fontSize: FONTS.base,
+    fontWeight: "600",
+  },
 });
 
 export default styles;

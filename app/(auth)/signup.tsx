@@ -28,6 +28,8 @@ export default function SignupScreen() {
   // NavigationContext will handle routing automatically
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [formError, setFormError] = useState("");
@@ -50,6 +52,16 @@ export default function SignupScreen() {
       return false;
     } else if (password.length < 6) {
       setFormError("Password must be at least 6 characters");
+      return false;
+    }
+
+    if (!firstName.trim()) {
+      setFormError("Please enter your first name");
+      return false;
+    }
+
+    if (!lastName.trim()) {
+      setFormError("Please enter your last name");
       return false;
     }
 
@@ -96,17 +108,33 @@ export default function SignupScreen() {
       return;
     }
 
-    // Create profiles row and route to intent
+    // Create profiles row with name and route to profile screen
     try {
       if (data.user?.id) {
-        await supabase.from("profiles").upsert(
+        const { error: profileError } = await supabase.from("profiles").upsert(
           {
             id: data.user.id,
             onboarding_completed: false,
-            onboarding_step: 1,
+            onboarding_step: 0, // Profile screen is next (step 1)
+            first_name: firstName.trim(),
+            last_name: lastName.trim(),
           },
           { onConflict: "id" }
         );
+
+        if (profileError) {
+          logger.error("Error creating profile: ", profileError);
+          setFormError(
+            "Account created but failed to set up profile. Please try logging in."
+          );
+          return;
+        }
+
+        logger.info("✅ SignupScreen: Profile created successfully", {
+          userId: data.user.id,
+          firstName: firstName.trim(),
+          lastName: lastName.trim(),
+        });
       }
     } catch (profileError) {
       logger.error("Error creating profile: ", profileError);
@@ -116,7 +144,7 @@ export default function SignupScreen() {
       return;
     }
 
-    router.replace("/onboarding-intent1" as any);
+    router.replace("/onboarding-profile" as any);
   };
 
   const handlePrivacyPolicy = async () => {
@@ -186,6 +214,40 @@ export default function SignupScreen() {
             </View>
 
             <View style={styles.inputContainer}>
+              <View style={styles.nameRow}>
+                <View style={styles.nameInputContainer}>
+                  <Text style={styles.label}>First</Text>
+                  <TextInput
+                    style={styles.nameInput}
+                    placeholder="John"
+                    placeholderTextColor="#666"
+                    onChangeText={(text) => {
+                      setFirstName(text);
+                      setFormError("");
+                    }}
+                    autoCapitalize="words"
+                    autoComplete="given-name"
+                    value={firstName}
+                  />
+                </View>
+
+                <View style={styles.nameInputContainer}>
+                  <Text style={styles.label}>Last</Text>
+                  <TextInput
+                    style={styles.nameInput}
+                    placeholder="Doe"
+                    placeholderTextColor="#666"
+                    onChangeText={(text) => {
+                      setLastName(text);
+                      setFormError("");
+                    }}
+                    autoCapitalize="words"
+                    autoComplete="family-name"
+                    value={lastName}
+                  />
+                </View>
+              </View>
+
               <Text style={styles.label}>Email</Text>
               <TextInput
                 style={styles.input}
@@ -320,6 +382,14 @@ const styles = StyleSheet.create({
   inputContainer: {
     marginBottom: 32,
   },
+  nameRow: {
+    flexDirection: "row",
+    gap: 12,
+    marginBottom: 20,
+  },
+  nameInputContainer: {
+    flex: 1,
+  },
   label: {
     color: "#fff",
     marginBottom: 8,
@@ -332,6 +402,15 @@ const styles = StyleSheet.create({
     padding: 16,
     borderRadius: 8,
     marginBottom: 20,
+    fontSize: 16,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.1)",
+  },
+  nameInput: {
+    backgroundColor: "rgba(255, 255, 255, 0.06)",
+    color: "#fff",
+    padding: 16,
+    borderRadius: 8,
     fontSize: 16,
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.1)",

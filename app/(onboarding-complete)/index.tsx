@@ -12,6 +12,7 @@ import {
   FlatList,
   ViewToken,
   StatusBar,
+  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -22,6 +23,7 @@ import { supabase } from "@/src/lib/supabase/supabase";
 import type { ComponentProps } from "react";
 import logger from "@/src/utils/logger";
 import { logOnboardingEvent } from "@/src/utils/onboarding";
+import { useAuthNavigation } from "@/src/contexts/AuthNavigationContext";
 // Onboarding flow context removed; using profiles + router only
 
 const { width, height } = Dimensions.get("window");
@@ -69,6 +71,7 @@ const carouselSlides = finalCards.reduce((acc, curr, i) => {
 
 export default function FinalScreen() {
   const router = useRouter();
+  const { refreshNavigationState } = useAuthNavigation();
   const [typedText, setTypedText] = useState("");
   const [activeSlide, setActiveSlide] = useState(0);
   const [isButtonEnabled, setIsButtonEnabled] = useState(false);
@@ -382,26 +385,68 @@ export default function FinalScreen() {
     animateLoadingDots();
 
     try {
-      // Mark profiles completed and jump to tabs
+      // Mark profiles completed
       const {
         data: { user },
       } = await supabase.auth.getUser();
-      if (user?.id) {
-        await supabase
-          .from("profiles")
-          .update({ onboarding_completed: true, onboarding_step: 4 })
-          .eq("id", user.id);
+      if (!user?.id) {
+        throw new Error("No user ID found");
       }
 
-      logger.info("✅ Onboarding completed");
+      // Update database and verify it succeeded
+      const { error: updateError, data: updateData } = await supabase
+        .from("profiles")
+        .update({ onboarding_completed: true, onboarding_step: 4 })
+        .eq("id", user.id)
+        .select()
+        .single();
+
+      if (updateError) {
+        logger.error("❌ Error updating profile to completed:", updateError);
+        throw updateError;
+      }
+
+      if (!updateData?.onboarding_completed) {
+        logger.error("❌ Profile update did not set onboarding_completed");
+        throw new Error("Profile update failed");
+      }
+
+      logger.info("✅ Onboarding completed - profile updated:", {
+        onboarding_completed: updateData.onboarding_completed,
+        onboarding_step: updateData.onboarding_step,
+      });
       logOnboardingEvent({ stage: "final", action: "complete" });
 
-      setTimeout(() => {
-        router.replace("/(tabs)/index" as any);
-      }, 1200);
+      // Clean up AsyncStorage after completion
+      try {
+        await AsyncStorage.multiRemove([
+          "pending_profile_data",
+          "pending_intent_answers",
+        ]);
+        logger.info("✅ Cleaned up onboarding AsyncStorage");
+      } catch (storageError) {
+        logger.error("Error cleaning up AsyncStorage:", storageError);
+        // Don't fail onboarding if cleanup fails
+      }
+
+      // CRITICAL: Refresh navigation state in background (for future navigation)
+      // But navigate directly to tabs to avoid redirect loop
+      refreshNavigationState().catch((err) => {
+        logger.error("Error refreshing navigation state:", err);
+        // Don't block navigation if refresh fails
+      });
+
+      // Small delay to ensure DB consistency, then navigate directly
+      // We navigate directly to tabs since we've verified the DB update succeeded
+      // This avoids the redirect loop where index.tsx might see stale state
+      await new Promise((resolve) => setTimeout(resolve, 300));
+
+      logger.info("🚀 Navigating directly to authenticated app");
+      router.replace("/(tabs)" as any);
     } catch (error) {
-      logger.error("Error completing onboarding:", error);
+      logger.error("❌ Error completing onboarding:", error);
       setIsLoading(false);
+      Alert.alert("Error", "Failed to complete onboarding. Please try again.");
     }
   };
 

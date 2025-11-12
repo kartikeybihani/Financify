@@ -21,23 +21,81 @@ import { logOnboardingEvent } from "@/src/utils/onboarding";
 import logger from "@/src/utils/logger";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
+const REFERRAL_OPTIONS = [
+  {
+    id: "tiktok",
+    label: "TikTok",
+    icon: "logo-tiktok",
+    color: "#FF0050",
+    useIcon: true,
+  },
+  {
+    id: "instagram",
+    label: "Instagram",
+    icon: "logo-instagram",
+    color: "#E4405F",
+    useIcon: true,
+  },
+  {
+    id: "twitter",
+    label: "Twitter/X",
+    icon: "logo-twitter",
+    color: "#1DA1F2",
+    useIcon: true,
+  },
+  {
+    id: "email",
+    label: "Email",
+    icon: "mail",
+    color: "#4A90E2",
+    useIcon: true,
+  },
+  {
+    id: "friend",
+    label: "Friend",
+    icon: "people",
+    color: "#00D4AA",
+    useIcon: true,
+  },
+  {
+    id: "appstore",
+    label: "App Store",
+    icon: "A",
+    color: "#007AFF",
+    useIcon: false,
+  },
+  {
+    id: "reddit",
+    label: "Reddit",
+    icon: "logo-reddit",
+    color: "#FF4500",
+    useIcon: true,
+  },
+  {
+    id: "founder",
+    label: "Founder",
+    icon: "person",
+    color: "#FFB020",
+    useIcon: true,
+  },
+];
+
 export default function AboutYouScreen() {
   useEffect(() => {
     logOnboardingEvent({ stage: "q2", action: "view" });
   }, []);
   const router = useRouter();
-  const [firstName, setFirstName] = useState("");
-  const [lastName, setLastName] = useState("");
   const [age, setAge] = useState<string>("");
   const [occupation, setOccupation] = useState<string>("");
+  const [referralSource, setReferralSource] = useState<string>("");
   const [saving, setSaving] = useState(false);
   const [showAgeModal, setShowAgeModal] = useState(false);
+  const [showReferralModal, setShowReferralModal] = useState(false);
 
   const canContinue =
-    firstName.trim().length > 0 &&
-    lastName.trim().length > 0 &&
     age.trim().length > 0 &&
-    occupation.trim().length > 0;
+    occupation.trim().length > 0 &&
+    referralSource.trim().length > 0;
 
   // Generate age options (18-80)
   const ageOptions = Array.from({ length: 63 }, (_, i) => (i + 18).toString());
@@ -48,14 +106,18 @@ export default function AboutYouScreen() {
     try {
       const parsedAge = age ? Number(age) : undefined;
       const profileData = {
-        first_name: firstName.trim(),
-        last_name: lastName.trim(),
         age: parsedAge,
         occupation: occupation.trim(),
+        referral: referralSource,
       };
 
       logger.info(
-        "🧭 AboutYouScreen: Saving profile data and navigating to connect screen"
+        "🧭 AboutYouScreen: Saving profile data and navigating to intent screen",
+        {
+          age: parsedAge,
+          occupation: profileData.occupation,
+          referral: referralSource,
+        }
       );
 
       // Save profile data to AsyncStorage for next screen
@@ -64,27 +126,44 @@ export default function AboutYouScreen() {
         JSON.stringify(profileData)
       );
 
-      // Persist profile data and step -> 3 (connect accounts)
+      // Persist profile data and step -> 1 (intent questions)
       try {
         const {
           data: { user },
         } = await supabase.auth.getUser();
         if (user?.id) {
-          await supabase
+          const { error: updateError } = await supabase
             .from("profiles")
             .update({
-              onboarding_step: 3,
-              first_name: profileData.first_name,
-              last_name: profileData.last_name,
+              onboarding_step: 1,
               age: profileData.age,
               occupation: profileData.occupation,
+              referral: profileData.referral,
             })
             .eq("id", user.id);
-        }
-      } catch {}
 
-      // Navigate to connect
-      router.replace("/onboarding-connect" as any);
+          if (updateError) {
+            logger.error(
+              "❌ AboutYouScreen: Error updating profile:",
+              updateError
+            );
+            throw updateError;
+          }
+
+          logger.info("✅ AboutYouScreen: Profile updated successfully");
+        } else {
+          logger.error("❌ AboutYouScreen: No user ID found");
+        }
+      } catch (profileError) {
+        logger.error(
+          "❌ AboutYouScreen: Error saving profile data:",
+          profileError
+        );
+        throw profileError;
+      }
+
+      // Navigate to intent questions
+      router.replace("/onboarding-intent1" as any);
       logOnboardingEvent({ stage: "q2", action: "complete" });
     } catch (error) {
       logger.error("❌ AboutYouScreen: Error saving user data:", error);
@@ -110,32 +189,6 @@ export default function AboutYouScreen() {
         >
           <Text style={styles.title}>Let's get to know you.</Text>
 
-          <Text style={styles.label}>What should we call you?</Text>
-          <View style={styles.nameRow}>
-            <View style={[styles.inputWrap, styles.nameInput]}>
-              <TextInput
-                value={firstName}
-                onChangeText={setFirstName}
-                placeholder="First name"
-                placeholderTextColor="rgba(255,255,255,0.5)"
-                style={styles.input}
-                returnKeyType="next"
-                autoCapitalize="words"
-              />
-            </View>
-            <View style={[styles.inputWrap, styles.nameInput]}>
-              <TextInput
-                value={lastName}
-                onChangeText={setLastName}
-                placeholder="Last name"
-                placeholderTextColor="rgba(255,255,255,0.5)"
-                style={styles.input}
-                returnKeyType="done"
-                autoCapitalize="words"
-              />
-            </View>
-          </View>
-
           <Text style={styles.label}>Age</Text>
           <TouchableOpacity
             style={styles.inputWrap}
@@ -159,18 +212,44 @@ export default function AboutYouScreen() {
               onChangeText={(text) =>
                 setOccupation(text.charAt(0).toUpperCase() + text.slice(1))
               }
-              placeholder="e.g., Engineering student at MIT, Investment banking analyst, Freelance designer, Nurse..."
+              placeholder="Tell us about yourself: your profession, whether you're a student, and your location    
+Examples:
+• Nurse in Seattle
+• Software Engineer at Google
+• Student at MIT in Boston
+• Freelance Designer in NYC"
               placeholderTextColor="rgba(255,255,255,0.5)"
               style={styles.occupationInput}
               autoCapitalize="sentences"
               returnKeyType="default"
               multiline
-              numberOfLines={3}
               textAlignVertical="top"
               blurOnSubmit={true}
               onSubmitEditing={() => Keyboard.dismiss()}
             />
           </View>
+          <Text style={styles.helperText}>
+            This helps Finny give you more personalized advice
+          </Text>
+
+          <Text style={styles.label}>How did you hear about us?</Text>
+          <TouchableOpacity
+            style={styles.inputWrap}
+            onPress={() => setShowReferralModal(true)}
+            activeOpacity={0.7}
+          >
+            <Text style={[styles.input, !referralSource && styles.placeholder]}>
+              {referralSource
+                ? REFERRAL_OPTIONS.find((opt) => opt.id === referralSource)
+                    ?.label || referralSource
+                : "Select an option"}
+            </Text>
+            <Ionicons
+              name="chevron-down"
+              size={20}
+              color="rgba(255,255,255,0.5)"
+            />
+          </TouchableOpacity>
         </ScrollView>
 
         <View style={styles.footer}>
@@ -238,6 +317,83 @@ export default function AboutYouScreen() {
           </TouchableOpacity>
         </TouchableOpacity>
       </Modal>
+
+      {/* Referral Source Modal */}
+      <Modal
+        visible={showReferralModal}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setShowReferralModal(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowReferralModal(false)}
+        >
+          <View style={styles.referralModalContent}>
+            <View style={styles.referralOptionsContainer}>
+              {REFERRAL_OPTIONS.map((option) => {
+                const isSelected = referralSource === option.id;
+                return (
+                  <TouchableOpacity
+                    key={option.id}
+                    style={[
+                      styles.referralOption,
+                      isSelected && styles.referralOptionSelected,
+                    ]}
+                    onPress={() => {
+                      setReferralSource(option.id);
+                      setShowReferralModal(false);
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    <View
+                      style={[
+                        styles.referralIconContainer,
+                        { backgroundColor: `${option.color}20` },
+                      ]}
+                    >
+                      {option.useIcon ? (
+                        <Ionicons
+                          name={option.icon as any}
+                          size={22}
+                          color={option.color}
+                        />
+                      ) : (
+                        <Text
+                          style={[
+                            styles.appStoreLetter,
+                            { color: option.color },
+                          ]}
+                        >
+                          {option.icon}
+                        </Text>
+                      )}
+                    </View>
+                    <Text
+                      style={[
+                        styles.referralOptionText,
+                        isSelected && styles.referralOptionTextSelected,
+                      ]}
+                    >
+                      {option.label}
+                    </Text>
+                    {isSelected && (
+                      <View style={styles.checkmarkContainer}>
+                        <Ionicons
+                          name="checkmark-circle"
+                          size={22}
+                          color="#4A90E2"
+                        />
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </LinearGradient>
   );
 }
@@ -260,14 +416,6 @@ const styles = StyleSheet.create({
     marginTop: 20,
     marginBottom: 8,
     letterSpacing: 0.3,
-  },
-  nameRow: {
-    flexDirection: "row",
-    gap: 20,
-  },
-  nameInput: {
-    flex: 1,
-    maxWidth: "48%",
   },
   inputWrap: {
     backgroundColor: "rgba(255,255,255,0.05)",
@@ -293,20 +441,28 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: "rgba(255,255,255,0.15)",
     paddingHorizontal: 16,
-    paddingVertical: Platform.OS === "ios" ? 5 : 7,
+    paddingVertical: Platform.OS === "ios" ? 12 : 10,
     shadowColor: "#000",
     shadowOpacity: 0.1,
     shadowRadius: 4,
     shadowOffset: { width: 0, height: 2 },
     elevation: 3,
-    minHeight: 60,
+    minHeight: 180,
   },
   occupationInput: {
     color: "#fff",
     fontSize: 16,
     fontWeight: "500",
-    minHeight: 70,
-    maxHeight: 100,
+    minHeight: 160,
+    maxHeight: 240,
+  },
+  helperText: {
+    color: "rgba(255,255,255,0.5)",
+    fontSize: 13,
+    fontWeight: "400",
+    marginTop: 8,
+    marginLeft: 4,
+    fontStyle: "italic",
   },
   footer: {
     paddingHorizontal: 24,
@@ -381,5 +537,62 @@ const styles = StyleSheet.create({
   pickerItem: {
     color: "#fff",
     fontSize: 18,
+  },
+  referralModalContent: {
+    backgroundColor: "#1A1A2E",
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingBottom: Platform.OS === "ios" ? 40 : 20,
+    paddingTop: 24,
+    maxHeight: "80%",
+  },
+  referralOptionsContainer: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    paddingHorizontal: 16,
+    justifyContent: "space-between",
+  },
+  referralOption: {
+    width: "48%",
+    backgroundColor: "rgba(255, 255, 255, 0.05)",
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 12,
+    borderWidth: 1.5,
+    borderColor: "rgba(255, 255, 255, 0.1)",
+    alignItems: "center",
+    position: "relative",
+  },
+  referralOptionSelected: {
+    borderColor: "#4A90E2",
+    backgroundColor: "rgba(74, 144, 226, 0.15)",
+  },
+  referralIconContainer: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  appStoreLetter: {
+    fontSize: 24,
+    fontWeight: "700",
+    fontFamily: Platform.OS === "ios" ? "System" : "Roboto",
+  },
+  referralOptionText: {
+    color: "rgba(255, 255, 255, 0.9)",
+    fontSize: 13,
+    fontWeight: "500",
+    textAlign: "center",
+  },
+  referralOptionTextSelected: {
+    color: "#fff",
+    fontWeight: "600",
+  },
+  checkmarkContainer: {
+    position: "absolute",
+    top: 8,
+    right: 8,
   },
 });

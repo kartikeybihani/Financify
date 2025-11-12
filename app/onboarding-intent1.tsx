@@ -16,6 +16,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import logger from "@/src/utils/logger";
 import { logOnboardingEvent } from "@/src/utils/onboarding";
 import { supabase } from "@/src/lib/supabase/supabase";
+import FinanceFact from "@/src/components/onboarding/FinanceFact";
 
 const OPTIONS = [
   {
@@ -110,7 +111,7 @@ export default function IntentQuestion1Screen() {
         JSON.stringify(answers)
       );
 
-      // Persist progress and answer in profiles (step 1)
+      // Persist progress and answer in profiles (step 2 - intent questions)
       try {
         const {
           data: { user },
@@ -118,7 +119,7 @@ export default function IntentQuestion1Screen() {
         if (user?.id) {
           await supabase
             .from("profiles")
-            .update({ onboarding_step: 1, intent_q1: selectedId })
+            .update({ onboarding_step: 2, intent_q1: selectedId })
             .eq("id", user.id);
         }
       } catch {}
@@ -174,7 +175,6 @@ export default function IntentQuestion1Screen() {
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.header}>
-            <Text style={styles.progress}>Question 1 of 3</Text>
             <Text style={styles.title}>
               How do you feel about money right now?
             </Text>
@@ -183,6 +183,8 @@ export default function IntentQuestion1Screen() {
           <View style={styles.optionsContainer}>
             {OPTIONS.map((option) => renderOption(option))}
           </View>
+
+          <FinanceFact />
         </ScrollView>
       </SafeAreaView>
     </LinearGradient>
@@ -205,12 +207,6 @@ const styles = StyleSheet.create({
   },
   header: {
     marginBottom: 28,
-  },
-  progress: {
-    fontSize: 14,
-    color: "#4A90E2",
-    marginBottom: 12,
-    fontWeight: "600",
   },
   title: {
     fontSize: 28,

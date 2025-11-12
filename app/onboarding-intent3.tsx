@@ -16,6 +16,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { supabase } from "@/src/lib/supabase/supabase";
 import logger from "@/src/utils/logger";
 import { logOnboardingEvent } from "@/src/utils/onboarding";
+import FinanceFact from "@/src/components/onboarding/FinanceFact";
 
 const OPTIONS = [
   {
@@ -105,7 +106,7 @@ export default function IntentQuestion3Screen() {
         JSON.stringify(answers)
       );
 
-      // Persist step -> 2 (Profile next)
+      // Persist answer and move to step 3 (Connect accounts next)
       try {
         const {
           data: { user },
@@ -113,12 +114,12 @@ export default function IntentQuestion3Screen() {
         if (user?.id) {
           await supabase
             .from("profiles")
-            .update({ onboarding_step: 2, intent_q3: selectedId })
+            .update({ onboarding_step: 3, intent_q3: selectedId })
             .eq("id", user.id);
         }
       } catch {}
 
-      router.replace("/onboarding-profile" as any);
+      router.replace("/onboarding-connect" as any);
       logOnboardingEvent({ stage: "q1_3", action: "complete" });
     } catch (error) {
       setIsProcessing(false);
@@ -169,7 +170,6 @@ export default function IntentQuestion3Screen() {
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.header}>
-            <Text style={styles.progress}>Question 3 of 3</Text>
             <Text style={styles.title}>
               Could you cover a $1,000 emergency expense?
             </Text>
@@ -178,6 +178,8 @@ export default function IntentQuestion3Screen() {
           <View style={styles.optionsContainer}>
             {OPTIONS.map((option) => renderOption(option))}
           </View>
+
+          <FinanceFact />
         </ScrollView>
       </SafeAreaView>
     </LinearGradient>
@@ -200,12 +202,6 @@ const styles = StyleSheet.create({
   },
   header: {
     marginBottom: 28,
-  },
-  progress: {
-    fontSize: 14,
-    color: "#4A90E2",
-    marginBottom: 12,
-    fontWeight: "600",
   },
   title: {
     fontSize: 28,

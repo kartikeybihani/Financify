@@ -19,14 +19,20 @@ export default function Index() {
 
     case NavigationState.ONBOARDING:
       // Route to specific onboarding step
-      if (onboardingStep === 2) {
+      if (onboardingStep === 1) {
         return <Redirect href="/onboarding-profile" />;
+      }
+      if (onboardingStep === 2) {
+        return <Redirect href="/onboarding-intent1" />;
       }
       if (onboardingStep === 3) {
         return <Redirect href="/onboarding-connect" />;
       }
-      // Default to first onboarding screen
-      return <Redirect href="/onboarding-intent1" />;
+      if (onboardingStep === 4) {
+        return <Redirect href="/(onboarding-complete)" />;
+      }
+      // Default to profile screen if step is 0 or unknown
+      return <Redirect href="/onboarding-profile" />;
 
     case NavigationState.ONBOARDING_FINAL:
       return <Redirect href="/(onboarding-complete)" />;
