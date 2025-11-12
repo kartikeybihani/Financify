@@ -249,10 +249,14 @@ async function handleInvestmentAccountPopulation(req, res, user_id) {
         const balanceRecord = balances.find(
           (b) => b.account_id === connection.account_id
         );
-        
+
         // Use total_value from investment_balances if available, otherwise calculate from holdings
         let totalValue = 0;
-        if (balanceRecord && balanceRecord.total_value !== null && balanceRecord.total_value !== undefined) {
+        if (
+          balanceRecord &&
+          balanceRecord.total_value !== null &&
+          balanceRecord.total_value !== undefined
+        ) {
           totalValue = balanceRecord.total_value;
           console.log(
             `✅ Using total_value from investment_balances: $${totalValue} for account ${connection.account_id}`
@@ -260,13 +264,14 @@ async function handleInvestmentAccountPopulation(req, res, user_id) {
         } else {
           // Fallback: Calculate from active holdings only
           const accountHoldings = holdings.filter(
-            (h) => h.account_id === connection.account_id && h.is_active === true
+            (h) =>
+              h.account_id === connection.account_id && h.is_active === true
           );
           const totalHoldingsValue = accountHoldings.reduce(
             (sum, holding) => sum + (holding.market_value || 0),
             0
           );
-          
+
           // Get cash balance
           const cashAmount = balanceRecord?.cash || 0;
           totalValue = totalHoldingsValue + cashAmount;

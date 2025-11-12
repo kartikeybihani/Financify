@@ -390,18 +390,9 @@ async function recalculatePortfolioMetricsFromDatabase(
       totalUnrealizedPL += unrealizedPL;
     });
 
-    // Get cash balance from investment_balances
-    const { data: balanceData, error: balanceError } = await supabase
-      .from("investment_balances")
-      .select("cash")
-      .eq("user_id", userId)
-      .eq("snaptrade_user_id", snaptradeUserId)
-      .eq("account_id", accountId)
-      .eq("is_current", true)
-      .single();
-
-    const cashAmount = balanceData?.cash || 0;
-    const totalPortfolioValue = totalValue + cashAmount;
+    // totalValue already includes cash (from holdings that include cash positions)
+    // So we use totalValue directly as the portfolio value
+    const totalPortfolioValue = totalValue;
 
     // Calculate percentages
     const dayChangePercent =
@@ -413,12 +404,25 @@ async function recalculatePortfolioMetricsFromDatabase(
         ? (totalUnrealizedPL / totalPortfolioValue) * 100
         : 0;
 
+    // Get cash balance for logging purposes only
+    const { data: balanceData } = await supabase
+      .from("investment_balances")
+      .select("cash")
+      .eq("user_id", userId)
+      .eq("snaptrade_user_id", snaptradeUserId)
+      .eq("account_id", accountId)
+      .eq("is_current", true)
+      .single();
+
+    const cashAmount = balanceData?.cash || 0;
+
     console.log("📊 Database-calculated portfolio metrics:", {
       holdingsCount: holdings?.length || 0,
       optionsCount: options?.length || 0,
       totalValue: totalValue.toFixed(2),
       cashAmount: cashAmount.toFixed(2),
       totalPortfolioValue: totalPortfolioValue.toFixed(2),
+      note: "totalValue already includes cash, so totalPortfolioValue = totalValue",
       totalDayChange: totalDayChange.toFixed(2),
       dayChangePercent: dayChangePercent.toFixed(2),
       totalUnrealizedPL: totalUnrealizedPL.toFixed(2),
