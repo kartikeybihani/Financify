@@ -294,6 +294,18 @@ CREATE TABLE public.snaptrade_connections (
   CONSTRAINT snaptrade_connections_pkey PRIMARY KEY (id),
   CONSTRAINT snaptrade_connections_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
 );
+CREATE TABLE public.sync_logs (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  sync_type text NOT NULL DEFAULT 'scheduled'::text,
+  total_items integer NOT NULL DEFAULT 0,
+  successful_syncs integer NOT NULL DEFAULT 0,
+  failed_syncs integer NOT NULL DEFAULT 0,
+  error_details jsonb,
+  started_at timestamp with time zone DEFAULT now(),
+  completed_at timestamp with time zone DEFAULT now(),
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT sync_logs_pkey PRIMARY KEY (id)
+);
 CREATE TABLE public.transactions (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL,
@@ -333,6 +345,8 @@ CREATE TABLE public.user_items (
   created_at timestamp with time zone DEFAULT now(),
   access_token_secret_id uuid,
   last_synced_at timestamp with time zone,
+  last_automated_sync timestamp with time zone,
+  sync_status text DEFAULT 'pending'::text,
   CONSTRAINT user_items_pkey PRIMARY KEY (id),
   CONSTRAINT user_items_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
 );

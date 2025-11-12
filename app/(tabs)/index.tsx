@@ -528,7 +528,10 @@ export default function HomeScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <HomeHeader userName={userData?.user_metadata?.full_name} />
+      <HomeHeader 
+        userName={userData?.user_metadata?.full_name}
+        onAddAccount={() => setShowCategoryModal(true)}
+      />
 
       <>
         {showUpdateBanner && (

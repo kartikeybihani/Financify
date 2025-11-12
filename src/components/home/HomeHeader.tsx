@@ -3,15 +3,17 @@
 import React from "react";
 import { View, Text, TouchableOpacity } from "react-native";
 import { Feather } from "@expo/vector-icons";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { styles } from "@/src/styles/homeStyles";
 
 interface HomeHeaderProps {
   userName?: string;
+  onAddAccount?: () => void;
 }
 
 export const HomeHeader: React.FC<HomeHeaderProps> = React.memo(
-  ({ userName }) => {
+  ({ userName, onAddAccount }) => {
     const router = useRouter();
 
     return (
@@ -27,6 +29,15 @@ export const HomeHeader: React.FC<HomeHeaderProps> = React.memo(
           </Text>
           <Text style={styles.subGreeting}>Welcome Back!</Text>
         </View>
+        {onAddAccount && (
+          <TouchableOpacity onPress={onAddAccount} style={{ marginRight: 13 }}>
+            <MaterialCommunityIcons
+              name="bank-plus"
+              size={28}
+              color="#4A90E2"
+            />
+          </TouchableOpacity>
+        )}
       </View>
     );
   }

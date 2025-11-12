@@ -17,12 +17,14 @@ export default async function handler(req, res) {
     new Date().toISOString()
   );
 
+  const startedAt = new Date().toISOString();
+
   try {
-    // 1) Get all active user items that need syncing
+    // 1) Get all user items that need syncing
+    // Note: user_items table doesn't have is_active column, so we sync all items
     const { data: userItems, error: fetchError } = await supabase
       .from("user_items")
-      .select("item_id, user_id, last_synced_at")
-      .eq("is_active", true);
+      .select("item_id, user_id, last_synced_at, last_automated_sync");
 
     if (fetchError) {
       console.error("❌ Error fetching user items:", fetchError);
@@ -30,15 +32,15 @@ export default async function handler(req, res) {
     }
 
     if (!userItems || userItems.length === 0) {
-      console.log("ℹ️ No active user items found for syncing");
+      console.log("ℹ️ No user items found for syncing");
       return res.status(200).json({
-        message: "No active items to sync",
+        message: "No items to sync",
         synced: 0,
         errors: 0,
       });
     }
 
-    console.log(`📊 Found ${userItems.length} active items to sync`);
+    console.log(`📊 Found ${userItems.length} items to sync`);
 
     // 2) Sync each item
     const results = {
@@ -51,7 +53,7 @@ export default async function handler(req, res) {
       try {
         console.log(`🔄 Syncing item ${item.item_id} for user ${item.user_id}`);
 
-        // Call the existing sync function logic
+        // Call the existing sync function logic (transactions + balances)
         const syncResult = await syncItemTransactions(
           item.item_id,
           item.user_id
@@ -59,7 +61,15 @@ export default async function handler(req, res) {
 
         if (syncResult.success) {
           results.synced++;
-          console.log(`✅ Successfully synced item ${item.item_id}`);
+          console.log(
+            `✅ Successfully synced item ${item.item_id}: ${
+              syncResult.added
+            } added, ${syncResult.modified} modified, ${
+              syncResult.removed
+            } removed transactions, ${
+              syncResult.balancesUpdated || 0
+            } balances updated`
+          );
         } else {
           results.errors++;
           results.errorDetails.push({
@@ -83,14 +93,17 @@ export default async function handler(req, res) {
       }
     }
 
-    // 3) Update global sync status
+    // 3) Update global sync status in sync_logs table
+    const completedAt = new Date().toISOString();
     await supabase.from("sync_logs").insert({
       sync_type: "scheduled",
       total_items: userItems.length,
       successful_syncs: results.synced,
       failed_syncs: results.errors,
-      error_details: results.errorDetails,
-      completed_at: new Date().toISOString(),
+      error_details:
+        results.errorDetails.length > 0 ? results.errorDetails : null,
+      started_at: startedAt,
+      completed_at: completedAt,
     });
 
     console.log(
@@ -116,6 +129,12 @@ export default async function handler(req, res) {
 // Helper function to sync individual item transactions
 async function syncItemTransactions(item_id, user_id) {
   try {
+    // Update sync status to in_progress before starting
+    await supabase
+      .from("user_items")
+      .update({ sync_status: "in_progress" })
+      .eq("item_id", item_id);
+
     // Import the existing sync logic
     const { client } = await import("../app/plaidClient.js");
 
@@ -169,7 +188,7 @@ async function syncItemTransactions(item_id, user_id) {
       cursor = data.next_cursor;
     }
 
-    // Get existing recurring streams
+    // Get existing recurring streams (is_active column exists in recurring_streams table)
     const { data: recurringStreams, error: streamsError } = await supabase
       .from("recurring_streams")
       .select("stream_id, transaction_ids, account_id")
@@ -283,22 +302,76 @@ async function syncItemTransactions(item_id, user_id) {
         );
     }
 
-    // Update cursor and timestamp
+    // Update cursor, timestamps, and sync status
+    const syncTimestamp = new Date().toISOString();
     await supabase
       .from("user_items")
       .update({
         transactions_cursor: cursor,
-        last_synced_at: new Date().toISOString(),
+        last_synced_at: syncTimestamp,
+        last_automated_sync: syncTimestamp, // Track when automated sync last ran
+        sync_status: "completed", // Update sync status
       })
       .eq("item_id", item_id);
+
+    // Sync account balances after transactions (balances change with transactions)
+    let balancesUpdated = 0;
+    try {
+      console.log(`💰 Syncing account balances for item ${item_id}...`);
+      const balanceResponse = await client.accountsBalanceGet({
+        access_token: access_token,
+      });
+
+      const accounts = balanceResponse.data.accounts;
+      if (accounts && accounts.length > 0) {
+        const balanceUpdates = accounts.map((account) => ({
+          account_id: account.account_id,
+          item_id: item_id,
+          current_balance: account.balances.current,
+          available_balance: account.balances.available,
+        }));
+
+        const { error: balanceErr } = await supabase
+          .from("accounts")
+          .upsert(balanceUpdates, { onConflict: "account_id" });
+
+        if (balanceErr) {
+          console.error(
+            `⚠️ Balance update failed for item ${item_id}:`,
+            balanceErr
+          );
+        } else {
+          balancesUpdated = balanceUpdates.length;
+          console.log(
+            `✅ Updated ${balancesUpdated} account balances for item ${item_id}`
+          );
+        }
+      }
+    } catch (balanceError) {
+      // Don't fail the whole sync if balance update fails
+      console.error(
+        `⚠️ Balance sync failed for item ${item_id} (non-critical):`,
+        balanceError.message
+      );
+    }
 
     return {
       success: true,
       added: added.length,
       modified: modified.length,
       removed: removed.length,
+      balancesUpdated: balancesUpdated,
     };
   } catch (error) {
+    // Update sync status to error on failure
+    await supabase
+      .from("user_items")
+      .update({ sync_status: "error" })
+      .eq("item_id", item_id)
+      .catch((updateError) => {
+        console.error("Failed to update sync status:", updateError);
+      });
+
     return {
       success: false,
       error: error.message,
