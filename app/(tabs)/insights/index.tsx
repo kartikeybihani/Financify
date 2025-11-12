@@ -86,6 +86,17 @@ import {
   CachedInvestmentData,
 } from "@/src/shared/utils/investmentCache";
 import {
+  loadTransactionsFromCache,
+  saveTransactionsToCache,
+  clearTransactionsCache,
+} from "@/src/shared/utils/transactionCache";
+import {
+  loadSpendingFromCache,
+  saveSpendingToCache,
+  clearSpendingCache,
+  CachedSpendingData,
+} from "@/src/shared/utils/spendingCache";
+import {
   LoadingIndicator,
   ErrorState,
   EmptyState,
@@ -139,6 +150,7 @@ export default function InsightsScreen() {
   >([]);
   const [categories, setCategories] = useState<string[]>(["All Categories"]);
   const hasData = useRef(false);
+  const hasCachedData = useRef(false); // Track if we have cached data to avoid skeleton
   const [refreshing, setRefreshing] = useState(false);
   const [showUpdateModal, setShowUpdateModal] = useState(false);
   const [updateModalInfo, setUpdateModalInfo] = useState<{
@@ -261,12 +273,25 @@ export default function InsightsScreen() {
     visitOrder: ["spending"],
   });
 
-  // Listen for transaction category updates
+  // Use ref to store latest processTransactionsData to avoid re-subscription
+  // Initialize as null, will be set after processTransactionsData is defined
+  const processTransactionsDataRef = useRef<
+    ((transactionsData: Transaction[]) => void) | null
+  >(null);
+
+  // Listen for transaction category updates - clear cache and refresh smoothly
+  // Note: Using ref to avoid re-subscription when processTransactionsData changes
   useEffect(() => {
     const subscription = DeviceEventEmitter.addListener(
       "transactionCategoryUpdated",
-      (data) => {
+      async (data) => {
         console.log("🔄 Transaction category updated:", data);
+
+        // Clear caches since categories have changed
+        await Promise.all([clearTransactionsCache(), clearSpendingCache()]);
+        logger.info(
+          "🗑️ Cleared transactions and spending cache after category update"
+        );
 
         // Handle targeted transaction updates
         console.log("🔄 Processing transaction category update:", {
@@ -310,6 +335,14 @@ export default function InsightsScreen() {
               );
             });
 
+            // Re-process spending breakdown with updated categories using ref
+            // Use setTimeout to ensure state update completes first
+            setTimeout(() => {
+              if (processTransactionsDataRef.current) {
+                processTransactionsDataRef.current(updatedTransactions);
+              }
+            }, 0);
+
             return updatedTransactions;
           });
         } else {
@@ -317,13 +350,13 @@ export default function InsightsScreen() {
             "⚠️ No affected transactions found, falling back to full refresh"
           );
           // Fallback: refresh all data if no specific transactions provided
-          loadData();
+          await loadData();
         }
       }
     );
 
     return () => subscription.remove();
-  }, []);
+  }, []); // Empty deps - listener only set up once, uses ref for latest function
 
   // Initialize section animations and preload tasks
   useEffect(() => {
@@ -384,10 +417,41 @@ export default function InsightsScreen() {
     SmartPreloader.preloadForSection(activeSection);
   }, []);
 
-  // Load cached data immediately on mount to prevent flinching
+  // Load cached data immediately on mount to prevent flinching and show instant UI
   useEffect(() => {
     const loadCachedData = async () => {
       try {
+        // Load cached spending breakdown first (has processed data)
+        const cachedSpending = await loadSpendingFromCache();
+        if (cachedSpending) {
+          logger.info("📦 Loading cached spending breakdown on mount");
+          setCategoryBreakdown(cachedSpending.categoryBreakdown);
+          setCurrentMonthTransactions(cachedSpending.currentMonthTransactions);
+          hasCachedData.current = true;
+        }
+
+        // Load cached transactions (most important for smooth UX)
+        const cachedTransactions = await loadTransactionsFromCache();
+        if (cachedTransactions && cachedTransactions.length > 0) {
+          logger.info(
+            "📦 Loading cached transactions on mount:",
+            cachedTransactions.length
+          );
+          setTransactions(cachedTransactions);
+          hasData.current = true;
+          hasCachedData.current = true;
+
+          // Only process if we don't have cached spending breakdown
+          // Otherwise, use cached spending data which is already processed
+          if (!cachedSpending) {
+            // Use ref if available, otherwise will be processed in normal flow
+            if (processTransactionsDataRef.current) {
+              processTransactionsDataRef.current(cachedTransactions);
+            }
+            // If ref not set yet, normal initialization will handle it
+          }
+        }
+
         // Load cached investment data
         const cachedInvestmentData = await loadInvestmentFromCache();
         if (cachedInvestmentData) {
@@ -412,19 +476,31 @@ export default function InsightsScreen() {
     loadCachedData();
   }, []);
 
-  // Initialize minimal data on mount: recent transactions + accounts only
+  // Initialize data on mount: use cache first, then refresh in background
   useEffect(() => {
     const initializeScreen = async () => {
-      setIsInitialLoad(true);
+      // Only show initial load if we don't have cached data
+      if (!hasCachedData.current) {
+        setIsInitialLoad(true);
+      }
 
       try {
+        // Try to load from database (will use cache if available)
         const hasStoredData = await loadData();
+
         // Load accounts for filter modal (non-blocking for first paint)
         loadUserAccounts(false);
         // Load sync status
         loadSyncStatus();
 
-        if (!hasStoredData) {
+        // If we have cached data, refresh in background without showing loading state
+        if (hasCachedData.current) {
+          // Refresh fresh data silently in background
+          fetchFreshData().catch((error) => {
+            logger.error("Background refresh failed:", error);
+          });
+        } else if (!hasStoredData) {
+          // No cache and no stored data - show loading and fetch
           setIsLoading(true);
           await fetchFreshData();
           setIsLoading(false);
@@ -436,14 +512,21 @@ export default function InsightsScreen() {
       }
     };
 
-    initializeScreen();
+    // Small delay to ensure cached data is loaded first
+    const timer = setTimeout(() => {
+      initializeScreen();
+    }, 50);
+
+    return () => clearTimeout(timer);
   }, [getUserId]);
 
   // Auto-refresh stale investment data (>24 hours old)
   useEffect(() => {
     const checkAndAutoSyncInvestments = async () => {
       try {
-        const { data: { user } } = await supabase.auth.getUser();
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
         if (!user) return;
 
         const connections = await getSnaptradeConnectionsFromDB();
@@ -454,7 +537,8 @@ export default function InsightsScreen() {
         const staleConnections = connections.filter((conn: any) => {
           if (!conn.last_synced_at) return true; // Never synced
           const lastSynced = new Date(conn.last_synced_at);
-          const hoursSinceSync = (now.getTime() - lastSynced.getTime()) / (1000 * 60 * 60);
+          const hoursSinceSync =
+            (now.getTime() - lastSynced.getTime()) / (1000 * 60 * 60);
           return hoursSinceSync > 24;
         });
 
@@ -535,6 +619,19 @@ export default function InsightsScreen() {
 
   const loadData = async () => {
     try {
+      // First check cache (already loaded in mount effect, but check again)
+      const cachedTransactions = await loadTransactionsFromCache();
+      if (cachedTransactions && cachedTransactions.length > 0) {
+        logger.info(
+          "Insights: Using cached transactions:",
+          cachedTransactions.length
+        );
+        setTransactions(cachedTransactions);
+        processTransactionsData(cachedTransactions);
+        hasData.current = true;
+        return true;
+      }
+
       logger.info("Insights: Loading data from Supabase...");
 
       const userId = await getUserId();
@@ -554,6 +651,9 @@ export default function InsightsScreen() {
         setTransactions(transactions);
         processTransactionsData(transactions);
         hasData.current = true;
+
+        // Save to cache for next time
+        await saveTransactionsToCache(transactions);
         return true;
       }
 
@@ -567,7 +667,10 @@ export default function InsightsScreen() {
 
   const fetchFreshData = async () => {
     try {
-      setIsLoading(true);
+      // Only show loading state if we don't have cached data
+      if (!hasCachedData.current) {
+        setIsLoading(true);
+      }
       logger.info("Insights: Fetching fresh data from Supabase...");
 
       const userId = await getUserId();
@@ -586,6 +689,9 @@ export default function InsightsScreen() {
         setTransactions(transactions);
         processTransactionsData(transactions);
         hasData.current = true;
+
+        // Save to cache for smooth next load
+        await saveTransactionsToCache(transactions);
       } else {
         logger.info("Insights: No transactions found");
       }
@@ -816,7 +922,13 @@ export default function InsightsScreen() {
 
         if (data && data.transactions) {
           setTransactions(data.transactions);
-          processTransactionsData(data.transactions);
+          // Use ref for consistency and to ensure we have latest function
+          if (processTransactionsDataRef.current) {
+            processTransactionsDataRef.current(data.transactions);
+          } else {
+            // Fallback: processTransactionsData should be defined by now, but use direct call
+            processTransactionsData(data.transactions);
+          }
           hasData.current = true;
         }
 
@@ -828,6 +940,8 @@ export default function InsightsScreen() {
           // Clear caches since financial data has changed
           await clearRecurringCache();
           await clearInvestmentCache();
+          await clearTransactionsCache();
+          await clearSpendingCache();
           // Also reload recurring transactions from database when data changes
           await loadRecurringTransactions();
           // Also reload investment data if financial data changes
@@ -985,9 +1099,26 @@ export default function InsightsScreen() {
       ];
 
       setRealInsights(newInsights);
+
+      // Save spending breakdown to cache for smooth UX
+      const spendingCacheData = {
+        categoryBreakdown: filteredCategories,
+        currentMonthTransactions: currentMonthExpenses,
+        totalSpent,
+        displayPeriod,
+      };
+      saveSpendingToCache(spendingCacheData).catch((error) => {
+        logger.error("Failed to save spending to cache:", error);
+      });
     },
-    [currentDateInfo]
+    [currentDateInfo, getCategoryColor, formatCategoryFromHook]
   );
+
+  // Keep ref updated with latest processTransactionsData function
+  // This allows the event listener to always use the latest version without re-subscribing
+  useEffect(() => {
+    processTransactionsDataRef.current = processTransactionsData;
+  }, [processTransactionsData]);
 
   const formatDate = (dateStr: string) => {
     const options: Intl.DateTimeFormatOptions = {
@@ -1040,6 +1171,8 @@ export default function InsightsScreen() {
     try {
       // Clear cache when refreshing
       clearCache();
+      await clearTransactionsCache();
+      await clearSpendingCache();
       await fetchFreshData();
       // Only reload filtered transactions if on Transactions section
       if (activeSection === "transactions") {
@@ -1482,6 +1615,8 @@ export default function InsightsScreen() {
       clearCache();
       await clearRecurringCache();
       await clearInvestmentCache();
+      await clearTransactionsCache();
+      await clearSpendingCache();
 
       setRefreshStatus({
         type: "manual",
@@ -1565,6 +1700,8 @@ export default function InsightsScreen() {
       clearCache();
       await clearRecurringCache();
       await clearInvestmentCache();
+      await clearTransactionsCache();
+      await clearSpendingCache();
 
       setRefreshStatus({
         type: "category_fix",
@@ -1661,6 +1798,8 @@ export default function InsightsScreen() {
       // Clear caches since we have fresh data
       await clearRecurringCache();
       await clearInvestmentCache();
+      await clearTransactionsCache();
+      await clearSpendingCache();
 
       // Step 5: Refresh UI from Supabase (single source of truth)
       setRefreshStatus({ type: "cloud", message: "Updating interface..." });
@@ -1829,7 +1968,7 @@ export default function InsightsScreen() {
         onChange={handleSectionChange as any}
       />
 
-      {isInitialLoad ? (
+      {isInitialLoad && !hasCachedData.current ? (
         <InsightsLoadingSkeleton />
       ) : (
         <ScrollView

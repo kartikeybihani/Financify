@@ -23,17 +23,20 @@ export const CACHE_CONFIG = {
     INVESTMENT_DATA_TIMESTAMP: 'cached_investment_data_timestamp',
     CATEGORIES: 'cached_categories',
     CATEGORIES_TIMESTAMP: 'cached_categories_timestamp',
+    SPENDING_BREAKDOWN: 'cached_spending_breakdown',
+    SPENDING_BREAKDOWN_TIMESTAMP: 'cached_spending_breakdown_timestamp',
   },
   
   // Cache strategies for different data types
   STRATEGIES: {
     ACCOUNT_BALANCES: 'MEDIUM',      // 5 minutes - balances change moderately
     GOALS: 'VERY_LONG',              // 1 day - goals are very stable
-    TRANSACTIONS: 'SHORT',           // 2 minutes - transactions can change frequently
+    TRANSACTIONS: 'VERY_LONG',       // 1 day - transactions cached for smooth UX (invalidated on category updates)
     FILTERED_TRANSACTIONS: 'SHORT',  // 2 minutes - filtered results change with filters
     RECURRING_TRANSACTIONS: 'VERY_LONG', // 1 day - recurring patterns are very stable
     INVESTMENT_DATA: 'VERY_LONG',    // 1 day - investment data is stable for daily use
     CATEGORIES: 'VERY_LONG',         // 1 hour - categories rarely change
+    SPENDING_BREAKDOWN: 'VERY_LONG', // 1 day - spending breakdown cached for smooth UX (invalidated on category updates)
   }
 } as const;
 
