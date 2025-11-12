@@ -100,7 +100,8 @@
     "typescript": "^5.3.3"
   },
   "overrides": {
-    "lodash": "^4.17.21"
+    "lodash": "^4.17.21",
+    "axios": "^1.12.0"
   },
   "resolutions": {
     "react": "^19.1.0",
