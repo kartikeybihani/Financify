@@ -171,6 +171,22 @@ export default function InvestmentsScreen({
             b?.length || 0
           }, Connections: ${c?.length || 0}`
         );
+
+        // Log balance details for debugging
+        if (b && b.length > 0) {
+          logger.info(
+            `💰 Balance total_value: $${
+              b[0]?.total_value || 0
+            }, Holdings sum: $${(h || []).reduce(
+              (sum, h) => sum + (h.market_value || 0),
+              0
+            )}, Options sum: $${(o || []).reduce(
+              (sum, o) => sum + (o.market_value || 0),
+              0
+            )}`
+          );
+        }
+
         setHoldings(h || []);
         setOptions(o || []);
         setBalances(b || []);
@@ -194,6 +210,18 @@ export default function InvestmentsScreen({
             connectionId: null,
           });
         }
+
+        // Update hasData flag to ensure UI reflects loaded data
+        hasData.current = true;
+        setIsLoading(false);
+      } else {
+        // No data found
+        setHoldings([]);
+        setOptions([]);
+        setBalances([]);
+        setConnections([]);
+        hasData.current = false;
+        setIsLoading(false);
       }
 
       return hasAnyData;
@@ -384,6 +412,7 @@ export default function InvestmentsScreen({
   useEffect(() => {
     const initializeScreen = async () => {
       // Check if we need to reload data (either no data, recent sync, or preloaded data changed)
+      // NOTE: This only runs on mount or when preloadedData changes, not on pull-to-refresh
       const shouldReload =
         !hasData.current ||
         (lastSyncTime.current && Date.now() - lastSyncTime.current < 5000) || // 5 second window
@@ -392,7 +421,9 @@ export default function InvestmentsScreen({
             JSON.stringify(lastPreloadedDataRef.current));
 
       if (!shouldReload) {
-        logger.info("Investments: Data already loaded, skipping reload");
+        logger.info(
+          "Investments: Data already loaded, skipping initial reload (pull-to-refresh will still work)"
+        );
         return;
       }
 
@@ -662,8 +693,10 @@ export default function InvestmentsScreen({
         hasData.current = true;
       }
 
-      // Step 5: Update investment accounts in main table
+      // Step 5: Update investment accounts in main table (after balances are recalculated)
       logger.info("🔄 Updating investment accounts in main table...");
+      // Wait a moment to ensure balances are fully updated
+      await new Promise((resolve) => setTimeout(resolve, 500));
       await populateInvestmentAccountsInDB();
 
       logger.info(
@@ -778,8 +811,34 @@ export default function InvestmentsScreen({
           // Sync already recalculates, but ensure it's done
           await recalculateInvestmentBalances(user.id, connection.account_id);
 
-          // Reload from database after sync
-          await loadFromDbWithoutAutoSync();
+          // Wait a moment for database update to complete
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+
+          // Force reload from database after sync and recalculation
+          hasData.current = false;
+
+          // Reload balances directly to get updated total_value
+          const [h, o, b, c] = await Promise.all([
+            getSnaptradeHoldingsFromDB(),
+            getSnaptradeOptionsFromDB(),
+            getSnaptradeBalancesFromDB(),
+            getSnaptradeConnectionsFromDB(),
+          ]);
+
+          if (b && b.length > 0) {
+            logger.info(
+              `💰 Reloaded balance total_value after sync: $${
+                b[0]?.total_value || 0
+              }`
+            );
+            setBalances(b || []);
+            setHoldings(h || []);
+            setOptions(o || []);
+            setConnections(c || []);
+            hasData.current = true;
+          } else {
+            await loadFromDbWithoutAutoSync();
+          }
 
           logger.info("✅ Pull-to-refresh completed - data synced from API");
         } catch (err: any) {
@@ -832,6 +891,9 @@ export default function InvestmentsScreen({
         try {
           await recalculateInvestmentBalances(user.id, connection.account_id);
           logger.info("✅ Balances recalculated from active holdings");
+
+          // Wait longer for database update to fully commit
+          await new Promise((resolve) => setTimeout(resolve, 1000));
         } catch (recalcError) {
           logger.warn(
             "⚠️ Failed to recalculate balances (continuing anyway):",
@@ -839,7 +901,41 @@ export default function InvestmentsScreen({
           );
         }
 
-        await loadFromDbWithoutAutoSync();
+        // Force reload by resetting hasData flag to ensure fresh data is loaded
+        hasData.current = false;
+
+        // Reload balances directly to get the updated total_value (bypass any caching)
+        // Wait a bit more to ensure DB transaction is committed
+        await new Promise((resolve) => setTimeout(resolve, 300));
+
+        const [h, o, b, c] = await Promise.all([
+          getSnaptradeHoldingsFromDB(),
+          getSnaptradeOptionsFromDB(),
+          getSnaptradeBalancesFromDB(),
+          getSnaptradeConnectionsFromDB(),
+        ]);
+
+        if (b && b.length > 0) {
+          const calculatedSum =
+            (h || []).reduce((sum, h) => sum + (h.market_value || 0), 0) +
+            (o || []).reduce((sum, o) => sum + (o.market_value || 0), 0);
+          logger.info(
+            `💰 Reloaded balance total_value: $${
+              b[0]?.total_value || 0
+            }, Calculated sum: $${calculatedSum}`
+          );
+
+          // Update state immediately with fresh balances
+          setBalances(b || []);
+          setHoldings(h || []);
+          setOptions(o || []);
+          setConnections(c || []);
+          hasData.current = true;
+        } else {
+          // Fallback to full reload
+          await loadFromDbWithoutAutoSync();
+        }
+
         logger.info(
           "✅ Pull-to-refresh completed - balances recalculated and data reloaded"
         );
@@ -848,6 +944,7 @@ export default function InvestmentsScreen({
       logger.error("❌ Error during pull-to-refresh:", error);
       // Try to reload from DB anyway
       try {
+        hasData.current = false;
         await loadFromDbWithoutAutoSync();
       } catch (dbError) {
         logger.error("❌ Failed to reload from database:", dbError);

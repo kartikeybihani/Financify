@@ -244,23 +244,39 @@ async function handleInvestmentAccountPopulation(req, res, user_id) {
 
     for (const connection of connections) {
       try {
-        // Calculate total portfolio value from holdings
-        const accountHoldings = holdings.filter(
-          (h) => h.account_id === connection.account_id
-        );
-        const totalHoldingsValue = accountHoldings.reduce(
-          (sum, holding) => sum + (holding.market_value || 0),
-          0
-        );
-
-        // Get cash balance
-        const cashBalance = balances.find(
+        // Use total_value from investment_balances as single source of truth
+        // This is already calculated from active holdings + options + cash
+        const balanceRecord = balances.find(
           (b) => b.account_id === connection.account_id
         );
-        const cashAmount = cashBalance?.cash || 0;
+        
+        // Use total_value from investment_balances if available, otherwise calculate from holdings
+        let totalValue = 0;
+        if (balanceRecord && balanceRecord.total_value !== null && balanceRecord.total_value !== undefined) {
+          totalValue = balanceRecord.total_value;
+          console.log(
+            `✅ Using total_value from investment_balances: $${totalValue} for account ${connection.account_id}`
+          );
+        } else {
+          // Fallback: Calculate from active holdings only
+          const accountHoldings = holdings.filter(
+            (h) => h.account_id === connection.account_id && h.is_active === true
+          );
+          const totalHoldingsValue = accountHoldings.reduce(
+            (sum, holding) => sum + (holding.market_value || 0),
+            0
+          );
+          
+          // Get cash balance
+          const cashAmount = balanceRecord?.cash || 0;
+          totalValue = totalHoldingsValue + cashAmount;
+          console.log(
+            `⚠️ Fallback: Calculated total_value from holdings: $${totalValue} (balance record not found or missing total_value)`
+          );
+        }
 
-        // Total investment value = holdings + cash
-        const totalValue = totalHoldingsValue + cashAmount;
+        // Get cash balance for available_balance field
+        const cashAmount = balanceRecord?.cash || 0;
 
         // Create a unique item_id for SnapTrade accounts
         const investmentItemId = `snaptrade-${connection.account_id}`;
