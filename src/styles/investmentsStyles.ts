@@ -41,6 +41,7 @@ export const styles = StyleSheet.create({
   portfolioSummaryContainer: {
     marginBottom: 24,
     position: "relative",
+    zIndex: 1,
   },
   portfolioSummaryContent: {
     marginBottom: 24,
@@ -83,7 +84,9 @@ export const styles = StyleSheet.create({
   addAccountTopRight: {
     position: "absolute",
     top: 10,
-    right: 0
+    right: 0,
+    zIndex: 100,
+    elevation: 10,
   },
   brokerageInfo: {
     flexDirection: "row",

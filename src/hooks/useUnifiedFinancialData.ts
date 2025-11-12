@@ -10,6 +10,7 @@ import { supabase } from "@/src/lib/supabase/supabase";
 import logger from "@/src/utils/logger";
 import { getAuthenticatedUser } from "@/src/utils/auth";
 import { CACHE_CONFIG } from "@/src/shared/constants/cacheConfig";
+import { getSnaptradeBalancesFromDB } from "@/src/utils/snaptrade";
 
 // Cache keys
 const UNIFIED_CACHE_KEY = "unified_financial_data";
@@ -75,6 +76,7 @@ export function useUnifiedFinancialData(): UnifiedFinancialData {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [goals, setGoals] = useState<Goal[]>([]);
   const [cashEntries, setCashEntries] = useState<CashEntry[]>([]);
+  const [investmentBalances, setInvestmentBalances] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
 
@@ -143,7 +145,7 @@ export function useUnifiedFinancialData(): UnifiedFinancialData {
       logger.info("🔄 [UNIFIED] Fetching all financial data in parallel...");
       
       // Fetch all data in parallel for optimal performance
-      const [accountsData, goalsData, cashData] = await Promise.all([
+      const [accountsData, goalsData, cashData, balancesData] = await Promise.all([
         getAllUserAccounts(user.id).catch(err => {
           logger.error("❌ [UNIFIED] Failed to fetch accounts:", err);
           return [];
@@ -172,13 +174,18 @@ export function useUnifiedFinancialData(): UnifiedFinancialData {
               return [];
             }
             return data || [];
-          })
+          }),
+        getSnaptradeBalancesFromDB().catch(err => {
+          logger.error("❌ [UNIFIED] Failed to fetch investment balances:", err);
+          return [];
+        })
       ]);
 
       // Update state
       setAccounts(accountsData || []);
       setGoals(goalsData || []);
       setCashEntries(cashData || []);
+      setInvestmentBalances(balancesData || []);
 
       logger.info(`✅ [UNIFIED] Loaded ${accountsData?.length || 0} accounts, ${goalsData?.length || 0} goals, ${cashData?.length || 0} cash entries`);
 
@@ -282,10 +289,24 @@ export function useUnifiedFinancialData(): UnifiedFinancialData {
     [categorizedDeposits]
   );
 
-  const investmentsTotal = useMemo(
-    () => categorizedInvestments.reduce((acc, a) => acc + (a.balances?.current || 0), 0),
-    [categorizedInvestments]
-  );
+  // Use total_value from investment_balances as single source of truth (same as investments screen)
+  const investmentsTotal = useMemo(() => {
+    // Use investment_balances.total_value which is calculated from active holdings + options
+    if (investmentBalances.length > 0 && investmentBalances[0].total_value !== null && investmentBalances[0].total_value !== undefined) {
+      return investmentBalances[0].total_value;
+    }
+    
+    // Fallback to accounts table if no balances found (for backwards compatibility)
+    if (categorizedInvestments.length > 0) {
+      const accountsTotal = categorizedInvestments.reduce(
+        (acc, a) => acc + (a.balances?.current || 0),
+        0
+      );
+      return accountsTotal;
+    }
+    
+    return 0;
+  }, [investmentBalances, categorizedInvestments]);
 
   const liabilitiesTotal = useMemo(
     () => categorizedLiabilities.reduce((acc, a) => acc + (a.balances?.current || 0), 0),

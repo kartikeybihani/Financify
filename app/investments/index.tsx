@@ -30,6 +30,7 @@ import {
   populateInvestmentAccountsInDB,
   checkSnaptradeConnectionStatus,
   getSnaptradeConnectionDetails,
+  recalculateInvestmentBalances,
 } from "@/src/utils/snaptrade";
 import { clearInvestmentCache } from "@/src/shared/utils/investmentCache";
 import { styles } from "@/src/styles/investmentsStyles";
@@ -547,17 +548,26 @@ export default function InvestmentsScreen({
             // This ensures UI reflects database changes from webhooks or background syncs
             // Even if last_synced_at didn't change, webhooks might have updated holdings/balances
             if (!isDisabled) {
-              logger.info("🔄 Screen focused - reloading data to ensure UI reflects database state...");
+              logger.info(
+                "🔄 Screen focused - reloading data to ensure UI reflects database state..."
+              );
               await loadFromDbWithoutAutoSync();
-              logger.info("✅ Data reloaded on focus - UI now in sync with database");
+              logger.info(
+                "✅ Data reloaded on focus - UI now in sync with database"
+              );
             }
           } else {
             // No connections - still try to reload in case data exists
-            logger.info("🔄 Screen focused - reloading data (no connections found)...");
+            logger.info(
+              "🔄 Screen focused - reloading data (no connections found)..."
+            );
             await loadFromDbWithoutAutoSync();
           }
         } catch (error) {
-          logger.warn("⚠️ Error checking connection status and reloading data on focus:", error);
+          logger.warn(
+            "⚠️ Error checking connection status and reloading data on focus:",
+            error
+          );
         }
       };
 
@@ -632,6 +642,18 @@ export default function InvestmentsScreen({
       logger.info("🔄 Syncing fresh data from SnapTrade API...");
       await syncSnaptradeInvestments(user.id, first.account_id);
 
+      // Step 3.5: Ensure balances are recalculated from active holdings
+      logger.info("🔄 Recalculating balances from active holdings...");
+      try {
+        await recalculateInvestmentBalances(user.id, first.account_id);
+        logger.info("✅ Balances recalculated successfully");
+      } catch (recalcError) {
+        logger.warn(
+          "⚠️ Failed to recalculate balances (continuing anyway):",
+          recalcError
+        );
+      }
+
       // Step 4: Reload data from database to show updated values (without triggering auto-sync)
       logger.info("🔄 Reloading data from database...");
       const hasStoredData = await loadFromDbWithoutAutoSync();
@@ -684,10 +706,10 @@ export default function InvestmentsScreen({
           connectionId
         );
       } else {
-      const errorMsg =
-        err instanceof Error ? err.message : "Failed to sync investments";
-      logger.error("Failed to sync investments", err);
-      setSyncError(errorMsg);
+        const errorMsg =
+          err instanceof Error ? err.message : "Failed to sync investments";
+        logger.error("Failed to sync investments", err);
+        setSyncError(errorMsg);
       }
     } finally {
       isSyncInProgress.current = false;
@@ -725,13 +747,13 @@ export default function InvestmentsScreen({
       }
 
       const connection = connections[0];
-      
+
       // Check if data is older than 24 hours
       const now = new Date();
       const lastSynced = connection.last_synced_at
         ? new Date(connection.last_synced_at)
         : null;
-      
+
       const hoursSinceSync = lastSynced
         ? (now.getTime() - lastSynced.getTime()) / (1000 * 60 * 60)
         : Infinity;
@@ -745,17 +767,20 @@ export default function InvestmentsScreen({
       if (hoursSinceSync > 24) {
         // Data is stale (>24 hours) - sync from SnapTrade API (not paid refresh endpoint)
         logger.info("📡 Data is >24 hours old, syncing from SnapTrade API...");
-        
+
         isSyncInProgress.current = true;
-        
+
         try {
           // Call sync endpoint (accounts API) - this fetches fresh data from SnapTrade
           // NOTE: We do NOT call refreshSnaptradeInvestments here - that's only for manual refresh button
           await syncSnaptradeInvestments(user.id, connection.account_id);
-          
+
+          // Sync already recalculates, but ensure it's done
+          await recalculateInvestmentBalances(user.id, connection.account_id);
+
           // Reload from database after sync
           await loadFromDbWithoutAutoSync();
-          
+
           logger.info("✅ Pull-to-refresh completed - data synced from API");
         } catch (err: any) {
           // Check if this is a 402 disabled connection error
@@ -764,24 +789,27 @@ export default function InvestmentsScreen({
             err.code === "CONNECTION_DISABLED" ||
             err.requiresReconnect
           ) {
-            logger.error("🔴 Connection disabled detected during pull-to-refresh", err);
-            
+            logger.error(
+              "🔴 Connection disabled detected during pull-to-refresh",
+              err
+            );
+
             // Reload connections from DB
             const updatedConnections = await getSnaptradeConnectionsFromDB();
             setConnections(updatedConnections || []);
-            
+
             const connectionId =
               err.connectionId ||
               (updatedConnections && updatedConnections.length > 0
                 ? updatedConnections[0].connection_id
                 : null) ||
               (connections.length > 0 ? connections[0].connection_id : null);
-            
+
             setConnectionStatus({
               isDisabled: true,
               connectionId: connectionId,
             });
-            
+
             setSyncError(
               err.message ||
                 "Your investment account connection has been disabled. Please reconnect your account."
@@ -795,10 +823,26 @@ export default function InvestmentsScreen({
           isSyncInProgress.current = false;
         }
       } else {
-        // Data is fresh (<24 hours) - just reload from database
-        logger.info("💾 Data is fresh (<24 hours), reloading from database...");
+        // Data is fresh (<24 hours) - recalculate balances and reload from database
+        logger.info(
+          "💾 Data is fresh (<24 hours), recalculating balances and reloading from database..."
+        );
+
+        // Always recalculate balances on pull-to-refresh to ensure accuracy
+        try {
+          await recalculateInvestmentBalances(user.id, connection.account_id);
+          logger.info("✅ Balances recalculated from active holdings");
+        } catch (recalcError) {
+          logger.warn(
+            "⚠️ Failed to recalculate balances (continuing anyway):",
+            recalcError
+          );
+        }
+
         await loadFromDbWithoutAutoSync();
-        logger.info("✅ Pull-to-refresh completed - data reloaded from database");
+        logger.info(
+          "✅ Pull-to-refresh completed - balances recalculated and data reloaded"
+        );
       }
     } catch (error) {
       logger.error("❌ Error during pull-to-refresh:", error);
@@ -1051,21 +1095,14 @@ export default function InvestmentsScreen({
     setShowSortModal(false);
   };
 
-  const totalHoldingsValue = holdings.reduce(
-    (sum, h) => sum + (h.market_value || 0),
-    0
-  );
-  const totalOptionsValue = options.reduce(
-    (sum, o) => sum + (o.market_value || 0),
-    0
-  );
-
-  // Use total_value from investment_balances if available, otherwise calculate
-  const calculatedPortfolioValue = totalHoldingsValue + totalOptionsValue;
+  // Use total_value from investment_balances as single source of truth
+  // This is calculated from active holdings + options by the sync function
   const totalPortfolioValue =
-    balances.length > 0 && balances[0].total_value
+    balances.length > 0 &&
+    balances[0].total_value !== null &&
+    balances[0].total_value !== undefined
       ? balances[0].total_value
-      : calculatedPortfolioValue;
+      : 0;
 
   const totalCash = balances.reduce((sum, b) => sum + (b.cash || 0), 0);
 
@@ -1274,6 +1311,8 @@ export default function InvestmentsScreen({
           accessibilityLabel="Add investment account"
           onPress={handleAddInvestmentAccount}
           style={[styles.syncButton, styles.addAccountTopRight]}
+          activeOpacity={0.7}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
           <Ionicons name="add-outline" size={18} color="#4A90E2" />
         </TouchableOpacity>

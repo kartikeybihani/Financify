@@ -17,10 +17,10 @@ const snaptrade = new Snaptrade({
   consumerKey: SNAPTRADE_CONSUMER_KEY,
 });
 
-// Helper function to recalculate portfolio metrics from database holdings
+// Helper function to recalculate portfolio metrics from database holdings and options
 async function recalculatePortfolioMetricsFromDatabase(userId: string, snaptradeUserId: string, accountId: string) {
   try {
-    console.log("🔄 Recalculating portfolio metrics from database holdings...");
+    console.log("🔄 Recalculating portfolio metrics from database holdings and options...");
 
     // Get all active holdings for this account from the database
     const { data: holdings, error: holdingsError } = await supabase
@@ -36,8 +36,22 @@ async function recalculatePortfolioMetricsFromDatabase(userId: string, snaptrade
       return;
     }
 
-    if (!holdings || holdings.length === 0) {
-      console.log("ℹ️ No holdings found for recalculation");
+    // Get all active options for this account from the database
+    const { data: options, error: optionsError } = await supabase
+      .from("investment_options")
+      .select("*")
+      .eq("user_id", userId)
+      .eq("snaptrade_user_id", snaptradeUserId)
+      .eq("account_id", accountId)
+      .eq("is_active", true);
+
+    if (optionsError) {
+      console.error("❌ Error fetching options for recalculation:", optionsError);
+      // Continue even if options fetch fails
+    }
+
+    if ((!holdings || holdings.length === 0) && (!options || options.length === 0)) {
+      console.log("ℹ️ No holdings or options found for recalculation");
       return;
     }
 
@@ -46,10 +60,21 @@ async function recalculatePortfolioMetricsFromDatabase(userId: string, snaptrade
     let totalDayChange = 0;
     let totalUnrealizedPL = 0;
 
-    holdings.forEach((holding: any) => {
+    holdings?.forEach((holding: any) => {
       const marketValue = holding.market_value || 0;
       const dayChange = holding.day_change || 0;
       const unrealizedPL = holding.unrealized_pl || 0;
+
+      totalValue += marketValue;
+      totalDayChange += dayChange;
+      totalUnrealizedPL += unrealizedPL;
+    });
+
+    // Calculate totals from database options
+    options?.forEach((option: any) => {
+      const marketValue = option.market_value || 0;
+      const dayChange = option.day_change || 0;
+      const unrealizedPL = option.unrealized_pl || 0;
 
       totalValue += marketValue;
       totalDayChange += dayChange;
@@ -74,7 +99,8 @@ async function recalculatePortfolioMetricsFromDatabase(userId: string, snaptrade
     const totalChangePercent = totalPortfolioValue > 0 ? (totalUnrealizedPL / totalPortfolioValue) * 100 : 0;
 
     console.log("📊 Database-calculated portfolio metrics:", {
-      holdingsCount: holdings.length,
+      holdingsCount: holdings?.length || 0,
+      optionsCount: options?.length || 0,
       totalValue: totalValue.toFixed(2),
       cashAmount: cashAmount.toFixed(2),
       totalPortfolioValue: totalPortfolioValue.toFixed(2),

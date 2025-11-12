@@ -815,6 +815,31 @@ export const syncSnaptradeInvestments = async (userId: string, accountId: string
   }
 };
 
+// === Recalculate Investment Balances from Active Holdings ===
+export const recalculateInvestmentBalances = async (userId: string, accountId: string) => {
+  try {
+    logger.info("🔄 Recalculating investment balances from active holdings...");
+    
+    const res = await fetch(`${BASE_URL}/api/plaid`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ 
+        mode: "snaptrade_recalculate", 
+        userId: userId,
+        accountId: accountId
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Failed to recalculate balances");
+    
+    logger.info("✅ Investment balances recalculated successfully");
+    return data;
+  } catch (error) {
+    logger.error("❌ Failed to recalculate investment balances:", error);
+    throw error;
+  }
+};
+
 // === Refresh SnapTrade Investments (Paid Endpoint) ===
 export const refreshSnaptradeInvestments = async (userId: string, accountId: string) => {
   try {

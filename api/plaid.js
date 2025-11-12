@@ -255,6 +255,12 @@ async function handleSnapTradeRequest(req, res, mode, params) {
           accountId
         );
 
+      case "snaptrade_recalculate":
+        if (!userId || !accountId) {
+          return res.status(400).json({ error: "Missing userId or accountId" });
+        }
+        return await handleSnapTradeRecalculate(res, userId, accountId);
+
       default:
         return res.status(400).json({ error: "Invalid SnapTrade mode" });
     }
@@ -312,7 +318,9 @@ async function recalculatePortfolioMetricsFromDatabase(
   accountId
 ) {
   try {
-    console.log("🔄 Recalculating portfolio metrics from database holdings...");
+    console.log(
+      "🔄 Recalculating portfolio metrics from database holdings and options..."
+    );
 
     // Get all active holdings for this account from the database
     const { data: holdings, error: holdingsError } = await supabase
@@ -331,8 +339,28 @@ async function recalculatePortfolioMetricsFromDatabase(
       return;
     }
 
-    if (!holdings || holdings.length === 0) {
-      console.log("ℹ️ No holdings found for recalculation");
+    // Get all active options for this account from the database
+    const { data: options, error: optionsError } = await supabase
+      .from("investment_options")
+      .select("*")
+      .eq("user_id", userId)
+      .eq("snaptrade_user_id", snaptradeUserId)
+      .eq("account_id", accountId)
+      .eq("is_active", true);
+
+    if (optionsError) {
+      console.error(
+        "❌ Error fetching options for recalculation:",
+        optionsError
+      );
+      // Continue even if options fetch fails
+    }
+
+    if (
+      (!holdings || holdings.length === 0) &&
+      (!options || options.length === 0)
+    ) {
+      console.log("ℹ️ No holdings or options found for recalculation");
       return;
     }
 
@@ -341,10 +369,21 @@ async function recalculatePortfolioMetricsFromDatabase(
     let totalDayChange = 0;
     let totalUnrealizedPL = 0;
 
-    holdings.forEach((holding) => {
+    holdings?.forEach((holding) => {
       const marketValue = holding.market_value || 0;
       const dayChange = holding.day_change || 0;
       const unrealizedPL = holding.unrealized_pl || 0;
+
+      totalValue += marketValue;
+      totalDayChange += dayChange;
+      totalUnrealizedPL += unrealizedPL;
+    });
+
+    // Calculate totals from database options
+    options?.forEach((option) => {
+      const marketValue = option.market_value || 0;
+      const dayChange = option.day_change || 0;
+      const unrealizedPL = option.unrealized_pl || 0;
 
       totalValue += marketValue;
       totalDayChange += dayChange;
@@ -375,7 +414,8 @@ async function recalculatePortfolioMetricsFromDatabase(
         : 0;
 
     console.log("📊 Database-calculated portfolio metrics:", {
-      holdingsCount: holdings.length,
+      holdingsCount: holdings?.length || 0,
+      optionsCount: options?.length || 0,
       totalValue: totalValue.toFixed(2),
       cashAmount: cashAmount.toFixed(2),
       totalPortfolioValue: totalPortfolioValue.toFixed(2),
@@ -414,6 +454,46 @@ async function recalculatePortfolioMetricsFromDatabase(
       "❌ Error in recalculatePortfolioMetricsFromDatabase:",
       error
     );
+  }
+}
+
+async function handleSnapTradeRecalculate(res, userId, accountId) {
+  try {
+    console.log("🔄 Recalculating investment balances for:", {
+      userId,
+      accountId,
+    });
+
+    // Get the snaptrade_user_id from the connection
+    const { data: connection, error: connErr } = await supabase
+      .from("snaptrade_connections")
+      .select("snaptrade_user_id")
+      .eq("user_id", userId)
+      .eq("account_id", accountId)
+      .eq("is_active", true)
+      .single();
+
+    if (connErr || !connection) {
+      console.error("SnapTrade connection lookup error:", connErr);
+      return res.status(404).json({ error: "SnapTrade connection not found" });
+    }
+
+    // Recalculate portfolio metrics from active holdings and options
+    await recalculatePortfolioMetricsFromDatabase(
+      userId,
+      connection.snaptrade_user_id,
+      accountId
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: "Investment balances recalculated successfully",
+    });
+  } catch (error) {
+    console.error("❌ Error recalculating balances:", error);
+    return res.status(500).json({
+      error: error.message || "Failed to recalculate balances",
+    });
   }
 }
 
