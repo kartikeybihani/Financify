@@ -474,10 +474,10 @@ export default function TransactionDetailModal({
       if (linkError) throw linkError;
 
       // Increment goal progress (current_amount)
-      const { error: goalError } = await supabase.rpc(
-        "increment_goal_amount",
-        { p_goal_id: goalId, p_amount: txAmount }
-      );
+      const { error: goalError } = await supabase.rpc("increment_goal_amount", {
+        p_goal_id: goalId,
+        p_amount: txAmount,
+      });
 
       if (goalError) {
         // Fallback if RPC not present: read-then-update
@@ -827,6 +827,7 @@ export default function TransactionDetailModal({
         visible={showCategorySelector}
         transactionId={transaction?.id || null}
         merchantName={transaction?.merchant_name}
+        currentCategoryName={getDisplayCategory(updatedCategory, transaction)}
         onClose={() => setShowCategorySelector(false)}
       />
 

@@ -19,6 +19,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import { Ionicons } from "@expo/vector-icons";
 import { AntDesign } from "@expo/vector-icons";
+import { FontAwesome6 } from "@expo/vector-icons";
 import { useRouter, useFocusEffect } from "expo-router";
 import { ChatMessageComponent } from "@/src/components/chat/ChatMessage";
 import { NudgeGrid } from "@/src/components/chat/NudgeGrid";
@@ -511,7 +512,7 @@ export default function ChatScreen() {
             onPress={() => router.push("/(tabs)/chat/finny-settings")}
             activeOpacity={0.7}
           >
-            <Ionicons name="filter" size={20} color="#4A90E2" />
+            <FontAwesome6 name="sliders" size={19} color="#4A90E2" />
           </TouchableOpacity>
         </View>
         <KeyboardAvoidingView

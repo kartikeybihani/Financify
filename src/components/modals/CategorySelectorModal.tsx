@@ -26,6 +26,7 @@ interface CategorySelectorModalProps {
   visible: boolean;
   transactionId: string | null;
   merchantName?: string;
+  currentCategoryName?: string;
   onClose: () => void;
 }
 
@@ -33,6 +34,7 @@ export default function CategorySelectorModal({
   visible,
   transactionId,
   merchantName,
+  currentCategoryName,
   onClose,
 }: CategorySelectorModalProps) {
   const insets = useSafeAreaInsets();
@@ -564,6 +566,7 @@ export default function CategorySelectorModal({
                       {
                         backgroundColor: "#e8f4fd", // Light blue background
                         borderColor: "#4A90E2",
+                        borderWidth: 1,
                       },
                     ]}
                     onPress={() => handleCategorySelect("all")}
@@ -576,7 +579,7 @@ export default function CategorySelectorModal({
                         styles.chipText,
                         {
                           color: "#4A90E2",
-                          fontWeight: "600",
+                          fontWeight: "500",
                         },
                       ]}
                       numberOfLines={1}
@@ -587,6 +590,12 @@ export default function CategorySelectorModal({
 
                   {/* Regular Categories */}
                   {categories?.map((category) => {
+                    // Check if this category is currently selected
+                    // Compare raw category names (case-insensitive) to handle variations
+                    const isSelected =
+                      currentCategoryName &&
+                      category.name.toLowerCase() ===
+                        currentCategoryName.toLowerCase();
                     // console.log("Rendering category:", category);
                     return (
                       <TouchableOpacity
@@ -597,8 +606,12 @@ export default function CategorySelectorModal({
                             backgroundColor: getCategoryBackgroundColor(
                               category.name
                             ),
-                            borderColor: category.color + "40",
+                            borderColor: isSelected
+                              ? category.color
+                              : category.color + "40",
+                            borderWidth: isSelected ? 3 : 2,
                           },
+                          isSelected && styles.selectedCategoryChip,
                         ]}
                         onPress={() => handleCategorySelect(category.id)}
                         onLongPress={() => handleCategoryLongPress(category.id)}
@@ -610,13 +623,23 @@ export default function CategorySelectorModal({
                           style={[
                             styles.chipText,
                             {
-                              color: "#000000",
+                              color: isSelected ? category.color : "#000000",
+                              fontWeight: isSelected ? "700" : "500",
                             },
                           ]}
                           numberOfLines={1}
                         >
                           {formatCategoryFromHook(category.name)}
                         </Text>
+                        {/* Show checkmark for selected category */}
+                        {isSelected && (
+                          <Ionicons
+                            name="checkmark-circle"
+                            size={16}
+                            color={category.color}
+                            style={styles.checkmarkIcon}
+                          />
+                        )}
                         {/* Show delete indicator for user-created categories */}
                         {category.user_id && (
                           <View style={styles.deleteIndicator}>
@@ -832,14 +855,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 20,
-    borderWidth: 2, // Debug: thicker border
+    borderWidth: 2,
     marginBottom: 8,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
     shadowRadius: 2,
     elevation: 1,
-    backgroundColor: "rgba(255, 255, 255, 0.1)", // Debug: white background
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+  },
+  selectedCategoryChip: {
+    shadowColor: "#4A90E2",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3,
   },
   addNewChip: {
     flexDirection: "row",
@@ -861,6 +891,9 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "500",
     flexShrink: 1,
+  },
+  checkmarkIcon: {
+    marginLeft: 4,
   },
   addNewChipText: {
     fontSize: 12,
