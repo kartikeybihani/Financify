@@ -128,9 +128,7 @@ const SpendingBreakdown: React.FC<SpendingBreakdownProps> = ({
                     styles.flowCard,
                     {
                       backgroundColor: data.color,
-                      transform: [
-                        { scale: 0.8 + (data.percentage / 100) * 0.4 },
-                      ],
+                      transform: [{ scale: 0.85 }],
                     },
                   ]}
                   onPress={() => onCategoryPress(category, data)}
