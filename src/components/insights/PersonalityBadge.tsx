@@ -39,6 +39,11 @@ export default function PersonalityBadge({
           </Text>
           <Text style={styles.badge}>{personality.badge}</Text>
         </View>
+        {showDetails && (
+          <Text style={[styles.confidence, { color: colors.primary }]}>
+            {personality.confidence}%
+          </Text>
+        )}
         {onPress && (
           <Ionicons
             name="chevron-forward"
@@ -52,17 +57,17 @@ export default function PersonalityBadge({
       <Text style={styles.description}>{personality.description}</Text>
 
       {showDetails && (
-        <View style={styles.details}>
-          <Text style={styles.confidence}>{personality.confidence}% match</Text>
-          <View style={styles.traits}>
-            {personality.traits.slice(0, 2).map((trait, index) => (
-              <View key={index} style={styles.trait}>
-                <Text style={[styles.traitText, { color: colors.primary }]}>
-                  {trait}
-                </Text>
-              </View>
-            ))}
-          </View>
+        <View style={styles.chipsContainer}>
+          {personality.traits.slice(0, 2).map((trait, index) => (
+            <View
+              key={index}
+              style={[styles.chip, { backgroundColor: colors.secondary }]}
+            >
+              <Text style={[styles.chipText, { color: colors.primary }]}>
+                {trait}
+              </Text>
+            </View>
+          ))}
         </View>
       )}
     </TouchableOpacity>
@@ -109,33 +114,30 @@ const styles = StyleSheet.create({
   chevron: {
     marginLeft: 8,
   },
+  confidence: {
+    fontSize: 12,
+    fontWeight: "600",
+    marginRight: 8,
+  },
   description: {
     fontSize: 14,
-    color: "#aaa",
+    color: "#666",
     lineHeight: 20,
     marginBottom: 8,
   },
-  details: {
-    marginTop: 8,
-  },
-  confidence: {
-    fontSize: 12,
-    color: "#666",
-    marginBottom: 8,
-  },
-  traits: {
+  chipsContainer: {
     flexDirection: "row",
-    flexWrap: "wrap",
+    flexWrap: "nowrap",
     gap: 8,
   },
-  trait: {
-    backgroundColor: "rgba(0,0,0,0.05)",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
+  chip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    flexShrink: 0,
   },
-  traitText: {
-    fontSize: 11,
+  chipText: {
+    fontSize: 12,
     fontWeight: "500",
   },
 });
