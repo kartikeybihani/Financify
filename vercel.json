@@ -6,7 +6,7 @@
     },
     {
       "path": "/api/scheduled-sync",
-      "schedule": "30 17 * * *"
+      "schedule": "45 18 * * *"
     }
   ]
 }

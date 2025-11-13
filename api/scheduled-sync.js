@@ -147,6 +147,7 @@ async function syncItemTransactions(item_id, user_id) {
     const { client } = await import("../app/plaidClient.js");
 
     // Get access token from Vault
+    console.log(`🔑 Fetching access token from Vault for item ${item_id}...`);
     const { data: access_token, error: tokenErr } = await supabase.rpc(
       "secure_get_plaid_token",
       {
@@ -156,8 +157,24 @@ async function syncItemTransactions(item_id, user_id) {
     );
 
     if (tokenErr || !access_token) {
-      throw new Error(`Access token not found: ${tokenErr?.message}`);
+      console.error(`❌ Vault token fetch failed for item ${item_id}:`, {
+        error: tokenErr,
+        hasToken: !!access_token,
+        item_id,
+        user_id: user_id.substring(0, 8) + "...",
+      });
+      throw new Error(
+        `Access token not found: ${
+          tokenErr?.message || "Token is null/undefined"
+        }`
+      );
     }
+
+    console.log(
+      `✅ Access token retrieved successfully for item ${item_id} (token length: ${
+        access_token?.length || 0
+      })`
+    );
 
     // Get current cursor
     const { data: item, error: fetchErr } = await supabase
@@ -178,22 +195,49 @@ async function syncItemTransactions(item_id, user_id) {
 
     // Pull all pages of transactions
     while (hasMore) {
-      const { data } = await client.transactionsSync({
-        access_token: access_token,
-        cursor,
-        count: 500,
-        options: {
-          include_original_description: true,
-          include_personal_finance_category: true,
-        },
-      });
+      try {
+        const { data } = await client.transactionsSync({
+          access_token: access_token,
+          cursor,
+          count: 500,
+          options: {
+            include_original_description: true,
+            include_personal_finance_category: true,
+          },
+        });
 
-      added.push(...data.added);
-      modified.push(...data.modified);
-      removed.push(...data.removed);
+        added.push(...data.added);
+        modified.push(...data.modified);
+        removed.push(...data.removed);
 
-      hasMore = data.has_more;
-      cursor = data.next_cursor;
+        hasMore = data.has_more;
+        cursor = data.next_cursor;
+      } catch (plaidError) {
+        // Extract detailed error information from Plaid API response
+        const plaidResponse = plaidError?.response?.data || {};
+        const errorMessage =
+          plaidResponse.error_message ||
+          plaidResponse.error_code ||
+          plaidError?.message ||
+          "Unknown Plaid API error";
+        const errorCode = plaidResponse.error_code || "UNKNOWN_ERROR";
+        const errorType = plaidResponse.error_type || "API_ERROR";
+        const requestId = plaidResponse.request_id || "N/A";
+
+        console.error(`❌ Plaid API error for item ${item_id}:`, {
+          errorCode,
+          errorType,
+          errorMessage,
+          requestId,
+          statusCode: plaidError?.response?.status,
+          cursor: cursor?.substring(0, 50) + "...",
+          fullError: JSON.stringify(plaidResponse),
+        });
+
+        throw new Error(
+          `Plaid API error (${errorCode}): ${errorMessage} | Type: ${errorType} | Request ID: ${requestId}`
+        );
+      }
     }
 
     // Get existing recurring streams (is_active column exists in recurring_streams table)
