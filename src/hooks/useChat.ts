@@ -5,6 +5,7 @@ import { ChatMessage, Goal } from '@/src/types/finny';
 import finnyConstants from '@/src/constants/finny';
 import logger from '@/src/utils/logger';
 import { supabase } from '@/src/lib/supabase/supabase';
+import { getFreshAccessToken, authenticatedFetch } from '@/src/utils/authToken';
 
 // Simple message handling - display messages as single strings
 
@@ -295,7 +296,14 @@ export const useChat = () => {
   };
 
   // Handle streaming response using XMLHttpRequest (works in React Native!)
-  const handleStreamingResponseXHR = (url: string, requestBody: any, accessToken: string) => {
+  // Note: accessToken parameter is kept for backward compatibility but should be fresh
+  const handleStreamingResponseXHR = async (url: string, requestBody: any, accessToken: string) => {
+    // Ensure we have a fresh token (accessToken param might be stale)
+    const freshToken = await getFreshAccessToken();
+    if (!freshToken) {
+      throw new Error('Not authenticated - no access token available');
+    }
+    
     return new Promise<void>((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       let receivedLength = 0;
@@ -308,7 +316,7 @@ export const useChat = () => {
 
       xhr.open('POST', url, true);
       xhr.setRequestHeader('Content-Type', 'application/json');
-      xhr.setRequestHeader('Authorization', `Bearer ${accessToken}`);
+      xhr.setRequestHeader('Authorization', `Bearer ${freshToken}`);
 
       // This is the magic - onprogress gets called as data arrives!
       xhr.onprogress = () => {
@@ -567,17 +575,16 @@ export const useChat = () => {
         return;
       }
 
-      // Fetch session once and reuse the access token
-      const { data: sessionData } = await supabase.auth.getSession();
-      const accessToken = sessionData?.session?.access_token || '';
+      // Get fresh access token (always fetches latest, never uses stale state)
+      const accessToken = await getFreshAccessToken();
+      if (!accessToken) {
+        pushChat("finny", "Please log in to get personalized financial advice.");
+        return;
+      }
 
       // Send action to backend in existing conversation context
-      const res = await fetch(`${BASE_URL}/api/finny`, {
+      const res = await authenticatedFetch(`${BASE_URL}/api/finny`, {
         method: "POST",
-        headers: { 
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${accessToken}`
-        },
         body: JSON.stringify({
           action: "goal_conversation",
           message: action,
@@ -634,15 +641,15 @@ export const useChat = () => {
         setProgressStatus("Clearing cache and refreshing data...");
         
         try {
-          const { data: sessionData } = await supabase.auth.getSession();
-          const accessToken = sessionData?.session?.access_token || '';
+          // Get fresh access token
+          const accessToken = await getFreshAccessToken();
+          if (!accessToken) {
+            pushChat("finny", "⚠️ Authentication error. Please try again.");
+            return;
+          }
           
-          const clearRes = await fetch(`${BASE_URL}/api/store_accounts`, {
+          const clearRes = await authenticatedFetch(`${BASE_URL}/api/store_accounts`, {
             method: "POST",
-            headers: { 
-              "Content-Type": "application/json",
-              "Authorization": `Bearer ${accessToken}`
-            },
             body: JSON.stringify({
               mode: "clear_cache",
               user_id: user.id,
@@ -664,18 +671,17 @@ export const useChat = () => {
       // Show initial progress
       setProgressStatus("Brewing up some financial wisdom...");
 
-      // Fetch session once and reuse the access token for all requests in this flow
-      const { data: sessionData } = await supabase.auth.getSession();
-      const accessToken = sessionData?.session?.access_token || '';
+      // Get fresh access token for all requests in this flow
+      // Always fetch fresh to avoid stale token issues during TOKEN_REFRESHED
+      const accessToken = await getFreshAccessToken();
+      if (!accessToken) {
+        pushChat("finny", "Please log in to get personalized financial advice.");
+        return;
+      }
 
       // 1) First classify the message to determine intent (skip if goal flow active)
-      const classifyRes = goalFlow?.active ? null : await fetch(`${BASE_URL}/api/finny`, {
+      const classifyRes = goalFlow?.active ? null : await authenticatedFetch(`${BASE_URL}/api/finny`, {
         method: "POST",
-        headers: { 
-          "Content-Type": "application/json",
-          // Pass Supabase JWT to server; server will derive userId
-          "Authorization": `Bearer ${accessToken}`
-        },
         body: JSON.stringify({
           action: "classify",
           message: messageText,
@@ -765,14 +771,11 @@ export const useChat = () => {
       }
 
       // Regular fetch for non-streaming requests
+      // Note: accessToken is already fetched fresh above
       let res;
       if (!goalFlow?.active && classifyData.intent === "ask_personalized") {
-        res = await fetch(`${BASE_URL}/api/finny`, {
+        res = await authenticatedFetch(`${BASE_URL}/api/finny`, {
           method: "POST",
-          headers: { 
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${accessToken}`
-          },
           body: JSON.stringify({
             action: "ask",
             message: messageText,
@@ -783,12 +786,8 @@ export const useChat = () => {
           }),
         });
       } else {
-        res = await fetch(`${BASE_URL}/api/finny`, {
+        res = await authenticatedFetch(`${BASE_URL}/api/finny`, {
           method: "POST",
-          headers: { 
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${accessToken}`
-          },
           body: JSON.stringify({
             action: goalFlow?.active ? "goal_conversation" : classifyData.intent,
             message: messageText,

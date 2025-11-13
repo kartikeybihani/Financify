@@ -198,10 +198,10 @@ export const AuthNavigationProvider: React.FC<AuthNavigationProviderProps> = ({
       // Force refetch profile - clear cache first
       profileCache.current = null;
       profileCacheUserId.current = null;
-      
+
       // Add small delay to ensure DB consistency after updates
       await new Promise((resolve) => setTimeout(resolve, 200));
-      
+
       await updateNavigationState(session);
     }
   };
@@ -261,6 +261,9 @@ export const AuthNavigationProvider: React.FC<AuthNavigationProviderProps> = ({
 
   /**
    * Listen for auth state changes
+   *
+   * CRITICAL: Session state is updated FIRST, then navigation state is updated.
+   * This ensures components reading session get the latest token immediately.
    */
   useEffect(() => {
     const {
@@ -281,68 +284,75 @@ export const AuthNavigationProvider: React.FC<AuthNavigationProviderProps> = ({
 
       logger.info(`🔐 Auth: ${event}`);
 
-      // Handle token refresh - validate user still exists with retry logic
-      if (event === "TOKEN_REFRESHED" && newSession) {
-        // Add delay to ensure Supabase has fully updated the session
-        await new Promise((resolve) => setTimeout(resolve, 100));
-
-        // Retry logic for getUser() to handle race conditions
-        let user = null;
-        let error = null;
-        let retryCount = 0;
-        const maxRetries = 3;
-
-        while (retryCount < maxRetries) {
-          const result = await supabase.auth.getUser();
-          user = result.data.user;
-          error = result.error;
-
-          if (user?.id || error) {
-            break; // Success or permanent error
-          }
-
-          retryCount++;
-          if (retryCount < maxRetries) {
-            logger.info(
-              `🔄 [AUTH] Token refresh retry ${retryCount}/${maxRetries}`
-            );
-            await new Promise((resolve) =>
-              setTimeout(resolve, 200 * retryCount)
-            );
-          }
-        }
-
-        if (error || !user?.id) {
-          logger.error(
-            "Invalid user on token refresh after retries, signing out"
-          );
-
-          // Direct sign out - don't try to validate again as it will fail
-          await supabase.auth.signOut();
-          await clearAllCache();
-          setSession(null);
-          return;
-        }
-
-        // Emit event to notify components about token refresh with validated session
-        DeviceEventEmitter.emit("authStateChanged", {
-          event,
-          session: newSession,
-          validated: true,
-        });
-
-        // Also update navigation state to ensure UI is in sync
-        await updateNavigationState(newSession);
-      }
-
-      // Update session
+      // CRITICAL FIX: Update session FIRST before any other operations
+      // This ensures React state is updated immediately, preventing stale token reads
       setSession(newSession);
 
-      // Update navigation state (silently - no loading screen during auth events)
-      // Login/signup screens handle their own loading and navigation
-      // This just keeps the context state in sync
-      if (isInitializedRef.current) {
-        await updateNavigationState(newSession);
+      // Handle token refresh - validate user still exists with retry logic
+      if (event === "TOKEN_REFRESHED" && newSession) {
+        try {
+          // Small delay to ensure Supabase has fully updated the session internally
+          await new Promise((resolve) => setTimeout(resolve, 100));
+
+          // Retry logic for getUser() to handle race conditions
+          let user = null;
+          let error = null;
+          let retryCount = 0;
+          const maxRetries = 3;
+
+          while (retryCount < maxRetries) {
+            const result = await supabase.auth.getUser();
+            user = result.data.user;
+            error = result.error;
+
+            if (user?.id || error) {
+              break; // Success or permanent error
+            }
+
+            retryCount++;
+            if (retryCount < maxRetries) {
+              logger.info(
+                `🔄 [AUTH] Token refresh retry ${retryCount}/${maxRetries}`
+              );
+              await new Promise((resolve) =>
+                setTimeout(resolve, 200 * retryCount)
+              );
+            }
+          }
+
+          if (error || !user?.id) {
+            logger.error(
+              "Invalid user on token refresh after retries, signing out"
+            );
+
+            // Direct sign out - don't try to validate again as it will fail
+            await supabase.auth.signOut();
+            await clearAllCache();
+            setSession(null);
+            return;
+          }
+
+          // Emit event to notify components about token refresh with validated session
+          DeviceEventEmitter.emit("authStateChanged", {
+            event,
+            session: newSession,
+            validated: true,
+          });
+
+          // Update navigation state AFTER session is updated
+          // This ensures any components reading session get the fresh token
+          if (isInitializedRef.current) {
+            await updateNavigationState(newSession);
+          }
+        } catch (error) {
+          logger.error("[AUTH] Error handling TOKEN_REFRESHED:", error);
+          // Don't break the flow - session is already updated
+        }
+      } else {
+        // For all other events, update navigation state after session update
+        if (isInitializedRef.current) {
+          await updateNavigationState(newSession);
+        }
       }
 
       // Clear cache on explicit sign out

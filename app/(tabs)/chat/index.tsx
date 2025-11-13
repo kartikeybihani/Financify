@@ -25,6 +25,7 @@ import { ChatMessageComponent } from "@/src/components/chat/ChatMessage";
 import { NudgeGrid } from "@/src/components/chat/NudgeGrid";
 import { useChatContext } from "@/src/contexts/ChatContext";
 import { supabase } from "@/src/lib/supabase/supabase";
+import { getFreshAccessToken, authenticatedFetch } from "@/src/utils/authToken";
 import styles from "@/src/styles/chatStyles";
 import TypingIndicator from "@/src/components/chat/TypingIndicator";
 import ConversationStartersModal from "@/src/components/chat/ConversationStartersModal";
@@ -267,8 +268,8 @@ export default function ChatScreen() {
         return;
       }
 
-      const { data: sessionData } = await supabase.auth.getSession();
-      const accessToken = sessionData?.session?.access_token || "";
+      // Get fresh access token (always fetches latest, never uses stale state)
+      const accessToken = await getFreshAccessToken();
 
       if (!accessToken) {
         console.log(
@@ -282,12 +283,9 @@ export default function ChatScreen() {
         "https://financify-rose.vercel.app";
 
       // Call the pre-build API in the background (don't await)
-      fetch(`${BASE_URL}/api/finny`, {
+      // Use authenticatedFetch for automatic retry on 401 errors
+      authenticatedFetch(`${BASE_URL}/api/finny`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${accessToken}`,
-        },
         body: JSON.stringify({
           action: "prebuild_context",
         }),
