@@ -130,10 +130,18 @@ export default async function handler(req, res) {
 async function syncItemTransactions(item_id, user_id) {
   try {
     // Update sync status to in_progress before starting
-    await supabase
+    const { error: statusError } = await supabase
       .from("user_items")
       .update({ sync_status: "in_progress" })
       .eq("item_id", item_id);
+
+    if (statusError) {
+      console.error(
+        `⚠️ Failed to set sync_status to in_progress for ${item_id}:`,
+        statusError
+      );
+      // Continue anyway - this is not critical
+    }
 
     // Import the existing sync logic
     const { client } = await import("../app/plaidClient.js");
@@ -304,7 +312,7 @@ async function syncItemTransactions(item_id, user_id) {
 
     // Update cursor, timestamps, and sync status
     const syncTimestamp = new Date().toISOString();
-    await supabase
+    const { error: updateError } = await supabase
       .from("user_items")
       .update({
         transactions_cursor: cursor,
@@ -313,6 +321,12 @@ async function syncItemTransactions(item_id, user_id) {
         sync_status: "completed", // Update sync status
       })
       .eq("item_id", item_id);
+
+    if (updateError) {
+      throw new Error(
+        `Failed to update sync status to completed: ${updateError.message}`
+      );
+    }
 
     // Sync account balances after transactions (balances change with transactions)
     let balancesUpdated = 0;
@@ -364,13 +378,19 @@ async function syncItemTransactions(item_id, user_id) {
     };
   } catch (error) {
     // Update sync status to error on failure
-    await supabase
-      .from("user_items")
-      .update({ sync_status: "error" })
-      .eq("item_id", item_id)
-      .catch((updateError) => {
+    // Use try-catch instead of .catch() since Supabase query builder doesn't support .catch()
+    try {
+      const { error: updateError } = await supabase
+        .from("user_items")
+        .update({ sync_status: "error" })
+        .eq("item_id", item_id);
+
+      if (updateError) {
         console.error("Failed to update sync status:", updateError);
-      });
+      }
+    } catch (updateError) {
+      console.error("Failed to update sync status:", updateError);
+    }
 
     return {
       success: false,
