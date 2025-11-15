@@ -17,6 +17,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { supabase } from "@/src/lib/supabase/supabase";
 import FeedbackModal from "@/src/components/modals/FeedbackModal";
+import ContactModal from "@/src/components/modals/ContactModal";
 import { handleDisconnect, getPrimaryItemId } from "@/src/utils/plaid";
 import logger from "@/src/utils/logger";
 
@@ -28,6 +29,7 @@ export default function SettingsScreen() {
   const [darkModeEnabled, setDarkModeEnabled] = useState(true);
   const [biometricsEnabled, setBiometricsEnabled] = useState(false);
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
+  const [showContactModal, setShowContactModal] = useState(false);
 
   useEffect(() => {
     const fetchAndSetUserData = async () => {
@@ -141,8 +143,8 @@ export default function SettingsScreen() {
     ]);
   };
 
-  const handleCallFounder = () => {
-    Linking.openURL("tel:+1234567890");
+  const handleCallUs = () => {
+    setShowContactModal(true);
   };
 
   const handleShareApp = async () => {
@@ -283,8 +285,8 @@ export default function SettingsScreen() {
             )}
             {renderSettingsItem(
               <Ionicons name="call-outline" size={24} color="#4A90E2" />,
-              "Call Founder",
-              handleCallFounder,
+              "Contact Us",
+              handleCallUs,
               true
             )}
             {renderSettingsItem(
@@ -324,6 +326,11 @@ export default function SettingsScreen() {
         visible={showFeedbackModal}
         onClose={() => setShowFeedbackModal(false)}
         userName={userData?.user_metadata?.full_name || userName || ""}
+      />
+
+      <ContactModal
+        visible={showContactModal}
+        onClose={() => setShowContactModal(false)}
       />
     </SafeAreaView>
   );

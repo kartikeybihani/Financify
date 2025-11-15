@@ -11,7 +11,8 @@ import {
   ActivityIndicator,
   Alert,
 } from "react-native";
-import { AntDesign } from "@expo/vector-icons";
+import { Ionicons, AntDesign } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 import { submitChatMessageReport } from "@/src/utils/reports";
 
 interface ReportModalProps {
@@ -107,8 +108,22 @@ export default function ReportModal({
         <View style={styles.modalContent}>
           <View style={styles.header}>
             <Text style={styles.title}>Report Message</Text>
-            <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-              <AntDesign name="close" size={19} color="#B4B4B4" />
+            <TouchableOpacity
+              onPress={onClose}
+              style={styles.closeButton}
+              activeOpacity={0.7}
+            >
+              <LinearGradient
+                colors={[
+                  "rgba(255, 255, 255, 0.15)",
+                  "rgba(255, 255, 255, 0.05)",
+                ]}
+                style={styles.closeButtonCircle}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+              >
+                <Ionicons name="close" size={22} color="#fff" />
+              </LinearGradient>
             </TouchableOpacity>
           </View>
 
@@ -161,10 +176,10 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     padding: 20,
-    backgroundColor: "rgba(10,16,30,0.85)",
+    backgroundColor: "rgba(0, 0, 0, 0.85)",
   },
   modalContent: {
-    backgroundColor: "rgba(24, 28, 36, 0.95)",
+    backgroundColor: "#0F0F0F",
     borderRadius: 28,
     padding: 32,
     borderWidth: 1,
@@ -190,9 +205,14 @@ const styles = StyleSheet.create({
     color: "#fff",
   },
   closeButton: {
-    padding: 7,
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    padding: 8,
+  },
+  closeButtonCircle: {
+    width: 40,
+    height: 40,
     borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.2)",
   },
@@ -209,7 +229,7 @@ const styles = StyleSheet.create({
     marginLeft: 4,
   },
   reportInput: {
-    backgroundColor: "rgba(35, 40, 58, 0.8)",
+    backgroundColor: "rgba(255, 255, 255, 0.05)",
     borderRadius: 12,
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.1)",
