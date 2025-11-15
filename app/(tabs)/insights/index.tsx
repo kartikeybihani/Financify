@@ -66,6 +66,10 @@ import {
   getUserAccountsForFilter,
 } from "@/src/utils/plaid";
 import {
+  getDisplayCategory,
+  shouldShowRecurringChip,
+} from "@/src/utils/transactionCategory";
+import {
   getSnaptradeHoldingsFromDB,
   getSnaptradeOptionsFromDB,
   getSnaptradeBalancesFromDB,
@@ -1016,8 +1020,8 @@ export default function InsightsScreen() {
 
       const categoriesObj: CategoryBreakdown = {};
       for (const tx of currentMonthExpenses) {
-        // Prioritize new_category (user overrides), then fall back to top_category
-        const category = tx.new_category || tx.top_category || "Other";
+        // Use the unified category display logic
+        const category = getDisplayCategory(tx);
 
         if (!categoriesObj[category]) {
           categoriesObj[category] = {
@@ -1029,8 +1033,8 @@ export default function InsightsScreen() {
         }
         categoriesObj[category].amount += tx.amount;
 
-        // Check if this transaction is recurring
-        if (tx.if_recurring === "yes") {
+        // Check if this transaction is recurring using the unified logic
+        if (shouldShowRecurringChip(tx)) {
           categoriesObj[category].hasRecurringTransactions = true;
         }
       }
@@ -1070,11 +1074,7 @@ export default function InsightsScreen() {
 
       const uniqueCategories = [
         "All Categories",
-        ...new Set(
-          currentMonthExpenses.map(
-            (tx) => tx.new_category || tx.top_category || "Other"
-          )
-        ),
+        ...new Set(currentMonthExpenses.map((tx) => getDisplayCategory(tx))),
       ].map((cat) =>
         cat === "All Categories" ? cat : formatCategoryFromHook(cat)
       );

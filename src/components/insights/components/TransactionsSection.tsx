@@ -12,6 +12,10 @@ import { Ionicons, AntDesign } from "@expo/vector-icons";
 import { useCategories } from "@/src/hooks/useCategories";
 import TransactionDetailModal from "@/src/components/modals/TransactionDetailModal";
 import { Transaction } from "@/src/types/plaid";
+import {
+  getDisplayCategory,
+  shouldShowRecurringChip,
+} from "@/src/utils/transactionCategory";
 
 interface Props {
   titleStyle: any;
@@ -359,10 +363,8 @@ export default function TransactionsSection(props: Props) {
                       fontWeight: "500",
                     }}
                   >
-                    {formatCategoryFromHook(
-                      tx.new_category || tx.top_category || "Other"
-                    )}{" "}
-                    {tx.if_recurring === "yes" ? "• Recurring" : ""}
+                    {formatCategoryFromHook(getDisplayCategory(tx))}{" "}
+                    {shouldShowRecurringChip(tx) ? "• Recurring" : ""}
                   </Text>
                 </View>
                 <View

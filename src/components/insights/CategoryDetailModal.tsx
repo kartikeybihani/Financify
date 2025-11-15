@@ -4,6 +4,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { styles } from "@/src/styles/insightsStyles";
 import TransactionDetailModal from "@/src/components/modals/TransactionDetailModal";
 import { Transaction } from "@/src/types/plaid";
+import { getDisplayCategory } from "@/src/utils/transactionCategory";
 
 interface CategoryData {
   amount: number;
@@ -59,7 +60,7 @@ const CategoryDetailModal: React.FC<CategoryDetailModalProps> = ({
     return iconMap[categoryName] || "cube-outline";
   };
   const categoryTransactions = transactions.filter(
-    (tx) => (tx.new_category || tx.top_category || "Other") === category
+    (tx) => getDisplayCategory(tx) === category
   );
 
   const [selectedTransactionId, setSelectedTransactionId] = useState<

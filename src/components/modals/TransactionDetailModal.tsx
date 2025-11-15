@@ -23,6 +23,10 @@ import AccountDetailModal from "@/src/components/modals/AccountDetailModal";
 import AccountCard from "@/src/components/shared/AccountCard";
 import TransactionActionAlert from "@/src/components/shared/TransactionActionAlert";
 import { Transaction, TransactionDetailModalProps } from "@/src/types/plaid";
+import {
+  getDisplayCategory as getDisplayCategoryUtil,
+  shouldShowRecurringChip,
+} from "@/src/utils/transactionCategory";
 
 const getCategoryBackgroundColorForName = (categoryName: string): string => {
   const map: { [key: string]: string } = {
@@ -76,25 +80,27 @@ const getCategoryBackgroundColorForName = (categoryName: string): string => {
   return "#f8f9fa";
 };
 
-// Helper function to get the display category based on the new logic
+// Helper function to get the display category with local override support
+// This wraps the utility function to handle the modal's temporary category updates
 const getDisplayCategory = (
   updatedCategory: string | null | undefined,
   transaction: Transaction | null
 ): string => {
   if (!transaction) return "Other";
 
-  const currentNewCategory =
-    (updatedCategory !== null ? updatedCategory : undefined) ||
-    transaction.new_category;
-
-  if (
-    currentNewCategory === "INTERNAL_TRANSFER" ||
-    currentNewCategory === null
-  ) {
-    return transaction.top_category || transaction.category || "Other";
+  // If there's a local override (updatedCategory), create a temporary transaction object
+  // Otherwise, use the utility function directly
+  if (updatedCategory !== undefined && updatedCategory !== null) {
+    // Create a temporary transaction with the updated category for the utility function
+    const tempTransaction: Transaction = {
+      ...transaction,
+      new_category: updatedCategory,
+    };
+    return getDisplayCategoryUtil(tempTransaction);
   }
 
-  return currentNewCategory || "Other";
+  // Use the utility function with the original transaction
+  return getDisplayCategoryUtil(transaction);
 };
 
 export default function TransactionDetailModal({
@@ -150,7 +156,7 @@ export default function TransactionDetailModal({
         setIsInternalTransfer(
           initialTransaction.new_category === "INTERNAL_TRANSFER"
         );
-        setIsRecurring(initialTransaction.if_recurring === "yes");
+        setIsRecurring(shouldShowRecurringChip(initialTransaction));
         return;
       }
 
@@ -175,7 +181,9 @@ export default function TransactionDetailModal({
               )
             ),
             recurring_streams:recurring_stream_id (
-              stream_id
+              stream_id,
+              stream_type,
+              is_active
             ),
             goal:linked_goal_id (
               label
@@ -201,7 +209,7 @@ export default function TransactionDetailModal({
 
           setTransaction(transformedTransaction);
           setIsInternalTransfer(data.new_category === "INTERNAL_TRANSFER");
-          setIsRecurring(data.if_recurring === "yes");
+          setIsRecurring(shouldShowRecurringChip(transformedTransaction));
         }
       } catch (error) {
         console.error("Error loading transaction:", error);

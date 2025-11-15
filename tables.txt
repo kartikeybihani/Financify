@@ -277,6 +277,24 @@ CREATE TABLE public.recurring_streams (
   CONSTRAINT recurring_streams_item_id_fkey FOREIGN KEY (item_id) REFERENCES public.user_items(item_id),
   CONSTRAINT recurring_streams_account_id_fkey FOREIGN KEY (account_id) REFERENCES public.accounts(account_id)
 );
+CREATE TABLE public.reports (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL,
+  report_type text NOT NULL CHECK (report_type = ANY (ARRAY['chat_message'::text, 'general_feedback'::text, 'love_it'::text])),
+  chat_session_id uuid,
+  reported_message_id text,
+  reported_message_content text,
+  reported_message_sender text CHECK (reported_message_sender IS NULL OR (reported_message_sender = ANY (ARRAY['user'::text, 'finny'::text]))),
+  reported_message_metadata jsonb DEFAULT '{}'::jsonb,
+  report_text text,
+  additional_context jsonb DEFAULT '{}'::jsonb,
+  status text NOT NULL DEFAULT 'pending'::text CHECK (status = ANY (ARRAY['pending'::text, 'reviewed'::text, 'resolved'::text, 'dismissed'::text])),
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT reports_pkey PRIMARY KEY (id),
+  CONSTRAINT reports_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id),
+  CONSTRAINT reports_chat_session_id_fkey FOREIGN KEY (chat_session_id) REFERENCES public.chat_sessions(id)
+);
 CREATE TABLE public.snaptrade_connections (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL,

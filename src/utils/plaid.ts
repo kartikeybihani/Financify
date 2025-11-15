@@ -507,7 +507,12 @@ export const getRecentTransactions = async (user_id: string, limit: number = 50)
       .from("transactions")
       .select(`
         *,
-        accounts(name, type, subtype)
+        accounts(name, type, subtype),
+        recurring_streams:recurring_stream_id (
+          stream_id,
+          stream_type,
+          is_active
+        )
       `)
       .eq("user_id", user_id)
       .order("date", { ascending: false })
@@ -776,6 +781,72 @@ export const getRecurringTransactionsFromDatabase = async (item_id?: string) => 
       }
     });
     
+    // Also fetch user-marked recurring transactions (if_recurring = 'yes' but not in a stream)
+    // IMPORTANT: Must select plaid_transaction_id because transaction_ids array uses Plaid IDs, not database UUIDs
+    const { data: userMarkedTxs, error: userMarkedError } = await supabase
+      .from('transactions')
+      .select('id, plaid_transaction_id, name, merchant_name, amount, date, new_category, top_category, account_id')
+      .eq('user_id', user.id)
+      .eq('if_recurring', 'yes')
+      .is('recurring_stream_id', null)
+      .order('date', { ascending: false });
+    
+    if (userMarkedError) {
+      logger.error("Error fetching user-marked recurring transactions:", userMarkedError);
+    }
+    
+    // Add user-marked transactions as "pseudo-streams" - one stream per transaction
+    (userMarkedTxs || []).forEach(tx => {
+      const category = tx.new_category || tx.top_category || 'Other';
+      // CRITICAL: Use plaid_transaction_id (not database UUID) for transaction_ids array
+      // This matches the format used by Plaid recurring streams and allows backfill to work correctly
+      const plaidTxId = tx.plaid_transaction_id;
+      if (!plaidTxId) {
+        logger.warn(`Skipping user-marked transaction ${tx.id} - missing plaid_transaction_id`);
+        return;
+      }
+      
+      const streamData = {
+        stream_id: `user-marked-${tx.id}`, // Unique ID for user-marked transactions (uses DB UUID for uniqueness)
+        description: tx.name || 'User-marked recurring',
+        merchant_name: tx.merchant_name || tx.name,
+        category: category,
+        frequency: 'user-marked', // Special indicator
+        average_amount: Math.abs(tx.amount),
+        last_amount: Math.abs(tx.amount),
+        last_date: tx.date,
+        first_date: tx.date,
+        is_active: true,
+        account_id: tx.account_id,
+        transaction_ids: [plaidTxId], // Use Plaid transaction ID, not database UUID
+        iso_currency_code: 'USD',
+        updated_at: tx.date,
+      };
+      
+      // Categorize based on transaction category
+      // If category is 'Subscriptions', add to subscriptions
+      // If category is 'Income', add to income
+      // If category suggests it's a bill (Housing, utilities, etc.), add to bills
+      // Otherwise add to other
+      
+      const categoryLower = category.toLowerCase();
+      if (categoryLower.includes('subscription')) {
+        groupedStreams.subscriptions.push(streamData);
+      } else if (categoryLower.includes('income') || categoryLower.includes('salary') || categoryLower.includes('wage')) {
+        groupedStreams.income.push(streamData);
+      } else if (
+        categoryLower.includes('housing') || 
+        categoryLower.includes('utilities') || 
+        categoryLower.includes('bill') ||
+        categoryLower.includes('rent') ||
+        categoryLower.includes('mortgage')
+      ) {
+        groupedStreams.bills.push(streamData);
+      } else {
+        groupedStreams.other.push(streamData);
+      }
+    });
+    
     const summary = {
       subscriptions: groupedStreams.subscriptions.length,
       income: groupedStreams.income.length,
@@ -785,7 +856,7 @@ export const getRecurringTransactionsFromDatabase = async (item_id?: string) => 
              groupedStreams.bills.length + groupedStreams.other.length
     };
     
-    logger.info(`📊 Found ${summary.total} recurring streams from database:`, summary);
+    logger.info(`📊 Found ${summary.total} recurring items from database (${streams?.length || 0} streams + ${userMarkedTxs?.length || 0} user-marked):`, summary);
     return { ...groupedStreams, summary };
   } catch (err) {
     logger.error("Error fetching recurring transactions from database:", err);
@@ -901,6 +972,8 @@ export const getAllRecurringTransactions = async () => {
     logger.info("🔄 Fetching recurring transactions from database...");
     
     // Fetch all recurring streams from database for this user
+    // Note: getRecurringTransactionsFromDatabase() already includes user-marked transactions
+    // when called without an item_id, so we don't need to fetch them again here.
     const data = await getRecurringTransactionsFromDatabase();
     
     logger.info(`✅ Retrieved recurring transactions from database:`, data.summary);
@@ -1175,6 +1248,11 @@ export const getFilteredTransactions = async (
           user_items:item_id (
             institution_name
           )
+        ),
+        recurring_streams:recurring_stream_id (
+          stream_id,
+          stream_type,
+          is_active
         )
       `)
       .eq("user_id", userId)

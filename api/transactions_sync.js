@@ -225,7 +225,7 @@ export default async function handler(req, res) {
     // 4) Get existing recurring streams for this account to check if transactions are recurring
     const { data: recurringStreams, error: streamsError } = await supabase
       .from("recurring_streams")
-      .select("stream_id, transaction_ids, account_id")
+      .select("stream_id, stream_type, transaction_ids, account_id")
       .eq("user_id", userId)
       .eq("is_active", true);
 
@@ -233,17 +233,31 @@ export default async function handler(req, res) {
       console.error("Error fetching recurring streams:", streamsError);
     }
 
-    // Create a map for quick lookup of transaction_id -> stream_id
+    // Create a map for quick lookup of transaction_id -> stream data
     const transactionToStreamMap = new Map();
     if (recurringStreams) {
       recurringStreams.forEach((stream) => {
         if (stream.transaction_ids && Array.isArray(stream.transaction_ids)) {
           stream.transaction_ids.forEach((transactionId) => {
-            transactionToStreamMap.set(transactionId, stream.stream_id);
+            transactionToStreamMap.set(transactionId, {
+              streamId: stream.stream_id,
+              streamType: stream.stream_type,
+            });
           });
         }
       });
     }
+
+    // Helper function to get category from stream type
+    const getCategoryFromStreamType = (streamType) => {
+      const mapping = {
+        subscription: "Subscriptions",
+        income: "Income",
+        bill: "Housing", // TODO: Update if user wants different category
+        other: "Other",
+      };
+      return mapping[streamType] || null;
+    };
 
     // 5) Store transactions in database
     if (added.length || modified.length) {
@@ -308,8 +322,26 @@ export default async function handler(req, res) {
         const simplifiedCategory = getSimplifiedCategory(category);
 
         // Check if this transaction is part of a recurring stream
-        const recurringStreamId =
-          transactionToStreamMap.get(txn.transaction_id) || null;
+        const streamData = transactionToStreamMap.get(txn.transaction_id);
+        const recurringStreamId = streamData ? streamData.streamId : null;
+
+        // Determine category and recurring status based on stream
+        let newCategory = null;
+        let ifRecurring = "no"; // Default to 'no' instead of 'unknown'
+
+        if (streamData) {
+          // Transaction is part of a recurring stream
+          ifRecurring = "yes";
+
+          // Set category based on stream type (will be used as new_category)
+          // Note: This will only be set if the transaction doesn't already have new_category
+          const categoryFromStream = getCategoryFromStreamType(
+            streamData.streamType
+          );
+          if (categoryFromStream && streamData.streamType !== "other") {
+            newCategory = categoryFromStream;
+          }
+        }
 
         // Debug log for first few transactions with enhanced info
         if (added.length <= 3 || modified.length <= 3) {
@@ -320,7 +352,13 @@ export default async function handler(req, res) {
               simplifiedCategory.top
             } > ${simplifiedCategory.sub}" (Merchant: "${
               txn.merchant_name || "N/A"
-            }") ${recurringStreamId ? "🔄 RECURRING" : ""}`
+            }") ${
+              recurringStreamId
+                ? `🔄 RECURRING (${streamData.streamType}) → ${
+                    newCategory || "no override"
+                  }`
+                : ""
+            }`
           );
         }
 
@@ -338,13 +376,115 @@ export default async function handler(req, res) {
           sub_category: simplifiedCategory.sub, // New simplified sub category
           transaction_type: txn.payment_channel || null,
           pending: txn.pending ?? false,
-          recurring_stream_id: recurringStreamId, // NEW: Link to recurring stream if applicable
+          recurring_stream_id: recurringStreamId, // Link to recurring stream if applicable
+          if_recurring: ifRecurring, // Set recurring flag based on stream membership
+          new_category: newCategory, // Set category from stream type (only for recurring)
         };
+      });
+
+      // IMPORTANT: We use a custom upsert strategy to protect user overrides
+      // Strategy: For new transactions, set new_category from stream
+      //           For existing transactions, only update if new_category is NULL
+      // CRITICAL: If we can't fetch existing transactions, we MUST NOT set new_category
+      //           from streams to avoid overwriting user overrides
+
+      // First, get existing transactions to check which ones already have new_category and if_recurring
+      const plaidTxIds = rows.map((r) => r.plaid_transaction_id);
+      const { data: existingTxs, error: fetchErr } = await supabase
+        .from("transactions")
+        .select(
+          "plaid_transaction_id, new_category, if_recurring, recurring_stream_id"
+        )
+        .eq("user_id", userId)
+        .in("plaid_transaction_id", plaidTxIds);
+
+      // CRITICAL FIX: If fetch fails, we cannot safely set new_category or if_recurring from streams
+      // because we don't know which transactions have user overrides or manual recurring flags.
+      // We'll still set recurring_stream_id (safe - this is a fact), but skip new_category and if_recurring.
+      const canSafelySetCategories =
+        !fetchErr && existingTxs !== null && existingTxs !== undefined;
+
+      if (fetchErr) {
+        console.error(
+          "⚠️ CRITICAL: Error fetching existing transactions to preserve user overrides:",
+          fetchErr
+        );
+        console.error(
+          "⚠️ Skipping new_category and if_recurring updates from streams to protect user data integrity"
+        );
+      }
+
+      // Create maps of existing transactions with new_category and if_recurring
+      const existingCategoryMap = new Map();
+      const existingRecurringMap = new Map();
+      if (canSafelySetCategories) {
+        existingTxs.forEach((tx) => {
+          if (tx.new_category) {
+            existingCategoryMap.set(tx.plaid_transaction_id, tx.new_category);
+          }
+          // Track if_recurring for transactions NOT in streams (user might have manually set it)
+          if (!tx.recurring_stream_id && tx.if_recurring === "yes") {
+            existingRecurringMap.set(tx.plaid_transaction_id, tx.if_recurring);
+          }
+        });
+      }
+
+      // Update rows to preserve existing new_category and if_recurring values
+      const finalRows = rows.map((row) => {
+        if (!canSafelySetCategories) {
+          // If we can't verify existing overrides, we need to distinguish between:
+          // 1. New transactions (not in database) - should include new_category and if_recurring
+          // 2. Existing transactions (in database) - should omit to preserve existing values
+
+          // Check if this transaction exists in the database by checking if it's in existingTxs
+          // Note: existingTxs might be null/undefined if fetch failed, so we can't check membership
+          // In this case, we must be conservative and omit fields for ALL transactions
+          // to avoid overwriting existing user choices. New transactions will get their
+          // categories set on the next successful sync.
+          const { new_category, if_recurring, ...rowWithoutUserFields } = row;
+          return rowWithoutUserFields;
+        }
+
+        // We can safely verify - check if this is an existing transaction
+        const existingTx = existingTxs.find(
+          (tx) => tx.plaid_transaction_id === row.plaid_transaction_id
+        );
+        const isNewTransaction = !existingTx;
+
+        // Preserve user overrides for existing transactions
+        const existingCategory = existingCategoryMap.get(
+          row.plaid_transaction_id
+        );
+        const existingRecurring = existingRecurringMap.get(
+          row.plaid_transaction_id
+        );
+
+        const updatedRow = { ...row };
+
+        if (isNewTransaction) {
+          // New transaction - keep all fields including new_category and if_recurring from stream
+          // No existing user choices to protect
+          return updatedRow;
+        }
+
+        // Existing transaction - preserve user overrides
+        if (existingCategory) {
+          // User has overridden this category - preserve it
+          updatedRow.new_category = existingCategory;
+        }
+
+        // If transaction is NOT in a stream but user manually set if_recurring = 'yes', preserve it
+        if (!row.recurring_stream_id && existingRecurring === "yes") {
+          updatedRow.if_recurring = existingRecurring;
+        }
+        // If transaction IS in a stream, if_recurring should be 'yes' (already set in row, safe to keep)
+
+        return updatedRow;
       });
 
       const { error: upsertErr } = await supabase
         .from("transactions")
-        .upsert(rows, { onConflict: "plaid_transaction_id" });
+        .upsert(finalRows, { onConflict: "plaid_transaction_id" });
 
       if (upsertErr) {
         console.error("Transaction upsert error:", upsertErr);

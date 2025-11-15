@@ -38,6 +38,8 @@ export interface Transaction {
   account_type?: string;
   if_recurring?: string;
   merchant_name?: string;
+  recurring_stream_id?: string; // Link to recurring stream if applicable
+  recurring_streams?: RecurringStream[]; // Joined recurring stream data from database
 }
 
 // RecurringStream interface - shared across all components
@@ -46,6 +48,7 @@ export interface RecurringStream {
   description: string;
   merchant_name?: string;
   category: string;
+  stream_type?: string; // Type of recurring stream: subscription, bill, income, other
   frequency: string;
   average_amount: number; // negative for inflow per Plaid
   last_amount: number;

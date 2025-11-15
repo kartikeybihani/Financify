@@ -7,6 +7,135 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
+/**
+ * Helper function to get category from stream type
+ */
+function getCategoryFromStreamType(streamType) {
+  const mapping = {
+    subscription: "Subscriptions",
+    income: "Income",
+    bill: "Housing",
+    other: "Other",
+  };
+  return mapping[streamType] || null;
+}
+
+/**
+ * Backfill transactions with recurring stream links and categories
+ * This runs after recurring streams are stored to link existing transactions
+ */
+async function backfillRecurringCategories(userId, recurringRows) {
+  console.log(
+    `📦 Backfilling recurring categories for ${recurringRows.length} streams...`
+  );
+
+  try {
+    // Build a map of transaction_id -> stream data
+    const transactionToStreamMap = new Map();
+
+    recurringRows.forEach((stream) => {
+      if (stream.transaction_ids && Array.isArray(stream.transaction_ids)) {
+        stream.transaction_ids.forEach((txId) => {
+          transactionToStreamMap.set(txId, {
+            streamId: stream.stream_id,
+            streamType: stream.stream_type,
+          });
+        });
+      }
+    });
+
+    const transactionIds = Array.from(transactionToStreamMap.keys());
+    if (transactionIds.length === 0) {
+      console.log("No transactions to backfill");
+      return { updated: 0 };
+    }
+
+    console.log(
+      `Found ${transactionIds.length} transactions to potentially update`
+    );
+
+    // Fetch these transactions from database
+    const { data: transactions, error: fetchErr } = await supabase
+      .from("transactions")
+      .select(
+        "id, plaid_transaction_id, recurring_stream_id, new_category, if_recurring"
+      )
+      .eq("user_id", userId)
+      .in("plaid_transaction_id", transactionIds);
+
+    if (fetchErr) {
+      throw new Error(`Failed to fetch transactions: ${fetchErr.message}`);
+    }
+
+    if (!transactions || transactions.length === 0) {
+      console.log("No matching transactions found in database");
+      return { updated: 0 };
+    }
+
+    // Prepare updates
+    const updates = [];
+
+    transactions.forEach((tx) => {
+      const streamData = transactionToStreamMap.get(tx.plaid_transaction_id);
+      if (!streamData) return;
+
+      const update = { id: tx.id };
+      let hasChanges = false;
+
+      // Link to stream if not already linked
+      if (!tx.recurring_stream_id) {
+        update.recurring_stream_id = streamData.streamId;
+        hasChanges = true;
+      }
+
+      // Set if_recurring flag
+      // Note: If a transaction is part of a recurring stream, it IS recurring by definition.
+      // We set it to "yes" regardless of previous value because stream membership is a fact.
+      // If a user explicitly unmarked it as recurring, they would need to remove it from the stream.
+      // This is intentional behavior - stream membership implies recurring status.
+      if (tx.if_recurring !== "yes") {
+        update.if_recurring = "yes";
+        hasChanges = true;
+      }
+
+      // Set category ONLY if new_category is NULL (respect user overrides)
+      if (!tx.new_category) {
+        const categoryToSet = getCategoryFromStreamType(streamData.streamType);
+        if (categoryToSet && streamData.streamType !== "other") {
+          update.new_category = categoryToSet;
+          hasChanges = true;
+        }
+      }
+
+      if (hasChanges) {
+        updates.push(update);
+      }
+    });
+
+    if (updates.length === 0) {
+      console.log("No updates needed");
+      return { updated: 0 };
+    }
+
+    console.log(`Applying ${updates.length} updates...`);
+
+    // Apply updates in batch
+    const { error: updateErr } = await supabase
+      .from("transactions")
+      .upsert(updates, { onConflict: "id", ignoreDuplicates: false });
+
+    if (updateErr) {
+      throw new Error(`Failed to update transactions: ${updateErr.message}`);
+    }
+
+    console.log(`✅ Successfully updated ${updates.length} transactions`);
+    return { updated: updates.length };
+  } catch (error) {
+    console.error("Backfill error:", error);
+    throw error;
+  }
+}
+
 export default async function handler(req, res) {
   if (req.method !== "POST")
     return res.status(405).json({ error: "Method not allowed" });
@@ -434,6 +563,26 @@ export default async function handler(req, res) {
               console.log(
                 `💾 Stored ${storedCount} recurring streams in database`
               );
+
+              // Trigger backfill to link transactions to streams and set categories
+              console.log(
+                "🔄 Running backfill to link transactions to streams..."
+              );
+              try {
+                const backfillResult = await backfillRecurringCategories(
+                  actualUserId,
+                  recurringRows
+                );
+                console.log(
+                  `✅ Backfill complete: ${backfillResult.updated} transactions updated`
+                );
+              } catch (backfillError) {
+                console.error(
+                  "⚠️  Backfill failed (non-fatal):",
+                  backfillError.message
+                );
+                // Don't fail the whole operation if backfill fails
+              }
             }
           } catch (storageError) {
             console.error("❌ Recurring streams storage failed:", storageError);
