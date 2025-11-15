@@ -49,9 +49,8 @@ const styles = {
     alignItems: "center" as const,
     justifyContent: "space-between" as const,
     paddingHorizontal: responsivePadding(16),
-    paddingTop:
-      Platform.OS === "ios" ? responsivePadding(14) : responsivePadding(18),
-    paddingBottom: responsivePadding(12),
+    paddingTop: Platform.OS === "ios" ? 8 : 12,
+    paddingBottom: 10,
     backgroundColor: "transparent",
     borderBottomWidth: 1,
     borderBottomColor: "rgba(30, 30, 30, 0.8)",
