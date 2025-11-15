@@ -2118,6 +2118,10 @@ export default function InsightsScreen() {
                     formatDate={formatDate}
                     formatCategoryName={formatCategoryFromHook}
                     onAddAccount={() => setShowCategoryModal(true)}
+                    hasAccounts={accounts.length > 0}
+                    isLoadingTransactions={
+                      isLoading && activeSection === "transactions"
+                    }
                   />
                 </Animated.View>
               )}

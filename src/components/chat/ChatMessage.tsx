@@ -20,7 +20,7 @@ import {
   Linking,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons, AntDesign, FontAwesome } from "@expo/vector-icons";
 import * as WebBrowser from "expo-web-browser";
 import { Svg, Path } from "react-native-svg";
 
@@ -348,6 +348,8 @@ interface ChatMessageProps {
   };
   showSender?: boolean;
   onAction?: (action: string) => void;
+  onThumbUp?: (messageId: string) => void;
+  onThumbDown?: (messageId: string) => void;
   // For grouping logic
   prevSender?: "user" | "finny" | null;
   nextSender?: "user" | "finny" | null;
@@ -427,6 +429,8 @@ export const ChatMessageComponent = memo(
     message,
     showSender = true,
     onAction,
+    onThumbUp,
+    onThumbDown,
     prevSender,
     nextSender,
   }: ChatMessageProps) => {
@@ -564,51 +568,77 @@ export const ChatMessageComponent = memo(
           )}
           <View style={styles.finnyMessageRow}>
             <View style={styles.finnyMessageContainer}>
-              <LinearGradient
-                colors={finnyGradient}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={[
-                  styles.finnyMessageBubble,
-                  bubbleRadii,
-                  { paddingBottom: responsivePadding(10) },
-                  !isFirstInGroup &&
-                    !isLastInGroup &&
-                    styles.finnyMessageBubbleGrouped,
-                  isLastInGroup && styles.finnyMessageBubbleLastInGroup,
-                ]}
-              >
-                <Text style={[styles.messageText, styles.finnyMessageText]}>
-                  {message.text.split("\n").map((line, lineIdx) => (
-                    <React.Fragment key={lineIdx}>
-                      {lineIdx > 0 && <Text>{"\n"}</Text>}
-                      <Text
-                        onTextLayout={lineIdx === 0 ? onTextLayout : undefined}
-                      >
-                        {line.split(/(\*\*[^*]+\*\*)/).map((chunk, idx) => {
-                          if (chunk.startsWith("**") && chunk.endsWith("**")) {
-                            return (
-                              <Text key={idx} style={styles.boldText}>
-                                {parseTextWithLinks(
-                                  chunk.slice(2, -2),
-                                  styles.boldText
-                                )}
-                              </Text>
-                            );
+              <View style={styles.bubbleWrapper}>
+                <LinearGradient
+                  colors={finnyGradient}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={[
+                    styles.finnyMessageBubble,
+                    bubbleRadii,
+                    { paddingBottom: responsivePadding(10) },
+                    !isFirstInGroup &&
+                      !isLastInGroup &&
+                      styles.finnyMessageBubbleGrouped,
+                    isLastInGroup && styles.finnyMessageBubbleLastInGroup,
+                  ]}
+                >
+                  <Text style={[styles.messageText, styles.finnyMessageText]}>
+                    {message.text.split("\n").map((line, lineIdx) => (
+                      <React.Fragment key={lineIdx}>
+                        {lineIdx > 0 && <Text>{"\n"}</Text>}
+                        <Text
+                          onTextLayout={
+                            lineIdx === 0 ? onTextLayout : undefined
                           }
-                          return parseTextWithLinks(chunk, [
-                            styles.messageText,
-                            styles.finnyMessageText,
-                          ]);
-                        })}
-                      </Text>
-                    </React.Fragment>
-                  ))}
-                </Text>
-              </LinearGradient>
-              {/* Tail only if last in group */}
-              {isLastInGroup && (
-                <BubbleTail side="left" color={finnyTailColor} />
+                        >
+                          {line.split(/(\*\*[^*]+\*\*)/).map((chunk, idx) => {
+                            if (
+                              chunk.startsWith("**") &&
+                              chunk.endsWith("**")
+                            ) {
+                              return (
+                                <Text key={idx} style={styles.boldText}>
+                                  {parseTextWithLinks(
+                                    chunk.slice(2, -2),
+                                    styles.boldText
+                                  )}
+                                </Text>
+                              );
+                            }
+                            return parseTextWithLinks(chunk, [
+                              styles.messageText,
+                              styles.finnyMessageText,
+                            ]);
+                          })}
+                        </Text>
+                      </React.Fragment>
+                    ))}
+                  </Text>
+                </LinearGradient>
+                {/* Tail only if last in group */}
+                {isLastInGroup && (
+                  <BubbleTail side="left" color={finnyTailColor} />
+                )}
+              </View>
+              {/* Feedback buttons - hide for initial welcome message */}
+              {isLastInGroup && message.id !== "welcome" && (
+                <View style={styles.feedbackButtons}>
+                  <TouchableOpacity
+                    style={styles.feedbackButton}
+                    onPress={() => onThumbUp?.(message.id)}
+                    activeOpacity={0.7}
+                  >
+                    <FontAwesome name="thumbs-o-up" size={15} color="#888" />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.feedbackButton}
+                    onPress={() => onThumbDown?.(message.id)}
+                    activeOpacity={0.7}
+                  >
+                    <FontAwesome name="thumbs-o-down" size={15} color="#888" />
+                  </TouchableOpacity>
+                </View>
               )}
             </View>
           </View>
@@ -670,50 +700,73 @@ export const ChatMessageComponent = memo(
         )}
         <Animated.View style={styles.finnyMessageRow}>
           <View style={styles.finnyMessageContainer}>
-            <LinearGradient
-              colors={finnyGradient}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={[
-                styles.finnyMessageBubble,
-                bubbleRadii,
-                { paddingBottom: responsivePadding(10) },
-                !isFirstInGroup &&
-                  !isLastInGroup &&
-                  styles.finnyMessageBubbleGrouped,
-                isLastInGroup && styles.finnyMessageBubbleLastInGroup,
-              ]}
-            >
-              <Text style={[styles.messageText, styles.finnyMessageText]}>
-                {messageText.split("\n").map((line, lineIdx) => (
-                  <React.Fragment key={lineIdx}>
-                    {lineIdx > 0 && <Text>{"\n"}</Text>}
-                    <Text
-                      onTextLayout={lineIdx === 0 ? onTextLayout : undefined}
-                    >
-                      {line.split(/(\*\*[^*]+\*\*)/).map((chunk, idx) => {
-                        if (chunk.startsWith("**") && chunk.endsWith("**")) {
-                          return (
-                            <Text key={idx} style={styles.boldText}>
-                              {parseTextWithLinks(
-                                chunk.slice(2, -2),
-                                styles.boldText
-                              )}
-                            </Text>
-                          );
-                        }
-                        return parseTextWithLinks(chunk, [
-                          styles.messageText,
-                          styles.finnyMessageText,
-                        ]);
-                      })}
-                    </Text>
-                  </React.Fragment>
-                ))}
-              </Text>
-            </LinearGradient>
-            {/* Tail only if last in group */}
-            {isLastInGroup && <BubbleTail side="left" color={finnyTailColor} />}
+            <View style={styles.bubbleWrapper}>
+              <LinearGradient
+                colors={finnyGradient}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={[
+                  styles.finnyMessageBubble,
+                  bubbleRadii,
+                  { paddingBottom: responsivePadding(10) },
+                  !isFirstInGroup &&
+                    !isLastInGroup &&
+                    styles.finnyMessageBubbleGrouped,
+                  isLastInGroup && styles.finnyMessageBubbleLastInGroup,
+                ]}
+              >
+                <Text style={[styles.messageText, styles.finnyMessageText]}>
+                  {messageText.split("\n").map((line, lineIdx) => (
+                    <React.Fragment key={lineIdx}>
+                      {lineIdx > 0 && <Text>{"\n"}</Text>}
+                      <Text
+                        onTextLayout={lineIdx === 0 ? onTextLayout : undefined}
+                      >
+                        {line.split(/(\*\*[^*]+\*\*)/).map((chunk, idx) => {
+                          if (chunk.startsWith("**") && chunk.endsWith("**")) {
+                            return (
+                              <Text key={idx} style={styles.boldText}>
+                                {parseTextWithLinks(
+                                  chunk.slice(2, -2),
+                                  styles.boldText
+                                )}
+                              </Text>
+                            );
+                          }
+                          return parseTextWithLinks(chunk, [
+                            styles.messageText,
+                            styles.finnyMessageText,
+                          ]);
+                        })}
+                      </Text>
+                    </React.Fragment>
+                  ))}
+                </Text>
+              </LinearGradient>
+              {/* Tail only if last in group */}
+              {isLastInGroup && (
+                <BubbleTail side="left" color={finnyTailColor} />
+              )}
+            </View>
+            {/* Feedback buttons - hide for initial welcome message */}
+            {isLastInGroup && message.id !== "welcome" && (
+              <View style={styles.feedbackButtons}>
+                <TouchableOpacity
+                  style={styles.feedbackButton}
+                  onPress={() => onThumbUp?.(message.id)}
+                  activeOpacity={0.7}
+                >
+                  <FontAwesome name="thumbs-o-up" size={15} color="#888" />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.feedbackButton}
+                  onPress={() => onThumbDown?.(message.id)}
+                  activeOpacity={0.7}
+                >
+                  <FontAwesome name="thumbs-o-down" size={15} color="#888" />
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
         </Animated.View>
       </Animated.View>
@@ -759,6 +812,10 @@ const styles = StyleSheet.create({
     flex: 1,
     marginLeft: responsivePadding(12),
     marginRight: responsiveWidth(15),
+    overflow: "visible",
+  },
+  bubbleWrapper: {
+    position: "relative",
     overflow: "visible",
   },
   finnyMessageBubble: {
@@ -821,6 +878,16 @@ const styles = StyleSheet.create({
     fontWeight: "500",
     letterSpacing: -0.1,
     fontFamily: Platform.OS === "ios" ? "SF Pro Text" : "System",
+  },
+  feedbackButtons: {
+    flexDirection: "row",
+    gap: 1,
+    marginTop: -22,
+    marginLeft: 10,
+  },
+  feedbackButton: {
+    borderRadius: 14,
+    padding: 8,
   },
 });
 

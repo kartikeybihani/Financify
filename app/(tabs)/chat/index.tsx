@@ -29,6 +29,9 @@ import { getFreshAccessToken, authenticatedFetch } from "@/src/utils/authToken";
 import styles from "@/src/styles/chatStyles";
 import TypingIndicator from "@/src/components/chat/TypingIndicator";
 import ConversationStartersModal from "@/src/components/chat/ConversationStartersModal";
+import ReportModal from "@/src/components/modals/ReportModal";
+import FeedbackNotification from "@/src/components/chat/FeedbackNotification";
+import { submitLoveIt } from "@/src/utils/reports";
 
 interface Suggestion {
   text: string;
@@ -60,6 +63,12 @@ export default function ChatScreen() {
   const [showStartersModal, setShowStartersModal] = useState(false);
   const [dimensions, setDimensions] = useState(Dimensions.get("window"));
   const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [reportedMessageId, setReportedMessageId] = useState<string | null>(
+    null
+  );
+  const [showFeedbackNotification, setShowFeedbackNotification] =
+    useState(false);
   const atBottomRef = useRef(true);
   const contentHeights = useRef({ content: 0, view: 0 });
 
@@ -145,13 +154,12 @@ export default function ChatScreen() {
   const {
     chatMessages,
     showNudges,
-    goalFlow,
     progressStatus,
-    clearChat,
     pushChat,
     handleUserMessage,
     handleFinnyResponse,
     handleActionButton,
+    currentSessionId,
   } = useChatContext();
 
   // Prepare FlatList data with nudges and messages
@@ -399,6 +407,57 @@ export default function ChatScreen() {
     });
   }, []);
 
+  // Handle thumb up
+  const handleThumbUp = useCallback(
+    async (messageId: string) => {
+      console.log("👍 Thumb up for message:", messageId);
+
+      // Find the message to get its content and sender
+      const message = chatMessages.find((msg) => msg.id === messageId);
+      if (!message) {
+        console.warn("Message not found for thumbs up:", messageId);
+        return;
+      }
+
+      // Submit love_it feedback to database
+      try {
+        const result = await submitLoveIt({
+          messageId,
+          messageContent: message.text,
+          messageSender: message.sender,
+          chatSessionId: currentSessionId,
+          messageMetadata: {
+            messageType: message.type,
+            hasActions: !!message.actions,
+            hasGoalOffer: !!message.goalOffer,
+          },
+        });
+
+        if (result.success) {
+          setShowFeedbackNotification(true);
+        } else {
+          console.error("Failed to submit thumbs up:", result.error);
+        }
+      } catch (error) {
+        console.error("Error submitting thumbs up:", error);
+      }
+    },
+    [chatMessages, currentSessionId]
+  );
+
+  // Handle thumb down
+  const handleThumbDown = useCallback((messageId: string) => {
+    console.log("👎 Thumb down for message:", messageId);
+    setReportedMessageId(messageId);
+    setShowReportModal(true);
+  }, []);
+
+  // Get reported message data
+  const reportedMessage = React.useMemo(() => {
+    if (!reportedMessageId) return null;
+    return chatMessages.find((msg) => msg.id === reportedMessageId) || null;
+  }, [reportedMessageId, chatMessages]);
+
   // Memoized action handler to prevent recreation
   const handleMessageAction = useCallback(
     async (action: string) => {
@@ -466,13 +525,24 @@ export default function ChatScreen() {
             prevSender={prevSender as any}
             nextSender={nextSender as any}
             onAction={handleMessageAction}
+            onThumbUp={message.sender === "finny" ? handleThumbUp : undefined}
+            onThumbDown={
+              message.sender === "finny" ? handleThumbDown : undefined
+            }
           />
         );
       }
 
       return null;
     },
-    [handleSend, progressStatus, flatListData, handleMessageAction]
+    [
+      handleSend,
+      progressStatus,
+      flatListData,
+      handleMessageAction,
+      handleThumbUp,
+      handleThumbDown,
+    ]
   );
 
   return (
@@ -692,6 +762,33 @@ export default function ChatScreen() {
             handleSend(question);
           }}
         />
+
+        <ReportModal
+          visible={showReportModal}
+          onClose={() => {
+            setShowReportModal(false);
+            setReportedMessageId(null);
+          }}
+          messageId={reportedMessageId || undefined}
+          messageContent={reportedMessage?.text}
+          messageSender={reportedMessage?.sender}
+          chatSessionId={currentSessionId}
+          messageMetadata={
+            reportedMessage
+              ? {
+                  messageType: reportedMessage.type,
+                  hasActions: !!reportedMessage.actions,
+                  hasGoalOffer: !!reportedMessage.goalOffer,
+                }
+              : undefined
+          }
+        />
+
+        {showFeedbackNotification && (
+          <FeedbackNotification
+            onClose={() => setShowFeedbackNotification(false)}
+          />
+        )}
       </SafeAreaView>
     </View>
   );

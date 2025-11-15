@@ -103,7 +103,7 @@ export default function CategorySelectionModal({
         <View style={styles.modalContainer}>
           <View style={styles.sheet}>
             <ModalHandle />
-            <ModalHeader title="Select Account Type" onClose={onClose} />
+            <ModalHeader title="Add a new account" onClose={onClose} />
             <View style={styles.content}>
               <View style={styles.categoriesGrid}>
                 {categories.map((category) => renderCategoryCard(category))}

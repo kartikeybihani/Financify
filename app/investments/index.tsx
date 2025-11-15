@@ -126,6 +126,9 @@ export default function InvestmentsScreen({
     connectionId: string | null;
   }>({ isDisabled: false, connectionId: null });
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [hasCheckedConnections, setHasCheckedConnections] = useState(
+    !!preloadedData
+  );
   const hasData = useRef(
     preloadedData
       ? (preloadedData.holdings && preloadedData.holdings.length > 0) ||
@@ -191,6 +194,7 @@ export default function InvestmentsScreen({
         setOptions(o || []);
         setBalances(b || []);
         setConnections(c || []);
+        setHasCheckedConnections(true);
 
         // Check if connection is disabled (but don't trigger auto-sync)
         if (c && c.length > 0) {
@@ -220,6 +224,7 @@ export default function InvestmentsScreen({
         setOptions([]);
         setBalances([]);
         setConnections([]);
+        setHasCheckedConnections(true);
         hasData.current = false;
         setIsLoading(false);
       }
@@ -227,6 +232,7 @@ export default function InvestmentsScreen({
       return hasAnyData;
     } catch (error) {
       logger.error("Error loading from database:", error);
+      setHasCheckedConnections(true);
       return false;
     }
   };
@@ -260,6 +266,7 @@ export default function InvestmentsScreen({
         setOptions(o || []);
         setBalances(b || []);
         setConnections(c || []);
+        setHasCheckedConnections(true);
 
         // Check if connection is disabled
         if (c && c.length > 0) {
@@ -400,10 +407,12 @@ export default function InvestmentsScreen({
       setOptions([]);
       setBalances([]);
       setConnections([]);
+      setHasCheckedConnections(true);
       setIsLoading(false);
       return false;
     } catch (err) {
       logger.error("Failed to load investments from DB", err);
+      setHasCheckedConnections(true);
       setIsLoading(false);
       return false;
     }
@@ -444,6 +453,7 @@ export default function InvestmentsScreen({
           setOptions(preloadedData.options || []);
           setBalances(preloadedData.balances || []);
           setConnections(preloadedData.connections || []);
+          setHasCheckedConnections(true);
         }
 
         // Data is already set in initial state, just ensure loading state is correct
@@ -455,6 +465,7 @@ export default function InvestmentsScreen({
 
         hasData.current = !!hasAnyData;
         setIsLoading(false);
+        setHasCheckedConnections(true);
         return; // Skip all database loading/logic when using preloaded data
       }
 
@@ -497,6 +508,7 @@ export default function InvestmentsScreen({
       setOptions(preloadedData.options || []);
       setBalances(preloadedData.balances || []);
       setConnections(preloadedData.connections || []);
+      setHasCheckedConnections(true);
 
       // Check connection status from preloaded data
       if (preloadedData.connections && preloadedData.connections.length > 0) {
@@ -1414,6 +1426,24 @@ export default function InvestmentsScreen({
     return !hasHoldings && !hasOptions && !hasBalances;
   };
 
+  const renderLoadingState = () => {
+    return (
+      <View style={styles.loadingStateContainer}>
+        <View style={styles.loadingStateContent}>
+          <View style={styles.loadingStateIconContainer}>
+            <ActivityIndicator size="large" color="#4A90E2" />
+          </View>
+          <Text style={styles.loadingStateTitle}>
+            Pulling up your investments now
+          </Text>
+          <Text style={styles.loadingStateMessage}>
+            We're fetching your latest portfolio data...
+          </Text>
+        </View>
+      </View>
+    );
+  };
+
   const renderEmptyState = () => {
     return (
       <View style={styles.emptyStateContainer}>
@@ -1991,9 +2021,17 @@ export default function InvestmentsScreen({
               </View>
             )}
 
-            {hasNoInvestments() && !isLoading ? (
+            {isLoading && hasCheckedConnections && connections.length > 0 ? (
+              // User has investment account and we're loading, show loading screen
+              renderLoadingState()
+            ) : isLoading && !hasCheckedConnections ? (
+              // Initial load, haven't checked connections yet - show loading screen
+              renderLoadingState()
+            ) : hasNoInvestments() && !isLoading && hasCheckedConnections ? (
+              // No investments (either no accounts or accounts with no investments), show empty state
               renderEmptyState()
             ) : (
+              // Data loaded, show content
               <>
                 {renderPortfolioSummary()}
 

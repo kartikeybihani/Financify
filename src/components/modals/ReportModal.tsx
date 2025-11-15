@@ -12,49 +12,67 @@ import {
   Alert,
 } from "react-native";
 import { AntDesign } from "@expo/vector-icons";
-import { submitGeneralFeedback } from "@/src/utils/reports";
+import { submitChatMessageReport } from "@/src/utils/reports";
 
-interface FeedbackModalProps {
+interface ReportModalProps {
   visible: boolean;
   onClose: () => void;
-  userName: string;
+  messageId?: string;
+  messageContent?: string;
+  messageSender?: "user" | "finny";
+  chatSessionId?: string | null;
+  messageMetadata?: Record<string, any>;
 }
 
-export default function FeedbackModal({
+export default function ReportModal({
   visible,
   onClose,
-  userName,
-}: FeedbackModalProps) {
-  const [name, setName] = useState(userName || "");
-  const [feedback, setFeedback] = useState("");
+  messageId,
+  messageContent,
+  messageSender,
+  chatSessionId,
+  messageMetadata,
+}: ReportModalProps) {
+  const [report, setReport] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
-    if (visible) setName(userName || "");
-  }, [visible, userName]);
+    if (visible) {
+      setReport("");
+    }
+  }, [visible]);
 
   const handleSubmit = async () => {
-    if (!feedback.trim()) {
-      Alert.alert("Error", "Please provide your feedback");
+    if (!report.trim()) {
+      Alert.alert("Error", "Please describe the issue");
+      return;
+    }
+
+    if (!messageId || !messageContent || !messageSender) {
+      Alert.alert("Error", "Missing message information. Please try again.");
       return;
     }
 
     setIsSubmitting(true);
     try {
-      const result = await submitGeneralFeedback({
-        reportText: feedback.trim(),
-        userName: name.trim() || undefined,
+      const result = await submitChatMessageReport({
+        reportText: report.trim(),
+        messageId,
+        messageContent,
+        messageSender,
+        chatSessionId,
+        messageMetadata,
       });
 
       if (result.success) {
         Alert.alert(
           "Thank You!",
-          "Your feedback has been submitted successfully. We appreciate your input!",
+          "Your report has been submitted successfully. We'll review it shortly.",
           [
             {
               text: "OK",
               onPress: () => {
-                setFeedback("");
+                setReport("");
                 onClose();
               },
             },
@@ -63,12 +81,12 @@ export default function FeedbackModal({
       } else {
         Alert.alert(
           "Error",
-          result.error || "Failed to submit feedback. Please try again."
+          result.error || "Failed to submit report. Please try again."
         );
       }
     } catch (error: any) {
-      console.error("Error submitting feedback:", error);
-      Alert.alert("Error", "Failed to submit feedback. Please try again.");
+      console.error("Error submitting report:", error);
+      Alert.alert("Error", "Failed to submit report. Please try again.");
     } finally {
       setIsSubmitting(false);
     }
@@ -88,7 +106,7 @@ export default function FeedbackModal({
       >
         <View style={styles.modalContent}>
           <View style={styles.header}>
-            <Text style={styles.title}>Send Feedback</Text>
+            <Text style={styles.title}>Report Message</Text>
             <TouchableOpacity onPress={onClose} style={styles.closeButton}>
               <AntDesign name="close" size={19} color="#B4B4B4" />
             </TouchableOpacity>
@@ -96,24 +114,12 @@ export default function FeedbackModal({
 
           <View style={styles.form}>
             <View style={styles.inputContainer}>
-              <Text style={styles.label}>Name (Optional)</Text>
+              <Text style={styles.label}>What's wrong with this message?</Text>
               <TextInput
-                style={styles.nameInput}
-                value={name}
-                onChangeText={setName}
-                placeholder="Your name"
-                placeholderTextColor="#666"
-                autoCapitalize="words"
-              />
-            </View>
-
-            <View style={styles.inputContainer}>
-              <Text style={styles.label}>Feedback</Text>
-              <TextInput
-                style={styles.feedbackInput}
-                value={feedback}
-                onChangeText={setFeedback}
-                placeholder="Share your thoughts, suggestions, or report issues..."
+                style={styles.reportInput}
+                value={report}
+                onChangeText={setReport}
+                placeholder="Please describe why you're reporting this message..."
                 placeholderTextColor="#666"
                 multiline
                 textAlignVertical="top"
@@ -139,7 +145,7 @@ export default function FeedbackModal({
                     color="#fff"
                     style={styles.submitIcon}
                   />
-                  <Text style={styles.submitText}>Submit Feedback</Text>
+                  <Text style={styles.submitText}>Submit Report</Text>
                 </>
               )}
             </TouchableOpacity>
@@ -194,32 +200,15 @@ const styles = StyleSheet.create({
     gap: 20,
   },
   inputContainer: {
-    gap: 8,
+    gap: 12,
   },
   label: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: "500",
-    color: "#888",
+    color: "#fff",
     marginLeft: 4,
   },
-  nameInput: {
-    backgroundColor: "rgba(35, 40, 58, 0.8)",
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.1)",
-    padding: 16,
-    color: "#fff",
-    fontSize: 16,
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 1,
-    },
-    shadowOpacity: 0.2,
-    shadowRadius: 2,
-    elevation: 2,
-  },
-  feedbackInput: {
+  reportInput: {
     backgroundColor: "rgba(35, 40, 58, 0.8)",
     borderRadius: 12,
     borderWidth: 1,

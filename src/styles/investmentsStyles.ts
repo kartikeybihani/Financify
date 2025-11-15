@@ -795,6 +795,45 @@ export const styles = StyleSheet.create({
     letterSpacing: 0.3,
   },
   
+  // Loading State Styles
+  loadingStateContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 32,
+    paddingVertical: 80,
+    minHeight: SCREEN_HEIGHT * 0.5,
+  },
+  loadingStateContent: {
+    alignItems: "center",
+    justifyContent: "center",
+    maxWidth: 320,
+  },
+  loadingStateIconContainer: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: "rgba(74, 144, 226, 0.1)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 24,
+    borderWidth: 1,
+    borderColor: "rgba(74, 144, 226, 0.2)",
+  },
+  loadingStateTitle: {
+    fontSize: FONTS.xl,
+    fontWeight: "700",
+    color: "#fff",
+    marginBottom: 12,
+    textAlign: "center",
+  },
+  loadingStateMessage: {
+    fontSize: FONTS.base,
+    color: "rgba(255, 255, 255, 0.7)",
+    textAlign: "center",
+    lineHeight: 22,
+  },
+  
   // Empty State Styles
   emptyStateContainer: {
     flex: 1,

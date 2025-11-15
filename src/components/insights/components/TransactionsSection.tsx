@@ -43,6 +43,8 @@ interface Props {
   formatDate: (dateStr: string) => string;
   formatCategoryName: (cat: string) => string;
   onAddAccount?: () => void;
+  hasAccounts?: boolean;
+  isLoadingTransactions?: boolean;
 }
 
 export default function TransactionsSection(props: Props) {
@@ -75,6 +77,8 @@ export default function TransactionsSection(props: Props) {
     formatDate,
     formatCategoryName,
     onAddAccount,
+    hasAccounts = false,
+    isLoadingTransactions = false,
   } = props;
 
   const [searchQuery, setSearchQuery] = useState("");
@@ -217,7 +221,25 @@ export default function TransactionsSection(props: Props) {
         </View>
       )} */}
 
-      {displayedTransactions.length === 0 ? (
+      {isLoadingTransactions && hasAccounts ? (
+        // User has accounts but transactions are loading, show loading screen
+        <View style={styles.loadingStateContainer}>
+          <View style={styles.loadingStateContent}>
+            <View style={styles.loadingStateIconContainer}>
+              <ActivityIndicator size="large" color="#4A90E2" />
+            </View>
+            <Text style={styles.loadingStateTitle}>
+              Pulling up your transactions now
+            </Text>
+            <Text style={styles.loadingStateMessage}>
+              We're fetching your latest transaction data...
+            </Text>
+          </View>
+        </View>
+      ) : displayedTransactions.length === 0 &&
+        !isLoadingTransactions &&
+        !hasAccounts ? (
+        // No accounts, show empty state
         <View style={styles.emptyStateContainer}>
           <View style={styles.emptyStateContent}>
             <View style={styles.emptyStateIconContainer}>
@@ -244,6 +266,22 @@ export default function TransactionsSection(props: Props) {
               />
               <Text style={styles.emptyStateButtonText}>Connect Account</Text>
             </TouchableOpacity>
+          </View>
+        </View>
+      ) : displayedTransactions.length === 0 &&
+        !isLoadingTransactions &&
+        hasAccounts ? (
+        // Has accounts but no transactions (accounts might not have transactions yet)
+        <View style={styles.emptyStateContainer}>
+          <View style={styles.emptyStateContent}>
+            <View style={styles.emptyStateIconContainer}>
+              <AntDesign name="wallet" size={64} color="#4A90E2" />
+            </View>
+            <Text style={styles.emptyStateTitle}>No Transactions Found</Text>
+            <Text style={styles.emptyStateMessage}>
+              Your connected accounts don't have any transactions matching your
+              current filters. Try adjusting your filters or check back later.
+            </Text>
           </View>
         </View>
       ) : (
@@ -404,6 +442,41 @@ export default function TransactionsSection(props: Props) {
 }
 
 const styles = StyleSheet.create({
+  loadingStateContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 60,
+    paddingHorizontal: 32,
+  },
+  loadingStateContent: {
+    alignItems: "center",
+    justifyContent: "center",
+    maxWidth: 320,
+  },
+  loadingStateIconContainer: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: "rgba(74, 144, 226, 0.1)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 24,
+    borderWidth: 1,
+    borderColor: "rgba(74, 144, 226, 0.2)",
+  },
+  loadingStateTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: "#fff",
+    marginBottom: 12,
+    textAlign: "center",
+  },
+  loadingStateMessage: {
+    fontSize: 14,
+    color: "rgba(255, 255, 255, 0.7)",
+    textAlign: "center",
+    lineHeight: 22,
+  },
   emptyStateContainer: {
     alignItems: "center",
     justifyContent: "center",
