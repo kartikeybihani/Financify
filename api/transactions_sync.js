@@ -343,6 +343,13 @@ export default async function handler(req, res) {
           }
         }
 
+        // If category is "Subscriptions", automatically mark as recurring
+        // (Subscriptions are inherently recurring, even if not in a Plaid stream)
+        const finalCategory = newCategory || simplifiedCategory.top;
+        if (finalCategory === "Subscriptions") {
+          ifRecurring = "yes";
+        }
+
         // Debug log for first few transactions with enhanced info
         if (added.length <= 3 || modified.length <= 3) {
           console.log(
@@ -473,11 +480,18 @@ export default async function handler(req, res) {
           updatedRow.new_category = existingCategory;
         }
 
+        // Determine final category for recurring check
+        const finalCategory = updatedRow.new_category || row.new_category || row.top_category;
+
         // If transaction is NOT in a stream but user manually set if_recurring = 'yes', preserve it
         if (!row.recurring_stream_id && existingRecurring === "yes") {
           updatedRow.if_recurring = existingRecurring;
         }
         // If transaction IS in a stream, if_recurring should be 'yes' (already set in row, safe to keep)
+        // OR if category is "Subscriptions", automatically mark as recurring
+        else if (finalCategory === "Subscriptions" && updatedRow.if_recurring !== "yes") {
+          updatedRow.if_recurring = "yes";
+        }
 
         return updatedRow;
       });

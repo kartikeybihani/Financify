@@ -596,19 +596,23 @@ export const getSpendingByCategory = async (user_id: string, days: number = 30) 
     
     const { data, error } = await supabase
       .from("transactions")
-      .select("category, amount")
+      .select("category, new_category, amount")
       .eq("user_id", user_id)
       .gte("date", startDate.toISOString().split('T')[0])
-      .gt("amount", 0); // Only positive amounts (expenses)
+      .gt("amount", 0) // Only positive amounts (expenses)
+      .neq("new_category", "INTERNAL_TRANSFER"); // Exclude internal transfers from spending
     
     if (error) throw error;
     
     // Group by category and sum amounts
-    const categorySpending = (data || []).reduce((acc, transaction) => {
-      const category = transaction.category || "Other";
-      acc[category] = (acc[category] || 0) + Math.abs(transaction.amount);
-      return acc;
-    }, {} as Record<string, number>);
+    // Filter out INTERNAL_TRANSFER transactions (defensive check in case query filter didn't work)
+    const categorySpending = (data || [])
+      .filter((tx) => tx.new_category !== "INTERNAL_TRANSFER")
+      .reduce((acc, transaction) => {
+        const category = transaction.category || "Other";
+        acc[category] = (acc[category] || 0) + Math.abs(transaction.amount);
+        return acc;
+      }, {} as Record<string, number>);
     
     // Convert to array and sort by amount
     const sortedCategories = Object.entries(categorySpending)
@@ -795,8 +799,28 @@ export const getRecurringTransactionsFromDatabase = async (item_id?: string) => 
       logger.error("Error fetching user-marked recurring transactions:", userMarkedError);
     }
     
+    // Create a set of merchant names from existing Plaid streams to avoid duplicates
+    const existingMerchantNames = new Set<string>();
+    (streams || []).forEach(stream => {
+      if (stream.merchant_name) {
+        existingMerchantNames.add(stream.merchant_name.toLowerCase().trim());
+      }
+      // Also check description as fallback
+      if (stream.description) {
+        existingMerchantNames.add(stream.description.toLowerCase().trim());
+      }
+    });
+    
     // Add user-marked transactions as "pseudo-streams" - one stream per transaction
+    // BUT: Skip if a Plaid stream already exists for the same merchant (deduplication)
     (userMarkedTxs || []).forEach(tx => {
+      // Check if a Plaid stream already exists for this merchant
+      const txMerchantName = (tx.merchant_name || tx.name || '').toLowerCase().trim();
+      if (existingMerchantNames.has(txMerchantName)) {
+        // Skip this user-marked transaction - a Plaid stream already exists for this merchant
+        logger.info(`Skipping user-marked transaction for ${txMerchantName} - Plaid stream already exists`);
+        return;
+      }
       const category = tx.new_category || tx.top_category || 'Other';
       // CRITICAL: Use plaid_transaction_id (not database UUID) for transaction_ids array
       // This matches the format used by Plaid recurring streams and allows backfill to work correctly
@@ -998,13 +1022,47 @@ export const getTransactionsForRecurringStream = async (streamId: string) => {
     
     logger.info(`🔄 Fetching transactions for recurring stream: ${streamId}`);
     
-    // Get the recurring stream to find its transaction IDs
+    // Check if this is a user-marked pseudo-stream (starts with "user-marked-")
+    if (streamId.startsWith("user-marked-")) {
+      // Extract the transaction ID from the stream ID
+      const transactionId = streamId.replace("user-marked-", "");
+      
+      // Fetch the single transaction
+      const { data: transaction, error: txError } = await supabase
+        .from("transactions")
+        .select(`
+          *,
+          accounts:account_id (
+            name,
+            mask,
+            type,
+            subtype,
+            item_id,
+            user_items:item_id (
+              institution_name
+            )
+          )
+        `)
+        .eq("user_id", user.id)
+        .eq("id", transactionId)
+        .single();
+      
+      if (txError) {
+        logger.error("Error fetching user-marked transaction:", txError);
+        return [];
+      }
+      
+      logger.info(`✅ Found user-marked transaction for stream: ${streamId}`);
+      return transaction ? [transaction] : [];
+    }
+    
+    // This is a Plaid recurring stream - fetch from recurring_streams table
     const { data: stream, error: streamError } = await supabase
       .from("recurring_streams")
       .select("transaction_ids, stream_id, description, merchant_name")
       .eq("user_id", user.id)
       .eq("stream_id", streamId)
-      .single();
+      .maybeSingle(); // Use maybeSingle() instead of single() to handle 0 rows gracefully
     
     if (streamError) {
       logger.error("Error fetching recurring stream:", streamError);

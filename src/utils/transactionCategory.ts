@@ -176,6 +176,10 @@ export function batchSetCategoriesFromStreams(transactions: Transaction[]): Tran
  * @param transaction - Transaction object
  * @returns True if the transaction should display as recurring
  * 
+ * Logic:
+ * 1. If if_recurring = 'yes' (explicitly marked or in a stream)
+ * 2. OR if category is "Subscriptions" (subscriptions are inherently recurring)
+ * 
  * @example
  * ```typescript
  * const showChip = shouldShowRecurringChip(transaction);
@@ -185,7 +189,18 @@ export function batchSetCategoriesFromStreams(transactions: Transaction[]): Tran
  * ```
  */
 export function shouldShowRecurringChip(transaction: Transaction): boolean {
-  return transaction.if_recurring === 'yes';
+  // Check explicit recurring flag
+  if (transaction.if_recurring === 'yes') {
+    return true;
+  }
+  
+  // If category is "Subscriptions", it's inherently recurring
+  const displayCategory = getDisplayCategory(transaction);
+  if (displayCategory === 'Subscriptions') {
+    return true;
+  }
+  
+  return false;
 }
 
 /**

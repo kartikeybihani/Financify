@@ -986,7 +986,10 @@ export default function InsightsScreen() {
       // Filter for current month expenses only
       const { now, currentMonth, currentYear } = currentDateInfo;
 
-      const expenses = transactionsData.filter((tx) => tx.amount > 0);
+      // Filter out INTERNAL_TRANSFER transactions - they should not be counted in spending
+      const expenses = transactionsData.filter(
+        (tx) => tx.amount > 0 && tx.new_category !== "INTERNAL_TRANSFER"
+      );
 
       // Filter for current month (with fallback to most recent month if no current month data)
       let currentMonthExpenses = expenses.filter((tx) => {
