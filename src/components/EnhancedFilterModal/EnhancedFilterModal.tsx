@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { Modal, View, Text, TouchableOpacity, ScrollView } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
+import { supabase } from "@/src/lib/supabase/supabase";
 
 import {
   EnhancedFilterModalProps,
@@ -27,16 +28,43 @@ const EnhancedFilterModal: React.FC<EnhancedFilterModalProps> = ({
   selectedFilters,
   onFiltersChange,
 }) => {
-  // Use database categories if no categories provided via props
-  const { categories: dbCategories } = useCategories();
+  const [userId, setUserId] = useState<string | undefined>(undefined);
+
+  // Fetch user ID when modal becomes visible
+  useEffect(() => {
+    if (visible) {
+      const fetchUserId = async () => {
+        try {
+          const {
+            data: { user },
+          } = await supabase.auth.getUser();
+          if (user?.id) {
+            setUserId(user.id);
+          }
+        } catch (error) {
+          console.error("Error fetching user ID:", error);
+        }
+      };
+      fetchUserId();
+    }
+  }, [visible]);
+
+  // Use database categories - always fetch with userId to get user-specific categories
+  // Prefer database categories (with userId) over propCategories to ensure user-specific categories are shown
+  const { categories: dbCategories, loading: categoriesLoading } =
+    useCategories(userId);
+
+  // Always use database categories if available (they include user-specific ones when userId is set)
+  // Only fall back to propCategories if database categories are not loaded yet
   const categories =
-    propCategories ||
-    dbCategories.map((cat) => ({
-      id: cat.id,
-      name: cat.name,
-      icon: cat.icon,
-      color: cat.color,
-    }));
+    !categoriesLoading && dbCategories.length > 0
+      ? dbCategories.map((cat) => ({
+          id: cat.id,
+          name: cat.name,
+          icon: cat.icon,
+          color: cat.color,
+        }))
+      : propCategories || [];
   const [localFilters, setLocalFilters] =
     useState<FilterOptions>(selectedFilters);
 
@@ -125,22 +153,21 @@ const EnhancedFilterModal: React.FC<EnhancedFilterModalProps> = ({
                   <Text style={styles.subtitle}>Customize your view</Text>
                 </View>
               </View>
-              <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+              <TouchableOpacity
+                onPress={onClose}
+                style={styles.closeButton}
+                activeOpacity={0.7}
+              >
                 <LinearGradient
-                  colors={
-                    [
-                      "rgba(255, 255, 255, 0.15)",
-                      "rgba(255, 255, 255, 0.05)",
-                    ] as const
-                  }
+                  colors={[
+                    "rgba(255, 255, 255, 0.15)",
+                    "rgba(255, 255, 255, 0.05)",
+                  ]}
+                  style={styles.closeButtonCircle}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
-                  style={[
-                    styles.closeButtonContainer,
-                    { borderWidth: 1, borderColor: "rgba(255,255,255,0.2)" },
-                  ]}
                 >
-                  <Ionicons name="close" size={18} color="#fff" />
+                  <Ionicons name="close" size={22} color="#fff" />
                 </LinearGradient>
               </TouchableOpacity>
             </View>

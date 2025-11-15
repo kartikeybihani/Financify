@@ -11,7 +11,10 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 
-import { Category, FilterOptions } from "@/src/components/EnhancedFilterModal/types";
+import {
+  Category,
+  FilterOptions,
+} from "@/src/components/EnhancedFilterModal/types";
 import { styles } from "@/src/components/EnhancedFilterModal/styles";
 import {
   getSelectedCategoriesDescription,
@@ -128,14 +131,19 @@ export const CategorySelector: React.FC<CategorySelectorProps> = ({
                   zIndex: 10,
                 },
               ]}
+              activeOpacity={0.7}
             >
-              <View style={styles.closeButtonContainer}>
-                <Ionicons
-                  name="close"
-                  size={20}
-                  color="rgba(255,255,255,0.9)"
-                />
-              </View>
+              <LinearGradient
+                colors={[
+                  "rgba(255, 255, 255, 0.15)",
+                  "rgba(255, 255, 255, 0.05)",
+                ]}
+                style={styles.closeButtonCircle}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+              >
+                <Ionicons name="close" size={22} color="#fff" />
+              </LinearGradient>
             </TouchableOpacity>
             <View style={{ height: 60 }} />
             {/* Modal Content */}

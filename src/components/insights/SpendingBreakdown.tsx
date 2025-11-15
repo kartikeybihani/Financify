@@ -292,7 +292,7 @@ const styles = StyleSheet.create({
   },
   flowLine: {
     position: "absolute",
-    top: -30,
+    top: -18,
     left: "50%",
     width: 2,
     height: 30,

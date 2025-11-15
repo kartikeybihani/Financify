@@ -126,14 +126,33 @@ import {
 export default function InsightsScreen() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [realInsights, setRealInsights] = useState<Insight[]>([]);
+  const [userId, setUserId] = useState<string | undefined>(undefined);
+
+  // Fetch user ID on mount
+  useEffect(() => {
+    const fetchUserId = async () => {
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (user?.id) {
+          setUserId(user.id);
+        }
+      } catch (error) {
+        console.error("Error fetching user ID:", error);
+      }
+    };
+    fetchUserId();
+  }, []);
 
   // Use the categories hook for database-driven categories
+  // Pass userId to get user-specific categories
   const {
     categories: dbCategories,
     getCategoryColor,
     formatCategoryName: formatCategoryFromHook,
     getCategoryIcon,
-  } = useCategories();
+  } = useCategories(userId);
   const [categoryBreakdown, setCategoryBreakdown] = useState<
     [
       string,
@@ -2185,7 +2204,6 @@ export default function InsightsScreen() {
             visible={showEnhancedFilterModal}
             onClose={() => setShowEnhancedFilterModal(false)}
             accounts={accounts}
-            categories={dbCategories}
             selectedFilters={filterOptions}
             onFiltersChange={(newFilters) => {
               // Clear cache when filters change to ensure fresh data

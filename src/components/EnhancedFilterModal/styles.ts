@@ -78,7 +78,7 @@ export const styles = StyleSheet.create({
     letterSpacing: 0.2,
   },
   closeButton: {
-    padding: 4,
+    padding: 8,
   },
   closeButtonContainer: {
     width: 32,
@@ -95,6 +95,15 @@ export const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 3,
     backdropFilter: "blur(10px)",
+  },
+  closeButtonCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.2)",
   },
   // Search Bar Styles - Added for fluid search functionality
   searchBarContainer: {
