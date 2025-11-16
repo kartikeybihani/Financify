@@ -21,6 +21,7 @@ import { useRouter } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import logger from "@/src/utils/logger";
 import * as WebBrowser from "expo-web-browser";
+import IconButton from "@/src/components/shared/IconButton";
 const { width } = Dimensions.get("window");
 
 export default function SignupScreen() {
@@ -55,12 +56,12 @@ export default function SignupScreen() {
       return false;
     }
 
-    if (!firstName.trim()) {
+    if (!firstName || !firstName.trim()) {
       setFormError("Please enter your first name");
       return false;
     }
 
-    if (!lastName.trim()) {
+    if (!lastName || !lastName.trim()) {
       setFormError("Please enter your last name");
       return false;
     }
@@ -200,11 +201,12 @@ export default function SignupScreen() {
           style={styles.spotlightContainer}
           locations={[0, 0.5, 1]}
         />
-        <TouchableOpacity style={styles.backButton} onPress={handleBack}>
-          <View style={styles.backButtonContainer}>
-            <Ionicons name="chevron-back" size={22} color="#fff" />
-          </View>
-        </TouchableOpacity>
+        <IconButton
+          icon="chevron-back"
+          onPress={handleBack}
+          size={22}
+          style={styles.backButton}
+        />
 
         <ScrollView contentContainerStyle={styles.scrollContainer}>
           <View style={styles.contentContainer}>
@@ -384,11 +386,13 @@ const styles = StyleSheet.create({
   },
   nameRow: {
     flexDirection: "row",
-    gap: 12,
+    gap: 22,
     marginBottom: 20,
+    justifyContent: "space-between",
   },
   nameInputContainer: {
     flex: 1,
+    maxWidth: "48%",
   },
   label: {
     color: "#fff",
@@ -452,28 +456,9 @@ const styles = StyleSheet.create({
   },
   backButton: {
     position: "absolute",
-    top: 60,
-    left: 17,
+    top: 52,
+    left: 9,
     zIndex: 10,
-    width: 48,
-    height: 48,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  backButtonContainer: {
-    width: 42,
-    height: 42,
-    borderRadius: 25,
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.2)",
-    justifyContent: "center",
-    alignItems: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 5,
   },
   formErrorText: {
     color: "#ff4444",

@@ -14,6 +14,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
+import IconButton from "@/src/components/shared/IconButton";
 import MemoriesScreen from "@/app/(tabs)/chat/memories";
 import FinnyStyleScreen from "@/app/(tabs)/chat/finny-style";
 import FinnyCheckinScreen from "@/app/(tabs)/chat/finny-checkin";
@@ -23,6 +24,7 @@ import ChatHistoryScreen from "@/app/(tabs)/chat/history";
 import { useAuthNavigation } from "@/src/contexts/AuthNavigationContext";
 import { useChatContext } from "@/src/contexts/ChatContext";
 import { SettingItemProps, MemorySummary } from "@/src/types/plaid";
+import { TEXT_STYLES } from "@/src/components/shared/modal-constants";
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
 
@@ -65,18 +67,6 @@ const styles = {
     letterSpacing: 0.5,
     flex: 1,
     textAlign: "center" as const,
-  },
-  closeButton: {
-    padding: 8,
-  },
-  closeButtonCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: "center" as const,
-    justifyContent: "center" as const,
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.2)",
   },
   content: {
     flex: 1,
@@ -471,23 +461,7 @@ export default function FinnySettingsScreen() {
         >
           {/* Header */}
           <View style={styles.header}>
-            <TouchableOpacity
-              style={styles.closeButton}
-              onPress={() => router.back()}
-              activeOpacity={0.7}
-            >
-              <LinearGradient
-                colors={[
-                  "rgba(255, 255, 255, 0.15)",
-                  "rgba(255, 255, 255, 0.05)",
-                ]}
-                style={styles.closeButtonCircle}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-              >
-                <Ionicons name="close" size={22} color="#fff" />
-              </LinearGradient>
-            </TouchableOpacity>
+            <IconButton icon="close" onPress={() => router.back()} size={22} />
             <Text style={styles.headerTitle}>Advisor Settings</Text>
             <View style={{ width: 40 }} />
           </View>

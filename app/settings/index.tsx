@@ -14,12 +14,14 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import IconButton from "@/src/components/shared/IconButton";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { supabase } from "@/src/lib/supabase/supabase";
 import FeedbackModal from "@/src/components/modals/FeedbackModal";
 import ContactModal from "@/src/components/modals/ContactModal";
 import { handleDisconnect, getPrimaryItemId } from "@/src/utils/plaid";
 import logger from "@/src/utils/logger";
+import { TEXT_STYLES } from "@/src/components/shared/modal-constants";
 
 export default function SettingsScreen() {
   const router = useRouter();
@@ -216,12 +218,12 @@ export default function SettingsScreen() {
       >
         <View style={styles.headerContainer}>
           <View style={styles.headerRow}>
-            <TouchableOpacity
-              style={styles.closeButton}
+            <IconButton
+              icon="chevron-back-sharp"
               onPress={() => router.back()}
-            >
-              <Ionicons name="chevron-back-sharp" size={28} color="#fff" />
-            </TouchableOpacity>
+              size={22}
+              style={TEXT_STYLES.closeButton}
+            />
             <View style={styles.profileInfo}>
               <Text style={styles.userName}>
                 {userData?.user_metadata?.full_name ||
@@ -355,24 +357,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingHorizontal: 16,
     paddingTop: 8,
-  },
-  closeButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
-    justifyContent: "center",
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.2)",
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
   },
   profileInfo: {
     marginLeft: 16,

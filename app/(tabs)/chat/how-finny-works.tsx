@@ -10,7 +10,8 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient";
+import IconButton from "@/src/components/shared/IconButton";
+import { TEXT_STYLES } from "@/src/components/shared/modal-constants";
 
 interface HowFinnyWorksScreenProps {
   onBack: () => void;
@@ -57,18 +58,6 @@ const styles = {
     letterSpacing: 0.5,
     flex: 1,
     textAlign: "center" as const,
-  },
-  backButton: {
-    padding: 8,
-  },
-  backButtonCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: "center" as const,
-    justifyContent: "center" as const,
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.2)",
   },
   content: {
     flex: 1,
@@ -197,23 +186,12 @@ export default function HowFinnyWorksScreen({
       <SafeAreaView style={{ flex: 1, marginBottom: insets.bottom - 10 }}>
         {/* Header */}
         <View style={styles.header}>
-          <TouchableOpacity
-            style={styles.backButton}
+          <IconButton
+            icon="chevron-back"
             onPress={onBack}
-            activeOpacity={0.7}
-          >
-            <LinearGradient
-              colors={[
-                "rgba(255, 255, 255, 0.15)",
-                "rgba(255, 255, 255, 0.05)",
-              ]}
-              style={styles.backButtonCircle}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-            >
-              <Ionicons name="chevron-back" size={22} color="#fff" />
-            </LinearGradient>
-          </TouchableOpacity>
+            size={22}
+            style={TEXT_STYLES.closeButton}
+          />
           <Text style={styles.headerTitle}>How Finny Works</Text>
           <View style={{ width: 40 }} />
         </View>

@@ -9,6 +9,8 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
+import { TEXT_STYLES } from "../shared/modal-constants";
+import IconButton from "../shared/IconButton";
 
 interface ContactModalProps {
   visible: boolean;
@@ -67,22 +69,8 @@ export default function ContactModal({ visible, onClose }: ContactModalProps) {
         <View style={styles.modalContent}>
           <View style={styles.header}>
             <Text style={styles.title}>Contact us</Text>
-            <TouchableOpacity
-              onPress={onClose}
-              style={styles.closeButton}
-              activeOpacity={0.7}
-            >
-              <LinearGradient
-                colors={[
-                  "rgba(255, 255, 255, 0.15)",
-                  "rgba(255, 255, 255, 0.05)",
-                ]}
-                style={styles.closeButtonCircle}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-              >
-                <Ionicons name="close" size={22} color="#fff" />
-              </LinearGradient>
+            <TouchableOpacity onPress={onClose} activeOpacity={0.7}>
+              <IconButton onPress={onClose} icon="close" size={20} />
             </TouchableOpacity>
           </View>
 
@@ -185,18 +173,6 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: "600",
     color: "#fff",
-  },
-  closeButton: {
-    padding: 8,
-  },
-  closeButtonCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.2)",
   },
   description: {
     fontSize: 16,

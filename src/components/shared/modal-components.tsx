@@ -9,8 +9,8 @@ import {
   Pressable,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient";
 import { BlurView } from "expo-blur";
+import IconButton from "@/src/components/shared/IconButton";
 import {
   INSTITUTION_LOGO_MAP,
   LIGHT_BG_LOGO_IDS,
@@ -74,16 +74,7 @@ export const ModalHeader: React.FC<ModalHeaderProps> = ({ title, onClose }) => (
     <View style={styles.titleContainer}>
       <Text style={TEXT_STYLES.title}>{title}</Text>
     </View>
-    <TouchableOpacity onPress={onClose} style={TEXT_STYLES.closeButton}>
-      <LinearGradient
-        colors={["rgba(255, 255, 255, 0.15)", "rgba(255, 255, 255, 0.05)"]}
-        style={TEXT_STYLES.closeButtonCircle}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-      >
-        <Ionicons name="close" size={18} color="#fff" />
-      </LinearGradient>
-    </TouchableOpacity>
+    <IconButton onPress={onClose} icon="close" size={18} />
   </View>
 );
 

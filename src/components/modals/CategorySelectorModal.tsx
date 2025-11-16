@@ -17,10 +17,12 @@ import {
 import { BlurView } from "expo-blur";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import IconButton from "@/src/components/shared/IconButton";
 import * as Haptics from "expo-haptics";
 import { useCategories } from "@/src/hooks/useCategories";
 import { supabase } from "@/src/lib/supabase/supabase";
 import { DeviceEventEmitter } from "react-native";
+import { TEXT_STYLES } from "../shared/modal-constants";
 
 interface CategorySelectorModalProps {
   visible: boolean;
@@ -538,14 +540,12 @@ export default function CategorySelectorModal({
               {/* Header with Categories Label and Back Button */}
               <View style={styles.headerContainer}>
                 <Text style={styles.categoriesLabel}>Categories</Text>
-                <TouchableOpacity
-                  style={styles.backButton}
+                <IconButton
+                  icon="chevron-back"
                   onPress={handleClose}
-                  activeOpacity={0.7}
-                >
-                  <Ionicons name="chevron-back" size={24} color="#ffffff" />
-                  {/* </BlurView> */}
-                </TouchableOpacity>
+                  size={22}
+                  style={styles.backButton}
+                />
               </View>
 
               {/* Content */}
@@ -686,17 +686,12 @@ export default function CategorySelectorModal({
             <View style={styles.formContainer}>
               <View style={styles.formHeader}>
                 <Text style={styles.formTitle}>Add New Category</Text>
-                <TouchableOpacity
-                  style={styles.formCloseButton}
+                <IconButton
+                  icon="close"
                   onPress={handleCancelAddForm}
-                  activeOpacity={0.7}
-                >
-                  <Ionicons
-                    name="close"
-                    size={24}
-                    color="rgba(255, 255, 255, 0.7)"
-                  />
-                </TouchableOpacity>
+                  size={16}
+                  style={TEXT_STYLES.closeButton}
+                />
               </View>
 
               <View style={styles.formContent}>
@@ -825,15 +820,7 @@ const styles = StyleSheet.create({
   },
   backButton: {
     position: "absolute",
-    left: 20,
-    borderRadius: 20,
-    overflow: "hidden",
-    padding: 6,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "rgba(255, 255, 255, 0.15)",
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.2)",
+    left: 12,
   },
   scrollContainer: {
     flex: 1,
@@ -960,9 +947,6 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "600",
     color: "#ffffff",
-  },
-  formCloseButton: {
-    padding: 4,
   },
   formContent: {
     paddingHorizontal: 20,

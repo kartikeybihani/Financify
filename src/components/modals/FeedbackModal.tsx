@@ -11,9 +11,9 @@ import {
   ActivityIndicator,
   Alert,
 } from "react-native";
-import { Ionicons, AntDesign } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient";
+import { AntDesign } from "@expo/vector-icons";
 import { submitGeneralFeedback } from "@/src/utils/reports";
+import IconButton from "@/src/components/shared/IconButton";
 
 interface FeedbackModalProps {
   visible: boolean;
@@ -90,23 +90,7 @@ export default function FeedbackModal({
         <View style={styles.modalContent}>
           <View style={styles.header}>
             <Text style={styles.title}>Send Feedback</Text>
-            <TouchableOpacity
-              onPress={onClose}
-              style={styles.closeButton}
-              activeOpacity={0.7}
-            >
-              <LinearGradient
-                colors={[
-                  "rgba(255, 255, 255, 0.15)",
-                  "rgba(255, 255, 255, 0.05)",
-                ]}
-                style={styles.closeButtonCircle}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-              >
-                <Ionicons name="close" size={22} color="#fff" />
-              </LinearGradient>
-            </TouchableOpacity>
+            <IconButton onPress={onClose} icon="close" size={20} />
           </View>
 
           <View style={styles.form}>
@@ -197,18 +181,6 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: "600",
     color: "#fff",
-  },
-  closeButton: {
-    padding: 8,
-  },
-  closeButtonCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.2)",
   },
   form: {
     gap: 20,

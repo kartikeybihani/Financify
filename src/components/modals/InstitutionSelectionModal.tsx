@@ -10,8 +10,8 @@ import {
   Pressable,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient";
 import { BlurView } from "expo-blur";
+import IconButton from "@/src/components/shared/IconButton";
 import * as WebBrowser from "expo-web-browser";
 import { useRouter } from "expo-router";
 import {
@@ -170,20 +170,22 @@ export default function InstitutionSelectionModal({
         // We need to verify by checking if accounts exist
         if (result.type === "cancel" || result.type === "dismiss") {
           logger.info("🔄 Browser closed, verifying connection...");
-          
+
           // Wait a moment for SnapTrade to process the connection
           await new Promise((resolve) => setTimeout(resolve, 2000));
-          
+
           try {
             const accounts = await fetchSnaptradeAccounts(
               registerResponse.userId,
               registerResponse.userSecret
             );
             logger.info("✅ Snaptrade accounts fetched:", accounts);
-            
+
             // CRITICAL: Verify connection was actually successful
             if (!accounts || accounts.length === 0) {
-              logger.warn("⚠️ No accounts found - user may have cancelled connection");
+              logger.warn(
+                "⚠️ No accounts found - user may have cancelled connection"
+              );
               setIsConnecting(false);
               setConnectingInstitution(null);
               // Optionally show error message to user
@@ -256,7 +258,7 @@ export default function InstitutionSelectionModal({
             // CRITICAL: Close modal and refresh parent component to show new data
             setIsConnecting(false);
             setConnectingInstitution(null);
-            
+
             // Notify parent that connection was successful
             if (onReopenFinancialSheet) {
               // Small delay to ensure database updates are complete
@@ -264,7 +266,7 @@ export default function InstitutionSelectionModal({
                 onReopenFinancialSheet();
               }, 1000);
             }
-            
+
             // Close the modal
             onClose();
           } catch (accountError) {
@@ -402,20 +404,22 @@ export default function InstitutionSelectionModal({
         // After the browser closes, check if connection was successful
         if (result.type === "cancel" || result.type === "dismiss") {
           logger.info("🔄 Browser closed, verifying connection...");
-          
+
           // Wait a moment for SnapTrade to process the connection
           await new Promise((resolve) => setTimeout(resolve, 2000));
-          
+
           try {
             const accounts = await fetchSnaptradeAccounts(
               registerResponse.userId,
               registerResponse.userSecret
             );
             logger.info("✅ Snaptrade accounts fetched:", accounts);
-            
+
             // CRITICAL: Verify connection was actually successful
             if (!accounts || accounts.length === 0) {
-              logger.warn("⚠️ No accounts found - user may have cancelled connection");
+              logger.warn(
+                "⚠️ No accounts found - user may have cancelled connection"
+              );
               setIsConnecting(false);
               setConnectingInstitution(null);
               return;
@@ -476,7 +480,7 @@ export default function InstitutionSelectionModal({
             // CRITICAL: Close modal and refresh parent component to show new data
             setIsConnecting(false);
             setConnectingInstitution(null);
-            
+
             // Notify parent that connection was successful
             if (onReopenFinancialSheet) {
               // Small delay to ensure database updates are complete
@@ -484,7 +488,7 @@ export default function InstitutionSelectionModal({
                 onReopenFinancialSheet();
               }, 1000);
             }
-            
+
             // Close the modal
             onClose();
           } catch (accountError) {
@@ -591,22 +595,7 @@ export default function InstitutionSelectionModal({
                     <View style={styles.titleContainer}>
                       <Text style={styles.title}>Select your institution</Text>
                     </View>
-                    <TouchableOpacity
-                      onPress={handleClose}
-                      style={styles.closeButton}
-                    >
-                      <LinearGradient
-                        colors={[
-                          "rgba(255, 255, 255, 0.15)",
-                          "rgba(255, 255, 255, 0.05)",
-                        ]}
-                        style={styles.closeButtonCircle}
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 1, y: 1 }}
-                      >
-                        <Ionicons name="close" size={18} color="#fff" />
-                      </LinearGradient>
-                    </TouchableOpacity>
+                    <IconButton onPress={handleClose} icon="close" size={18} />
                   </View>
 
                   <View style={styles.content}>
@@ -716,18 +705,6 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontFamily: Platform.OS === "ios" ? "System" : "sans-serif",
     letterSpacing: 0.3,
-  },
-  closeButton: {
-    padding: 4,
-  },
-  closeButtonCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.2)",
   },
   content: {
     padding: 20,

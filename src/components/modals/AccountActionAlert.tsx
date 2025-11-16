@@ -10,6 +10,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Haptics from "expo-haptics";
+import IconButton from "@/src/components/shared/IconButton";
 
 interface AccountActionAlertProps {
   visible: boolean;
@@ -41,39 +42,20 @@ export default function AccountActionAlert({
     >
       <TouchableWithoutFeedback onPress={onClose}>
         <View style={styles.overlay}>
-          <TouchableWithoutFeedback onPress={() => {}}>
+          <TouchableWithoutFeedback onPress={(e) => e.stopPropagation()}>
             <View style={styles.container}>
               {/* Close Button */}
-              <TouchableOpacity
-                style={styles.closeButton}
+              <IconButton
                 onPress={onClose}
-                activeOpacity={0.7}
-              >
-                <LinearGradient
-                  colors={[
-                    "rgba(255, 255, 255, 0.15)",
-                    "rgba(255, 255, 255, 0.05)",
-                  ]}
-                  style={styles.closeButtonGradient}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                >
-                  <Ionicons
-                    name="close"
-                    size={20}
-                    color="rgba(255, 255, 255, 0.8)"
-                  />
-                </LinearGradient>
-              </TouchableOpacity>
+                icon="close"
+                size={20}
+                style={styles.closeButton}
+              />
 
               {/* Warning Header */}
               <View style={styles.headerContainer}>
                 <View style={styles.warningIconContainer}>
-                  <Ionicons
-                    name="warning-outline"
-                    size={32}
-                    color="#ff6b6b"
-                  />
+                  <Ionicons name="warning-outline" size={32} color="#ff6b6b" />
                 </View>
                 <Text style={styles.headerTitle}>Delete Account</Text>
                 <Text style={styles.headerSubtitle}>
@@ -165,7 +147,7 @@ export default function AccountActionAlert({
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.6)",
+    backgroundColor: "rgba(0, 0, 0, 0.75)",
     justifyContent: "center",
     alignItems: "center",
     paddingHorizontal: 20,
@@ -184,21 +166,9 @@ const styles = StyleSheet.create({
   },
   closeButton: {
     position: "absolute",
-    top: 16,
-    right: 16,
-    width: 35,
-    height: 35,
-    borderRadius: 20,
+    top: 12,
+    right: 12,
     zIndex: 1,
-  },
-  closeButtonGradient: {
-    width: 35,
-    height: 35,
-    borderRadius: 20,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.2)",
   },
   headerContainer: {
     alignItems: "center",
@@ -298,4 +268,3 @@ const styles = StyleSheet.create({
     color: "rgba(255, 255, 255, 0.7)",
   },
 });
-

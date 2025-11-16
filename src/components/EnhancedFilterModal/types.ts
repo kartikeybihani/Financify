@@ -1,5 +1,7 @@
 import { Account } from "@/src/types/plaid";
 
+export { Account };
+
 export interface Category {
   id: string;
   name: string;

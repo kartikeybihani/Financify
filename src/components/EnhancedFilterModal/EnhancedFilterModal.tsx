@@ -3,6 +3,7 @@ import { Modal, View, Text, TouchableOpacity, ScrollView } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { supabase } from "@/src/lib/supabase/supabase";
+import IconButton from "@/src/components/shared/IconButton";
 
 import {
   EnhancedFilterModalProps,
@@ -153,23 +154,7 @@ const EnhancedFilterModal: React.FC<EnhancedFilterModalProps> = ({
                   <Text style={styles.subtitle}>Customize your view</Text>
                 </View>
               </View>
-              <TouchableOpacity
-                onPress={onClose}
-                style={styles.closeButton}
-                activeOpacity={0.7}
-              >
-                <LinearGradient
-                  colors={[
-                    "rgba(255, 255, 255, 0.15)",
-                    "rgba(255, 255, 255, 0.05)",
-                  ]}
-                  style={styles.closeButtonCircle}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                >
-                  <Ionicons name="close" size={22} color="#fff" />
-                </LinearGradient>
-              </TouchableOpacity>
+              <IconButton onPress={onClose} icon="close" size={22} />
             </View>
           </LinearGradient>
 

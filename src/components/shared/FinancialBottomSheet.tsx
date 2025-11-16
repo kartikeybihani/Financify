@@ -4,6 +4,7 @@ import {
   View,
   Text,
   TouchableOpacity,
+  TouchableWithoutFeedback,
   StyleSheet,
   ScrollView,
   Platform,
@@ -16,7 +17,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons, AntDesign } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient";
+import IconButton from "@/src/components/shared/IconButton";
 import { BlurView } from "expo-blur";
 import { addNewBankAccount } from "@/src/utils/plaid";
 import InstitutionSelectionModal from "@/src/components/modals/InstitutionSelectionModal";
@@ -310,276 +311,268 @@ export default function FinancialBottomSheet({
         statusBarTranslucent
         presentationStyle="overFullScreen"
       >
-        <View style={styles.overlay}>
-          <BlurView
-            intensity={25}
-            style={StyleSheet.absoluteFill}
-            tint="dark"
-          />
-          <View style={styles.modalContainer}>
-            <View
-              style={[
-                styles.sheet,
-                {
-                  height: responsiveDimensions.maxHeight,
-                  borderTopLeftRadius: responsiveDimensions.borderRadius,
-                  borderTopRightRadius: responsiveDimensions.borderRadius,
-                },
-              ]}
-            >
-              <View style={styles.handleContainer}>
-                <View style={styles.handle} />
-              </View>
-              <View
-                style={[
-                  styles.header,
-                  { paddingHorizontal: responsiveDimensions.paddingHorizontal },
-                ]}
-              >
-                <View style={styles.titleContainer}>
+        <TouchableWithoutFeedback onPress={onClose}>
+          <View style={styles.overlay}>
+            <BlurView
+              intensity={25}
+              style={StyleSheet.absoluteFill}
+              tint="dark"
+            />
+            <TouchableWithoutFeedback onPress={(e) => e.stopPropagation()}>
+              <View style={styles.modalContainer}>
+                <View
+                  style={[
+                    styles.sheet,
+                    {
+                      height: responsiveDimensions.maxHeight,
+                      borderTopLeftRadius: responsiveDimensions.borderRadius,
+                      borderTopRightRadius: responsiveDimensions.borderRadius,
+                    },
+                  ]}
+                >
+                  <View style={styles.handleContainer}>
+                    <View style={styles.handle} />
+                  </View>
                   <View
                     style={[
-                      styles.iconContainer,
+                      styles.header,
                       {
-                        backgroundColor: "#1f1f1f",
-                        width: isSmallScreen ? 36 : 42,
-                        height: isSmallScreen ? 36 : 42,
-                        borderRadius: isSmallScreen ? 18 : 21,
+                        paddingHorizontal:
+                          responsiveDimensions.paddingHorizontal,
                       },
                     ]}
                   >
-                    <Ionicons
-                      name={icon}
+                    <View style={styles.titleContainer}>
+                      <View
+                        style={[
+                          styles.iconContainer,
+                          {
+                            backgroundColor: "#1f1f1f",
+                            width: isSmallScreen ? 36 : 42,
+                            height: isSmallScreen ? 36 : 42,
+                            borderRadius: isSmallScreen ? 18 : 21,
+                          },
+                        ]}
+                      >
+                        <Ionicons
+                          name={icon}
+                          size={responsiveDimensions.iconSize}
+                          color={iconColor}
+                        />
+                      </View>
+                      <View style={styles.titleTextContainer}>
+                        <Text
+                          style={[
+                            styles.title,
+                            { fontSize: responsiveDimensions.titleFontSize },
+                          ]}
+                        >
+                          {title}
+                        </Text>
+                        <Text
+                          style={[
+                            styles.subtitle,
+                            { fontSize: responsiveDimensions.subtitleFontSize },
+                          ]}
+                        >
+                          Manage your financial accounts
+                        </Text>
+                      </View>
+                    </View>
+                    <IconButton
+                      onPress={onClose}
+                      icon="close"
                       size={responsiveDimensions.iconSize}
-                      color={iconColor}
                     />
                   </View>
-                  <View style={styles.titleTextContainer}>
-                    <Text
-                      style={[
-                        styles.title,
-                        { fontSize: responsiveDimensions.titleFontSize },
-                      ]}
-                    >
-                      {title}
-                    </Text>
-                    <Text
-                      style={[
-                        styles.subtitle,
-                        { fontSize: responsiveDimensions.subtitleFontSize },
-                      ]}
-                    >
-                      Manage your financial accounts
-                    </Text>
-                  </View>
-                </View>
-                <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-                  <LinearGradient
-                    colors={[
-                      "rgba(255, 255, 255, 0.15)",
-                      "rgba(255, 255, 255, 0.05)",
+                  <ScrollView
+                    style={styles.content}
+                    showsVerticalScrollIndicator={false}
+                    contentContainerStyle={[
+                      styles.scrollContent,
+                      { padding: responsiveDimensions.paddingVertical },
                     ]}
-                    style={[
-                      styles.closeButtonCircle,
-                      {
-                        width: isSmallScreen ? 30 : 34,
-                        height: isSmallScreen ? 30 : 34,
-                        borderRadius: isSmallScreen ? 15 : 17,
-                      },
-                    ]}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
                   >
-                    <Ionicons
-                      name="close"
-                      size={responsiveDimensions.iconSize}
-                      color="#fff"
-                    />
-                  </LinearGradient>
-                </TouchableOpacity>
-              </View>
-              <ScrollView
-                style={styles.content}
-                showsVerticalScrollIndicator={false}
-                contentContainerStyle={[
-                  styles.scrollContent,
-                  { padding: responsiveDimensions.paddingVertical },
-                ]}
-              >
-                {categories
-                  ? categories.map((category, index) => (
-                      <View key={index} style={styles.categoryContainer}>
-                        <View style={styles.categoryHeader}>
-                          <TouchableOpacity
-                            onPress={() => toggleCategory(category.title)}
-                            style={styles.categoryTitleContainer}
-                          >
-                            <Ionicons
-                              name={
-                                expandedCategories.has(category.title)
-                                  ? "caret-down"
-                                  : "caret-forward"
-                              }
-                              size={16}
-                              color="#888"
-                              style={styles.categoryCaretIcon}
-                            />
-                            <Text
-                              style={[
-                                styles.categoryTitle,
-                                {
-                                  fontSize:
-                                    responsiveDimensions.categoryFontSize,
-                                },
-                              ]}
-                            >
-                              {category.title}
-                            </Text>
-                          </TouchableOpacity>
-                          {category.items.length > 0 &&
-                          category.totalAmount !== undefined ? (
-                            <View style={styles.totalAmountContainer}>
-                              <Text style={styles.totalAmountText}>
-                                {new Intl.NumberFormat("en-US", {
-                                  style: "currency",
-                                  currency: "USD",
-                                  minimumFractionDigits: 0,
-                                  maximumFractionDigits: 0,
-                                }).format(category.totalAmount)}
-                              </Text>
-                            </View>
-                          ) : (
-                            <View style={{ width: 0 }} />
-                          )}
-                          <TouchableOpacity
-                            onPress={() => handleAddNewAccount(category.title)}
-                            disabled={isAddingAccount}
-                            style={{
-                              flexDirection: "row",
-                              alignItems: "center",
-                              opacity: isAddingAccount ? 0.6 : 1,
-                            }}
-                          >
-                            <Text
-                              style={[
-                                styles.addActionText,
-                                { fontSize: isSmallScreen ? 11 : 12 },
-                              ]}
-                            >
-                              Add
-                            </Text>
-                            <AntDesign
-                              name="right"
-                              size={13}
-                              color="#4A90E2"
-                              style={{ marginLeft: 6 }}
-                            />
-                          </TouchableOpacity>
-                        </View>
-                        {expandedCategories.has(category.title) && (
-                          <View style={styles.categoryContent}>
-                            {category.items.length > 0 ? (
-                              category.items.map((item, itemIndex) => (
-                                <View
-                                  key={itemIndex}
-                                  style={styles.categoryItem}
+                    {categories
+                      ? categories.map((category, index) => (
+                          <View key={index} style={styles.categoryContainer}>
+                            <View style={styles.categoryHeader}>
+                              <TouchableOpacity
+                                onPress={() => toggleCategory(category.title)}
+                                style={styles.categoryTitleContainer}
+                              >
+                                <Ionicons
+                                  name={
+                                    expandedCategories.has(category.title)
+                                      ? "caret-down"
+                                      : "caret-forward"
+                                  }
+                                  size={16}
+                                  color="#888"
+                                  style={styles.categoryCaretIcon}
+                                />
+                                <Text
+                                  style={[
+                                    styles.categoryTitle,
+                                    {
+                                      fontSize:
+                                        responsiveDimensions.categoryFontSize,
+                                    },
+                                  ]}
                                 >
-                                  {item}
+                                  {category.title}
+                                </Text>
+                              </TouchableOpacity>
+                              {category.items.length > 0 &&
+                              category.totalAmount !== undefined ? (
+                                <View style={styles.totalAmountContainer}>
+                                  <Text style={styles.totalAmountText}>
+                                    {new Intl.NumberFormat("en-US", {
+                                      style: "currency",
+                                      currency: "USD",
+                                      minimumFractionDigits: 0,
+                                      maximumFractionDigits: 0,
+                                    }).format(category.totalAmount)}
+                                  </Text>
                                 </View>
-                              ))
-                            ) : (
-                              <View style={styles.emptyState}>
-                                {/* <Text style={styles.emptyStateText}>
+                              ) : (
+                                <View style={{ width: 0 }} />
+                              )}
+                              <TouchableOpacity
+                                onPress={() =>
+                                  handleAddNewAccount(category.title)
+                                }
+                                disabled={isAddingAccount}
+                                style={{
+                                  flexDirection: "row",
+                                  alignItems: "center",
+                                  opacity: isAddingAccount ? 0.6 : 1,
+                                }}
+                              >
+                                <Text
+                                  style={[
+                                    styles.addActionText,
+                                    { fontSize: isSmallScreen ? 11 : 12 },
+                                  ]}
+                                >
+                                  Add
+                                </Text>
+                                <AntDesign
+                                  name="right"
+                                  size={13}
+                                  color="#4A90E2"
+                                  style={{ marginLeft: 6 }}
+                                />
+                              </TouchableOpacity>
+                            </View>
+                            {expandedCategories.has(category.title) && (
+                              <View style={styles.categoryContent}>
+                                {category.items.length > 0 ? (
+                                  category.items.map((item, itemIndex) => (
+                                    <View
+                                      key={itemIndex}
+                                      style={styles.categoryItem}
+                                    >
+                                      {item}
+                                    </View>
+                                  ))
+                                ) : (
+                                  <View style={styles.emptyState}>
+                                    {/* <Text style={styles.emptyStateText}>
                                 No {category.title.toLowerCase()} found
                               </Text> */}
-                                <TouchableOpacity
-                                  style={{
-                                    flexDirection: "row",
-                                    opacity: isAddingAccount ? 0.6 : 1,
-                                  }}
-                                  onPress={() =>
-                                    handleAddNewAccount(category.title)
-                                  }
-                                  disabled={isAddingAccount}
-                                >
-                                  <Ionicons
-                                    name={
-                                      isAddingAccount
-                                        ? "hourglass-outline"
-                                        : "add-circle-outline"
-                                    }
-                                    size={16}
-                                    color="#4A90E2"
-                                    style={{ marginRight: 4 }}
-                                  />
-                                  <Text
-                                    style={{
-                                      fontSize: isSmallScreen ? 11 : 12,
-                                      fontWeight: "600",
-                                      color: "#4A90E2",
-                                      fontFamily:
-                                        Platform.OS === "ios"
-                                          ? "System"
-                                          : "sans-serif",
-                                      letterSpacing: 0.2,
-                                    }}
-                                  >
-                                    {isAddingAccount
-                                      ? "CONNECTING..."
-                                      : category.title === "CASH"
-                                      ? "ADD CASH MANUALLY"
-                                      : "ADD A NEW ACCOUNT"}
-                                  </Text>
-                                </TouchableOpacity>
+                                    <TouchableOpacity
+                                      style={{
+                                        flexDirection: "row",
+                                        opacity: isAddingAccount ? 0.6 : 1,
+                                      }}
+                                      onPress={() =>
+                                        handleAddNewAccount(category.title)
+                                      }
+                                      disabled={isAddingAccount}
+                                    >
+                                      <Ionicons
+                                        name={
+                                          isAddingAccount
+                                            ? "hourglass-outline"
+                                            : "add-circle-outline"
+                                        }
+                                        size={16}
+                                        color="#4A90E2"
+                                        style={{ marginRight: 4 }}
+                                      />
+                                      <Text
+                                        style={{
+                                          fontSize: isSmallScreen ? 11 : 12,
+                                          fontWeight: "600",
+                                          color: "#4A90E2",
+                                          fontFamily:
+                                            Platform.OS === "ios"
+                                              ? "System"
+                                              : "sans-serif",
+                                          letterSpacing: 0.2,
+                                        }}
+                                      >
+                                        {isAddingAccount
+                                          ? "CONNECTING..."
+                                          : category.title === "CASH"
+                                          ? "ADD CASH MANUALLY"
+                                          : "ADD A NEW ACCOUNT"}
+                                      </Text>
+                                    </TouchableOpacity>
+                                  </View>
+                                )}
                               </View>
                             )}
                           </View>
-                        )}
-                      </View>
-                    ))
-                  : children}
-              </ScrollView>
-              <View
-                style={[
-                  styles.footer,
-                  { padding: responsiveDimensions.paddingHorizontal },
-                ]}
-              >
-                <TouchableOpacity
-                  style={[
-                    styles.addAccountButton,
-                    {
-                      opacity: isAddingAccount ? 0.6 : 1,
-                      paddingVertical: isSmallScreen ? 12 : 14,
-                      paddingHorizontal: isSmallScreen ? 18 : 22,
-                    },
-                  ]}
-                  onPress={() => handleAddNewAccount()}
-                  disabled={isAddingAccount}
-                >
-                  <Ionicons
-                    name={
-                      isAddingAccount
-                        ? "hourglass-outline"
-                        : "add-circle-outline"
-                    }
-                    size={responsiveDimensions.iconSize}
-                    color="#4A90E2"
-                    style={styles.addIcon}
-                  />
-                  <Text
+                        ))
+                      : children}
+                  </ScrollView>
+                  <View
                     style={[
-                      styles.addAccountText,
-                      { fontSize: responsiveDimensions.buttonFontSize },
+                      styles.footer,
+                      { padding: responsiveDimensions.paddingHorizontal },
                     ]}
                   >
-                    {isAddingAccount ? "Connecting..." : "Link a New Account"}
-                  </Text>
-                </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[
+                        styles.addAccountButton,
+                        {
+                          opacity: isAddingAccount ? 0.6 : 1,
+                          paddingVertical: isSmallScreen ? 12 : 14,
+                          paddingHorizontal: isSmallScreen ? 18 : 22,
+                        },
+                      ]}
+                      onPress={() => handleAddNewAccount()}
+                      disabled={isAddingAccount}
+                    >
+                      <Ionicons
+                        name={
+                          isAddingAccount
+                            ? "hourglass-outline"
+                            : "add-circle-outline"
+                        }
+                        size={responsiveDimensions.iconSize}
+                        color="#4A90E2"
+                        style={styles.addIcon}
+                      />
+                      <Text
+                        style={[
+                          styles.addAccountText,
+                          { fontSize: responsiveDimensions.buttonFontSize },
+                        ]}
+                      >
+                        {isAddingAccount
+                          ? "Connecting..."
+                          : "Link a New Account"}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
               </View>
-            </View>
+            </TouchableWithoutFeedback>
           </View>
-        </View>
+        </TouchableWithoutFeedback>
       </Modal>
     </>
   );
@@ -649,20 +642,6 @@ const styles = StyleSheet.create({
     color: "#aaa",
     fontFamily: Platform.OS === "ios" ? "System" : "sans-serif",
     letterSpacing: 0.2,
-  },
-  closeButton: {
-    padding: 4,
-  },
-  closeButtonCircle: {
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.2)",
-  },
-  closeButtonContainer: {
-    backgroundColor: "rgba(255, 255, 255, 0.06)",
-    justifyContent: "center",
-    alignItems: "center",
   },
   content: {
     flex: 1,

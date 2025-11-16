@@ -10,6 +10,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
+import IconButton from "@/src/components/shared/IconButton";
 
 import {
   Category,
@@ -120,31 +121,17 @@ export const CategorySelector: React.FC<CategorySelectorProps> = ({
             ]}
           >
             {/* Close Icon */}
-            <TouchableOpacity
+            <IconButton
               onPress={() => setShowModal(false)}
-              style={[
-                styles.closeButton,
-                {
-                  position: "absolute",
-                  top: 16,
-                  right: 16,
-                  zIndex: 10,
-                },
-              ]}
-              activeOpacity={0.7}
-            >
-              <LinearGradient
-                colors={[
-                  "rgba(255, 255, 255, 0.15)",
-                  "rgba(255, 255, 255, 0.05)",
-                ]}
-                style={styles.closeButtonCircle}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-              >
-                <Ionicons name="close" size={22} color="#fff" />
-              </LinearGradient>
-            </TouchableOpacity>
+              icon="close"
+              size={22}
+              style={{
+                position: "absolute",
+                top: 8,
+                right: 8,
+                zIndex: 10,
+              }}
+            />
             <View style={{ height: 60 }} />
             {/* Modal Content */}
             <ScrollView

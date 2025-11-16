@@ -9,9 +9,9 @@ import {
   Platform,
   Dimensions,
 } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
+import IconButton from "@/src/components/shared/IconButton";
 
 const { width } = Dimensions.get("window");
 
@@ -61,14 +61,12 @@ export default function AuthTemplate({
             locations={[0, 0.5, 1]}
           />
         )}
-        <TouchableOpacity
-          style={styles.backButton}
+        <IconButton
+          icon="chevron-back"
           onPress={() => router.back()}
-        >
-          <View style={styles.backButtonContainer}>
-            <Ionicons name="chevron-back" size={22} color="#fff" />
-          </View>
-        </TouchableOpacity>
+          size={22}
+          style={styles.backButton}
+        />
 
         <View style={styles.contentContainer}>
           <Image
@@ -177,26 +175,7 @@ const styles = StyleSheet.create({
   backButton: {
     position: "absolute",
     top: 60,
-    left: 18,
+    left: 10,
     zIndex: 10,
-    width: 48,
-    height: 48,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  backButtonContainer: {
-    width: 42,
-    height: 42,
-    borderRadius: 25,
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.2)",
-    justifyContent: "center",
-    alignItems: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 5,
   },
 });

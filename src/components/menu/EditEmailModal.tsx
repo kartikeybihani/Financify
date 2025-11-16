@@ -12,6 +12,7 @@ import {
   ScrollView,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import IconButton from "@/src/components/shared/IconButton";
 
 interface EditEmailModalProps {
   visible: boolean;
@@ -88,13 +89,13 @@ export default function EditEmailModal({
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
           >
-            <TouchableOpacity
-              style={styles.closeIcon}
+            <IconButton
+              icon="close"
               onPress={handleCancel}
-              disabled={loading}
-            >
-              <Ionicons name="close" size={28} color="#B4B4B4" />
-            </TouchableOpacity>
+              size={22}
+              style={styles.closeIcon}
+              activeOpacity={loading ? 1 : 0.7}
+            />
             <Text style={styles.title}>Change Email Address</Text>
             <Text style={styles.subtitle}>
               We'll send a confirmation link to verify the change.
@@ -173,14 +174,9 @@ const styles = StyleSheet.create({
   },
   closeIcon: {
     position: "absolute",
-    top: 18,
-    right: 18,
+    top: 10,
+    right: 10,
     zIndex: 2,
-    padding: 4,
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.2)",
   },
   title: {
     fontSize: 22,

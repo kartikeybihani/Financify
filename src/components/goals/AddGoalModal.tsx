@@ -17,6 +17,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
+import IconButton from "@/src/components/shared/IconButton";
 import { AddGoalModalProps, GoalInput } from "@/src/types/addGoalModalTypes";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -235,22 +236,7 @@ export default function AddGoalModal({
                     <View style={styles.headerTextContainer}>
                       <Text style={styles.headerTitle}>Set a new goal</Text>
                     </View>
-                    <TouchableOpacity
-                      onPress={onClose}
-                      style={styles.closeButton}
-                    >
-                      <LinearGradient
-                        colors={[
-                          "rgba(255, 255, 255, 0.15)",
-                          "rgba(255, 255, 255, 0.05)",
-                        ]}
-                        style={styles.closeButtonCircle}
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 1, y: 1 }}
-                      >
-                        <Ionicons name="close" size={18} color="#fff" />
-                      </LinearGradient>
-                    </TouchableOpacity>
+                    <IconButton onPress={onClose} icon="close" size={18} />
                   </View>
 
                   <ScrollView
@@ -707,22 +693,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 8,
+    paddingTop: 10,
+    paddingBottom: 6,
     borderBottomWidth: 1,
     borderBottomColor: "rgba(255,255,255,0.1)",
-  },
-  closeButton: {
-    padding: 4,
-  },
-  closeButtonCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.2)",
   },
   headerTextContainer: {
     flex: 1,

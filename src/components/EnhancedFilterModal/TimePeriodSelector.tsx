@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { Modal, View, Text, TouchableOpacity, ScrollView } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
+import IconButton from "@/src/components/shared/IconButton";
 
 import { FilterOptions } from "@/src/components/EnhancedFilterModal/types";
 import { styles } from "@/src/components/EnhancedFilterModal/styles";
@@ -138,26 +139,17 @@ export const TimePeriodSelector: React.FC<TimePeriodSelectorProps> = ({
             style={[styles.modalContainer, styles.timePeriodModalContainer]}
           >
             {/* Close Icon */}
-            <TouchableOpacity
+            <IconButton
               onPress={() => setShowModal(false)}
-              style={[
-                styles.closeButton,
-                {
-                  position: "absolute",
-                  top: 16,
-                  right: 16,
-                  zIndex: 10,
-                },
-              ]}
-            >
-              <View style={styles.closeButtonContainer}>
-                <Ionicons
-                  name="close"
-                  size={18}
-                  color="rgba(255,255,255,0.8)"
-                />
-              </View>
-            </TouchableOpacity>
+              icon="close"
+              size={18}
+              style={{
+                position: "absolute",
+                top: 8,
+                right: 8,
+                zIndex: 10,
+              }}
+            />
             <View style={{ height: 60 }} />
             {/* Modal Content */}
             <ScrollView

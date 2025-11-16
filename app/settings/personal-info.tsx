@@ -10,11 +10,13 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useLocalSearchParams } from "expo-router";
+import IconButton from "@/src/components/shared/IconButton";
 import { supabase } from "@/src/lib/supabase/supabase";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import EditEmailModal from "@/src/components/menu/EditEmailModal";
 import EditOccupationModal from "@/src/components/menu/EditOccupationModal";
 import logger from "@/src/utils/logger";
+import { TEXT_STYLES } from "@/src/components/shared/modal-constants";
 
 export default function PersonalInfoScreen() {
   const router = useRouter();
@@ -163,12 +165,12 @@ export default function PersonalInfoScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.header}>
-          <TouchableOpacity
-            style={styles.backButton}
+          <IconButton
+            icon="chevron-back-sharp"
             onPress={() => router.back()}
-          >
-            <Ionicons name="chevron-back-sharp" size={28} color="#fff" />
-          </TouchableOpacity>
+            size={22}
+            style={TEXT_STYLES.closeButton}
+          />
           <Text style={styles.headerTitle}>Personal Information</Text>
         </View>
 
@@ -267,24 +269,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 20,
     paddingBottom: 10,
-  },
-  backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
-    justifyContent: "center",
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.2)",
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
   },
   headerTitle: {
     fontSize: 20,
