@@ -1,156 +1,15 @@
 // /api/transactions_sync.js
 import { client } from "../app/plaidClient.js";
 import { createClient } from "@supabase/supabase-js";
-// Removed categoryMapping import - using database categories instead
+import {
+  mapPlaidToAppCategory,
+  isInternalTransferCategory,
+} from "./utils/plaidCategoryMapper.js";
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
-
-// Simple category mapping function
-function getSimplifiedCategory(plaidCategory) {
-  if (!plaidCategory) {
-    return { top: "Other", sub: "Other" };
-  }
-
-  const upperCategory = plaidCategory.toUpperCase();
-
-  // Food-related mappings
-  if (
-    upperCategory.includes("FOOD") ||
-    upperCategory.includes("RESTAURANT") ||
-    upperCategory.includes("COFFEE")
-  ) {
-    if (
-      upperCategory.includes("GROCERY") ||
-      upperCategory.includes("SUPERMARKET")
-    ) {
-      return { top: "Groceries", sub: "Groceries" };
-    }
-    return { top: "Food", sub: "Dining Out" };
-  }
-
-  // Grocery specific
-  if (
-    upperCategory.includes("GROCERY") ||
-    upperCategory.includes("SUPERMARKET")
-  ) {
-    return { top: "Groceries", sub: "Groceries" };
-  }
-
-  // Transportation
-  if (
-    upperCategory.includes("TRANSPORT") ||
-    upperCategory.includes("GAS") ||
-    upperCategory.includes("UBER") ||
-    upperCategory.includes("LYFT")
-  ) {
-    return { top: "Transportation", sub: "Transportation" };
-  }
-
-  // Shopping
-  if (
-    upperCategory.includes("SHOPPING") ||
-    upperCategory.includes("MERCHANDISE") ||
-    upperCategory.includes("AMAZON")
-  ) {
-    return { top: "Shopping", sub: "Shopping" };
-  }
-
-  // Entertainment
-  if (
-    upperCategory.includes("ENTERTAINMENT") ||
-    upperCategory.includes("MOVIE") ||
-    upperCategory.includes("GAME")
-  ) {
-    return { top: "Entertainment", sub: "Entertainment" };
-  }
-
-  // Travel
-  if (
-    upperCategory.includes("TRAVEL") ||
-    upperCategory.includes("FLIGHT") ||
-    upperCategory.includes("HOTEL")
-  ) {
-    return { top: "Travel", sub: "Travel" };
-  }
-
-  // Income
-  if (
-    upperCategory.includes("INCOME") ||
-    upperCategory.includes("WAGE") ||
-    upperCategory.includes("SALARY")
-  ) {
-    return { top: "Income", sub: "Income" };
-  }
-
-  // Housing
-  if (
-    upperCategory.includes("RENT") ||
-    upperCategory.includes("MORTGAGE") ||
-    upperCategory.includes("UTILITIES")
-  ) {
-    return { top: "Housing", sub: "Housing" };
-  }
-
-  // Health & Fitness
-  if (
-    upperCategory.includes("HEALTH") ||
-    upperCategory.includes("MEDICAL") ||
-    upperCategory.includes("PHARMACY") ||
-    upperCategory.includes("FITNESS")
-  ) {
-    return { top: "Health", sub: "Health" };
-  }
-
-  // Personal Care
-  if (
-    upperCategory.includes("PERSONAL_CARE") ||
-    upperCategory.includes("BEAUTY") ||
-    upperCategory.includes("HAIR")
-  ) {
-    return { top: "Personal Care", sub: "Personal Care" };
-  }
-
-  // Bills & Utilities
-  if (
-    upperCategory.includes("UTILITIES") ||
-    upperCategory.includes("PHONE") ||
-    upperCategory.includes("INTERNET")
-  ) {
-    return { top: "Bills & Utilities", sub: "Bills & Utilities" };
-  }
-
-  // Subscriptions
-  if (
-    upperCategory.includes("SUBSCRIPTION") ||
-    upperCategory.includes("STREAMING")
-  ) {
-    return { top: "Subscriptions", sub: "Subscriptions" };
-  }
-
-  // Education
-  if (
-    upperCategory.includes("EDUCATION") ||
-    upperCategory.includes("STUDENT") ||
-    upperCategory.includes("SCHOOL")
-  ) {
-    return { top: "Education", sub: "Education" };
-  }
-
-  // Savings & Investments
-  if (
-    upperCategory.includes("INVESTMENT") ||
-    upperCategory.includes("SAVINGS") ||
-    upperCategory.includes("TRANSFER")
-  ) {
-    return { top: "Savings", sub: "Savings" };
-  }
-
-  // Default fallback
-  return { top: "Other", sub: "Other" };
-}
 
 export default async function handler(req, res) {
   if (req.method !== "POST")
@@ -262,64 +121,22 @@ export default async function handler(req, res) {
     // 5) Store transactions in database
     if (added.length || modified.length) {
       const rows = [...added, ...modified].map((txn) => {
-        // Enhanced category extraction with fallbacks
-        let category = null;
+        // Extract Plaid categories with proper fallback hierarchy
+        const primary = txn.personal_finance_category?.primary || null;
+        const detailed = txn.personal_finance_category?.detailed || null;
 
-        // Try detailed category first (if available)
-        if (txn.personal_finance_category?.detailed) {
-          category = txn.personal_finance_category.detailed;
-        }
-        // Then try primary category
-        else if (txn.personal_finance_category?.primary) {
-          category = txn.personal_finance_category.primary;
-        }
-        // Fallback to legacy category array (first item)
-        else if (
-          txn.personal_finance_category &&
-          txn.personal_finance_category.length > 0
-        ) {
-          category = txn.personal_finance_category[0];
-        }
+        // Keep original category for reference (prefer detailed, fallback to primary)
+        const category = detailed || primary || null;
 
-        // Enhanced merchant-based category detection
-        const merchantName = (
-          txn.merchant_name ||
-          txn.name ||
-          ""
-        ).toLowerCase();
-        if (!category || category === "GENERAL_MERCHANDISE") {
-          if (merchantName.includes("amazon"))
-            category = "GENERAL_MERCHANDISE_ONLINE_SHOPPING";
-          else if (
-            merchantName.includes("uber") ||
-            merchantName.includes("lyft")
-          )
-            category = "TRANSPORTATION_TAXIS_AND_RIDE_SHARES";
-          else if (
-            merchantName.includes("starbucks") ||
-            merchantName.includes("coffee")
-          )
-            category = "FOOD_AND_DRINK_COFFEE";
-          else if (
-            merchantName.includes("mcdonalds") ||
-            merchantName.includes("burger")
-          )
-            category = "FOOD_AND_DRINK_FAST_FOOD";
-          else if (
-            merchantName.includes("target") ||
-            merchantName.includes("walmart")
-          )
-            category = "GENERAL_MERCHANDISE_SUPERSTORES";
-          else if (
-            merchantName.includes("shell") ||
-            merchantName.includes("exxon") ||
-            merchantName.includes("chevron")
-          )
-            category = "TRANSPORTATION_GAS";
-        }
+        // Check if this is an internal transfer based on Plaid categories
+        const detectedAsInternalTransfer = isInternalTransferCategory(
+          primary,
+          detailed
+        );
 
-        // Apply simple category mapping
-        const simplifiedCategory = getSimplifiedCategory(category);
+        // Apply comprehensive category mapping using both primary and detailed
+        // (internal transfers will be detected and mapped to INTERNAL_TRANSFER)
+        const mappedCategory = mapPlaidToAppCategory(primary, detailed);
 
         // Check if this transaction is part of a recurring stream
         const streamData = transactionToStreamMap.get(txn.transaction_id);
@@ -329,8 +146,13 @@ export default async function handler(req, res) {
         let newCategory = null;
         let ifRecurring = "no"; // Default to 'no' instead of 'unknown'
 
-        if (streamData) {
-          // Transaction is part of a recurring stream
+        // Priority 1: Internal transfer detection (highest priority)
+        if (detectedAsInternalTransfer) {
+          newCategory = "INTERNAL_TRANSFER";
+          // Internal transfers are not recurring (they're account movements)
+          ifRecurring = "no";
+        } else if (streamData) {
+          // Priority 2: Transaction is part of a recurring stream
           ifRecurring = "yes";
 
           // Set category based on stream type (will be used as new_category)
@@ -345,26 +167,28 @@ export default async function handler(req, res) {
 
         // If category is "Subscriptions", automatically mark as recurring
         // (Subscriptions are inherently recurring, even if not in a Plaid stream)
-        const finalCategory = newCategory || simplifiedCategory.top;
-        if (finalCategory === "Subscriptions") {
-          ifRecurring = "yes";
+        // But skip if it's an internal transfer
+        if (!detectedAsInternalTransfer) {
+          const finalCategory = newCategory || mappedCategory.top;
+          if (finalCategory === "Subscriptions") {
+            ifRecurring = "yes";
+          }
         }
 
         // Debug log for first few transactions with enhanced info
         if (added.length <= 3 || modified.length <= 3) {
+          const logPrefix = detectedAsInternalTransfer
+            ? "🔄 INTERNAL TRANSFER"
+            : "🏷️ Category Mapping";
           console.log(
-            `🏷️ Enhanced: "${
-              txn.name
-            }" → Original: "${category}" → Simplified: "${
-              simplifiedCategory.top
-            } > ${simplifiedCategory.sub}" (Merchant: "${
-              txn.merchant_name || "N/A"
-            }") ${
-              recurringStreamId
-                ? `🔄 RECURRING (${streamData.streamType}) → ${
-                    newCategory || "no override"
-                  }`
-                : ""
+            `${logPrefix}: "${txn.name}" → Plaid Primary: "${
+              primary || "N/A"
+            }" → Detailed: "${detailed || "N/A"}" → Mapped: "${
+              mappedCategory.top
+            } > ${mappedCategory.sub}" → Final: "${
+              newCategory || mappedCategory.top
+            }" ${
+              recurringStreamId ? `🔄 RECURRING (${streamData.streamType})` : ""
             }`
           );
         }
@@ -378,9 +202,9 @@ export default async function handler(req, res) {
           iso_currency_code: txn.iso_currency_code || null,
           name: txn.name || null,
           merchant_name: txn.merchant_name || null,
-          category: category, // Keep original Plaid category
-          top_category: simplifiedCategory.top, // New simplified top category
-          sub_category: simplifiedCategory.sub, // New simplified sub category
+          category: category, // Keep original Plaid category (detailed or primary)
+          top_category: mappedCategory.top, // Mapped top category
+          sub_category: mappedCategory.sub, // Mapped sub category
           transaction_type: txn.payment_channel || null,
           pending: txn.pending ?? false,
           recurring_stream_id: recurringStreamId, // Link to recurring stream if applicable
@@ -477,11 +301,20 @@ export default async function handler(req, res) {
         // Existing transaction - preserve user overrides
         if (existingCategory) {
           // User has overridden this category - preserve it
+          // This includes if user manually set INTERNAL_TRANSFER
           updatedRow.new_category = existingCategory;
+        } else {
+          // No user override - check if top_category indicates internal transfer
+          // (mapper already detected it from Plaid categories)
+          if (row.top_category === "INTERNAL_TRANSFER") {
+            updatedRow.new_category = "INTERNAL_TRANSFER";
+            updatedRow.if_recurring = "no";
+          }
         }
 
         // Determine final category for recurring check
-        const finalCategory = updatedRow.new_category || row.new_category || row.top_category;
+        const finalCategory =
+          updatedRow.new_category || row.new_category || row.top_category;
 
         // If transaction is NOT in a stream but user manually set if_recurring = 'yes', preserve it
         if (!row.recurring_stream_id && existingRecurring === "yes") {
@@ -489,7 +322,12 @@ export default async function handler(req, res) {
         }
         // If transaction IS in a stream, if_recurring should be 'yes' (already set in row, safe to keep)
         // OR if category is "Subscriptions", automatically mark as recurring
-        else if (finalCategory === "Subscriptions" && updatedRow.if_recurring !== "yes") {
+        // BUT skip if it's an internal transfer
+        else if (
+          finalCategory === "Subscriptions" &&
+          updatedRow.if_recurring !== "yes" &&
+          updatedRow.new_category !== "INTERNAL_TRANSFER"
+        ) {
           updatedRow.if_recurring = "yes";
         }
 

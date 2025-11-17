@@ -196,7 +196,7 @@ export async function backfillRecurringCategories(
             transactionId: tx.id,
             transactionName: tx.name || 'Unknown',
             change: 'set_flag',
-            from: tx.if_recurring || 'unknown',
+            from: tx.if_recurring || 'no',
             to: 'yes',
             streamType: streamData.streamType,
           });
