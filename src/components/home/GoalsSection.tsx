@@ -1,9 +1,10 @@
 // components/home/GoalsSection.tsx
 
 import React from "react";
-import { View, Text, TouchableOpacity, Image } from "react-native";
+import { View, Text, TouchableOpacity, Image, Platform } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { GlassView } from "expo-glass-effect";
+import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { Goal } from "@/src/types/finny";
 import { styles } from "@/src/styles/homeStyles";
@@ -40,31 +41,63 @@ export const GoalsSection: React.FC<GoalsSectionProps> = React.memo(
                 <Text style={styles.emptyGoalsDescription}>
                   Start your financial journey by setting your first goal.
                 </Text>
-                <TouchableOpacity
-                  onPress={() => {
-                    router.push({
-                      pathname: "/goals",
-                      params: { openAddGoal: "true" },
-                    });
-                  }}
-                  activeOpacity={0.8}
-                >
-                  <GlassView
-                    style={styles.addFirstGoalButton}
-                    tintColor="#4A90E2"
-                  >
-                    <View style={styles.addFirstGoalContent}>
-                      <Ionicons
-                        name="add-circle-outline"
-                        size={20}
-                        color="#fff"
-                      />
-                      <Text style={styles.addFirstGoalText}>
-                        Add Your First Goal
-                      </Text>
-                    </View>
-                  </GlassView>
-                </TouchableOpacity>
+                {(() => {
+                  const isIOS = Platform.OS === "ios";
+                  const iosVersion = isIOS
+                    ? parseInt(
+                        String(Platform.Version).split(".")[0] || "0",
+                        10
+                      )
+                    : 0;
+                  const shouldUseLiquidGlass = isIOS && iosVersion >= 18;
+                  const ButtonShell = shouldUseLiquidGlass ? GlassView : View;
+
+                  return (
+                    <TouchableOpacity
+                      style={styles.addFirstGoalButton}
+                      activeOpacity={0.9}
+                      onPress={() => {
+                        router.push({
+                          pathname: "/goals",
+                          params: { openAddGoal: "true" },
+                        });
+                      }}
+                    >
+                      {shouldUseLiquidGlass ? (
+                        <ButtonShell
+                          glassEffectStyle="regular"
+                          tintColor="rgba(74, 144, 226, 0.8)"
+                          style={styles.addFirstGoalGlassContainer}
+                        >
+                          <Ionicons
+                            name="add-circle-outline"
+                            size={18}
+                            color="#fff"
+                          />
+                          <Text style={styles.addFirstGoalText}>
+                            Add Your First Goal
+                          </Text>
+                        </ButtonShell>
+                      ) : (
+                        <LinearGradient
+                          colors={["#4A90E2", "#357ABD", "#2E6BA8"]}
+                          start={{ x: 0, y: 0 }}
+                          end={{ x: 1, y: 1 }}
+                          style={styles.addFirstGoalGradientContainer}
+                        >
+                          <Ionicons
+                            name="add-circle-outline"
+                            size={18}
+                            color="#fff"
+                          />
+                          <Text style={styles.addFirstGoalText}>
+                            Add Your First Goal
+                          </Text>
+                        </LinearGradient>
+                      )}
+                    </TouchableOpacity>
+                  );
+                })()}
               </View>
             </View>
           </View>

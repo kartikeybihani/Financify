@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -6,12 +6,15 @@ import {
   Platform,
   Dimensions,
   Alert,
+  Animated,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { notificationService } from "@/src/utils/notificationService";
 import IconButton from "@/src/components/shared/IconButton";
+import { supabase } from "@/src/lib/supabase/supabase";
+import logger from "@/src/utils/logger";
 
 interface FinnyCheckinScreenProps {
   onBack: () => void;
@@ -140,6 +143,7 @@ interface FrequencyOptionProps {
   isSelected: boolean;
   onPress: () => void;
   isLast?: boolean;
+  disabled?: boolean;
 }
 
 const FrequencyOption: React.FC<FrequencyOptionProps> = ({
@@ -147,11 +151,13 @@ const FrequencyOption: React.FC<FrequencyOptionProps> = ({
   isSelected,
   onPress,
   isLast = false,
+  disabled = false,
 }) => (
   <TouchableOpacity
     style={[styles.frequencyOption, isLast && styles.frequencyOptionLast]}
     onPress={onPress}
     activeOpacity={0.7}
+    disabled={disabled}
   >
     <View style={styles.frequencyOptionLeft}>
       <Text
@@ -178,8 +184,11 @@ export default function FinnyCheckinScreen({
 }: FinnyCheckinScreenProps) {
   const insets = useSafeAreaInsets();
   const [selectedFrequency, setSelectedFrequency] = useState<
-    "daily" | "3times" | "weekly" | "never"
-  >("daily");
+    "daily" | "3times" | "weekly" | "never" | null
+  >(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const fadeAnim = useRef(new Animated.Value(0)).current;
 
   const frequencyOptions = [
     {
@@ -200,21 +209,90 @@ export default function FinnyCheckinScreen({
     },
   ];
 
+  // Load current frequency from database on mount
+  useEffect(() => {
+    const loadCheckinFrequency = async () => {
+      let frequency: "daily" | "3times" | "weekly" | "never" = "daily";
+
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (!user?.id) {
+          logger.warn("[FinnyCheckin] No authenticated user found");
+        } else {
+          const { data: profile, error } = await supabase
+            .from("profiles")
+            .select("checkin_frequency")
+            .eq("id", user.id)
+            .maybeSingle();
+
+          if (error) {
+            logger.error("[FinnyCheckin] Error loading frequency:", error);
+          } else if (profile?.checkin_frequency) {
+            frequency = profile.checkin_frequency as
+              | "daily"
+              | "3times"
+              | "weekly"
+              | "never";
+          }
+        }
+      } catch (error) {
+        logger.error("[FinnyCheckin] Error loading frequency:", error);
+      } finally {
+        // Always set the frequency (defaults to daily) and fade in
+        setSelectedFrequency(frequency);
+        setIsLoading(false);
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 200,
+          useNativeDriver: true,
+        }).start();
+      }
+    };
+
+    loadCheckinFrequency();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const handleFrequencySelect = async (
     frequency: "daily" | "3times" | "weekly" | "never"
   ) => {
+    // Don't update if already selected
+    if (selectedFrequency === frequency) return;
+
+    // Optimistically update UI
     setSelectedFrequency(frequency);
 
     try {
-      // Request notification permissions if not already granted
-      const hasPermission = await notificationService.requestPermissions();
-      if (!hasPermission) {
-        Alert.alert(
-          "Notification Permission Required",
-          "To receive check-in reminders, please enable notifications in your device settings.",
-          [{ text: "OK" }]
-        );
-        return;
+      setIsSaving(true);
+
+      // Save to database first
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user?.id) {
+        throw new Error("User not authenticated");
+      }
+
+      const { error: dbError } = await supabase
+        .from("profiles")
+        .update({ checkin_frequency: frequency })
+        .eq("id", user.id);
+
+      if (dbError) {
+        throw dbError;
+      }
+
+      logger.info("[FinnyCheckin] Frequency saved successfully:", frequency);
+
+      // Request notification permissions if not already granted (only if not "never")
+      if (frequency !== "never") {
+        const hasPermission = await notificationService.requestPermissions();
+        if (!hasPermission) {
+          // Preference is still saved to database, user can enable notifications later
+          return;
+        }
       }
 
       // Save preferences and schedule notifications
@@ -226,35 +304,36 @@ export default function FinnyCheckinScreen({
       await notificationService.savePreferences(preferences);
       await notificationService.scheduleNotifications(preferences);
 
-      console.log("Selected frequency:", frequency);
-
-      // Show confirmation
-      if (frequency !== "never") {
-        Alert.alert(
-          "Notifications Scheduled!",
-          `You'll receive Finny check-in reminders ${
-            frequency === "daily"
-              ? "daily"
-              : frequency === "3times"
-              ? "3 times a week"
-              : "weekly"
-          }.`,
-          [{ text: "OK" }]
-        );
-      } else {
-        Alert.alert(
-          "Notifications Disabled",
-          "You won't receive any check-in reminders.",
-          [{ text: "OK" }]
-        );
-      }
-    } catch (error) {
-      console.error("Error setting notification preferences:", error);
+      logger.info(
+        "[FinnyCheckin] Frequency and notifications updated:",
+        frequency
+      );
+    } catch (error: any) {
+      logger.error("[FinnyCheckin] Error saving frequency:", error);
+      // Revert to previous frequency on error
       Alert.alert(
         "Error",
-        "Failed to save notification preferences. Please try again.",
+        "Failed to save check-in frequency. Please try again.",
         [{ text: "OK" }]
       );
+      // Reload from database to get the correct value
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (user?.id) {
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("checkin_frequency")
+          .eq("id", user.id)
+          .maybeSingle();
+        if (profile?.checkin_frequency) {
+          setSelectedFrequency(
+            profile.checkin_frequency as "daily" | "3times" | "weekly" | "never"
+          );
+        }
+      }
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -269,21 +348,32 @@ export default function FinnyCheckinScreen({
         </View>
 
         {/* Content */}
-        <View style={styles.content}>
+        <Animated.View
+          style={[
+            styles.content,
+            {
+              opacity: fadeAnim,
+            },
+          ]}
+        >
           <View style={styles.section}>
             <View style={styles.frequencyOptionsContainer}>
               {frequencyOptions.map((option, index) => (
                 <FrequencyOption
                   key={option.id}
                   title={option.title}
-                  isSelected={selectedFrequency === option.id}
+                  isSelected={
+                    selectedFrequency !== null &&
+                    selectedFrequency === option.id
+                  }
                   onPress={() => handleFrequencySelect(option.id)}
                   isLast={index === frequencyOptions.length - 1}
+                  disabled={isLoading || isSaving}
                 />
               ))}
             </View>
           </View>
-        </View>
+        </Animated.View>
       </SafeAreaView>
     </View>
   );

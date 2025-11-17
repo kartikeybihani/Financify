@@ -25,7 +25,7 @@ export const HomeHeader: React.FC<HomeHeaderProps> = React.memo(
         </TouchableOpacity>
         <View style={styles.headerTextContainer}>
           <Text style={styles.greetingText}>
-            Hi {userName?.split(" ")[0] || "there"}
+            Hi {userName || "there"}
           </Text>
           <Text style={styles.subGreeting}>Welcome Back!</Text>
         </View>

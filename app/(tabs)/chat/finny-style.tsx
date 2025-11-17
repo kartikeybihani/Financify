@@ -1,15 +1,19 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
   TouchableOpacity,
   Platform,
   Dimensions,
+  Alert,
+  Animated,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import IconButton from "@/src/components/shared/IconButton";
+import { supabase } from "@/src/lib/supabase/supabase";
+import logger from "@/src/utils/logger";
 
 interface FinnyStyleScreenProps {
   onBack: () => void;
@@ -147,6 +151,7 @@ interface StyleOptionProps {
   isSelected: boolean;
   onPress: () => void;
   isLast?: boolean;
+  disabled?: boolean;
 }
 
 const StyleOption: React.FC<StyleOptionProps> = ({
@@ -155,11 +160,13 @@ const StyleOption: React.FC<StyleOptionProps> = ({
   isSelected,
   onPress,
   isLast = false,
+  disabled = false,
 }) => (
   <TouchableOpacity
     style={[styles.styleOption, isLast && styles.styleOptionLast]}
     onPress={onPress}
     activeOpacity={0.7}
+    disabled={disabled}
   >
     <View style={styles.styleOptionLeft}>
       <Text
@@ -185,8 +192,11 @@ const StyleOption: React.FC<StyleOptionProps> = ({
 export default function FinnyStyleScreen({ onBack }: FinnyStyleScreenProps) {
   const insets = useSafeAreaInsets();
   const [selectedStyle, setSelectedStyle] = useState<
-    "conversational" | "direct" | "witty"
-  >("conversational");
+    "conversational" | "direct" | "witty" | null
+  >(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const fadeAnim = useRef(new Animated.Value(0)).current;
 
   const styleOptions = [
     {
@@ -206,10 +216,107 @@ export default function FinnyStyleScreen({ onBack }: FinnyStyleScreenProps) {
     },
   ];
 
-  const handleStyleSelect = (style: "conversational" | "direct" | "witty") => {
+  // Load current style from database on mount
+  useEffect(() => {
+    const loadFinnyStyle = async () => {
+      let style: "conversational" | "direct" | "witty" = "conversational";
+
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (!user?.id) {
+          logger.warn("[FinnyStyle] No authenticated user found");
+        } else {
+          const { data: profile, error } = await supabase
+            .from("profiles")
+            .select("finny_style")
+            .eq("id", user.id)
+            .maybeSingle();
+
+          if (error) {
+            logger.error("[FinnyStyle] Error loading style:", error);
+          } else if (profile?.finny_style) {
+            style = profile.finny_style as
+              | "conversational"
+              | "direct"
+              | "witty";
+          }
+        }
+      } catch (error) {
+        logger.error("[FinnyStyle] Error loading style:", error);
+      } finally {
+        // Always set the style (defaults to conversational) and fade in
+        setSelectedStyle(style);
+        setIsLoading(false);
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 200,
+          useNativeDriver: true,
+        }).start();
+      }
+    };
+
+    loadFinnyStyle();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleStyleSelect = async (
+    style: "conversational" | "direct" | "witty"
+  ) => {
+    // Don't update if already selected
+    if (selectedStyle === style) return;
+
+    // Optimistically update UI
     setSelectedStyle(style);
-    // TODO: Save the selected style to user preferences
-    console.log("Selected style:", style);
+
+    // Save to database
+    try {
+      setIsSaving(true);
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user?.id) {
+        throw new Error("User not authenticated");
+      }
+
+      const { error } = await supabase
+        .from("profiles")
+        .update({ finny_style: style })
+        .eq("id", user.id);
+
+      if (error) {
+        throw error;
+      }
+
+      logger.info("[FinnyStyle] Style saved successfully:", style);
+    } catch (error: any) {
+      logger.error("[FinnyStyle] Error saving style:", error);
+      // Revert to previous style on error
+      Alert.alert(
+        "Error",
+        "Failed to save style preference. Please try again.",
+        [{ text: "OK" }]
+      );
+      // Reload from database to get the correct value
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (user?.id) {
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("finny_style")
+          .eq("id", user.id)
+          .maybeSingle();
+        if (profile?.finny_style) {
+          setSelectedStyle(
+            profile.finny_style as "conversational" | "direct" | "witty"
+          );
+        }
+      }
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -223,7 +330,14 @@ export default function FinnyStyleScreen({ onBack }: FinnyStyleScreenProps) {
         </View>
 
         {/* Content */}
-        <View style={styles.content}>
+        <Animated.View
+          style={[
+            styles.content,
+            {
+              opacity: fadeAnim,
+            },
+          ]}
+        >
           <View style={styles.section}>
             <View style={styles.styleOptionsContainer}>
               {styleOptions.map((option, index) => (
@@ -231,14 +345,17 @@ export default function FinnyStyleScreen({ onBack }: FinnyStyleScreenProps) {
                   key={option.id}
                   title={option.title}
                   subtitle={option.subtitle}
-                  isSelected={selectedStyle === option.id}
+                  isSelected={
+                    selectedStyle !== null && selectedStyle === option.id
+                  }
                   onPress={() => handleStyleSelect(option.id)}
                   isLast={index === styleOptions.length - 1}
+                  disabled={isLoading || isSaving}
                 />
               ))}
             </View>
           </View>
-        </View>
+        </Animated.View>
       </SafeAreaView>
     </View>
   );

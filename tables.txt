@@ -247,6 +247,8 @@ CREATE TABLE public.profiles (
   age integer CHECK (age IS NULL OR age >= 0),
   occupation text,
   referral text,
+  finny_style text NOT NULL DEFAULT 'conversational'::text CHECK (finny_style = ANY (ARRAY['conversational'::text, 'direct'::text, 'witty'::text])),
+  checkin_frequency text NOT NULL DEFAULT 'daily'::text CHECK (checkin_frequency = ANY (ARRAY['daily'::text, '3times'::text, 'weekly'::text, 'never'::text])),
   CONSTRAINT profiles_pkey PRIMARY KEY (id),
   CONSTRAINT profiles_id_fkey FOREIGN KEY (id) REFERENCES auth.users(id)
 );

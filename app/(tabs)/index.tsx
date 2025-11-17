@@ -98,6 +98,7 @@ export default function HomeScreen() {
   const [showCashInputModal, setShowCashInputModal] = useState(false);
 
   const [userData, setUserData] = useState<any>(null);
+  const [firstName, setFirstName] = useState<string | null>(null);
 
   // Account Detail Modal state
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(
@@ -373,6 +374,21 @@ export default function HomeScreen() {
         return;
       }
 
+      // Fetch first name from profiles table
+      try {
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("first_name")
+          .eq("id", user.id)
+          .maybeSingle();
+
+        if (profile?.first_name) {
+          setFirstName(profile.first_name);
+        }
+      } catch (error) {
+        logger.error("Error fetching profile first name:", error);
+      }
+
       logger.info("Home screen initialized with cached data");
 
       // Set access token based on whether we have any accounts (from cache or fresh)
@@ -528,8 +544,8 @@ export default function HomeScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <HomeHeader 
-        userName={userData?.user_metadata?.full_name}
+      <HomeHeader
+        userName={firstName || userData?.user_metadata?.full_name}
         onAddAccount={() => setShowCategoryModal(true)}
       />
 
