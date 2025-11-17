@@ -10,6 +10,7 @@ import {
   ScrollView,
   Modal,
   Keyboard,
+  Image,
 } from "react-native";
 import { Picker } from "@react-native-picker/picker";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -187,7 +188,13 @@ export default function AboutYouScreen() {
           contentContainerStyle={styles.content}
           keyboardShouldPersistTaps="handled"
         >
-          <Text style={styles.title}>Let's get to know you.</Text>
+          <View style={styles.titleContainer}>
+            <Image
+              source={require("@/assets/images/midleftshot.png")}
+              style={styles.mascotImage}
+            />
+            <Text style={styles.title}>Let's get to know you.</Text>
+          </View>
 
           <Text style={styles.label}>Age</Text>
           <TouchableOpacity
@@ -218,7 +225,7 @@ Examples:
 • Software Engineer at Google
 • Student at MIT in Boston
 • Freelance Designer in NYC"
-              placeholderTextColor="rgba(255,255,255,0.5)"
+              placeholderTextColor="rgba(255,255,255,0.2)"
               style={styles.occupationInput}
               autoCapitalize="sentences"
               returnKeyType="default"
@@ -408,7 +415,18 @@ const styles = StyleSheet.create({
     paddingBottom: 10,
   },
   progress: { fontSize: 12, color: "rgba(255,255,255,0.6)", marginBottom: 8 },
-  title: { fontSize: 28, color: "#fff", fontWeight: "700", marginBottom: 20 },
+  titleContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 20,
+    gap: 0,
+  },
+  mascotImage: {
+    width: 80,
+    height: 80,
+    resizeMode: "contain",
+  },
+  title: { fontSize: 28, color: "#fff", fontWeight: "700", flex: 1 },
   label: {
     color: "#fff",
     fontSize: 15,

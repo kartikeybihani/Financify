@@ -1,4 +1,4 @@
-// FinalScreen.tsx - Full Redesign with Smart Animations, Rich Messaging, and Elegant Transitions
+// FinalScreen.tsx - Personalized Insights for Gen Z
 
 import React, { useEffect, useRef, useState } from "react";
 import {
@@ -9,8 +9,7 @@ import {
   Dimensions,
   Animated,
   Platform,
-  FlatList,
-  ViewToken,
+  ScrollView,
   StatusBar,
   Alert,
 } from "react-native";
@@ -20,102 +19,115 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { supabase } from "@/src/lib/supabase/supabase";
-import type { ComponentProps } from "react";
 import logger from "@/src/utils/logger";
 import { logOnboardingEvent } from "@/src/utils/onboarding";
 import { useAuthNavigation } from "@/src/contexts/AuthNavigationContext";
-// Onboarding flow context removed; using profiles + router only
 
-const { width, height } = Dimensions.get("window");
+const { width } = Dimensions.get("window");
 
-type IconName = ComponentProps<typeof Ionicons>["name"];
-
-interface CardItem {
-  icon: IconName;
+interface InsightCard {
+  id: string;
+  type: "surprise" | "pattern" | "opportunity";
+  title: string;
+  subtitle: string;
+  icon: string;
   color: string;
-  text: string;
+  data?: any;
 }
 
-const finalCards: CardItem[] = [
-  {
-    icon: "cash-outline",
-    color: "#FFD700",
-    text: "Biggest spend last 30d: loading…",
-  },
-  {
-    icon: "document-text-outline",
-    color: "#00CED1",
-    text: "Subscriptions this month: loading…",
-  },
-  {
-    icon: "timer-outline",
-    color: "#FFA500",
-    text: "Cash runway estimate: loading…",
-  },
-];
-
-const CARD_HEIGHT = 75;
-const CARDS_PER_SLIDE = 3;
-const SLIDE_WIDTH = width;
-const SPACING = 5;
-
-// Reorganize cards into slides
-const carouselSlides = finalCards.reduce((acc, curr, i) => {
-  const slideIndex = Math.floor(i / CARDS_PER_SLIDE);
-  if (!acc[slideIndex]) {
-    acc[slideIndex] = [];
-  }
-  acc[slideIndex].push(curr);
-  return acc;
-}, [] as (typeof finalCards)[]);
+interface CategoryBreakdown {
+  category: string;
+  amount: number;
+  percentage: number;
+  count: number;
+}
 
 export default function FinalScreen() {
   const router = useRouter();
   const { refreshNavigationState } = useAuthNavigation();
   const [typedText, setTypedText] = useState("");
-  const [activeSlide, setActiveSlide] = useState(0);
+  const [insights, setInsights] = useState<InsightCard[]>([]);
+  const [isLoadingInsights, setIsLoadingInsights] = useState(true);
   const [isButtonEnabled, setIsButtonEnabled] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [hasInitialized, setHasInitialized] = useState(false);
+  const [currentSlide, setCurrentSlide] = useState(0);
+  const [showLoadingAnimation, setShowLoadingAnimation] = useState(true);
+  const carouselRef = useRef<ScrollView>(null);
 
-  // Screen mount/unmount logs only
-  useEffect(() => {
-    logger.info("🎬 FinalScreen: Screen mounted");
-    return () => {
-      logger.info("🎬 FinalScreen: Screen unmounted");
-    };
-  }, []);
+  // Typing dots animation for loading
+  const typingDotsAnim = useRef([
+    new Animated.Value(0.4),
+    new Animated.Value(0.4),
+    new Animated.Value(0.4),
+  ]).current;
+
   const index = useRef(0);
-  const message = "You’re in. Here’s what jumps out already.";
+  const messageLines = ["You're in.", "Here's what jumps out already!"];
   const cursorVisible = useRef(true);
-  const viewabilityConfig = useRef({
-    viewAreaCoveragePercentThreshold: 50,
-  }).current;
 
-  const textAnim = useRef(new Animated.Value(0)).current;
-  const boxHeight = useRef(new Animated.Value(80)).current;
   const cardOpacity = useRef(new Animated.Value(0)).current;
   const buttonScale = useRef(new Animated.Value(1)).current;
   const buttonPulse = useRef(new Animated.Value(1)).current;
   const rocketAnimation = useRef(new Animated.Value(0)).current;
-  const cardFloat = useRef(new Animated.Value(0)).current;
-  const progressAnimation = useRef(new Animated.Value(0)).current;
+  const cardAnimations = useRef<Animated.Value[]>([]).current;
   const mascotBounce = useRef(new Animated.Value(0)).current;
   const loadingDotsAnim = useRef([
     new Animated.Value(0.3),
     new Animated.Value(0.3),
     new Animated.Value(0.3),
   ]).current;
-  const gradientShift = useRef(new Animated.Value(0)).current;
   const typingSpeed = 20;
+
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: "USD",
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    }).format(Math.abs(amount));
+  };
+
+  const getCategoryColor = (categoryName: string): string => {
+    const colorMap: { [key: string]: string } = {
+      Groceries: "#4CAF50",
+      Food: "#FF6B6B",
+      "Food & Dining": "#FF6B6B",
+      "Dining Out": "#FF6B6B",
+      Housing: "#8E44AD",
+      Transportation: "#45B7D1",
+      Shopping: "#4ECDC4",
+      Entertainment: "#96CEB4",
+      Subscriptions: "#FFA500",
+      "Health & Fitness": "#FF6B9D",
+      Health: "#FF6B9D",
+      "Bills & Utilities": "#FFD700",
+      "Personal Care": "#FFB6C1",
+      Travel: "#00CED1",
+      Education: "#9B59B6",
+      "Savings & Investments": "#32D74B",
+      Savings: "#32D74B",
+      Income: "#4A90E2",
+      Other: "#607D8B",
+    };
+    return colorMap[categoryName] || "#607D8B";
+  };
 
   const loadInsights = async () => {
     try {
+      setIsLoadingInsights(true);
       const {
         data: { user },
-        error,
+        error: authError,
       } = await supabase.auth.getUser();
-      if (error || !user) return;
+
+      if (authError || !user) {
+        logger.error("❌ FinalScreen: Auth error", authError);
+        setIsLoadingInsights(false);
+        setIsButtonEnabled(true);
+        return;
+      }
+
+      logger.info("🔍 FinalScreen: Loading insights for user", user.id);
 
       const formatDate = (d: Date) => {
         const y = d.getFullYear();
@@ -124,150 +136,563 @@ export default function FinalScreen() {
         return `${y}-${m}-${day}`;
       };
 
-      // Dates for last 30 days
+      // Get last 30 days of transactions
       const end = new Date();
       const start = new Date();
       start.setDate(end.getDate() - 30);
+      const startDateStr = formatDate(start);
+      const endDateStr = formatDate(end);
 
-      // 1) Top category last 30d
-      try {
-        const { data: catRows } = await supabase.rpc("get_spend_by_category", {
-          p_user_id: user.id,
-          p_start: formatDate(start),
-          p_end: formatDate(end),
-        });
-        if (Array.isArray(catRows) && catRows.length > 0) {
-          const top = [...catRows].sort(
-            (a: any, b: any) => Number(b.total_spend) - Number(a.total_spend)
-          )[0];
-          finalCards[0].text = `Biggest spend last 30d: ${
-            top.category
-          } ($${Number(top.total_spend).toFixed(0)})`;
-        }
-      } catch (e) {
-        logger.info("get_spend_by_category failed", e);
+      logger.info("📅 FinalScreen: Fetching transactions", {
+        startDate: startDateStr,
+        endDate: endDateStr,
+      });
+
+      // Fetch transactions directly from database
+      // Use top_category (user-friendly) with fallback to category (raw Plaid)
+      const { data: transactions, error: txError } = await supabase
+        .from("transactions")
+        .select(
+          "date, amount, merchant_name, name, category, top_category, new_category"
+        )
+        .eq("user_id", user.id)
+        .gte("date", startDateStr)
+        .lte("date", endDateStr)
+        .gt("amount", 0) // Only expenses
+        .order("date", { ascending: false })
+        .limit(100);
+
+      if (txError) {
+        logger.error("❌ FinalScreen: Error fetching transactions", txError);
+        // Still show fallback insight
+        setInsights([
+          {
+            id: "error",
+            type: "surprise",
+            title: "Your account is connected!",
+            subtitle:
+              "We're analyzing your transactions. Check back soon for insights.",
+            icon: "checkmark-circle",
+            color: "#00D4AA",
+          },
+        ]);
+        setIsLoadingInsights(false);
+        setIsButtonEnabled(true);
+        return;
       }
 
-      // 2) Subscriptions total (active recurring streams)
+      // Filter out internal transfers and payment transactions
+      const isPaymentTransaction = (tx: any): boolean => {
+        // Exclude if marked as internal transfer
+        if (tx.new_category === "INTERNAL_TRANSFER") {
+          return true;
+        }
+
+        const name = (tx.name || "").toUpperCase();
+        const merchant = (tx.merchant_name || "").toUpperCase();
+
+        // Check for automatic payments (must be exact match or start with)
+        if (
+          name.startsWith("AUTOMATIC PAYMENT") ||
+          name.includes("AUTOMATIC PAYMENT -") ||
+          merchant.startsWith("AUTOMATIC PAYMENT")
+        ) {
+          return true;
+        }
+
+        // Check for credit card payments (both words must be present)
+        if (
+          (name.includes("CREDIT CARD") && name.includes("PAYMENT")) ||
+          (name.includes("PAYMENT") &&
+            name.includes("CREDIT CARD") &&
+            name.match(/\d{4}/)) // Has card number pattern
+        ) {
+          return true;
+        }
+
+        // Check for bill payments (ACH transfers) - more specific
+        if (
+          name.includes("PAYMENT") &&
+          (name.includes("ACH") ||
+            (name.includes("BILL") && name.includes("PAYMENT")))
+        ) {
+          return true;
+        }
+
+        return false;
+      };
+
+      const recentTransactions = (transactions || []).filter(
+        (tx: any) => !isPaymentTransaction(tx)
+      );
+
+      logger.info("📊 FinalScreen: Transaction filtering", {
+        total: transactions?.length || 0,
+        afterFiltering: recentTransactions.length,
+        filteredOut: (transactions?.length || 0) - recentTransactions.length,
+        sampleNames: transactions
+          ?.slice(0, 3)
+          .map((t: any) => t.name || t.merchant_name),
+      });
+
+      const newInsights: InsightCard[] = [];
+
+      if (recentTransactions.length === 0) {
+        logger.info("ℹ️ FinalScreen: No transactions found, showing welcome");
+        // Fallback if no transactions
+        newInsights.push({
+          id: "welcome",
+          type: "surprise",
+          title: "Your account is connected!",
+          subtitle:
+            "We'll analyze your spending patterns as transactions come in.",
+          icon: "checkmark-circle",
+          color: "#00D4AA",
+        });
+        setInsights(newInsights);
+        setIsLoadingInsights(false);
+        setIsButtonEnabled(false);
+
+        // Show loading animation for 2.5 seconds before showing insights
+        setTimeout(() => {
+          setShowLoadingAnimation(false);
+        }, 2500);
+
+        // Initialize animation for welcome card (and teaser/feature cards)
+        for (let i = 0; i < 3; i++) {
+          if (!cardAnimations[i]) {
+            cardAnimations[i] = new Animated.Value(0);
+          }
+        }
+        Animated.stagger(
+          200,
+          cardAnimations.slice(0, 3).map((anim) =>
+            Animated.spring(anim, {
+              toValue: 1,
+              friction: 6,
+              tension: 40,
+              useNativeDriver: true,
+            })
+          )
+        ).start();
+        return;
+      }
+
+      // Helper function to get user-friendly category name
+      const getUserFriendlyCategory = (tx: any): string => {
+        // Priority: new_category (user override) > top_category (mapped) > format category (raw Plaid)
+        if (tx.new_category) return tx.new_category;
+        if (tx.top_category) return tx.top_category;
+
+        // Fallback: format raw Plaid category to be more readable
+        if (tx.category) {
+          return formatPlaidCategory(tx.category);
+        }
+        return "Other";
+      };
+
+      // Helper function to format raw Plaid category names
+      const formatPlaidCategory = (plaidCategory: string): string => {
+        if (!plaidCategory) return "Other";
+
+        // Convert "food_and_drink_fast_food" -> "Fast Food"
+        // Convert "general_merchandise_other" -> "Shopping"
+        // Convert "travel_flight" -> "Travel"
+
+        const upper = plaidCategory.toUpperCase();
+
+        // Food categories
+        if (
+          upper.includes("FOOD") ||
+          upper.includes("RESTAURANT") ||
+          upper.includes("COFFEE")
+        ) {
+          if (upper.includes("GROCERY") || upper.includes("SUPERMARKET"))
+            return "Groceries";
+          if (upper.includes("FAST_FOOD")) return "Fast Food";
+          return "Food & Dining";
+        }
+
+        // Shopping/Merchandise
+        if (upper.includes("MERCHANDISE") || upper.includes("SHOPPING")) {
+          return "Shopping";
+        }
+
+        // Transportation
+        if (
+          upper.includes("TRANSPORT") ||
+          upper.includes("GAS") ||
+          upper.includes("UBER") ||
+          upper.includes("LYFT")
+        ) {
+          return "Transportation";
+        }
+
+        // Travel
+        if (
+          upper.includes("TRAVEL") ||
+          upper.includes("FLIGHT") ||
+          upper.includes("HOTEL")
+        ) {
+          return "Travel";
+        }
+
+        // Entertainment
+        if (
+          upper.includes("ENTERTAINMENT") ||
+          upper.includes("MOVIE") ||
+          upper.includes("GAME")
+        ) {
+          return "Entertainment";
+        }
+
+        // Housing
+        if (
+          upper.includes("RENT") ||
+          upper.includes("MORTGAGE") ||
+          upper.includes("UTILITIES")
+        ) {
+          return "Housing";
+        }
+
+        // Health
+        if (
+          upper.includes("HEALTH") ||
+          upper.includes("MEDICAL") ||
+          upper.includes("PHARMACY")
+        ) {
+          return "Health & Fitness";
+        }
+
+        // Subscriptions
+        if (upper.includes("SUBSCRIPTION") || upper.includes("STREAMING")) {
+          return "Subscriptions";
+        }
+
+        // Income
+        if (
+          upper.includes("INCOME") ||
+          upper.includes("WAGE") ||
+          upper.includes("SALARY")
+        ) {
+          return "Income";
+        }
+
+        // Education
+        if (upper.includes("EDUCATION") || upper.includes("STUDENT")) {
+          return "Education";
+        }
+
+        // Default: convert snake_case to Title Case
+        return plaidCategory
+          .split("_")
+          .map(
+            (word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+          )
+          .join(" ");
+      };
+
+      // Calculate category breakdown using user-friendly categories
+      const categoryMap: { [key: string]: { amount: number; count: number } } =
+        {};
+      let totalSpent = 0;
+
+      recentTransactions.forEach((tx: any) => {
+        const category = getUserFriendlyCategory(tx);
+        const amount = Number(tx.amount) || 0;
+        totalSpent += amount;
+
+        if (!categoryMap[category]) {
+          categoryMap[category] = { amount: 0, count: 0 };
+        }
+        categoryMap[category].amount += amount;
+        categoryMap[category].count += 1;
+      });
+
+      const categoryBreakdown: CategoryBreakdown[] = Object.entries(categoryMap)
+        .map(([category, data]) => ({
+          category,
+          amount: data.amount,
+          percentage: (data.amount / totalSpent) * 100,
+          count: data.count,
+        }))
+        .sort((a, b) => b.amount - a.amount);
+
+      // 1. SURPRISE CARD - Find something counterintuitive
+      const biggestTransaction = recentTransactions.reduce(
+        (max: any, tx: any) =>
+          Number(tx.amount) > Number(max.amount) ? tx : max,
+        recentTransactions[0]
+      );
+
+      // Find most frequent merchant
+      const merchantMap: { [key: string]: number } = {};
+      recentTransactions.forEach((tx: any) => {
+        const merchant = tx.merchant_name || tx.name || "Unknown";
+        merchantMap[merchant] = (merchantMap[merchant] || 0) + 1;
+      });
+      const mostFrequentMerchant = Object.entries(merchantMap).sort(
+        (a, b) => b[1] - a[1]
+      )[0];
+
+      // Create surprise insight
+      if (biggestTransaction && biggestTransaction.amount > 50) {
+        const merchant =
+          biggestTransaction.merchant_name ||
+          biggestTransaction.name ||
+          "a merchant";
+        newInsights.push({
+          id: "surprise",
+          type: "surprise",
+          title: `Your biggest spend: ${formatCurrency(
+            biggestTransaction.amount
+          )}`,
+          subtitle: `at ${merchant} — that's ${Math.round(
+            (biggestTransaction.amount / totalSpent) * 100
+          )}% of your monthly spending`,
+          icon: "flash",
+          color: "#FF6B6B",
+          data: { amount: biggestTransaction.amount, merchant },
+        });
+      } else if (mostFrequentMerchant && mostFrequentMerchant[1] >= 3) {
+        newInsights.push({
+          id: "surprise",
+          type: "surprise",
+          title: `You visited ${mostFrequentMerchant[0]} ${mostFrequentMerchant[1]} times`,
+          subtitle: "this month — your most frequent spot",
+          icon: "repeat",
+          color: "#FFD700",
+          data: {
+            merchant: mostFrequentMerchant[0],
+            count: mostFrequentMerchant[1],
+          },
+        });
+      } else if (categoryBreakdown.length > 0) {
+        const topCategory = categoryBreakdown[0];
+        newInsights.push({
+          id: "surprise",
+          type: "surprise",
+          title: `${topCategory.category} is your top category`,
+          subtitle: `You spent ${formatCurrency(
+            topCategory.amount
+          )} (${Math.round(
+            topCategory.percentage
+          )}%) on ${topCategory.category.toLowerCase()} this month`,
+          icon: "trending-up",
+          color: "#4A90E2",
+          data: topCategory,
+        });
+      }
+
+      // 2. OPPORTUNITY CARD - Actionable insight (moved before pattern)
       try {
         const { data: rec } = await supabase.rpc(
           "get_recurring_streams_active",
           { p_user_id: user.id }
         );
-        if (Array.isArray(rec)) {
+        if (Array.isArray(rec) && rec.length > 0) {
           const subs = rec.filter((r: any) => r.stream_type === "subscription");
-          const total = subs.reduce(
-            (s: number, r: any) => s + Number(r.average_amount || 0),
-            0
-          );
-          finalCards[1].text = `Subscriptions this month: $${total.toFixed(
-            0
-          )} across ${subs.length}`;
+          if (subs.length > 0) {
+            const subTotal = subs.reduce(
+              (s: number, r: any) => s + Number(r.average_amount || 0),
+              0
+            );
+            newInsights.push({
+              id: "opportunity",
+              type: "opportunity",
+              title: `You're spending ${formatCurrency(
+                subTotal
+              )}/month on subscriptions`,
+              subtitle: `That's ${
+                subs.length
+              } active subscriptions — ${formatCurrency(
+                subTotal * 12
+              )} per year`,
+              icon: "card",
+              color: "#FFA500",
+              data: { total: subTotal, count: subs.length },
+            });
+          }
         }
       } catch (e) {
         logger.info("get_recurring_streams_active failed", e);
       }
 
-      // 3) Cash runway estimate = liquid_assets / max(expense - income, 1)
-      try {
-        const { data: netWorthRows } = await supabase.rpc("get_net_worth", {
-          p_user_id: user.id,
-        });
-        const { data: cashflow } = await supabase.rpc("get_cashflow_monthly", {
-          p_user_id: user.id,
-          p_months: 3,
-        });
-        const liquidAssets =
-          Array.isArray(netWorthRows) && netWorthRows[0]
-            ? Number(netWorthRows[0].liquid_assets || 0)
-            : 0;
-        let avgMonthlyBurn = 0;
-        if (Array.isArray(cashflow) && cashflow.length > 0) {
-          const nets = cashflow.map(
-            (m: any) => Number(m.expense || 0) - Number(m.income || 0)
-          );
-          avgMonthlyBurn =
-            nets.reduce((a: number, b: number) => a + b, 0) / nets.length;
-        }
-        if (liquidAssets > 0) {
-          if (avgMonthlyBurn <= 0) {
-            finalCards[2].text = `Cash runway: growing (positive cashflow)`;
-          } else {
-            const months = liquidAssets / avgMonthlyBurn;
-            finalCards[2].text = `Cash runway: ~${months.toFixed(
-              1
-            )} months at current burn`;
+      // If no opportunity card, create one based on spending
+      if (!newInsights.find((i) => i.type === "opportunity")) {
+        if (categoryBreakdown.length > 0) {
+          const topCategory = categoryBreakdown[0];
+          const potentialSavings = Math.round(topCategory.amount * 0.1); // 10% reduction
+          if (potentialSavings > 20) {
+            newInsights.push({
+              id: "opportunity",
+              type: "opportunity",
+              title: `Save ${formatCurrency(potentialSavings)}/month`,
+              subtitle: `Cut back 10% on ${topCategory.category.toLowerCase()} and you'll save ${formatCurrency(
+                potentialSavings * 12
+              )} per year`,
+              icon: "bulb",
+              color: "#00D4AA",
+              data: {
+                savings: potentialSavings,
+                category: topCategory.category,
+              },
+            });
           }
         }
-      } catch (e) {
-        logger.info("runway calc failed", e);
       }
 
-      setTypedText((prev) => prev);
-    } catch {}
-  };
+      // 3. PATTERN CARD - Top 3 categories with visual breakdown (moved to 3rd position)
+      if (categoryBreakdown.length >= 2) {
+        const top3 = categoryBreakdown.slice(0, 3);
+        newInsights.push({
+          id: "pattern",
+          type: "pattern",
+          title: "Your spending breakdown",
+          subtitle: "", // Empty subtitle - visual boxes show the info
+          icon: "", // No icon - title will be centered
+          color: "#00CED1",
+          data: { categories: top3, total: totalSpent },
+        });
+      }
 
-  const onViewableItemsChanged = useRef(
-    ({ viewableItems }: { viewableItems: ViewToken[] }) => {
-      if (viewableItems.length > 0) {
-        const newActiveSlide = viewableItems[0].index || 0;
-        setActiveSlide(newActiveSlide);
-        // Enable button only when user reaches the last slide
-        const shouldEnable = newActiveSlide === carouselSlides.length - 1;
-        setIsButtonEnabled(shouldEnable);
-
-        // Animate progress line
-        Animated.timing(progressAnimation, {
-          toValue: (newActiveSlide + 1) / carouselSlides.length,
-          duration: 500,
-          useNativeDriver: false,
-        }).start();
-
-        // Gradient shift for momentum feel
-        Animated.timing(gradientShift, {
-          toValue: newActiveSlide / carouselSlides.length,
-          duration: 500,
-          useNativeDriver: false,
-        }).start();
-
-        // Pulse button when enabled + micro celebration
-        if (shouldEnable) {
-          // Mascot bounce celebration
-          Animated.sequence([
-            Animated.timing(mascotBounce, {
-              toValue: -8,
-              duration: 150,
-              useNativeDriver: true,
-            }),
-            Animated.spring(mascotBounce, {
-              toValue: 0,
-              friction: 4,
-              useNativeDriver: true,
-            }),
-          ]).start();
-
-          // Button pulse effect
-          Animated.loop(
-            Animated.sequence([
-              Animated.timing(buttonPulse, {
-                toValue: 1.05,
-                duration: 1000,
-                useNativeDriver: true,
-              }),
-              Animated.timing(buttonPulse, {
-                toValue: 1,
-                duration: 1000,
-                useNativeDriver: true,
-              }),
-            ])
-          ).start();
+      // Initialize card animations (including teaser and feature cards)
+      const totalCards = newInsights.length + 2; // +2 for teaser and feature cards
+      for (let i = 0; i < totalCards; i++) {
+        if (!cardAnimations[i]) {
+          cardAnimations[i] = new Animated.Value(0);
         }
       }
+
+      logger.info("✅ FinalScreen: Generated insights", {
+        count: newInsights.length,
+        types: newInsights.map((i) => i.type),
+      });
+
+      setInsights(newInsights);
+      setIsLoadingInsights(false);
+      // Don't enable button initially - wait for user to swipe to slide 2
+      setIsButtonEnabled(false);
+
+      // Show loading animation for 2.5 seconds before showing insights
+      setTimeout(() => {
+        setShowLoadingAnimation(false);
+      }, 2500);
+
+      // Animate cards in with stagger (including teaser and social proof)
+      if (cardAnimations.length > 0) {
+        Animated.stagger(
+          200,
+          cardAnimations.slice(0, totalCards).map((anim) =>
+            Animated.spring(anim, {
+              toValue: 1,
+              friction: 6,
+              tension: 40,
+              useNativeDriver: true,
+            })
+          )
+        ).start();
+      }
+    } catch (error) {
+      logger.error("❌ FinalScreen: Error loading insights", error);
+      // Show error fallback
+      setInsights([
+        {
+          id: "error",
+          type: "surprise",
+          title: "Something went wrong",
+          subtitle:
+            "We couldn't load your insights right now. Try again later.",
+          icon: "alert-circle",
+          color: "#FF6B6B",
+        },
+      ]);
+      setIsLoadingInsights(false);
+      setIsButtonEnabled(false);
+
+      // Show loading animation for 2.5 seconds before showing error state
+      setTimeout(() => {
+        setShowLoadingAnimation(false);
+      }, 2500);
+
+      // Initialize animation for error card (and teaser/feature cards)
+      for (let i = 0; i < 3; i++) {
+        if (!cardAnimations[i]) {
+          cardAnimations[i] = new Animated.Value(0);
+        }
+      }
+      Animated.stagger(
+        200,
+        cardAnimations.slice(0, 3).map((anim) =>
+          Animated.spring(anim, {
+            toValue: 1,
+            friction: 6,
+            tension: 40,
+            useNativeDriver: true,
+          })
+        )
+      ).start();
     }
-  ).current;
+  };
+
+  // Enable button after insights load
+  useEffect(() => {
+    if (!isLoadingInsights && insights.length > 0) {
+      // Mascot bounce celebration
+      Animated.sequence([
+        Animated.timing(mascotBounce, {
+          toValue: -8,
+          duration: 150,
+          useNativeDriver: true,
+        }),
+        Animated.spring(mascotBounce, {
+          toValue: 0,
+          friction: 4,
+          useNativeDriver: true,
+        }),
+      ]).start();
+
+      // Button pulse effect
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(buttonPulse, {
+            toValue: 1.05,
+            duration: 1000,
+            useNativeDriver: true,
+          }),
+          Animated.timing(buttonPulse, {
+            toValue: 1,
+            duration: 1000,
+            useNativeDriver: true,
+          }),
+        ])
+      ).start();
+    }
+  }, [isLoadingInsights, insights]);
 
   useEffect(() => {
     logOnboardingEvent({ stage: "final", action: "view" });
+
+    // Typing dots animation
+    const dotAnimations = typingDotsAnim.map((dot, index) =>
+      Animated.loop(
+        Animated.sequence([
+          Animated.delay(index * 150),
+          Animated.timing(dot, {
+            toValue: 1,
+            duration: 600,
+            useNativeDriver: true,
+          }),
+          Animated.timing(dot, {
+            toValue: 0,
+            duration: 600,
+            useNativeDriver: true,
+          }),
+        ])
+      )
+    );
+    Animated.parallel(dotAnimations).start();
+
     // Cursor blink animation
     const cursorInterval = setInterval(() => {
       cursorVisible.current = !cursorVisible.current;
@@ -276,59 +701,59 @@ export default function FinalScreen() {
       );
     }, 500);
 
-    // Initial box animation
-    Animated.spring(boxHeight, {
-      toValue: 120,
-      friction: 8,
-      tension: 40,
-      useNativeDriver: false,
-    }).start();
-
-    // Text typing animation with natural feel
+    // Text typing animation
     let typingTimeout: ReturnType<typeof setTimeout>;
+    let currentLineIndex = 0;
+    let currentCharIndex = 0;
+
     const typeNextChar = () => {
-      if (index.current < message.length) {
-        setTypedText(
-          message.substring(0, index.current + 1) +
-            (cursorVisible.current ? "|" : "")
-        );
-        index.current++;
+      if (currentLineIndex < messageLines.length) {
+        const currentLine = messageLines[currentLineIndex];
 
-        // Vary typing speed slightly for natural feel
-        const variance = Math.random() * 30 - 15; // ±15ms variance
-        typingTimeout = setTimeout(typeNextChar, typingSpeed + variance);
-      } else {
-        // Show cards after typing
-        Animated.sequence([
-          Animated.delay(300),
-          Animated.spring(cardOpacity, {
-            toValue: 1,
-            friction: 6,
-            tension: 40,
-            useNativeDriver: true,
-          }),
-        ]).start();
+        if (currentCharIndex < currentLine.length) {
+          // Type current character
+          const linesSoFar = messageLines.slice(0, currentLineIndex);
+          const currentLineText = currentLine.substring(
+            0,
+            currentCharIndex + 1
+          );
+          const fullText = [...linesSoFar, currentLineText].join("\n");
 
-        // Start subtle card floating animation
-        Animated.loop(
-          Animated.sequence([
-            Animated.timing(cardFloat, {
-              toValue: 1,
-              duration: 3000,
-              useNativeDriver: true,
-            }),
-            Animated.timing(cardFloat, {
-              toValue: 0,
-              duration: 3000,
-              useNativeDriver: true,
-            }),
-          ])
-        ).start();
+          setTypedText(fullText + (cursorVisible.current ? "|" : ""));
+          currentCharIndex++;
+
+          const variance = Math.random() * 30 - 15;
+          typingTimeout = setTimeout(typeNextChar, typingSpeed + variance);
+        } else {
+          // Move to next line
+          currentLineIndex++;
+          currentCharIndex = 0;
+
+          if (currentLineIndex < messageLines.length) {
+            // Add newline and continue typing
+            const fullText = messageLines.slice(0, currentLineIndex).join("\n");
+            setTypedText(fullText + (cursorVisible.current ? "|" : ""));
+            typingTimeout = setTimeout(typeNextChar, typingSpeed * 2); // Slight pause between lines
+          } else {
+            // All lines typed, show cards
+            setTypedText(messageLines.join("\n"));
+            Animated.sequence([
+              Animated.delay(300),
+              Animated.spring(cardOpacity, {
+                toValue: 1,
+                friction: 6,
+                tension: 40,
+                useNativeDriver: true,
+              }),
+            ]).start();
+          }
+        }
       }
     };
 
     typingTimeout = setTimeout(typeNextChar, 300);
     loadInsights();
+
     return () => {
       clearTimeout(typingTimeout);
       clearInterval(cursorInterval);
@@ -450,52 +875,106 @@ export default function FinalScreen() {
     }
   };
 
-  const renderSlide = ({
-    item: slideCards,
-    index: slideIndex,
-  }: {
-    item: typeof finalCards;
-    index: number;
-  }) => (
-    <View style={[styles.slide, { width: SLIDE_WIDTH - SPACING * 2 }]}>
-      {slideCards.map((card, cardIndex) => (
-        <Animated.View
-          key={cardIndex}
-          style={[
-            styles.card,
-            {
-              transform: [
-                {
-                  translateX: cardOpacity.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [cardIndex % 2 === 0 ? -50 : 50, 0],
-                  }),
-                },
-                {
-                  translateY: cardFloat.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [0, -3 + cardIndex * 2], // Staggered float
-                  }),
-                },
-              ],
-            },
-          ]}
-        >
-          <View
-            style={[
-              styles.iconContainer,
-              { backgroundColor: `${card.color}15` },
-            ]}
-          >
-            <Ionicons name={card.icon} size={24} color={card.color} />
+  const renderInsightCard = (insight: InsightCard, index: number) => {
+    const animValue = cardAnimations[index] || new Animated.Value(0);
+
+    return (
+      <Animated.View
+        key={insight.id}
+        style={[
+          styles.insightCard,
+          {
+            opacity: animValue,
+            transform: [
+              {
+                translateY: animValue.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [30, 0],
+                }),
+              },
+              {
+                scale: animValue.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [0.95, 1],
+                }),
+              },
+            ],
+          },
+        ]}
+      >
+        {insight.type === "pattern" ? (
+          // Pattern card: centered title, no icon
+          <View style={styles.patternCardHeader}>
+            <Text style={styles.patternCardTitle}>{insight.title}</Text>
           </View>
-          <View style={styles.cardTextContainer}>
-            <Text style={styles.cardText}>{card.text}</Text>
+        ) : (
+          // Other cards: icon + title + subtitle
+          <View style={styles.cardHeader}>
+            <View
+              style={[
+                styles.cardIconContainer,
+                { backgroundColor: `${insight.color}20` },
+              ]}
+            >
+              <Ionicons
+                name={insight.icon as any}
+                size={24}
+                color={insight.color}
+              />
+            </View>
+            <View style={styles.cardHeaderText}>
+              <Text style={styles.cardTitle}>{insight.title}</Text>
+              <Text style={styles.cardSubtitleInline}>{insight.subtitle}</Text>
+            </View>
           </View>
-        </Animated.View>
-      ))}
-    </View>
-  );
+        )}
+
+        {/* Visual breakdown for pattern card */}
+        {insight.type === "pattern" && insight.data?.categories && (
+          <View style={styles.categoryBoxes}>
+            {insight.data.categories
+              .slice(0, 3)
+              .map((cat: CategoryBreakdown, i: number) => {
+                // Use three distinct colors based on index
+                const boxColors = ["#6B8DD6", "#00D4AA", "#FF6B6B"];
+                const boxColor = boxColors[i] || "#607D8B";
+                const isFirst = i === 0;
+                const isLast = i === 2;
+                return (
+                  <View
+                    key={i}
+                    style={[
+                      styles.categoryBox,
+                      isFirst && styles.categoryBoxFirst,
+                      isLast && styles.categoryBoxLast,
+                    ]}
+                  >
+                    <View
+                      style={[
+                        styles.categoryBoxContent,
+                        { backgroundColor: boxColor },
+                      ]}
+                    >
+                      <Text style={styles.categoryBoxName} numberOfLines={1}>
+                        {cat.category}
+                      </Text>
+                      <Text style={styles.categoryBoxAmount}>
+                        {formatCurrency(cat.amount)}
+                      </Text>
+                      <View style={styles.categoryBoxPercentage}>
+                        <Text style={styles.categoryBoxPercentageText}>
+                          {Math.round(cat.percentage)}%
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+                );
+              })}
+          </View>
+        )}
+      </Animated.View>
+    );
+  };
 
   return (
     <View style={styles.container}>
@@ -513,30 +992,18 @@ export default function FinalScreen() {
         locations={[0, 0.3, 0.4, 1]}
         style={styles.gradientContainer}
       >
-        {/* Animated overlay for gradient shift effect */}
-        <Animated.View
-          style={[
-            styles.gradientOverlay,
-            {
-              opacity: gradientShift.interpolate({
-                inputRange: [0, 1],
-                outputRange: [0, 0.3],
-              }),
-            },
-          ]}
-        />
-        <SafeAreaView style={styles.safeAreaTop} />
-
         {/* Day 1 Loading Screen */}
         {isLoading && (
           <Animated.View style={styles.loadingOverlay}>
             <View style={styles.loadingContent}>
               <Animated.Image
-                source={require("../../assets/images/mascot1.jpg")}
+                source={require("../../assets/images/midleftshot.png")}
                 resizeMode="contain"
-                style={[styles.loadingMascot, { transform: [{ scaleX: -1 }] }]}
+                style={[styles.loadingMascot]}
               />
-              <Text style={styles.loadingText}>Setting things up for you…</Text>
+              <Text style={styles.loadingOverlayText}>
+                Setting things up for you…
+              </Text>
               <View style={styles.loadingDots}>
                 {loadingDotsAnim.map((anim, index) => (
                   <Animated.View
@@ -549,7 +1016,7 @@ export default function FinalScreen() {
           </Animated.View>
         )}
 
-        <SafeAreaView style={styles.mainContent}>
+        <SafeAreaView style={styles.mainContent} edges={["top", "bottom"]}>
           <View style={styles.header}>
             <Text style={styles.doneText}>
               You've already done the hardest part — showing up! 🎉
@@ -561,14 +1028,9 @@ export default function FinalScreen() {
 
           <Animated.View style={[styles.finnyBox]}>
             <Animated.Image
-              source={require("../../assets/images/mascot1.jpg")}
-              resizeMode="contain"
-              style={[
-                styles.mascot,
-                {
-                  transform: [{ scaleX: -1 }, { translateY: mascotBounce }],
-                },
-              ]}
+              source={require("../../assets/images/midleftshot.png")}
+              // resizeMode="contain"
+              style={[styles.mascot]}
             />
             <Text style={styles.finnyText}>{typedText}</Text>
           </Animated.View>
@@ -577,41 +1039,225 @@ export default function FinalScreen() {
             style={[styles.cardsContainer, { opacity: cardOpacity }]}
           >
             <Text style={styles.sectionTitle}>
-              Small wins add up faster than you think.
+              Here's what we found in your spending
             </Text>
 
-            <FlatList
-              data={carouselSlides}
-              keyExtractor={(_, index) => index.toString()}
-              horizontal
-              pagingEnabled
-              showsHorizontalScrollIndicator={false}
-              snapToInterval={width}
-              decelerationRate="fast"
-              onViewableItemsChanged={onViewableItemsChanged}
-              viewabilityConfig={viewabilityConfig}
-              contentContainerStyle={styles.carouselContent}
-              renderItem={renderSlide}
-            />
+            {isLoadingInsights || showLoadingAnimation ? (
+              <View style={styles.loadingContainer}>
+                <View style={styles.typingIndicatorContainer}>
+                  <View style={styles.typingDotsContainer}>
+                    {typingDotsAnim.map((dot, index) => (
+                      <Animated.View
+                        key={index}
+                        style={[
+                          styles.typingDot,
+                          {
+                            transform: [
+                              {
+                                translateY: dot.interpolate({
+                                  inputRange: [0, 1],
+                                  outputRange: [0, -8],
+                                }),
+                              },
+                            ],
+                            opacity: dot.interpolate({
+                              inputRange: [0, 1],
+                              outputRange: [0.4, 1],
+                            }),
+                          },
+                        ]}
+                      />
+                    ))}
+                  </View>
+                  <Text style={styles.loadingText}>
+                    Analyzing your transactions...
+                  </Text>
+                </View>
+              </View>
+            ) : (
+              <View style={styles.carouselContainer}>
+                <ScrollView
+                  ref={carouselRef}
+                  horizontal
+                  pagingEnabled
+                  showsHorizontalScrollIndicator={false}
+                  onMomentumScrollEnd={(event) => {
+                    const slideIndex = Math.round(
+                      event.nativeEvent.contentOffset.x / width
+                    );
+                    setCurrentSlide(slideIndex);
+                    // Enable button only when user reaches slide 2, disable on slide 1
+                    setIsButtonEnabled(slideIndex === 1);
+                  }}
+                  scrollEventThrottle={16}
+                >
+                  {/* Slide 1: Insight Cards */}
+                  <View style={styles.carouselSlide}>
+                    <View style={styles.insightsContent}>
+                      {insights.map((insight, index) =>
+                        renderInsightCard(insight, index)
+                      )}
+                    </View>
+                  </View>
 
-            <View style={styles.progressContainer}>
-              <View style={styles.progressTrack}>
-                <Animated.View
-                  style={[
-                    styles.progressLine,
-                    {
-                      width: progressAnimation.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: ["0%", "100%"],
-                      }),
-                    },
-                  ]}
-                />
+                  {/* Slide 2: Teaser + Feature + Achievement */}
+                  <View style={styles.carouselSlide}>
+                    <View style={styles.slide2Content}>
+                      {/* Teaser Card - More Insights Waiting */}
+                      {insights.length > 0 &&
+                        cardAnimations[insights.length] && (
+                          <Animated.View
+                            style={[
+                              styles.teaserCard,
+                              {
+                                opacity: cardAnimations[insights.length],
+                                transform: [
+                                  {
+                                    translateY: cardAnimations[
+                                      insights.length
+                                    ].interpolate({
+                                      inputRange: [0, 1],
+                                      outputRange: [20, 0],
+                                    }),
+                                  },
+                                ],
+                              },
+                            ]}
+                          >
+                            <View style={styles.teaserContent}>
+                              <View style={styles.teaserIconContainer}>
+                                <Ionicons
+                                  name="sparkles"
+                                  size={22}
+                                  color="#FFD700"
+                                />
+                              </View>
+                              <View style={styles.teaserTextContainer}>
+                                <Text style={styles.teaserTitle}>
+                                  {insights.length === 1
+                                    ? "3 more insights"
+                                    : "5+ more insights"}{" "}
+                                  waiting for you
+                                </Text>
+                                <Text style={styles.teaserSubtitle}>
+                                  Discover recurring subscriptions, spending
+                                  trends, and personalized recommendations
+                                </Text>
+                              </View>
+                            </View>
+                          </Animated.View>
+                        )}
+
+                      {/* Feature Preview Card */}
+                      {insights.length > 0 &&
+                        cardAnimations[insights.length + 1] && (
+                          <Animated.View
+                            style={[
+                              styles.featureCard,
+                              {
+                                opacity: cardAnimations[insights.length + 1],
+                                transform: [
+                                  {
+                                    translateY: cardAnimations[
+                                      insights.length + 1
+                                    ].interpolate({
+                                      inputRange: [0, 1],
+                                      outputRange: [20, 0],
+                                    }),
+                                  },
+                                ],
+                              },
+                            ]}
+                          >
+                            <View style={styles.featureContent}>
+                              <View style={styles.featureIconContainer}>
+                                <Ionicons
+                                  name="chatbubbles"
+                                  size={22}
+                                  color="#00D4AA"
+                                />
+                              </View>
+                              <View style={styles.featureTextContainer}>
+                                <Text style={styles.featureTitle}>
+                                  Chat with Finny, your AI advisor
+                                </Text>
+                                <View style={styles.featurePoints}>
+                                  <View style={styles.featurePoint}>
+                                    <Ionicons
+                                      name="checkmark-circle"
+                                      size={14}
+                                      color="#00D4AA"
+                                    />
+                                    <Text style={styles.featurePointText}>
+                                      Get personalized financial advice
+                                    </Text>
+                                  </View>
+                                  <View style={styles.featurePoint}>
+                                    <Ionicons
+                                      name="checkmark-circle"
+                                      size={14}
+                                      color="#00D4AA"
+                                    />
+                                    <Text style={styles.featurePointText}>
+                                      Track and achieve your goals
+                                    </Text>
+                                  </View>
+                                  <View style={styles.featurePoint}>
+                                    <Ionicons
+                                      name="checkmark-circle"
+                                      size={14}
+                                      color="#00D4AA"
+                                    />
+                                    <Text style={styles.featurePointText}>
+                                      Understand your spending patterns
+                                    </Text>
+                                  </View>
+                                  <View style={styles.featurePoint}>
+                                    <Ionicons
+                                      name="checkmark-circle"
+                                      size={14}
+                                      color="#00D4AA"
+                                    />
+                                    <Text style={styles.featurePointText}>
+                                      Get answers to money questions
+                                    </Text>
+                                  </View>
+                                  <View style={styles.featurePoint}>
+                                    <Ionicons
+                                      name="checkmark-circle"
+                                      size={14}
+                                      color="#00D4AA"
+                                    />
+                                    <Text style={styles.featurePointText}>
+                                      Ready to grow wealth?
+                                    </Text>
+                                  </View>
+                                </View>
+                              </View>
+                            </View>
+                          </Animated.View>
+                        )}
+                    </View>
+                  </View>
+                </ScrollView>
+
+                {/* Carousel Indicators */}
+                <View style={styles.carouselIndicators}>
+                  <View
+                    style={[
+                      styles.carouselIndicator,
+                      currentSlide === 0 && styles.carouselIndicatorActive,
+                    ]}
+                  />
+                  <View
+                    style={[
+                      styles.carouselIndicator,
+                      currentSlide === 1 && styles.carouselIndicatorActive,
+                    ]}
+                  />
+                </View>
               </View>
-              <View style={styles.progressEndpoint}>
-                <Text style={styles.day1Text}>Day 1</Text>
-              </View>
-            </View>
+            )}
           </Animated.View>
 
           <View style={styles.footer}>
@@ -646,7 +1292,7 @@ export default function FinalScreen() {
                       !isButtonEnabled && styles.buttonTextDisabled,
                     ]}
                   >
-                    Start Your Day 1
+                    Let's Explore and Grow
                   </Text>
                   <Animated.View
                     style={{ transform: [{ translateY: rocketAnimation }] }}
@@ -661,9 +1307,6 @@ export default function FinalScreen() {
                 </LinearGradient>
               </TouchableOpacity>
             </Animated.View>
-            {/* <Text style={styles.supportiveText}>
-              Others started Day 1 this week — now it's your turn.
-            </Text> */}
           </View>
         </SafeAreaView>
       </LinearGradient>
@@ -679,15 +1322,6 @@ const styles = StyleSheet.create({
   gradientContainer: {
     flex: 1,
   },
-  gradientOverlay: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: "rgba(32, 43, 72, 0.4)",
-    pointerEvents: "none",
-  },
   safeAreaTop: {
     flex: 0,
     backgroundColor: "transparent",
@@ -698,15 +1332,15 @@ const styles = StyleSheet.create({
   },
   header: {
     alignItems: "center",
-    marginBottom: 12,
-    paddingTop: Platform.OS === "ios" ? 40 : 24,
+    marginBottom: 8,
+    paddingTop: Platform.OS === "ios" ? 40 : 36,
   },
   doneText: {
-    fontSize: 20,
+    fontSize: width < 375 ? 18 : 20,
     fontWeight: "800",
     color: "#fff",
     textAlign: "center",
-    paddingHorizontal: 20,
+    paddingHorizontal: Math.max(20, width * 0.05),
   },
   subText: {
     fontSize: 15,
@@ -718,16 +1352,17 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.12)",
-    padding: 14,
-    marginHorizontal: 20,
+    padding: 18,
+    marginHorizontal: Math.max(20, width * 0.05),
     flexDirection: "row",
     alignItems: "flex-start",
     marginBottom: 16,
+    minHeight: 80,
   },
   mascot: {
-    width: 60,
-    height: 60,
-    marginRight: 10,
+    width: 64,
+    height: 64,
+    marginRight: 12,
     borderRadius: 18,
   },
   finnyText: {
@@ -742,94 +1377,197 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
   sectionTitle: {
-    fontSize: 15,
-    fontWeight: "600",
+    fontSize: 16,
+    fontWeight: "700",
     color: "#fff",
-    marginBottom: 12,
-    marginLeft: 24,
+    marginBottom: 16,
+    marginLeft: Math.max(20, width * 0.05),
+    marginRight: Math.max(20, width * 0.05),
   },
-  carousel: {
-    marginLeft: (width - SLIDE_WIDTH) / 2 - SPACING,
+  insightsScroll: {
+    flex: 1,
   },
-  carouselContent: {
-    paddingHorizontal: 0,
+  insightsContent: {
+    paddingHorizontal: Math.max(20, width * 0.05),
+    paddingBottom: 20,
+    flexGrow: 1,
   },
-  slide: {
+  carouselContainer: {
+    flex: 1,
+  },
+  carouselSlide: {
     width: width,
-    paddingHorizontal: 20,
-    paddingTop: 6,
+    flex: 1,
+    justifyContent: "flex-start",
   },
-  card: {
-    width: "100%",
-    height: CARD_HEIGHT,
-    backgroundColor: "rgba(255, 255, 255, 0.06)",
-    borderRadius: 12,
-    marginBottom: 10,
+  carouselIndicators: {
     flexDirection: "row",
+    justifyContent: "center",
     alignItems: "center",
+    gap: 8,
+    paddingVertical: 16,
+  },
+  carouselIndicator: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "rgba(255, 255, 255, 0.3)",
+  },
+  carouselIndicatorActive: {
+    backgroundColor: "#4A90E2",
+    width: 24,
+  },
+  insightCard: {
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
+    borderRadius: 16,
+    marginBottom: 16,
+    padding: 18,
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.12)",
-    paddingHorizontal: 12,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
   },
-  iconContainer: {
+  cardHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    marginBottom: 12,
+  },
+  cardIconContainer: {
     width: 40,
     height: 40,
     borderRadius: 12,
     justifyContent: "center",
     alignItems: "center",
+    marginRight: 12,
   },
-  cardTextContainer: {
+  cardHeaderText: {
     flex: 1,
-    marginLeft: 14,
   },
-  cardText: {
+  cardTitle: {
     color: "#fff",
+    fontSize: 16,
+    fontWeight: "700",
+    lineHeight: 22,
+    marginBottom: 2,
+  },
+  cardSubtitle: {
+    color: "rgba(255, 255, 255, 0.75)",
     fontSize: 14,
     fontWeight: "500",
     lineHeight: 20,
+    marginTop: 4,
   },
-  progressContainer: {
-    flexDirection: "row",
-    justifyContent: "center",
+  cardSubtitleInline: {
+    color: "rgba(255, 255, 255, 0.75)",
+    fontSize: 13,
+    fontWeight: "500",
+    lineHeight: 18,
+    marginTop: 2,
+  },
+  patternCardHeader: {
     alignItems: "center",
-    marginTop: 12,
-    marginBottom: 12,
-    paddingHorizontal: 40,
+    marginBottom: 8,
   },
-  progressTrack: {
-    flex: 1,
-    height: 4,
-    backgroundColor: "rgba(255,255,255,0.2)",
-    borderRadius: 2,
-    overflow: "hidden",
-  },
-  progressLine: {
-    height: "100%",
-    backgroundColor: "#4A90E2",
-    borderRadius: 2,
-    shadowColor: "#4A90E2",
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.8,
-    shadowRadius: 4,
-    elevation: 4,
-  },
-  progressEndpoint: {
-    marginLeft: 12,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    backgroundColor: "rgba(74, 144, 226, 0.2)",
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "rgba(74, 144, 226, 0.4)",
-  },
-  day1Text: {
-    color: "#4A90E2",
-    fontSize: 11,
-    fontWeight: "600",
+  patternCardTitle: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "700",
+    lineHeight: 22,
     textAlign: "center",
   },
+  categoryBoxes: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: 8,
+    gap: 8,
+    paddingHorizontal: 4,
+  },
+  categoryBox: {
+    alignItems: "center",
+    flex: 1,
+    minWidth: 50,
+    maxWidth: 80,
+  },
+  categoryBoxFirst: {
+    marginLeft: 10,
+  },
+  categoryBoxLast: {
+    marginRight: 10,
+  },
+  categoryBoxContent: {
+    borderRadius: 12,
+    padding: 16,
+    paddingHorizontal: 10,
+    alignItems: "center",
+    width: "100%",
+    minHeight: 100,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  categoryBoxName: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#fff",
+    textAlign: "center",
+    marginBottom: 6,
+  },
+  categoryBoxAmount: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#fff",
+    marginBottom: 6,
+  },
+  categoryBoxPercentage: {
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  categoryBoxPercentageText: {
+    fontSize: 10,
+    fontWeight: "600",
+    color: "#fff",
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingVertical: 60,
+  },
+  typingIndicatorContainer: {
+    alignItems: "center",
+    gap: 16,
+  },
+  typingDotsContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  typingDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#4A90E2",
+  },
+  loadingText: {
+    color: "rgba(255, 255, 255, 0.7)",
+    fontSize: 15,
+    fontWeight: "500",
+  },
+  slide2Content: {
+    paddingHorizontal: Math.max(20, width * 0.05),
+    paddingBottom: 20,
+    flexGrow: 1,
+    gap: 30,
+  },
   footer: {
-    paddingHorizontal: 20,
+    paddingHorizontal: Math.max(20, width * 0.05),
     paddingBottom: Platform.OS === "ios" ? 16 : 12,
     backgroundColor: "transparent",
   },
@@ -892,7 +1630,7 @@ const styles = StyleSheet.create({
     borderRadius: 30,
     marginBottom: 20,
   },
-  loadingText: {
+  loadingOverlayText: {
     color: "#fff",
     fontSize: 18,
     fontWeight: "600",
@@ -910,5 +1648,137 @@ const styles = StyleSheet.create({
     backgroundColor: "#4A90E2",
     marginHorizontal: 4,
     opacity: 0.3,
+  },
+  teaserCard: {
+    backgroundColor: "rgba(255, 215, 0, 0.1)",
+    borderRadius: 14,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: "rgba(255, 215, 0, 0.3)",
+    shadowColor: "#FFD700",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  teaserContent: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+  },
+  teaserIconContainer: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: "rgba(255, 215, 0, 0.2)",
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 12,
+  },
+  teaserTextContainer: {
+    flex: 1,
+  },
+  teaserTitle: {
+    color: "#fff",
+    fontSize: 15,
+    fontWeight: "700",
+    lineHeight: 20,
+    marginBottom: 6,
+  },
+  teaserSubtitle: {
+    color: "rgba(255, 255, 255, 0.7)",
+    fontSize: 13,
+    fontWeight: "500",
+    lineHeight: 18,
+  },
+  featureCard: {
+    backgroundColor: "rgba(0, 212, 170, 0.1)",
+    borderRadius: 14,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: "rgba(0, 212, 170, 0.3)",
+  },
+  featureContent: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+  },
+  featureIconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    backgroundColor: "rgba(0, 212, 170, 0.2)",
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 14,
+  },
+  featureTextContainer: {
+    flex: 1,
+  },
+  featureTitle: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "700",
+    lineHeight: 22,
+    marginBottom: 12,
+  },
+  featurePoints: {
+    gap: 10,
+  },
+  featurePoint: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  featurePointText: {
+    color: "rgba(255, 255, 255, 0.85)",
+    fontSize: 13,
+    fontWeight: "500",
+    lineHeight: 18,
+    flex: 1,
+  },
+  featureSubtitle: {
+    color: "rgba(255, 255, 255, 0.7)",
+    fontSize: 13,
+    fontWeight: "500",
+    lineHeight: 18,
+  },
+  achievementCard: {
+    backgroundColor: "rgba(255, 215, 0, 0.1)",
+    borderRadius: 14,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: "rgba(255, 215, 0, 0.3)",
+  },
+  achievementHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 10,
+    gap: 8,
+  },
+  achievementIconContainer: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: "rgba(255, 215, 0, 0.2)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  achievementTitle: {
+    color: "#fff",
+    fontSize: 15,
+    fontWeight: "700",
+    flex: 1,
+  },
+  achievementList: {
+    gap: 8,
+  },
+  achievementItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  achievementText: {
+    color: "rgba(255, 255, 255, 0.9)",
+    fontSize: 13,
+    fontWeight: "500",
   },
 });

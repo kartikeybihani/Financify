@@ -318,7 +318,7 @@ export default function AccountConnectionScreen() {
                 <View style={styles.trustContent}>
                   <Text style={styles.trustTitle}>Bank-level security</Text>
                   <Text style={styles.trustSubtitle}>
-                    Used by Venmo, Robinhood • Read-only • Encrypted
+                    Used by Chase, Venmo, Robinhood • Read-only • Encrypted
                   </Text>
                 </View>
               </View>
@@ -331,6 +331,18 @@ export default function AccountConnectionScreen() {
                   <Text style={styles.trustTitle}>Takes ~60 seconds</Text>
                   <Text style={styles.trustSubtitle}>
                     See insights right after connecting
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.trustCard}>
+                <View style={styles.trustIconContainer}>
+                  <Ionicons name="lock-closed" size={24} color="#00D4AA" />
+                </View>
+                <View style={styles.trustContent}>
+                  <Text style={styles.trustTitle}>Your data is never sold</Text>
+                  <Text style={styles.trustSubtitle}>
+                    Never shared with advertisers • You can delete anytime
                   </Text>
                 </View>
               </View>
@@ -362,13 +374,18 @@ export default function AccountConnectionScreen() {
                 )}
               </TouchableOpacity>
               <View style={styles.securityMessage}>
-                <Ionicons
-                  name="shield-checkmark-outline"
-                  size={14}
-                  color="#A0A0A0"
-                />
-                <Text style={styles.securityText}>
-                  We securely connect via Plaid
+                <View style={styles.securityRow}>
+                  <Ionicons
+                    name="shield-checkmark-outline"
+                    size={14}
+                    color="#A0A0A0"
+                  />
+                  <Text style={styles.securityText}>
+                    We securely connect via Plaid
+                  </Text>
+                </View>
+                <Text style={styles.securitySubtext}>
+                  Used by 8000+ Institutions
                 </Text>
               </View>
             </View>
@@ -692,15 +709,26 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   securityMessage: {
-    flexDirection: "row",
     alignItems: "center",
     gap: 6,
     marginTop: 12,
+  },
+  securityRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
   },
   securityText: {
     color: "#A0A0A0",
     fontSize: 13,
     fontWeight: "400",
+    textAlign: "center",
+  },
+  securitySubtext: {
+    color: "rgba(255, 255, 255, 0.5)",
+    fontSize: 12,
+    fontWeight: "400",
+    textAlign: "center",
   },
   connectButtonDisabled: {
     opacity: 0.7,
