@@ -15,25 +15,20 @@ import {
   setSessionState,
   mergeSessionState,
   getConversationContext,
-  saveConversationContext,
   updateConversationContext,
-  getCachedMemory,
-  setCachedMemory,
-  invalidateMemoryCache,
-  getCachedProfile,
-  setCachedProfile,
   invalidateProfileCache,
   selectRelevantMemories,
   categorizeSelectedMemories,
   loadUserMemory,
   loadUserProfile,
-  isSensitiveData,
-  getExpiryDate,
   saveMemoryCandidates,
-  updateMemorySummary,
   generateMemorySummary,
   validateMemoriesWithSmallModel,
 } from "./memory.js";
+import {
+  detectUserState,
+  buildContextAwarePrompt,
+} from "../lib/prompt_engine.js";
 
 // Utilities
 function generateRequestId() {
@@ -885,11 +880,8 @@ function quickExtract(message) {
 }
 
 // Goal extraction function moved to goals.js
-
 // Goal feasibility analysis function moved to goals.js
-
 // Goal conversation handler moved to goals.js
-
 // Goal handler functions moved to goals.js
 
 // Hybrid memory extraction gating — cheap pre-checks before any LLM call
@@ -2214,170 +2206,135 @@ async function handleAsk(
       }
     }
 
-    // 4) Build focused prompt using context packs
-    const system = [
-      "You are Finny: a warm, encouraging, and empowering financial advisor who is blunt when needed.",
-      "",
-      "PERSONALITY & APPROACH:",
-      "- Be warm and encouraging while maintaining professional expertise",
-      "- Show enthusiasm for helping users achieve their financial goals",
-      "- Be blunt and direct when users need to hear hard truths about their finances",
-      "- Celebrate wins and progress, no matter how small",
-      "- Use the user's name when available to create personal connection",
-      "- Focus on financial empowerment and positive outcomes",
-      "",
-      "GEN Z COMMUNICATION STYLE:",
-      "- Keep responses concise (150-200 words max per message)",
-      "- Use direct, conversational language (avoid corporate jargon)",
-      "- Be engaging but professional (not overly casual)",
-      "- Use strategic emojis sparingly (📊 for data, 💰 for money, 🎯 for goals)",
-      "- Say 'Hey!' instead of 'Hello' for greetings",
-      "- Use 'I'd say' instead of 'I think' for opinions",
-      "- Use 'But' instead of 'However' for transitions",
-      "- Use 'Plus' instead of 'Additionally' for extra points",
-      "- Use 'Heads up' instead of 'It's important to note'",
-      "- End with casual but professional phrases like 'Hit me up or Let me know if you need anything' but not always.",
-      "- Keep financial terminology intact (volatility, sector concentration, etc.)",
-      "- Maintain professional credibility while being more engaging and casual",
-      "",
-      "EMPATHETIC ENGAGEMENT:",
-      "- ALWAYS acknowledge and engage with personal information users share, even if not directly financial",
-      "- Show genuine interest in their life, studies, career, location, hobbies, or experiences",
-      "- Make connections between their personal situation and financial advice when relevant",
-      "- Respond with warmth and understanding to personal details like age, location, occupation, or interests",
-      "- Examples: If someone says they're a 20-year-old software engineer student in Tucson, respond with something like 'That's awesome that you're studying software engineering in Tucson! That's such a growing field with great earning potential.'",
-      "- If users share non-financial information, acknowledge it warmly before transitioning to financial topics",
-      "- Build rapport by showing you care about them as a person, not just their finances",
-      "",
-      // USER PROFILE (from onboarding)
-      ...(context.profile?.name
-        ? [`User's name: ${context.profile.name}`]
-        : []),
-      ...(context.profile?.age ? [`User's age: ${context.profile.age}`] : []),
-      ...(context.profile?.occupation
-        ? [`User's occupation: ${context.profile.occupation}`]
-        : []),
-      ...(context.profile?.intent_context
-        ? [
-            "",
-            "USER'S FINANCIAL PERSPECTIVE (from onboarding - use as reference, may not be current):",
-            context.profile.intent_context,
-          ]
-        : []),
-      ...(context.profile?.finny_style
-        ? [
-            "",
-            `COMMUNICATION STYLE PREFERENCE: User prefers ${context.profile.finny_style} communication style. Adjust your tone accordingly:`,
-            context.profile.finny_style === "direct"
-              ? "- Be more direct and to-the-point, focus on facts and numbers"
-              : context.profile.finny_style === "witty"
-              ? "- Add more humor and light-heartedness while staying professional"
-              : "- Use conversational, friendly tone (default)",
-          ]
-        : []),
-      "",
-      // Smart memory context with relevance-based selection
-      // Session summary (short-term conversation memory)
-      // Session summary removed
-      ...(context.memory?.summary
-        ? [`User context: ${context.memory.summary}`]
-        : []),
-      ...(() => {
-        // Select relevant memories based on message and intent
-        const selectedMemories = selectRelevantMemories(
-          context.memory,
-          message,
-          intent, // Use the actual intent passed to handleAsk
-          context.profile
-        );
-        const categorized = categorizeSelectedMemories(selectedMemories);
+    // 4) Detect user state for context-aware prompting
+    const financialDataForState = {
+      base: packs.base,
+      cashflow: packs.cashflow,
+      spend: packs.spend,
+      transactions: packs.base?.recentTransactions || [],
+    };
+    const userState = detectUserState(message, financialDataForState);
+    console.log("🎯 [PROMPT ENGINE] Detected user state:", userState);
 
-        return [
-          // Profile traits
-          ...(categorized.profile_trait?.length
-            ? [
-                `Traits: ${categorized.profile_trait
-                  .map((m) => `${m.key}: ${m.value}`)
-                  .join(", ")}`,
-              ]
-            : []),
-          // Constraints
-          ...(categorized.constraint?.length
-            ? [
-                `Constraints: ${categorized.constraint
-                  .map((m) => `${m.key}: ${m.value}`)
-                  .join(", ")}`,
-              ]
-            : []),
-          // Preferences
-          ...(categorized.preference?.length
-            ? [
-                `Preferences: ${categorized.preference
-                  .map((m) => `${m.key}: ${m.value}`)
-                  .join(", ")}`,
-              ]
-            : []),
-          // Future plans
-          ...(categorized.future_plan?.length
-            ? [
-                `Future plans: ${categorized.future_plan
-                  .map((m) => `${m.key}: ${m.value}`)
-                  .join(", ")}`,
-              ]
-            : []),
-          // Context signals
-          ...(categorized.context_signal?.length
-            ? [
-                `Context signals: ${categorized.context_signal
-                  .map((m) => `${m.key}: ${m.value}`)
-                  .join(", ")}`,
-              ]
-            : []),
-          // Goals
-          ...(categorized.goal?.length
-            ? [
-                `Goals: ${categorized.goal
-                  .map((m) => `${m.key}: ${m.value}`)
-                  .join(", ")}`,
-              ]
-            : []),
-        ];
-      })(),
+    // 5) Build context-aware prompt using new prompt engine
+    let system = buildContextAwarePrompt(
+      message,
+      context,
+      financialDataForState,
+      userState
+    );
+
+    // Add additional context sections that aren't handled by prompt engine
+    const additionalSections = [];
+
+    // User profile financial perspective (from onboarding)
+    if (context.profile?.intent_context) {
+      additionalSections.push(
+        "",
+        "USER'S FINANCIAL PERSPECTIVE (from onboarding - use as reference, may not be current):",
+        context.profile.intent_context
+      );
+    }
+
+    // Communication style preference
+    if (context.profile?.finny_style) {
+      additionalSections.push(
+        "",
+        `COMMUNICATION STYLE PREFERENCE: User prefers ${context.profile.finny_style} communication style. Adjust your tone accordingly:`,
+        context.profile.finny_style === "direct"
+          ? "- Be more direct and to-the-point, focus on facts and numbers"
+          : context.profile.finny_style === "witty"
+          ? "- Add more humor and light-heartedness while staying professional"
+          : "- Use conversational, friendly tone (default)"
+      );
+    }
+
+    // Smart memory context with relevance-based selection
+    const selectedMemories = selectRelevantMemories(
+      context.memory,
+      message,
+      intent,
+      context.profile
+    );
+    const categorized = categorizeSelectedMemories(selectedMemories);
+
+    const memorySections = [];
+    if (categorized.profile_trait?.length) {
+      memorySections.push(
+        `Traits: ${categorized.profile_trait
+          .map((m) => `${m.key}: ${m.value}`)
+          .join(", ")}`
+      );
+    }
+    if (categorized.constraint?.length) {
+      memorySections.push(
+        `Constraints: ${categorized.constraint
+          .map((m) => `${m.key}: ${m.value}`)
+          .join(", ")}`
+      );
+    }
+    if (categorized.preference?.length) {
+      memorySections.push(
+        `Preferences: ${categorized.preference
+          .map((m) => `${m.key}: ${m.value}`)
+          .join(", ")}`
+      );
+    }
+    if (categorized.future_plan?.length) {
+      memorySections.push(
+        `Future plans: ${categorized.future_plan
+          .map((m) => `${m.key}: ${m.value}`)
+          .join(", ")}`
+      );
+    }
+    if (categorized.context_signal?.length) {
+      memorySections.push(
+        `Context signals: ${categorized.context_signal
+          .map((m) => `${m.key}: ${m.value}`)
+          .join(", ")}`
+      );
+    }
+    if (categorized.goal?.length) {
+      memorySections.push(
+        `Goals: ${categorized.goal
+          .map((m) => `${m.key}: ${m.value}`)
+          .join(", ")}`
+      );
+    }
+
+    if (memorySections.length > 0) {
+      additionalSections.push("", ...memorySections);
+    }
+
+    // Add web context if available
+    if (webSummary) {
+      additionalSections.push(
+        "",
+        "WEB CONTEXT:",
+        "The following is current information from web search:",
+        "",
+        webSummary,
+        "",
+        "IMPORTANT: Use the web search results above for current information. These results are more up-to-date than training data.",
+        "",
+        "SOURCE INCLUSION: When using web search results, ALWAYS include 2-3 most relevant source URLs in your response. Format them as links at the end of your response under a 'Sources:' section. Choose the most authoritative and directly relevant sources. Do NOT overwhelm with too many sources - quality over quantity.",
+        "",
+        "LINK PROVISION: When suggesting users go online for additional resources (like checking credit scores, applying for credit cards, or accessing specific services), ALWAYS provide the direct link if you have it. This saves users time and provides immediate access to the resources you're recommending."
+      );
+      if (context.userPrompt) {
+        additionalSections.push("", "USER GUIDANCE:", context.userPrompt);
+      }
+    }
+
+    // Add standard response guidelines (these are always needed)
+    additionalSections.push(
       "",
-      // Add web context if available
-      ...(webSummary
-        ? [
-            "WEB CONTEXT:",
-            "The following is current information from web search:",
-            "",
-            webSummary,
-            "",
-            "IMPORTANT: Use the web search results above for current information. These results are more up-to-date than training data.",
-            "",
-            "SOURCE INCLUSION: When using web search results, ALWAYS include 2-3 most relevant source URLs in your response. Format them as links at the end of your response under a 'Sources:' section. Choose the most authoritative and directly relevant sources. Do NOT overwhelm with too many sources - quality over quantity.",
-            "",
-            "LINK PROVISION: When suggesting users go online for additional resources (like checking credit scores, applying for credit cards, or accessing specific services), ALWAYS provide the direct link if you have it. This saves users time and provides immediate access to the resources you're recommending.",
-            "",
-            // Add user prompt if available
-            ...(context.userPrompt
-              ? ["USER GUIDANCE:", context.userPrompt, ""]
-              : []),
-          ]
-        : []),
-      "RESPONSE GUIDELINES:",
-      "- Be CONCISE and focused - only answer what the user is asking for",
-      "- Don't overwhelm users with too much information at once",
+      "ADDITIONAL RESPONSE GUIDELINES:",
       "- ALWAYS prioritize web search results over training data for current information (rates, limits, rules, etc.)",
       "- If user asks about 'accounts', show individual account names, balances, and types from the provided account data",
       "- If user asks 'net worth' or 'what's my net worth', ALWAYS include a brief breakdown: show total plus top 2–3 contributors across what you have and what you owe (e.g., cash, investments, credit card debt). Use simple language like 'money you have' instead of 'assets' and 'money you owe' instead of 'liabilities'. Keep it concise, no long lists",
       "- If user asks about 'investments' or 'holdings', then show ALL holdings with their symbols, descriptions, and market values. Do not limit to top ones - show the complete portfolio",
       "- If user asks for 'investment advice' or 'financial advice', focus on actionable recommendations, not data dumps",
-      "- Keep responses conversational and encouraging, not overwhelming",
-      "- Provide actionable advice that users can implement immediately",
-      "- Explain financial concepts in simple, understandable terms",
-      "- ALWAYS use layman terms instead of technical jargon: use 'money you have' instead of 'assets', 'money you owe' instead of 'liabilities', 'savings' instead of 'liquid assets', 'debt' instead of 'liabilities'",
-      "- Connect advice to the user's specific financial situation when possible",
-      "- For general advice requests, give 2-3 key recommendations rather than comprehensive breakdowns",
       "- If required data is missing (e.g., no transactions or summary), explicitly say so and ask the user to refresh or connect accounts. Do NOT fabricate data.",
       "- When listing transactions, ONLY use transactions present in the provided context. If none exist, say you couldn't find recent transactions.",
       "- For amounts like net worth, ONLY use values from the context. If missing, state that it's unavailable.",
@@ -2433,8 +2390,11 @@ async function handleAsk(
       "  * Bank transfers or account management through their actual banks",
       "  * Investment platforms for specific needs Finny doesn't cover",
       "  * Insurance providers or other non-competitive financial services",
-      "- Always end responses by encouraging users to ask Finny about their specific financial questions",
-    ].join("\n");
+      "- Always end responses by encouraging users to ask Finny about their specific financial questions"
+    );
+
+    // Combine base prompt with additional sections
+    system = system + "\n\n" + additionalSections.join("\n");
 
     // Build context from packs
     console.log("🔍 [CONTEXT] Building context from packs:", {
@@ -2988,7 +2948,8 @@ function splitLongResponse(text) {
 function detectWebSearchNeeded(message) {
   const lowerMessage = message.toLowerCase();
   // Do not trigger web search for off-topic queries (e.g., weather)
-  if (detectOffTopic(message)) return false;
+  const offTopicCheck = detectOffTopic(message);
+  if (offTopicCheck.isOffTopic && offTopicCheck.confidence >= 0.7) return false;
 
   // Production-optimized web search keywords
   const webKeywords = [
@@ -3053,53 +3014,22 @@ function detectWebSearchNeeded(message) {
   return webKeywords.some((keyword) => lowerMessage.includes(keyword));
 }
 
-// Enhanced off-topic detection
-function detectOffTopic(message) {
+// Enhanced off-topic detection with confidence scoring
+function detectOffTopic(message, conversationContext = null) {
   const lower = message.toLowerCase();
 
+  // Comprehensive financial terms list - if message contains any, it's NOT off-topic
   const financeTerms = [
-    "credit",
-    "debit",
-    "card",
-    "cards",
-    "account",
-    "accounts",
-    "spend",
-    "spent",
-    "spending",
-    "transaction",
-    "transactions",
-    "budget",
-    "net worth",
-    "invest",
-    "investment",
-    "investments",
-    "stock",
-    "stocks",
-    "ira",
-    "401k",
-    "roth",
-    "rate",
-    "rates",
-    "limit",
-    "limits",
-    "buy",
-    "buying",
-    "purchase",
-    "house",
-    "home",
-    "achieve",
-    "goal",
-    "goals",
-    "save",
-    "saving",
-    "afford",
-    "affordable",
+    // Core financial terms
     "money",
     "financial",
     "finance",
     "finances",
     "wealth",
+    "budget",
+    "budgeting",
+    "expense",
+    "expenses",
     "income",
     "salary",
     "wage",
@@ -3119,72 +3049,61 @@ function detectOffTopic(message) {
     "prices",
     "expensive",
     "cheap",
-    "budget",
-    "budgeting",
-    "expense",
-    "expenses",
+    "afford",
+    "affordable",
+    "save",
+    "saving",
+    "spend",
+    "spent",
+    "spending",
+    "invest",
+    "investment",
+    "investments",
+    "account",
+    "accounts",
+    "balance",
+    "net worth",
+    "credit",
+    "debit",
+    "card",
+    "cards",
+    "transaction",
+    "transactions",
+    "bill",
     "cash",
     "dollar",
     "dollars",
     "cent",
     "cents",
+    // Investment terms
+    "stock",
+    "stocks",
+    "ira",
+    "401k",
+    "roth",
+    "rate",
+    "rates",
+    "limit",
+    "limits",
+    // Purchase/housing terms
+    "buy",
+    "buying",
+    "purchase",
+    "house",
+    "home",
+    // Goal terms
+    "goal",
+    "goals",
+    "achieve",
   ];
-  if (financeTerms.some((t) => lower.includes(t))) {
-    return false;
+
+  // If message contains financial terms, it's NOT off-topic
+  if (financeTerms.some((term) => lower.includes(term))) {
+    return { isOffTopic: false, confidence: 0.0 };
   }
 
-  // Broad weather/forecast detection
-  if (lower.includes("weather") || lower.includes("forecast")) {
-    return true;
-  }
-
-  // Broad off-topic indicators beyond patterns: ethics, emotions, philosophy, AI meta, culture, jokes/riddles
-  const offTopicBroad = [
-    // ethics & morality
-    "acceptable to lie",
-    "is it ok to lie",
-    "is it ever acceptable",
-    "ethical",
-    "morality",
-    "moral",
-    // emotions / mental health
-    "feeling really down",
-    "depressed",
-    "anxious",
-    "anxiety",
-    "sad",
-    // philosophy
-    "meaning of life",
-    "purpose of life",
-    "existential",
-    // AI meta
-    "surpass human intelligence",
-    "are you an ai",
-    "do you know that you're an ai",
-    "can you learn from our previous conversations",
-    // humor / riddles
-    "why did the chicken cross the road",
-    "riddle",
-    // culture / etiquette
-    "best practices for greeting",
-    "etiquette",
-    "cultural",
-  ];
-  if (offTopicBroad.some((p) => lower.includes(p))) {
-    return true;
-  }
-
-  // Strong off-topic indicators (specific patterns)
-  const offTopicPatterns = [
-    // Trust/meta questions
-    "can i trust you",
-    "are you trustworthy",
-    "can we trust",
-    "is this trustworthy",
-    "are you reliable",
-    "can i trust this",
-    "can i rely on you",
-
+  // Strong off-topic indicators (high confidence)
+  const strongOffTopicPatterns = [
     // Weather & environment
     "what's the weather",
     "weather today",
@@ -3192,7 +3111,6 @@ function detectOffTopic(message) {
     "temperature today",
     "is it raining",
     "is it sunny",
-    "weather like",
     "what's the weather like",
 
     // Cooking & food
@@ -3202,7 +3120,6 @@ function detectOffTopic(message) {
 
     // Entertainment
     "what movie",
-    "watch",
     "netflix",
     "tv show",
     "entertainment",
@@ -3214,18 +3131,20 @@ function detectOffTopic(message) {
     "award",
     "film",
 
-    // General chat
-    "hello",
-    "hi",
-    "hey",
-    "how are you",
-    "what's up",
-    "good morning",
-    "good evening",
-    "joke",
-    "funny",
-    "laugh",
-    "humor",
+    // Philosophy / existential
+    "meaning of life",
+    "purpose of life",
+    "existential",
+
+    // AI meta
+    "surpass human intelligence",
+    "are you an ai",
+    "do you know that you're an ai",
+    "can you learn from our previous conversations",
+
+    // Humor / riddles
+    "why did the chicken cross the road",
+    "riddle",
     "tell me a joke",
     "amuse me",
 
@@ -3257,10 +3176,75 @@ function detectOffTopic(message) {
     "grade",
     "teacher",
     "professor",
-    "student",
   ];
 
-  return offTopicPatterns.some((pattern) => lower.includes(pattern));
+  if (strongOffTopicPatterns.some((p) => lower.includes(p))) {
+    return { isOffTopic: true, confidence: 0.9 }; // High confidence
+  }
+
+  // Weak off-topic indicators (medium confidence)
+  const weakOffTopicPatterns = [
+    // General greetings (might be followed by financial question)
+    "hello",
+    "hi",
+    "hey",
+    "how are you",
+    "what's up",
+    "good morning",
+    "good evening",
+
+    // Broad weather
+    "weather",
+    "forecast",
+
+    // Ethics / morality
+    "acceptable to lie",
+    "is it ok to lie",
+    "is it ever acceptable",
+    "ethical",
+    "morality",
+    "moral",
+
+    // Emotions (but could be financial stress)
+    "feeling really down",
+    "depressed",
+    "anxious",
+    "anxiety",
+    "sad",
+
+    // Culture / etiquette
+    "best practices for greeting",
+    "etiquette",
+    "cultural",
+
+    // General chat
+    "joke",
+    "funny",
+    "laugh",
+    "humor",
+  ];
+
+  if (weakOffTopicPatterns.some((p) => lower.includes(p))) {
+    return { isOffTopic: true, confidence: 0.6 }; // Medium confidence
+  }
+
+  // Trust/meta questions (medium-high confidence)
+  const trustPatterns = [
+    "can i trust you",
+    "are you trustworthy",
+    "can we trust",
+    "is this trustworthy",
+    "are you reliable",
+    "can i trust this",
+    "can i rely on you",
+  ];
+
+  if (trustPatterns.some((p) => lower.includes(p))) {
+    return { isOffTopic: true, confidence: 0.75 }; // Medium-high confidence
+  }
+
+  // No off-topic detected
+  return { isOffTopic: false, confidence: 0.0 };
 }
 
 // === CONTEXT PLANNER ===
@@ -4927,21 +4911,32 @@ async function handleClassify(message, context, conversationContext = null) {
     return result;
   }
 
-  // Check for off-topic LAST (after financial heuristics)
-  const offTopicHeuristic = detectOffTopic(text);
-  if (offTopicHeuristic) {
-    console.log("✅ [FINNY] Heuristic detected off-topic query");
-    const result = {
-      intent: "off_topic",
-      needs_web: false,
-      needs_user_data: false,
-      state: null,
-      entities: [],
-      confidence: 0.9,
-      heuristic: true,
-    };
-    setCachedClassification(text, result);
-    return result;
+  // Check for off-topic LAST (after financial heuristics) with confidence scoring
+  const offTopicResult = detectOffTopic(text, context?.conversation_context);
+  if (offTopicResult.isOffTopic) {
+    // Hybrid approach: Only route to handleOffTopic if confidence >= 0.7
+    if (offTopicResult.confidence >= 0.7) {
+      console.log(
+        `✅ [FINNY] Heuristic detected off-topic query (confidence: ${offTopicResult.confidence})`
+      );
+      const result = {
+        intent: "off_topic",
+        needs_web: false,
+        needs_user_data: false,
+        state: null,
+        entities: [],
+        confidence: offTopicResult.confidence,
+        heuristic: true,
+      };
+      setCachedClassification(text, result);
+      return result;
+    } else {
+      // Low confidence off-topic - let LLM decide (route to handleAsk)
+      console.log(
+        `⚠️ [FINNY] Low confidence off-topic (${offTopicResult.confidence}), routing to handleAsk for LLM decision`
+      );
+      // Continue to LLM classification
+    }
   }
 
   try {
@@ -5153,7 +5148,8 @@ async function handleClassify(message, context, conversationContext = null) {
     // Enhanced heuristic fallbacks in priority order
 
     // 1. Off-topic detection (highest priority)
-    if (detectOffTopic(message)) {
+    const offTopicCheck = detectOffTopic(message);
+    if (offTopicCheck.isOffTopic && offTopicCheck.confidence >= 0.7) {
       console.log("✅ [FINNY] Using off-topic heuristic fallback");
       return {
         intent: "off_topic",
@@ -5287,16 +5283,18 @@ async function handleOffTopic(message, context, conversationContext = null) {
 
   const systemPrompt = [
     "You are Finny, a warm and encouraging financial advisor.",
-    "The user asked a non-financial question that's outside your scope.",
+    "The user asked a question that's outside your financial scope, but you should ALWAYS redirect them back to financial topics with warmth and enthusiasm.",
+    "NEVER reject or say 'I can't help with that.' Instead, acknowledge briefly and redirect.",
     "Respond with warmth and redirect them to relevant financial topics.",
     "Be encouraging and show enthusiasm for helping with their finances.",
     "Use their name if available, and make the redirection feel natural.",
-    "Keep responses concise but engaging.",
+    "Keep responses concise but engaging (2-3 sentences max).",
     "You can use emojis or decorative symbols.",
-    "Limit your reply to 4-6 sentences (roughly <=120 words).",
-    "Finish complete sentences; avoid trailing fragments or cut-offs.",
     "Focus on financial empowerment and positive outcomes.",
-    "Add spacing between sentences to make the response more readable.",
+    "Example good responses:",
+    "- 'I'm focused on helping with your finances! What money question can I help with?'",
+    "- 'I'm here for your financial questions! What's on your mind?'",
+    "- 'Let's talk about your money! What can I help you with today?'",
     "",
     "EMPATHETIC ENGAGEMENT:",
     "- ALWAYS acknowledge and engage with personal information users share, even if not directly financial",
