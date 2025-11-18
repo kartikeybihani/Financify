@@ -484,11 +484,31 @@ function detectGoalIntent(message, conversationContext) {
   const activeGoalFlow = conversationContext?.goal_flow;
   const isContinuingGoalFlow = activeGoalFlow && activeGoalFlow.active;
 
+  // 0.5. Check for advice-seeking patterns FIRST (these override goal creation patterns)
+  const adviceSeekingPatterns = [
+    /\bshould\s+i\s+(?:save|buy|invest|spend)/i, // "Should I save/buy/invest"
+    /\bis\s+it\s+(?:worth|smart|good|wise)/i, // "Is it worth/smart/good"
+    /\bcan\s+i\s+afford/i, // "Can I afford"
+    /\bwhat'?s?\s+a\s+good/i, // "What's a good"
+    /\bhow\s+much\s+(?:should|can|could)/i, // "How much should/can/could"
+  ];
+
+  if (adviceSeekingPatterns.some((p) => p.test(message))) {
+    console.log(
+      "✅ [GOAL] Advice-seeking pattern detected → routing to ask_personalized"
+    );
+    return {
+      intent: "ask_personalized",
+      confidence: 0.9,
+      reason: "advice_query",
+    };
+  }
+
   // 1. EXPLICIT goal creation patterns (high confidence)
   const explicitGoalPatterns = [
     /\b(?:create|set|add|make)\s+(?:a\s+)?(?:new\s+)?goal/i,
     /\bgoal\s+(?:for|to)\s+(?:save|buy)/i,
-    /\bsave\s+\$?\d+[k]?\s+(?:for|toward)/i, // "save $5000 for"
+    /\b(?:i\s+want\s+to|i'd\s+like\s+to|let'?s)\s+save\s+\$?\d+[k]?\s+(?:for|toward)/i, // "I want to save $5000 for" or "Let's save $5000 for"
     /\btarget\s+(?:amount|of)\s+\$?\d+/i, // "target amount $5000"
   ];
 
@@ -538,16 +558,21 @@ function detectGoalIntent(message, conversationContext) {
     };
   }
 
-  // 3. NOT goal creation - general financial queries
+  // 3. NOT goal creation - general financial queries (affordability, advice, recommendations)
   const nonGoalPatterns = [
     /\bcan\s+i\s+afford/i, // Affordability check
     /\bshould\s+i\s+buy/i, // Purchase advice
+    /\bis\s+it\s+worth\s+it/i, // Value assessment
+    /\bis\s+it\s+smart\s+to/i, // Advice seeking
     /\bwhat.*(?:spend|spent)/i, // Spending analysis
     /\bhow\s+much.*(?:spend|spent)/i, // Spending questions
     /\bwhere.*(?:money|spending)/i, // Transaction queries
     /\bshow.*(?:transactions|spending)/i, // Transaction display
     /\bafford.*\$\d+/i, // "afford $1000" patterns
     /\bafford.*\d+[k]/i, // "afford 5k" patterns
+    /\bwhat.*(?:good|recommended|suggested).*(?:emergency|savings|amount)/i, // Advice queries like "what's a good emergency amount"
+    /\bhow\s+much.*(?:should|can|could).*(?:save|have|keep)/i, // Advice on amounts
+    /\b(?:good|ideal|recommended|suggested).*(?:emergency|savings|fund|amount)/i, // General advice patterns
   ];
 
   if (nonGoalPatterns.some((p) => p.test(message))) {
@@ -723,6 +748,16 @@ async function handleClassify(message, context, conversationContext = null) {
                 "CRITICAL: Goal queries should NEVER need web search:",
                 "- 'Show my goals/Current goals' → intent:goal_conversation, needs_web:false, needs_user_data:true",
                 "",
+                "CRITICAL: Affordability and advice queries are ask_personalized, NOT goal_conversation:",
+                "- 'Can I afford X?' → ask_personalized (user wants to know if they can afford something now)",
+                "- 'What's a good emergency amount for me?' → ask_personalized (user wants personalized advice)",
+                "- 'Should I buy X?' → ask_personalized (user wants purchase advice)",
+                "- 'Is it worth it to buy X?' → ask_personalized (user wants value assessment)",
+                "",
+                "goal_conversation is ONLY for creating NEW goals or setting savings targets:",
+                "- 'I want to save $5000 for a house' → goal_conversation (user wants to CREATE a goal)",
+                "- 'Let's set a goal to save for vacation' → goal_conversation (user wants to CREATE a goal)",
+                "",
                 "Examples:",
                 '"What is the Roth IRA limit for 2025?" → {intent:"ask_personalized", needs_web:true, needs_user_data:false}',
                 '"How much did I spend last month?" → {intent:"ask_personalized", needs_web:false, needs_user_data:true}',
@@ -730,7 +765,8 @@ async function handleClassify(message, context, conversationContext = null) {
                 '"Which credit card should I get?" → {intent:"ask_personalized", needs_web:true, needs_user_data:true}',
                 '"Rent vs buy in Phoenix at 7% for me" → {intent:"ask_personalized", needs_web:true, needs_user_data:true, state:"AZ"}',
                 '"What\'s the weather?" → {intent:"off_topic", needs_web:false, needs_user_data:false}',
-                '"Can I afford a $10000 watch?" → {intent:"goal_conversation", needs_web:false, needs_user_data:true}',
+                '"Can I afford a $10000 watch?" → {intent:"ask_personalized", needs_web:false, needs_user_data:true}',
+                '"What\'s a good emergency amount for me?" → {intent:"ask_personalized", needs_web:false, needs_user_data:true}',
                 "",
                 "Return ONLY JSON (no code fences, no commentary):",
                 '{"intent":"ask_personalized|goal_conversation|off_topic","needs_web":true|false,"needs_user_data":true|false,"state":null|"AZ","entities":[],"confidence":0.0-1.0}',
@@ -1075,12 +1111,115 @@ async function testSingleMessage(message) {
   }
 }
 
+// Hardball tests - edge cases for classification
+async function runHardballTests() {
+  const tests = [
+    {
+      q: "What's a good emergency amount for me?",
+      expected: "ask_personalized",
+      note: "Should be ask_personalized (advice query), NOT goal_conversation",
+    },
+    {
+      q: "Can I afford a $1500 trip?",
+      expected: "ask_personalized",
+      note: "Should be ask_personalized (affordability check), NOT goal_conversation",
+    },
+    {
+      q: "I want to create a goal for my emergency fund",
+      expected: "goal_conversation",
+      note: "Should be goal_conversation (explicit goal creation)",
+    },
+    {
+      q: "How much should I have in my emergency fund?",
+      expected: "ask_personalized",
+      note: "Should be ask_personalized (advice query), NOT goal_conversation",
+    },
+    {
+      q: "Is it worth it to buy a $2000 laptop?",
+      expected: "ask_personalized",
+      note: "Should be ask_personalized (value assessment), NOT goal_conversation",
+    },
+    {
+      q: "Should I save $5000 for a house?",
+      expected: "ask_personalized",
+      note: "Should be ask_personalized (advice query), NOT goal_conversation (note: 'save' + 'for' but phrased as advice)",
+    },
+    {
+      q: "I want to save $5000 for a house",
+      expected: "goal_conversation",
+      note: "Should be goal_conversation (explicit goal creation statement)",
+    },
+    {
+      q: "What's a good amount to save for retirement?",
+      expected: "ask_personalized",
+      note: "Should be ask_personalized (advice query), NOT goal_conversation",
+    },
+    {
+      q: "Let's set a goal to save for my emergency fund",
+      expected: "goal_conversation",
+      note: "Should be goal_conversation (explicit goal creation with 'set a goal')",
+    },
+    {
+      q: "Can I go afford a $1500 trip?",
+      expected: "ask_personalized",
+      note: "Should be ask_personalized (affordability check with typo 'go afford'), NOT goal_conversation",
+    },
+  ];
+
+  console.log("\n" + "=".repeat(80));
+  console.log("🔥 HARDBALL TESTS - Edge Cases for Classification");
+  console.log("=".repeat(80));
+
+  let pass = 0;
+  let total = tests.length;
+
+  for (let i = 0; i < tests.length; i++) {
+    const t = tests[i];
+    console.log(`\n${i + 1}. Testing: "${t.q}"`);
+    console.log(`   Expected: ${t.expected}`);
+    console.log(`   Note: ${t.note}`);
+    console.log("-".repeat(80));
+
+    try {
+      const { classification } = await testSingleMessage(t.q);
+      const actual = classification?.intent;
+      const isCorrect = actual === t.expected;
+
+      if (isCorrect) {
+        pass++;
+        console.log(`   ✅ PASS - Got ${actual} (as expected)`);
+      } else {
+        console.log(`   ❌ FAIL - Got ${actual}, expected ${t.expected}`);
+        console.log(`   Confidence: ${classification?.confidence}`);
+        console.log(`   Needs web: ${classification?.needs_web}`);
+        console.log(`   Needs user data: ${classification?.needs_user_data}`);
+        if (classification?.reason) {
+          console.log(`   Reason: ${classification.reason}`);
+        }
+      }
+    } catch (error) {
+      console.log(`   ❌ ERROR: ${error.message}`);
+    }
+  }
+
+  console.log("\n" + "=".repeat(80));
+  console.log(`📊 HARDBALL TEST SUMMARY: ${pass}/${total} passed`);
+  console.log("=".repeat(80));
+
+  if (pass === total) {
+    console.log("🎉 All tests passed!");
+  } else {
+    console.log(`⚠️  ${total - pass} test(s) failed`);
+  }
+}
+
 // Run if called directly
 if (
   typeof window === "undefined" &&
   import.meta.url === `file://${process.argv[1]}`
 ) {
   const userMessage = process.argv[2];
+  const testType = process.argv[3];
 
   if (userMessage) {
     console.log("🚀 Testing Single Statement");
@@ -1088,6 +1227,9 @@ if (
     console.log("=".repeat(50));
 
     testSingleMessage(userMessage).catch(console.error);
+  } else if (testType === "hardball") {
+    console.log("🔥 Running hardball tests...");
+    runHardballTests().catch(console.error);
   } else {
     console.log("Running curveball tests...");
     runCurveballTests().catch(console.error);

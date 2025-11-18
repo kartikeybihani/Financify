@@ -13,7 +13,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import IconButton from "@/src/components/shared/IconButton";
 import { supabase } from "@/src/lib/supabase/supabase";
-import logger from "@/src/utils/logger";
+import logger from "@/src/utils/core/logger";
 
 interface FinnyStyleScreenProps {
   onBack: () => void;

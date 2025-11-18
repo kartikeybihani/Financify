@@ -15,7 +15,7 @@ import { Transaction } from "@/src/types/plaid";
 import {
   getDisplayCategory,
   shouldShowRecurringChip,
-} from "@/src/utils/transactionCategory";
+} from "@/src/utils/categories/transactionCategory";
 
 interface Props {
   titleStyle: any;

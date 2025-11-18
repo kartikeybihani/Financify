@@ -26,7 +26,7 @@ import { Transaction, TransactionDetailModalProps } from "@/src/types/plaid";
 import {
   getDisplayCategory as getDisplayCategoryUtil,
   shouldShowRecurringChip,
-} from "@/src/utils/transactionCategory";
+} from "@/src/utils/categories/transactionCategory";
 
 const getCategoryBackgroundColorForName = (categoryName: string): string => {
   const map: { [key: string]: string } = {

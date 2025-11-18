@@ -22,7 +22,7 @@ import DateTimePicker from "@react-native-community/datetimepicker";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Goal } from "@/src/types/finny";
 import { GoalDetailModalProps } from "@/src/types/goalsTypes";
-import logger from "@/src/utils/logger";
+import logger from "@/src/utils/core/logger";
 import {
   getCategoryDisplayName,
   getCategoryOptions,

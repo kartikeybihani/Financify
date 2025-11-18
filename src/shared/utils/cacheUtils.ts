@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { CACHE_CONFIG, getCacheDuration, getCacheKey } from '../constants/cacheConfig';
-import logger from '@/src/utils/logger';
+import logger from '@/src/utils/core/logger';
 
 export interface CachedData<T> {
   data: T;

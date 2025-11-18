@@ -1,5 +1,5 @@
 // types/addGoalModalTypes.ts
-import { GoalCategory } from '@/src/utils/goalCategories';
+import { GoalCategory } from '@/src/utils/categories/goalCategories';
 
 export interface GoalInput {
     label: string;

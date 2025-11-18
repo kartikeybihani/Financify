@@ -4,7 +4,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { styles } from "@/src/styles/insightsStyles";
 import TransactionDetailModal from "@/src/components/modals/TransactionDetailModal";
 import { Transaction } from "@/src/types/plaid";
-import { getDisplayCategory } from "@/src/utils/transactionCategory";
+import { getDisplayCategory } from "@/src/utils/categories/transactionCategory";
 
 interface CategoryData {
   amount: number;

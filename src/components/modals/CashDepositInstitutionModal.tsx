@@ -12,8 +12,8 @@ import {
   CASH_DEPOSIT_INSTITUTIONS,
   type Institution,
 } from "../shared/modal-constants";
-import { handleInstitutionConnect } from "@/src/utils/plaid";
-import logger from "@/src/utils/logger";
+import { handleInstitutionConnect } from "@/src/utils/plaid/plaid;
+import logger from "@/src/utils/core/logger";
 
 interface CashDepositInstitutionModalProps {
   visible: boolean;

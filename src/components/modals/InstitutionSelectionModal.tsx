@@ -24,9 +24,9 @@ import {
   storeSnaptradeCredentials,
   syncSnaptradeInvestments,
   getSnaptradeConnectionsFromDB,
-} from "@/src/utils/snaptrade";
+} from "@/src/utils/integrations/snaptrade";
 import { supabase } from "@/src/lib/supabase/supabase";
-import logger from "@/src/utils/logger";
+import logger from "@/src/utils/core/logger";
 import {
   INVESTMENT_INSTITUTIONS,
   INSTITUTION_LOGO_MAP,

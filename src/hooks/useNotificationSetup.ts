@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { notificationService } from '@/src/utils/notificationService';
+import { notificationService } from '@/src/utils/core/notificationService';
 
 /**
  * Hook to initialize notification service and load user preferences

@@ -1,6 +1,6 @@
 // app/_shared/utils/transactionCache.ts
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import logger from "@/src/utils/logger";
+import logger from "@/src/utils/core/logger";
 import { CACHE_CONFIG } from "../constants/cacheConfig";
 import { Transaction } from "@/src/types/plaid";
 

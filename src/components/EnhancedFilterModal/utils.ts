@@ -59,7 +59,7 @@ export const getSelectedAccountsDescription = (accountIds: string[], accounts: A
     return "All accounts";
   } else if (accountIds.length === 1) {
     const account = accounts.find((acc) => acc.account_id === accountIds[0]);
-    return account ? account.institution_name : "Selected account";
+    return account?.institution_name || "Selected account";
   } else {
     return `${accountIds.length} accounts selected`;
   }

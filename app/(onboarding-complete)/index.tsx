@@ -19,8 +19,8 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { supabase } from "@/src/lib/supabase/supabase";
-import logger from "@/src/utils/logger";
-import { logOnboardingEvent } from "@/src/utils/onboarding";
+import logger from "@/src/utils/core/logger";
+import { logOnboardingEvent } from "@/src/utils/auth/onboarding";
 import { useAuthNavigation } from "@/src/contexts/AuthNavigationContext";
 
 const { width } = Dimensions.get("window");

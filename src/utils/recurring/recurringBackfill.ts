@@ -15,8 +15,8 @@
  */
 
 import { supabase } from '@/src/lib/supabase/supabase';
-import logger from '@/src/utils/logger';
-import { getCategoryToSetForStream } from './transactionCategory';
+import logger from '@/src/utils/core/logger';
+import { getCategoryToSetForStream } from '../categories/transactionCategory';
 
 export interface BackfillStats {
   totalTransactions: number;

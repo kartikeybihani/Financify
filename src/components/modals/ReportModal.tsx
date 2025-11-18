@@ -12,7 +12,7 @@ import {
   Alert,
 } from "react-native";
 import { AntDesign } from "@expo/vector-icons";
-import { submitChatMessageReport } from "@/src/utils/reports";
+import { submitChatMessageReport } from "@/src/utils/analytics/reports";
 import IconButton from "@/src/components/shared/IconButton";
 
 interface ReportModalProps {

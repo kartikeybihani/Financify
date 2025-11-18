@@ -3,7 +3,7 @@
 import React from "react";
 import { View, Text, TouchableOpacity } from "react-native";
 import { styles } from "@/src/styles/homeStyles";
-import logger from "@/src/utils/logger";
+import logger from "@/src/utils/core/logger";
 
 interface ActionButtonsProps {
   onAddAccount: () => void;

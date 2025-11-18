@@ -50,7 +50,7 @@ import CategorySelectionModal from "@/src/components/modals/CategorySelectionMod
 import CashDepositInstitutionModal from "@/src/components/modals/CashDepositInstitutionModal";
 import CreditCardInstitutionModal from "@/src/components/modals/CreditCardInstitutionModal";
 import InstitutionSelectionModal from "@/src/components/modals/InstitutionSelectionModal";
-import { addNewBankAccount } from "@/src/utils/plaid";
+import { addNewBankAccount } from "@/src/utils/plaid/plaid;
 import { supabase } from "@/src/lib/supabase/supabase";
 import InvestmentsScreen from "@/app/investments";
 import {
@@ -64,20 +64,20 @@ import {
   getFilteredTransactions,
   getFilteredTransactionsCount,
   getUserAccountsForFilter,
-} from "@/src/utils/plaid";
+} from "@/src/utils/plaid/plaid;
 import {
   getDisplayCategory,
   shouldShowRecurringChip,
-} from "@/src/utils/transactionCategory";
+} from "@/src/utils/categories/transactionCategory";
 import {
   getSnaptradeHoldingsFromDB,
   getSnaptradeOptionsFromDB,
   getSnaptradeBalancesFromDB,
   getSnaptradeConnectionsFromDB,
   syncSnaptradeInvestments,
-} from "@/src/utils/snaptrade";
-import { forceFullResync } from "@/src/utils/categoryFix";
-import logger from "@/src/utils/logger";
+} from "@/src/utils/integrations/snaptrade";
+import { forceFullResync } from "@/src/utils/categories/categoryFix";
+import logger from "@/src/utils/core/logger";
 import { useCategories } from "@/src/hooks/useCategories";
 import { OptimisticUpdateManager } from "@/src/shared/utils/optimisticUpdates";
 import { InsightsAnimationManager } from "@/src/shared/utils/insightsAnimations";

@@ -1,4 +1,4 @@
-import logger from '@/src/utils/logger';
+import logger from '@/src/utils/core/logger';
 
 export interface PreloadTask {
   id: string;

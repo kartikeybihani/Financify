@@ -28,7 +28,7 @@ import { Goal } from "@/src/types/finny";
 import { GoalInput } from "@/src/types/addGoalModalTypes";
 import { GoalsProps, GoalsState } from "@/src/types/goalsTypes";
 import { useRouter } from "expo-router";
-import logger from "@/src/utils/logger";
+import logger from "@/src/utils/core/logger";
 import { supabase } from "@/src/lib/supabase/supabase";
 
 // UUID generator for temporary IDs

@@ -13,7 +13,7 @@ import {
 import { Ionicons, AntDesign, Feather } from "@expo/vector-icons";
 import { GlassView } from "expo-glass-effect";
 import { LinearGradient } from "expo-linear-gradient";
-import { getTransactionsForRecurringStream } from "@/src/utils/plaid";
+import { getTransactionsForRecurringStream } from "@/src/utils/plaid/plaid;
 import {
   Transaction,
   RecurringStream,

@@ -16,8 +16,8 @@ import { LinearGradient } from "expo-linear-gradient";
 import { Entypo, Ionicons } from "@expo/vector-icons";
 import * as AppleAuthentication from "expo-apple-authentication";
 import { supabase } from "@/src/lib/supabase/supabase";
-import logger from "@/src/utils/logger";
-import { logOnboardingEvent } from "@/src/utils/onboarding";
+import logger from "@/src/utils/core/logger";
+import { logOnboardingEvent } from "@/src/utils/auth/onboarding";
 
 const { width } = Dimensions.get("window");
 

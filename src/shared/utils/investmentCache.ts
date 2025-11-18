@@ -1,6 +1,6 @@
 // app/_shared/utils/investmentCache.ts
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import logger from "@/src/utils/logger";
+import logger from "@/src/utils/core/logger";
 import { CACHE_CONFIG } from "../constants/cacheConfig";
 
 const INVESTMENT_CACHE_KEY = CACHE_CONFIG.KEYS.INVESTMENT_DATA;

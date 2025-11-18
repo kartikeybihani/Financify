@@ -1,7 +1,7 @@
 // app/utils/snaptrade.ts
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '@/src/lib/supabase/supabase';
-import logger from '@/src/utils/logger';
+import logger from '@/src/utils/core/logger';
 
 const BASE_URL = process.env.EXPO_PUBLIC_APP_BASE_URL || "https://financify-rose.vercel.app";
 

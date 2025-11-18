@@ -6,7 +6,7 @@
  */
 
 import { supabase } from '@/src/lib/supabase/supabase';
-import logger from '@/src/utils/logger';
+import logger from '@/src/utils/core/logger';
 
 /**
  * Get a fresh access token from Supabase

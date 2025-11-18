@@ -2,46 +2,13 @@ export const isGoalIntent = async (input: string) => {
     const lower = input.toLowerCase();
     let confidence = 0;
   
-    // Strong negative indicators (immediate rejection)
-    const strongNegativeIndicators = [
-      "should i",
-      "can i",
-      "could i",
-      "what if",
-      "is it possible",
-      "check",
-      "afford",
-      "possible",
-      "worth it",
-      "good idea",
-      "smart to",
-      "advice",
-      "recommend",
-      "suggestion",
-      "worth",
-      "expensive",
-      "cost",
-      "price",
-      "budget",
-      "affordable",
-    ];
-  
-    // Check for strong negative indicators first
-    for (const phrase of strongNegativeIndicators) {
-      if (lower.includes(phrase)) {
-        // Check if it's a genuine question about feasibility
-        if (lower.includes("?") || lower.includes("but")) {
-          return { isGoal: false, confidence: 0.9 };
-        }
-      }
-    }
-  
-    // Strong goal-setting indicators
+    // Strong goal-setting indicators (check FIRST before negative indicators)
     const strongGoalSetters = [
       "start saving for",
       "save up for",
       "saving towards",
       "set a goal for",
+      "create a goal for",
       "create a fund for",
       "let's set a goal",
       "set our dream",
@@ -51,14 +18,76 @@ export const isGoalIntent = async (input: string) => {
       "need to save",
       "set up a goal",
       "set up a fund",
+      "i want to create",
+      "i'd like to create",
+      "create goal",
     ];
   
-    // Check for strong goal-setting phrases
+    // Check for strong goal-setting phrases FIRST
+    let hasGoalCreationPhrase = false;
     for (const phrase of strongGoalSetters) {
       if (lower.includes(phrase)) {
+        hasGoalCreationPhrase = true;
         confidence += 0.8;
+        break; // If we find a goal creation phrase, it's definitely a goal
       }
     }
+  
+    // Strong negative indicators (immediate rejection) - these are NOT goal creation queries
+    // BUT only apply if there's no goal creation phrase
+    if (!hasGoalCreationPhrase) {
+      const strongNegativeIndicators = [
+        "should i",
+        "can i",
+        "could i",
+        "what if",
+        "is it possible",
+        "check",
+        "afford",
+        "possible",
+        "worth it",
+        "good idea",
+        "smart to",
+        "advice",
+        "recommend",
+        "suggestion",
+        "worth",
+        "expensive",
+        "cost",
+        "price",
+        "budget",
+        "affordable",
+        "what's a good",
+        "what is a good",
+        "how much should",
+        "how much can",
+        "how much could",
+      ];
+  
+      // Context-aware emergency fund checks (only if asking for advice, not creating a goal)
+      const emergencyAdvicePatterns = [
+        /\bwhat'?s?\s+a\s+good\s+emergency/i,
+        /\bwhat\s+is\s+a\s+good\s+emergency/i,
+        /\bhow\s+much\s+(?:should|can|could)\s+i\s+(?:have|save|keep)\s+(?:in|for)\s+(?:my\s+)?emergency/i,
+        /\bemergency\s+(?:amount|fund|savings)\s+(?:should|can|could|recommended)/i,
+      ];
+  
+      // Check for strong negative indicators
+      for (const phrase of strongNegativeIndicators) {
+        if (lower.includes(phrase)) {
+          // These are always non-goal queries (affordability checks, advice requests)
+          return { isGoal: false, confidence: 0.9 };
+        }
+      }
+  
+      // Check for emergency advice patterns (not goal creation)
+      for (const pattern of emergencyAdvicePatterns) {
+        if (pattern.test(lower)) {
+          return { isGoal: false, confidence: 0.9 };
+        }
+      }
+    }
+  
   
     // Moderate goal indicators
     const moderateGoalSetters = [

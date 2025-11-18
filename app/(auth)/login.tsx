@@ -11,7 +11,7 @@ import {
 } from "react-native";
 import { useRouter } from "expo-router";
 import { supabase } from "@/src/lib/supabase/supabase";
-import logger from "@/src/utils/logger";
+import logger from "@/src/utils/core/logger";
 import AuthTemplate from "@/src/components/auth/AuthTemplate";
 import AuthInput from "@/src/components/auth/AuthInput";
 import AuthButton from "@/src/components/auth/AuthButton";

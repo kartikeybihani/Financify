@@ -16,7 +16,7 @@ import * as Haptics from "expo-haptics";
 import { supabase } from "@/src/lib/supabase/supabase";
 import AccountCard from "@/src/components/shared/AccountCard";
 import AccountActionAlert from "@/src/components/modals/AccountActionAlert";
-import { deleteAccount } from "@/src/utils/accountManagement";
+import { deleteAccount } from "@/src/utils/plaid/accountManagement";
 import { useAuthNavigation } from "@/src/contexts/AuthNavigationContext";
 import {
   Transaction,

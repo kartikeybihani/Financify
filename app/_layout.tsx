@@ -12,10 +12,10 @@ import AuthNavigationProvider, {
   useAuthNavigation,
 } from "@/src/contexts/AuthNavigationContext";
 import NavigationLoadingScreen from "@/src/components/shared/NavigationLoadingScreen";
-import { runStorageMigrationV2 } from "@/src/utils/migrate";
-import logger from "@/src/utils/logger";
+import { runStorageMigrationV2 } from "@/src/utils/core/migrate";
+import logger from "@/src/utils/core/logger";
 import { ActionSheetProvider } from "@expo/react-native-action-sheet";
-import { setupGlobalErrorHandling } from "@/src/utils/errorBoundary";
+import { setupGlobalErrorHandling } from "@/src/utils/core/errorBoundary";
 import { useNotificationSetup } from "@/src/hooks/useNotificationSetup";
 
 SplashScreen.preventAutoHideAsync();

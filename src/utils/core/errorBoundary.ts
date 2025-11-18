@@ -1,5 +1,5 @@
 import { supabase } from "@/src/lib/supabase/supabase";
-import logger from "@/src/utils/logger";
+import logger from "@/src/utils/core/logger";
 
 // Global error handler for auth-related errors
 export const setupGlobalErrorHandling = () => {

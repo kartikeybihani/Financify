@@ -121,7 +121,7 @@ When recurring streams refresh (`refresh_financial_data.js`):
 Components use `getDisplayCategory()` utility:
 
 ```typescript
-import { getDisplayCategory } from '@/src/utils/transactionCategory';
+import { getDisplayCategory } from '@/src/utils/categories/transactionCategory';
 
 // In component:
 const displayCategory = getDisplayCategory(transaction);

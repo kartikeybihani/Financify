@@ -1,6 +1,6 @@
 // app/_shared/utils/spendingCache.ts
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import logger from "@/src/utils/logger";
+import logger from "@/src/utils/core/logger";
 import { CACHE_CONFIG } from "../constants/cacheConfig";
 
 const SPENDING_CACHE_KEY = "cached_spending_breakdown";

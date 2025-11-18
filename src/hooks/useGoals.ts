@@ -6,9 +6,9 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Goal } from "@/src/types/finny";
 import { GoalInput } from "@/src/types/addGoalModalTypes";
 import { supabase } from "@/src/lib/supabase/supabase";
-import logger from "@/src/utils/logger";
+import logger from "@/src/utils/core/logger";
 import { CACHE_CONFIG } from "@/src/shared/constants/cacheConfig";
-import { getAuthenticatedUser } from "@/src/utils/auth";
+import { getAuthenticatedUser } from "@/src/utils/auth/auth;
 
 const GOALS_CACHE_KEY = CACHE_CONFIG.KEYS.GOALS;
 const GOALS_CACHE_TIMESTAMP_KEY = CACHE_CONFIG.KEYS.GOALS_TIMESTAMP;

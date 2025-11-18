@@ -14,10 +14,10 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { supabase } from "@/src/lib/supabase/supabase";
-import { getPrimaryItemId, addNewBankAccount } from "@/src/utils/plaid";
+import { getPrimaryItemId, addNewBankAccount } from "@/src/utils/plaid/plaid";
 import { Goal } from "@/src/types/finny";
 import { useUnifiedFinancialData } from "@/src/hooks/useUnifiedFinancialData";
-import logger from "@/src/utils/logger";
+import logger from "@/src/utils/core/logger";
 
 // New optimized components
 import { HomeHeader } from "@/src/components/home/HomeHeader";

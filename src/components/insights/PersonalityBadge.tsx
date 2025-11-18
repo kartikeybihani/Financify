@@ -1,7 +1,7 @@
 import React from "react";
 import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { SpendingPersonality } from "@/src/utils/personalityAnalysis";
+import { SpendingPersonality } from "@/src/utils/analytics/personalityAnalysis";
 
 interface PersonalityBadgeProps {
   personality: SpendingPersonality;

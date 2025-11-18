@@ -21,7 +21,7 @@ import { supabase } from '../src/lib/supabase/supabase';
 import {
   backfillRecurringCategories,
   BackfillResult,
-} from '../src/utils/recurringBackfill';
+} from '../src/utils/recurring/recurringBackfill';
 
 interface CliOptions {
   userId?: string;

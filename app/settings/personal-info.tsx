@@ -15,7 +15,7 @@ import { supabase } from "@/src/lib/supabase/supabase";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import EditEmailModal from "@/src/components/menu/EditEmailModal";
 import EditOccupationModal from "@/src/components/menu/EditOccupationModal";
-import logger from "@/src/utils/logger";
+import logger from "@/src/utils/core/logger";
 import { TEXT_STYLES } from "@/src/components/shared/modal-constants";
 
 export default function PersonalInfoScreen() {

@@ -3,9 +3,9 @@ import { AppState } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ChatMessage, Goal } from '@/src/types/finny';
 import finnyConstants from '@/src/constants/finny';
-import logger from '@/src/utils/logger';
+import logger from '@/src/utils/core/logger';
 import { supabase } from '@/src/lib/supabase/supabase';
-import { getFreshAccessToken, authenticatedFetch } from '@/src/utils/authToken';
+import { getFreshAccessToken, authenticatedFetch } from '@/src/utils/auth/authToken';
 
 // Simple message handling - display messages as single strings
 

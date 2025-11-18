@@ -14,8 +14,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { supabase } from "@/src/lib/supabase/supabase";
-import logger from "@/src/utils/logger";
-import { logOnboardingEvent } from "@/src/utils/onboarding";
+import logger from "@/src/utils/core/logger";
+import { logOnboardingEvent } from "@/src/utils/auth/onboarding";
 import FinanceFact from "@/src/components/onboarding/FinanceFact";
 
 const OPTIONS = [

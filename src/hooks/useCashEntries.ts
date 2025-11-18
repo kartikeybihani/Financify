@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { supabase } from "@/src/lib/supabase/supabase";
-import logger from "@/src/utils/logger";
+import logger from "@/src/utils/core/logger";
 
 const CASH_CACHE_KEY = "cached_cash_entries";
 const CASH_CACHE_TIMESTAMP_KEY = "cached_cash_entries_timestamp";

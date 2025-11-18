@@ -1,5 +1,5 @@
 import { supabase } from "@/src/lib/supabase/supabase";
-import logger from "@/src/utils/logger";
+import logger from "@/src/utils/core/logger";
 
 /**
  * Robust getUser function that handles race conditions during token refresh

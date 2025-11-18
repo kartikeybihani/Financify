@@ -8,8 +8,8 @@ import {
   TX_TTL, 
   BAL_TTL, 
   INST_TTL 
-} from "./cache";
-import { SlimTransaction } from "@/src/utils/supabase";
+} from "../cache/cache";
+import { SlimTransaction } from "@/src/utils/core/supabase";
 
 // Stale while revalidate pattern for transaction preview
 export async function loadTxPreview(

@@ -25,13 +25,13 @@ import { ChatMessageComponent } from "@/src/components/chat/ChatMessage";
 import { NudgeGrid } from "@/src/components/chat/NudgeGrid";
 import { useChatContext } from "@/src/contexts/ChatContext";
 import { supabase } from "@/src/lib/supabase/supabase";
-import { getFreshAccessToken, authenticatedFetch } from "@/src/utils/authToken";
+import { getFreshAccessToken, authenticatedFetch } from "@/src/utils/auth/authToken";
 import styles from "@/src/styles/chatStyles";
 import TypingIndicator from "@/src/components/chat/TypingIndicator";
 import ConversationStartersModal from "@/src/components/chat/ConversationStartersModal";
 import ReportModal from "@/src/components/modals/ReportModal";
 import FeedbackNotification from "@/src/components/chat/FeedbackNotification";
-import { submitLoveIt } from "@/src/utils/reports";
+import { submitLoveIt } from "@/src/utils/analytics/reports";
 
 interface Suggestion {
   text: string;

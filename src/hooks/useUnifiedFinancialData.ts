@@ -5,12 +5,12 @@ import { DeviceEventEmitter } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Account } from "@/src/types/plaid";
 import { Goal } from "@/src/types/finny";
-import { getAllUserAccounts } from "@/src/utils/plaid";
+import { getAllUserAccounts } from "@/src/utils/plaid/plaid;
 import { supabase } from "@/src/lib/supabase/supabase";
-import logger from "@/src/utils/logger";
-import { getAuthenticatedUser } from "@/src/utils/auth";
+import logger from "@/src/utils/core/logger";
+import { getAuthenticatedUser } from "@/src/utils/auth/auth;
 import { CACHE_CONFIG } from "@/src/shared/constants/cacheConfig";
-import { getSnaptradeBalancesFromDB } from "@/src/utils/snaptrade";
+import { getSnaptradeBalancesFromDB } from "@/src/utils/integrations/snaptrade";
 
 // Cache keys
 const UNIFIED_CACHE_KEY = "unified_financial_data";

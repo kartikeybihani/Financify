@@ -2312,12 +2312,13 @@ async function handleAsk(
       "- Don't overwhelm users with too much information at once",
       "- ALWAYS prioritize web search results over training data for current information (rates, limits, rules, etc.)",
       "- If user asks about 'accounts', show individual account names, balances, and types from the provided account data",
-      "- If user asks 'net worth' or 'what's my net worth', ALWAYS include a brief breakdown: show total plus top 2–3 contributors across assets and liabilities (e.g., cash, investments, credit card debt). Keep it concise, no long lists",
+      "- If user asks 'net worth' or 'what's my net worth', ALWAYS include a brief breakdown: show total plus top 2–3 contributors across what you have and what you owe (e.g., cash, investments, credit card debt). Use simple language like 'money you have' instead of 'assets' and 'money you owe' instead of 'liabilities'. Keep it concise, no long lists",
       "- If user asks about 'investments' or 'holdings', then show ALL holdings with their symbols, descriptions, and market values. Do not limit to top ones - show the complete portfolio",
       "- If user asks for 'investment advice' or 'financial advice', focus on actionable recommendations, not data dumps",
       "- Keep responses conversational and encouraging, not overwhelming",
       "- Provide actionable advice that users can implement immediately",
       "- Explain financial concepts in simple, understandable terms",
+      "- ALWAYS use layman terms instead of technical jargon: use 'money you have' instead of 'assets', 'money you owe' instead of 'liabilities', 'savings' instead of 'liquid assets', 'debt' instead of 'liabilities'",
       "- Connect advice to the user's specific financial situation when possible",
       "- For general advice requests, give 2-3 key recommendations rather than comprehensive breakdowns",
       "- If required data is missing (e.g., no transactions or summary), explicitly say so and ask the user to refresh or connect accounts. Do NOT fabricate data.",
@@ -2395,9 +2396,11 @@ async function handleAsk(
       });
       contextLines.push("Financial Summary:");
       contextLines.push(`Net Worth: $${packs.base.netWorth}`);
-      contextLines.push(`Liquid Assets: $${packs.base.liquidAssets}`);
+      contextLines.push(`Money You Have (Cash): $${packs.base.liquidAssets}`);
       contextLines.push(`Investments Total: $${packs.base.investmentsTotal}`);
-      contextLines.push(`Total Liabilities: $${packs.base.totalLiabilities}`);
+      contextLines.push(
+        `Money You Owe (Debt): $${packs.base.totalLiabilities}`
+      );
 
       if (packs.base.accounts?.length > 0) {
         contextLines.push("Your accounts:");
@@ -4454,11 +4457,31 @@ function detectGoalIntent(message, conversationContext) {
   const activeGoalFlow = conversationContext?.goal_flow;
   const isContinuingGoalFlow = activeGoalFlow && activeGoalFlow.active;
 
+  // 0.5. Check for advice-seeking patterns FIRST (these override goal creation patterns)
+  const adviceSeekingPatterns = [
+    /\bshould\s+i\s+(?:save|buy|invest|spend)/i, // "Should I save/buy/invest"
+    /\bis\s+it\s+(?:worth|smart|good|wise)/i, // "Is it worth/smart/good"
+    /\bcan\s+i\s+afford/i, // "Can I afford"
+    /\bwhat'?s?\s+a\s+good/i, // "What's a good"
+    /\bhow\s+much\s+(?:should|can|could)/i, // "How much should/can/could"
+  ];
+
+  if (adviceSeekingPatterns.some((p) => p.test(message))) {
+    console.log(
+      "✅ [GOAL] Advice-seeking pattern detected → routing to ask_personalized"
+    );
+    return {
+      intent: "ask_personalized",
+      confidence: 0.9,
+      reason: "advice_query",
+    };
+  }
+
   // 1. EXPLICIT goal creation patterns (high confidence)
   const explicitGoalPatterns = [
     /\b(?:create|set|add|make)\s+(?:a\s+)?(?:new\s+)?goal/i,
     /\bgoal\s+(?:for|to)\s+(?:save|buy)/i,
-    /\bsave\s+\$?\d+[k]?\s+(?:for|toward)/i, // "save $5000 for"
+    /\b(?:i\s+want\s+to|i'd\s+like\s+to|let'?s)\s+save\s+\$?\d+[k]?\s+(?:for|toward)/i, // "I want to save $5000 for" or "Let's save $5000 for"
     /\btarget\s+(?:amount|of)\s+\$?\d+/i, // "target amount $5000"
   ];
 
@@ -4508,16 +4531,21 @@ function detectGoalIntent(message, conversationContext) {
     };
   }
 
-  // 3. NOT goal creation - general financial queries
+  // 3. NOT goal creation - general financial queries (affordability, advice, recommendations)
   const nonGoalPatterns = [
     /\bcan\s+i\s+afford/i, // Affordability check
     /\bshould\s+i\s+buy/i, // Purchase advice
+    /\bis\s+it\s+worth\s+it/i, // Value assessment
+    /\bis\s+it\s+smart\s+to/i, // Advice seeking
     /\bwhat.*(?:spend|spent)/i, // Spending analysis
     /\bhow\s+much.*(?:spend|spent)/i, // Spending questions
     /\bwhere.*(?:money|spending)/i, // Transaction queries
     /\bshow.*(?:transactions|spending)/i, // Transaction display
     /\bafford.*\$\d+/i, // "afford $1000" patterns
     /\bafford.*\d+[k]/i, // "afford 5k" patterns
+    /\bwhat.*(?:good|recommended|suggested).*(?:emergency|savings|amount)/i, // Advice queries like "what's a good emergency amount"
+    /\bhow\s+much.*(?:should|can|could).*(?:save|have|keep)/i, // Advice on amounts
+    /\b(?:good|ideal|recommended|suggested).*(?:emergency|savings|fund|amount)/i, // General advice patterns
   ];
 
   if (nonGoalPatterns.some((p) => p.test(message))) {
@@ -4907,6 +4935,16 @@ async function handleClassify(message, context, conversationContext = null) {
                 "CRITICAL: Goal queries should NEVER need web search:",
                 "- 'Show my goals/Current goals' → intent:goal_conversation, needs_web:false, needs_user_data:true",
                 "",
+                "CRITICAL: Affordability and advice queries are ask_personalized, NOT goal_conversation:",
+                "- 'Can I afford X?' → ask_personalized (user wants to know if they can afford something now)",
+                "- 'What's a good emergency amount for me?' → ask_personalized (user wants personalized advice)",
+                "- 'Should I buy X?' → ask_personalized (user wants purchase advice)",
+                "- 'Is it worth it to buy X?' → ask_personalized (user wants value assessment)",
+                "",
+                "goal_conversation is ONLY for creating NEW goals or setting savings targets:",
+                "- 'I want to save $5000 for a house' → goal_conversation (user wants to CREATE a goal)",
+                "- 'Let's set a goal to save for vacation' → goal_conversation (user wants to CREATE a goal)",
+                "",
                 "Examples:",
                 '"What is the Roth IRA limit for 2025?" → {intent:"ask_personalized", needs_web:true, needs_user_data:false}',
                 '"How much did I spend last month?" → {intent:"ask_personalized", needs_web:false, needs_user_data:true}',
@@ -4914,7 +4952,8 @@ async function handleClassify(message, context, conversationContext = null) {
                 '"Which credit card should I get?" → {intent:"ask_personalized", needs_web:true, needs_user_data:true}',
                 '"Rent vs buy in Phoenix at 7% for me" → {intent:"ask_personalized", needs_web:true, needs_user_data:true, state:"AZ"}',
                 '"What\'s the weather?" → {intent:"off_topic", needs_web:false, needs_user_data:false}',
-                '"Can I afford a $10000 watch?" → {intent:"goal_conversation", needs_web:false, needs_user_data:true}',
+                '"Can I afford a $10000 watch?" → {intent:"ask_personalized", needs_web:false, needs_user_data:true}',
+                '"What\'s a good emergency amount for me?" → {intent:"ask_personalized", needs_web:false, needs_user_data:true}',
                 "",
                 "Return ONLY JSON (no code fences, no commentary):",
                 '{"intent":"ask_personalized|goal_conversation|off_topic","needs_web":true|false,"needs_user_data":true|false,"state":null|"AZ","entities":[],"confidence":0.0-1.0}',
@@ -5282,9 +5321,9 @@ async function handleOffTopic(message, context, conversationContext = null) {
           "",
           "FINANCIAL SITUATION:",
           `Current net worth: ${netWorthData.formatted.net_worth}`,
-          `Liquid assets: ${netWorthData.formatted.liquid_assets}`,
+          `Money you have (cash): ${netWorthData.formatted.liquid_assets}`,
           `Investments: ${netWorthData.formatted.investments_total}`,
-          `Liabilities: ${netWorthData.formatted.total_liabilities}`,
+          `Money you owe (debt): ${netWorthData.formatted.total_liabilities}`,
           "",
           "Use this financial context to provide more relevant and personalized financial advice when redirecting the user to financial topics.",
         ]
@@ -5315,7 +5354,7 @@ async function handleOffTopic(message, context, conversationContext = null) {
                 ", "
               )}\n\nUser name: ${userProfile.name || "there"}${
                 netWorthData
-                  ? `\n\nUser's financial situation: Net worth ${netWorthData.formatted.net_worth} (${netWorthData.formatted.liquid_assets} liquid, ${netWorthData.formatted.investments_total} invested, ${netWorthData.formatted.total_liabilities} liabilities)`
+                  ? `\n\nUser's financial situation: Net worth ${netWorthData.formatted.net_worth} (${netWorthData.formatted.liquid_assets} cash, ${netWorthData.formatted.investments_total} invested, ${netWorthData.formatted.total_liabilities} debt)`
                   : ""
               }${
                 conversationContext?.active_topic

@@ -18,7 +18,7 @@ import { useRouter, useFocusEffect } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import * as WebBrowser from "expo-web-browser";
 import { supabase } from "@/src/lib/supabase/supabase";
-import logger from "@/src/utils/logger";
+import logger from "@/src/utils/core/logger";
 import {
   getSnaptradeHoldingsFromDB,
   getSnaptradeOptionsFromDB,
@@ -31,7 +31,7 @@ import {
   checkSnaptradeConnectionStatus,
   getSnaptradeConnectionDetails,
   recalculateInvestmentBalances,
-} from "@/src/utils/snaptrade";
+} from "@/src/utils/integrations/snaptrade";
 import { clearInvestmentCache } from "@/src/shared/utils/investmentCache";
 import { styles } from "@/src/styles/investmentsStyles";
 import InstitutionSelectionModal from "@/src/components/modals/InstitutionSelectionModal";
@@ -1010,7 +1010,7 @@ export default function InvestmentsScreen({
         getSnaptradeUserSecretFromDB,
         reconnectSnaptradeConnection,
         getSnaptradeConnectionDetails,
-      } = await import("@/src/utils/snaptrade");
+      } = await import("@/src/utils/integrations/snaptrade");
       const userSecret = await getSnaptradeUserSecretFromDB(
         user.id,
         creds.userId,

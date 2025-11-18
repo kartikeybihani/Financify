@@ -18,7 +18,8 @@ dotenv.config();
 // Configuration
 const BASE_URL =
   process.env.APP_BASE_URL || "https://financify-rose.vercel.app";
-const TEST_USER_ID = process.env.TEST_USER_ID || "test-user-123";
+const TEST_USER_ID =
+  process.env.TEST_USER_ID || "79952f35-b607-40d6-a32e-d81386882eb7";
 
 // Test queries to verify different scenarios
 const TEST_QUERIES = [

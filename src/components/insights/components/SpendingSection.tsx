@@ -5,7 +5,7 @@ import SpendingBreakdown from "@/src/components/insights/SpendingBreakdown";
 import {
   analyzeSpendingPersonality,
   SpendingPersonality,
-} from "@/src/utils/personalityAnalysis";
+} from "@/src/utils/analytics/personalityAnalysis";
 
 interface Props {
   titleStyle: any;

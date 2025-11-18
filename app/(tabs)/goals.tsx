@@ -13,7 +13,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import Goals from "@/src/components/goals/Goals";
 import { useGoals } from "@/src/hooks/useGoals";
-import { notificationService } from "@/src/utils/notificationService";
+import { notificationService } from "@/src/utils/core/notificationService";
 
 const styles = StyleSheet.create({
   safeArea: {
