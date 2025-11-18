@@ -114,6 +114,29 @@ export default function PersonalInfoScreen() {
       setShowOccupationModal(false);
       setNewOccupation("");
 
+      // Invalidate profile cache on server
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        if (session?.access_token) {
+          await fetch("/api/finny", {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${session.access_token}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              action: "invalidate_profile_cache",
+            }),
+          });
+          logger.info("[PersonalInfo] Profile cache invalidated");
+        }
+      } catch (cacheError) {
+        logger.warn("[PersonalInfo] Failed to invalidate cache:", cacheError);
+        // Non-critical, don't throw
+      }
+
       Alert.alert("Success", "Occupation updated successfully!");
     } catch (error: any) {
       throw error;

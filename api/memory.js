@@ -469,6 +469,10 @@ const supabase = createClient(
 const memoryCache = new Map();
 const MEMORY_CACHE_TTL = 10 * 60 * 1000; // 10 minutes
 
+// In-memory cache for user profiles (onboarding data - rarely changes)
+const profileCache = new Map();
+const PROFILE_CACHE_TTL = 3 * 24 * 60 * 60 * 1000; // 3 days (onboarding data rarely changes, only finny_style/occupation can change)
+
 // Lightweight session state (goal_flow, etc.) with TTL
 const sessionStateCache = new Map(); // key: userId, value: { state, timestamp }
 const SESSION_STATE_TTL = 15 * 60 * 1000; // 15 minutes
@@ -676,6 +680,34 @@ function setCachedMemory(userId, data) {
 
 function invalidateMemoryCache(userId) {
   memoryCache.delete(userId);
+}
+
+// Profile cache functions
+function getCachedProfile(userId) {
+  const cached = profileCache.get(userId);
+  if (!cached) return null;
+
+  const now = Date.now();
+  if (now - cached.timestamp > PROFILE_CACHE_TTL) {
+    profileCache.delete(userId);
+    return null;
+  }
+
+  return cached.data;
+}
+
+function setCachedProfile(userId, data) {
+  profileCache.set(userId, {
+    data,
+    timestamp: Date.now(),
+  });
+}
+
+function invalidateProfileCache(userId) {
+  profileCache.delete(userId);
+  console.log(
+    `🧹 [PROFILE_CACHE] Invalidated profile cache for user: ${userId}`
+  );
 }
 
 // Smart memory selection for optimal context building
@@ -1536,6 +1568,136 @@ async function validateMemoriesWithSmallModel(
   }
 }
 
+// Format intent answers into natural language context for Finny
+function formatIntentAnswers(intentQ1, intentQ2, intentQ3) {
+  const contextParts = [];
+
+  // Intent Q1: Money mindset
+  const mindsetMap = {
+    freedom: "User views money as a tool for freedom",
+    stress: "User finds money stressful",
+    ignore: "User tends to ignore their finances",
+    disciplined: "User is disciplined with money",
+  };
+  if (intentQ1 && mindsetMap[intentQ1]) {
+    contextParts.push(mindsetMap[intentQ1]);
+  }
+
+  // Intent Q2: Financial stress level
+  const stressMap = {
+    chill: "User feels relaxed about their finances",
+    tense: "User feels a bit tense about their finances",
+    stressed: "User feels stressed about their finances",
+    overwhelmed: "User feels overwhelmed by their finances",
+  };
+  if (intentQ2 && stressMap[intentQ2]) {
+    contextParts.push(stressMap[intentQ2]);
+  }
+
+  // Intent Q3: Emergency readiness (reference point, not absolute truth)
+  const emergencyMap = {
+    yes: "User indicated they could cover a $1,000 emergency expense",
+    maybe: "User is uncertain if they could cover a $1,000 emergency expense",
+    no: "User indicated they cannot cover a $1,000 emergency expense (use as reference, may not be current)",
+    unsure: "User is unsure about their emergency fund readiness",
+  };
+  if (intentQ3 && emergencyMap[intentQ3]) {
+    contextParts.push(emergencyMap[intentQ3]);
+  }
+
+  return contextParts.join(". ");
+}
+
+// Load user profile data from profiles table (onboarding data)
+async function loadUserProfile(userId) {
+  if (!userId) {
+    return {
+      name: null,
+      age: null,
+      occupation: null,
+      finny_style: "conversational",
+      intent_context: "",
+    };
+  }
+
+  // Check cache first
+  const cached = getCachedProfile(userId);
+  if (cached) {
+    console.log("👤 [PROFILE] Using cached profile data for user:", userId);
+    return cached;
+  }
+
+  try {
+    console.log("👤 [PROFILE] Loading fresh profile data for user:", userId);
+
+    const { data: profile, error } = await supabase
+      .from("profiles")
+      .select(
+        "first_name, last_name, age, occupation, finny_style, intent_q1, intent_q2, intent_q3"
+      )
+      .eq("id", userId)
+      .maybeSingle();
+
+    if (error) {
+      console.error("❌ [PROFILE] Error loading profile:", error);
+      // Return defaults on error
+      const defaultProfile = {
+        name: null,
+        age: null,
+        occupation: null,
+        finny_style: "conversational",
+        intent_context: "",
+      };
+      setCachedProfile(userId, defaultProfile);
+      return defaultProfile;
+    }
+
+    // Build full name
+    const firstName = profile?.first_name || null;
+    const lastName = profile?.last_name || null;
+    const name =
+      firstName && lastName
+        ? `${firstName} ${lastName}`
+        : firstName || lastName || null;
+
+    // Format intent answers into natural language context
+    const intentContext = formatIntentAnswers(
+      profile?.intent_q1,
+      profile?.intent_q2,
+      profile?.intent_q3
+    );
+
+    const result = {
+      name,
+      age: profile?.age || null,
+      occupation: profile?.occupation || null,
+      finny_style: profile?.finny_style || "conversational",
+      intent_context: intentContext,
+      // Keep raw values for reference if needed
+      intent_q1: profile?.intent_q1 || null,
+      intent_q2: profile?.intent_q2 || null,
+      intent_q3: profile?.intent_q3 || null,
+    };
+
+    // Cache the result
+    setCachedProfile(userId, result);
+
+    console.log(`👤 [PROFILE] Loaded profile for user ${userId}`);
+    return result;
+  } catch (error) {
+    console.error("❌ [PROFILE] Error loading user profile:", error);
+    const defaultProfile = {
+      name: null,
+      age: null,
+      occupation: null,
+      finny_style: "conversational",
+      intent_context: "",
+    };
+    setCachedProfile(userId, defaultProfile);
+    return defaultProfile;
+  }
+}
+
 // Export all functions
 export {
   getSessionState,
@@ -1547,9 +1709,13 @@ export {
   getCachedMemory,
   setCachedMemory,
   invalidateMemoryCache,
+  getCachedProfile,
+  setCachedProfile,
+  invalidateProfileCache,
   selectRelevantMemories,
   categorizeSelectedMemories,
   loadUserMemory,
+  loadUserProfile,
   isSensitiveData,
   getExpiryDate,
   saveMemoryCandidates,

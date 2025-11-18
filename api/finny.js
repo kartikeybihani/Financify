@@ -20,9 +20,13 @@ import {
   getCachedMemory,
   setCachedMemory,
   invalidateMemoryCache,
+  getCachedProfile,
+  setCachedProfile,
+  invalidateProfileCache,
   selectRelevantMemories,
   categorizeSelectedMemories,
   loadUserMemory,
+  loadUserProfile,
   isSensitiveData,
   getExpiryDate,
   saveMemoryCandidates,
@@ -1427,24 +1431,50 @@ export default async function handler(req, res) {
   }
 
   let sessionState = getSessionState(finalUserId);
+
+  // Load user profile (onboarding data) and memory in parallel
+  const [userProfileData, userMemory] = await Promise.all([
+    loadUserProfile(finalUserId),
+    loadUserMemory(finalUserId),
+  ]);
+
+  // Merge profile data with existing userProfile (from auth metadata)
+  const enrichedProfile = {
+    name: userProfile.name || userProfileData.name,
+    age: userProfile.age || userProfileData.age,
+    occupation: userProfileData.occupation,
+    finny_style: userProfileData.finny_style,
+    intent_context: userProfileData.intent_context,
+  };
+
   const safeContext = {
     ...(context || {}),
     user_id: finalUserId,
     chat_id: chatId,
-    profile: userProfile,
+    profile: enrichedProfile,
     // carry session short-term state into handlers
     session: sessionState,
     // NEW: Add conversation context
     conversationContext: conversationContext,
     conversation_context: conversationContext, // Keep both for compatibility
     // NEW: Add memory reading
-    memory: await loadUserMemory(finalUserId),
+    memory: userMemory,
   };
 
   if (!action) {
     return res
       .status(400)
       .json({ error: "Missing required parameter: action" });
+  }
+
+  // === PROFILE CACHE INVALIDATION ===
+  if (action === "invalidate_profile_cache") {
+    // Invalidate profile cache for the authenticated user
+    invalidateProfileCache(finalUserId);
+    console.log(
+      `✅ [CACHE] Profile cache invalidated for user: ${finalUserId}`
+    );
+    return res.status(200).json({ success: true });
   }
 
   // === CHAT SESSION CHECK: Clear session state if new chat session ===
@@ -2218,6 +2248,33 @@ async function handleAsk(
       "- Examples: If someone says they're a 20-year-old software engineer student in Tucson, respond with something like 'That's awesome that you're studying software engineering in Tucson! That's such a growing field with great earning potential.'",
       "- If users share non-financial information, acknowledge it warmly before transitioning to financial topics",
       "- Build rapport by showing you care about them as a person, not just their finances",
+      "",
+      // USER PROFILE (from onboarding)
+      ...(context.profile?.name
+        ? [`User's name: ${context.profile.name}`]
+        : []),
+      ...(context.profile?.age ? [`User's age: ${context.profile.age}`] : []),
+      ...(context.profile?.occupation
+        ? [`User's occupation: ${context.profile.occupation}`]
+        : []),
+      ...(context.profile?.intent_context
+        ? [
+            "",
+            "USER'S FINANCIAL PERSPECTIVE (from onboarding - use as reference, may not be current):",
+            context.profile.intent_context,
+          ]
+        : []),
+      ...(context.profile?.finny_style
+        ? [
+            "",
+            `COMMUNICATION STYLE PREFERENCE: User prefers ${context.profile.finny_style} communication style. Adjust your tone accordingly:`,
+            context.profile.finny_style === "direct"
+              ? "- Be more direct and to-the-point, focus on facts and numbers"
+              : context.profile.finny_style === "witty"
+              ? "- Add more humor and light-heartedness while staying professional"
+              : "- Use conversational, friendly tone (default)",
+          ]
+        : []),
       "",
       // Smart memory context with relevance-based selection
       // Session summary (short-term conversation memory)
@@ -5249,6 +5306,31 @@ async function handleOffTopic(message, context, conversationContext = null) {
     "- If users share non-financial information, acknowledge it warmly before transitioning to financial topics",
     "- Build rapport by showing you care about them as a person, not just their finances",
     "- Make the transition to financial topics feel natural and connected to their personal situation",
+    "",
+    // USER PROFILE (from onboarding)
+    ...(context.profile?.name ? [`User's name: ${context.profile.name}`] : []),
+    ...(context.profile?.age ? [`User's age: ${context.profile.age}`] : []),
+    ...(context.profile?.occupation
+      ? [`User's occupation: ${context.profile.occupation}`]
+      : []),
+    ...(context.profile?.intent_context
+      ? [
+          "",
+          "USER'S FINANCIAL PERSPECTIVE (from onboarding - use as reference, may not be current):",
+          context.profile.intent_context,
+        ]
+      : []),
+    ...(context.profile?.finny_style
+      ? [
+          "",
+          `COMMUNICATION STYLE PREFERENCE: User prefers ${context.profile.finny_style} communication style. Adjust your tone accordingly:`,
+          context.profile.finny_style === "direct"
+            ? "- Be more direct and to-the-point, focus on facts and numbers"
+            : context.profile.finny_style === "witty"
+            ? "- Add more humor and light-heartedness while staying professional"
+            : "- Use conversational, friendly tone (default)",
+        ]
+      : []),
     "",
     // Smart memory context with relevance-based selection
     ...(context.memory?.summary

@@ -290,6 +290,29 @@ export default function FinnyStyleScreen({ onBack }: FinnyStyleScreenProps) {
       }
 
       logger.info("[FinnyStyle] Style saved successfully:", style);
+
+      // Invalidate profile cache on server
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        if (session?.access_token) {
+          await fetch("/api/finny", {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${session.access_token}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              action: "invalidate_profile_cache",
+            }),
+          });
+          logger.info("[FinnyStyle] Profile cache invalidated");
+        }
+      } catch (cacheError) {
+        logger.warn("[FinnyStyle] Failed to invalidate cache:", cacheError);
+        // Non-critical, don't throw
+      }
     } catch (error: any) {
       logger.error("[FinnyStyle] Error saving style:", error);
       // Revert to previous style on error
