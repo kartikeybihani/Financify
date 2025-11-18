@@ -50,7 +50,7 @@ import CategorySelectionModal from "@/src/components/modals/CategorySelectionMod
 import CashDepositInstitutionModal from "@/src/components/modals/CashDepositInstitutionModal";
 import CreditCardInstitutionModal from "@/src/components/modals/CreditCardInstitutionModal";
 import InstitutionSelectionModal from "@/src/components/modals/InstitutionSelectionModal";
-import { addNewBankAccount } from "@/src/utils/plaid/plaid;
+import { addNewBankAccount } from "@/src/utils/plaid/plaid";
 import { supabase } from "@/src/lib/supabase/supabase";
 import InvestmentsScreen from "@/app/investments";
 import {
@@ -64,7 +64,7 @@ import {
   getFilteredTransactions,
   getFilteredTransactionsCount,
   getUserAccountsForFilter,
-} from "@/src/utils/plaid/plaid;
+} from "@/src/utils/plaid/plaid";
 import {
   getDisplayCategory,
   shouldShowRecurringChip,

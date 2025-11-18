@@ -19,7 +19,7 @@ import { useRouter, useLocalSearchParams } from "expo-router";
 import { supabase } from "@/src/lib/supabase/supabase";
 import FeedbackModal from "@/src/components/modals/FeedbackModal";
 import ContactModal from "@/src/components/modals/ContactModal";
-import { handleDisconnect, getPrimaryItemId } from "@/src/utils/plaid/plaid;
+import { handleDisconnect, getPrimaryItemId } from "@/src/utils/plaid/plaid";
 import logger from "@/src/utils/core/logger";
 import { TEXT_STYLES } from "@/src/components/shared/modal-constants";
 

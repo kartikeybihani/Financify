@@ -12,7 +12,7 @@ import { Ionicons } from "@expo/vector-icons";
 import {
   getCategoryOptions,
   GoalCategory,
-} from "../../../src/utils/goalCategories";
+} from "@/src/utils/categories/goalCategories";
 
 interface CategoryPickerModalProps {
   visible: boolean;

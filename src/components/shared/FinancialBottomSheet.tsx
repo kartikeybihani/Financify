@@ -19,7 +19,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons, AntDesign } from "@expo/vector-icons";
 import IconButton from "@/src/components/shared/IconButton";
 import { BlurView } from "expo-blur";
-import { addNewBankAccount } from "@/src/utils/plaid/plaid;
+import { addNewBankAccount } from "@/src/utils/plaid/plaid";
 import InstitutionSelectionModal from "@/src/components/modals/InstitutionSelectionModal";
 import logger from "@/src/utils/core/logger";
 

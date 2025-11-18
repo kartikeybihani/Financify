@@ -26,7 +26,7 @@ import logger from "@/src/utils/core/logger";
 import {
   getCategoryDisplayName,
   getCategoryOptions,
-} from "../../../src/utils/goalCategories";
+} from "@/src/utils/categories/goalCategories";
 import CategoryPickerModal from "@/src/components/shared/CategoryPickerModal";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");

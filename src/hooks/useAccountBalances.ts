@@ -4,11 +4,11 @@ import { useState, useEffect, useCallback } from "react";
 import { DeviceEventEmitter } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Account } from "@/src/types/plaid";
-import { getAllUserAccounts } from "@/src/utils/plaid/plaid;
+import { getAllUserAccounts } from "@/src/utils/plaid/plaid";
 import { supabase } from "@/src/lib/supabase/supabase";
 import { useCashEntries } from "./useCashEntries";
 import logger from "@/src/utils/core/logger";
-import { getAuthenticatedUser } from "@/src/utils/auth/auth;
+import { getAuthenticatedUser } from "@/src/utils/auth/auth";
 
 const BALANCES_CACHE_KEY = "cached_account_balances";
 const BALANCES_CACHE_TIMESTAMP_KEY = "cached_account_balances_timestamp";

@@ -12,7 +12,7 @@ import {
   CASH_DEPOSIT_INSTITUTIONS,
   type Institution,
 } from "../shared/modal-constants";
-import { handleInstitutionConnect } from "@/src/utils/plaid/plaid;
+import { handleInstitutionConnect } from "@/src/utils/plaid/plaid";
 import logger from "@/src/utils/core/logger";
 
 interface CashDepositInstitutionModalProps {

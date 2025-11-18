@@ -24,7 +24,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   getCategoryOptions,
   GoalCategory,
-} from "../../../src/utils/goalCategories";
+} from "@/src/utils/categories/goalCategories";
 import CategoryPickerModal from "@/src/components/shared/CategoryPickerModal";
 
 const initialGoalState: Omit<GoalInput, "target_date" | "category"> = {
