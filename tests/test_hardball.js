@@ -120,7 +120,7 @@ const HARDBALL_QUESTIONS = [
   {
     id: 10,
     question:
-      "i'm honestly terrified i'll never be able to retire like i have zero savings and i'm already 28 is it too late?",
+      "i'm terrified i'll never be able to retire like i have zero savings and i'm already 28 is it too late?",
     category: "Existential Fear",
     expectedState: "anxious",
     description: "Tests long-term fear and reassurance",
@@ -130,7 +130,7 @@ const HARDBALL_QUESTIONS = [
   {
     id: 11,
     question:
-      "my car broke down and i need 800 to fix it but i only have 50 bucks in my account what do i even do",
+      "my car broke down and i need 800 to fix it but i don't have a lot in my accounts what do i even do",
     category: "Emergency Crisis",
     expectedState: "crisis",
     description: "Tests emergency response without buffer",
