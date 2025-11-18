@@ -417,6 +417,20 @@ async function setCachedUserData(dataType, userId, data, params = {}) {
 // Clean up duplicate cache entries (keep only the most recent one)
 async function cleanupDuplicateCacheEntries(cacheKey, userId) {
   try {
+    // Validate userId is a valid UUID
+    if (
+      !userId ||
+      typeof userId !== "string" ||
+      !userId.match(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+      )
+    ) {
+      console.warn(
+        `⚠️ [CACHE] Invalid userId format in cleanupDuplicateCacheEntries: ${userId}`
+      );
+      return;
+    }
+
     // Get all entries for this cache key
     const { data: allEntries, error } = await supabase
       .from("context_cache")
@@ -678,12 +692,25 @@ async function cleanupExistingDuplicates() {
 
       // Clean up each duplicate set
       for (const key of duplicateKeys) {
-        const [cacheKey, userId] = key
-          .split("_")
-          .slice(0, -1)
-          .join("_")
-          .split("_");
-        await cleanupDuplicateCacheEntries(cacheKey, userId);
+        // Extract cacheKey and userId from the first entry (they're all the same for duplicates)
+        const firstEntry = duplicates[key][0];
+        const cacheKey = firstEntry.cache_key;
+        const userId = firstEntry.user_id;
+
+        // Validate userId is a valid UUID before calling cleanup
+        if (
+          userId &&
+          typeof userId === "string" &&
+          userId.match(
+            /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+          )
+        ) {
+          await cleanupDuplicateCacheEntries(cacheKey, userId);
+        } else {
+          console.warn(
+            `⚠️ [CACHE] Skipping cleanup for invalid userId: ${userId}`
+          );
+        }
       }
 
       console.log("✅ [CACHE] Existing duplicates cleaned up");
@@ -1830,11 +1857,18 @@ async function handleAsk(
     let webResults = [];
     let webSummary = "";
 
-    // Use passed classification result or fallback to keyword detection
+    // Use passed classification result, or retrieve from cache, or fallback to keyword detection
     if (!classificationResult) {
-      console.log(
-        "⚠️ [FINNY] No classification result passed, using keyword fallback"
-      );
+      // Try to retrieve from cache
+      const cachedClassification = getCachedClassification(message);
+      if (cachedClassification) {
+        console.log("✅ [FINNY] Retrieved classification from cache");
+        classificationResult = cachedClassification;
+      } else {
+        console.log(
+          "⚠️ [FINNY] No classification result passed and not in cache, using keyword fallback"
+        );
+      }
     }
 
     // Use classification.needs_web as primary, with keyword detection as fallback
