@@ -132,6 +132,10 @@ export default function SettingsScreen() {
           await AsyncStorage.removeItem("onboarding_complete");
           await AsyncStorage.removeItem("user_authenticated");
           await AsyncStorage.removeItem("userData");
+          // CRITICAL: Clear chat messages to prevent cross-user data leakage
+          await AsyncStorage.removeItem("chatMessages");
+          await AsyncStorage.removeItem("chatId");
+          await AsyncStorage.removeItem("currentChatUserId");
 
           // Sign out first (context will update state)
           await supabase.auth.signOut();

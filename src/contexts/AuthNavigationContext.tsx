@@ -181,6 +181,10 @@ export const AuthNavigationProvider: React.FC<AuthNavigationProviderProps> = ({
         "@balances_cache",
         "@recurring_cache",
         "@investment_cache",
+        // CRITICAL: Clear chat data to prevent cross-user data leakage
+        "chatMessages",
+        "chatId",
+        "currentChatUserId",
       ]);
       profileCache.current = null;
       profileCacheUserId.current = null;

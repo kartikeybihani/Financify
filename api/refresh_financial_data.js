@@ -79,7 +79,7 @@ async function backfillRecurringCategories(userId, recurringRows) {
       const streamData = transactionToStreamMap.get(tx.plaid_transaction_id);
       if (!streamData) return;
 
-      const update = { id: tx.id };
+      const update = { id: tx.id, user_id: userId };
       let hasChanges = false;
 
       // Link to stream if not already linked

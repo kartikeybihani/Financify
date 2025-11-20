@@ -34,6 +34,47 @@ export const useChat = () => {
 
   const loadChatMessages = async () => {
     try {
+      // CRITICAL: Verify current user matches stored user before loading messages
+      const { data: { user } } = await supabase.auth.getUser();
+      const currentUserId = user?.id;
+      
+      if (!currentUserId) {
+        // No user logged in, start fresh
+        setChatMessages(finnyConstants.INITIAL_CHAT_MESSAGES);
+        setShowNudges(true);
+        return;
+      }
+
+      // Check if stored chat belongs to current user
+      const storedUserId = await AsyncStorage.getItem("currentChatUserId");
+      if (storedUserId && storedUserId !== currentUserId) {
+        // Different user detected - clear old chat data
+        console.log("🔄 [SECURITY] User changed, clearing previous user's chat data");
+        await AsyncStorage.removeItem("chatMessages");
+        await AsyncStorage.removeItem("chatId");
+        await AsyncStorage.removeItem("currentChatUserId");
+        setChatMessages(finnyConstants.INITIAL_CHAT_MESSAGES);
+        setShowNudges(true);
+        // Generate new chatId for new user
+        const newChatId = `chat_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
+        setChatId(newChatId);
+        await AsyncStorage.setItem("currentChatUserId", currentUserId);
+        return;
+      }
+
+      // Load stored chatId or generate new one
+      const storedChatId = await AsyncStorage.getItem("chatId");
+      if (storedChatId) {
+        setChatId(storedChatId);
+      } else {
+        const newChatId = `chat_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
+        setChatId(newChatId);
+        await AsyncStorage.setItem("chatId", newChatId);
+      }
+      
+      // Store current user ID for future verification
+      await AsyncStorage.setItem("currentChatUserId", currentUserId);
+
       const savedMessages = await AsyncStorage.getItem("chatMessages");
       if (savedMessages) {
         const parsedMessages = JSON.parse(savedMessages);
@@ -57,7 +98,25 @@ export const useChat = () => {
 
   const saveChatMessages = async () => {
     try {
+      // CRITICAL: Only save if current user matches stored user
+      const { data: { user } } = await supabase.auth.getUser();
+      const currentUserId = user?.id;
+      
+      if (!currentUserId) {
+        // Don't save if no user logged in
+        return;
+      }
+
+      const storedUserId = await AsyncStorage.getItem("currentChatUserId");
+      if (storedUserId && storedUserId !== currentUserId) {
+        // User changed - don't save messages for wrong user
+        console.log("⚠️ [SECURITY] User mismatch detected, not saving chat messages");
+        return;
+      }
+
       await AsyncStorage.setItem("chatMessages", JSON.stringify(chatMessages));
+      await AsyncStorage.setItem("chatId", chatId);
+      await AsyncStorage.setItem("currentChatUserId", currentUserId);
     } catch (error) {
       logger.error("Error saving chat messages:", error);
     }
@@ -81,6 +140,14 @@ export const useChat = () => {
       // Generate new chat_id for fresh conversation (backend uses this to clear context)
       const newChatId = `chat_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
       setChatId(newChatId);
+      await AsyncStorage.setItem("chatId", newChatId);
+      
+      // Store current user ID for verification
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user?.id) {
+        await AsyncStorage.setItem("currentChatUserId", user.id);
+      }
+      
       console.log("🆕 [CLEAR_CHAT] New chat ID generated:", newChatId);
       
       // Save current session to database in the background (don't await)
@@ -195,6 +262,14 @@ export const useChat = () => {
       // Generate new chat_id for fresh conversation
       const newChatId = `chat_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
       setChatId(newChatId);
+      await AsyncStorage.setItem("chatId", newChatId);
+      
+      // Store current user ID for verification
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user?.id) {
+        await AsyncStorage.setItem("currentChatUserId", user.id);
+      }
+      
       console.log("🆕 [NEW_SESSION] New chat ID generated:", newChatId);
       
       logger.info("Started new chat session");

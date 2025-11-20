@@ -203,7 +203,6 @@ export function useGoals(pushChat: (sender: "user" | "finny", message: string) =
       const goalData = {
         user_id: user.id,
         label: goalInput.label.trim(),
-        description: null, // Keep description as null since we removed it from UI
         note: goalInput.note?.trim() || null,
         target_amount: goalInput.target_amount,
         current_amount: goalInput.current_amount || 0,

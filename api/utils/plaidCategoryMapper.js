@@ -467,7 +467,7 @@ function mapPlaidToAppCategory(primary, detailed) {
   return { top: "Other", sub: "Other" };
 }
 
-module.exports = {
+export {
   mapPlaidToAppCategory,
   parseSubcategory,
   isInternalTransferCategory,

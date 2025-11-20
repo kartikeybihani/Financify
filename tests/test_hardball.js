@@ -80,7 +80,7 @@ const HARDBALL_QUESTIONS = [
   {
     id: 6,
     question:
-      "everyone keeps saying save 20% but like how?? my rent is 2k and i only make 3k a month and i'm literally drowning in bills",
+      "everyone keeps saying save 20% but like how?? my rent is 900 and i only make 2k a month and i'm literally drowning in bills",
     category: "Systemic Challenges",
     expectedState: "high_fixed_costs",
     description: "Tests realistic advice vs generic rules",
