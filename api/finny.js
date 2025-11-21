@@ -29,6 +29,10 @@ import {
   detectUserState,
   buildContextAwarePrompt,
 } from "../lib/prompt_engine.js";
+import {
+  checkRateLimit,
+  formatRetryAfterSeconds,
+} from "../lib/api/rateLimiter.js";
 
 // Utilities
 function generateRequestId() {
@@ -1333,21 +1337,17 @@ export default async function handler(req, res) {
 
   // Check if client wants streaming response
   const wantsStreaming = req.body.stream === true;
-  if (wantsStreaming) {
-    // Set SSE headers for streaming
-    res.writeHead(200, {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
-      Connection: "keep-alive",
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Headers": "Cache-Control",
-    });
-  }
 
   const { action, message, context, classification, ...otherParams } = req.body;
   console.log("📝 [FINNY] Action:", action);
   // Avoid logging full message/context to reduce PII exposure
   console.log("📊 [FINNY] Context provided:", context ? "Yes" : "No");
+
+  if (!action) {
+    return res
+      .status(400)
+      .json({ error: "Missing required parameter: action" });
+  }
 
   // Derive user from Supabase JWT instead of trusting client context
   let serverUserId = null;
@@ -1391,6 +1391,41 @@ export default async function handler(req, res) {
   // But fall back to client-provided user_id if no JWT token is present (for testing)
   const finalUserId = serverUserId || context?.user_id;
   const chatId = req.body.chat_id || context?.chat_id; // Get chat_id from request
+
+  const finnyRateConfig =
+    action === "classify"
+      ? { limit: 90, windowMs: 60 * 1000 }
+      : action === "goal_conversation"
+      ? { limit: 30, windowMs: 60 * 1000 }
+      : { limit: 20, windowMs: 60 * 1000 };
+
+  const finnyRateLimit = await checkRateLimit(req, {
+    scope: `finny:${action}`,
+    userId: finalUserId,
+    ...finnyRateConfig,
+  });
+
+  if (!finnyRateLimit.allowed) {
+    const retryAfter = formatRetryAfterSeconds(finnyRateLimit.retryAfterMs);
+    if (retryAfter > 0) {
+      res.setHeader("Retry-After", retryAfter);
+    }
+    return res.status(429).json({
+      error: "Too many assistant requests. Please wait before retrying.",
+      retry_after: retryAfter,
+    });
+  }
+
+  if (wantsStreaming) {
+    // Set SSE headers for streaming after confirming rate limit allowance
+    res.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Headers": "Cache-Control",
+    });
+  }
 
   // Load conversation context from Supabase (if chat_id provided)
   // Skip context loading for first message in chat session
@@ -1474,12 +1509,6 @@ export default async function handler(req, res) {
     // NEW: Add memory reading
     memory: userMemory,
   };
-
-  if (!action) {
-    return res
-      .status(400)
-      .json({ error: "Missing required parameter: action" });
-  }
 
   // === PROFILE CACHE INVALIDATION ===
   if (action === "invalidate_profile_cache") {

@@ -1,5 +1,7 @@
 // Account management utilities for Plaid account operations
 
+import { authenticatedFetch } from "@/src/utils/auth/authToken";
+
 const BASE_URL = process.env.EXPO_PUBLIC_APP_BASE_URL || "https://financify-rose.vercel.app";
 
 export interface DeleteAccountResponse {
@@ -17,7 +19,7 @@ export async function deleteAccount(
   accountId: string,
   userId: string
 ): Promise<DeleteAccountResponse> {
-  const response = await fetch(`${BASE_URL}/api/plaid_management`, {
+  const response = await authenticatedFetch(`${BASE_URL}/api/plaid_management`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({

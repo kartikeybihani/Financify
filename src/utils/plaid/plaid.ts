@@ -2,6 +2,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { open, create } from "react-native-plaid-link-sdk";
 import {supabase} from "@/src/lib/supabase/supabase";
+import { authenticatedFetch } from "@/src/utils/auth/authToken";
 import logger from "@/src/utils/core/logger";
 import { getPlaidInstitutionId, logInstitutionMapping } from "@/src/components/shared/modal-constants";
 
@@ -93,7 +94,7 @@ export const fetchLinkToken = async (institution_id?: string, routing_number?: s
     logger.info("🎯 Using routing number for Institution Select shortcut:", routing_number);
   }
 
-  const res = await fetch(`${BASE_URL}/api/plaid_management`, {
+  const res = await authenticatedFetch(`${BASE_URL}/api/plaid_management`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(requestBody),
@@ -178,7 +179,7 @@ export const handlePlaidConnect = async (
         }
 
         logger.info("📡 Making API call to exchange_public_token");
-        const res = await fetch(`${BASE_URL}/api/exchange_public_token`, {
+        const res = await authenticatedFetch(`${BASE_URL}/api/exchange_public_token`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -268,7 +269,7 @@ export const addNewBankAccount = async (
 // === Update Mode ===
 export const getUpdateLinkToken = async (item_id: string) => {
   const { data: { user } } = await supabase.auth.getUser();
-  const res = await fetch(`${BASE_URL}/api/plaid_management`, {
+  const res = await authenticatedFetch(`${BASE_URL}/api/plaid_management`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ mode: "update", item_id, user_id: user?.id }),
@@ -309,7 +310,7 @@ export const handleDisconnect = async (item_id: string) => {
     throw new Error("Item ID is required for disconnection");
   }
 
-  const res = await fetch(`${BASE_URL}/api/plaid_management`, {
+  const res = await authenticatedFetch(`${BASE_URL}/api/plaid_management`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ mode: "remove_item", item_id }),
@@ -452,7 +453,7 @@ export const syncTransactions = async (item_id: string) => {
   try {
     // Use API endpoint directly (more reliable than Supabase function)
     logger.info("📡 Calling transactions_sync API endpoint...");
-    const res = await fetch(`${BASE_URL}/api/transactions_sync`, {
+    const res = await authenticatedFetch(`${BASE_URL}/api/transactions_sync`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ item_id, user_id: user.id }),
@@ -487,7 +488,7 @@ export const syncTransactions = async (item_id: string) => {
 // === Store Accounts ===
 export const storeAccounts = async (item_id: string) => {
   logger.info("🏦 Storing accounts for item_id:", item_id);
-  const res = await fetch(`${BASE_URL}/api/store_accounts`, {
+  const res = await authenticatedFetch(`${BASE_URL}/api/store_accounts`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ item_id }),
@@ -928,7 +929,7 @@ export const refreshRecurringTransactions = async (item_id?: string) => {
     // Refresh recurring transactions for each account
     const recurringPromises = userItems.map(async (item) => {
       try {
-        const res = await fetch(`${BASE_URL}/api/refresh_financial_data`, {
+        const res = await authenticatedFetch(`${BASE_URL}/api/refresh_financial_data`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ 
@@ -1141,7 +1142,7 @@ export const refreshBothBalancesAndTransactions = async (item_id?: string) => {
     // Refresh both balances and transactions for each account
     const refreshPromises = userItems.map(async (item) => {
       try {
-        const res = await fetch(`${BASE_URL}/api/refresh_financial_data`, {
+        const res = await authenticatedFetch(`${BASE_URL}/api/refresh_financial_data`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ 

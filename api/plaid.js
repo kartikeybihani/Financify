@@ -7,6 +7,14 @@ import {
   clientId,
   consumerKey,
 } from "../lib/api/snaptrade.js";
+import {
+  verifyItemOwnership,
+  verifyUserAuthorization,
+} from "../lib/api/auth.js";
+import {
+  checkRateLimit,
+  formatRetryAfterSeconds,
+} from "../lib/api/rateLimiter.js";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -27,19 +35,34 @@ export default async function handler(req, res) {
   }
 
   try {
-    // 1. Look up user_id if not provided
-    let actualUserId = user_id;
-    if (!actualUserId) {
-      const { data: item, error: userErr } = await supabase
-        .from("user_items")
-        .select("user_id")
-        .eq("item_id", item_id)
-        .single();
+    // 1. Verify user owns this item (authorization check)
+    const {
+      authorized,
+      userId: actualUserId,
+      error: authError,
+    } = await verifyItemOwnership(req, item_id);
 
-      if (userErr || !item) {
-        return res.status(404).json({ error: "Item not found" });
+    if (!authorized) {
+      return res.status(authError?.includes("Unauthorized") ? 401 : 403).json({
+        error: authError || "Access denied",
+      });
+    }
+
+    const plaidRateLimit = await checkRateLimit(req, {
+      scope: "plaid",
+      userId: actualUserId,
+      limit: 60,
+      windowMs: 60 * 1000,
+    });
+
+    if (!plaidRateLimit.allowed) {
+      const retryAfter = formatRetryAfterSeconds(plaidRateLimit.retryAfterMs);
+      if (retryAfter > 0) {
+        res.setHeader("Retry-After", retryAfter);
       }
-      actualUserId = item.user_id;
+      return res
+        .status(429)
+        .json({ error: "Too many requests. Please try again later." });
     }
 
     // 2. Get access_token from Vault
@@ -62,7 +85,8 @@ export default async function handler(req, res) {
         break;
 
       case "transactions_sync":
-        // Get cursor for this item
+        // Get cursor for this item (already have user_id from auth check)
+        // Fetch user_id and cursor together in one query for efficiency
         const { data: itemData, error: cursorErr } = await supabase
           .from("user_items")
           .select("transactions_cursor")
@@ -172,7 +196,80 @@ export default async function handler(req, res) {
 // SnapTrade handler function
 async function handleSnapTradeRequest(req, res, mode, params) {
   try {
-    const { userId, userSecret, accountId } = params;
+    let { userId, userSecret, accountId, user_id } = params;
+
+    // For modes that require Supabase user authorization
+    const requiresAuth = [
+      "snaptrade_store_credentials",
+      "snaptrade_sync",
+      "snaptrade_refresh",
+      "snaptrade_check_status",
+      "snaptrade_get_connection_details",
+      "snaptrade_recalculate",
+    ];
+
+    let supabaseUserId = user_id || null;
+
+    if (requiresAuth.includes(mode)) {
+      // If not provided, derive Supabase user_id from accountId
+      if (!supabaseUserId && accountId) {
+        try {
+          const { data: accountOwner } = await supabase
+            .from("snaptrade_connections")
+            .select("user_id")
+            .eq("account_id", accountId)
+            .single();
+
+          if (accountOwner?.user_id) {
+            supabaseUserId = accountOwner.user_id;
+          }
+        } catch (lookupError) {
+          console.warn(
+            "⚠️ Unable to derive Supabase user_id from accountId:",
+            lookupError.message
+          );
+        }
+      }
+
+      if (!supabaseUserId) {
+        return res.status(400).json({
+          error:
+            "Missing user_id (Supabase user ID required for this SnapTrade operation)",
+        });
+      }
+
+      const { authorized, error: authError } = await verifyUserAuthorization(
+        req,
+        supabaseUserId
+      );
+
+      if (!authorized) {
+        return res
+          .status(authError?.includes("Unauthorized") ? 401 : 403)
+          .json({
+            error: authError || "Access denied",
+          });
+      }
+    }
+
+    const snaptradeRateLimit = await checkRateLimit(req, {
+      scope: "snaptrade",
+      userId: supabaseUserId,
+      limit: 30,
+      windowMs: 60 * 1000,
+    });
+
+    if (!snaptradeRateLimit.allowed) {
+      const retryAfter = formatRetryAfterSeconds(
+        snaptradeRateLimit.retryAfterMs
+      );
+      if (retryAfter > 0) {
+        res.setHeader("Retry-After", retryAfter);
+      }
+      return res
+        .status(429)
+        .json({ error: "Too many requests. Please try again later." });
+    }
 
     switch (mode) {
       case "snaptrade_register":
@@ -222,43 +319,60 @@ async function handleSnapTradeRequest(req, res, mode, params) {
 
       case "snaptrade_store_credentials":
         if (!userId || !userSecret || !accountId) {
-          return res.status(400).json({ error: "Missing required parameters" });
+          return res.status(400).json({
+            error:
+              "Missing required parameters (userId, userSecret, accountId)",
+          });
         }
-        return await handleSnapTradeStoreCredentials(res, params);
+        return await handleSnapTradeStoreCredentials(
+          res,
+          params,
+          supabaseUserId
+        );
 
       case "snaptrade_sync":
-        if (!userId || !accountId) {
-          return res.status(400).json({ error: "Missing userId or accountId" });
+        if (!accountId) {
+          return res.status(400).json({
+            error: "Missing accountId",
+          });
         }
-        return await handleSnapTradeSync(res, userId, accountId);
+        return await handleSnapTradeSync(res, supabaseUserId, accountId);
 
       case "snaptrade_refresh":
-        if (!userId || !accountId) {
-          return res.status(400).json({ error: "Missing userId or accountId" });
+        if (!accountId) {
+          return res.status(400).json({
+            error: "Missing accountId",
+          });
         }
-        return await handleSnapTradeRefresh(res, userId, accountId);
+        return await handleSnapTradeRefresh(res, supabaseUserId, accountId);
 
       case "snaptrade_check_status":
-        if (!userId || !accountId) {
-          return res.status(400).json({ error: "Missing userId or accountId" });
+        if (!accountId) {
+          return res.status(400).json({
+            error: "Missing accountId",
+          });
         }
-        return await handleSnapTradeCheckStatus(res, userId, accountId);
+        return await handleSnapTradeCheckStatus(res, supabaseUserId, accountId);
 
       case "snaptrade_get_connection_details":
-        if (!userId || !accountId) {
-          return res.status(400).json({ error: "Missing userId or accountId" });
+        if (!accountId) {
+          return res.status(400).json({
+            error: "Missing accountId",
+          });
         }
         return await handleSnapTradeGetConnectionDetails(
           res,
-          userId,
+          supabaseUserId,
           accountId
         );
 
       case "snaptrade_recalculate":
-        if (!userId || !accountId) {
-          return res.status(400).json({ error: "Missing userId or accountId" });
+        if (!accountId) {
+          return res.status(400).json({
+            error: "Missing accountId",
+          });
         }
-        return await handleSnapTradeRecalculate(res, userId, accountId);
+        return await handleSnapTradeRecalculate(res, supabaseUserId, accountId);
 
       default:
         return res.status(400).json({ error: "Invalid SnapTrade mode" });
@@ -559,10 +673,14 @@ async function handleSnapTradeBalances(res, userId, userSecret, accountId) {
   }
 }
 
-async function handleSnapTradeStoreCredentials(res, params) {
+async function handleSnapTradeStoreCredentials(res, params, supabaseUserId) {
   try {
-    const { userId, snaptradeUserId, accountId, userSecret, ...metadata } =
-      params;
+    const {
+      userId: snaptradeUserId,
+      accountId,
+      userSecret,
+      ...metadata
+    } = params;
 
     console.log("🔄 Storing SnapTrade credentials directly in database...");
 
@@ -571,8 +689,8 @@ async function handleSnapTradeStoreCredentials(res, params) {
       .from("snaptrade_connections")
       .upsert(
         {
-          user_id: userId,
-          snaptrade_user_id: snaptradeUserId,
+          user_id: supabaseUserId, // Supabase user_id (already verified via auth)
+          snaptrade_user_id: snaptradeUserId, // SnapTrade userId
           account_id: accountId,
           user_secret: userSecret,
           brokerage_name: metadata.brokerage_name || "Unknown",
@@ -663,6 +781,11 @@ async function handleSnapTradeSync(res, userId, accountId) {
     });
 
     // Use shared SnapTrade SDK instance
+
+    // Track sync operations for error reporting
+    const syncErrors = [];
+    let balancesSynced = false;
+    let holdingsSynced = false;
 
     // Sync Account Balances
     console.log("💰 Syncing account balances...");
@@ -837,11 +960,14 @@ async function handleSnapTradeSync(res, userId, accountId) {
           connection.snaptrade_user_id,
           accountId
         );
+        balancesSynced = true;
       } else {
         console.log("ℹ️ No balance data to sync");
+        balancesSynced = true; // No data is not an error
       }
     } catch (error) {
       console.error("❌ Error syncing balances:", error);
+      syncErrors.push(`Balance sync failed: ${error.message}`);
     }
 
     // Sync Holdings
@@ -1213,6 +1339,7 @@ async function handleSnapTradeSync(res, userId, accountId) {
           );
           // Continue with sync even if holdings fail
         }
+        holdingsSynced = true;
       } else {
         console.log("ℹ️ No holdings data to sync");
         // SAFETY: Don't automatically mark all holdings as inactive if positions array is empty
@@ -1220,9 +1347,11 @@ async function handleSnapTradeSync(res, userId, accountId) {
         console.log(
           "⚠️ No positions found in API response - keeping existing holdings active (may be temporary API issue)"
         );
+        holdingsSynced = true; // No data is not an error
       }
     } catch (error) {
       console.error("❌ Error syncing holdings:", error);
+      syncErrors.push(`Holdings sync failed: ${error.message}`);
     }
 
     // Final recalculation from database holdings to ensure accuracy
@@ -1251,10 +1380,27 @@ async function handleSnapTradeSync(res, userId, accountId) {
       console.log("✅ Updated last_synced_at timestamp");
     }
 
+    // Return appropriate status based on sync results
+    if (syncErrors.length > 0) {
+      console.warn(
+        `⚠️ SnapTrade sync completed with ${syncErrors.length} error(s):`,
+        syncErrors
+      );
+      return res.status(200).json({
+        success: true,
+        message: "Investments synced with warnings",
+        warnings: syncErrors,
+        balancesSynced,
+        holdingsSynced,
+      });
+    }
+
     console.log("✅ SnapTrade sync completed successfully");
     return res.status(200).json({
       success: true,
       message: "Investments synced successfully",
+      balancesSynced,
+      holdingsSynced,
     });
   } catch (error) {
     console.error("❌ SnapTrade sync error:", error);

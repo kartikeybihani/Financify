@@ -4,11 +4,49 @@ import {
   mapPlaidToAppCategory,
   isInternalTransferCategory,
 } from "./utils/plaidCategoryMapper.js";
+import {
+  checkRateLimit,
+  formatRetryAfterSeconds,
+} from "../lib/api/rateLimiter.js";
 
 export default async function handler(req, res) {
   // Only allow GET requests (for cron triggers)
   if (req.method !== "GET") {
     return res.status(405).json({ error: "Method not allowed" });
+  }
+
+  // Protect this endpoint with a shared secret so only your cron job can call it
+  const cronSecretHeader =
+    req.headers["x-cron-secret"] || req.headers["X-Cron-Secret"];
+  const expectedCronSecret = process.env.CRON_SECRET;
+
+  if (expectedCronSecret) {
+    if (!cronSecretHeader || cronSecretHeader !== expectedCronSecret) {
+      console.error("❌ Unauthorized scheduled-sync attempt");
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+  } else {
+    console.warn(
+      "⚠️ CRON_SECRET not set - scheduled-sync endpoint is not protected (set this in Vercel env vars)"
+    );
+  }
+
+  const cronRateLimit = await checkRateLimit(req, {
+    scope: "scheduled_sync",
+    userId: null,
+    limit: 1,
+    windowMs: 60 * 1000,
+  });
+
+  if (!cronRateLimit.allowed) {
+    const retryAfter = formatRetryAfterSeconds(cronRateLimit.retryAfterMs);
+    if (retryAfter > 0) {
+      res.setHeader("Retry-After", retryAfter);
+    }
+    return res.status(429).json({
+      error: "Sync already running. Please wait before triggering again.",
+      retry_after: retryAfter,
+    });
   }
 
   console.log(

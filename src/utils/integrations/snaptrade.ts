@@ -2,6 +2,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '@/src/lib/supabase/supabase';
 import logger from '@/src/utils/core/logger';
+import { authenticatedFetch } from '@/src/utils/auth/authToken';
 
 const BASE_URL = process.env.EXPO_PUBLIC_APP_BASE_URL || "https://financify-rose.vercel.app";
 
@@ -85,7 +86,7 @@ export const callSnapTradeAPI = async (mode: string, params: any = {}) => {
   try {
     logger.info(`🔄 Calling SnapTrade API with mode: ${mode}`, params);
     
-    const res = await fetch(`${BASE_URL}/api/plaid_management`, {
+    const res = await authenticatedFetch(`${BASE_URL}/api/plaid_management`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ 
@@ -204,7 +205,7 @@ export const registerSnaptradeUser = async () => {
 
 // === Fetch SnapTrade Accounts ===
 export const fetchSnaptradeAccounts = async (userId: string, userSecret: string) => {
-  const res = await fetch(`${BASE_URL}/api/plaid_management`, {
+  const res = await authenticatedFetch(`${BASE_URL}/api/plaid_management`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ 
@@ -483,7 +484,7 @@ export const fetchSnaptradeHoldings = async (userId: string, userSecret: string,
   try {
     logger.info("🔄 Fetching SnapTrade holdings via API...");
     
-    const res = await fetch(`${BASE_URL}/api/plaid`, {
+    const res = await authenticatedFetch(`${BASE_URL}/api/plaid`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ 
@@ -542,7 +543,7 @@ export const fetchSnaptradeOptions = async (userId: string, userSecret: string, 
   try {
     logger.info("🔄 Fetching SnapTrade options via API...");
     
-    const res = await fetch(`${BASE_URL}/api/plaid`, {
+    const res = await authenticatedFetch(`${BASE_URL}/api/plaid`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ 
@@ -593,7 +594,7 @@ export const fetchSnaptradeBalances = async (userId: string, userSecret: string,
   try {
     logger.info("🔄 Fetching SnapTrade balances via API...");
     
-    const res = await fetch(`${BASE_URL}/api/plaid`, {
+    const res = await authenticatedFetch(`${BASE_URL}/api/plaid`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ 
@@ -712,7 +713,7 @@ export const checkSnaptradeConnectionStatus = async (userId: string, accountId: 
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error("User not authenticated");
 
-    const res = await fetch(`${BASE_URL}/api/plaid`, {
+    const res = await authenticatedFetch(`${BASE_URL}/api/plaid`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ 
@@ -741,7 +742,7 @@ export const getSnaptradeConnectionDetails = async (userId: string, accountId: s
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error("User not authenticated");
 
-    const res = await fetch(`${BASE_URL}/api/plaid`, {
+    const res = await authenticatedFetch(`${BASE_URL}/api/plaid`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ 
@@ -795,7 +796,7 @@ export const syncSnaptradeInvestments = async (userId: string, accountId: string
       accountId: credentials.accountId 
     });
     
-    const res = await fetch(`${BASE_URL}/api/plaid`, {
+    const res = await authenticatedFetch(`${BASE_URL}/api/plaid`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ 
@@ -820,7 +821,7 @@ export const recalculateInvestmentBalances = async (userId: string, accountId: s
   try {
     logger.info("🔄 Recalculating investment balances from active holdings...");
     
-    const res = await fetch(`${BASE_URL}/api/plaid`, {
+    const res = await authenticatedFetch(`${BASE_URL}/api/plaid`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ 
@@ -845,7 +846,7 @@ export const refreshSnaptradeInvestments = async (userId: string, accountId: str
   try {
     logger.info("🔄 Refreshing SnapTrade investments (paid endpoint)...");
     
-    const res = await fetch(`${BASE_URL}/api/plaid`, {
+    const res = await authenticatedFetch(`${BASE_URL}/api/plaid`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ 
@@ -986,7 +987,7 @@ export const populateInvestmentAccountsInDB = async () => {
     logger.info("🔄 Populating investment accounts via API endpoint...");
 
     // Call the server-side API endpoint to handle RLS policies
-    const res = await fetch(`${BASE_URL}/api/store_accounts`, {
+    const res = await authenticatedFetch(`${BASE_URL}/api/store_accounts`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ 

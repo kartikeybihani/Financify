@@ -1,6 +1,11 @@
 // /api/refresh_financial_data.js
 import { client } from "../app/plaidClient.js";
 import { supabase } from "../lib/api/supabase.js";
+import { verifyItemOwnership } from "../lib/api/auth.js";
+import {
+  checkRateLimit,
+  formatRetryAfterSeconds,
+} from "../lib/api/rateLimiter.js";
 
 /**
  * Helper function to get category from stream type
@@ -156,19 +161,44 @@ export default async function handler(req, res) {
   try {
     console.log(`🔄 Starting ${refresh_type} refresh for item_id: ${item_id}`);
 
-    // 1) Look up user_id if not provided
-    let actualUserId = user_id;
-    if (!actualUserId) {
-      const { data: item, error: userErr } = await supabase
-        .from("user_items")
-        .select("user_id")
-        .eq("item_id", item_id)
-        .single();
+    // 1) Verify user owns this item (authorization check)
+    const {
+      authorized,
+      userId: actualUserId,
+      error: authError,
+    } = await verifyItemOwnership(req, item_id);
 
-      if (userErr || !item) {
-        return res.status(404).json({ error: "Item not found" });
+    if (!authorized) {
+      return res.status(authError?.includes("Unauthorized") ? 401 : 403).json({
+        error: authError || "Access denied",
+      });
+    }
+
+    const refreshRateConfigs = {
+      balances: { limit: 8, windowMs: 60 * 1000 },
+      transactions: { limit: 4, windowMs: 2 * 60 * 1000 },
+      recurring: { limit: 3, windowMs: 5 * 60 * 1000 },
+      both: { limit: 3, windowMs: 5 * 60 * 1000 },
+    };
+
+    const refreshRateLimit = await checkRateLimit(req, {
+      scope: `refresh_financial_data:${refresh_type}`,
+      userId: actualUserId,
+      ...(refreshRateConfigs[refresh_type] || {
+        limit: 4,
+        windowMs: 2 * 60 * 1000,
+      }),
+    });
+
+    if (!refreshRateLimit.allowed) {
+      const retryAfter = formatRetryAfterSeconds(refreshRateLimit.retryAfterMs);
+      if (retryAfter > 0) {
+        res.setHeader("Retry-After", retryAfter);
       }
-      actualUserId = item.user_id;
+      return res.status(429).json({
+        error: "Too many refresh attempts. Please wait before retrying.",
+        retry_after: retryAfter,
+      });
     }
 
     // 2) Get access token from Vault

@@ -5,6 +5,11 @@ import {
   mapPlaidToAppCategory,
   isInternalTransferCategory,
 } from "./utils/plaidCategoryMapper.js";
+import { verifyItemOwnership } from "../lib/api/auth.js";
+import {
+  checkRateLimit,
+  formatRetryAfterSeconds,
+} from "../lib/api/rateLimiter.js";
 
 export default async function handler(req, res) {
   if (req.method !== "POST")
@@ -14,27 +19,48 @@ export default async function handler(req, res) {
   if (!item_id) return res.status(400).json({ error: "Missing item_id" });
 
   try {
-    // 1) Get user_id and cursor for this Item (use provided user_id if available)
-    let userId = user_id;
-    if (!userId) {
-      const { data: item, error: fetchErr } = await supabase
-        .from("user_items")
-        .select("user_id, transactions_cursor")
-        .eq("item_id", item_id)
-        .single();
-      if (fetchErr || !item)
-        return res.status(404).json({ error: "Item not found" });
-      userId = item.user_id;
+    // 1) Verify user owns this item and get user_id + cursor in one query
+    const {
+      authorized,
+      userId,
+      error: authError,
+    } = await verifyItemOwnership(req, item_id);
+
+    if (!authorized) {
+      return res.status(authError?.includes("Unauthorized") ? 401 : 403).json({
+        error: authError || "Access denied",
+      });
     }
 
-    // Get cursor for this Item
-    const { data: item, error: fetchErr } = await supabase
+    const syncRateLimit = await checkRateLimit(req, {
+      scope: "transactions_sync",
+      userId,
+      limit: 4,
+      windowMs: 60 * 1000,
+    });
+
+    if (!syncRateLimit.allowed) {
+      const retryAfter = formatRetryAfterSeconds(syncRateLimit.retryAfterMs);
+      if (retryAfter > 0) {
+        res.setHeader("Retry-After", retryAfter);
+      }
+      return res.status(429).json({
+        error: "Too many manual sync attempts. Please wait a minute.",
+        retry_after: retryAfter,
+      });
+    }
+
+    // Fetch user_id and transactions_cursor together in one query for efficiency
+    const { data: itemData, error: fetchErr } = await supabase
       .from("user_items")
-      .select("transactions_cursor")
+      .select("user_id, transactions_cursor")
       .eq("item_id", item_id)
+      .eq("user_id", userId) // Additional security: ensure user_id matches
       .single();
-    if (fetchErr || !item)
+
+    if (fetchErr || !itemData) {
       return res.status(404).json({ error: "Item not found" });
+    }
 
     // 2) Get access token from Vault
     const { data: access_token, error: tokenErr } = await supabase.rpc(
@@ -50,7 +76,7 @@ export default async function handler(req, res) {
       return res.status(404).json({ error: "Access token not found" });
     }
 
-    let cursor = item.transactions_cursor || null;
+    let cursor = itemData.transactions_cursor || null;
     let added = [],
       modified = [],
       removed = [];

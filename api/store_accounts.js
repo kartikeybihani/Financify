@@ -1,6 +1,42 @@
 // /api/store_accounts.js
 import { client } from "../app/plaidClient.js";
 import { supabase } from "../lib/api/supabase.js";
+import {
+  verifyItemOwnership,
+  verifyUserAuthorization,
+} from "../lib/api/auth.js";
+import {
+  checkRateLimit,
+  formatRetryAfterSeconds,
+} from "../lib/api/rateLimiter.js";
+
+async function enforceStoreAccountsRateLimit(
+  req,
+  res,
+  { scope, userId, limit, windowMs, message }
+) {
+  const rateResult = await checkRateLimit(req, {
+    scope,
+    userId,
+    limit,
+    windowMs,
+  });
+
+  if (rateResult.allowed) {
+    return true;
+  }
+
+  const retryAfter = formatRetryAfterSeconds(rateResult.retryAfterMs);
+  if (retryAfter > 0) {
+    res.setHeader("Retry-After", retryAfter);
+  }
+
+  res.status(429).json({
+    error: message || "Too many requests. Please try again later.",
+    retry_after: retryAfter,
+  });
+  return false;
+}
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -11,16 +47,76 @@ export default async function handler(req, res) {
 
   // Handle SnapTrade investment account population
   if (mode === "populate_investment_accounts") {
+    if (!user_id) {
+      return res.status(400).json({ error: "Missing user_id" });
+    }
+    const { authorized, error: authError } = await verifyUserAuthorization(
+      req,
+      user_id
+    );
+    if (!authorized) {
+      return res.status(authError?.includes("Unauthorized") ? 401 : 403).json({
+        error: authError || "Access denied",
+      });
+    }
+    const allowed = await enforceStoreAccountsRateLimit(req, res, {
+      scope: "store_accounts:populate_investments",
+      userId: user_id,
+      limit: 5,
+      windowMs: 60 * 1000,
+      message: "Too many investment account refreshes. Please try again soon.",
+    });
+    if (!allowed) return;
     return handleInvestmentAccountPopulation(req, res, user_id);
   }
 
   // Handle financial summary generation
   if (mode === "financial_summary") {
+    if (!user_id) {
+      return res.status(400).json({ error: "Missing user_id" });
+    }
+    const { authorized, error: authError } = await verifyUserAuthorization(
+      req,
+      user_id
+    );
+    if (!authorized) {
+      return res.status(authError?.includes("Unauthorized") ? 401 : 403).json({
+        error: authError || "Access denied",
+      });
+    }
+    const allowed = await enforceStoreAccountsRateLimit(req, res, {
+      scope: "store_accounts:financial_summary",
+      userId: user_id,
+      limit: 8,
+      windowMs: 60 * 1000,
+      message: "Too many summary requests. Please wait and try again.",
+    });
+    if (!allowed) return;
     return handleFinancialSummary(req, res, user_id);
   }
 
   // Handle cache clearing
   if (mode === "clear_cache") {
+    if (!user_id) {
+      return res.status(400).json({ error: "Missing user_id" });
+    }
+    const { authorized, error: authError } = await verifyUserAuthorization(
+      req,
+      user_id
+    );
+    if (!authorized) {
+      return res.status(authError?.includes("Unauthorized") ? 401 : 403).json({
+        error: authError || "Access denied",
+      });
+    }
+    const allowed = await enforceStoreAccountsRateLimit(req, res, {
+      scope: "store_accounts:clear_cache",
+      userId: user_id,
+      limit: 3,
+      windowMs: 60 * 1000,
+      message: "Cache clear requests are rate limited. Please wait a bit.",
+    });
+    if (!allowed) return;
     return handleClearCache(req, res, user_id);
   }
 
@@ -35,21 +131,33 @@ export default async function handler(req, res) {
       item_id
     );
 
-    // 1. Get user_id for this item
-    const { data: userItem, error: fetchErr } = await supabase
-      .from("user_items")
-      .select("user_id")
-      .eq("item_id", item_id)
-      .single();
+    // 1. Verify user owns this item (authorization check)
+    const {
+      authorized,
+      userId,
+      error: authError,
+    } = await verifyItemOwnership(req, item_id);
 
-    if (fetchErr || !userItem) {
-      return res.status(404).json({ error: "Item not found" });
+    if (!authorized) {
+      return res.status(authError?.includes("Unauthorized") ? 401 : 403).json({
+        error: authError || "Access denied",
+      });
     }
+
+    const allowed = await enforceStoreAccountsRateLimit(req, res, {
+      scope: "store_accounts:plaid_full_import",
+      userId,
+      limit: 5,
+      windowMs: 2 * 60 * 1000,
+      message:
+        "Too many full account refreshes. Please wait before trying again.",
+    });
+    if (!allowed) return;
 
     // 2. Get access_token from Vault
     const { data: access_token, error: tokenError } = await supabase.rpc(
       "secure_get_plaid_token",
-      { p_item_id: item_id, p_user_id: userItem.user_id }
+      { p_item_id: item_id, p_user_id: userId }
     );
 
     if (tokenError || !access_token) {

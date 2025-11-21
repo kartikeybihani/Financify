@@ -183,12 +183,12 @@ async function handleSnapTradeWebhook(req, res, payload) {
       full_payload: JSON.stringify(payload, null, 2),
     });
 
-    // Verify webhook authenticity (you should set this in your SnapTrade dashboard)
+    // Verify webhook authenticity (required in production)
     const expectedSecret = process.env.SNAPTRADE_WEBHOOK_SECRET;
     if (expectedSecret) {
       if (!webhookSecret) {
-        console.warn("⚠️ SnapTrade webhook secret expected but not provided");
-        // Don't reject - might be optional depending on SnapTrade config
+        console.error("❌ SnapTrade webhook secret expected but not provided");
+        return res.status(401).json({ error: "Unauthorized" });
       } else if (webhookSecret !== expectedSecret) {
         console.error("❌ SnapTrade webhook secret mismatch", {
           expected: expectedSecret?.substring(0, 8) + "...",
@@ -200,7 +200,7 @@ async function handleSnapTradeWebhook(req, res, payload) {
       }
     } else {
       console.warn(
-        "⚠️ SNAPTRADE_WEBHOOK_SECRET not set - webhook verification disabled"
+        "⚠️ SNAPTRADE_WEBHOOK_SECRET not set - webhook verification disabled (not recommended for production)"
       );
     }
 

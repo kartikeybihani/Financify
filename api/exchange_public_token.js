@@ -5,6 +5,11 @@ import {
   supabaseUrl,
   supabaseServiceKey,
 } from "../lib/api/supabase.js";
+import { verifyUserAuthorization } from "../lib/api/auth.js";
+import {
+  checkRateLimit,
+  formatRetryAfterSeconds,
+} from "../lib/api/rateLimiter.js";
 
 export default async function handler(req, res) {
   if (req.method !== "POST")
@@ -13,6 +18,36 @@ export default async function handler(req, res) {
   const { public_token, user_id } = req.body;
   if (!public_token || !user_id) {
     return res.status(400).json({ error: "Missing public_token or user_id" });
+  }
+
+  // Verify user authorization
+  const { authorized, error: authError } = await verifyUserAuthorization(
+    req,
+    user_id
+  );
+
+  if (!authorized) {
+    return res.status(authError?.includes("Unauthorized") ? 401 : 403).json({
+      error: authError || "Access denied",
+    });
+  }
+
+  const exchangeRateLimit = await checkRateLimit(req, {
+    scope: "exchange_public_token",
+    userId: user_id,
+    limit: 5,
+    windowMs: 60 * 1000,
+  });
+
+  if (!exchangeRateLimit.allowed) {
+    const retryAfter = formatRetryAfterSeconds(exchangeRateLimit.retryAfterMs);
+    if (retryAfter > 0) {
+      res.setHeader("Retry-After", retryAfter);
+    }
+    return res.status(429).json({
+      error: "Too many token exchange attempts. Please wait and try again.",
+      retry_after: retryAfter,
+    });
   }
 
   try {
