@@ -57,7 +57,17 @@ export default function CashDepositInstitutionModal({
           setIsConnecting(false);
           setConnectingInstitution(null);
 
-          if (error?.error?.errorCode === "INVALID_LINK_TOKEN") {
+          if (
+            error?.code === "DUPLICATE_ITEM" ||
+            error?.message?.includes("already linked")
+          ) {
+            Alert.alert(
+              "Account Already Connected",
+              error.message ||
+                "This account is already connected to your account.",
+              [{ text: "OK" }]
+            );
+          } else if (error?.error?.errorCode === "INVALID_LINK_TOKEN") {
             Alert.alert(
               "Connection Expired",
               "The connection session expired. Please try again.",

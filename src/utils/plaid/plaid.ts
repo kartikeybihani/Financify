@@ -1,6 +1,6 @@
 // /app/utils/plaid.ts
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { open, create } from "react-native-plaid-link-sdk";
+import { open, create, LinkSuccess } from "react-native-plaid-link-sdk";
 import {supabase} from "@/src/lib/supabase/supabase";
 import { authenticatedFetch } from "@/src/utils/auth/authToken";
 import logger from "@/src/utils/core/logger";
@@ -169,7 +169,7 @@ export const handlePlaidConnect = async (
 
   create({ token: linkToken }); // init RN SDK
   open({
-    onSuccess: async ({ publicToken }: { publicToken: string }) => {
+    onSuccess: async ({ publicToken, metadata }: LinkSuccess) => {
       try {
         logger.info("🔄 Starting token exchange...");
         const { data: { user } } = await supabase.auth.getUser();
@@ -178,13 +178,49 @@ export const handlePlaidConnect = async (
           throw new Error("User not authenticated");
         }
 
-        logger.info("📡 Making API call to exchange_public_token");
+        // Extract metadata for duplicate detection
+        // Note: LinkInstitution uses 'id' not 'institution_id', but we need 'institution_id' for backend
+        // LinkAccount.subtype is a LinkAccountSubtype object with 'type' and 'subtype' properties
+        const linkMetadata = metadata ? {
+          institution: metadata.institution ? {
+            name: metadata.institution.name || null,
+            // SDK uses 'id' but backend expects 'institution_id' - use 'id' as fallback
+            institution_id: (metadata.institution as any).institution_id || metadata.institution.id || null,
+          } : null,
+          accounts: metadata.accounts ? metadata.accounts.map(acc => {
+            // Extract subtype string from LinkAccountSubtype object
+            let subtypeStr: string | null = null;
+            if (acc.subtype) {
+              if (typeof acc.subtype === 'string') {
+                subtypeStr = acc.subtype;
+              } else if (typeof acc.subtype === 'object' && acc.subtype !== null) {
+                // LinkAccountSubtype has 'subtype' property that contains the string value
+                subtypeStr = (acc.subtype as any).subtype || (acc.subtype as any).value || null;
+              }
+            }
+            
+            return {
+              name: acc.name || null,
+              mask: acc.mask || null,
+              type: acc.type || null,
+              subtype: subtypeStr,
+            };
+          }) : [],
+        } : null;
+
+        logger.info("📡 Making API call to exchange_public_token", {
+          hasMetadata: !!linkMetadata,
+          institutionId: linkMetadata?.institution?.institution_id,
+          accountCount: linkMetadata?.accounts?.length || 0,
+        });
+
         const res = await authenticatedFetch(`${BASE_URL}/api/exchange_public_token`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             public_token: publicToken,
             user_id: user.id,
+            metadata: linkMetadata,
           }),
         });
 
@@ -192,7 +228,15 @@ export const handlePlaidConnect = async (
         logger.info("📦 Exchange response:", { ok: res.ok, data });
         
         if (!res.ok) {
-          throw new Error(data.error || `Exchange failed: ${res.status}`);
+          // Handle duplicate item error specifically
+          if (res.status === 409 && data.error === "DUPLICATE_ITEM") {
+            const duplicateError = new Error(data.message || "This account is already connected");
+            (duplicateError as any).code = "DUPLICATE_ITEM";
+            (duplicateError as any).institution_name = data.institution_name;
+            (duplicateError as any).duplicate_accounts = data.duplicate_accounts;
+            throw duplicateError;
+          }
+          throw new Error(data.error || data.message || `Exchange failed: ${res.status}`);
         }
 
         if (!data.item_id) {

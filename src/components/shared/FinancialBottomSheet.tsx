@@ -210,15 +210,28 @@ export default function FinancialBottomSheet({
             [{ text: "Great!", style: "default" }]
           );
         },
-        (error) => {
+        (error: any) => {
           logger.error("❌ Failed to add new bank account:", error);
 
-          // Show error message
-          Alert.alert(
-            "Connection Failed",
-            "We couldn't connect your bank account. Please try again or contact support if the issue persists.",
-            [{ text: "Try Again", style: "default" }]
-          );
+          // Show error message - handle duplicate items specifically
+          if (
+            error?.code === "DUPLICATE_ITEM" ||
+            error?.message?.includes("already linked")
+          ) {
+            Alert.alert(
+              "Account Already Connected",
+              error.message ||
+                "This account is already connected to your account.",
+              [{ text: "OK", style: "default" }]
+            );
+          } else {
+            Alert.alert(
+              "Connection Failed",
+              error?.message ||
+                "We couldn't connect your bank account. Please try again or contact support if the issue persists.",
+              [{ text: "Try Again", style: "default" }]
+            );
+          }
         }
       );
     } catch (error) {
@@ -265,15 +278,28 @@ export default function FinancialBottomSheet({
             [{ text: "Great!", style: "default" }]
           );
         },
-        (error) => {
+        (error: any) => {
           logger.error("❌ Failed to add investment account:", error);
 
-          // Show error message
-          Alert.alert(
-            "Connection Failed",
-            "We couldn't connect your investment account. Please try again or contact support if the issue persists.",
-            [{ text: "Try Again", style: "default" }]
-          );
+          // Show error message - handle duplicate items specifically
+          if (
+            error?.code === "DUPLICATE_ITEM" ||
+            error?.message?.includes("already linked")
+          ) {
+            Alert.alert(
+              "Account Already Connected",
+              error.message ||
+                "This account is already connected to your account.",
+              [{ text: "OK", style: "default" }]
+            );
+          } else {
+            Alert.alert(
+              "Connection Failed",
+              error?.message ||
+                "We couldn't connect your investment account. Please try again or contact support if the issue persists.",
+              [{ text: "Try Again", style: "default" }]
+            );
+          }
         }
       );
     } catch (error) {
