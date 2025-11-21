@@ -1,5 +1,5 @@
 // api/goals.js
-import { createClient } from "@supabase/supabase-js";
+import { supabase } from "../lib/api/supabase.js";
 import fetch from "node-fetch";
 import crypto from "crypto";
 
@@ -41,11 +41,6 @@ function logConversation(logData) {
     }
   });
 }
-
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-);
 
 // Memory extraction model - small, fast, free
 const MEMORY_EXTRACTION_MODEL = "meta-llama/llama-3.3-8b-instruct:free";

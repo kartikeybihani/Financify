@@ -1,24 +1,7 @@
 // /api/plaid_management.js
 import { client } from "../app/plaidClient.js";
-import { createClient } from "@supabase/supabase-js";
-import { Snaptrade } from "snaptrade-typescript-sdk";
-
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY // Using service role key for backend operations
-);
-
-// Pick credentials based on environment
-const isSandbox = process.env.SNAPTRADE_ENVIRONMENT === "sandbox";
-
-const snaptrade = new Snaptrade({
-  clientId: isSandbox
-    ? process.env.SNAPTRADE_CLIENT_ID_DEV
-    : process.env.SNAPTRADE_CLIENT_ID,
-  consumerKey: isSandbox
-    ? process.env.SNAPTRADE_CONSUMER_KEY_DEV
-    : process.env.SNAPTRADE_CONSUMER_KEY,
-});
+import { supabase } from "../lib/api/supabase.js";
+import { snaptrade, isSandbox } from "../lib/api/snaptrade.js";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {

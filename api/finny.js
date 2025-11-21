@@ -1,5 +1,5 @@
 // api/finny.js
-import { createClient } from "@supabase/supabase-js";
+import { supabase } from "../lib/api/supabase.js";
 import fetch from "node-fetch";
 import crypto from "crypto";
 import { handleGoalConversation } from "./goals.js";
@@ -75,11 +75,6 @@ function redactPII(text) {
     }
   );
 }
-
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-);
 
 // Centralized OpenRouter model selection. Override via OPENROUTER_MODEL env.
 // Default to a widely available Grok model to avoid invalid ID errors.

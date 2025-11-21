@@ -1,12 +1,10 @@
 // /api/exchange_public_token.js
 import { client } from "../app/plaidClient.js";
-import { createClient } from "@supabase/supabase-js";
-
-const supabase = createClient(
-  process.env.SUPABASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL, // server-side env var with fallback
-  process.env.SUPABASE_SERVICE_ROLE_KEY ||
-    process.env.EXPO_PUBLIC_SUPABASE_SERVICE_ROLE_KEY // server-side env var with fallback
-);
+import {
+  supabase,
+  supabaseUrl,
+  supabaseServiceKey,
+} from "../lib/api/supabase.js";
 
 export default async function handler(req, res) {
   if (req.method !== "POST")
@@ -64,18 +62,13 @@ export default async function handler(req, res) {
     if (itemError) throw itemError;
 
     // Store access_token securely in Vault via store-plaid-token function
-    const SUPABASE_URL =
-      process.env.SUPABASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL;
     const storeTokenResponse = await fetch(
-      `${SUPABASE_URL}/functions/v1/store-plaid-token`,
+      `${supabaseUrl}/functions/v1/store-plaid-token`,
       {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${
-            process.env.SUPABASE_SERVICE_ROLE_KEY ||
-            process.env.EXPO_PUBLIC_SUPABASE_SERVICE_ROLE_KEY
-          }`,
+          Authorization: `Bearer ${supabaseServiceKey}`,
         },
         body: JSON.stringify({ item_id, user_id, access_token }),
       }

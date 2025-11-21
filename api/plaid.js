@@ -1,13 +1,12 @@
 // /api/plaid.js
 import { client } from "../app/plaidClient.js";
-import { createClient } from "@supabase/supabase-js";
-import { Snaptrade } from "snaptrade-typescript-sdk";
-
-const supabase = createClient(
-  process.env.SUPABASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL, // server-side env var with fallback
-  process.env.SUPABASE_SERVICE_ROLE_KEY ||
-    process.env.EXPO_PUBLIC_SUPABASE_SERVICE_ROLE_KEY // server-side env var with fallback
-);
+import { supabase } from "../lib/api/supabase.js";
+import {
+  snaptrade,
+  isSandbox,
+  clientId,
+  consumerKey,
+} from "../lib/api/snaptrade.js";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -273,15 +272,9 @@ async function handleSnapTradeRequest(req, res, mode, params) {
 // SnapTrade API helper functions
 async function callSnapTradeAPI(endpoint, params) {
   const SNAPTRADE_BASE_URL = "https://api.snaptrade.com/api/v1";
-  const SNAPTRADE_CLIENT_ID = process.env.SNAPTRADE_CLIENT_ID;
-  const SNAPTRADE_CONSUMER_KEY = process.env.SNAPTRADE_CONSUMER_KEY;
-
-  // Fail fast if credentials are not configured
-  if (!SNAPTRADE_CLIENT_ID || !SNAPTRADE_CONSUMER_KEY) {
-    throw new Error(
-      "SnapTrade credentials missing: ensure SNAPTRADE_CLIENT_ID and SNAPTRADE_CONSUMER_KEY are set"
-    );
-  }
+  // Use shared SnapTrade credentials
+  const SNAPTRADE_CLIENT_ID = clientId;
+  const SNAPTRADE_CONSUMER_KEY = consumerKey;
 
   const url = new URL(`${SNAPTRADE_BASE_URL}${endpoint}`);
 
@@ -669,18 +662,7 @@ async function handleSnapTradeSync(res, userId, accountId) {
       snaptrade_user_id: connection.snaptrade_user_id,
     });
 
-    // Import SnapTrade SDK (same as plaid_management.js)
-
-    const isSandbox = process.env.SNAPTRADE_ENVIRONMENT === "sandbox";
-
-    const snaptrade = new Snaptrade({
-      clientId: isSandbox
-        ? process.env.SNAPTRADE_CLIENT_ID_DEV
-        : process.env.SNAPTRADE_CLIENT_ID,
-      consumerKey: isSandbox
-        ? process.env.SNAPTRADE_CONSUMER_KEY_DEV
-        : process.env.SNAPTRADE_CONSUMER_KEY,
-    });
+    // Use shared SnapTrade SDK instance
 
     // Sync Account Balances
     console.log("💰 Syncing account balances...");
@@ -1350,17 +1332,7 @@ async function handleSnapTradeRefresh(res, userId, accountId) {
       );
     }
 
-    // Use imported SnapTrade SDK
-    const isSandbox = process.env.SNAPTRADE_ENVIRONMENT === "sandbox";
-
-    const snaptrade = new Snaptrade({
-      clientId: isSandbox
-        ? process.env.SNAPTRADE_CLIENT_ID_DEV
-        : process.env.SNAPTRADE_CLIENT_ID,
-      consumerKey: isSandbox
-        ? process.env.SNAPTRADE_CONSUMER_KEY_DEV
-        : process.env.SNAPTRADE_CONSUMER_KEY,
-    });
+    // Use shared SnapTrade SDK instance
 
     // STEP 1: Check actual connection status from SnapTrade API before attempting refresh
     console.log("🔍 Checking connection status from SnapTrade API...");
@@ -1556,17 +1528,7 @@ async function handleSnapTradeCheckStatus(res, userId, accountId) {
     let isActuallyActive = true;
 
     try {
-      // Use imported SnapTrade SDK
-      const isSandbox = process.env.SNAPTRADE_ENVIRONMENT === "sandbox";
-
-      const snaptrade = new Snaptrade({
-        clientId: isSandbox
-          ? process.env.SNAPTRADE_CLIENT_ID_DEV
-          : process.env.SNAPTRADE_CLIENT_ID,
-        consumerKey: isSandbox
-          ? process.env.SNAPTRADE_CONSUMER_KEY_DEV
-          : process.env.SNAPTRADE_CONSUMER_KEY,
-      });
+      // Use shared SnapTrade SDK instance
 
       // Try to list accounts - this will fail if connection is disabled
       await snaptrade.accountInformation.listUserAccounts({
@@ -1675,17 +1637,7 @@ async function handleSnapTradeGetConnectionDetails(res, userId, accountId) {
       });
     }
 
-    // Use imported SnapTrade SDK
-    const isSandbox = process.env.SNAPTRADE_ENVIRONMENT === "sandbox";
-
-    const snaptrade = new Snaptrade({
-      clientId: isSandbox
-        ? process.env.SNAPTRADE_CLIENT_ID_DEV
-        : process.env.SNAPTRADE_CLIENT_ID,
-      consumerKey: isSandbox
-        ? process.env.SNAPTRADE_CONSUMER_KEY_DEV
-        : process.env.SNAPTRADE_CONSUMER_KEY,
-    });
+    // Use shared SnapTrade SDK instance
 
     try {
       // Fetch connection details from SnapTrade API

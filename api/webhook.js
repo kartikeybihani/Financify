@@ -1,11 +1,9 @@
 // /api/webhook.js
-import { createClient } from "@supabase/supabase-js";
-
-const supabase = createClient(
-  process.env.SUPABASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL, // server-side env var with fallback
-  process.env.SUPABASE_SERVICE_ROLE_KEY ||
-    process.env.EXPO_PUBLIC_SUPABASE_SERVICE_ROLE_KEY // server-side env var with fallback
-);
+import {
+  supabase,
+  supabaseUrl,
+  supabaseServiceKey,
+} from "../lib/api/supabase.js";
 
 export default async function handler(req, res) {
   // Log ALL incoming requests for debugging
@@ -144,16 +142,11 @@ export default async function handler(req, res) {
           }
 
           // Call Supabase sync-transactions function
-          const SUPABASE_URL =
-            process.env.SUPABASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL;
-          fetch(`${SUPABASE_URL}/functions/v1/sync-transactions`, {
+          fetch(`${supabaseUrl}/functions/v1/sync-transactions`, {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
-              Authorization: `Bearer ${
-                process.env.SUPABASE_SERVICE_ROLE_KEY ||
-                process.env.EXPO_PUBLIC_SUPABASE_SERVICE_ROLE_KEY
-              }`,
+              Authorization: `Bearer ${supabaseServiceKey}`,
             },
             body: JSON.stringify({ item_id, user_id: userItem.user_id }),
           }).catch((e) =>
@@ -408,8 +401,6 @@ async function handleConnectionFixed(user_id, connection_id) {
     console.log("✅ Connection status updated to active in database");
 
     // Trigger sync to pull fresh data after reconnection
-    const SUPABASE_URL =
-      process.env.SUPABASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL;
     const { data: connection } = await supabase
       .from("snaptrade_connections")
       .select("user_id, account_id, snaptrade_user_id")
@@ -419,14 +410,11 @@ async function handleConnectionFixed(user_id, connection_id) {
 
     if (connection) {
       console.log("🔄 Triggering sync after connection fixed...");
-      await fetch(`${SUPABASE_URL}/functions/v1/sync-investments`, {
+      await fetch(`${supabaseUrl}/functions/v1/sync-investments`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${
-            process.env.SUPABASE_SERVICE_ROLE_KEY ||
-            process.env.EXPO_PUBLIC_SUPABASE_SERVICE_ROLE_KEY
-          }`,
+          Authorization: `Bearer ${supabaseServiceKey}`,
         },
         body: JSON.stringify({
           user_id: connection.user_id, // Use Supabase user_id from connection
@@ -478,16 +466,11 @@ async function handleAccountHoldingsUpdated(user_id, connection_id) {
     });
 
     // Call sync-investments Supabase function to pull fresh data
-    const SUPABASE_URL =
-      process.env.SUPABASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL;
-    await fetch(`${SUPABASE_URL}/functions/v1/sync-investments`, {
+    await fetch(`${supabaseUrl}/functions/v1/sync-investments`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${
-          process.env.SUPABASE_SERVICE_ROLE_KEY ||
-          process.env.EXPO_PUBLIC_SUPABASE_SERVICE_ROLE_KEY
-        }`,
+        Authorization: `Bearer ${supabaseServiceKey}`,
       },
       body: JSON.stringify({
         user_id: connection.user_id, // CRITICAL: Use Supabase user_id from connection, not SnapTrade user_id

@@ -1,5 +1,5 @@
 // api/memory.js
-import { createClient } from "@supabase/supabase-js";
+import { supabase } from "../lib/api/supabase.js";
 
 // KEY_SYNONYMS constant (copied from src/constants/keySynonyms.ts)
 const KEY_SYNONYMS = {
@@ -457,11 +457,6 @@ const KEY_SYNONYMS = {
     examples: ["got a raise", "tax refund", "sold my car", "inherited money"],
   },
 };
-
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-);
 
 // === MEMORY MANAGEMENT FUNCTIONS ===
 

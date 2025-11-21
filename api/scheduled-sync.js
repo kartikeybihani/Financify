@@ -1,14 +1,9 @@
 // /api/scheduled-sync.js
-import { createClient } from "@supabase/supabase-js";
+import { supabase } from "../lib/api/supabase.js";
 import {
   mapPlaidToAppCategory,
   isInternalTransferCategory,
 } from "./utils/plaidCategoryMapper.js";
-
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-);
 
 export default async function handler(req, res) {
   // Only allow GET requests (for cron triggers)

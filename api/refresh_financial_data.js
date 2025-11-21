@@ -1,11 +1,6 @@
 // /api/refresh_financial_data.js
 import { client } from "../app/plaidClient.js";
-import { createClient } from "@supabase/supabase-js";
-
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-);
+import { supabase } from "../lib/api/supabase.js";
 
 /**
  * Helper function to get category from stream type
