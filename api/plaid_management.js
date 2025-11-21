@@ -393,6 +393,11 @@ export default async function handler(req, res) {
         redirect_uri,
         access_token: access_token,
         update: { account_selection_enabled: true },
+        // Request 2 years (730 days) of transaction history for updates
+        // Note: This only takes effect if Transactions is being added for the first time
+        transactions: {
+          days_requested: 730, // 2 years of transaction history
+        },
       });
 
       return res.status(200).json({ link_token: tokenData.link_token });
@@ -439,7 +444,14 @@ export default async function handler(req, res) {
     linkTokenParams.optional_products = ["auth", "liabilities"];
     linkTokenParams.additional_consented_products = [];
 
+    // Request 2 years (730 days) of transaction history
+    // This only takes effect when Transactions is added to an Item for the first time
+    linkTokenParams.transactions = {
+      days_requested: 730, // 2 years of transaction history
+    };
+
     console.log("🔧 Using standard product configuration for all connections");
+    console.log("📅 Requesting 730 days (2 years) of transaction history");
 
     console.log(
       "📋 Final link token parameters:",
