@@ -15,22 +15,6 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  // Protect this endpoint with a shared secret so only your cron job can call it
-  const cronSecretHeader =
-    req.headers["x-cron-secret"] || req.headers["X-Cron-Secret"];
-  const expectedCronSecret = process.env.CRON_SECRET;
-
-  if (expectedCronSecret) {
-    if (!cronSecretHeader || cronSecretHeader !== expectedCronSecret) {
-      console.error("❌ Unauthorized scheduled-sync attempt");
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-  } else {
-    console.warn(
-      "⚠️ CRON_SECRET not set - scheduled-sync endpoint is not protected (set this in Vercel env vars)"
-    );
-  }
-
   const cronRateLimit = await checkRateLimit(req, {
     scope: "scheduled_sync",
     userId: null,

@@ -2,10 +2,7 @@
   "crons": [
     {
       "path": "/api/scheduled-sync",
-      "schedule": "0 13 * * *",
-      "headers": {
-        "x-cron-secret": "@CRON_SECRET"
-      }
+      "schedule": "0 13 * * *"
     }
   ]
 }
