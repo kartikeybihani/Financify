@@ -17,6 +17,15 @@ import {
   shouldShowRecurringChip,
 } from "@/src/utils/categories/transactionCategory";
 
+import {
+  Account,
+  FilterOptions,
+} from "@/src/components/EnhancedFilterModal/types";
+import {
+  getSelectedAccounts,
+  getAccountMask,
+} from "@/src/components/EnhancedFilterModal/utils";
+
 interface Props {
   titleStyle: any;
   sectionHeaderStyle: any;
@@ -49,6 +58,8 @@ interface Props {
   onAddAccount?: () => void;
   hasAccounts?: boolean;
   isLoadingTransactions?: boolean;
+  accounts?: Account[];
+  filterOptions?: FilterOptions;
 }
 
 export default function TransactionsSection(props: Props) {
@@ -76,13 +87,12 @@ export default function TransactionsSection(props: Props) {
     onPressRefreshAccounts: _onPressRefreshAccounts,
     onPressOpenFilter,
     getFilterDescription,
-    onPressTransaction,
-    showTransactionDetail,
     formatDate,
-    formatCategoryName,
     onAddAccount,
     hasAccounts = false,
     isLoadingTransactions = false,
+    accounts = [],
+    filterOptions,
   } = props;
 
   const [searchQuery, setSearchQuery] = useState("");
@@ -148,12 +158,88 @@ export default function TransactionsSection(props: Props) {
               color="#667eea"
               style={{ marginRight: 8 }}
             />
-            <Text
-              style={[filterButtonTextStyle, { flex: 1 }]}
-              numberOfLines={1}
-            >
-              {getFilterDescription()}
-            </Text>
+            {filterOptions &&
+            accounts.length > 0 &&
+            (filterOptions.accountIds || []).length > 0 ? (
+              <View
+                style={{
+                  flexDirection: "row",
+                  flexWrap: "wrap",
+                  gap: 6,
+                  alignItems: "center",
+                  flex: 1,
+                }}
+              >
+                {getSelectedAccounts(
+                  filterOptions.accountIds || [],
+                  accounts
+                ).map((account) => (
+                  <View
+                    key={account.account_id}
+                    style={{
+                      backgroundColor: "rgba(74, 144, 226, 0.15)",
+                      borderRadius: 16,
+                      paddingVertical: 6,
+                      paddingHorizontal: 12,
+                      borderWidth: 1,
+                      borderColor: "rgba(74, 144, 226, 0.3)",
+                      minHeight: 28,
+                      justifyContent: "center",
+                      alignItems: "center",
+                    }}
+                  >
+                    <Text
+                      style={{
+                        fontSize: 12,
+                        color: "#4A90E2",
+                        fontWeight: "600",
+                        letterSpacing: 0.2,
+                      }}
+                    >
+                      {getAccountMask(account)}
+                    </Text>
+                  </View>
+                ))}
+                {(() => {
+                  const timePeriodMap: { [key: string]: string } = {
+                    all: "All",
+                    "7days": "7 days",
+                    "30days": "30 days",
+                    "3months": "3 months",
+                    "6months": "6 months",
+                    "12months": "12 months",
+                    december2024: "Dec 2024",
+                    november2024: "Nov 2024",
+                    october2024: "Oct 2024",
+                  };
+                  const timePeriodName =
+                    timePeriodMap[filterOptions?.timePeriod || "7days"] ||
+                    "7 days";
+                  const categoryIds = filterOptions?.categoryIds || [];
+                  const categoryName =
+                    categoryIds.length === 0
+                      ? "All Categories"
+                      : categoryIds.length === 1
+                      ? "1 category"
+                      : `${categoryIds.length} categories`;
+                  return (
+                    <Text
+                      style={[filterButtonTextStyle, { marginLeft: 4 }]}
+                      numberOfLines={1}
+                    >
+                      • {timePeriodName} • {categoryName}
+                    </Text>
+                  );
+                })()}
+              </View>
+            ) : (
+              <Text
+                style={[filterButtonTextStyle, { flex: 1 }]}
+                numberOfLines={1}
+              >
+                {getFilterDescription()}
+              </Text>
+            )}
           </View>
           <Ionicons
             name="chevron-down"
@@ -202,15 +288,19 @@ export default function TransactionsSection(props: Props) {
             <TouchableOpacity
               onPress={() => setSearchQuery("")}
               style={{
-                padding: 6,
+                padding: 3,
                 borderRadius: 12,
-                backgroundColor: "rgba(255,255,255,0.06)",
+                backgroundColor: "rgba(82, 76, 76, 0.34)",
               }}
-              activeOpacity={0.7}
+              // activeOpacity={0.7}
               delayPressIn={0}
               delayPressOut={0}
             >
-              <Ionicons name="close" size={14} color="rgba(255,255,255,0.7)" />
+              <Ionicons
+                name="close"
+                size={16}
+                color="rgba(230, 222, 222, 0.98)"
+              />
             </TouchableOpacity>
           )}
         </View>
@@ -385,7 +475,7 @@ export default function TransactionsSection(props: Props) {
                   >
                     {amountText}
                   </Text>
-                  <Ionicons name="chevron-forward" size={14} color="#666" />
+                  <Ionicons name="chevron-forward" size={13} color="#666" />
                 </View>
               </TouchableOpacity>
             );
@@ -393,22 +483,19 @@ export default function TransactionsSection(props: Props) {
           ListFooterComponent={() => (
             <View style={loadMoreStyles.container}>
               {loadingMore && (
-                <ActivityIndicator
-                  size="small"
-                  color="#4A90E2"
-                  style={loadMoreStyles.indicator}
-                />
-              )}
-              {hasMoreTransactions && !loadingMore && (
-                <TouchableOpacity
-                  style={loadMoreStyles.button}
-                  onPress={onPressLoadMore}
-                  delayPressIn={0}
-                  delayPressOut={0}
+                <View
+                  style={{
+                    alignItems: "center",
+                    justifyContent: "center",
+                    paddingVertical: 20,
+                  }}
                 >
-                  <Text style={loadMoreStyles.buttonText}>Load More</Text>
-                  <Ionicons name="chevron-down" size={16} color="#4A90E2" />
-                </TouchableOpacity>
+                  <ActivityIndicator
+                    size="small"
+                    color="#4A90E2"
+                    style={loadMoreStyles.indicator}
+                  />
+                </View>
               )}
               {!hasMoreTransactions && filteredTransactions.length > 0 && (
                 <Text style={loadMoreStyles.endText}>

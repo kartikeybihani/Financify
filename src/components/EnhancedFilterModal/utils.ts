@@ -53,6 +53,11 @@ export const formatAccountName = (account: Account): string => {
   return `${account.name} ${mask}`.trim();
 };
 
+// Get only the masked number (last 4 digits)
+export const getAccountMask = (account: Account): string => {
+  return account.mask ? `•••${account.mask}` : "";
+};
+
 // Get selected accounts description
 export const getSelectedAccountsDescription = (accountIds: string[], accounts: Account[]): string => {
   if (accountIds.length === 0) {
@@ -63,6 +68,14 @@ export const getSelectedAccountsDescription = (accountIds: string[], accounts: A
   } else {
     return `${accountIds.length} accounts selected`;
   }
+};
+
+// Get selected accounts for chip display
+export const getSelectedAccounts = (accountIds: string[], accounts: Account[]): Account[] => {
+  if (accountIds.length === 0) {
+    return [];
+  }
+  return accounts.filter((acc) => accountIds.includes(acc.account_id));
 };
 
 // Get selected categories description

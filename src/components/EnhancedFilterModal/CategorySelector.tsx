@@ -10,7 +10,6 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import IconButton from "@/src/components/shared/IconButton";
 
 import {
   Category,
@@ -120,24 +119,14 @@ export const CategorySelector: React.FC<CategorySelectorProps> = ({
               { height: modalHeight },
             ]}
           >
-            {/* Close Icon */}
-            <IconButton
-              onPress={() => setShowModal(false)}
-              icon="close"
-              size={22}
-              style={{
-                position: "absolute",
-                top: 8,
-                right: 8,
-                zIndex: 10,
-              }}
-            />
-            <View style={{ height: 60 }} />
             {/* Modal Content */}
             <ScrollView
               style={styles.modalContent}
               showsVerticalScrollIndicator={false}
-              contentContainerStyle={styles.modalScrollContent}
+              contentContainerStyle={[
+                styles.modalScrollContent,
+                { paddingTop: 24 },
+              ]}
               bounces={true}
               keyboardShouldPersistTaps="handled"
             >

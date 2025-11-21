@@ -35,6 +35,7 @@ import {
 import { clearInvestmentCache } from "@/src/shared/utils/investmentCache";
 import { styles } from "@/src/styles/investmentsStyles";
 import InstitutionSelectionModal from "@/src/components/modals/InstitutionSelectionModal";
+import IconButton from "@/src/components/shared/IconButton";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 
@@ -70,6 +71,7 @@ interface BalanceRow {
   total_change?: number | null;
   total_change_percent?: number | null;
   total_value?: number | null;
+  last_updated?: string | null;
 }
 
 interface ConnectionRow {
@@ -1478,23 +1480,45 @@ export default function InvestmentsScreen({
 
   const renderPortfolioSummary = () => {
     const lastConnection = connections.length > 0 ? connections[0] : null;
-    const lastSyncDate = lastConnection?.last_synced_at
-      ? new Date(lastConnection.last_synced_at).toLocaleDateString()
-      : "Never";
+
+    // Use last_updated from investment_balances as it reflects when the portfolio data was last refreshed
+    const lastBalance = balances.length > 0 ? balances[0] : null;
+    const lastUpdatedTimestamp =
+      lastBalance?.last_updated || lastConnection?.last_synced_at;
+
+    // Format date and time in user's local timezone
+    const formatLastUpdated = (
+      timestamp: string | null | undefined
+    ): string => {
+      if (!timestamp) return "Never";
+      try {
+        const date = new Date(timestamp);
+        // Format as "MM/DD/YYYY, HH:MM AM/PM" in user's local timezone
+        return date.toLocaleString("en-US", {
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+          hour: "numeric",
+          minute: "2-digit",
+          hour12: true,
+        });
+      } catch (error) {
+        return "Never";
+      }
+    };
+
+    const lastUpdatedText = formatLastUpdated(lastUpdatedTimestamp);
     const brokerageName =
       lastConnection?.brokerage_name || "Investment Account";
 
     return (
       <View style={styles.portfolioSummaryContainer}>
-        <TouchableOpacity
-          accessibilityLabel="Add investment account"
+        <IconButton
           onPress={handleAddInvestmentAccount}
-          style={[styles.syncButton, styles.addAccountTopRight]}
-          activeOpacity={0.7}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-        >
-          <Ionicons name="add-outline" size={18} color="#4A90E2" />
-        </TouchableOpacity>
+          icon="add-outline"
+          size={19}
+          style={styles.addAccountTopRight}
+        />
         <View style={styles.portfolioSummaryContent}>
           <View style={styles.portfolioInfo}>
             <Text style={styles.portfolioLabel}>Total Portfolio Value</Text>
@@ -1596,27 +1620,19 @@ export default function InvestmentsScreen({
               <View style={styles.brokerageDetails}>
                 <Text style={styles.accountName}>{brokerageName}</Text>
                 <Text style={styles.lastSyncText}>
-                  Last synced: {lastSyncDate}
+                  Last updated: {lastUpdatedText}
                 </Text>
               </View>
             </View>
             {/* Button Group with Spacing */}
             <View style={styles.buttonGroup}>
               {/* Sync Button */}
-              <TouchableOpacity
-                style={[
-                  styles.syncButton,
-                  isSyncing && styles.syncButtonDisabled,
-                ]}
+              <IconButton
                 onPress={handleSync}
+                icon={isSyncing ? "hourglass" : "refresh"}
+                size={19}
                 disabled={isSyncing}
-              >
-                <Ionicons
-                  name={isSyncing ? "hourglass" : "refresh"}
-                  size={18}
-                  color="#4A90E2"
-                />
-              </TouchableOpacity>
+              />
             </View>
           </View>
         </View>

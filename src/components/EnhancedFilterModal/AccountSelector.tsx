@@ -9,7 +9,6 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import IconButton from "@/src/components/shared/IconButton";
 
 import {
   Account,
@@ -21,6 +20,8 @@ import {
   formatAccountName,
   getSelectedAccountsDescription,
   toggleAccountSelection,
+  getSelectedAccounts,
+  getAccountMask,
 } from "./utils";
 
 interface AccountSelectorProps {
@@ -61,15 +62,32 @@ export const AccountSelector: React.FC<AccountSelectorProps> = ({
             {(localFilters.accountIds || []).length === 0 ? "🏦" : "💳"}
           </Text>
           <View style={styles.textContainer}>
-            <Text style={styles.selectedLabel}>
-              {getSelectedAccountsDescription(
-                localFilters.accountIds || [],
-                filteredAccounts
-              )}
-            </Text>
-            <Text style={styles.selectedDescription}>
-              View all connected accounts
-            </Text>
+            {(localFilters.accountIds || []).length === 0 ? (
+              <>
+                <Text style={styles.selectedLabel}>
+                  {getSelectedAccountsDescription(
+                    localFilters.accountIds || [],
+                    filteredAccounts
+                  )}
+                </Text>
+                <Text style={styles.selectedDescription}>
+                  View all connected accounts
+                </Text>
+              </>
+            ) : (
+              <View style={styles.accountChipsContainer}>
+                {getSelectedAccounts(
+                  localFilters.accountIds || [],
+                  filteredAccounts
+                ).map((account) => (
+                  <View key={account.account_id} style={styles.accountChip}>
+                    <Text style={styles.accountChipText}>
+                      {getAccountMask(account)}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            )}
           </View>
         </View>
         <Ionicons
@@ -101,25 +119,14 @@ export const AccountSelector: React.FC<AccountSelectorProps> = ({
               <View
                 style={[styles.modalContainer, styles.adaptiveModalContainer]}
               >
-                {/* Close Icon */}
-                <IconButton
-                  onPress={() => setShowModal(false)}
-                  icon="close"
-                  size={22}
-                  style={{
-                    position: "absolute",
-                    top: 8,
-                    right: 8,
-                    zIndex: 10,
-                  }}
-                />
-                <View style={{ height: 20 }} />
-
                 {/* Modal Content */}
                 <ScrollView
                   style={styles.modalContent}
                   showsVerticalScrollIndicator={false}
-                  contentContainerStyle={styles.modalScrollContent}
+                  contentContainerStyle={[
+                    styles.modalScrollContent,
+                    { paddingTop: 24, paddingBottom: 24 },
+                  ]}
                 >
                   {/* All Accounts and Individual Account Cards */}
                   {filteredAccounts.length > 0 && (

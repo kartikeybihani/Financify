@@ -242,6 +242,12 @@ export default function InsightsScreen() {
   const [totalFilteredCount, setTotalFilteredCount] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMoreTransactions, setHasMoreTransactions] = useState(true);
+  const scrollViewRef = useRef<ScrollView>(null);
+  const scrollOffsetRef = useRef(0);
+  const contentHeightRef = useRef(0);
+  const scrollViewHeightRef = useRef(0);
+  const [isNearBottom, setIsNearBottom] = useState(false);
+  const lastLoadTriggerRef = useRef(0);
 
   // Investment data state
   // Initialize investment data with cached data if available
@@ -945,6 +951,10 @@ export default function InsightsScreen() {
     setLoadingMore(true);
     await loadFilteredTransactions(filterOptions, false);
     setLoadingMore(false);
+
+    // Note: When appending items below the current scroll position,
+    // React Native ScrollView naturally maintains the scroll position.
+    // No manual adjustment needed - the scroll stays in place.
   };
 
   // Listen for financial data updates
@@ -2005,6 +2015,7 @@ export default function InsightsScreen() {
         <InsightsLoadingSkeleton />
       ) : (
         <ScrollView
+          ref={scrollViewRef}
           contentContainerStyle={styles.container}
           refreshControl={
             <RefreshControl
@@ -2015,6 +2026,42 @@ export default function InsightsScreen() {
               progressBackgroundColor="#1f1f1f"
             />
           }
+          onScroll={(event) => {
+            const { contentOffset, contentSize, layoutMeasurement } =
+              event.nativeEvent;
+            scrollOffsetRef.current = contentOffset.y;
+            contentHeightRef.current = contentSize.height;
+            scrollViewHeightRef.current = layoutMeasurement.height;
+
+            // Detect if user is near bottom (within 300px)
+            const distanceFromBottom =
+              contentSize.height - (contentOffset.y + layoutMeasurement.height);
+            const nearBottom = distanceFromBottom < 300;
+
+            setIsNearBottom(nearBottom);
+
+            // Auto-load when near bottom and has more transactions
+            // Add debounce to prevent multiple simultaneous loads
+            const now = Date.now();
+            if (
+              nearBottom &&
+              hasMoreTransactions &&
+              !loadingMore &&
+              activeSection === "transactions" &&
+              filteredTransactions.length > 0 &&
+              now - lastLoadTriggerRef.current > 1000 // Debounce: wait 1 second between loads
+            ) {
+              lastLoadTriggerRef.current = now;
+              loadMoreTransactions();
+            }
+          }}
+          scrollEventThrottle={400}
+          onContentSizeChange={(contentWidth, contentHeight) => {
+            contentHeightRef.current = contentHeight;
+          }}
+          onLayout={(event) => {
+            scrollViewHeightRef.current = event.nativeEvent.layout.height;
+          }}
         >
           {isLoading && !hasData.current && (
             <LoadingIndicator
@@ -2144,6 +2191,8 @@ export default function InsightsScreen() {
                     isLoadingTransactions={
                       isLoading && activeSection === "transactions"
                     }
+                    accounts={accounts}
+                    filterOptions={filterOptions}
                   />
                 </Animated.View>
               )}

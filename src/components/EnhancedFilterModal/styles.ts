@@ -26,7 +26,7 @@ export const styles = StyleSheet.create({
   },
   handleContainer: {
     alignItems: "center",
-    paddingVertical: 12,
+    paddingVertical: 6,
   },
   handle: {
     width: 40,
@@ -35,15 +35,15 @@ export const styles = StyleSheet.create({
     backgroundColor: "rgba(255,255,255,0.3)",
   },
   headerGradient: {
-    paddingTop: Platform.OS === "ios" ? 8 : 24,
-    paddingBottom: 8,
+    paddingTop: Platform.OS === "ios" ? 4 : 12,
+    paddingBottom: 4,
   },
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 24,
-    paddingBottom: 16,
+    paddingBottom: 8,
   },
   headerLeft: {
     flexDirection: "row",
@@ -182,6 +182,30 @@ export const styles = StyleSheet.create({
     textAlign: "center",
     letterSpacing: 0.2,
   },
+  accountChipsContainer: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+    alignItems: "center",
+    marginTop: 4,
+  },
+  accountChip: {
+    backgroundColor: "rgba(74, 144, 226, 0.15)",
+    borderRadius: 16,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: "rgba(74, 144, 226, 0.3)",
+    minHeight: 28,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  accountChipText: {
+    fontSize: 12,
+    color: "#4A90E2",
+    fontWeight: "600",
+    letterSpacing: 0.2,
+  },
 
   // Selector Base Styles
   selectorContainer: {
@@ -190,7 +214,7 @@ export const styles = StyleSheet.create({
   horizontalSectionsContainer: {
     flexDirection: "row",
     gap: 12,
-    marginBottom: 27,
+    marginBottom: 13,
     paddingHorizontal: 16,
   },
   halfSection: {
@@ -307,7 +331,7 @@ export const styles = StyleSheet.create({
     overflow: "hidden",
   },
   adaptiveModalContainer: {
-    maxHeight: "75%",
+    maxHeight: "85%",
     minHeight: "35%",
   },
   modalHeaderGradient: {
