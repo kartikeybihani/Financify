@@ -964,6 +964,29 @@ export default function InsightsScreen() {
       async (data) => {
         logger.info("🔄 Financial data refreshed event received");
 
+        // Handle account deletion - clean up filter options if deleted account was selected
+        let updatedFilterOptions = filterOptions;
+        if (data && data.accountDeleted) {
+          const deletedAccountId = data.accountDeleted;
+          logger.info(`🗑️ Account deleted: ${deletedAccountId}`);
+
+          // Remove deleted account from filter options if it was selected
+          const currentAccountIds = filterOptions.accountIds || [];
+          if (currentAccountIds.includes(deletedAccountId)) {
+            const updatedAccountIds = currentAccountIds.filter(
+              (id) => id !== deletedAccountId
+            );
+            logger.info(
+              `🧹 Removed deleted account from filter options. Remaining: ${updatedAccountIds.length}`
+            );
+            updatedFilterOptions = {
+              ...filterOptions,
+              accountIds: updatedAccountIds,
+            };
+            setFilterOptions(updatedFilterOptions);
+          }
+        }
+
         if (data && data.transactions) {
           setTransactions(data.transactions);
           // Use ref for consistency and to ensure we have latest function
@@ -979,7 +1002,8 @@ export default function InsightsScreen() {
         // Only refresh accounts if we're not in the middle of filtering
         if (!showEnhancedFilterModal) {
           await loadUserAccounts(true); // Debug when financial data changes
-          await loadFilteredTransactions(filterOptions, true);
+          // Use updated filter options (with deleted account removed if applicable)
+          await loadFilteredTransactions(updatedFilterOptions, true);
 
           // Clear caches since financial data has changed
           await clearRecurringCache();
@@ -997,7 +1021,7 @@ export default function InsightsScreen() {
     return () => {
       subscription.remove();
     };
-  }, [showEnhancedFilterModal]);
+  }, [showEnhancedFilterModal, filterOptions]);
 
   // Memoized date calculations to avoid repeated Date object creation
   const currentDateInfo = useMemo(() => {

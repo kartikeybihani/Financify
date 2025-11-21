@@ -9,6 +9,7 @@ import {
   Modal,
   ActivityIndicator,
   TouchableWithoutFeedback,
+  DeviceEventEmitter,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -180,6 +181,11 @@ export default function AccountDetailModal({
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setShowActionAlert(false);
+
+      // Emit event to notify other screens (like insights) that accounts have changed
+      DeviceEventEmitter.emit("financialDataRefreshed", {
+        accountDeleted: account.account_id,
+      });
 
       // Close modal and let parent component handle refresh
       handleClose();

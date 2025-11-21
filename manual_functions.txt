@@ -187,6 +187,10 @@ SECURITY & CREDENTIAL MANAGEMENT
    - Returns: uuid (secret_id)
    - Purpose: Encrypted storage of banking credentials
    - Used in: store-plaid-token function
+   - Notes:
+     * Automatically deletes old secret from Vault before creating new one (prevents orphaned secrets)
+     * Deletes by both secret_id (from user_items.access_token_secret_id) and by name ('plaid_' || item_id)
+     * Ensures no duplicate secrets exist for the same item_id
 
 21. secure_delete_plaid_token ⭐ ACTIVE
    - Securely deletes Plaid access token from Vault
@@ -194,6 +198,11 @@ SECURITY & CREDENTIAL MANAGEMENT
    - Returns: void
    - Purpose: Removes encrypted Plaid tokens when accounts/items are deleted
    - Used in: plaid_management.js (remove_item and remove_account modes)
+   - Notes:
+     * Deletes secret from Vault using DELETE FROM vault.secrets (Supabase doesn't provide vault.delete_secret() function)
+     * Attempts deletion by both secret_id (from user_items.access_token_secret_id) and by name ('plaid_' || item_id)
+     * Clears access_token_secret_id from user_items table after successful deletion
+     * Critical for security compliance - ensures tokens are removed when users disconnect accounts
 
 22. secure_store_snaptrade_credentials ⭐ ACTIVE
    - Securely stores SnapTrade credentials in Vault
@@ -280,7 +289,7 @@ ONBOARDING ANALYTICS
      * Used for analytics, A/B testing, and optimization
      * Common actions: 'view', 'complete', 'skip', 'error', 'plaid_success', 'plaid_error'
 
-TOTAL: 34 ACTIVE functions, 0 REMAINING unused functions
+TOTAL: 35 ACTIVE functions, 0 REMAINING unused functions
 
 NOTES:
 - ⭐ ACTIVE functions are currently used in the codebase
@@ -290,5 +299,7 @@ NOTES:
 - Numeric parameters use PostgreSQL numeric type for precision
 - Functions return TABLE types for complex result sets
 - Security functions use Supabase Vault for encrypted credential storage
+  * Vault secrets are deleted using DELETE FROM vault.secrets (no built-in delete_secret() function)
+  * secure_store_plaid_token automatically cleans up old secrets to prevent orphaned entries
 - Automatic categorization functions work with triggers for real-time categorization
 - Chat history functions use JSONB for efficient message storage and retrieval

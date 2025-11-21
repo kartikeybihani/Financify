@@ -42,6 +42,28 @@ export const AccountSelector: React.FC<AccountSelectorProps> = ({
     (account) => account.type !== "investment"
   );
 
+  // Clean up filter options: remove any selected account IDs that don't exist in the accounts list
+  // This handles cases where accounts were deleted but filter options haven't been updated yet
+  React.useEffect(() => {
+    const selectedAccountIds = localFilters.accountIds || [];
+    if (selectedAccountIds.length > 0) {
+      const validAccountIds = filteredAccounts.map((acc) => acc.account_id);
+      const invalidAccountIds = selectedAccountIds.filter(
+        (id) => !validAccountIds.includes(id)
+      );
+
+      if (invalidAccountIds.length > 0) {
+        // Remove invalid account IDs from filter options
+        setLocalFilters((prev) => ({
+          ...prev,
+          accountIds: selectedAccountIds.filter((id) =>
+            validAccountIds.includes(id)
+          ),
+        }));
+      }
+    }
+  }, [accounts, filteredAccounts.length]); // Re-run when accounts change
+
   const handleToggleAccountSelection = (accountId: string) => {
     setLocalFilters((prev) => toggleAccountSelection(accountId, prev));
   };
