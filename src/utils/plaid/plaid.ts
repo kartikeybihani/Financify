@@ -1,10 +1,15 @@
 // /app/utils/plaid.ts
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { open, create, LinkSuccess } from "react-native-plaid-link-sdk";
+import { open, create, LinkSuccess, LinkEvent, LinkExit } from "react-native-plaid-link-sdk";
 import {supabase} from "@/src/lib/supabase/supabase";
 import { authenticatedFetch } from "@/src/utils/auth/authToken";
 import logger from "@/src/utils/core/logger";
 import { getPlaidInstitutionId, logInstitutionMapping } from "@/src/components/shared/modal-constants";
+import {
+  logLinkEventCallback,
+  logLinkExitEvent,
+  logLinkSuccessEvent,
+} from "./linkAnalytics";
 
 const BASE_URL = process.env.EXPO_PUBLIC_APP_BASE_URL || "https://financify-rose.vercel.app";
 
@@ -167,8 +172,14 @@ export const handlePlaidConnect = async (
 ) => {
   if (!linkToken) return;
 
+  // Get user ID for analytics tracking
+  const { data: { user } } = await supabase.auth.getUser();
+  const userId = user?.id;
+
   create({ token: linkToken }); // init RN SDK
-  open({
+  
+  // Prepare open config with analytics tracking
+  const openConfig: any = {
     onSuccess: async ({ publicToken, metadata }: LinkSuccess) => {
       try {
         logger.info("🔄 Starting token exchange...");
@@ -176,6 +187,13 @@ export const handlePlaidConnect = async (
         
         if (!user?.id) {
           throw new Error("User not authenticated");
+        }
+
+        // 📊 Log HANDOFF event (successful connection) - use fresh user ID from callback
+        if (user.id && metadata) {
+          logLinkSuccessEvent(user.id, metadata).catch((err) => {
+            logger.error("⚠️ Failed to log HANDOFF event:", err);
+          });
         }
 
         // Extract metadata for duplicate detection
@@ -275,8 +293,31 @@ export const handlePlaidConnect = async (
         onExit?.(error);
       }
     },
-    onExit: (error?: any) => onExit?.(error),
-  });
+    onExit: userId
+      ? (exit?: LinkExit) => {
+          // 📊 Log EXIT event with full metadata
+          if (exit) {
+            logLinkExitEvent(userId, exit).catch((err) => {
+              logger.error("⚠️ Failed to log EXIT event:", err);
+            });
+          }
+          // Call original onExit callback
+          onExit?.(exit?.error);
+        }
+      : (error?: any) => onExit?.(error),
+  };
+
+  // Add onEvent callback if user is authenticated (SDK supports it but types don't include it)
+  if (userId) {
+    openConfig.onEvent = (event: LinkEvent) => {
+      // 📊 Log all Link events for analytics
+      logLinkEventCallback(userId, event).catch((err) => {
+        logger.error("⚠️ Failed to log Link event:", err);
+      });
+    };
+  }
+
+  open(openConfig);
 };
 
 // === Add New Bank Account (for existing users) ===
@@ -327,18 +368,46 @@ export const getUpdateLinkToken = async (item_id: string) => {
 export const openPlaidLink = async (link_token: string) => {
   try {
     logger.info("Opening Plaid link for update");
+    
+    // Get user ID for analytics tracking
+    const { data: { user } } = await supabase.auth.getUser();
+    const userId = user?.id;
+    
     create({ token: link_token });
     return new Promise((resolve, reject) => {
-      open({
+      const openConfig: any = {
         onSuccess: () => {
           logger.info("✅ Update success");
           resolve(true);
         },
-        onExit: (error: any) => {
-          logger.info("⛔ Update exited", error);
-          reject(error || new Error("Update flow exited"));
-        },
-      });
+        onExit: userId
+          ? (exit?: LinkExit) => {
+              // 📊 Log EXIT event for update mode
+              if (exit) {
+                logLinkExitEvent(userId, exit).catch((err) => {
+                  logger.error("⚠️ Failed to log EXIT event:", err);
+                });
+              }
+              logger.info("⛔ Update exited", exit?.error);
+              reject(exit?.error || new Error("Update flow exited"));
+            }
+          : (error: any) => {
+              logger.info("⛔ Update exited", error);
+              reject(error || new Error("Update flow exited"));
+            },
+      };
+
+      // Add onEvent callback for update mode tracking
+      if (userId) {
+        openConfig.onEvent = (event: LinkEvent) => {
+          // 📊 Log all Link events for analytics (update mode)
+          logLinkEventCallback(userId, event).catch((err) => {
+            logger.error("⚠️ Failed to log Link event:", err);
+          });
+        };
+      }
+
+      open(openConfig);
     });
   } catch (error) {
     logger.error("Error opening Plaid link:", error);
