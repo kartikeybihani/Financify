@@ -135,6 +135,6 @@ export const toggleCategorySelection = (categoryId: string, currentFilters: Filt
 // Reset filters to default
 export const getResetFilters = (): FilterOptions => ({
   accountIds: [],
-  timePeriod: "30days",
+  timePeriod: "all",
   categoryIds: [],
 });

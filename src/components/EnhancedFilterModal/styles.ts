@@ -283,7 +283,7 @@ export const styles = StyleSheet.create({
     flex: 1,
   },
   verticalSelectorEmoji: {
-    fontSize: 24,
+    fontSize: 28,
     marginBottom: 8,
     textAlign: "center",
   },

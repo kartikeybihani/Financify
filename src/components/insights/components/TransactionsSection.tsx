@@ -7,6 +7,7 @@ import {
   ActivityIndicator,
   TextInput,
   StyleSheet,
+  Image,
 } from "react-native";
 import { Ionicons, AntDesign } from "@expo/vector-icons";
 import { useCategories } from "@/src/hooks/useCategories";
@@ -58,6 +59,7 @@ interface Props {
   onAddAccount?: () => void;
   hasAccounts?: boolean;
   isLoadingTransactions?: boolean;
+  mightHaveTransactions?: boolean;
   accounts?: Account[];
   filterOptions?: FilterOptions;
 }
@@ -91,6 +93,7 @@ export default function TransactionsSection(props: Props) {
     onAddAccount,
     hasAccounts = false,
     isLoadingTransactions = false,
+    mightHaveTransactions = false,
     accounts = [],
     filterOptions,
   } = props;
@@ -315,7 +318,9 @@ export default function TransactionsSection(props: Props) {
         </View>
       )} */}
 
-      {isLoadingTransactions && hasAccounts ? (
+      {(isLoadingTransactions ||
+        (mightHaveTransactions && displayedTransactions.length === 0)) &&
+      hasAccounts ? (
         // User has accounts but transactions are loading, show loading screen
         <View style={styles.loadingStateContainer}>
           <View style={styles.loadingStateContent}>
@@ -332,6 +337,7 @@ export default function TransactionsSection(props: Props) {
         </View>
       ) : displayedTransactions.length === 0 &&
         !isLoadingTransactions &&
+        !mightHaveTransactions &&
         !hasAccounts ? (
         // No accounts, show empty state
         <View style={styles.emptyStateContainer}>
@@ -364,17 +370,32 @@ export default function TransactionsSection(props: Props) {
         </View>
       ) : displayedTransactions.length === 0 &&
         !isLoadingTransactions &&
+        !mightHaveTransactions &&
         hasAccounts ? (
         // Has accounts but no transactions (accounts might not have transactions yet)
+        // Check if search query is active - show search image if yes
         <View style={styles.emptyStateContainer}>
           <View style={styles.emptyStateContent}>
             <View style={styles.emptyStateIconContainer}>
-              <AntDesign name="wallet" size={64} color="#4A90E2" />
+              {searchQuery.trim() ? (
+                <Image
+                  source={require("@/assets/images/finnylap3.png")}
+                  style={{
+                    width: 150,
+                    height: 140,
+                    borderRadius: 80,
+                  }}
+                  resizeMode="cover"
+                />
+              ) : (
+                <AntDesign name="wallet" size={64} color="#4A90E2" />
+              )}
             </View>
             <Text style={styles.emptyStateTitle}>No Transactions Found</Text>
             <Text style={styles.emptyStateMessage}>
-              Your connected accounts don't have any transactions matching your
-              current filters. Try adjusting your filters or check back later.
+              {searchQuery.trim()
+                ? "Try a different search term."
+                : "Your connected accounts don't have any transactions matching your current filters. Try adjusting your filters or check back later."}
             </Text>
           </View>
         </View>
@@ -581,12 +602,12 @@ const styles = StyleSheet.create({
     width: 120,
     height: 120,
     borderRadius: 60,
-    backgroundColor: "rgba(74, 144, 226, 0.1)",
+    // backgroundColor: "rgba(74, 144, 226, 0.1)",
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 24,
-    borderWidth: 1,
-    borderColor: "rgba(74, 144, 226, 0.2)",
+    // borderWidth: 1,
+    // borderColor: "rgba(74, 144, 226, 0.2)",
   },
   emptyStateTitle: {
     fontSize: 20,

@@ -31,13 +31,13 @@ export const FinnyMessage: React.FC = React.memo(() => {
       <View style={styles.finnyMessage}>
         <View style={styles.finnyIconContainer}>
           <Image
-            source={require("../../../assets/images/mascot1.jpg")}
+            source={require("../../../assets/images/finny2.png")}
             style={{
-              width: 45,
-              height: 50,
+              width: 55,
+              height: 70,
               borderRadius: 20,
               resizeMode: "contain",
-              transform: [{ scaleX: -1 }, { rotate: "0deg" }],
+              // transform: [{ scaleX: -1 }, { rotate: "0deg" }],
             }}
           />
         </View>

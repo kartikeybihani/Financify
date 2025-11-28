@@ -98,6 +98,7 @@ import {
   loadTransactionsFromCache,
   saveTransactionsToCache,
   clearTransactionsCache,
+  hasValidTransactionsCache,
 } from "@/src/shared/utils/transactionCache";
 import {
   loadSpendingFromCache,
@@ -234,7 +235,7 @@ export default function InsightsScreen() {
   const [filterOptions, setFilterOptions] = useState<FilterOptions>({
     accountIds: [],
     categoryIds: [],
-    timePeriod: "30days",
+    timePeriod: "all",
   });
   const [filteredTransactions, setFilteredTransactions] = useState<
     Transaction[]
@@ -242,6 +243,7 @@ export default function InsightsScreen() {
   const [totalFilteredCount, setTotalFilteredCount] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMoreTransactions, setHasMoreTransactions] = useState(true);
+  const [mightHaveTransactions, setMightHaveTransactions] = useState(false);
   const scrollViewRef = useRef<ScrollView>(null);
   const scrollOffsetRef = useRef(0);
   const contentHeightRef = useRef(0);
@@ -318,6 +320,17 @@ export default function InsightsScreen() {
   const processTransactionsDataRef = useRef<
     ((transactionsData: Transaction[]) => void) | null
   >(null);
+
+  // Use refs to track current section and recurring data state for event listeners
+  const activeSectionRef = useRef<
+    "investments" | "spending" | "transactions" | "recurring" | "cashflow"
+  >("spending");
+  const recurringDataRef = useRef<typeof recurringData>(null);
+
+  // Use ref to store latest loadRecurringTransactions function to avoid re-subscription
+  const loadRecurringTransactionsRef = useRef<(() => Promise<void>) | null>(
+    null
+  );
 
   // Listen for transaction category updates - clear cache and refresh smoothly
   // Note: Using ref to avoid re-subscription when processTransactionsData changes
@@ -397,6 +410,51 @@ export default function InsightsScreen() {
 
     return () => subscription.remove();
   }, []); // Empty deps - listener only set up once, uses ref for latest function
+
+  // Keep refs updated with latest values
+  useEffect(() => {
+    activeSectionRef.current = activeSection;
+  }, [activeSection]);
+
+  useEffect(() => {
+    recurringDataRef.current = recurringData;
+  }, [recurringData]);
+
+  // Listen for transaction recurring status updates - refresh recurring section
+  useEffect(() => {
+    const subscription = DeviceEventEmitter.addListener(
+      "transactionRecurringUpdated",
+      async (data) => {
+        console.log("🔄 Transaction recurring status updated:", data);
+
+        // Clear recurring cache since recurring status has changed
+        await clearRecurringCache();
+        logger.info("🗑️ Cleared recurring cache after recurring status update");
+
+        // Refresh recurring transactions data
+        // Only refresh if we're on the recurring section or if we have recurring data loaded
+        // This prevents unnecessary refreshes when user is on other sections
+        if (
+          activeSectionRef.current === "recurring" ||
+          recurringDataRef.current !== null
+        ) {
+          logger.info(
+            "🔄 Refreshing recurring transactions after status update"
+          );
+          if (loadRecurringTransactionsRef.current) {
+            await loadRecurringTransactionsRef.current();
+          }
+        } else {
+          // If not on recurring section, just clear cache - will load fresh when user navigates
+          logger.info(
+            "📦 Cleared recurring cache (will load fresh when user navigates to recurring section)"
+          );
+        }
+      }
+    );
+
+    return () => subscription.remove();
+  }, []); // Empty deps - listener only set up once, uses refs for latest values
 
   // Initialize section animations and preload tasks
   useEffect(() => {
@@ -626,6 +684,28 @@ export default function InsightsScreen() {
       loadFilteredTransactions(filterOptions, true);
     }
   }, [filterOptions, activeSection, showEnhancedFilterModal]);
+
+  // Check cache when transactions section is active and we have accounts but no filtered transactions yet
+  useEffect(() => {
+    const checkCacheIfNeeded = async () => {
+      if (
+        activeSection === "transactions" &&
+        accounts.length > 0 &&
+        filteredTransactions.length === 0
+      ) {
+        const hasCache = await hasValidTransactionsCache();
+        setMightHaveTransactions(hasCache);
+        if (hasCache) {
+          logger.info(
+            "📦 Cache exists, showing loading state instead of empty state"
+          );
+        }
+      } else {
+        setMightHaveTransactions(false);
+      }
+    };
+    checkCacheIfNeeded();
+  }, [activeSection, accounts.length, filteredTransactions.length]);
 
   // Gate data loads by active section and trigger smart preloading
   useEffect(() => {
@@ -1578,6 +1658,12 @@ export default function InsightsScreen() {
     }
   };
 
+  // Keep ref updated with latest loadRecurringTransactions function
+  // This allows the event listener to always use the latest version without re-subscribing
+  useEffect(() => {
+    loadRecurringTransactionsRef.current = loadRecurringTransactions;
+  }, [loadRecurringTransactions]);
+
   // Handle re-auth banner actions - Complete flow: Re-auth → Sync → Update UI
   const handleReAuth = async (item_id: string) => {
     try {
@@ -2215,6 +2301,7 @@ export default function InsightsScreen() {
                     isLoadingTransactions={
                       isLoading && activeSection === "transactions"
                     }
+                    mightHaveTransactions={mightHaveTransactions}
                     accounts={accounts}
                     filterOptions={filterOptions}
                   />
