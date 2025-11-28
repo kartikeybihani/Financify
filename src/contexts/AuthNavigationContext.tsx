@@ -12,6 +12,13 @@ import { DeviceEventEmitter } from "react-native";
 import { supabase } from "@/src/lib/supabase/supabase";
 import logger from "@/src/utils/core/logger";
 
+// Constants
+const PROFILE_FETCH_TIMEOUT_MS = 8000; // 8 seconds timeout for profile fetch
+const TOKEN_REFRESH_RETRY_DELAY_MS = 200;
+const TOKEN_REFRESH_MAX_RETRIES = 3;
+const INITIALIZATION_BUFFER_MS = 100; // Buffer for initialization completion
+const PENDING_REFRESH_STALE_MS = 30000; // 30 seconds - ignore stale queued refreshes
+
 // Navigation states - the 4 main stages
 export enum NavigationState {
   PRE_SIGNUP = "pre_signup",
@@ -73,34 +80,145 @@ export const AuthNavigationProvider: React.FC<AuthNavigationProviderProps> = ({
   const lastAuthEventRef = useRef<string>("");
   const lastUserIdRef = useRef<string | undefined>(undefined);
 
+  // Queue for TOKEN_REFRESHED events that occur before initialization completes
+  const pendingTokenRefreshRef = useRef<{
+    session: Session | null;
+    timestamp: number;
+  } | null>(null);
+
+  // Track if we're currently processing a token refresh to prevent concurrent processing
+  const isProcessingTokenRefreshRef = useRef(false);
+
+  // Track if we're currently updating navigation state to prevent concurrent updates
+  const isUpdatingNavigationRef = useRef(false);
+
   /**
-   * Fetch profile data from database
+   * Create a promise that rejects after specified timeout
+   */
+  const createTimeoutPromise = (
+    ms: number,
+    message: string
+  ): Promise<never> => {
+    return new Promise((_, reject) => {
+      setTimeout(() => reject(new Error(message)), ms);
+    });
+  };
+
+  /**
+   * Fetch profile data from database with timeout and retry logic
    * Only called when needed (session changes, explicit refresh)
    */
-  const fetchProfile = async (userId: string): Promise<Profile | null> => {
+  const fetchProfile = async (
+    userId: string,
+    retryCount: number = 0,
+    useCache: boolean = true
+  ): Promise<Profile | null> => {
+    // Check cache first if enabled and valid
+    if (
+      useCache &&
+      profileCache.current &&
+      profileCacheUserId.current === userId
+    ) {
+      logger.info(
+        `[AUTH] Using cached profile for user: ${userId.substring(0, 8)}...`
+      );
+      return profileCache.current;
+    }
+
     try {
-      const { data: profile, error } = await supabase
+      // Race the profile fetch against a timeout
+      const profilePromise = supabase
         .from("profiles")
         .select("onboarding_completed, onboarding_step")
         .eq("id", userId)
         .maybeSingle();
 
+      const timeoutPromise = createTimeoutPromise(
+        PROFILE_FETCH_TIMEOUT_MS,
+        `Profile fetch timeout after ${PROFILE_FETCH_TIMEOUT_MS}ms`
+      );
+
+      const result = await Promise.race([profilePromise, timeoutPromise]);
+      const { data: profile, error } = result;
+
       if (error) {
-        logger.error("Error fetching profile:", error);
+        logger.error(
+          `[AUTH] Error fetching profile (attempt ${retryCount + 1}):`,
+          error
+        );
+
+        // Retry on network errors (not on 404s or auth errors)
+        if (
+          retryCount < 2 &&
+          error.code !== "PGRST116" &&
+          error.code !== "42501"
+        ) {
+          logger.info(
+            `[AUTH] Retrying profile fetch in ${
+              TOKEN_REFRESH_RETRY_DELAY_MS * (retryCount + 1)
+            }ms...`
+          );
+          await new Promise((resolve) =>
+            setTimeout(resolve, TOKEN_REFRESH_RETRY_DELAY_MS * (retryCount + 1))
+          );
+          return fetchProfile(userId, retryCount + 1, useCache);
+        }
+
         return null;
       }
 
       // Legacy users without profile row = treat as completed
       if (!profile) {
-        return { onboarding_completed: true, onboarding_step: 0 };
+        const legacyProfile = {
+          onboarding_completed: true,
+          onboarding_step: 0,
+        };
+        // Cache the result
+        profileCache.current = legacyProfile;
+        profileCacheUserId.current = userId;
+        return legacyProfile;
       }
 
-      return {
+      const parsedProfile = {
         onboarding_completed: !!profile.onboarding_completed,
         onboarding_step: Number(profile.onboarding_step || 0),
       };
-    } catch (error) {
-      logger.error("Error in fetchProfile:", error);
+
+      // Cache the result
+      profileCache.current = parsedProfile;
+      profileCacheUserId.current = userId;
+
+      return parsedProfile;
+    } catch (error: any) {
+      // Handle timeout errors
+      if (error?.message?.includes("timeout")) {
+        logger.error(
+          `[AUTH] Profile fetch timeout for user ${userId.substring(
+            0,
+            8
+          )}... (attempt ${retryCount + 1})`
+        );
+
+        // Retry on timeout
+        if (retryCount < 1) {
+          logger.info(`[AUTH] Retrying profile fetch after timeout...`);
+          await new Promise((resolve) =>
+            setTimeout(resolve, TOKEN_REFRESH_RETRY_DELAY_MS * (retryCount + 1))
+          );
+          return fetchProfile(userId, retryCount + 1, useCache);
+        }
+
+        // On final timeout, return cached profile if available, otherwise treat as legacy user
+        if (profileCache.current && profileCacheUserId.current === userId) {
+          logger.warn(`[AUTH] Using stale cached profile due to timeout`);
+          return profileCache.current;
+        }
+
+        logger.warn(`[AUTH] Treating as legacy user due to timeout`);
+        return { onboarding_completed: true, onboarding_step: 0 };
+      }
+
+      logger.error("[AUTH] Error in fetchProfile:", error);
       return null;
     }
   };
@@ -138,32 +256,61 @@ export const AuthNavigationProvider: React.FC<AuthNavigationProviderProps> = ({
 
   /**
    * Update navigation state based on current session
+   * Includes deduplication to prevent concurrent updates
    */
   const updateNavigationState = async (currentSession: Session | null) => {
-    if (!currentSession?.user) {
-      // No session = clear everything
-      profileCache.current = null;
-      profileCacheUserId.current = null;
-      setNavigationState(NavigationState.PRE_SIGNUP);
-      setOnboardingStep(0);
-      setOnboardingCompleted(false);
+    // Prevent concurrent updates
+    if (isUpdatingNavigationRef.current) {
+      logger.info(
+        "[AUTH] Navigation update already in progress, skipping duplicate call"
+      );
       return;
     }
 
-    // Fetch profile if not cached or user changed
-    const userId = currentSession.user.id;
-    if (!profileCache.current || profileCacheUserId.current !== userId) {
-      const profile = await fetchProfile(userId);
-      profileCache.current = profile;
-      profileCacheUserId.current = userId;
+    isUpdatingNavigationRef.current = true;
+
+    try {
+      if (!currentSession?.user) {
+        // No session = clear everything
+        profileCache.current = null;
+        profileCacheUserId.current = null;
+        setNavigationState(NavigationState.PRE_SIGNUP);
+        setOnboardingStep(0);
+        setOnboardingCompleted(false);
+        return;
+      }
+
+      // Fetch profile - fetchProfile handles caching internally
+      const userId = currentSession.user.id;
+      const useCache = !!(
+        profileCache.current && profileCacheUserId.current === userId
+      );
+      const profile = await fetchProfile(userId, 0, useCache);
+
+      // fetchProfile always updates cache internally, so use cached version for consistency
+      const finalProfile = profileCache.current;
+      const newState = determineNavigationState(true, finalProfile);
+
+      setNavigationState(newState);
+      setOnboardingStep(finalProfile?.onboarding_step || 0);
+      setOnboardingCompleted(finalProfile?.onboarding_completed || false);
+    } catch (error) {
+      logger.error("[AUTH] Error in updateNavigationState:", error);
+      // On error, try to use cached profile if available
+      if (currentSession?.user) {
+        const userId = currentSession.user.id;
+        if (profileCache.current && profileCacheUserId.current === userId) {
+          logger.warn("[AUTH] Using cached profile after error");
+          const cachedProfile = profileCache.current;
+          const newState = determineNavigationState(true, cachedProfile);
+          setNavigationState(newState);
+          setOnboardingStep(cachedProfile?.onboarding_step || 0);
+          setOnboardingCompleted(cachedProfile?.onboarding_completed || false);
+        }
+      }
+    } finally {
+      isUpdatingNavigationRef.current = false;
     }
-
-    const profile = profileCache.current;
-    const newState = determineNavigationState(true, profile);
-
-    setNavigationState(newState);
-    setOnboardingStep(profile?.onboarding_step || 0);
-    setOnboardingCompleted(profile?.onboarding_completed || false);
   };
 
   /**
@@ -211,6 +358,124 @@ export const AuthNavigationProvider: React.FC<AuthNavigationProviderProps> = ({
   };
 
   /**
+   * Handle TOKEN_REFRESHED event with proper error handling and recovery
+   */
+  const handleTokenRefresh = async (newSession: Session | null) => {
+    // Prevent concurrent token refresh processing
+    if (isProcessingTokenRefreshRef.current) {
+      logger.info(
+        "[AUTH] Token refresh already in progress, skipping duplicate"
+      );
+      return;
+    }
+
+    if (!newSession?.user) {
+      logger.warn("[AUTH] Token refresh called with no session, skipping");
+      return;
+    }
+
+    isProcessingTokenRefreshRef.current = true;
+
+    try {
+      // Small delay to ensure Supabase has fully updated the session internally
+      await new Promise((resolve) =>
+        setTimeout(resolve, INITIALIZATION_BUFFER_MS)
+      );
+
+      // Retry logic for getUser() to handle race conditions
+      let user = null;
+      let error = null;
+      let retryCount = 0;
+
+      while (retryCount < TOKEN_REFRESH_MAX_RETRIES) {
+        const result = await supabase.auth.getUser();
+        user = result.data.user;
+        error = result.error;
+
+        if (user?.id || error) {
+          break; // Success or permanent error
+        }
+
+        retryCount++;
+        if (retryCount < TOKEN_REFRESH_MAX_RETRIES) {
+          logger.info(
+            `[AUTH] Token refresh getUser retry ${retryCount}/${TOKEN_REFRESH_MAX_RETRIES}`
+          );
+          await new Promise((resolve) =>
+            setTimeout(resolve, TOKEN_REFRESH_RETRY_DELAY_MS * retryCount)
+          );
+        }
+      }
+
+      if (error || !user?.id) {
+        logger.error(
+          "[AUTH] Invalid user on token refresh after retries, signing out"
+        );
+
+        // Direct sign out - don't try to validate again as it will fail
+        await supabase.auth.signOut();
+        await clearAllCache();
+        setSession(null);
+        setIsAuthLoading(false);
+        return;
+      }
+
+      // Emit event to notify components about token refresh with validated session
+      DeviceEventEmitter.emit("authStateChanged", {
+        event: "TOKEN_REFRESHED",
+        session: newSession,
+        validated: true,
+      });
+
+      // Update navigation state AFTER session is updated and validated
+      await updateNavigationState(newSession);
+    } catch (error) {
+      logger.error("[AUTH] Error handling TOKEN_REFRESHED:", error);
+
+      // On error, still try to update navigation state with current session
+      // This ensures the app doesn't get stuck even if validation fails
+      try {
+        await updateNavigationState(newSession);
+      } catch (navError) {
+        logger.error(
+          "[AUTH] Error updating navigation state after token refresh error:",
+          navError
+        );
+      }
+    } finally {
+      isProcessingTokenRefreshRef.current = false;
+    }
+  };
+
+  /**
+   * Process pending token refresh if initialization is complete
+   */
+  const processPendingTokenRefresh = async () => {
+    if (!isInitializedRef.current || !pendingTokenRefreshRef.current) {
+      return;
+    }
+
+    const pending = pendingTokenRefreshRef.current;
+    const age = Date.now() - pending.timestamp;
+
+    // Ignore stale queued refreshes (older than 30 seconds)
+    if (age > PENDING_REFRESH_STALE_MS) {
+      logger.warn(
+        `[AUTH] Ignoring stale pending token refresh (age: ${age}ms, max: ${PENDING_REFRESH_STALE_MS}ms)`
+      );
+      pendingTokenRefreshRef.current = null;
+      return;
+    }
+
+    pendingTokenRefreshRef.current = null;
+
+    logger.info(
+      `[AUTH] Processing pending token refresh from initialization (age: ${age}ms)`
+    );
+    await handleTokenRefresh(pending.session);
+  };
+
+  /**
    * Initialize auth state
    */
   useEffect(() => {
@@ -250,9 +515,25 @@ export const AuthNavigationProvider: React.FC<AuthNavigationProviderProps> = ({
 
         setIsAuthLoading(false);
         isInitializedRef.current = true;
+
+        // Process any pending token refresh that occurred during initialization
+        // Small delay to ensure all state updates are complete
+        setTimeout(() => {
+          processPendingTokenRefresh();
+        }, INITIALIZATION_BUFFER_MS);
       } catch (error) {
         logger.error("Error initializing auth:", error);
         setIsAuthLoading(false);
+        isInitializedRef.current = true; // Still mark as initialized to prevent stuck state
+
+        // Clear any pending token refresh since initialization failed
+        // This prevents processing stale refreshes after a failed init
+        if (pendingTokenRefreshRef.current) {
+          logger.warn(
+            "[AUTH] Clearing pending token refresh due to initialization error"
+          );
+          pendingTokenRefreshRef.current = null;
+        }
       }
     };
 
@@ -292,70 +573,34 @@ export const AuthNavigationProvider: React.FC<AuthNavigationProviderProps> = ({
       // This ensures React state is updated immediately, preventing stale token reads
       setSession(newSession);
 
-      // Handle token refresh - validate user still exists with retry logic
+      // Handle token refresh with proper initialization handling
       if (event === "TOKEN_REFRESHED" && newSession) {
-        try {
-          // Small delay to ensure Supabase has fully updated the session internally
-          await new Promise((resolve) => setTimeout(resolve, 100));
-
-          // Retry logic for getUser() to handle race conditions
-          let user = null;
-          let error = null;
-          let retryCount = 0;
-          const maxRetries = 3;
-
-          while (retryCount < maxRetries) {
-            const result = await supabase.auth.getUser();
-            user = result.data.user;
-            error = result.error;
-
-            if (user?.id || error) {
-              break; // Success or permanent error
-            }
-
-            retryCount++;
-            if (retryCount < maxRetries) {
-              logger.info(
-                `🔄 [AUTH] Token refresh retry ${retryCount}/${maxRetries}`
-              );
-              await new Promise((resolve) =>
-                setTimeout(resolve, 200 * retryCount)
-              );
-            }
-          }
-
-          if (error || !user?.id) {
-            logger.error(
-              "Invalid user on token refresh after retries, signing out"
-            );
-
-            // Direct sign out - don't try to validate again as it will fail
-            await supabase.auth.signOut();
-            await clearAllCache();
-            setSession(null);
-            return;
-          }
-
-          // Emit event to notify components about token refresh with validated session
-          DeviceEventEmitter.emit("authStateChanged", {
-            event,
+        // Check if initialization is complete
+        if (!isInitializedRef.current) {
+          // Queue the token refresh to process after initialization
+          logger.info(
+            "[AUTH] Queuing TOKEN_REFRESHED event - initialization not complete"
+          );
+          pendingTokenRefreshRef.current = {
             session: newSession,
-            validated: true,
-          });
-
-          // Update navigation state AFTER session is updated
-          // This ensures any components reading session get the fresh token
-          if (isInitializedRef.current) {
-            await updateNavigationState(newSession);
-          }
-        } catch (error) {
-          logger.error("[AUTH] Error handling TOKEN_REFRESHED:", error);
-          // Don't break the flow - session is already updated
+            timestamp: Date.now(),
+          };
+          // Don't process yet - will be handled after initialization completes
+          return;
         }
+
+        // Process token refresh immediately if initialization is complete
+        await handleTokenRefresh(newSession);
       } else {
         // For all other events, update navigation state after session update
+        // Only if initialization is complete
         if (isInitializedRef.current) {
           await updateNavigationState(newSession);
+        } else {
+          // For other events during initialization, just log and wait
+          logger.info(
+            `[AUTH] Event ${event} received during initialization, will process after init`
+          );
         }
       }
 
