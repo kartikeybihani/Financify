@@ -835,6 +835,7 @@ export default function TransactionDetailModal({
         visible={showCategorySelector}
         transactionId={transaction?.id || null}
         merchantName={transaction?.merchant_name}
+        transactionName={transaction?.name}
         currentCategoryName={getDisplayCategory(updatedCategory, transaction)}
         onClose={() => setShowCategorySelector(false)}
       />

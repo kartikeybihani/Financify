@@ -1,4 +1,11 @@
-import React, { useMemo, useState, useEffect } from "react";
+import React, {
+  useMemo,
+  useState,
+  useEffect,
+  useRef,
+  memo,
+  useCallback,
+} from "react";
 import {
   View,
   Text,
@@ -62,9 +69,12 @@ interface Props {
   mightHaveTransactions?: boolean;
   accounts?: Account[];
   filterOptions?: FilterOptions;
+  searchQuery?: string;
+  onSearchQueryChange?: (query: string) => void;
+  isSearching?: boolean;
 }
 
-export default function TransactionsSection(props: Props) {
+function TransactionsSection(props: Props) {
   const [selectedTransactionId, setSelectedTransactionId] = useState<
     string | null
   >(null);
@@ -96,9 +106,13 @@ export default function TransactionsSection(props: Props) {
     mightHaveTransactions = false,
     accounts = [],
     filterOptions,
+    searchQuery: propSearchQuery = "",
+    onSearchQueryChange,
+    isSearching = false,
   } = props;
 
-  const [searchQuery, setSearchQuery] = useState("");
+  const [searchQuery, setSearchQuery] = useState(propSearchQuery);
+  const searchInputRef = useRef<TextInput>(null);
 
   // Use the categories hook
   const { formatCategoryName: formatCategoryFromHook } = useCategories();
@@ -119,15 +133,32 @@ export default function TransactionsSection(props: Props) {
     };
   }, []);
 
-  const displayedTransactions = useMemo(() => {
-    if (!searchQuery.trim()) return filteredTransactions;
-    const q = searchQuery.trim().toLowerCase();
-    return filteredTransactions.filter((tx) => {
-      const name = (tx.name || "").toLowerCase();
-      const category = (tx.top_category || "").toLowerCase();
-      return name.includes(q) || category.includes(q);
-    });
-  }, [filteredTransactions, searchQuery]);
+  // Sync local search query with prop only when it's cleared externally
+  // Don't sync during typing to avoid focus loss
+  useEffect(() => {
+    // Only sync if prop is cleared (empty) and local state is not
+    // This handles external clears without interfering with typing
+    if (propSearchQuery === "" && searchQuery !== "") {
+      setSearchQuery("");
+    }
+  }, [propSearchQuery]);
+
+  // Notify parent when search query changes - use useCallback to prevent recreation
+  const handleSearchChange = useCallback(
+    (text: string) => {
+      // Update local state immediately for instant UI feedback
+      setSearchQuery(text);
+      // Notify parent (this will trigger the search effect)
+      if (onSearchQueryChange) {
+        onSearchQueryChange(text);
+      }
+    },
+    [onSearchQueryChange]
+  );
+
+  // Transactions are already filtered by the database, so just use filteredTransactions directly
+  // If search is active and we have transactions, show them; otherwise show empty state
+  const displayedTransactions = filteredTransactions;
 
   return (
     <View>
@@ -271,25 +302,35 @@ export default function TransactionsSection(props: Props) {
             shadowRadius: 4,
           }}
         >
-          <Ionicons
-            name="search"
-            size={20}
-            color="rgba(255,255,255,0.6)"
-            style={{ marginRight: 8 }}
-          />
+          {isSearching ? (
+            <ActivityIndicator
+              size="small"
+              color="#4A90E2"
+              style={{ marginRight: 8 }}
+            />
+          ) : (
+            <Ionicons
+              name="search"
+              size={20}
+              color="rgba(255,255,255,0.6)"
+              style={{ marginRight: 8 }}
+            />
+          )}
           <TextInput
+            ref={searchInputRef}
             value={searchQuery}
-            onChangeText={setSearchQuery}
+            onChangeText={handleSearchChange}
             placeholder="Search by name or category..."
             placeholderTextColor="rgba(255,255,255,0.4)"
             style={{ flex: 1, color: "#fff", fontSize: 15, paddingVertical: 2 }}
             autoCapitalize="none"
             autoCorrect={false}
             returnKeyType="search"
+            blurOnSubmit={false}
           />
           {searchQuery.length > 0 && (
             <TouchableOpacity
-              onPress={() => setSearchQuery("")}
+              onPress={() => handleSearchChange("")}
               style={{
                 padding: 3,
                 borderRadius: 12,
@@ -319,9 +360,12 @@ export default function TransactionsSection(props: Props) {
       )} */}
 
       {(isLoadingTransactions ||
-        (mightHaveTransactions && displayedTransactions.length === 0)) &&
+        (mightHaveTransactions &&
+          displayedTransactions.length === 0 &&
+          !searchQuery.trim())) &&
       hasAccounts ? (
         // User has accounts but transactions are loading, show loading screen
+        // Don't show loading if there's an active search query - we've already searched
         <View style={styles.loadingStateContainer}>
           <View style={styles.loadingStateContent}>
             <View style={styles.loadingStateIconContainer}>
@@ -643,3 +687,7 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
 });
+
+// Memoize component to prevent unnecessary re-renders that cause focus loss
+// We want to re-render when transactions/search change, but prevent re-renders from other prop changes
+export default memo(TransactionsSection);

@@ -28,6 +28,7 @@ interface CategorySelectorModalProps {
   visible: boolean;
   transactionId: string | null;
   merchantName?: string;
+  transactionName?: string;
   currentCategoryName?: string;
   onClose: () => void;
 }
@@ -36,6 +37,7 @@ export default function CategorySelectorModal({
   visible,
   transactionId,
   merchantName,
+  transactionName,
   currentCategoryName,
   onClose,
 }: CategorySelectorModalProps) {
@@ -365,39 +367,59 @@ export default function CategorySelectorModal({
           throw new Error("User not authenticated");
         }
 
-        // Update all transactions with the same merchant name
-        if (!merchantName) {
+        // Determine which field to use for matching: merchant_name first, then transaction name
+        const useMerchantName = merchantName && merchantName.trim() !== "";
+        const useTransactionName =
+          !useMerchantName && transactionName && transactionName.trim() !== "";
+
+        if (!useMerchantName && !useTransactionName) {
           Alert.alert(
             "Error",
-            "Cannot update similar transactions without merchant name"
+            "Cannot update similar transactions without merchant name or transaction name"
           );
           return;
         }
 
-        const { data: updateResult, error } = await supabase
+        // Build the query based on which field we're using
+        let updateQuery = supabase
           .from("transactions")
           .update({ new_category: selectedCategory.name })
-          .eq("user_id", userId)
-          .eq("merchant_name", merchantName)
-          .select("id");
+          .eq("user_id", userId);
+
+        let selectQuery = supabase
+          .from("transactions")
+          .select("id, name, amount, date")
+          .eq("user_id", userId);
+
+        if (useMerchantName && merchantName) {
+          updateQuery = updateQuery.eq("merchant_name", merchantName);
+          selectQuery = selectQuery.eq("merchant_name", merchantName);
+        } else if (useTransactionName && transactionName) {
+          updateQuery = updateQuery.eq("name", transactionName);
+          selectQuery = selectQuery.eq("name", transactionName);
+        }
+
+        const { data: updateResult, error } = await updateQuery.select("id");
 
         if (error) throw error;
 
         const data = updateResult?.length || 0;
 
         // Get the affected transaction IDs and details
+        const matchField = useMerchantName ? "merchant_name" : "name";
+        const matchValue = useMerchantName
+          ? merchantName || ""
+          : transactionName || "";
+
         console.log("🔍 Getting affected transactions for:", {
-          merchantName,
+          matchField,
+          matchValue,
           newCategory: selectedCategory.name,
           updatedCount: data,
         });
 
-        const { data: affectedData, error: affectedError } = await supabase
-          .from("transactions")
-          .select("id, name, amount, date")
-          .eq("user_id", userId)
-          .eq("merchant_name", merchantName)
-          .eq("new_category", selectedCategory.name);
+        const { data: affectedData, error: affectedError } =
+          await selectQuery.eq("new_category", selectedCategory.name);
 
         console.log("📊 Affected transactions result:", {
           affectedData,
@@ -431,6 +453,7 @@ export default function CategorySelectorModal({
         updateType,
         affectedTransactions,
         merchantName: merchantName,
+        transactionName: transactionName,
       };
 
       console.log("📡 Emitting transactionCategoryUpdated event:", eventData);

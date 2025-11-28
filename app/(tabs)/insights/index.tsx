@@ -244,6 +244,7 @@ export default function InsightsScreen() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMoreTransactions, setHasMoreTransactions] = useState(true);
   const [mightHaveTransactions, setMightHaveTransactions] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
   const scrollViewRef = useRef<ScrollView>(null);
   const scrollOffsetRef = useRef(0);
   const contentHeightRef = useRef(0);
@@ -287,6 +288,25 @@ export default function InsightsScreen() {
     >
   >(new Map());
   const CACHE_DURATION = 2 * 60 * 1000; // 2 minutes - using SHORT duration for filtered transactions
+
+  // Search cache for instant repeat searches
+  const searchCache = useRef<
+    Map<
+      string,
+      {
+        transactions: Transaction[];
+        count: number;
+        timestamp: number;
+      }
+    >
+  >(new Map());
+  const SEARCH_CACHE_DURATION = 5 * 60 * 1000; // 5 minutes for search results
+
+  // Track if we're currently searching (for optimistic UI)
+  const [isSearching, setIsSearching] = useState(false);
+
+  // Store unfiltered transactions for instant client-side search
+  const unfilteredTransactionsRef = useRef<Transaction[]>([]);
 
   // Cached userId to avoid repeated supabase.auth.getUser() calls
   const userIdRef = useRef<string | null>(null);
@@ -471,7 +491,7 @@ export default function InsightsScreen() {
       id: "transactions",
       priority: "high",
       execute: async () => {
-        await loadFilteredTransactions(filterOptions, true);
+        await loadFilteredTransactions(filterOptions, true, searchQuery);
         return {
           transactions: filteredTransactions,
           count: totalFilteredCount,
@@ -681,36 +701,138 @@ export default function InsightsScreen() {
       hasData.current &&
       !showEnhancedFilterModal
     ) {
-      loadFilteredTransactions(filterOptions, true);
+      loadFilteredTransactions(filterOptions, true, searchQuery);
     }
   }, [filterOptions, activeSection, showEnhancedFilterModal]);
 
+  // Load filtered transactions when search query changes (debounced with instant client-side filtering)
+  useEffect(() => {
+    if (activeSection !== "transactions" || !hasData.current) return;
+
+    // If search query is empty, just reload normal filtered transactions
+    if (!searchQuery.trim()) {
+      setIsSearching(false);
+      loadFilteredTransactions(filterOptions, true, "");
+      return;
+    }
+
+    // Check search cache first for instant results
+    const searchCacheKey = `${searchQuery
+      .trim()
+      .toLowerCase()}_${JSON.stringify(filterOptions)}`;
+    const cachedSearch = searchCache.current.get(searchCacheKey);
+    if (
+      cachedSearch &&
+      Date.now() - cachedSearch.timestamp < SEARCH_CACHE_DURATION
+    ) {
+      logger.info(`⚡ Using cached search results for: "${searchQuery}"`);
+      setFilteredTransactions(cachedSearch.transactions);
+      setTotalFilteredCount(cachedSearch.count);
+      setHasMoreTransactions(
+        cachedSearch.transactions.length < cachedSearch.count
+      );
+      setIsSearching(false);
+      return;
+    }
+
+    // Instant client-side filtering for immediate feedback
+    // Use unfiltered transactions ref for consistent instant results
+    const baseTransactions =
+      unfilteredTransactionsRef.current.length > 0
+        ? unfilteredTransactionsRef.current
+        : filteredTransactions;
+
+    // Only update if we have base transactions to filter
+    if (baseTransactions.length > 0) {
+      const searchTerm = searchQuery.trim().toLowerCase();
+      const instantResults = baseTransactions.filter((tx) => {
+        const name = (tx.name || "").toLowerCase();
+        const category = (tx.top_category || "").toLowerCase();
+        const newCategory = (tx.new_category || "").toLowerCase();
+        return (
+          name.includes(searchTerm) ||
+          category.includes(searchTerm) ||
+          newCategory.includes(searchTerm)
+        );
+      });
+
+      // Show instant results immediately (optimistic UI) - use functional update to avoid stale closure
+      setFilteredTransactions((prev) => {
+        // Only update if results are different to avoid unnecessary re-renders
+        if (
+          prev.length !== instantResults.length ||
+          prev[0]?.id !== instantResults[0]?.id
+        ) {
+          return instantResults;
+        }
+        return prev;
+      });
+      setIsSearching(true);
+    } else {
+      setIsSearching(true);
+    }
+
+    // Debounce database search to avoid too many queries
+    const timeoutId = setTimeout(() => {
+      loadFilteredTransactions(filterOptions, true, searchQuery).then(() => {
+        setIsSearching(false);
+      });
+    }, 400); // 400ms debounce for database search (balance between responsiveness and query count)
+
+    return () => {
+      clearTimeout(timeoutId);
+    };
+  }, [searchQuery, activeSection, filterOptions]);
+
   // Check cache when transactions section is active and we have accounts but no filtered transactions yet
   useEffect(() => {
+    let isCancelled = false;
+
     const checkCacheIfNeeded = async () => {
       if (
         activeSection === "transactions" &&
         accounts.length > 0 &&
         filteredTransactions.length === 0
       ) {
+        // If there's an active search query and we have 0 results, 
+        // we've already confirmed there are no results - don't show loading state
+        if (searchQuery.trim() && !isSearching) {
+          // Search completed with 0 results - show empty state, not loading
+          if (!isCancelled) {
+            setMightHaveTransactions(false);
+          }
+          return;
+        }
+
         const hasCache = await hasValidTransactionsCache();
-        setMightHaveTransactions(hasCache);
-        if (hasCache) {
-          logger.info(
-            "📦 Cache exists, showing loading state instead of empty state"
-          );
+        // Only update state if this effect hasn't been cancelled
+        if (!isCancelled) {
+          setMightHaveTransactions(hasCache);
+          if (hasCache) {
+            logger.info(
+              "📦 Cache exists, showing loading state instead of empty state"
+            );
+          }
         }
       } else {
-        setMightHaveTransactions(false);
+        // Only update state if this effect hasn't been cancelled
+        if (!isCancelled) {
+          setMightHaveTransactions(false);
+        }
       }
     };
     checkCacheIfNeeded();
-  }, [activeSection, accounts.length, filteredTransactions.length]);
+
+    // Cleanup function to cancel pending async operations
+    return () => {
+      isCancelled = true;
+    };
+  }, [activeSection, accounts.length, filteredTransactions.length, searchQuery, isSearching]);
 
   // Gate data loads by active section and trigger smart preloading
   useEffect(() => {
     if (activeSection === "transactions") {
-      loadFilteredTransactions(filterOptions, true);
+      loadFilteredTransactions(filterOptions, true, searchQuery);
     } else if (activeSection === "recurring") {
       // Only load recurring data if we don't have any data yet
       if (!recurringData) {
@@ -936,12 +1058,14 @@ export default function InsightsScreen() {
 
   const clearCache = () => {
     filterCache.current.clear();
+    searchCache.current.clear(); // Also clear search cache when filters/data change
   };
 
   // Load filtered transactions with pagination and caching
   const loadFilteredTransactions = async (
     filters: FilterOptions,
-    reset: boolean = false
+    reset: boolean = false,
+    search: string = ""
   ) => {
     try {
       const userId = await getUserId();
@@ -953,8 +1077,30 @@ export default function InsightsScreen() {
       const offset = reset ? 0 : filteredTransactions.length;
       const cacheKey = getCacheKey(filters, offset);
 
-      // Check cache first (only for initial load, not pagination)
-      if (reset) {
+      // Check search cache first for instant results
+      if (reset && search.trim()) {
+        const searchCacheKey = `${search.trim().toLowerCase()}_${JSON.stringify(
+          filters
+        )}`;
+        const cachedSearch = searchCache.current.get(searchCacheKey);
+        if (
+          cachedSearch &&
+          Date.now() - cachedSearch.timestamp < SEARCH_CACHE_DURATION
+        ) {
+          logger.info(`⚡ Using cached search results for: "${search}"`);
+          setFilteredTransactions(cachedSearch.transactions);
+          setTotalFilteredCount(cachedSearch.count);
+          setHasMoreTransactions(
+            cachedSearch.transactions.length < cachedSearch.count
+          );
+          setIsSearching(false);
+          return;
+        }
+      }
+
+      // Don't use cache when searching - always fetch fresh results
+      // Check cache first (only for initial load, not pagination, and not when searching)
+      if (reset && !search.trim()) {
         const cached = getCachedData(getCacheKey(filters, 0));
         if (cached) {
           logger.info(`📦 Using cached data for filters: ${cacheKey}`);
@@ -965,13 +1111,17 @@ export default function InsightsScreen() {
         }
       }
 
-      const limit = 50;
+      // When searching, load more results at once (up to 200) to show most matches quickly
+      // Otherwise use normal pagination (50 at a time)
+      // Using 200 instead of 500 for faster initial load - can paginate if needed
+      const limit = search.trim() ? 200 : 50;
 
       // Get filtered transactions
       // logger.info(`🔍 Loading filtered transactions with:`, {
       //   accountIds: filters.accountIds,
       //   timePeriod: filters.timePeriod,
       //   categoryIds: filters.categoryIds,
+      //   searchQuery: search,
       //   limit,
       //   offset,
       //   accountIdsLength: filters.accountIds?.length || 0,
@@ -982,6 +1132,7 @@ export default function InsightsScreen() {
         accountIds: filters.accountIds,
         timePeriod: filters.timePeriod,
         categoryIds: filters.categoryIds,
+        searchQuery: search,
         limit,
         offset,
       });
@@ -990,13 +1141,14 @@ export default function InsightsScreen() {
       //   `📊 getFilteredTransactions returned ${newTransactions.length} transactions`
       // );
 
-      // Get total count for pagination (only on initial load)
+      // Get total count for pagination (only on initial load or when search changes)
       let totalCount = totalFilteredCount;
       if (reset) {
         totalCount = await getFilteredTransactionsCount(userId, {
           accountIds: filters.accountIds,
           timePeriod: filters.timePeriod,
           categoryIds: filters.categoryIds,
+          searchQuery: search,
         });
       }
 
@@ -1008,16 +1160,44 @@ export default function InsightsScreen() {
         setFilteredTransactions(updatedTransactions);
         setTotalFilteredCount(totalCount);
 
-        // Cache the initial load
-        setCachedData(getCacheKey(filters, 0), updatedTransactions, totalCount);
+        // Store unfiltered transactions for instant client-side search
+        if (!search.trim()) {
+          unfilteredTransactionsRef.current = updatedTransactions;
+        }
+
+        // Cache the initial load (only if not searching)
+        if (!search.trim()) {
+          setCachedData(
+            getCacheKey(filters, 0),
+            updatedTransactions,
+            totalCount
+          );
+        } else {
+          // Cache search results for instant repeat searches
+          const searchCacheKey = `${search
+            .trim()
+            .toLowerCase()}_${JSON.stringify(filters)}`;
+          searchCache.current.set(searchCacheKey, {
+            transactions: updatedTransactions,
+            count: totalCount,
+            timestamp: Date.now(),
+          });
+          logger.info(`💾 Cached search results for: "${search}"`);
+        }
       } else {
         setFilteredTransactions(updatedTransactions);
+        // Update ref when appending
+        if (!search.trim()) {
+          unfilteredTransactionsRef.current = updatedTransactions;
+        }
       }
 
       setHasMoreTransactions(updatedTransactions.length < totalCount);
 
       logger.info(
-        `📊 Loaded ${newTransactions.length} filtered transactions (${updatedTransactions.length}/${totalCount})`
+        `📊 Loaded ${newTransactions.length} filtered transactions (${
+          updatedTransactions.length
+        }/${totalCount})${search.trim() ? ` for search: "${search}"` : ""}`
       );
     } catch (error) {
       logger.error("❌ Error loading filtered transactions:", error);
@@ -1029,7 +1209,7 @@ export default function InsightsScreen() {
     if (loadingMore || !hasMoreTransactions) return;
 
     setLoadingMore(true);
-    await loadFilteredTransactions(filterOptions, false);
+    await loadFilteredTransactions(filterOptions, false, searchQuery);
     setLoadingMore(false);
 
     // Note: When appending items below the current scroll position,
@@ -1323,7 +1503,7 @@ export default function InsightsScreen() {
       await fetchFreshData();
       // Only reload filtered transactions if on Transactions section
       if (activeSection === "transactions") {
-        await loadFilteredTransactions(filterOptions, true);
+        await loadFilteredTransactions(filterOptions, true, searchQuery);
       }
     } finally {
       setRefreshing(false);
@@ -1713,7 +1893,7 @@ export default function InsightsScreen() {
       // On error, try to at least refresh UI from existing database data
       try {
         await fetchFreshData();
-        await loadFilteredTransactions(filterOptions, true);
+        await loadFilteredTransactions(filterOptions, true, searchQuery);
         await loadInvestmentData();
       } catch (fallbackError) {
         logger.error("❌ Fallback data refresh also failed:", fallbackError);
@@ -1981,7 +2161,7 @@ export default function InsightsScreen() {
       // Fallback: reload current data from Supabase
       try {
         await fetchFreshData();
-        await loadFilteredTransactions(filterOptions, true);
+        await loadFilteredTransactions(filterOptions, true, searchQuery);
         await loadRecurringTransactions();
         await loadInvestmentData();
       } catch (fallbackError) {
@@ -2269,7 +2449,7 @@ export default function InsightsScreen() {
                   ]}
                 >
                   <TransactionsSection
-                    key={`transactions-${filteredTransactions.length}`}
+                    key="transactions-section"
                     titleStyle={styles.sectionLabel}
                     sectionHeaderStyle={styles.sectionHeader}
                     headerButtonsContainerStyle={styles.headerButtonsContainer}
@@ -2304,6 +2484,9 @@ export default function InsightsScreen() {
                     mightHaveTransactions={mightHaveTransactions}
                     accounts={accounts}
                     filterOptions={filterOptions}
+                    searchQuery={searchQuery}
+                    onSearchQueryChange={setSearchQuery}
+                    isSearching={isSearching}
                   />
                 </Animated.View>
               )}
@@ -2414,7 +2597,11 @@ export default function InsightsScreen() {
                   async (itemId) => {
                     logger.info("Successfully added new cash account:", itemId);
                     await fetchFreshData();
-                    await loadFilteredTransactions(filterOptions, true);
+                    await loadFilteredTransactions(
+                      filterOptions,
+                      true,
+                      searchQuery
+                    );
                   },
                   (error) => {
                     logger.error("Failed to add new cash account:", error);
@@ -2440,7 +2627,11 @@ export default function InsightsScreen() {
                       itemId
                     );
                     await fetchFreshData();
-                    await loadFilteredTransactions(filterOptions, true);
+                    await loadFilteredTransactions(
+                      filterOptions,
+                      true,
+                      searchQuery
+                    );
                   },
                   (error) => {
                     logger.error(

@@ -1374,6 +1374,7 @@ export const getFilteredTransactions = async (
     categoryIds?: string[]; // empty array means all categories
     limit?: number;
     offset?: number;
+    searchQuery?: string; // search by transaction name or category
   } = {}
 ) => {
   try {
@@ -1382,7 +1383,8 @@ export const getFilteredTransactions = async (
       timePeriod = "7days",
       categoryIds = [],
       limit = 50,
-      offset = 0
+      offset = 0,
+      searchQuery = ""
     } = options;
 
     // Convert category IDs to category names for database filtering
@@ -1456,12 +1458,24 @@ export const getFilteredTransactions = async (
       // logger.info(`🔍 No category filter - showing transactions from ALL categories`);
     }
 
+    // Add search query filter if specified (search by name or category)
+    if (searchQuery && searchQuery.trim()) {
+      const searchTerm = searchQuery.trim();
+      // Search in transaction name (case-insensitive)
+      // Also search in categories (both new_category and top_category)
+      // PostgREST uses * as wildcard for ilike (not %)
+      query = query.or(
+        `name.ilike.*${searchTerm}*,new_category.ilike.*${searchTerm}*,top_category.ilike.*${searchTerm}*`
+      );
+    }
+
     logger.info(`🔍 Query parameters:`, {
       userId,
       startDate,
       endDate,
       accountIdsLength: accountIds.length,
       categoryIdsLength: categoryIds.length,
+      searchQuery: searchQuery || "none",
       limit,
       offset
     });
@@ -1498,13 +1512,15 @@ export const getFilteredTransactionsCount = async (
     accountIds?: string[];
     timePeriod?: string;
     categoryIds?: string[];
+    searchQuery?: string; // search by transaction name or category
   } = {}
 ) => {
   try {
     const {
       accountIds = [],
       timePeriod = "7days",
-      categoryIds = []
+      categoryIds = [],
+      searchQuery = ""
     } = options;
 
     // Convert category IDs to category names for database filtering
@@ -1546,6 +1562,17 @@ export const getFilteredTransactionsCount = async (
         categoryNames.map(cat => 
           `new_category.eq.${cat},and(new_category.is.null,top_category.eq.${cat})`
         ).join(',')
+      );
+    }
+
+    // Add search query filter if specified (search by name or category)
+    if (searchQuery && searchQuery.trim()) {
+      const searchTerm = searchQuery.trim();
+      // Search in transaction name (case-insensitive)
+      // Also search in categories (both new_category and top_category)
+      // PostgREST uses * as wildcard for ilike (not %)
+      query = query.or(
+        `name.ilike.*${searchTerm}*,new_category.ilike.*${searchTerm}*,top_category.ilike.*${searchTerm}*`
       );
     }
 

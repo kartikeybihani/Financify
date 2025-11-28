@@ -422,7 +422,7 @@ export const styles = StyleSheet.create({
       borderTopLeftRadius: 20,
       borderTopRightRadius: 20,
       padding: 20,
-      maxHeight: "80%",
+      maxHeight: "60%",
     },
     categoryDetailHeader: {
       flexDirection: "row",
@@ -469,7 +469,7 @@ export const styles = StyleSheet.create({
       color: "#fff",
     },
     categoryTransactionsList: {
-      marginTop: 10,
+      marginBottom: 20,
     },
     categoryTransactionsHeader: {
       fontSize: 16,

@@ -1,5 +1,12 @@
 import React, { useState } from "react";
-import { Modal, View, Text, TouchableOpacity, ScrollView } from "react-native";
+import {
+  Modal,
+  View,
+  Text,
+  TouchableOpacity,
+  ScrollView,
+  Dimensions,
+} from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { styles } from "@/src/styles/insightsStyles";
 import TransactionDetailModal from "@/src/components/modals/TransactionDetailModal";
@@ -74,6 +81,10 @@ const CategoryDetailModal: React.FC<CategoryDetailModalProps> = ({
       ? data.amount / categoryTransactions.length
       : 0;
 
+  // Calculate max height for transactions list (70% of screen minus header/stats space ~200px)
+  const screenHeight = Dimensions.get("window").height;
+  const maxTransactionsHeight = screenHeight * 0.7 - 200;
+
   return (
     <Modal
       visible={visible}
@@ -86,7 +97,11 @@ const CategoryDetailModal: React.FC<CategoryDetailModalProps> = ({
         activeOpacity={1}
         onPress={onClose}
       >
-        <View style={styles.categoryDetailModal}>
+        <TouchableOpacity
+          activeOpacity={1}
+          onPress={(e) => e.stopPropagation()}
+          style={styles.categoryDetailModal}
+        >
           <View style={styles.categoryDetailHeader}>
             <View
               style={[
@@ -131,9 +146,17 @@ const CategoryDetailModal: React.FC<CategoryDetailModalProps> = ({
             </View>
           </View>
 
-          <View style={styles.categoryTransactionsList}>
+          <View
+            style={[
+              styles.categoryTransactionsList,
+              { maxHeight: maxTransactionsHeight },
+            ]}
+          >
             {categoryTransactions.length > 0 ? (
-              <ScrollView>
+              <ScrollView
+                contentContainerStyle={{ paddingBottom: 20 }}
+                showsVerticalScrollIndicator={false}
+              >
                 {categoryTransactions.map((tx, idx) => (
                   <TouchableOpacity
                     key={tx.plaid_transaction_id || tx.id || idx}
@@ -191,7 +214,7 @@ const CategoryDetailModal: React.FC<CategoryDetailModalProps> = ({
               </View>
             )}
           </View>
-        </View>
+        </TouchableOpacity>
       </TouchableOpacity>
       {/* // Transaction Detail Modal (opens when a transaction is tapped) */}
       <TransactionDetailModal
