@@ -34,6 +34,28 @@ import {
   formatRetryAfterSeconds,
 } from "../lib/api/rateLimiter.js";
 
+// Simple log level mechanism for controlling verbosity
+const LOG_LEVEL =
+  process.env.LOG_LEVEL || process.env.NODE_ENV === "production"
+    ? "info"
+    : "debug";
+const LOG_LEVELS = { debug: 10, info: 20, warn: 30, error: 40 };
+const CURRENT_LOG_LEVEL =
+  LOG_LEVELS[LOG_LEVEL] !== undefined ? LOG_LEVELS[LOG_LEVEL] : LOG_LEVELS.info;
+
+function logDebug(...args) {
+  if (CURRENT_LOG_LEVEL <= LOG_LEVELS.debug) console.log(...args);
+}
+function logInfo(...args) {
+  if (CURRENT_LOG_LEVEL <= LOG_LEVELS.info) console.log(...args);
+}
+function logWarn(...args) {
+  if (CURRENT_LOG_LEVEL <= LOG_LEVELS.warn) console.warn(...args);
+}
+function logError(...args) {
+  if (CURRENT_LOG_LEVEL <= LOG_LEVELS.error) console.error(...args);
+}
+
 // Utilities
 function generateRequestId() {
   try {
@@ -101,9 +123,7 @@ const dataCache = new Map();
 async function getPersistentCache(dataType, userId, params = {}) {
   try {
     const key = generateDataCacheKey(dataType, userId, params);
-    console.log(
-      `🔍 [PERSISTENT_CACHE] Looking for ${dataType} with key: ${key}`
-    );
+    logDebug(`🔍 [PERSISTENT_CACHE] Looking for ${dataType} with key: ${key}`);
 
     // Use .limit(1) to handle potential duplicates and get the most recent one
     const { data, error } = await supabase
@@ -115,7 +135,7 @@ async function getPersistentCache(dataType, userId, params = {}) {
       .limit(1);
 
     if (error) {
-      console.log(
+      logError(
         `❌ [PERSISTENT_CACHE] Database error for ${dataType}:`,
         error.message
       );
@@ -123,9 +143,7 @@ async function getPersistentCache(dataType, userId, params = {}) {
     }
 
     if (!data || data.length === 0) {
-      console.log(
-        `❌ [PERSISTENT_CACHE] No data found for ${dataType} (${key})`
-      );
+      logDebug(`❌ [PERSISTENT_CACHE] No data found for ${dataType} (${key})`);
       return null;
     }
 
@@ -133,16 +151,14 @@ async function getPersistentCache(dataType, userId, params = {}) {
 
     // Check if expired
     const now = Date.now();
-    console.log(
+    logDebug(
       `🔍 [PERSISTENT_CACHE] Checking expiration for ${dataType}: now=${now}, expires=${
         cacheEntry.expires_at
       }, expired=${now > cacheEntry.expires_at}`
     );
 
     if (now > cacheEntry.expires_at) {
-      console.log(
-        `⏰ [PERSISTENT_CACHE] Cache EXPIRED for ${dataType} (${key})`
-      );
+      logDebug(`⏰ [PERSISTENT_CACHE] Cache EXPIRED for ${dataType} (${key})`);
       // Clean up ALL expired entries for this key
       await cleanupDuplicateCacheEntries(key, userId);
       return null;
@@ -150,20 +166,20 @@ async function getPersistentCache(dataType, userId, params = {}) {
 
     // If there are duplicates, clean them up in the background
     if (data.length > 1) {
-      console.log(
+      logDebug(
         `🧹 [PERSISTENT_CACHE] Found ${data.length} duplicate entries, cleaning up...`
       );
       setImmediate(() => {
         cleanupDuplicateCacheEntries(key, userId).catch((error) => {
-          console.error("❌ [PERSISTENT_CACHE] Cleanup failed:", error);
+          logError("❌ [PERSISTENT_CACHE] Cleanup failed:", error);
         });
       });
     }
 
-    console.log(`✅ [PERSISTENT_CACHE] Cache HIT for ${dataType} (${key})`);
+    logDebug(`✅ [PERSISTENT_CACHE] Cache HIT for ${dataType} (${key})`);
     return cacheEntry.cache_data;
   } catch (error) {
-    console.error(
+    logError(
       `❌ [PERSISTENT_CACHE] Error getting cache for ${dataType}:`,
       error
     );
@@ -177,7 +193,7 @@ async function setPersistentCache(dataType, userId, data, params = {}) {
     const ttl = params.ttl || CACHE_TTL[dataType] || 5 * 60 * 1000;
     const expires_at = Date.now() + ttl;
 
-    console.log(
+    logDebug(
       `💾 [PERSISTENT_CACHE] Setting cache for ${dataType} with key: ${key}, expires: ${new Date(
         expires_at
       ).toISOString()}, TTL: ${ttl}ms`
@@ -201,15 +217,15 @@ async function setPersistentCache(dataType, userId, data, params = {}) {
     });
 
     if (error) {
-      console.error(
+      logError(
         `❌ [PERSISTENT_CACHE] Error setting cache for ${dataType}:`,
         error
       );
     } else {
-      console.log(`✅ [PERSISTENT_CACHE] Cache SET for ${dataType} (${key})`);
+      logDebug(`✅ [PERSISTENT_CACHE] Cache SET for ${dataType} (${key})`);
     }
   } catch (error) {
-    console.error(
+    logError(
       `❌ [PERSISTENT_CACHE] Error setting cache for ${dataType}:`,
       error
     );
@@ -335,7 +351,7 @@ function setCachedClassification(message, result) {
     cached_at: Date.now(),
   });
 
-  console.log(
+  logDebug(
     `💾 [CACHE] Classification cached for: "${message.substring(
       0,
       50
@@ -381,19 +397,19 @@ async function getCachedUserData(dataType, userId, params = {}) {
   // First check in-memory cache
   const cached = dataCache.get(key);
   if (cached && Date.now() < cached.expires_at) {
-    console.log(`✅ [DATA_CACHE] In-memory cache HIT for ${dataType} (${key})`);
+    logDebug(`✅ [DATA_CACHE] In-memory cache HIT for ${dataType} (${key})`);
     return cached.data;
   }
 
   if (cached) {
-    console.log(
+    logDebug(
       `⏰ [DATA_CACHE] In-memory cache EXPIRED for ${dataType} (${key})`
     );
     dataCache.delete(key);
   }
 
   // Fallback to persistent cache
-  console.log(
+  logDebug(
     `🔍 [DATA_CACHE] Checking persistent cache for ${dataType} (${key})`
   );
   const persistentData = await getPersistentCache(dataType, userId, params);
@@ -434,13 +450,13 @@ async function setCachedUserData(dataType, userId, data, params = {}) {
   await setPersistentCache(dataType, userId, data, params);
 
   const ttlMinutes = Math.round(ttl / (60 * 1000));
-  console.log(
+  logDebug(
     `💾 [DATA_CACHE] Cached ${dataType} (${key}) - expires in ${ttlMinutes} minutes`
   );
 
   // Trigger cleanup if cache is getting large
   if (dataCache.size > CACHE_STRATEGY.in_memory.max_size) {
-    console.log(`🧹 [CACHE] Cache size exceeded limit, triggering cleanup`);
+    logDebug(`🧹 [CACHE] Cache size exceeded limit, triggering cleanup`);
     await cleanupInMemoryCache();
   }
 }
@@ -456,7 +472,7 @@ async function cleanupDuplicateCacheEntries(cacheKey, userId) {
         /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
       )
     ) {
-      console.warn(
+      logWarn(
         `⚠️ [CACHE] Invalid userId format in cleanupDuplicateCacheEntries: ${userId}`
       );
       return;
@@ -471,7 +487,7 @@ async function cleanupDuplicateCacheEntries(cacheKey, userId) {
       .order("created_at", { ascending: false });
 
     if (error) {
-      console.error("❌ [CACHE] Error fetching duplicate entries:", error);
+      logError("❌ [CACHE] Error fetching duplicate entries:", error);
       return;
     }
 
@@ -491,18 +507,15 @@ async function cleanupDuplicateCacheEntries(cacheKey, userId) {
         .in("id", idsToDelete);
 
       if (deleteError) {
-        console.error(
-          "❌ [CACHE] Error deleting duplicate entries:",
-          deleteError
-        );
+        logError("❌ [CACHE] Error deleting duplicate entries:", deleteError);
       } else {
-        console.log(
+        logDebug(
           `🧹 [CACHE] Cleaned up ${entriesToDelete.length} duplicate cache entries for key: ${cacheKey}`
         );
       }
     }
   } catch (error) {
-    console.error("❌ [CACHE] Error in cleanupDuplicateCacheEntries:", error);
+    logError("❌ [CACHE] Error in cleanupDuplicateCacheEntries:", error);
   }
 }
 
@@ -521,7 +534,7 @@ async function cleanupInMemoryCache() {
   }
 
   if (cleaned > 0) {
-    console.log(`🧹 [CACHE] Cleaned up ${cleaned} expired in-memory entries`);
+    logDebug(`🧹 [CACHE] Cleaned up ${cleaned} expired in-memory entries`);
   }
 
   return cleaned;
@@ -537,28 +550,28 @@ async function cleanupSupabaseCache() {
       .select("id", { count: "exact" });
 
     if (error) {
-      console.error("❌ [CACHE] Error cleaning Supabase cache:", error);
+      logError("❌ [CACHE] Error cleaning Supabase cache:", error);
       return 0;
     }
 
-    console.log(
+    logDebug(
       `🧹 [CACHE] Cleaned up ${count || 0} expired Supabase cache entries`
     );
     return count || 0;
   } catch (error) {
-    console.error("❌ [CACHE] Supabase cleanup failed:", error);
+    logError("❌ [CACHE] Supabase cleanup failed:", error);
     return 0;
   }
 }
 
 // Comprehensive cache cleanup (both in-memory and Supabase)
 async function cleanupAllCaches() {
-  console.log("🧹 [CACHE] Starting comprehensive cache cleanup...");
+  logInfo("🧹 [CACHE] Starting comprehensive cache cleanup...");
 
   const inMemoryCleaned = await cleanupInMemoryCache();
   const supabaseCleaned = await cleanupSupabaseCache();
 
-  console.log(
+  logInfo(
     `✅ [CACHE] Cleanup complete - In-memory: ${inMemoryCleaned}, Supabase: ${supabaseCleaned}`
   );
 
@@ -594,7 +607,7 @@ async function invalidateUserCache(userId, dataType = null) {
         .eq("data_type", dataType);
 
       if (error) {
-        console.error("❌ [CACHE] Error invalidating Supabase cache:", error);
+        logError("❌ [CACHE] Error invalidating Supabase cache:", error);
       }
     } catch (error) {
       console.error("❌ [CACHE] Supabase invalidation failed:", error);
@@ -618,13 +631,13 @@ async function invalidateUserCache(userId, dataType = null) {
         .eq("user_id", userId);
 
       if (error) {
-        console.error("❌ [CACHE] Error invalidating all user cache:", error);
+        logError("❌ [CACHE] Error invalidating all user cache:", error);
       }
     } catch (error) {
       console.error("❌ [CACHE] Supabase invalidation failed:", error);
     }
 
-    console.log(`🗑️ [CACHE] Invalidated all cache for user ${userId}`);
+    logInfo(`🗑️ [CACHE] Invalidated all cache for user ${userId}`);
   }
 
   return invalidatedCount;
@@ -632,7 +645,7 @@ async function invalidateUserCache(userId, dataType = null) {
 
 // Pre-populate cache for common user data
 async function prePopulateUserCache(userId) {
-  console.log(`🚀 [CACHE] Pre-populating cache for user: ${userId}`);
+  logDebug(`🚀 [CACHE] Pre-populating cache for user: ${userId}`);
 
   // Use canonical need names; cache types are derived via NEED_CONFIG
   const commonNeeds = ["summary_min", "invest_holdings", "goals_overview"];
@@ -645,7 +658,7 @@ async function prePopulateUserCache(userId) {
       const cacheType = cfg?.cacheType || need;
       const cached = await getCachedUserData(cacheType, userId);
       if (cached) {
-        console.log(`✅ [CACHE] ${need} already cached for user ${userId}`);
+        logDebug(`✅ [CACHE] ${need} already cached for user ${userId}`);
         results.success++;
         continue;
       }
@@ -657,21 +670,21 @@ async function prePopulateUserCache(userId) {
         contextResult.packs &&
         contextResult.packs[NEED_CONFIG[need]?.packKey || need]
       ) {
-        console.log(`✅ [CACHE] Pre-populated ${need} for user ${userId}`);
+        logDebug(`✅ [CACHE] Pre-populated ${need} for user ${userId}`);
         results.success++;
       } else {
-        console.log(
+        logDebug(
           `⚠️ [CACHE] Failed to pre-populate ${need} for user ${userId}`
         );
         results.failed++;
       }
     } catch (error) {
-      console.error(`❌ [CACHE] Error pre-populating ${need}:`, error);
+      logError(`❌ [CACHE] Error pre-populating ${need}:`, error);
       results.failed++;
     }
   }
 
-  console.log(
+  logDebug(
     `📊 [CACHE] Pre-population complete - Success: ${results.success}, Failed: ${results.failed}`
   );
   return results;
@@ -734,29 +747,27 @@ async function cleanupExistingDuplicates() {
         ) {
           await cleanupDuplicateCacheEntries(cacheKey, userId);
         } else {
-          console.warn(
-            `⚠️ [CACHE] Skipping cleanup for invalid userId: ${userId}`
-          );
+          logWarn(`⚠️ [CACHE] Skipping cleanup for invalid userId: ${userId}`);
         }
       }
 
-      console.log("✅ [CACHE] Existing duplicates cleaned up");
+      logDebug("✅ [CACHE] Existing duplicates cleaned up");
     } else {
-      console.log("✅ [CACHE] No existing duplicates found");
+      logDebug("✅ [CACHE] No existing duplicates found");
     }
   } catch (error) {
-    console.error("❌ [CACHE] Error cleaning up existing duplicates:", error);
+    logError("❌ [CACHE] Error cleaning up existing duplicates:", error);
   }
 }
 
 // Initialize periodic cache cleanup
 function initializeCacheCleanup() {
-  console.log("🔄 [CACHE] Initializing periodic cache cleanup...");
+  logInfo("🔄 [CACHE] Initializing periodic cache cleanup...");
 
   // Clean up existing duplicates on startup
   setImmediate(() => {
     cleanupExistingDuplicates().catch((error) => {
-      console.error("❌ [CACHE] Startup cleanup failed:", error);
+      logError("❌ [CACHE] Startup cleanup failed:", error);
     });
   });
 
@@ -770,7 +781,7 @@ function initializeCacheCleanup() {
     await cleanupSupabaseCache();
   }, CACHE_STRATEGY.persistent.cleanup_interval);
 
-  console.log("✅ [CACHE] Periodic cleanup initialized");
+  logInfo("✅ [CACHE] Periodic cleanup initialized");
 }
 
 // Heuristic pre-pass for quick memory extraction (1ms)
@@ -1327,22 +1338,20 @@ async function logConversation(conversationData) {
           return;
         }
       } else {
-        console.log(
+        logDebug(
           "📝 [CONVERSATION_LOG] Logged conversation to Supabase:",
           conversationData.timestamp
         );
         return; // Success
       }
     } catch (error) {
-      console.error(
+      logError(
         `❌ [CONVERSATION_LOG] Attempt ${attempt}/${maxRetries} failed:`,
         error.message
       );
 
       if (attempt === maxRetries) {
-        console.error(
-          "❌ [CONVERSATION_LOG] All retry attempts failed, giving up"
-        );
+        logError("❌ [CONVERSATION_LOG] All retry attempts failed, giving up");
         return; // Don't throw error - logging failure shouldn't break the API
       }
 
@@ -1356,10 +1365,10 @@ async function logConversation(conversationData) {
 initializeCacheCleanup();
 
 export default async function handler(req, res) {
-  console.log("🤖 [FINNY] Request received:", req.method);
+  logInfo("🤖 [FINNY] Request received:", req.method);
 
   if (req.method !== "POST") {
-    console.log("❌ [FINNY] Method not allowed:", req.method);
+    logWarn("❌ [FINNY] Method not allowed:", req.method);
     return res.status(405).json({ error: "Method not allowed" });
   }
 
@@ -1367,9 +1376,9 @@ export default async function handler(req, res) {
   const wantsStreaming = req.body.stream === true;
 
   const { action, message, context, classification, ...otherParams } = req.body;
-  console.log("📝 [FINNY] Action:", action);
+  logInfo("📝 [FINNY] Action:", action);
   // Avoid logging full message/context to reduce PII exposure
-  console.log("📊 [FINNY] Context provided:", context ? "Yes" : "No");
+  logInfo("📊 [FINNY] Context provided:", context ? "Yes" : "No");
 
   if (!action) {
     return res
@@ -1469,39 +1478,37 @@ export default async function handler(req, res) {
       existingContext.last_messages.length === 0
     ) {
       isFirstMessage = true;
-      console.log(
+      logDebug(
         "🔍 [CONTEXT DEBUG] First message in chat session - skipping context loading"
       );
 
       // Pre-populate cache for new chat sessions
-      console.log("🚀 [CACHE] Pre-populating cache for new chat session...");
+      logDebug("🚀 [CACHE] Pre-populating cache for new chat session...");
       setImmediate(() => {
         prePopulateUserCache(finalUserId).catch((error) => {
-          console.error("❌ [CACHE] Pre-population failed:", error);
+          logError("❌ [CACHE] Pre-population failed:", error);
         });
       });
     } else {
       conversationContext = existingContext;
-      console.log(
-        "🔍 [CONTEXT DEBUG] Continuing conversation - loading context"
-      );
+      logDebug("🔍 [CONTEXT DEBUG] Continuing conversation - loading context");
     }
   }
 
-  // 🔍 DEBUG: Log conversation context loading
-  console.log("🔍 [CONTEXT DEBUG] Loading conversation context:");
-  console.log("  - Chat ID:", chatId);
-  console.log("  - User ID:", finalUserId);
-  console.log("  - Is first message:", isFirstMessage);
-  console.log("  - Context loaded:", conversationContext ? "YES" : "NO");
+  // 🔍 DEBUG: Log conversation context loading (debug only)
+  logDebug("🔍 [CONTEXT DEBUG] Loading conversation context:");
+  logDebug("  - Chat ID:", chatId);
+  logDebug("  - User ID:", finalUserId);
+  logDebug("  - Is first message:", isFirstMessage);
+  logDebug("  - Context loaded:", conversationContext ? "YES" : "NO");
   if (conversationContext) {
-    console.log("  - Active topic:", conversationContext.active_topic);
-    console.log(
+    logDebug("  - Active topic:", conversationContext.active_topic);
+    logDebug(
       "  - Last entity:",
       JSON.stringify(conversationContext.last_entity)
     );
-    console.log("  - Pending action:", conversationContext.pending_action);
-    console.log(
+    logDebug("  - Pending action:", conversationContext.pending_action);
+    logDebug(
       "  - Last messages count:",
       conversationContext.last_messages?.length || 0
     );
@@ -1871,7 +1878,7 @@ async function handleAsk(
   classificationResult = null,
   conversationContext = null
 ) {
-  console.log("🔍 [FINNY] Starting ask handler for message:", message);
+  logInfo("🔍 [FINNY] Starting ask handler for message:", message);
   const startTime = Date.now();
   const timings = {
     user_data_ms: 0,
@@ -1888,7 +1895,7 @@ async function handleAsk(
     const userId = context?.user_id;
 
     if (!userId) {
-      console.log("❌ [FINNY] No user_id provided in context");
+      logWarn("❌ [FINNY] No user_id provided in context");
       return {
         message: cleanResponseFormatting(
           "I need to know who you are to provide personalized advice. Please try again."
@@ -1898,12 +1905,12 @@ async function handleAsk(
     }
 
     // 2) NEW: Use deterministic context planner
-    console.log("🎯 [FINNY] Using deterministic context planner");
+    logDebug("🎯 [FINNY] Using deterministic context planner");
     const slots = extractSlots(message);
     const needs = planNeeds(slots, message);
 
-    console.log("🎯 [FINNY] Extracted slots:", slots);
-    console.log("🎯 [FINNY] Planned needs:", needs);
+    logDebug("🎯 [FINNY] Extracted slots:", slots);
+    logInfo("🎯 [FINNY] Planned needs:", needs);
 
     // 2.1) Check if web search is needed
     let webResults = [];
@@ -1914,10 +1921,10 @@ async function handleAsk(
       // Try to retrieve from cache
       const cachedClassification = getCachedClassification(message);
       if (cachedClassification) {
-        console.log("✅ [FINNY] Retrieved classification from cache");
+        logDebug("✅ [FINNY] Retrieved classification from cache");
         classificationResult = cachedClassification;
       } else {
-        console.log(
+        logDebug(
           "⚠️ [FINNY] No classification result passed and not in cache, using keyword fallback"
         );
       }
@@ -1927,14 +1934,14 @@ async function handleAsk(
     const needsWeb =
       classificationResult?.needs_web || detectWebSearchNeeded(message, slots);
 
-    console.log("🌍 [FINNY] Web search decision:", {
+    logInfo("🌍 [FINNY] Web search decision:", {
       classification_needs_web: classificationResult?.needs_web,
       keyword_fallback: detectWebSearchNeeded(message, slots),
       final_decision: needsWeb,
     });
 
     if (needsWeb) {
-      console.log("🌍 [FINNY] Web search needed, fetching fresh data...");
+      logInfo("🌍 [FINNY] Web search needed, fetching fresh data...");
       const webStartTime = Date.now();
 
       try {
@@ -1948,7 +1955,7 @@ async function handleAsk(
         } else if (enhancedData && enhancedData.queries) {
           // Multiple queries - search in parallel (limited to avoid rate limiting)
           const symbols = enhancedData.queries.map((q) => q.split(" ")[0]);
-          console.log(
+          logDebug(
             `🔍 [FINNY] Performing ${enhancedData.queries.length} parallel searches for:`,
             symbols
           );
@@ -1966,14 +1973,14 @@ async function handleAsk(
                 index === self.findIndex((r) => r.url === result.url)
             );
 
-          console.log(
+          logInfo(
             `✅ [FINNY] Combined ${searchResults.length} searches into ${webResults.length} unique results`
           );
 
           // Add user prompt to context for AI response
           if (enhancedData.userPrompt) {
             context.userPrompt = enhancedData.userPrompt;
-            console.log(
+            logDebug(
               "🔍 [FINNY] Added user prompt to context:",
               enhancedData.userPrompt
             );
@@ -1993,10 +2000,10 @@ async function handleAsk(
           console.log(
             `✅ [FINNY] Web search completed: ${webResults.length} results`
           );
-          console.log("📄 [FINNY] Web summary for prompt:", webSummary);
+          logDebug("📄 [FINNY] Web summary for prompt:", webSummary);
           toolsUsed.push("brave-search");
         } else {
-          console.log("⚠️ [FINNY] Web search returned no results");
+          logInfo("⚠️ [FINNY] Web search returned no results");
         }
       } catch (error) {
         console.error("❌ [FINNY] Web search failed:", error);
@@ -2011,7 +2018,7 @@ async function handleAsk(
       message.toLowerCase().includes("latest");
 
     if (forceRefresh) {
-      console.log("🔄 [FINNY] Force refresh requested, clearing cache...");
+      logInfo("🔄 [FINNY] Force refresh requested, clearing cache...");
       await forceRefreshUserData(userId);
     }
 
@@ -2022,22 +2029,22 @@ async function handleAsk(
       slots
     );
 
-    console.log("📦 [FINNY] Context packs built:", Object.keys(packs));
-    console.log("⚠️ [FINNY] Data gaps:", gaps);
+    logInfo("📦 [FINNY] Context packs built:", Object.keys(packs));
+    logInfo("⚠️ [FINNY] Data gaps:", gaps);
 
     // 3.5) Check if this is a stock query after building context packs
-    console.log(
+    logDebug(
       "🔍 [STOCK_ROUTING] Checking if message looks like stock query:",
       message
     );
     const isStockQuery = looksLikeStockQuery(message);
-    console.log("🔍 [STOCK_ROUTING] Result:", isStockQuery);
+    logDebug("🔍 [STOCK_ROUTING] Result:", isStockQuery);
 
     if (isStockQuery) {
       try {
         // Use the built context packs for stock queries
-        console.log("🔍 [STOCK] Using built context packs for stock analysis");
-        console.log("🔍 [STOCK] Available packs:", Object.keys(packs));
+        logDebug("🔍 [STOCK] Using built context packs for stock analysis");
+        logDebug("🔍 [STOCK] Available packs:", Object.keys(packs));
 
         // Get user context for personalization
         const userMemory = await loadUserMemory(userId);
@@ -2056,17 +2063,15 @@ async function handleAsk(
 
         // Try deep query first
         if (looksLikeStockDeepQuery(message)) {
-          console.log(
-            "🔍 [STOCK] Deep query detected, using advanced analysis"
-          );
+          logDebug("🔍 [STOCK] Deep query detected, using advanced analysis");
           stockPlan = await planStockRequest(message);
-          console.log("🔍 [STOCK] Stock plan result:", stockPlan);
+          logDebug("🔍 [STOCK] Stock plan result:", stockPlan);
           const exec = await executeStockPlan(stockPlan || {}, message);
-          console.log("🔍 [STOCK] Execute result:", exec);
+          logDebug("🔍 [STOCK] Execute result:", exec);
           if (!exec.error && exec.data?.current != null) {
             stockData = exec;
           } else {
-            console.log(
+            logDebug(
               "🔍 [STOCK] Stock plan failed, falling back to simple query"
             );
           }
@@ -2488,7 +2493,7 @@ async function handleAsk(
     system = system + "\n\n" + additionalSections.join("\n");
 
     // Build context from packs
-    console.log("🔍 [CONTEXT] Building context from packs:", {
+    logDebug("🔍 [CONTEXT] Building context from packs:", {
       packsKeys: Object.keys(packs),
       hasBase: !!packs.base,
       baseKeys: packs.base ? Object.keys(packs.base) : [],
@@ -2496,7 +2501,7 @@ async function handleAsk(
     const contextLines = [contextHeader];
 
     if (packs.base) {
-      console.log("🔍 [CONTEXT] Building context from packs.base:", {
+      logDebug("🔍 [CONTEXT] Building context from packs.base:", {
         hasBase: !!packs.base,
         baseKeys: Object.keys(packs.base || {}),
         netWorth: packs.base?.netWorth,
@@ -2653,7 +2658,7 @@ async function handleAsk(
     }
 
     const contextNote = contextLines.join("\n");
-    console.log("🔍 [FINNY] Context note:", contextNote);
+    logDebug("🔍 [FINNY] Context note:", contextNote);
 
     // 5) Parallel processing: Main response + Memory extraction
     const llmT0 = Date.now();
@@ -2688,26 +2693,20 @@ async function handleAsk(
     ]);
 
     // 🔍 DEBUG: Log context extraction after LLM call
-    console.log("🔍 [CONTEXT DEBUG] After LLM call:");
-    console.log("  - Message:", message);
-    console.log("  - Context provided:", contextNote ? "YES" : "NO");
+    logDebug("🔍 [CONTEXT DEBUG] After LLM call:");
+    logDebug("  - Message:", message);
+    logDebug("  - Context provided:", contextNote ? "YES" : "NO");
     if (contextNote) {
-      console.log(
-        "  - Context content:",
-        contextNote.substring(0, 200) + "..."
-      );
+      logDebug("  - Context content:", contextNote.substring(0, 200) + "...");
     }
-    console.log(
+    logDebug(
       "  - Conversation context loaded:",
       context?.conversationContext ? "YES" : "NO"
     );
     if (context?.conversationContext) {
-      console.log(
-        "  - Active topic:",
-        context.conversationContext.active_topic
-      );
-      console.log("  - Last entity:", context.conversationContext.last_entity);
-      console.log(
+      logDebug("  - Active topic:", context.conversationContext.active_topic);
+      logDebug("  - Last entity:", context.conversationContext.last_entity);
+      logDebug(
         "  - Pending action:",
         context.conversationContext.pending_action
       );
@@ -2748,7 +2747,7 @@ async function handleAsk(
         );
     } else {
       memoryExtraction = [];
-      console.log("🧠 [MEMORY] Skipping extraction (gates not satisfied)");
+      logDebug("🧠 [MEMORY] Skipping extraction (gates not satisfied)");
     }
 
     timings.llm_ms = Date.now() - llmT0;
@@ -2772,16 +2771,16 @@ async function handleAsk(
 
     // Save memories (skip when none)
     if (memoryExtraction.length > 0) {
-      console.log(
+      logDebug(
         `🧠 [FINNY] Prepared ${memoryExtraction.length} memory candidates`
       );
       try {
         await saveMemoryCandidates(context?.user_id, memoryExtraction);
       } catch (error) {
-        console.log("🧠 [FINNY] Memory save failed:", error?.message);
+        logError("🧠 [FINNY] Memory save failed:", error?.message);
       }
     } else {
-      console.log("🧠 [FINNY] No memories to save");
+      logDebug("🧠 [FINNY] No memories to save");
     }
 
     // Clean any markdown formatting from the response
@@ -3547,7 +3546,7 @@ async function buildContextPacks(userId, needs, slots) {
   try {
     // OPTIMIZED: Pre-validate needs and slots to avoid unnecessary work
     if (!userId || !needs || needs.length === 0) {
-      console.log("⚠️ [FINNY] No valid needs provided, returning empty packs");
+      logWarn("⚠️ [FINNY] No valid needs provided, returning empty packs");
       return {
         packs,
         gaps,
@@ -3556,15 +3555,15 @@ async function buildContextPacks(userId, needs, slots) {
     }
 
     // OPTIMIZATION: Check for pre-built context first
-    console.log("🔍 [FINNY] Checking for pre-built context...");
+    logDebug("🔍 [FINNY] Checking for pre-built context...");
     const remainingNeeds = [];
 
     for (const need of needs) {
       const cacheType = NEED_CONFIG[need]?.cacheType || need;
       const cachedData = await getCachedUserData(cacheType, userId);
       if (cachedData) {
-        console.log(`✅ [FINNY] Using pre-built context for: ${need}`);
-        console.log(`🔍 [FINNY] Pre-built data for ${need}:`, {
+        logInfo(`✅ [FINNY] Using pre-built context for: ${need}`);
+        logDebug(`🔍 [FINNY] Pre-built data for ${need}:`, {
           hasData: !!cachedData,
           dataKeys: Object.keys(cachedData || {}),
           isCached: true,
@@ -3573,14 +3572,14 @@ async function buildContextPacks(userId, needs, slots) {
         const packKey = NEED_CONFIG[need]?.packKey || need;
         packs[packKey] = cachedData;
       } else {
-        console.log(`⚠️ [FINNY] No pre-built context for: ${need}, will fetch`);
+        logDebug(`⚠️ [FINNY] No pre-built context for: ${need}, will fetch`);
         remainingNeeds.push(need);
       }
     }
 
     // If all contexts are pre-built, return early
     if (remainingNeeds.length === 0) {
-      console.log("🎯 [FINNY] All contexts pre-built, returning cached data");
+      logInfo("🎯 [FINNY] All contexts pre-built, returning cached data");
       return {
         packs,
         gaps,
@@ -3590,7 +3589,7 @@ async function buildContextPacks(userId, needs, slots) {
       };
     }
 
-    console.log(
+    logInfo(
       `🚀 [FINNY] Building context packs for remaining needs: [${remainingNeeds.join(
         ", "
       )}]`
@@ -3604,9 +3603,7 @@ async function buildContextPacks(userId, needs, slots) {
     );
 
     if (fetchOperations.length === 0) {
-      console.log(
-        "⚠️ [FINNY] No fetch operations needed, returning empty packs"
-      );
+      logWarn("⚠️ [FINNY] No fetch operations needed, returning empty packs");
       return {
         packs,
         gaps,
@@ -3615,7 +3612,7 @@ async function buildContextPacks(userId, needs, slots) {
     }
 
     // OPTIMIZED: Execute all operations in parallel with better error handling
-    console.log(
+    logInfo(
       `🚀 [FINNY] Executing ${fetchOperations.length} optimized fetch operations in parallel...`
     );
 
@@ -3624,12 +3621,12 @@ async function buildContextPacks(userId, needs, slots) {
     );
 
     const fetchTime = Date.now() - startTime;
-    console.log(`✅ [FINNY] All fetch operations completed in ${fetchTime}ms`);
+    logInfo(`✅ [FINNY] All fetch operations completed in ${fetchTime}ms`);
 
     // OPTIMIZED: Process results with better error handling and caching
     processFetchResults(results, fetchOperations, packs, gaps);
   } catch (error) {
-    console.error("❌ [FINNY] Error building context packs:", error);
+    logError("❌ [FINNY] Error building context packs:", error);
     // Add all needs as gaps if there's a critical error
     needs.forEach((need) => {
       if (!gaps.includes(need)) gaps.push(need);
@@ -4658,16 +4655,16 @@ function detectGoalIntent(message, conversationContext) {
 }
 
 async function handlePrebuildContext(userId) {
-  console.log("🚀 [PREBUILD] Starting context pre-building for user:", userId);
+  logInfo("🚀 [PREBUILD] Starting context pre-building for user:", userId);
   const startTime = Date.now();
 
   try {
     // Build base context pack first (highest priority)
-    console.log("📦 [PREBUILD] Building base context pack...");
+    logInfo("📦 [PREBUILD] Building base context pack...");
     const baseContext = await buildContextPacks(userId, ["summary_min"], {});
     const basePack =
       baseContext?.packs?.[NEED_CONFIG.summary_min.packKey] || null;
-    console.log("🔍 [PREBUILD] Base context result:", {
+    logInfo("🔍 [PREBUILD] Base context result:", {
       hasBaseContext: !!baseContext,
       hasPacks: !!baseContext?.packs,
       hasSummaryMin: !!basePack,
@@ -4684,15 +4681,15 @@ async function handlePrebuildContext(userId) {
           ttl: 5 * 60 * 1000,
         }
       );
-      console.log("✅ [PREBUILD] Base context cached successfully");
-      console.log("🔍 [PREBUILD] Base context data:", {
+      logInfo("✅ [PREBUILD] Base context cached successfully");
+      logInfo("🔍 [PREBUILD] Base context data:", {
         hasNetWorth: !!basePack.netWorth,
         hasTransactions: !!basePack.recentTransactions,
         hasSpendByCategory: !!basePack.spendByCategory,
       });
     } else {
-      console.log("❌ [PREBUILD] Base context failed to build or cache");
-      console.log("🔍 [PREBUILD] Debug info:", {
+      logWarn("❌ [PREBUILD] Base context failed to build or cache");
+      logDebug("🔍 [PREBUILD] Debug info:", {
         baseContext: baseContext,
         packs: baseContext?.packs,
         basePack: basePack,
@@ -4700,7 +4697,7 @@ async function handlePrebuildContext(userId) {
     }
 
     // Build other context packs in background (after base is ready)
-    console.log("🔄 [PREBUILD] Starting background context building...");
+    logInfo("🔄 [PREBUILD] Starting background context building...");
 
     // Build investment context
     try {
@@ -4718,16 +4715,16 @@ async function handlePrebuildContext(userId) {
           investPack,
           { ttl: 5 * 60 * 1000 }
         );
-        console.log("✅ [PREBUILD] Investment context cached");
-        console.log("🔍 [PREBUILD] Investment context data:", {
+        logInfo("✅ [PREBUILD] Investment context cached");
+        logInfo("🔍 [PREBUILD] Investment context data:", {
           hasHoldings: !!investPack.holdings,
           holdingsCount: investPack.holdings?.length || 0,
         });
       } else {
-        console.log("❌ [PREBUILD] Investment context failed to build");
+        logWarn("❌ [PREBUILD] Investment context failed to build");
       }
     } catch (error) {
-      console.error("❌ [PREBUILD] Investment context failed:", error);
+      logError("❌ [PREBUILD] Investment context failed:", error);
     }
 
     // Build goals context
@@ -4746,16 +4743,16 @@ async function handlePrebuildContext(userId) {
           goalsPack,
           { ttl: 5 * 60 * 1000 }
         );
-        console.log("✅ [PREBUILD] Goals context cached");
-        console.log("🔍 [PREBUILD] Goals context data:", {
+        logInfo("✅ [PREBUILD] Goals context cached");
+        logInfo("🔍 [PREBUILD] Goals context data:", {
           hasGoals: !!goalsPack.goals,
           goalsCount: goalsPack.goals?.length || 0,
         });
       } else {
-        console.log("❌ [PREBUILD] Goals context failed to build");
+        logWarn("❌ [PREBUILD] Goals context failed to build");
       }
     } catch (error) {
-      console.error("❌ [PREBUILD] Goals context failed:", error);
+      logError("❌ [PREBUILD] Goals context failed:", error);
     }
 
     // Build cashflow context
@@ -4774,16 +4771,16 @@ async function handlePrebuildContext(userId) {
           cashflowPack,
           { ttl: 5 * 60 * 1000 }
         );
-        console.log("✅ [PREBUILD] Cashflow context cached");
-        console.log("🔍 [PREBUILD] Cashflow context data:", {
+        logInfo("✅ [PREBUILD] Cashflow context cached");
+        logInfo("🔍 [PREBUILD] Cashflow context data:", {
           hasCashflow: !!cashflowPack.cashflow,
           cashflowMonths: cashflowPack.cashflow?.length || 0,
         });
       } else {
-        console.log("❌ [PREBUILD] Cashflow context failed to build");
+        logWarn("❌ [PREBUILD] Cashflow context failed to build");
       }
     } catch (error) {
-      console.error("❌ [PREBUILD] Cashflow context failed:", error);
+      logError("❌ [PREBUILD] Cashflow context failed:", error);
     }
 
     // Build spend context for last 30 days
@@ -4802,22 +4799,20 @@ async function handlePrebuildContext(userId) {
             ttl: 5 * 60 * 1000,
           }
         );
-        console.log("✅ [PREBUILD] Spend context cached");
-        console.log("🔍 [PREBUILD] Spend context data:", {
+        logInfo("✅ [PREBUILD] Spend context cached");
+        logInfo("🔍 [PREBUILD] Spend context data:", {
           hasSpendSummary: !!spendPack.total,
           totalSpend: spendPack.total || 0,
         });
       } else {
-        console.log("❌ [PREBUILD] Spend context failed to build");
+        logWarn("❌ [PREBUILD] Spend context failed to build");
       }
     } catch (error) {
-      console.error("❌ [PREBUILD] Spend context failed:", error);
+      logError("❌ [PREBUILD] Spend context failed:", error);
     }
 
     const totalTime = Date.now() - startTime;
-    console.log(
-      `🎯 [PREBUILD] Context pre-building completed in ${totalTime}ms`
-    );
+    logInfo(`🎯 [PREBUILD] Context pre-building completed in ${totalTime}ms`);
 
     return {
       success: true,
@@ -4833,7 +4828,7 @@ async function handlePrebuildContext(userId) {
       buildTime: totalTime,
     };
   } catch (error) {
-    console.error("❌ [PREBUILD] Context pre-building failed:", error);
+    logError("❌ [PREBUILD] Context pre-building failed:", error);
     return {
       success: false,
       message:
