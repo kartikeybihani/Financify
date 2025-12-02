@@ -25,7 +25,10 @@ import { ChatMessageComponent } from "@/src/components/chat/ChatMessage";
 import { NudgeGrid } from "@/src/components/chat/NudgeGrid";
 import { useChatContext } from "@/src/contexts/ChatContext";
 import { supabase } from "@/src/lib/supabase/supabase";
-import { getFreshAccessToken, authenticatedFetch } from "@/src/utils/auth/authToken";
+import {
+  getFreshAccessToken,
+  authenticatedFetch,
+} from "@/src/utils/auth/authToken";
 import styles from "@/src/styles/chatStyles";
 import TypingIndicator from "@/src/components/chat/TypingIndicator";
 import ConversationStartersModal from "@/src/components/chat/ConversationStartersModal";
@@ -263,25 +266,39 @@ export default function ChatScreen() {
     outputRange: [1, 1.1, 1],
   });
 
-  // Trigger context pre-building when user enters chat tab
+  /**
+   * Triggers context pre-building when the user enters the chat tab.
+   *
+   * This function pre-fetches user context data in the background to improve
+   * response times for the first message. It:
+   * - Uses getFreshAccessToken() instead of getUser() to avoid hangs
+   * - Makes an API call to prebuild context (non-blocking)
+   * - Handles errors gracefully without affecting the UI
+   *
+   * The pre-build happens in the background and doesn't block the chat interface.
+   * If it fails, the app falls back to on-demand context building when needed.
+   */
   const triggerContextPrebuild = async () => {
+    const callId = Math.random().toString(36).substring(2, 8);
+    const startTime = Date.now();
     try {
-      console.log("🚀 [CONTEXT_PREBUILD] Starting context pre-building...");
+      console.log(
+        `🚀 [CONTEXT_PREBUILD] [${callId}] Starting context pre-building...`
+      );
 
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user?.id) {
-        console.log("⚠️ [CONTEXT_PREBUILD] No user ID, skipping pre-build");
-        return;
-      }
-
-      // Get fresh access token (always fetches latest, never uses stale state)
+      console.log(
+        `🚀 [CONTEXT_PREBUILD] [${callId}] Getting fresh access token (skipping getUser() to avoid hangs)...`
+      );
+      const tokenStartTime = Date.now();
       const accessToken = await getFreshAccessToken();
+      const tokenDuration = Date.now() - tokenStartTime;
+      console.log(
+        `🚀 [CONTEXT_PREBUILD] [${callId}] getFreshAccessToken() completed in ${tokenDuration}ms - hasToken: ${!!accessToken}`
+      );
 
       if (!accessToken) {
         console.log(
-          "⚠️ [CONTEXT_PREBUILD] No access token, skipping pre-build"
+          `⚠️ [CONTEXT_PREBUILD] [${callId}] No access token, skipping pre-build`
         );
         return;
       }
@@ -290,8 +307,10 @@ export default function ChatScreen() {
         process.env.EXPO_PUBLIC_APP_BASE_URL ||
         "https://financify-rose.vercel.app";
 
-      // Call the pre-build API in the background (don't await)
-      // Use authenticatedFetch for automatic retry on 401 errors
+      console.log(
+        `🚀 [CONTEXT_PREBUILD] [${callId}] Making API call to ${BASE_URL}/api/finny...`
+      );
+      const apiStartTime = Date.now();
       authenticatedFetch(`${BASE_URL}/api/finny`, {
         method: "POST",
         body: JSON.stringify({
@@ -299,23 +318,34 @@ export default function ChatScreen() {
         }),
       })
         .then(async (response) => {
+          const apiDuration = Date.now() - apiStartTime;
+          const totalDuration = Date.now() - startTime;
           if (response.ok) {
             const result = await response.json();
             console.log(
-              "✅ [CONTEXT_PREBUILD] Context pre-built successfully:",
+              `✅ [CONTEXT_PREBUILD] [${callId}] Context pre-built successfully in ${apiDuration}ms (total: ${totalDuration}ms):`,
               result
             );
           } else {
             console.log(
-              "⚠️ [CONTEXT_PREBUILD] Pre-build failed, will fallback to on-demand"
+              `⚠️ [CONTEXT_PREBUILD] [${callId}] Pre-build failed in ${apiDuration}ms (total: ${totalDuration}ms), status: ${response.status}, will fallback to on-demand`
             );
           }
         })
         .catch((error) => {
-          console.log("⚠️ [CONTEXT_PREBUILD] Pre-build error:", error);
+          const apiDuration = Date.now() - apiStartTime;
+          const totalDuration = Date.now() - startTime;
+          console.log(
+            `⚠️ [CONTEXT_PREBUILD] [${callId}] Pre-build error after ${apiDuration}ms (total: ${totalDuration}ms):`,
+            error
+          );
         });
     } catch (error) {
-      console.log("⚠️ [CONTEXT_PREBUILD] Pre-build setup error:", error);
+      const totalDuration = Date.now() - startTime;
+      console.log(
+        `⚠️ [CONTEXT_PREBUILD] [${callId}] Pre-build setup error after ${totalDuration}ms:`,
+        error
+      );
     }
   };
 

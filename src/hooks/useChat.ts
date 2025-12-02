@@ -7,6 +7,16 @@ import logger from '@/src/utils/core/logger';
 import { supabase } from '@/src/lib/supabase/supabase';
 import { getFreshAccessToken, authenticatedFetch } from '@/src/utils/auth/authToken';
 
+/**
+ * Creates a promise that rejects after a specified timeout duration.
+ * Used to prevent infinite hangs when Supabase operations get stuck.
+ */
+const createTimeoutPromise = (ms: number, message: string): Promise<never> => {
+  return new Promise((_, reject) => {
+    setTimeout(() => reject(new Error(message)), ms);
+  });
+};
+
 // Simple message handling - display messages as single strings
 
 export const useChat = () => {
@@ -726,20 +736,83 @@ export const useChat = () => {
     }
   };
 
+  /**
+   * Handles user messages and generates Finny's response.
+   * 
+   * This is the main function that processes chat messages. It:
+   * - Uses getSession() instead of getUser() to avoid hangs during token refresh
+   * - Classifies the message intent (unless goal flow is active)
+   * - Routes to appropriate handlers (streaming or regular)
+   * - Handles special commands like "clear cache"
+   * 
+   * The use of getSession() is critical - getUser() can hang indefinitely during
+   * token refresh, but getSession() reads from local storage and is much faster.
+   * 
+   * @param messageText - The user's message text
+   * @param startTime - Optional timestamp for performance tracking
+   */
   const handleFinnyResponse = async (messageText: string, startTime?: number) => {
+    const callId = Math.random().toString(36).substring(2, 8);
+    const funcStartTime = Date.now();
+    logger.info(`[CHAT] 💬 handleFinnyResponse START [${callId}] - message: "${messageText.substring(0, 50)}${messageText.length > 50 ? '...' : ''}"`);
+    
     const BASE_URL = process.env.EXPO_PUBLIC_APP_BASE_URL || "https://financify-rose.vercel.app";
     try {
-      // Get user_id for the API calls
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user?.id) {
+      logger.info(`[CHAT] 💬 [${callId}] Step 1: Getting session and token...`);
+      
+      // First, get fresh access token with timeout protection (validates auth is working)
+      const tokenStartTime = Date.now();
+      const accessToken = await getFreshAccessToken();
+      const tokenDuration = Date.now() - tokenStartTime;
+      logger.info(`[CHAT] 💬 [${callId}] getFreshAccessToken() completed in ${tokenDuration}ms - hasToken: ${!!accessToken}`);
+      
+      if (!accessToken) {
+        logger.warn(`[CHAT] ⚠️ [${callId}] No access token, returning early`);
+        pushChat("finny", "Please log in to get personalized financial advice.");
+        return;
+      }
+      
+      // Get session with timeout protection to extract user ID
+      const GET_SESSION_TIMEOUT_MS = 2000;
+      const sessionStartTime = Date.now();
+      let userId: string;
+      try {
+        const getSessionPromise = supabase.auth.getSession();
+        const timeoutPromise = createTimeoutPromise(
+          GET_SESSION_TIMEOUT_MS,
+          `getSession() timeout after ${GET_SESSION_TIMEOUT_MS}ms`
+        );
+        
+        const result = await Promise.race([getSessionPromise, timeoutPromise]);
+        
+        // Type guard: timeoutPromise always rejects, so if we reach here, result is from getSessionPromise
+        if (result instanceof Error) {
+          throw result;
+        }
+        
+        const { data: { session }, error: sessionError } = result;
+        const sessionDuration = Date.now() - sessionStartTime;
+        logger.info(`[CHAT] 💬 [${callId}] getSession() completed in ${sessionDuration}ms - hasSession: ${!!session}, hasUser: ${!!session?.user?.id}`);
+        
+        if (!session?.user?.id || sessionError) {
+          logger.warn(`[CHAT] ⚠️ [${callId}] No session or user ID, returning early`);
+          pushChat("finny", "Please log in to get personalized financial advice.");
+          return;
+        }
+        
+        userId = session.user.id;
+      } catch (timeoutError: any) {
+        const sessionDuration = Date.now() - sessionStartTime;
+        if (timeoutError?.message?.includes('timeout')) {
+          logger.error(`[CHAT] ❌ [${callId}] getSession() TIMEOUT after ${sessionDuration}ms - Supabase may be stuck`);
+        } else {
+          logger.error(`[CHAT] ❌ [${callId}] Unexpected error in getSession():`, timeoutError);
+        }
         pushChat("finny", "Please log in to get personalized financial advice.");
         return;
       }
 
-      // Use streaming for better UX - implemented with XMLHttpRequest
       const useStreaming = true;
-
-      // Check if user wants to clear cache
       if (messageText.toLowerCase().includes("clear cache") || 
           messageText.toLowerCase().includes("refresh data")) {
         setProgressStatus("Clearing cache and refreshing data...");
@@ -756,7 +829,7 @@ export const useChat = () => {
             method: "POST",
             body: JSON.stringify({
               mode: "clear_cache",
-              user_id: user.id,
+              user_id: userId,
             }),
           });
 
@@ -775,15 +848,13 @@ export const useChat = () => {
       // Show initial progress
       setProgressStatus("Brewing up some financial wisdom...");
 
-      // Get fresh access token for all requests in this flow
-      // Always fetch fresh to avoid stale token issues during TOKEN_REFRESHED
-      const accessToken = await getFreshAccessToken();
-      if (!accessToken) {
-        pushChat("finny", "Please log in to get personalized financial advice.");
-        return;
-      }
-
       // 1) First classify the message to determine intent (skip if goal flow active)
+      if (goalFlow?.active) {
+        logger.info(`[CHAT] 💬 [${callId}] Skipping classification (goal flow active)`);
+      } else {
+        logger.info(`[CHAT] 💬 [${callId}] Step 3: Classifying message...`);
+      }
+      const classifyStartTime = Date.now();
       const classifyRes = goalFlow?.active ? null : await authenticatedFetch(`${BASE_URL}/api/finny`, {
         method: "POST",
         body: JSON.stringify({
@@ -796,7 +867,12 @@ export const useChat = () => {
       });
 
       const classifyData = classifyRes ? await classifyRes.json() : { intent: "goal" };
-      if (classifyRes) logger.info("🎯 [CHAT] Classification result:", classifyData);
+      const classifyDuration = Date.now() - classifyStartTime;
+      if (classifyRes) {
+        logger.info(`[CHAT] 💬 [${callId}] Classification completed in ${classifyDuration}ms - result:`, classifyData);
+      } else {
+        logger.info(`[CHAT] 💬 [${callId}] Classification skipped (goal flow active)`);
+      }
 
       // Update progress based on intent
       if (classifyData.intent === "off_topic") {
@@ -843,7 +919,9 @@ export const useChat = () => {
 
       // 2) Route to appropriate handler based on classification
       // Use XMLHttpRequest for streaming, fetch for regular responses
+      logger.info(`[CHAT] 💬 [${callId}] Step 4: Routing to handler (streaming: ${useStreaming})...`);
       if (useStreaming) {
+        logger.info(`[CHAT] 💬 [${callId}] Using XMLHttpRequest for streaming`);
         if (STREAM_DEBUG) {
           console.log("🔄 [STREAMING] Using XMLHttpRequest for streaming");
         }
@@ -864,10 +942,18 @@ export const useChat = () => {
               stream: true
             };
 
+        const streamStartTime = Date.now();
         try {
-          await handleStreamingResponseXHR(`${BASE_URL}/api/finny`, requestBody, accessToken);
+          logger.info(`[CHAT] 💬 [${callId}] Starting streaming request...`);
+          await handleStreamingResponseXHR(`${BASE_URL}/api/finny`, requestBody, "");
+          const streamDuration = Date.now() - streamStartTime;
+          const totalDuration = Date.now() - funcStartTime;
+          logger.info(`[CHAT] ✅ [${callId}] Streaming completed in ${streamDuration}ms (total: ${totalDuration}ms)`);
           return; // Done with streaming, exit early
         } catch (streamError) {
+          const streamDuration = Date.now() - streamStartTime;
+          const totalDuration = Date.now() - funcStartTime;
+          logger.error(`[CHAT] ❌ [${callId}] Streaming failed after ${totalDuration}ms:`, streamError);
           console.error("❌ [STREAMING] Streaming failed:", streamError);
           pushChat("finny", "Something went wrong. Try again later.");
           setProgressStatus("");
@@ -877,7 +963,6 @@ export const useChat = () => {
       }
 
       // Regular fetch for non-streaming requests
-      // Note: accessToken is already fetched fresh above
       let res;
       if (!goalFlow?.active && classifyData.intent === "ask_personalized") {
         res = await authenticatedFetch(`${BASE_URL}/api/finny`, {
@@ -976,10 +1061,9 @@ export const useChat = () => {
         await pushChatWithDelay("finny", message);
       }
     } catch (error) {
-      logger.error("AI error:", error);
+      const totalDuration = Date.now() - funcStartTime;
+      logger.error(`[CHAT] ❌ [${callId}] handleFinnyResponse ERROR after ${totalDuration}ms:`, error);
       setProgressStatus(""); // Clear progress status
-      
-      
       pushChat("finny", "Something went wrong. Try again later.");
     }
   };
