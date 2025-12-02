@@ -3,7 +3,7 @@ import { client } from "../app/plaidClient.js";
 import { supabase } from "../lib/api/supabase.js";
 import {
   mapPlaidToAppCategory,
-  isInternalTransferCategory,
+  isInternalTransfer,
 } from "./utils/plaidCategoryMapper.js";
 import { verifyItemOwnership } from "../lib/api/auth.js";
 import {
@@ -149,10 +149,13 @@ export default async function handler(req, res) {
         // Keep original category for reference (prefer detailed, fallback to primary)
         const category = detailed || primary || null;
 
-        // Check if this is an internal transfer based on Plaid categories
-        const detectedAsInternalTransfer = isInternalTransferCategory(
+        // Check if this is an internal transfer using both Plaid categories and transaction names/descriptions
+        const detectedAsInternalTransfer = isInternalTransfer(
           primary,
-          detailed
+          detailed,
+          txn.name || null,
+          txn.merchant_name || null,
+          txn.original_description || null
         );
 
         // Apply comprehensive category mapping using both primary and detailed

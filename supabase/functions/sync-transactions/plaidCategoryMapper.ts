@@ -186,6 +186,82 @@ function parseSubcategory(detailed: string | null | undefined): string | null {
 }
 
 /**
+ * Check if transaction name/description indicates an internal transfer
+ */
+function isInternalTransferByName(
+  name: string | null | undefined,
+  merchantName: string | null | undefined,
+  originalDescription: string | null | undefined
+): boolean {
+  // Combine all text fields for pattern matching
+  const combinedText = [
+    name || "",
+    merchantName || "",
+    originalDescription || "",
+  ]
+    .join(" ")
+    .toLowerCase()
+    .trim();
+
+  if (!combinedText) {
+    return false;
+  }
+
+  // Patterns that strongly indicate internal transfers
+  const internalTransferPatterns = [
+    // Credit card payment patterns
+    /payment\s+thank\s+you/i,
+    /payment\s+thankyou/i,
+    /thank\s+you\s+for\s+payment/i,
+    /credit\s+card\s+payment/i,
+    /card\s+payment/i,
+    /cc\s+payment/i,
+
+    // Autopay patterns
+    /autopay/i,
+    /auto\s*[-]?\s*pay/i,
+    /auto\s*payment/i,
+    /automatic\s+payment/i,
+
+    // ACH patterns
+    /ach\s+payment/i,
+    /ach\s+transfer/i,
+    /ach\s+debit/i,
+    /ach\s+credit/i,
+
+    // Bank transfer patterns (but exclude savings-related)
+    /bank\s+transfer/i,
+    /account\s+transfer/i,
+    /internal\s+transfer/i,
+    /transfer\s+between\s+accounts/i,
+    /account\s+to\s+account/i,
+
+    // Payment received patterns (when it's from yourself)
+    /payment\s+received/i,
+    /payment\s+posted/i,
+
+    // Generic payment patterns that are likely internal
+    /online\s+payment/i,
+    /electronic\s+payment/i,
+    /bill\s+pay\s+payment/i,
+    /billpay/i,
+  ];
+
+  // Check if any pattern matches
+  for (const pattern of internalTransferPatterns) {
+    if (pattern.test(combinedText)) {
+      // Additional check: exclude savings-related transfers
+      // If it explicitly mentions "savings", it's probably a savings transfer, not internal
+      if (!/savings|investment|deposit\s+to\s+savings/i.test(combinedText)) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+/**
  * Check if Plaid category indicates an internal transfer
  */
 export function isInternalTransferCategory(
@@ -232,6 +308,29 @@ export function isInternalTransferCategory(
     ) {
       return true;
     }
+  }
+
+  return false;
+}
+
+/**
+ * Comprehensive internal transfer detection combining category and name-based checks
+ */
+export function isInternalTransfer(
+  primary: string | null | undefined,
+  detailed: string | null | undefined,
+  name: string | null | undefined = null,
+  merchantName: string | null | undefined = null,
+  originalDescription: string | null | undefined = null
+): boolean {
+  // First check Plaid categories (most reliable)
+  if (isInternalTransferCategory(primary, detailed)) {
+    return true;
+  }
+
+  // Then check transaction names/descriptions (catches cases Plaid misses)
+  if (isInternalTransferByName(name, merchantName, originalDescription)) {
+    return true;
   }
 
   return false;

@@ -1,7 +1,7 @@
 /// <reference types="https://deno.land/x/supabase_functions/mod.ts" />
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { mapPlaidToAppCategory, isInternalTransferCategory } from "./plaidCategoryMapper.ts";
+import { mapPlaidToAppCategory, isInternalTransfer } from "./plaidCategoryMapper.ts";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -117,6 +117,7 @@ serve(async (req: Request) => {
         access_token,
         count: 500,
         options: {
+          include_original_description: true,
           include_personal_finance_category: true, // Request Plaid's enhanced categories
         },
       };
@@ -212,8 +213,14 @@ serve(async (req: Request) => {
         // Keep original category for reference (prefer detailed, fallback to primary)
         const category = detailed || primary || null;
         
-        // Check if this is an internal transfer based on Plaid categories
-        const detectedAsInternalTransfer = isInternalTransferCategory(primary, detailed);
+        // Check if this is an internal transfer using both Plaid categories and transaction names/descriptions
+        const detectedAsInternalTransfer = isInternalTransfer(
+          primary,
+          detailed,
+          txn.name || null,
+          txn.merchant_name || null,
+          txn.original_description || null
+        );
         
         // Apply comprehensive category mapping using both primary and detailed
         // (internal transfers will be detected and mapped to INTERNAL_TRANSFER)
