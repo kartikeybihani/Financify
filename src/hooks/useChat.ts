@@ -370,6 +370,9 @@ export const useChat = () => {
     }
   };
 
+  // Toggle for verbose streaming debug logs
+  const STREAM_DEBUG = false;
+
   // Handle streaming response using XMLHttpRequest (works in React Native!)
   // Note: accessToken parameter is kept for backward compatibility but should be fresh
   const handleStreamingResponseXHR = async (url: string, requestBody: any, accessToken: string) => {
@@ -387,7 +390,9 @@ export const useChat = () => {
       let messageId = `finny-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
       let currentEvent = '';
 
-      console.log("🔄 [STREAMING] Starting XMLHttpRequest streaming");
+      if (STREAM_DEBUG) {
+        console.log("🔄 [STREAMING] Starting XMLHttpRequest streaming");
+      }
 
       xhr.open('POST', url, true);
       xhr.setRequestHeader('Content-Type', 'application/json');
@@ -408,7 +413,9 @@ export const useChat = () => {
 
           if (line.startsWith('event: ')) {
             const event = line.slice(7).trim();
-            console.log("📡 [STREAMING] Event:", event);
+            if (STREAM_DEBUG) {
+              console.log("📡 [STREAMING] Event:", event);
+            }
             // Store the event type for the next data line
             currentEvent = event;
             continue;
@@ -420,16 +427,20 @@ export const useChat = () => {
 
             try {
               const data = JSON.parse(dataString);
-              console.log("📦 [STREAMING] Data chunk:", data);
-              console.log("🔍 [STREAMING] Current event:", currentEvent);
-              console.log("🔍 [STREAMING] Data keys:", Object.keys(data));
-              console.log("🔍 [STREAMING] Has actions?", !!data.actions);
-              console.log("🔍 [STREAMING] Has message?", !!data.message);
-              console.log("🔍 [STREAMING] Data type:", data.type);
+              if (STREAM_DEBUG) {
+                console.log("📦 [STREAMING] Data chunk:", data);
+                console.log("🔍 [STREAMING] Current event:", currentEvent);
+                console.log("🔍 [STREAMING] Data keys:", Object.keys(data));
+                console.log("🔍 [STREAMING] Has actions?", !!data.actions);
+                console.log("🔍 [STREAMING] Has message?", !!data.message);
+                console.log("🔍 [STREAMING] Data type:", data.type);
+              }
 
               // Handle complete event (final response with actions)
               if (currentEvent === 'complete') {
-                console.log("🎯 [STREAMING] Complete event received:", data);
+                if (STREAM_DEBUG) {
+                  console.log("🎯 [STREAMING] Complete event received:", data);
+                }
                 const finalMessage = data.message || currentMessage;
                 if (finalMessage && typeof finalMessage === 'string' && finalMessage.trim()) {
                   setChatMessages(prev => {
@@ -444,7 +455,9 @@ export const useChat = () => {
                         ...(data.actions && { actions: data.actions }),
                         ...(data.type && { type: data.type })
                       };
-                      console.log("🔄 [STREAMING] Updated existing message with complete response:", updated[existingIndex]);
+                      if (STREAM_DEBUG) {
+                        console.log("🔄 [STREAMING] Updated existing message with complete response:", updated[existingIndex]);
+                      }
                       return updated;
                     } else {
                       const completedMessage: ChatMessage = {
@@ -457,7 +470,9 @@ export const useChat = () => {
                         // Preserve actions if present in the complete response
                         ...(data.actions && { actions: data.actions })
                       };
-                      console.log("✨ [STREAMING] Created new message with complete response:", completedMessage);
+                      if (STREAM_DEBUG) {
+                        console.log("✨ [STREAMING] Created new message with complete response:", completedMessage);
+                      }
                       return [...prev, completedMessage];
                     }
                   });
@@ -471,7 +486,9 @@ export const useChat = () => {
               } else if (data.text) {
                 // Stream text chunks with space between
                 currentMessage += (currentMessage ? ' ' : '') + data.text;
-                console.log("📝 [STREAMING] Current message:", currentMessage);
+                if (STREAM_DEBUG) {
+                  console.log("📝 [STREAMING] Current message:", currentMessage);
+                }
                 
                 // Only update if we have actual text content
                 if (currentMessage && currentMessage.trim()) {
@@ -485,7 +502,9 @@ export const useChat = () => {
                         text: currentMessage,
                         isStreaming: true
                       };
-                      console.log("🔄 [STREAMING] Updated existing message:", updated[existingIndex]);
+                      if (STREAM_DEBUG) {
+                        console.log("🔄 [STREAMING] Updated existing message:", updated[existingIndex]);
+                      }
                       return updated;
                     } else {
                       const newMessage: ChatMessage = {
@@ -496,7 +515,9 @@ export const useChat = () => {
                         type: "text" as const,
                         isStreaming: true
                       };
-                      console.log("✨ [STREAMING] Created new message:", newMessage);
+                      if (STREAM_DEBUG) {
+                        console.log("✨ [STREAMING] Created new message:", newMessage);
+                      }
                       return [...prev, newMessage];
                     }
                   });
@@ -504,9 +525,11 @@ export const useChat = () => {
               } else if (data.message) {
                 // Final complete response - handle both text and actions
                 const finalMessage = data.message || currentMessage;
-                console.log("🎯 [STREAMING] Final message:", finalMessage);
-                console.log("🎯 [STREAMING] Actions:", data.actions);
-                console.log("🎯 [STREAMING] Type:", data.type);
+                if (STREAM_DEBUG) {
+                  console.log("🎯 [STREAMING] Final message:", finalMessage);
+                  console.log("🎯 [STREAMING] Actions:", data.actions);
+                  console.log("🎯 [STREAMING] Type:", data.type);
+                }
                 
                 if (finalMessage && typeof finalMessage === 'string' && finalMessage.trim()) {
                   setChatMessages(prev => {
@@ -521,7 +544,9 @@ export const useChat = () => {
                         ...(data.actions && { actions: data.actions }),
                         ...(data.type && { type: data.type })
                       };
-                      console.log("🔄 [STREAMING] Updated existing message with actions:", updated[existingIndex]);
+                      if (STREAM_DEBUG) {
+                        console.log("🔄 [STREAMING] Updated existing message with actions:", updated[existingIndex]);
+                      }
                       return updated;
                     } else {
                       const completedMessage: ChatMessage = {
@@ -534,7 +559,9 @@ export const useChat = () => {
                         // Preserve actions if present in the complete response
                         ...(data.actions && { actions: data.actions })
                       };
-                      console.log("✨ [STREAMING] Created new message with actions:", completedMessage);
+                      if (STREAM_DEBUG) {
+                        console.log("✨ [STREAMING] Created new message with actions:", completedMessage);
+                      }
                       return [...prev, completedMessage];
                     }
                   });
@@ -549,10 +576,12 @@ export const useChat = () => {
 
       xhr.onloadend = () => {
         // Process any remaining data
-        if (buffer.trim()) {
+        if (STREAM_DEBUG && buffer.trim()) {
           console.log("🔚 [STREAMING] Processing final buffer:", buffer);
         }
-        console.log("✅ [STREAMING] Stream completed");
+        if (STREAM_DEBUG) {
+          console.log("✅ [STREAMING] Stream completed");
+        }
         setProgressStatus("");
         setIsTyping(false);
         resolve();
@@ -815,7 +844,9 @@ export const useChat = () => {
       // 2) Route to appropriate handler based on classification
       // Use XMLHttpRequest for streaming, fetch for regular responses
       if (useStreaming) {
-        console.log("🔄 [STREAMING] Using XMLHttpRequest for streaming");
+        if (STREAM_DEBUG) {
+          console.log("🔄 [STREAMING] Using XMLHttpRequest for streaming");
+        }
         const requestBody = !goalFlow?.active && classifyData.intent === "ask_personalized" 
           ? {
               action: "ask",
