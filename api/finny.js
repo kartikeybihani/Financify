@@ -233,6 +233,38 @@ const CACHE_TTL = {
   category_transactions: 30 * 60 * 1000, // 30 minutes
 };
 
+// Centralized mapping from "needs" to pack keys and persistent cache types
+const NEED_CONFIG = {
+  summary_min: {
+    packKey: "base",
+    cacheType: "summary_min",
+  },
+  invest_holdings: {
+    packKey: "invest",
+    cacheType: "investments_all",
+  },
+  goals_overview: {
+    packKey: "goals",
+    cacheType: "goals_overview",
+  },
+  cashflow_monthly: {
+    packKey: "cashflow",
+    cacheType: "cashflow_monthly",
+  },
+  spend_total: {
+    packKey: "spend",
+    cacheType: "spend_data",
+  },
+  txns_by_category: {
+    packKey: "spend", // merged into spend_total pack
+    cacheType: "category_transactions",
+  },
+  category_details: {
+    packKey: "categoryDetails",
+    cacheType: "category_transactions",
+  },
+};
+
 // Cache strategy configuration
 const CACHE_STRATEGY = {
   // In-memory cache settings
@@ -602,32 +634,28 @@ async function invalidateUserCache(userId, dataType = null) {
 async function prePopulateUserCache(userId) {
   console.log(`🚀 [CACHE] Pre-populating cache for user: ${userId}`);
 
-  const commonNeeds = ["summary_min", "investments_all", "goals_overview"];
+  // Use canonical need names; cache types are derived via NEED_CONFIG
+  const commonNeeds = ["summary_min", "invest_holdings", "goals_overview"];
   const results = { success: 0, failed: 0 };
 
   for (const need of commonNeeds) {
     try {
-      // Check if already cached
-      const cached = await getCachedUserData(need, userId);
+      // Check if already cached for this need's cache type
+      const cfg = NEED_CONFIG[need];
+      const cacheType = cfg?.cacheType || need;
+      const cached = await getCachedUserData(cacheType, userId);
       if (cached) {
         console.log(`✅ [CACHE] ${need} already cached for user ${userId}`);
         results.success++;
         continue;
       }
 
-      // Build context pack - map the cache type to the need type
-      const needMapping = {
-        investments_all: "invest_holdings",
-        goals_overview: "goals_overview",
-        summary_min: "summary_min",
-      };
-      const needType = needMapping[need] || need;
-
-      const contextResult = await buildContextPacks(userId, [needType], {});
+      // Build context pack for this canonical need
+      const contextResult = await buildContextPacks(userId, [need], {});
       if (
         contextResult &&
         contextResult.packs &&
-        contextResult.packs[needType]
+        contextResult.packs[NEED_CONFIG[need]?.packKey || need]
       ) {
         console.log(`✅ [CACHE] Pre-populated ${need} for user ${userId}`);
         results.success++;
@@ -2017,8 +2045,11 @@ async function handleAsk(
 
         // Get investment holdings from context packs if available
         const investmentHoldings =
-          packs.invest_holdings ||
-          (await getCachedUserData("investments_all", userId));
+          packs[NEED_CONFIG.invest_holdings.packKey] ||
+          (await getCachedUserData(
+            NEED_CONFIG.invest_holdings.cacheType,
+            userId
+          ));
 
         let stockData = null;
         let stockPlan = null;
@@ -2589,9 +2620,9 @@ async function handleAsk(
       });
     }
 
-    if (packs.goals?.cashflow?.length > 0) {
+    if (packs.cashflow?.cashflow?.length > 0) {
       contextLines.push("Recent cashflow:");
-      packs.goals.cashflow.forEach((cf) => {
+      packs.cashflow.cashflow.forEach((cf) => {
         contextLines.push(
           `${cf.month}: Income $${cf.income.toFixed(
             2
@@ -3526,22 +3557,10 @@ async function buildContextPacks(userId, needs, slots) {
 
     // OPTIMIZATION: Check for pre-built context first
     console.log("🔍 [FINNY] Checking for pre-built context...");
-    const prebuiltContexts = {};
     const remainingNeeds = [];
 
-    // Map needs to actual cache data types
-    const needToCacheTypeMapping = {
-      invest_holdings: "investments_all",
-      goals_overview: "goals_overview",
-      summary_min: "summary_min",
-      spend_total: "spend_data",
-      category_details: "category_transactions",
-      txns_by_category: "category_transactions",
-      cashflow_monthly: "cashflow_monthly",
-    };
-
     for (const need of needs) {
-      const cacheType = needToCacheTypeMapping[need] || need;
+      const cacheType = NEED_CONFIG[need]?.cacheType || need;
       const cachedData = await getCachedUserData(cacheType, userId);
       if (cachedData) {
         console.log(`✅ [FINNY] Using pre-built context for: ${need}`);
@@ -3550,21 +3569,9 @@ async function buildContextPacks(userId, needs, slots) {
           dataKeys: Object.keys(cachedData || {}),
           isCached: true,
         });
-        prebuiltContexts[need] = cachedData;
         // Store data in the correct pack structure for context building
-        if (need === "summary_min") {
-          packs.base = cachedData;
-        } else if (need === "invest_holdings") {
-          packs.invest = cachedData;
-        } else if (need === "goals_overview") {
-          packs.goals = cachedData;
-        } else if (need === "cashflow_monthly") {
-          packs.cashflow = cachedData;
-        } else if (need === "spend_total") {
-          packs.spend = cachedData;
-        } else {
-          packs[need] = cachedData;
-        }
+        const packKey = NEED_CONFIG[need]?.packKey || need;
+        packs[packKey] = cachedData;
       } else {
         console.log(`⚠️ [FINNY] No pre-built context for: ${need}, will fetch`);
         remainingNeeds.push(need);
@@ -3934,12 +3941,6 @@ function processFetchResults(results, operations, packs, gaps) {
 
       // Process data based on operation type
       switch (operation.type) {
-        case "summary_min":
-          packs.base = data;
-          break;
-        case "spend_total":
-          packs.spend = data;
-          break;
         case "category_transactions":
           // This operation can serve both category_details and txns_by_category
           if (operation.servesNeeds?.includes("category_details")) {
@@ -3949,15 +3950,12 @@ function processFetchResults(results, operations, packs, gaps) {
             packs.spend = { ...packs.spend, ...data };
           }
           break;
-        case "invest_holdings":
-          packs.invest = data;
+        default: {
+          const packKey =
+            NEED_CONFIG[operation.type]?.packKey || operation.type;
+          packs[packKey] = data;
           break;
-        case "goals_overview":
-          packs.goals = data;
-          break;
-        case "cashflow_monthly":
-          packs.cashflow = data;
-          break;
+        }
       }
     } else {
       // Handle failed operations
@@ -4115,35 +4113,32 @@ function processCashflowData(results) {
 
 // OPTIMIZED: Cache operation data
 async function cacheOperationData(operation, data) {
+  const cfg = NEED_CONFIG[operation.type];
+  if (!cfg) return;
+
+  // Always start with an object so downstream helpers that expect fields on
+  // params (like ttl/period) never receive undefined.
+  let params = {};
+
   switch (operation.type) {
-    case "summary_min":
-      await setCachedUserData("summary_min", operation.userId, data);
-      break;
     case "spend_total":
-      await setCachedUserData("spend_data", operation.userId, data, {
-        period: operation.period,
-      });
+      params = { period: operation.period };
       break;
     case "category_transactions":
-      await setCachedUserData("category_transactions", operation.userId, data, {
+      params = {
         category: operation.category,
         period: operation.period,
-      });
-      break;
-    case "invest_holdings":
-      await setCachedUserData("investments_all", operation.userId, data);
+      };
       break;
     case "goals_overview":
-      await setCachedUserData("goals_overview", operation.userId, data, {
-        limit: 10,
-      });
+      params = { limit: 10 };
       break;
     case "cashflow_monthly":
-      await setCachedUserData("cashflow_monthly", operation.userId, data, {
-        months: 3,
-      });
+      params = { months: 3 };
       break;
   }
+
+  await setCachedUserData(cfg.cacheType, operation.userId, data, params);
 }
 
 // Heuristic: detect clearly in-scope financial concept questions to avoid false off-topic
@@ -4670,37 +4665,37 @@ async function handlePrebuildContext(userId) {
     // Build base context pack first (highest priority)
     console.log("📦 [PREBUILD] Building base context pack...");
     const baseContext = await buildContextPacks(userId, ["summary_min"], {});
+    const basePack =
+      baseContext?.packs?.[NEED_CONFIG.summary_min.packKey] || null;
     console.log("🔍 [PREBUILD] Base context result:", {
       hasBaseContext: !!baseContext,
       hasPacks: !!baseContext?.packs,
-      hasSummaryMin: !!baseContext?.packs?.summary_min,
-      summaryMinKeys: baseContext?.packs?.summary_min
-        ? Object.keys(baseContext.packs.summary_min)
-        : [],
+      hasSummaryMin: !!basePack,
+      summaryMinKeys: basePack ? Object.keys(basePack) : [],
     });
 
     // Cache base context for 5 minutes
-    if (baseContext && baseContext.packs && baseContext.packs.summary_min) {
+    if (basePack) {
       await setCachedUserData(
-        "summary_min",
+        NEED_CONFIG.summary_min.cacheType,
         userId,
-        baseContext.packs.summary_min,
+        basePack,
         {
           ttl: 5 * 60 * 1000,
         }
       );
       console.log("✅ [PREBUILD] Base context cached successfully");
       console.log("🔍 [PREBUILD] Base context data:", {
-        hasNetWorth: !!baseContext.packs.summary_min.net_worth,
-        hasTransactions: !!baseContext.packs.summary_min.recent_transactions,
-        hasSpendByCategory: !!baseContext.packs.summary_min.spend_by_category,
+        hasNetWorth: !!basePack.netWorth,
+        hasTransactions: !!basePack.recentTransactions,
+        hasSpendByCategory: !!basePack.spendByCategory,
       });
     } else {
       console.log("❌ [PREBUILD] Base context failed to build or cache");
       console.log("🔍 [PREBUILD] Debug info:", {
         baseContext: baseContext,
         packs: baseContext?.packs,
-        summaryMin: baseContext?.packs?.summary_min,
+        basePack: basePack,
       });
     }
 
@@ -4714,22 +4709,19 @@ async function handlePrebuildContext(userId) {
         ["invest_holdings"],
         {}
       );
-      if (
-        investContext &&
-        investContext.packs &&
-        investContext.packs.invest_holdings
-      ) {
+      const investPack =
+        investContext?.packs?.[NEED_CONFIG.invest_holdings.packKey] || null;
+      if (investContext && investContext.packs && investPack) {
         await setCachedUserData(
-          "invest_holdings",
+          NEED_CONFIG.invest_holdings.cacheType,
           userId,
-          investContext.packs.invest_holdings,
+          investPack,
           { ttl: 5 * 60 * 1000 }
         );
         console.log("✅ [PREBUILD] Investment context cached");
         console.log("🔍 [PREBUILD] Investment context data:", {
-          hasHoldings: !!investContext.packs.invest_holdings.holdings,
-          holdingsCount:
-            investContext.packs.invest_holdings.holdings?.length || 0,
+          hasHoldings: !!investPack.holdings,
+          holdingsCount: investPack.holdings?.length || 0,
         });
       } else {
         console.log("❌ [PREBUILD] Investment context failed to build");
@@ -4745,21 +4737,19 @@ async function handlePrebuildContext(userId) {
         ["goals_overview"],
         {}
       );
-      if (
-        goalsContext &&
-        goalsContext.packs &&
-        goalsContext.packs.goals_overview
-      ) {
+      const goalsPack =
+        goalsContext?.packs?.[NEED_CONFIG.goals_overview.packKey] || null;
+      if (goalsContext && goalsContext.packs && goalsPack) {
         await setCachedUserData(
-          "goals_overview",
+          NEED_CONFIG.goals_overview.cacheType,
           userId,
-          goalsContext.packs.goals_overview,
+          goalsPack,
           { ttl: 5 * 60 * 1000 }
         );
         console.log("✅ [PREBUILD] Goals context cached");
         console.log("🔍 [PREBUILD] Goals context data:", {
-          hasGoals: !!goalsContext.packs.goals_overview.goals,
-          goalsCount: goalsContext.packs.goals_overview.goals?.length || 0,
+          hasGoals: !!goalsPack.goals,
+          goalsCount: goalsPack.goals?.length || 0,
         });
       } else {
         console.log("❌ [PREBUILD] Goals context failed to build");
@@ -4775,22 +4765,19 @@ async function handlePrebuildContext(userId) {
         ["cashflow_monthly"],
         {}
       );
-      if (
-        cashflowContext &&
-        cashflowContext.packs &&
-        cashflowContext.packs.cashflow_monthly
-      ) {
+      const cashflowPack =
+        cashflowContext?.packs?.[NEED_CONFIG.cashflow_monthly.packKey] || null;
+      if (cashflowContext && cashflowContext.packs && cashflowPack) {
         await setCachedUserData(
-          "cashflow_monthly",
+          NEED_CONFIG.cashflow_monthly.cacheType,
           userId,
-          cashflowContext.packs.cashflow_monthly,
+          cashflowPack,
           { ttl: 5 * 60 * 1000 }
         );
         console.log("✅ [PREBUILD] Cashflow context cached");
         console.log("🔍 [PREBUILD] Cashflow context data:", {
-          hasCashflow: !!cashflowContext.packs.cashflow_monthly.cashflow,
-          cashflowMonths:
-            cashflowContext.packs.cashflow_monthly.cashflow?.length || 0,
+          hasCashflow: !!cashflowPack.cashflow,
+          cashflowMonths: cashflowPack.cashflow?.length || 0,
         });
       } else {
         console.log("❌ [PREBUILD] Cashflow context failed to build");
@@ -4804,24 +4791,21 @@ async function handlePrebuildContext(userId) {
       const spendContext = await buildContextPacks(userId, ["spend_total"], {
         period: getDateRange(30),
       });
-      if (
-        spendContext &&
-        spendContext.packs &&
-        spendContext.packs.spend_total
-      ) {
+      const spendPack =
+        spendContext?.packs?.[NEED_CONFIG.spend_total.packKey] || null;
+      if (spendContext && spendContext.packs && spendPack) {
         await setCachedUserData(
-          "spend_total",
+          NEED_CONFIG.spend_total.cacheType,
           userId,
-          spendContext.packs.spend_total,
+          spendPack,
           {
             ttl: 5 * 60 * 1000,
           }
         );
         console.log("✅ [PREBUILD] Spend context cached");
         console.log("🔍 [PREBUILD] Spend context data:", {
-          hasSpendSummary: !!spendContext.packs.spend_total.spend_summary,
-          totalSpend:
-            spendContext.packs.spend_total.spend_summary?.total_spend || 0,
+          hasSpendSummary: !!spendPack.total,
+          totalSpend: spendPack.total || 0,
         });
       } else {
         console.log("❌ [PREBUILD] Spend context failed to build");
