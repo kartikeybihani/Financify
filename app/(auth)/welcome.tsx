@@ -196,7 +196,7 @@ export default function WelcomeScreen() {
               ]}
             >
               <View style={styles.brandContainer}>
-                <Text style={styles.brandName}>Financify</Text>
+                <Text style={styles.brandName}>Finny</Text>
                 <Text style={styles.aiTagline}>Powered by Next Gen AI</Text>
                 <LinearGradient
                   colors={[
@@ -210,7 +210,7 @@ export default function WelcomeScreen() {
               </View>
               <Text style={styles.titleHighlight}>
                 <Text style={styles.titleMain}>
-                  Finally, a financial advisor that gets you
+                  A money coach that gets you!
                 </Text>
               </Text>
             </Animated.View>
