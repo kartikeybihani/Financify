@@ -11,7 +11,10 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { DeviceEventEmitter } from "react-native";
 import { supabase } from "@/src/lib/supabase/supabase";
 import logger from "@/src/utils/core/logger";
-import { invalidateTokenCache } from "@/src/utils/auth/authToken";
+import {
+  invalidateTokenCache,
+  startTokenRefresh,
+} from "@/src/utils/auth/authToken";
 
 // Constants
 const PROFILE_FETCH_TIMEOUT_MS = 8000; // 8 seconds timeout for profile fetch
@@ -536,14 +539,48 @@ export const AuthNavigationProvider: React.FC<AuthNavigationProviderProps> = ({
         );
       }
 
+      logger.info("[AUTH] 📡 Starting coordinated token refresh...");
+
+      // Use the token refresh coordinator to manage the refresh lifecycle
+      // This ensures all concurrent token requests are queued and receive the new token
+      const refreshFn = async (): Promise<string | null> => {
+        // Wait a bit more for Supabase to fully complete the refresh
+        await new Promise((resolve) => setTimeout(resolve, 100));
+
+        // Get the new token from the session
+        const {
+          data: { session: latestSession },
+          error: sessionError,
+        } = await supabase.auth.getSession();
+        if (sessionError || !latestSession?.access_token) {
+          logger.warn("[AUTH] ⚠️ Could not retrieve new token after refresh");
+          return null;
+        }
+
+        logger.info("[AUTH] ✅ New token retrieved from session");
+        return latestSession.access_token;
+      };
+
+      // Start the coordinated refresh - this will queue all concurrent token requests
+      const newToken = await startTokenRefresh(refreshFn);
+
+      if (newToken) {
+        logger.info(
+          "[AUTH] ✅ Token refresh coordinator completed successfully"
+        );
+      } else {
+        logger.warn(
+          "[AUTH] ⚠️ Token refresh coordinator completed but no token received"
+        );
+      }
+
       logger.info(
         "[AUTH] 📡 Emitting authStateChanged event (TOKEN_REFRESHED)"
       );
-      invalidateTokenCache();
       DeviceEventEmitter.emit("authStateChanged", {
         event: "TOKEN_REFRESHED",
         session: newSession,
-        validated: !!user?.id && !error,
+        validated: !!user?.id && !error && !!newToken,
       });
       logger.info("[AUTH] ✅ authStateChanged event emitted");
 

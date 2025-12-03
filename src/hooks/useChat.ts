@@ -1,11 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
-import { AppState } from 'react-native';
+import { AppState, DeviceEventEmitter } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ChatMessage, Goal } from '@/src/types/finny';
 import finnyConstants from '@/src/constants/finny';
 import logger from '@/src/utils/core/logger';
 import { supabase } from '@/src/lib/supabase/supabase';
-import { getFreshAccessToken, authenticatedFetch } from '@/src/utils/auth/authToken';
+import { getFreshAccessToken, authenticatedFetch, invalidateTokenCache } from '@/src/utils/auth/authToken';
 
 /**
  * Creates a promise that rejects after a specified timeout duration.
@@ -15,6 +15,38 @@ const createTimeoutPromise = (ms: number, message: string): Promise<never> => {
   return new Promise((_, reject) => {
     setTimeout(() => reject(new Error(message)), ms);
   });
+};
+
+/**
+ * Extracts user ID from a JWT token by decoding the payload.
+ * This is a fallback when getSession() times out.
+ * 
+ * @param token - JWT access token
+ * @returns User ID if found, null otherwise
+ */
+const extractUserIdFromToken = (token: string): string | null => {
+  try {
+    // JWT format: header.payload.signature
+    const parts = token.split('.');
+    if (parts.length !== 3) {
+      return null;
+    }
+    
+    // Decode the payload (base64url)
+    const payload = parts[1];
+    // Replace URL-safe base64 characters
+    const base64 = payload.replace(/-/g, '+').replace(/_/g, '/');
+    // Add padding if needed
+    const padded = base64 + '='.repeat((4 - base64.length % 4) % 4);
+    const decoded = atob(padded);
+    const parsed = JSON.parse(decoded);
+    
+    // Supabase JWT contains user ID in 'sub' field
+    return parsed.sub || parsed.user_id || null;
+  } catch (error) {
+    logger.warn('[CHAT] Failed to extract userId from token:', error);
+    return null;
+  }
 };
 
 // Simple message handling - display messages as single strings
@@ -41,6 +73,30 @@ export const useChat = () => {
     saveChatMessages();
     // Remove auto-save - only save on app close or clear chat
   }, [chatMessages]);
+
+  /**
+   * Listen for TOKEN_REFRESHED events.
+   * 
+   * Note: We do NOT invalidate the cache here because the token refresh coordinator
+   * in authToken.ts already handles cache invalidation and caching of the new token.
+   * Invalidating here would clear the freshly cached token, forcing unnecessary
+   * getSession() calls. The coordinator ensures all queued requests receive the new token.
+   */
+  useEffect(() => {
+    const subscription = DeviceEventEmitter.addListener(
+      "authStateChanged",
+      (data: { event: string; session: any; validated: boolean }) => {
+        if (data?.event === "TOKEN_REFRESHED") {
+          logger.info("[CHAT] 🔄 TOKEN_REFRESHED event received - token refresh coordinator has already cached new token");
+          // No action needed - refresh coordinator handles everything
+        }
+      }
+    );
+
+    return () => {
+      subscription.remove();
+    };
+  }, []);
 
   const loadChatMessages = async () => {
     try {
@@ -361,7 +417,10 @@ export const useChat = () => {
     if (msg.sender === "user") {
       logger.info(`User: ${msg.text}`);
     } else if (msg.sender === "finny") {
-      logger.info(`Finny: [${msg.text}]`);
+      // Log all Finny messages (errors, non-streaming responses, etc.)
+      // Streaming responses are logged separately in handleFinnyResponse
+      const preview = msg.text.length > 200 ? msg.text.substring(0, 200) + '...' : msg.text;
+      logger.info(`Finny: ${preview}`);
     }
     setChatMessages((prev) => [...prev, msg]);
   };
@@ -385,18 +444,20 @@ export const useChat = () => {
 
   // Handle streaming response using XMLHttpRequest (works in React Native!)
   // Note: accessToken parameter is kept for backward compatibility but should be fresh
-  const handleStreamingResponseXHR = async (url: string, requestBody: any, accessToken: string) => {
+  // Returns the final response message for logging
+  const handleStreamingResponseXHR = async (url: string, requestBody: any, accessToken: string): Promise<string | null> => {
     // Ensure we have a fresh token (accessToken param might be stale)
     const freshToken = await getFreshAccessToken();
     if (!freshToken) {
       throw new Error('Not authenticated - no access token available');
     }
     
-    return new Promise<void>((resolve, reject) => {
+    return new Promise<string | null>((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       let receivedLength = 0;
       let buffer = '';
       let currentMessage = '';
+      let finalResponseMessage: string | null = null;
       let messageId = `finny-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
       let currentEvent = '';
 
@@ -451,7 +512,27 @@ export const useChat = () => {
                 if (STREAM_DEBUG) {
                   console.log("🎯 [STREAMING] Complete event received:", data);
                 }
-                const finalMessage = data.message || currentMessage;
+                // Get final message - prefer data.message, fallback to currentMessage
+                const finalMessage = (data.message && typeof data.message === 'string') 
+                  ? data.message 
+                  : (currentMessage && typeof currentMessage === 'string' ? currentMessage : '');
+                
+                // Only set if we have a valid string
+                if (finalMessage && typeof finalMessage === 'string') {
+                  finalResponseMessage = finalMessage;
+                }
+                
+                // Check if API returned "Please log in" - indicates stale/invalid token
+                if (finalMessage && typeof finalMessage === 'string' && 
+                    (finalMessage.toLowerCase().includes("please log in") || 
+                     finalMessage.toLowerCase().includes("log in"))) {
+                  logger.warn(`[CHAT] ⚠️ API returned "Please log in" - invalidating cache`);
+                  invalidateTokenCache();
+                  // Reject the promise to trigger retry in calling code
+                  reject(new Error('Authentication required - please retry with fresh token'));
+                  return;
+                }
+                
                 if (finalMessage && typeof finalMessage === 'string' && finalMessage.trim()) {
                   setChatMessages(prev => {
                     const existingIndex = prev.findIndex(msg => msg.id === messageId);
@@ -465,9 +546,6 @@ export const useChat = () => {
                         ...(data.actions && { actions: data.actions }),
                         ...(data.type && { type: data.type })
                       };
-                      if (STREAM_DEBUG) {
-                        console.log("🔄 [STREAMING] Updated existing message with complete response:", updated[existingIndex]);
-                      }
                       return updated;
                     } else {
                       const completedMessage: ChatMessage = {
@@ -480,14 +558,22 @@ export const useChat = () => {
                         // Preserve actions if present in the complete response
                         ...(data.actions && { actions: data.actions })
                       };
-                      if (STREAM_DEBUG) {
-                        console.log("✨ [STREAMING] Created new message with complete response:", completedMessage);
-                      }
                       return [...prev, completedMessage];
                     }
                   });
                 }
                 return; // Skip other processing for complete event
+              }
+              
+              // Also check text chunks for "Please log in" messages
+              if (data.text && typeof data.text === 'string' && 
+                  (data.text.toLowerCase().includes("please log in") || 
+                   data.text.toLowerCase().includes("log in"))) {
+                logger.warn(`[CHAT] ⚠️ Detected "Please log in" in stream - invalidating cache`);
+                invalidateTokenCache();
+                // Reject the promise to trigger retry in calling code
+                reject(new Error('Authentication required - please retry with fresh token'));
+                return;
               }
 
               if (data.status) {
@@ -534,11 +620,24 @@ export const useChat = () => {
                 }
               } else if (data.message) {
                 // Final complete response - handle both text and actions
-                const finalMessage = data.message || currentMessage;
-                if (STREAM_DEBUG) {
-                  console.log("🎯 [STREAMING] Final message:", finalMessage);
-                  console.log("🎯 [STREAMING] Actions:", data.actions);
-                  console.log("🎯 [STREAMING] Type:", data.type);
+                const finalMessage = (data.message && typeof data.message === 'string')
+                  ? data.message
+                  : (currentMessage && typeof currentMessage === 'string' ? currentMessage : '');
+                
+                // Only set if we have a valid string
+                if (finalMessage && typeof finalMessage === 'string') {
+                  finalResponseMessage = finalMessage;
+                }
+                
+                // Check if API returned "Please log in" - indicates stale/invalid token
+                if (finalMessage && typeof finalMessage === 'string' && 
+                    (finalMessage.toLowerCase().includes("please log in") || 
+                     finalMessage.toLowerCase().includes("log in"))) {
+                  logger.warn(`[CHAT] ⚠️ API returned "Please log in" - invalidating cache`);
+                  invalidateTokenCache();
+                  // Reject the promise to trigger retry in calling code
+                  reject(new Error('Authentication required - please retry with fresh token'));
+                  return;
                 }
                 
                 if (finalMessage && typeof finalMessage === 'string' && finalMessage.trim()) {
@@ -554,9 +653,6 @@ export const useChat = () => {
                         ...(data.actions && { actions: data.actions }),
                         ...(data.type && { type: data.type })
                       };
-                      if (STREAM_DEBUG) {
-                        console.log("🔄 [STREAMING] Updated existing message with actions:", updated[existingIndex]);
-                      }
                       return updated;
                     } else {
                       const completedMessage: ChatMessage = {
@@ -569,9 +665,6 @@ export const useChat = () => {
                         // Preserve actions if present in the complete response
                         ...(data.actions && { actions: data.actions })
                       };
-                      if (STREAM_DEBUG) {
-                        console.log("✨ [STREAMING] Created new message with actions:", completedMessage);
-                      }
                       return [...prev, completedMessage];
                     }
                   });
@@ -586,15 +679,23 @@ export const useChat = () => {
 
       xhr.onloadend = () => {
         // Process any remaining data
-        if (STREAM_DEBUG && buffer.trim()) {
-          console.log("🔚 [STREAMING] Processing final buffer:", buffer);
-        }
-        if (STREAM_DEBUG) {
-          console.log("✅ [STREAMING] Stream completed");
-        }
         setProgressStatus("");
         setIsTyping(false);
-        resolve();
+        
+        // Ensure we always have a final response message
+        // Priority: finalResponseMessage (from complete event) > currentMessage (from text chunks)
+        if (!finalResponseMessage || typeof finalResponseMessage !== 'string') {
+          if (currentMessage && typeof currentMessage === 'string' && currentMessage.trim()) {
+            finalResponseMessage = currentMessage;
+          } else {
+            // If we still don't have a message, try to get it from the chat state
+            // This is a fallback in case the message was set but not captured
+            finalResponseMessage = null; // Will be handled by caller
+          }
+        }
+        
+        // Always resolve with a string or null (never undefined)
+        resolve(finalResponseMessage || null);
       };
 
       xhr.onerror = () => {
@@ -754,28 +855,23 @@ export const useChat = () => {
   const handleFinnyResponse = async (messageText: string, startTime?: number) => {
     const callId = Math.random().toString(36).substring(2, 8);
     const funcStartTime = Date.now();
-    logger.info(`[CHAT] 💬 handleFinnyResponse START [${callId}] - message: "${messageText.substring(0, 50)}${messageText.length > 50 ? '...' : ''}"`);
     
     const BASE_URL = process.env.EXPO_PUBLIC_APP_BASE_URL || "https://financify-rose.vercel.app";
     try {
-      logger.info(`[CHAT] 💬 [${callId}] Step 1: Getting session and token...`);
-      
-      // First, get fresh access token with timeout protection (validates auth is working)
-      const tokenStartTime = Date.now();
+      // Get fresh access token
       const accessToken = await getFreshAccessToken();
-      const tokenDuration = Date.now() - tokenStartTime;
-      logger.info(`[CHAT] 💬 [${callId}] getFreshAccessToken() completed in ${tokenDuration}ms - hasToken: ${!!accessToken}`);
       
       if (!accessToken) {
-        logger.warn(`[CHAT] ⚠️ [${callId}] No access token, returning early`);
+        logger.warn(`[CHAT] ⚠️ No access token`);
         pushChat("finny", "Please log in to get personalized financial advice.");
         return;
       }
       
-      // Get session with timeout protection to extract user ID
+      // Get user ID - try getSession() first, fallback to token decode if it times out
+      // Note: userId is only needed for "clear cache" - API derives it from token for main flow
       const GET_SESSION_TIMEOUT_MS = 2000;
-      const sessionStartTime = Date.now();
-      let userId: string;
+      let userId: string | null = null;
+      
       try {
         const getSessionPromise = supabase.auth.getSession();
         const timeoutPromise = createTimeoutPromise(
@@ -791,25 +887,18 @@ export const useChat = () => {
         }
         
         const { data: { session }, error: sessionError } = result;
-        const sessionDuration = Date.now() - sessionStartTime;
-        logger.info(`[CHAT] 💬 [${callId}] getSession() completed in ${sessionDuration}ms - hasSession: ${!!session}, hasUser: ${!!session?.user?.id}`);
         
-        if (!session?.user?.id || sessionError) {
-          logger.warn(`[CHAT] ⚠️ [${callId}] No session or user ID, returning early`);
-          pushChat("finny", "Please log in to get personalized financial advice.");
-          return;
+        if (session?.user?.id && !sessionError) {
+          userId = session.user.id;
         }
-        
-        userId = session.user.id;
       } catch (timeoutError: any) {
-        const sessionDuration = Date.now() - sessionStartTime;
-        if (timeoutError?.message?.includes('timeout')) {
-          logger.error(`[CHAT] ❌ [${callId}] getSession() TIMEOUT after ${sessionDuration}ms - Supabase may be stuck`);
-        } else {
-          logger.error(`[CHAT] ❌ [${callId}] Unexpected error in getSession():`, timeoutError);
-        }
-        pushChat("finny", "Please log in to get personalized financial advice.");
-        return;
+        // getSession() timeout - will use token decode fallback if needed
+      }
+      
+      // If we don't have userId yet and we need it, try extracting from token
+      // This is only needed for "clear cache" functionality
+      if (!userId && accessToken) {
+        userId = extractUserIdFromToken(accessToken);
       }
 
       const useStreaming = true;
@@ -817,10 +906,21 @@ export const useChat = () => {
           messageText.toLowerCase().includes("refresh data")) {
         setProgressStatus("Clearing cache and refreshing data...");
         
+        // For clear cache, we need userId - try to get it if we don't have it
+        if (!userId && accessToken) {
+          userId = extractUserIdFromToken(accessToken);
+        }
+        
+        if (!userId) {
+          logger.error(`[CHAT] ❌ Cannot clear cache - no userId available`);
+          pushChat("finny", "⚠️ Could not verify your identity. Please try again.");
+          return;
+        }
+        
         try {
           // Get fresh access token
-          const accessToken = await getFreshAccessToken();
-          if (!accessToken) {
+          const freshToken = await getFreshAccessToken();
+          if (!freshToken) {
             pushChat("finny", "⚠️ Authentication error. Please try again.");
             return;
           }
@@ -849,29 +949,57 @@ export const useChat = () => {
       setProgressStatus("Brewing up some financial wisdom...");
 
       // 1) First classify the message to determine intent (skip if goal flow active)
-      if (goalFlow?.active) {
-        logger.info(`[CHAT] 💬 [${callId}] Skipping classification (goal flow active)`);
-      } else {
-        logger.info(`[CHAT] 💬 [${callId}] Step 3: Classifying message...`);
-      }
-      const classifyStartTime = Date.now();
       const classifyRes = goalFlow?.active ? null : await authenticatedFetch(`${BASE_URL}/api/finny`, {
         method: "POST",
         body: JSON.stringify({
           action: "classify",
           message: messageText,
-          chat_id: chatId, // Send chat_id for conversation context
-          // client context no longer carries user_id; server derives it
+          chat_id: chatId,
           context: {}
         }),
       });
 
-      const classifyData = classifyRes ? await classifyRes.json() : { intent: "goal" };
-      const classifyDuration = Date.now() - classifyStartTime;
-      if (classifyRes) {
-        logger.info(`[CHAT] 💬 [${callId}] Classification completed in ${classifyDuration}ms - result:`, classifyData);
-      } else {
-        logger.info(`[CHAT] 💬 [${callId}] Classification skipped (goal flow active)`);
+      let classifyData = classifyRes ? await classifyRes.json() : { intent: "goal" };
+      
+      // Check if API returned "Please log in" - indicates stale/invalid token
+      if (classifyRes && classifyData.message && 
+          (classifyData.message.toLowerCase().includes("please log in") || 
+           classifyData.message.toLowerCase().includes("log in"))) {
+        logger.warn(`[CHAT] ⚠️ API returned "Please log in" - retrying with fresh token...`);
+        invalidateTokenCache();
+        
+        // Retry classification once with fresh token
+        try {
+          const retryToken = await getFreshAccessToken();
+          if (retryToken) {
+            const retryRes = await authenticatedFetch(`${BASE_URL}/api/finny`, {
+              method: "POST",
+              body: JSON.stringify({
+                action: "classify",
+                message: messageText,
+                chat_id: chatId,
+                context: {}
+              }),
+            });
+            const retryData = await retryRes.json();
+            if (retryData.message && 
+                (retryData.message.toLowerCase().includes("please log in") || 
+                 retryData.message.toLowerCase().includes("log in"))) {
+              logger.error(`[CHAT] ❌ Retry still returned "Please log in"`);
+              pushChat("finny", "Please log in to get personalized financial advice.");
+              return;
+            }
+            classifyData = retryData;
+          } else {
+            logger.error(`[CHAT] ❌ Could not get fresh token for retry`);
+            pushChat("finny", "Please log in to get personalized financial advice.");
+            return;
+          }
+        } catch (retryError) {
+          logger.error(`[CHAT] ❌ Retry failed:`, retryError);
+          pushChat("finny", "Please log in to get personalized financial advice.");
+          return;
+        }
       }
 
       // Update progress based on intent
@@ -919,12 +1047,7 @@ export const useChat = () => {
 
       // 2) Route to appropriate handler based on classification
       // Use XMLHttpRequest for streaming, fetch for regular responses
-      logger.info(`[CHAT] 💬 [${callId}] Step 4: Routing to handler (streaming: ${useStreaming})...`);
       if (useStreaming) {
-        logger.info(`[CHAT] 💬 [${callId}] Using XMLHttpRequest for streaming`);
-        if (STREAM_DEBUG) {
-          console.log("🔄 [STREAMING] Using XMLHttpRequest for streaming");
-        }
         const requestBody = !goalFlow?.active && classifyData.intent === "ask_personalized" 
           ? {
               action: "ask",
@@ -943,18 +1066,58 @@ export const useChat = () => {
             };
 
         const streamStartTime = Date.now();
+        let finalResponse: string | null = null;
+        
         try {
-          logger.info(`[CHAT] 💬 [${callId}] Starting streaming request...`);
-          await handleStreamingResponseXHR(`${BASE_URL}/api/finny`, requestBody, "");
+          // Track final response for logging
+          finalResponse = await handleStreamingResponseXHR(`${BASE_URL}/api/finny`, requestBody, "");
           const streamDuration = Date.now() - streamStartTime;
           const totalDuration = Date.now() - funcStartTime;
-          logger.info(`[CHAT] ✅ [${callId}] Streaming completed in ${streamDuration}ms (total: ${totalDuration}ms)`);
+          
+          // Log Finny's response - ensure it's a string before calling substring
+          if (finalResponse && typeof finalResponse === 'string' && finalResponse.trim()) {
+            const preview = finalResponse.length > 200 ? finalResponse.substring(0, 200) + '...' : finalResponse;
+            logger.info(`Finny: ${preview}`);
+          }
+          logger.info(`[CHAT] ✅ Completed in ${totalDuration}ms`);
           return; // Done with streaming, exit early
-        } catch (streamError) {
-          const streamDuration = Date.now() - streamStartTime;
+        } catch (streamError: any) {
           const totalDuration = Date.now() - funcStartTime;
-          logger.error(`[CHAT] ❌ [${callId}] Streaming failed after ${totalDuration}ms:`, streamError);
-          console.error("❌ [STREAMING] Streaming failed:", streamError);
+          
+          // Check if error is due to authentication (stale token)
+          if (streamError?.message?.includes('Authentication required') || 
+              streamError?.message?.includes('fresh token')) {
+            logger.warn(`[CHAT] ⚠️ Auth error - retrying...`);
+            invalidateTokenCache();
+            
+            // Retry once with fresh token
+            try {
+              const retryToken = await getFreshAccessToken();
+              if (retryToken) {
+                finalResponse = await handleStreamingResponseXHR(`${BASE_URL}/api/finny`, requestBody, "");
+                if (finalResponse && typeof finalResponse === 'string' && finalResponse.trim()) {
+                  const preview = finalResponse.length > 200 ? finalResponse.substring(0, 200) + '...' : finalResponse;
+                  logger.info(`Finny: ${preview}`);
+                }
+                logger.info(`[CHAT] ✅ Retry successful in ${Date.now() - streamStartTime}ms`);
+                return;
+              } else {
+                logger.error(`[CHAT] ❌ Could not get fresh token for retry`);
+                pushChat("finny", "Please log in to get personalized financial advice.");
+                setProgressStatus("");
+                setIsTyping(false);
+                return;
+              }
+            } catch (retryError) {
+              logger.error(`[CHAT] ❌ Retry failed:`, retryError);
+              pushChat("finny", "Please log in to get personalized financial advice.");
+              setProgressStatus("");
+              setIsTyping(false);
+              return;
+            }
+          }
+          
+          logger.error(`[CHAT] ❌ Streaming failed after ${totalDuration}ms:`, streamError);
           pushChat("finny", "Something went wrong. Try again later.");
           setProgressStatus("");
           setIsTyping(false);
@@ -1053,16 +1216,16 @@ export const useChat = () => {
         console.log(`📥 Total response time: ${totalResponseDuration}ms (${(totalResponseDuration / 1000).toFixed(2)}s) at ${ptTime} PT`);
       }
       
+      // Note: Finny's response will be logged in pushChat() when it's added to chat
       // Handle split messages for better UX
       if (data.isSplit && Array.isArray(data.message)) {
-        console.log(`[Frontend] Received ${data.message.length} split messages`);
         await handleSplitMessages(data.message);
       } else {
         await pushChatWithDelay("finny", message);
       }
     } catch (error) {
       const totalDuration = Date.now() - funcStartTime;
-      logger.error(`[CHAT] ❌ [${callId}] handleFinnyResponse ERROR after ${totalDuration}ms:`, error);
+      logger.error(`[CHAT] ❌ Error after ${totalDuration}ms:`, error);
       setProgressStatus(""); // Clear progress status
       pushChat("finny", "Something went wrong. Try again later.");
     }

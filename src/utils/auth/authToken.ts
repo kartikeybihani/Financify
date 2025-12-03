@@ -19,6 +19,93 @@ let tokenCache: {
 } | null = null;
 
 /**
+ * Token refresh coordinator - manages the refresh lifecycle to prevent race conditions.
+ * 
+ * When a token refresh is in progress:
+ * - Queues token requests instead of making concurrent getSession() calls
+ * - Provides a promise that resolves when refresh completes with the new token
+ * - Prevents multiple concurrent refresh operations
+ */
+type RefreshState = {
+  isRefreshing: boolean;
+  refreshPromise: Promise<string | null> | null;
+  newToken: string | null;
+  startTime: number;
+};
+
+let refreshCoordinator: RefreshState = {
+  isRefreshing: false,
+  refreshPromise: null,
+  newToken: null,
+  startTime: 0,
+};
+
+/**
+ * Starts a token refresh operation in the coordinator.
+ * Returns a promise that resolves when refresh completes with the new token.
+ * 
+ * @param refreshFn - Async function that performs the refresh and returns the new token
+ * @returns Promise resolving to the new token, or null if refresh failed
+ */
+export const startTokenRefresh = async (
+  refreshFn: () => Promise<string | null>
+): Promise<string | null> => {
+  // If refresh already in progress, return the existing promise
+  if (refreshCoordinator.isRefreshing && refreshCoordinator.refreshPromise) {
+    logger.info("[AUTH_TOKEN] 🔄 Refresh already in progress, queuing request");
+    return refreshCoordinator.refreshPromise;
+  }
+
+  logger.info("[AUTH_TOKEN] 🔄 Starting token refresh coordination");
+  refreshCoordinator.isRefreshing = true;
+  refreshCoordinator.startTime = Date.now();
+  refreshCoordinator.newToken = null;
+
+  // Create the refresh promise
+  refreshCoordinator.refreshPromise = (async () => {
+    try {
+      // Invalidate cache immediately to prevent stale token usage
+      tokenCache = null;
+      logger.info("[AUTH_TOKEN] 🗑️ Token cache invalidated for refresh");
+
+      // Wait a brief moment for Supabase to complete internal refresh
+      await new Promise((resolve) => setTimeout(resolve, 150));
+
+      // Execute the refresh function
+      const newToken = await refreshFn();
+
+      if (newToken) {
+        refreshCoordinator.newToken = newToken;
+        // Update cache with new token
+        tokenCache = {
+          token: newToken,
+          timestamp: Date.now(),
+        };
+        const duration = Date.now() - refreshCoordinator.startTime;
+        logger.info(`[AUTH_TOKEN] ✅ Token refresh completed in ${duration}ms - new token cached`);
+      } else {
+        logger.warn("[AUTH_TOKEN] ⚠️ Token refresh completed but no new token received");
+      }
+
+      return newToken;
+    } catch (error) {
+      logger.error("[AUTH_TOKEN] ❌ Token refresh failed:", error);
+      return null;
+    } finally {
+      // Reset coordinator after a brief delay to allow queued requests to complete
+      setTimeout(() => {
+        refreshCoordinator.isRefreshing = false;
+        refreshCoordinator.refreshPromise = null;
+        refreshCoordinator.newToken = null;
+        logger.info("[AUTH_TOKEN] 🔓 Token refresh coordinator reset");
+      }, 100);
+    }
+  })();
+
+  return refreshCoordinator.refreshPromise;
+};
+
+/**
  * Invalidates the in-memory token cache.
  * Should be called when TOKEN_REFRESHED event fires to ensure fresh tokens are used.
  */
@@ -46,34 +133,68 @@ const createTimeoutPromise = (ms: number, message: string): Promise<never> => {
 /**
  * Retrieves a fresh access token from Supabase with in-memory caching and robust error handling.
  * 
- * This function implements a performance-optimized token retrieval system:
+ * This function implements a performance-optimized token retrieval system with refresh coordination:
  * - Uses in-memory cache to avoid redundant getSession() calls (instant on cache hit)
+ * - If token refresh is in progress, queues the request and waits for refresh to complete
  * - Cache is invalidated automatically on TOKEN_REFRESHED events to ensure freshness
- * - Falls back to getSession() on cache miss (with timeout protection)
+ * - Falls back to getSession() on cache miss (with refresh-aware timeout protection)
  * - Uses getSession() instead of getUser() to avoid blocking during token refresh
- * - Implements a 2-second timeout on getSession() calls to prevent infinite hangs
+ * - Implements adaptive timeout: longer during refresh, shorter otherwise
  * - Retries up to 3 times with exponential backoff if no token is found
- * - Falls back to reading directly from AsyncStorage if Supabase is stuck
+ * - Falls back to reading directly from AsyncStorage only if refresh is not in progress
  * - Never throws errors - always returns null on failure, letting calling code decide next steps
  * 
- * The caching eliminates redundant token fetches (saves 1-46ms per API call), while the timeout
- * protection prevents hangs if Supabase's internal state machine gets stuck.
+ * The refresh coordination prevents race conditions where multiple components try to get tokens
+ * simultaneously during refresh, causing all getSession() calls to timeout.
  * 
  * @returns Promise resolving to the access token string, or null if unavailable
  */
 export const getFreshAccessToken = async (): Promise<string | null> => {
   const MAX_RETRIES = 3;
   const RETRY_DELAY_MS = 200;
-  const GET_SESSION_TIMEOUT_MS = 2000;
+  const NORMAL_TIMEOUT_MS = 2000;
+  const REFRESH_TIMEOUT_MS = 5000; // Longer timeout during refresh
   const callId = Math.random().toString(36).substring(2, 8);
   const startTime = Date.now();
 
+  // Check if refresh is in progress - if so, queue this request
+  if (refreshCoordinator.isRefreshing && refreshCoordinator.refreshPromise) {
+    logger.info(`[AUTH_TOKEN] 🔑 [${callId}] Refresh in progress, queuing token request...`);
+    try {
+      const newToken = await refreshCoordinator.refreshPromise;
+      if (newToken) {
+        const duration = Date.now() - startTime;
+        logger.info(`[AUTH_TOKEN] ✅ [${callId}] Got token from refresh coordinator in ${duration}ms`);
+        return newToken;
+      }
+    } catch (error) {
+      logger.warn(`[AUTH_TOKEN] ⚠️ [${callId}] Refresh coordinator failed, falling back to getSession()...`);
+    }
+  }
+
+  // Check cache (may have been updated by refresh coordinator)
   if (tokenCache) {
-    logger.info(`[AUTH_TOKEN] 🔑 [${callId}] Using cached token (cached ${Date.now() - tokenCache.timestamp}ms ago)`);
-    return tokenCache.token;
+    const cacheAge = Date.now() - tokenCache.timestamp;
+    // Don't use cache if it's older than 2 minutes (tokens can be invalidated by refresh at any time)
+    // This is more aggressive than token expiration (1 hour) to catch refresh invalidations
+    if (cacheAge < 2 * 60 * 1000) {
+      logger.info(`[AUTH_TOKEN] 🔑 [${callId}] Using cached token (cached ${cacheAge}ms ago)`);
+      return tokenCache.token;
+    } else {
+      logger.info(`[AUTH_TOKEN] 🔑 [${callId}] Cache expired (${cacheAge}ms old), fetching fresh token`);
+      tokenCache = null;
+    }
   }
 
   logger.info(`[AUTH_TOKEN] 🔑 getFreshAccessToken START [${callId}] (cache miss)`);
+  
+  // Determine timeout based on whether refresh is in progress
+  const isRefreshing = refreshCoordinator.isRefreshing;
+  const GET_SESSION_TIMEOUT_MS = isRefreshing ? REFRESH_TIMEOUT_MS : NORMAL_TIMEOUT_MS;
+  
+  if (isRefreshing) {
+    logger.info(`[AUTH_TOKEN] 🔑 [${callId}] Using extended timeout (${GET_SESSION_TIMEOUT_MS}ms) due to active refresh`);
+  }
   
   try {
     for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
@@ -131,7 +252,8 @@ export const getFreshAccessToken = async (): Promise<string | null> => {
             logger.warn(`[AUTH_TOKEN] ⏱️ [${callId}] getSession() TIMEOUT after ${getSessionDuration}ms (attempt ${attempt + 1}/${MAX_RETRIES}), will retry...`);
           }
           
-          if (attempt === MAX_RETRIES - 1) {
+          // Only use AsyncStorage fallback if refresh is NOT in progress (to avoid stale tokens)
+          if (attempt === MAX_RETRIES - 1 && !refreshCoordinator.isRefreshing) {
             logger.warn(`[AUTH_TOKEN] 🔄 [${callId}] getSession() timed out, trying AsyncStorage fallback...`);
             try {
               const allKeys = await AsyncStorage.getAllKeys();
@@ -163,6 +285,9 @@ export const getFreshAccessToken = async (): Promise<string | null> => {
             
             const totalDuration = Date.now() - startTime;
             logger.error(`[AUTH_TOKEN] ❌ [${callId}] getSession() timed out on all attempts (total: ${totalDuration}ms) - Supabase may be stuck`);
+            return null;
+          } else if (attempt === MAX_RETRIES - 1 && refreshCoordinator.isRefreshing) {
+            logger.warn(`[AUTH_TOKEN] ⚠️ [${callId}] Skipping AsyncStorage fallback - refresh in progress (would return stale token)`);
             return null;
           }
           
