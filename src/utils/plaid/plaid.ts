@@ -1345,20 +1345,42 @@ const getDateRangeFromTimePeriod = (timePeriod: string) => {
     case "12months":
       startDate = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
       break;
-    case "december2024":
-      startDate = "2024-12-01";
-      endDate = "2024-12-31";
-      break;
-    case "november2024":
-      startDate = "2024-11-01";
-      endDate = "2024-11-30";
-      break;
-    case "october2024":
-      startDate = "2024-10-01";
-      endDate = "2024-10-31";
-      break;
     default:
-      // Default to last 30 days
+      // Check if it's a month-year format (e.g., "january2024", "december2025")
+      const monthYearMatch = timePeriod.match(/^(january|february|march|april|may|june|july|august|september|october|november|december)(\d{4})$/i);
+      if (monthYearMatch) {
+        const monthName = monthYearMatch[1].toLowerCase();
+        const year = parseInt(monthYearMatch[2], 10);
+        
+        const monthMap: { [key: string]: number } = {
+          january: 0,
+          february: 1,
+          march: 2,
+          april: 3,
+          may: 4,
+          june: 5,
+          july: 6,
+          august: 7,
+          september: 8,
+          october: 9,
+          november: 10,
+          december: 11,
+        };
+        
+        const monthIndex = monthMap[monthName];
+        if (monthIndex !== undefined) {
+          // First day of the month
+          const firstDay = new Date(year, monthIndex, 1);
+          startDate = firstDay.toISOString().split('T')[0];
+          
+          // Last day of the month (first day of next month minus 1 day)
+          const lastDay = new Date(year, monthIndex + 1, 0);
+          endDate = lastDay.toISOString().split('T')[0];
+          break;
+        }
+      }
+      
+      // Default to last 30 days if no match
       startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
   }
 

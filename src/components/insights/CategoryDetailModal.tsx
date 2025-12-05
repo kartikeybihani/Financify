@@ -197,7 +197,7 @@ const CategoryDetailModal: React.FC<CategoryDetailModalProps> = ({
                         )}
                       </View>
                       <Text style={styles.categoryTransactionDate}>
-                        {formatDate(tx.date)}
+                        {formatDate(tx.authorized_date || tx.date)}
                       </Text>
                     </View>
                     <Text style={styles.categoryTransactionAmount}>

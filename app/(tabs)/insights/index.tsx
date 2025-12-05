@@ -44,6 +44,7 @@ import EnhancedFilterModal, {
 import ReAuthBanner from "@/src/components/ui/ReAuthBanner";
 import InsightsLoadingSkeleton from "@/src/components/insights/InsightsLoadingSkeleton";
 import SpendingSection from "@/src/components/insights/components/SpendingSection";
+import { MonthOption } from "@/src/components/insights/components/MonthSelector";
 import TransactionsSection from "@/src/components/insights/components/TransactionsSection";
 import CashFlowSection from "@/src/components/insights/components/CashFlowSection";
 import CategorySelectionModal from "@/src/components/modals/CategorySelectionModal";
@@ -178,6 +179,16 @@ export default function InsightsScreen() {
     Transaction[]
   >([]);
   const [categories, setCategories] = useState<string[]>(["All Categories"]);
+
+  // Month selection state
+  const [selectedMonth, setSelectedMonth] = useState<number>(
+    new Date().getMonth()
+  );
+  const [selectedYear, setSelectedYear] = useState<number>(
+    new Date().getFullYear()
+  );
+  const [availableMonths, setAvailableMonths] = useState<MonthOption[]>([]);
+
   const hasData = useRef(false);
   const hasCachedData = useRef(false); // Track if we have cached data to avoid skeleton
   const [refreshing, setRefreshing] = useState(false);
@@ -539,14 +550,12 @@ export default function InsightsScreen() {
   useEffect(() => {
     const loadCachedData = async () => {
       try {
-        // Load cached spending breakdown first (has processed data)
-        const cachedSpending = await loadSpendingFromCache();
-        if (cachedSpending) {
-          logger.info("📦 Loading cached spending breakdown on mount");
-          setCategoryBreakdown(cachedSpending.categoryBreakdown);
-          setCurrentMonthTransactions(cachedSpending.currentMonthTransactions);
-          hasCachedData.current = true;
-        }
+        // Clear spending cache on mount to force recalculation with new date parsing logic
+        // This ensures old cached data with buggy date logic doesn't persist
+        await clearSpendingCache();
+
+        // Don't load cached spending breakdown anymore - it's month-specific and may have
+        // been calculated with old buggy date logic. Always reprocess from transactions.
 
         // Load cached transactions (most important for smooth UX)
         const cachedTransactions = await loadTransactionsFromCache();
@@ -559,15 +568,12 @@ export default function InsightsScreen() {
           hasData.current = true;
           hasCachedData.current = true;
 
-          // Only process if we don't have cached spending breakdown
-          // Otherwise, use cached spending data which is already processed
-          if (!cachedSpending) {
-            // Use ref if available, otherwise will be processed in normal flow
-            if (processTransactionsDataRef.current) {
-              processTransactionsDataRef.current(cachedTransactions);
-            }
-            // If ref not set yet, normal initialization will handle it
+          // Always reprocess transactions to calculate spending breakdown with correct date logic
+          // Use ref if available, otherwise will be processed in normal flow
+          if (processTransactionsDataRef.current) {
+            processTransactionsDataRef.current(cachedTransactions);
           }
+          // If ref not set yet, normal initialization will handle it
         }
 
         // Load cached investment data
@@ -794,7 +800,7 @@ export default function InsightsScreen() {
         accounts.length > 0 &&
         filteredTransactions.length === 0
       ) {
-        // If there's an active search query and we have 0 results, 
+        // If there's an active search query and we have 0 results,
         // we've already confirmed there are no results - don't show loading state
         if (searchQuery.trim() && !isSearching) {
           // Search completed with 0 results - show empty state, not loading
@@ -827,7 +833,13 @@ export default function InsightsScreen() {
     return () => {
       isCancelled = true;
     };
-  }, [activeSection, accounts.length, filteredTransactions.length, searchQuery, isSearching]);
+  }, [
+    activeSection,
+    accounts.length,
+    filteredTransactions.length,
+    searchQuery,
+    isSearching,
+  ]);
 
   // Gate data loads by active section and trigger smart preloading
   useEffect(() => {
@@ -883,7 +895,8 @@ export default function InsightsScreen() {
       }
 
       // Fetch recent transactions using the new plaid utils
-      const transactions = await getRecentTransactions(userId, 100);
+      // Fetch more transactions to support 2 years of month history (estimate ~1000 transactions)
+      const transactions = await getRecentTransactions(userId, 1000);
 
       if (transactions && transactions.length > 0) {
         logger.info(
@@ -922,7 +935,8 @@ export default function InsightsScreen() {
       }
 
       // Fetch latest transactions using the new plaid utils
-      const transactions = await getRecentTransactions(userId, 100);
+      // Fetch more transactions to support 2 years of month history (estimate ~1000 transactions)
+      const transactions = await getRecentTransactions(userId, 1000);
 
       if (transactions && transactions.length > 0) {
         logger.info(
@@ -1293,40 +1307,132 @@ export default function InsightsScreen() {
     };
   }, []);
 
+  // Helper function to parse transaction date as local date (not UTC)
+  // Uses authorized_date if available (when user actually made transaction),
+  // otherwise uses posted date (date)
+  const parseTransactionDate = useCallback(
+    (tx: Transaction): { year: number; month: number } => {
+      // Use authorized_date if available (when user actually made the transaction)
+      // Fallback to date (posted date) if authorized_date is not available
+      const dateStr = tx.authorized_date || tx.date;
+      // Parse date string directly: "2024-11-30" -> year=2024, month=10 (0-indexed)
+      const parts = dateStr.split("-");
+      const year = parseInt(parts[0], 10);
+      const month = parseInt(parts[1], 10) - 1; // Convert 1-12 to 0-11
+      return { year, month };
+    },
+    []
+  );
+
+  // Generate available months from transactions (last 24 months max)
+  const generateAvailableMonths = useCallback(
+    (transactionsData: Transaction[]): MonthOption[] => {
+      // Filter out INTERNAL_TRANSFER transactions
+      const expenses = transactionsData.filter(
+        (tx) => tx.amount > 0 && tx.new_category !== "INTERNAL_TRANSFER"
+      );
+
+      // Create a map of month-year to total spent
+      const monthMap = new Map<
+        string,
+        { month: number; year: number; total: number }
+      >();
+
+      expenses.forEach((tx) => {
+        const { year, month } = parseTransactionDate(tx);
+        const key = `${year}-${month}`;
+
+        if (!monthMap.has(key)) {
+          monthMap.set(key, { month, year, total: 0 });
+        }
+        monthMap.get(key)!.total += tx.amount;
+      });
+
+      // Convert to array and sort by date (most recent first)
+      const monthsArray: MonthOption[] = Array.from(monthMap.values())
+        .sort((a, b) => {
+          if (a.year !== b.year) return b.year - a.year;
+          return b.month - a.month;
+        })
+        .slice(0, 24) // Limit to last 24 months
+        .map(({ month, year, total }) => ({
+          month,
+          year,
+          totalSpent: total,
+        }));
+
+      return monthsArray;
+    },
+    [parseTransactionDate]
+  );
+
+  // Filter transactions by selected month/year
+  const filterTransactionsByMonth = useCallback(
+    (
+      transactionsData: Transaction[],
+      month: number,
+      year: number
+    ): Transaction[] => {
+      return transactionsData.filter((tx) => {
+        const { year: txYear, month: txMonth } = parseTransactionDate(tx);
+        return (
+          txMonth === month &&
+          txYear === year &&
+          tx.amount > 0 &&
+          tx.new_category !== "INTERNAL_TRANSFER"
+        );
+      });
+    },
+    [parseTransactionDate]
+  );
+
   // Memoized transaction processing to prevent expensive recomputations
   const processTransactionsData = useCallback(
-    (transactionsData: Transaction[]) => {
-      // Filter for current month expenses only
-      const { now, currentMonth, currentYear } = currentDateInfo;
+    (
+      transactionsData: Transaction[],
+      targetMonth?: number,
+      targetYear?: number
+    ) => {
+      // Use selected month/year or default to current month
+      const monthToUse =
+        targetMonth !== undefined ? targetMonth : selectedMonth;
+      const yearToUse = targetYear !== undefined ? targetYear : selectedYear;
 
       // Filter out INTERNAL_TRANSFER transactions - they should not be counted in spending
       const expenses = transactionsData.filter(
         (tx) => tx.amount > 0 && tx.new_category !== "INTERNAL_TRANSFER"
       );
 
-      // Filter for current month (with fallback to most recent month if no current month data)
-      let currentMonthExpenses = expenses.filter((tx) => {
-        const txDate = new Date(tx.date);
-        const isCurrentMonth =
-          txDate.getMonth() === currentMonth &&
-          txDate.getFullYear() === currentYear;
-        return isCurrentMonth;
-      });
+      // Filter for selected month
+      let currentMonthExpenses = filterTransactionsByMonth(
+        expenses,
+        monthToUse,
+        yearToUse
+      );
 
-      // If no current month data, use most recent month's data
+      // If no data for selected month, try to find the most recent month with data
       if (currentMonthExpenses.length === 0 && expenses.length > 0) {
-        // Find the most recent month with data
-        const mostRecentDate = new Date(expenses[0].date);
-        const mostRecentMonth = mostRecentDate.getMonth();
-        const mostRecentYear = mostRecentDate.getFullYear();
-
-        currentMonthExpenses = expenses.filter((tx) => {
-          const txDate = new Date(tx.date);
-          return (
-            txDate.getMonth() === mostRecentMonth &&
-            txDate.getFullYear() === mostRecentYear
-          );
+        // Sort expenses by date (most recent first) - compare date strings directly
+        const sortedExpenses = [...expenses].sort((a, b) => {
+          // YYYY-MM-DD format sorts correctly as strings
+          return b.date.localeCompare(a.date);
         });
+
+        // Find the most recent month with data using transaction date parsing
+        const { year: mostRecentYear, month: mostRecentMonth } =
+          parseTransactionDate(sortedExpenses[0]);
+
+        currentMonthExpenses = filterTransactionsByMonth(
+          expenses,
+          mostRecentMonth,
+          mostRecentYear
+        );
+
+        // Update selected month/year to match most recent month with data
+        if (targetMonth === undefined && targetYear === undefined) {
+          setSelectedMonth(mostRecentMonth);
+          setSelectedYear(mostRecentYear);
+        }
       }
 
       const totalSpent = currentMonthExpenses.reduce(
@@ -1438,7 +1544,14 @@ export default function InsightsScreen() {
         logger.error("Failed to save spending to cache:", error);
       });
     },
-    [currentDateInfo, getCategoryColor, formatCategoryFromHook]
+    [
+      selectedMonth,
+      selectedYear,
+      filterTransactionsByMonth,
+      parseTransactionDate,
+      getCategoryColor,
+      formatCategoryFromHook,
+    ]
   );
 
   // Keep ref updated with latest processTransactionsData function
@@ -1447,6 +1560,44 @@ export default function InsightsScreen() {
     processTransactionsDataRef.current = processTransactionsData;
   }, [processTransactionsData]);
 
+  // Generate available months when transactions change
+  useEffect(() => {
+    if (transactions.length > 0) {
+      const months = generateAvailableMonths(transactions);
+      setAvailableMonths(months);
+
+      // If current selected month is not in available months, default to most recent month
+      if (months.length > 0) {
+        const currentSelectedExists = months.some(
+          (m) => m.month === selectedMonth && m.year === selectedYear
+        );
+        if (!currentSelectedExists) {
+          // Default to most recent month (first in array)
+          setSelectedMonth(months[0].month);
+          setSelectedYear(months[0].year);
+        }
+      }
+    }
+  }, [transactions, generateAvailableMonths, selectedMonth, selectedYear]);
+
+  // Handle month selection
+  const handleMonthSelect = useCallback((month: number, year: number) => {
+    setSelectedMonth(month);
+    setSelectedYear(year);
+  }, []);
+
+  // Reprocess transactions when selected month/year changes
+  useEffect(() => {
+    if (transactions.length > 0) {
+      processTransactionsData(transactions, selectedMonth, selectedYear);
+    }
+  }, [selectedMonth, selectedYear, transactions, processTransactionsData]);
+
+  // Helper to get display date from transaction (uses authorized_date if available)
+  const getTransactionDisplayDate = (tx: Transaction): string => {
+    return tx.authorized_date || tx.date;
+  };
+
   const formatDate = (dateStr: string) => {
     const options: Intl.DateTimeFormatOptions = {
       year: "numeric",
@@ -1454,6 +1605,11 @@ export default function InsightsScreen() {
       day: "numeric",
     };
     return new Date(dateStr).toLocaleDateString("en-US", options);
+  };
+
+  // Format transaction date using display date (authorized_date if available)
+  const formatTransactionDate = (tx: Transaction): string => {
+    return formatDate(getTransactionDisplayDate(tx));
   };
 
   // Helper function to get filter description
@@ -1467,19 +1623,51 @@ export default function InsightsScreen() {
             ?.institution_name || "Selected Account"
         : `${accountIds.length} accounts`;
 
-    const timePeriodMap: { [key: string]: string } = {
-      all: "All",
-      "7days": "7 days",
-      "30days": "30 days",
-      "3months": "3 months",
-      "6months": "6 months",
-      "12months": "12 months",
-      december2024: "Dec 2024",
-      november2024: "Nov 2024",
-      october2024: "Oct 2024",
+    // Helper function to format month-year period IDs
+    const formatTimePeriodName = (timePeriod: string): string => {
+      const quickPeriods: { [key: string]: string } = {
+        all: "All",
+        "7days": "7 days",
+        "30days": "30 days",
+        "3months": "3 months",
+        "6months": "6 months",
+        "12months": "12 months",
+      };
+
+      if (quickPeriods[timePeriod]) {
+        return quickPeriods[timePeriod];
+      }
+
+      // Handle month-year format (e.g., "january2024" -> "Jan 2024")
+      const monthYearMatch = timePeriod.match(
+        /^(january|february|march|april|may|june|july|august|september|october|november|december)(\d{4})$/i
+      );
+      if (monthYearMatch) {
+        const monthName = monthYearMatch[1].toLowerCase();
+        const year = monthYearMatch[2];
+
+        const monthAbbrev: { [key: string]: string } = {
+          january: "Jan",
+          february: "Feb",
+          march: "Mar",
+          april: "Apr",
+          may: "May",
+          june: "Jun",
+          july: "Jul",
+          august: "Aug",
+          september: "Sep",
+          october: "Oct",
+          november: "Nov",
+          december: "Dec",
+        };
+
+        return `${monthAbbrev[monthName] || monthName} ${year}`;
+      }
+
+      return "7 days"; // Default fallback
     };
 
-    const timePeriodName = timePeriodMap[filterOptions.timePeriod] || "7 days";
+    const timePeriodName = formatTimePeriodName(filterOptions.timePeriod);
 
     const categoryIds = filterOptions.categoryIds || [];
     const categoryName =
@@ -2429,6 +2617,10 @@ export default function InsightsScreen() {
                     categoryBreakdown={categoryBreakdown}
                     onCategoryPress={handleCategoryPress}
                     formatCategoryName={formatCategoryFromHook}
+                    availableMonths={availableMonths}
+                    selectedMonth={selectedMonth}
+                    selectedYear={selectedYear}
+                    onMonthSelect={handleMonthSelect}
                   />
                 </Animated.View>
               )}

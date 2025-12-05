@@ -25,7 +25,8 @@ export interface Transaction {
   top_category?: string; // Simplified top-level category (e.g., "Food", "Transportation")
   sub_category?: string; // Simplified sub-category (e.g., "Eating Out", "Groceries")
   new_category?: string; // User-overridden category (highest priority)
-  date: string;
+  date: string; // Posted date (when transaction was posted to account)
+  authorized_date?: string | null; // Authorization date (when user actually made the transaction) - optional
   name: string;
   personal_finance_category?: {
     primary: string;

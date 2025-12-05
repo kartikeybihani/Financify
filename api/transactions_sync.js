@@ -229,6 +229,7 @@ export default async function handler(req, res) {
           category: category, // Keep original Plaid category (detailed or primary)
           top_category: mappedCategory.top, // Mapped top category
           sub_category: mappedCategory.sub, // Mapped sub category
+          authorized_date: txn.authorized_date || null, // When transaction was authorized (when user actually made it)
           transaction_type: txn.payment_channel || null,
           pending: txn.pending ?? false,
           recurring_stream_id: recurringStreamId, // Link to recurring stream if applicable

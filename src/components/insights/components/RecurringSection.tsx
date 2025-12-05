@@ -441,7 +441,9 @@ export default function RecurringSection({
                             {transaction.name}
                           </Text>
                           <Text style={styles.historyTransactionDate}>
-                            {formatDate(transaction.date)}
+                            {formatDate(
+                              transaction.authorized_date || transaction.date
+                            )}
                           </Text>
                           {transaction.accounts?.user_items
                             ?.institution_name && (

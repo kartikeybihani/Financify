@@ -277,6 +277,7 @@ serve(async (req: Request) => {
           account_id: txn.account_id, // must exist in public.accounts due to FK
           plaid_transaction_id: txn.transaction_id,
           date: txn.date,
+          authorized_date: txn.authorized_date || null, // When transaction was authorized (when user actually made it)
           amount: txn.amount,
           iso_currency_code: txn.iso_currency_code || null,
           name: txn.name || null,

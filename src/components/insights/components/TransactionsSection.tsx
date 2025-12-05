@@ -235,20 +235,53 @@ function TransactionsSection(props: Props) {
                   </View>
                 ))}
                 {(() => {
-                  const timePeriodMap: { [key: string]: string } = {
-                    all: "All",
-                    "7days": "7 days",
-                    "30days": "30 days",
-                    "3months": "3 months",
-                    "6months": "6 months",
-                    "12months": "12 months",
-                    december2024: "Dec 2024",
-                    november2024: "Nov 2024",
-                    october2024: "Oct 2024",
+                  // Helper function to format month-year period IDs
+                  const formatTimePeriodName = (timePeriod: string): string => {
+                    const quickPeriods: { [key: string]: string } = {
+                      all: "All",
+                      "7days": "7 days",
+                      "30days": "30 days",
+                      "3months": "3 months",
+                      "6months": "6 months",
+                      "12months": "12 months",
+                    };
+
+                    if (quickPeriods[timePeriod]) {
+                      return quickPeriods[timePeriod];
+                    }
+
+                    // Handle month-year format (e.g., "january2024" -> "Jan 2024")
+                    const monthYearMatch = timePeriod.match(
+                      /^(january|february|march|april|may|june|july|august|september|october|november|december)(\d{4})$/i
+                    );
+                    if (monthYearMatch) {
+                      const monthName = monthYearMatch[1].toLowerCase();
+                      const year = monthYearMatch[2];
+
+                      const monthAbbrev: { [key: string]: string } = {
+                        january: "Jan",
+                        february: "Feb",
+                        march: "Mar",
+                        april: "Apr",
+                        may: "May",
+                        june: "Jun",
+                        july: "Jul",
+                        august: "Aug",
+                        september: "Sep",
+                        october: "Oct",
+                        november: "Nov",
+                        december: "Dec",
+                      };
+
+                      return `${monthAbbrev[monthName] || monthName} ${year}`;
+                    }
+
+                    return "7 days"; // Default fallback
                   };
-                  const timePeriodName =
-                    timePeriodMap[filterOptions?.timePeriod || "7days"] ||
-                    "7 days";
+
+                  const timePeriodName = formatTimePeriodName(
+                    filterOptions?.timePeriod || "7days"
+                  );
                   const categoryIds = filterOptions?.categoryIds || [];
                   const categoryName =
                     categoryIds.length === 0
@@ -509,7 +542,7 @@ function TransactionsSection(props: Props) {
                   <Text
                     style={{ color: "#888", fontSize: 11, marginBottom: 1 }}
                   >
-                    {formatDate(tx.date)}
+                    {formatDate(tx.authorized_date || tx.date)}
                   </Text>
                   <Text
                     style={{

@@ -15,6 +15,38 @@ CREATE TABLE public.accounts (
   CONSTRAINT accounts_pkey PRIMARY KEY (account_id),
   CONSTRAINT accounts_item_id_fkey FOREIGN KEY (item_id) REFERENCES public.user_items(item_id)
 );
+CREATE TABLE public.budget_entries (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  budget_period_id uuid NOT NULL,
+  scope_type text NOT NULL CHECK (scope_type = ANY (ARRAY['overall'::text, 'category'::text, 'group'::text])),
+  category_id uuid,
+  group_key text,
+  label text NOT NULL,
+  limit_amount numeric NOT NULL CHECK (limit_amount >= 0::numeric),
+  is_flexible boolean NOT NULL DEFAULT false,
+  sort_index integer NOT NULL DEFAULT 0,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT budget_entries_pkey PRIMARY KEY (id),
+  CONSTRAINT budget_entries_budget_period_id_fkey FOREIGN KEY (budget_period_id) REFERENCES public.budget_periods(id),
+  CONSTRAINT budget_entries_category_id_fkey FOREIGN KEY (category_id) REFERENCES public.categories(id)
+);
+CREATE TABLE public.budget_periods (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL,
+  name text,
+  period_start date NOT NULL,
+  period_end date NOT NULL,
+  period_type text NOT NULL DEFAULT 'monthly'::text CHECK (period_type = 'monthly'::text),
+  currency_code text NOT NULL DEFAULT 'USD'::text,
+  total_limit numeric,
+  rollover_mode text NOT NULL DEFAULT 'none'::text CHECK (rollover_mode = ANY (ARRAY['none'::text, 'carry_remaining'::text, 'carry_overspend'::text])),
+  status text NOT NULL DEFAULT 'active'::text CHECK (status = ANY (ARRAY['draft'::text, 'active'::text, 'archived'::text])),
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT budget_periods_pkey PRIMARY KEY (id),
+  CONSTRAINT budget_periods_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
+);
 CREATE TABLE public.cash_entries (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL,
@@ -233,6 +265,26 @@ CREATE TABLE public.memory_summary (
   CONSTRAINT memory_summary_pkey PRIMARY KEY (id),
   CONSTRAINT memory_summary_history_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
 );
+CREATE TABLE public.plaid_link_events (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL,
+  link_session_id text NOT NULL,
+  event_name text NOT NULL,
+  event_type text,
+  institution_id text,
+  institution_name text,
+  view_name text,
+  error_code text,
+  error_type text,
+  error_message text,
+  status text,
+  request_id text,
+  metadata jsonb DEFAULT '{}'::jsonb,
+  timestamp timestamp with time zone DEFAULT now(),
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT plaid_link_events_pkey PRIMARY KEY (id),
+  CONSTRAINT plaid_link_events_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
+);
 CREATE TABLE public.profiles (
   id uuid NOT NULL,
   onboarding_completed boolean NOT NULL DEFAULT false,
@@ -347,6 +399,7 @@ CREATE TABLE public.transactions (
   recurring_stream_id text,
   if_recurring text DEFAULT 'no'::text CHECK (if_recurring = ANY (ARRAY['yes'::text, 'no'::text])),
   linked_goal_id uuid,
+  authorized_date date,
   CONSTRAINT transactions_pkey PRIMARY KEY (id),
   CONSTRAINT transactions_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id),
   CONSTRAINT transactions_account_id_fkey FOREIGN KEY (account_id) REFERENCES public.accounts(account_id),

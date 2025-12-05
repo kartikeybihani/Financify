@@ -19,12 +19,14 @@ interface SpendingBreakdownProps {
   categoryBreakdown: [string, CategoryData][];
   onCategoryPress: (category: string, data: CategoryData) => void;
   formatCategoryName: (category: string) => string;
+  period?: string; // Optional period label (e.g., "This Month", "December 2024")
 }
 
 const SpendingBreakdown: React.FC<SpendingBreakdownProps> = ({
   categoryBreakdown,
   onCategoryPress,
   formatCategoryName,
+  period = "This Month",
 }) => {
   const totalSpent = categoryBreakdown.reduce(
     (sum, [_, data]) => sum + data.amount,
@@ -96,14 +98,14 @@ const SpendingBreakdown: React.FC<SpendingBreakdownProps> = ({
             <Text style={styles.totalAmount}>
               ${totalSpent.toLocaleString()}
             </Text>
-            <Text style={styles.totalPeriod}>This Month</Text>
+            <Text style={styles.totalPeriod}>{period}</Text>
           </View>
         </View>
       </View>
 
       {/* Money Flow - Visual Storytelling */}
       <View style={styles.moneyFlowSection}>
-        <Text style={styles.flowTitle}>Where Your Money Flows</Text>
+        <Text style={styles.flowTitle}>Money Avenue</Text>
         <View style={styles.flowContainer}>
           {/* Flowing Categories */}
           <View style={styles.flowCategories}>
