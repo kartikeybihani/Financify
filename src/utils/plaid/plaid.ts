@@ -1480,14 +1480,16 @@ export const getFilteredTransactions = async (
       // logger.info(`🔍 No category filter - showing transactions from ALL categories`);
     }
 
-    // Add search query filter if specified (search by name or category)
+    // Add search query filter if specified (search by name or effective category)
     if (searchQuery && searchQuery.trim()) {
       const searchTerm = searchQuery.trim();
       // Search in transaction name (case-insensitive)
-      // Also search in categories (both new_category and top_category)
+      // Search in effective category: new_category if exists, else top_category
+      // This respects user overrides - if user changed category, we only search the new category
       // PostgREST uses * as wildcard for ilike (not %)
+      // Pattern: name matches OR (new_category matches AND new_category is not null) OR (top_category matches AND new_category is null)
       query = query.or(
-        `name.ilike.*${searchTerm}*,new_category.ilike.*${searchTerm}*,top_category.ilike.*${searchTerm}*`
+        `name.ilike.*${searchTerm}*,and(new_category.ilike.*${searchTerm}*,new_category.not.is.null),and(top_category.ilike.*${searchTerm}*,new_category.is.null)`
       );
     }
 
@@ -1587,14 +1589,16 @@ export const getFilteredTransactionsCount = async (
       );
     }
 
-    // Add search query filter if specified (search by name or category)
+    // Add search query filter if specified (search by name or effective category)
     if (searchQuery && searchQuery.trim()) {
       const searchTerm = searchQuery.trim();
       // Search in transaction name (case-insensitive)
-      // Also search in categories (both new_category and top_category)
+      // Search in effective category: new_category if exists, else top_category
+      // This respects user overrides - if user changed category, we only search the new category
       // PostgREST uses * as wildcard for ilike (not %)
+      // Pattern: name matches OR (new_category matches AND new_category is not null) OR (top_category matches AND new_category is null)
       query = query.or(
-        `name.ilike.*${searchTerm}*,new_category.ilike.*${searchTerm}*,top_category.ilike.*${searchTerm}*`
+        `name.ilike.*${searchTerm}*,and(new_category.ilike.*${searchTerm}*,new_category.not.is.null),and(top_category.ilike.*${searchTerm}*,new_category.is.null)`
       );
     }
 

@@ -176,5 +176,41 @@ export const sectionContentStyles = StyleSheet.create({
   },
 });
 
+// Floating Action Button Styles (Fixed to screen)
+export const fabStyles = StyleSheet.create({
+  container: {
+    position: "absolute",
+    bottom: 84,
+    right: 34,
+    zIndex: 1000,
+  },
+  button: {
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  addButton: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: "#4A90E2",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#4A90E2",
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+});
+
 // Prevent Expo Router from treating this as a route by providing a no-op default export
 export default function InsightsStylesPlaceholder() { return null; }

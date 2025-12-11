@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -6,6 +6,12 @@ import {
   TouchableOpacity,
   Animated,
   ActivityIndicator,
+  Modal,
+  TouchableWithoutFeedback,
+  ScrollView,
+  TextInput,
+  Easing,
+  Dimensions,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import PersonalityBadge from "@/src/components/insights/PersonalityBadge";
@@ -14,6 +20,8 @@ import BudgetView from "@/src/components/insights/BudgetView";
 import MonthSelector, { MonthOption } from "./MonthSelector";
 import { analyzeSpendingPersonality } from "@/src/utils/analytics/personalityAnalysis";
 import { useBudget } from "@/src/hooks/useBudget";
+import { supabase } from "@/src/lib/supabase/supabase";
+import logger from "@/src/utils/core/logger";
 
 interface Props {
   titleStyle: any;
@@ -40,6 +48,8 @@ interface Props {
   selectedMonth?: number;
   selectedYear?: number;
   onMonthSelect?: (month: number, year: number) => void;
+  onBudgetModeChange?: (isBudgetMode: boolean) => void;
+  onOpenAddCategoryModalRef?: (openFn: () => void) => void;
 }
 
 export default function SpendingSection({
@@ -51,8 +61,11 @@ export default function SpendingSection({
   selectedMonth,
   selectedYear,
   onMonthSelect,
+  onBudgetModeChange,
+  onOpenAddCategoryModalRef,
 }: Props) {
   const [isBudgetMode, setIsBudgetMode] = useState(false);
+  const [addCategoryModalVisible, setAddCategoryModalVisible] = useState(false);
   const fadeAnim = useRef(new Animated.Value(1)).current;
   const slideAnim = useRef(new Animated.Value(0)).current;
 
@@ -67,6 +80,9 @@ export default function SpendingSection({
     updateCategoryBudget,
     deleteCategoryBudget,
     budgetSummary,
+    groupCategory,
+    ungroupCategory,
+    deleteCategory,
   } = useBudget();
 
   // Initialize budget on first mount if needed
@@ -106,7 +122,12 @@ export default function SpendingSection({
       }),
     ]).start(() => {
       // Switch mode
-      setIsBudgetMode((prev) => !prev);
+      setIsBudgetMode((prev) => {
+        const newMode = !prev;
+        // Notify parent of budget mode change
+        onBudgetModeChange?.(newMode);
+        return newMode;
+      });
 
       // Prepare slide-in position
       slideAnim.setValue(-20);
@@ -127,28 +148,27 @@ export default function SpendingSection({
     });
   };
 
+  // Expose function to open add category modal to parent
+  const openAddCategoryModal = useCallback(() => {
+    setAddCategoryModalVisible(true);
+  }, []);
+
+  useEffect(() => {
+    onOpenAddCategoryModalRef?.(openAddCategoryModal);
+  }, [onOpenAddCategoryModalRef, openAddCategoryModal]);
+
+  // Notify parent of initial budget mode state
+  useEffect(() => {
+    onBudgetModeChange?.(isBudgetMode);
+  }, [isBudgetMode, onBudgetModeChange]);
+
   return (
-    <View>
+    <View style={styles.container}>
       <View style={styles.titleRow}>
         <Text style={titleStyle}>
           {isBudgetMode ? "Budget Overview" : "Your Spending Personality"}
         </Text>
         <View style={styles.titleRight}>
-          {isBudgetMode && (
-            <TouchableOpacity
-              style={styles.reloadButton}
-              activeOpacity={0.7}
-              onPress={async () => {
-                console.log(
-                  "[BUDGET] Reload button pressed - force re-initializing..."
-                );
-                // Force re-initialize to recalculate suggestions
-                await initializeBudget(true);
-              }}
-            >
-              <Ionicons name="refresh-outline" size={16} color="#4A90E2" />
-            </TouchableOpacity>
-          )}
           <TouchableOpacity
             style={[styles.budgetChip, isBudgetMode && styles.budgetChipActive]}
             activeOpacity={0.7}
@@ -202,6 +222,10 @@ export default function SpendingSection({
               budgetSummary={budgetSummary}
               onUpdateBudget={updateCategoryBudget}
               onDeleteBudget={deleteCategoryBudget}
+              onGroupCategory={groupCategory}
+              onRemoveGrouping={ungroupCategory}
+              onDeleteCategory={deleteCategory}
+              refreshBudget={refreshBudget}
             />
           )
         ) : (
@@ -239,11 +263,27 @@ export default function SpendingSection({
           />
         )}
       </Animated.View>
+
+      {/* Add Category Modal */}
+      <AddCategoryModal
+        visible={addCategoryModalVisible}
+        onClose={() => setAddCategoryModalVisible(false)}
+        onCategoryAdded={async () => {
+          // Refresh budget data after adding category
+          if (refreshBudget) {
+            await refreshBudget();
+          }
+          setAddCategoryModalVisible(false);
+        }}
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  container: {
+    position: "relative",
+  },
   titleRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -254,16 +294,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-  },
-  reloadButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: "rgba(74, 144, 226, 0.15)",
-    justifyContent: "center",
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: "rgba(74, 144, 226, 0.3)",
   },
   budgetChip: {
     backgroundColor: "rgba(74, 144, 226, 0.15)",
@@ -301,5 +331,455 @@ const styles = StyleSheet.create({
     color: "#888",
     fontSize: 14,
     marginTop: 12,
+  },
+});
+
+// Add Category Modal Component
+interface AddCategoryModalProps {
+  visible: boolean;
+  onClose: () => void;
+  onCategoryAdded: () => Promise<void>;
+}
+
+const AddCategoryModal: React.FC<AddCategoryModalProps> = ({
+  visible,
+  onClose,
+  onCategoryAdded,
+}) => {
+  const [categoryName, setCategoryName] = useState("");
+  const [selectedIcon, setSelectedIcon] = useState("💰");
+  const [loading, setLoading] = useState(false);
+  const screenHeight = Dimensions.get("window").height;
+  const slideAnim = useRef(new Animated.Value(screenHeight)).current;
+  const [rendered, setRendered] = useState(visible);
+
+  const commonIcons = [
+    "💰",
+    "🛒",
+    "🍽️",
+    "🏠",
+    "🚗",
+    "🛍️",
+    "🎬",
+    "📱",
+    "💪",
+    "⚡",
+    "💄",
+    "✈️",
+    "📚",
+    "💎",
+    "🏥",
+    "🎮",
+    "🎵",
+    "🎨",
+    "🏋️",
+    "🧘",
+    "🍕",
+    "☕",
+    "🍔",
+    "🍰",
+    "🥗",
+    "🍺",
+    "🍷",
+    "🚕",
+    "🚌",
+    "🚇",
+  ];
+
+  const ionicons = [
+    "home",
+    "restaurant",
+    "car",
+    "shirt",
+    "film",
+    "phone-portrait",
+    "fitness",
+    "flash",
+    "beauty",
+    "airplane",
+    "book",
+    "diamond",
+    "medical",
+    "game-controller",
+    "musical-notes",
+    "color-palette",
+    "barbell",
+    "leaf",
+    "pizza",
+    "cafe",
+    "fast-food",
+    "ice-cream",
+    "nutrition",
+    "beer",
+    "wine",
+    "taxi",
+    "bus",
+    "train",
+  ];
+
+  useEffect(() => {
+    if (visible) {
+      setRendered(true);
+      slideAnim.setValue(screenHeight);
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 300,
+        easing: Easing.out(Easing.quad),
+        useNativeDriver: true,
+      }).start();
+    } else if (rendered) {
+      Animated.timing(slideAnim, {
+        toValue: screenHeight,
+        duration: 250,
+        easing: Easing.in(Easing.quad),
+        useNativeDriver: true,
+      }).start(() => {
+        setRendered(false);
+        setCategoryName("");
+        setSelectedIcon("💰");
+      });
+    }
+  }, [visible, rendered, slideAnim, screenHeight]);
+
+  if (!rendered) return null;
+
+  const handleSave = async () => {
+    if (!categoryName.trim()) {
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user?.id) {
+        throw new Error("Not authenticated");
+      }
+
+      // Create slug from name
+      let baseSlug = categoryName
+        .toLowerCase()
+        .replace(/[^a-z0-9\s-]/g, "")
+        .replace(/\s+/g, "-")
+        .trim();
+
+      // Handle potential slug conflicts
+      let slug = baseSlug;
+      let counter = 1;
+      let slugExists = true;
+
+      while (slugExists) {
+        const { data: existingSlug } = await supabase
+          .from("categories")
+          .select("id")
+          .eq("slug", slug)
+          .limit(1);
+
+        if (!existingSlug || existingSlug.length === 0) {
+          slugExists = false;
+        } else {
+          slug = `${baseSlug}-${counter}`;
+          counter++;
+        }
+      }
+
+      // Get the next rank
+      const { data: maxRankData } = await supabase
+        .from("categories")
+        .select("rank")
+        .eq("user_id", user.id)
+        .order("rank", { ascending: false })
+        .limit(1);
+
+      const nextRank = maxRankData?.[0]?.rank ? maxRankData[0].rank + 1 : 1;
+
+      // Generate UUID
+      const categoryId = "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(
+        /[xy]/g,
+        function (c) {
+          const r = (Math.random() * 16) | 0;
+          const v = c == "x" ? r : (r & 0x3) | 0x8;
+          return v.toString(16);
+        }
+      );
+
+      const { error } = await supabase.from("categories").insert({
+        id: categoryId,
+        user_id: user.id,
+        name: categoryName.trim(),
+        slug: slug,
+        icon: selectedIcon,
+        color: "#4A90E2",
+        rank: nextRank,
+        is_active: true,
+      });
+
+      if (error) throw error;
+
+      await onCategoryAdded();
+      onClose();
+    } catch (error) {
+      logger.error("[BUDGET] Error adding category:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Modal
+      transparent
+      animationType="none"
+      visible={visible}
+      onRequestClose={onClose}
+      statusBarTranslucent={true}
+    >
+      <TouchableWithoutFeedback onPress={onClose}>
+        <View style={modalStyles.sheetOverlay}>
+          <TouchableWithoutFeedback onPress={(e) => e.stopPropagation()}>
+            <Animated.View
+              style={[
+                modalStyles.sheetContainer,
+                {
+                  transform: [{ translateY: slideAnim }],
+                  maxHeight: screenHeight * 0.9,
+                },
+              ]}
+            >
+              <View style={modalStyles.sheetHandle} />
+              <ScrollView
+                style={modalStyles.scrollView}
+                contentContainerStyle={modalStyles.scrollContent}
+                showsVerticalScrollIndicator={false}
+                nestedScrollEnabled={true}
+                keyboardShouldPersistTaps="handled"
+              >
+                <View style={modalStyles.sheetHeader}>
+                  <Text style={modalStyles.sheetTitle}>Add New Category</Text>
+                </View>
+
+                <View style={modalStyles.section}>
+                  <Text style={modalStyles.label}>Category Name</Text>
+                  <TextInput
+                    style={modalStyles.inputRow}
+                    value={categoryName}
+                    onChangeText={setCategoryName}
+                    placeholder="Enter category name"
+                    placeholderTextColor="rgba(255,255,255,0.4)"
+                    autoFocus
+                  />
+                </View>
+
+                <View style={modalStyles.section}>
+                  <Text style={modalStyles.label}>Icon</Text>
+                  <View style={modalStyles.iconSelector}>
+                    <Text style={modalStyles.selectedIcon}>{selectedIcon}</Text>
+                    <Text style={modalStyles.iconLabel}>
+                      {ionicons.includes(selectedIcon) ? "Ionicons" : "Emoji"}
+                    </Text>
+                  </View>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    style={modalStyles.iconScroll}
+                  >
+                    <View style={modalStyles.iconRow}>
+                      {commonIcons.map((icon) => (
+                        <TouchableOpacity
+                          key={icon}
+                          style={[
+                            modalStyles.iconOption,
+                            selectedIcon === icon &&
+                              modalStyles.iconOptionSelected,
+                          ]}
+                          onPress={() => setSelectedIcon(icon)}
+                        >
+                          <Text style={modalStyles.iconOptionText}>{icon}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </ScrollView>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    style={modalStyles.iconScroll}
+                  >
+                    <View style={modalStyles.iconRow}>
+                      {ionicons.map((icon) => (
+                        <TouchableOpacity
+                          key={icon}
+                          style={[
+                            modalStyles.iconOption,
+                            selectedIcon === icon &&
+                              modalStyles.iconOptionSelected,
+                          ]}
+                          onPress={() => setSelectedIcon(icon)}
+                        >
+                          <Ionicons
+                            name={icon as keyof typeof Ionicons.glyphMap}
+                            size={24}
+                            color="#fff"
+                          />
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </ScrollView>
+                </View>
+
+                <View style={modalStyles.sheetButtonsRow}>
+                  <TouchableOpacity
+                    style={modalStyles.sheetSecondaryButton}
+                    onPress={onClose}
+                  >
+                    <Text style={modalStyles.sheetSecondaryText}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      modalStyles.sheetPrimaryButton,
+                      (!categoryName.trim() || loading) && { opacity: 0.5 },
+                    ]}
+                    onPress={handleSave}
+                    disabled={!categoryName.trim() || loading}
+                  >
+                    <Text style={modalStyles.sheetPrimaryText}>
+                      {loading ? "Adding..." : "Add Category"}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </ScrollView>
+            </Animated.View>
+          </TouchableWithoutFeedback>
+        </View>
+      </TouchableWithoutFeedback>
+    </Modal>
+  );
+};
+
+const modalStyles = StyleSheet.create({
+  sheetOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.75)",
+    justifyContent: "flex-end",
+  },
+  sheetContainer: {
+    width: "100%",
+    backgroundColor: "#1f1f1f",
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
+    padding: 18,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderColor: "rgba(255,255,255,0.1)",
+    minHeight: 400,
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
+    paddingBottom: 20,
+  },
+  sheetHandle: {
+    width: 44,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: "rgba(255,255,255,0.25)",
+    alignSelf: "center",
+    marginBottom: 12,
+  },
+  sheetHeader: {
+    marginBottom: 16,
+  },
+  sheetTitle: {
+    color: "#fff",
+    fontSize: 18,
+    fontWeight: "700",
+  },
+  section: {
+    marginTop: 4,
+    marginBottom: 16,
+  },
+  label: {
+    color: "rgba(255,255,255,0.7)",
+    fontSize: 12,
+    marginBottom: 6,
+  },
+  inputRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.08)",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.12)",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    color: "#fff",
+    fontSize: 16,
+  },
+  iconSelector: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    marginBottom: 12,
+  },
+  selectedIcon: {
+    fontSize: 32,
+    marginRight: 8,
+  },
+  iconLabel: {
+    color: "rgba(255,255,255,0.6)",
+    fontSize: 12,
+  },
+  iconScroll: {
+    marginBottom: 12,
+  },
+  iconRow: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  iconOption: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: "rgba(255,255,255,0.08)",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 2,
+    borderColor: "transparent",
+  },
+  iconOptionSelected: {
+    borderColor: "#4A90E2",
+    backgroundColor: "rgba(74, 144, 226, 0.2)",
+  },
+  iconOptionText: {
+    fontSize: 24,
+  },
+  sheetButtonsRow: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    gap: 10,
+    marginTop: 4,
+    paddingBottom: 10,
+  },
+  sheetSecondaryButton: {
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.12)",
+  },
+  sheetSecondaryText: {
+    color: "#fff",
+    fontWeight: "600",
+  },
+  sheetPrimaryButton: {
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    backgroundColor: "#4A90E2",
+  },
+  sheetPrimaryText: {
+    color: "#0b121a",
+    fontWeight: "700",
   },
 });

@@ -35,6 +35,7 @@ import {
   transactionInfoStyles,
   loadMoreStyles,
   sectionContentStyles,
+  fabStyles,
 } from "./insightsStyles";
 import CategoryDetailModal from "@/src/components/insights/CategoryDetailModal";
 import EnhancedFilterModal, {
@@ -45,6 +46,7 @@ import ReAuthBanner from "@/src/components/ui/ReAuthBanner";
 import InsightsLoadingSkeleton from "@/src/components/insights/InsightsLoadingSkeleton";
 import SpendingSection from "@/src/components/insights/components/SpendingSection";
 import { MonthOption } from "@/src/components/insights/components/MonthSelector";
+import IconButton from "@/src/components/shared/IconButton";
 import TransactionsSection from "@/src/components/insights/components/TransactionsSection";
 import CashFlowSection from "@/src/components/insights/components/CashFlowSection";
 import CategorySelectionModal from "@/src/components/modals/CategorySelectionModal";
@@ -257,6 +259,10 @@ export default function InsightsScreen() {
   const [mightHaveTransactions, setMightHaveTransactions] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const scrollViewRef = useRef<ScrollView>(null);
+  const [isBudgetMode, setIsBudgetMode] = useState(false);
+  const [openAddCategoryModal, setOpenAddCategoryModal] = useState<
+    (() => void) | null
+  >(null);
   const scrollOffsetRef = useRef(0);
   const contentHeightRef = useRef(0);
   const scrollViewHeightRef = useRef(0);
@@ -753,12 +759,10 @@ export default function InsightsScreen() {
       const searchTerm = searchQuery.trim().toLowerCase();
       const instantResults = baseTransactions.filter((tx) => {
         const name = (tx.name || "").toLowerCase();
-        const category = (tx.top_category || "").toLowerCase();
-        const newCategory = (tx.new_category || "").toLowerCase();
+        // Use effective category (new_category if exists, else top_category) - matches getDisplayCategory logic
+        const effectiveCategory = getDisplayCategory(tx).toLowerCase();
         return (
-          name.includes(searchTerm) ||
-          category.includes(searchTerm) ||
-          newCategory.includes(searchTerm)
+          name.includes(searchTerm) || effectiveCategory.includes(searchTerm)
         );
       });
 
@@ -1599,12 +1603,22 @@ export default function InsightsScreen() {
   };
 
   const formatDate = (dateStr: string) => {
+    // Parse date string directly to avoid timezone shifts
+    // dateStr format: "YYYY-MM-DD"
+    const parts = dateStr.split("-");
+    const year = parseInt(parts[0], 10);
+    const month = parseInt(parts[1], 10) - 1; // 0-indexed
+    const day = parseInt(parts[2], 10);
+
+    // Create date in local timezone
+    const date = new Date(year, month, day);
+
     const options: Intl.DateTimeFormatOptions = {
       year: "numeric",
       month: "long",
       day: "numeric",
     };
-    return new Date(dateStr).toLocaleDateString("en-US", options);
+    return date.toLocaleDateString("en-US", options);
   };
 
   // Format transaction date using display date (authorized_date if available)
@@ -2621,6 +2635,10 @@ export default function InsightsScreen() {
                     selectedMonth={selectedMonth}
                     selectedYear={selectedYear}
                     onMonthSelect={handleMonthSelect}
+                    onBudgetModeChange={setIsBudgetMode}
+                    onOpenAddCategoryModalRef={(openFn) =>
+                      setOpenAddCategoryModal(() => openFn)
+                    }
                   />
                 </Animated.View>
               )}
@@ -2849,6 +2867,19 @@ export default function InsightsScreen() {
             }}
           />
         </ScrollView>
+      )}
+
+      {/* Floating Action Button for Adding Category - Fixed to screen, only visible in budget mode */}
+      {isBudgetMode && activeSection === "spending" && openAddCategoryModal && (
+        <View style={fabStyles.container}>
+          <TouchableOpacity
+            onPress={openAddCategoryModal}
+            style={fabStyles.addButton}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="add-outline" size={24} color="#fff" />
+          </TouchableOpacity>
+        </View>
       )}
 
       {/* Update Mode Notification Modal */}
