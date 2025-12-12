@@ -31,7 +31,7 @@ import {
   loadMoreStyles,
   sectionContentStyles,
   fabStyles,
-} from "./insightsStyles";
+} from "@/src/styles/insightsStyles";
 import CategoryDetailModal from "@/src/components/insights/CategoryDetailModal";
 import EnhancedFilterModal, {
   FilterOptions,
@@ -257,7 +257,7 @@ export default function InsightsScreen() {
   const [isBudgetMode, setIsBudgetMode] = useState(false);
   const openAddCategoryModalRef = useRef<(() => void) | null>(null);
   const [hasOpenAddCategoryModal, setHasOpenAddCategoryModal] = useState(false);
-  
+
   // Wrapper function that calls the ref
   const openAddCategoryModal = useCallback(() => {
     if (openAddCategoryModalRef.current) {
@@ -2836,17 +2836,19 @@ export default function InsightsScreen() {
       )}
 
       {/* Floating Action Button for Adding Category - Fixed to screen, only visible in budget mode */}
-      {isBudgetMode && activeSection === "spending" && hasOpenAddCategoryModal && (
-        <View style={fabStyles.container}>
-          <TouchableOpacity
-            onPress={openAddCategoryModal}
-            style={fabStyles.addButton}
-            activeOpacity={0.8}
-          >
-            <Ionicons name="add-outline" size={24} color="#fff" />
-          </TouchableOpacity>
-        </View>
-      )}
+      {isBudgetMode &&
+        activeSection === "spending" &&
+        hasOpenAddCategoryModal && (
+          <View style={fabStyles.container}>
+            <TouchableOpacity
+              onPress={openAddCategoryModal}
+              style={fabStyles.addButton}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="add-outline" size={24} color="#fff" />
+            </TouchableOpacity>
+          </View>
+        )}
 
       {/* Update Mode Notification Modal */}
       <Modal

@@ -1,3 +1,4 @@
+// @refresh reset
 import { StyleSheet, Platform } from "react-native";
 import { MODAL_CONFIG } from "@/src/components/shared/modal-constants";
 
@@ -206,6 +207,3 @@ export const MODAL_SHARED_STYLES = StyleSheet.create({
     fontFamily: Platform.OS === "ios" ? "System" : "sans-serif",
   },
 });
-
-// Prevent Expo Router from treating this as a route by providing a no-op default export
-export default function ModalStylesPlaceholder() { return null; }

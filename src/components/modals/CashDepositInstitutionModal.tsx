@@ -7,7 +7,7 @@ import {
   ModalHeader,
   ModalLogoContainer,
 } from "../shared/modal-components";
-import { MODAL_SHARED_STYLES as styles } from "@/src/components/shared/modal-styles";
+import { MODAL_SHARED_STYLES as styles } from "@/src/styles/modalStyles";
 import {
   CASH_DEPOSIT_INSTITUTIONS,
   type Institution,
