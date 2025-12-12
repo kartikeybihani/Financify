@@ -52,11 +52,9 @@ export const startTokenRefresh = async (
 ): Promise<string | null> => {
   // If refresh already in progress, return the existing promise
   if (refreshCoordinator.isRefreshing && refreshCoordinator.refreshPromise) {
-    logger.info("[AUTH_TOKEN] 🔄 Refresh already in progress, queuing request");
     return refreshCoordinator.refreshPromise;
   }
 
-  logger.info("[AUTH_TOKEN] 🔄 Starting token refresh coordination");
   refreshCoordinator.isRefreshing = true;
   refreshCoordinator.startTime = Date.now();
   refreshCoordinator.newToken = null;
@@ -66,7 +64,6 @@ export const startTokenRefresh = async (
     try {
       // Invalidate cache immediately to prevent stale token usage
       tokenCache = null;
-      logger.info("[AUTH_TOKEN] 🗑️ Token cache invalidated for refresh");
 
       // Wait a brief moment for Supabase to complete internal refresh
       await new Promise((resolve) => setTimeout(resolve, 150));
@@ -81,15 +78,11 @@ export const startTokenRefresh = async (
           token: newToken,
           timestamp: Date.now(),
         };
-        const duration = Date.now() - refreshCoordinator.startTime;
-        logger.info(`[AUTH_TOKEN] ✅ Token refresh completed in ${duration}ms - new token cached`);
-      } else {
-        logger.warn("[AUTH_TOKEN] ⚠️ Token refresh completed but no new token received");
       }
 
       return newToken;
     } catch (error) {
-      logger.error("[AUTH_TOKEN] ❌ Token refresh failed:", error);
+      logger.error("[AUTH_TOKEN] Token refresh failed:", error);
       return null;
     } finally {
       // Reset coordinator after a brief delay to allow queued requests to complete
@@ -97,7 +90,6 @@ export const startTokenRefresh = async (
         refreshCoordinator.isRefreshing = false;
         refreshCoordinator.refreshPromise = null;
         refreshCoordinator.newToken = null;
-        logger.info("[AUTH_TOKEN] 🔓 Token refresh coordinator reset");
       }, 100);
     }
   })();
@@ -111,7 +103,6 @@ export const startTokenRefresh = async (
  */
 export const invalidateTokenCache = () => {
   if (tokenCache) {
-    logger.info("[AUTH_TOKEN] 🗑️ Invalidating token cache");
     tokenCache = null;
   }
 };
@@ -159,16 +150,13 @@ export const getFreshAccessToken = async (): Promise<string | null> => {
 
   // Check if refresh is in progress - if so, queue this request
   if (refreshCoordinator.isRefreshing && refreshCoordinator.refreshPromise) {
-    logger.info(`[AUTH_TOKEN] 🔑 [${callId}] Refresh in progress, queuing token request...`);
     try {
       const newToken = await refreshCoordinator.refreshPromise;
       if (newToken) {
-        const duration = Date.now() - startTime;
-        logger.info(`[AUTH_TOKEN] ✅ [${callId}] Got token from refresh coordinator in ${duration}ms`);
         return newToken;
       }
     } catch (error) {
-      logger.warn(`[AUTH_TOKEN] ⚠️ [${callId}] Refresh coordinator failed, falling back to getSession()...`);
+      // Fall through to getSession()
     }
   }
 
@@ -176,31 +164,19 @@ export const getFreshAccessToken = async (): Promise<string | null> => {
   if (tokenCache) {
     const cacheAge = Date.now() - tokenCache.timestamp;
     // Don't use cache if it's older than 2 minutes (tokens can be invalidated by refresh at any time)
-    // This is more aggressive than token expiration (1 hour) to catch refresh invalidations
     if (cacheAge < 2 * 60 * 1000) {
-      logger.info(`[AUTH_TOKEN] 🔑 [${callId}] Using cached token (cached ${cacheAge}ms ago)`);
       return tokenCache.token;
     } else {
-      logger.info(`[AUTH_TOKEN] 🔑 [${callId}] Cache expired (${cacheAge}ms old), fetching fresh token`);
       tokenCache = null;
     }
   }
-
-  logger.info(`[AUTH_TOKEN] 🔑 getFreshAccessToken START [${callId}] (cache miss)`);
   
   // Determine timeout based on whether refresh is in progress
   const isRefreshing = refreshCoordinator.isRefreshing;
   const GET_SESSION_TIMEOUT_MS = isRefreshing ? REFRESH_TIMEOUT_MS : NORMAL_TIMEOUT_MS;
   
-  if (isRefreshing) {
-    logger.info(`[AUTH_TOKEN] 🔑 [${callId}] Using extended timeout (${GET_SESSION_TIMEOUT_MS}ms) due to active refresh`);
-  }
-  
   try {
     for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-      logger.info(`[AUTH_TOKEN] 🔑 [${callId}] Attempt ${attempt + 1}/${MAX_RETRIES} - calling getSession() with ${GET_SESSION_TIMEOUT_MS}ms timeout...`);
-      const getSessionStartTime = Date.now();
-      
       try {
         const getSessionPromise = supabase.auth.getSession();
         const timeoutPromise = createTimeoutPromise(
@@ -209,7 +185,6 @@ export const getFreshAccessToken = async (): Promise<string | null> => {
         );
         
         const result = await Promise.race([getSessionPromise, timeoutPromise]);
-        const getSessionDuration = Date.now() - getSessionStartTime;
         
         // Type guard: timeoutPromise always rejects, so if we reach here, result is from getSessionPromise
         if (result instanceof Error) {
@@ -217,30 +192,21 @@ export const getFreshAccessToken = async (): Promise<string | null> => {
         }
         
         const { data: { session }, error } = result;
-        
-        logger.info(`[AUTH_TOKEN] 🔑 [${callId}] getSession() completed in ${getSessionDuration}ms - hasSession: ${!!session}, hasToken: ${!!session?.access_token}, error: ${error ? error.message : 'none'}`);
 
         if (error) {
-          logger.error(`[AUTH_TOKEN] ❌ [${callId}] Error getting session:`, error);
+          logger.error(`[AUTH_TOKEN] Error getting session:`, error);
           return null;
         }
 
         if (session?.access_token) {
-          const totalDuration = Date.now() - startTime;
           tokenCache = {
             token: session.access_token,
             timestamp: Date.now(),
           };
-          logger.info(`[AUTH_TOKEN] ✅ [${callId}] SUCCESS - got token in ${totalDuration}ms and cached (token: ${session.access_token.substring(0, 20)}...)`);
           return session.access_token;
         }
 
         if (attempt < MAX_RETRIES - 1) {
-          logger.info(
-            `[AUTH_TOKEN] ⏳ [${callId}] No access token in session (attempt ${
-              attempt + 1
-            }/${MAX_RETRIES}), retrying in ${RETRY_DELAY_MS}ms...`
-          );
           await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
         }
       } catch (timeoutError: any) {
@@ -333,59 +299,34 @@ export const authenticatedFetch = async (
   options: RequestInit = {},
   maxRetries: number = 2
 ): Promise<Response> => {
-  const callId = Math.random().toString(36).substring(2, 8);
-  const startTime = Date.now();
-  logger.info(`[AUTH_TOKEN] 🌐 authenticatedFetch START [${callId}] - ${options.method || 'GET'} ${url}`);
-  
   let retryCount = 0;
   
   while (retryCount <= maxRetries) {
-    logger.info(`[AUTH_TOKEN] 🌐 [${callId}] Attempt ${retryCount + 1}/${maxRetries + 1} - getting token...`);
-    const tokenStartTime = Date.now();
     const accessToken = await getFreshAccessToken();
-    const tokenDuration = Date.now() - tokenStartTime;
     
     if (!accessToken) {
-      logger.error(`[AUTH_TOKEN] ❌ [${callId}] No access token available after ${tokenDuration}ms`);
       throw new Error('Not authenticated - no access token available');
     }
-    
-    logger.info(`[AUTH_TOKEN] 🌐 [${callId}] Got token in ${tokenDuration}ms, making request...`);
     
     const headers = new Headers(options.headers);
     headers.set('Authorization', `Bearer ${accessToken}`);
     headers.set('Content-Type', 'application/json');
     
-    const fetchStartTime = Date.now();
     const response = await fetch(url, {
       ...options,
       headers,
     });
-    const fetchDuration = Date.now() - fetchStartTime;
-    
-    logger.info(`[AUTH_TOKEN] 🌐 [${callId}] Request completed in ${fetchDuration}ms - status: ${response.status}`);
     
     if (response.status === 401 && retryCount < maxRetries) {
-      // CRITICAL: Invalidate cache on 401 - the token is expired/invalid
-      // This ensures the next retry fetches a fresh token instead of reusing the expired cached one
-      logger.warn(`[AUTH_TOKEN] ⚠️ [${callId}] 401 error detected - invalidating token cache to force fresh token fetch`);
       invalidateTokenCache();
-      
       retryCount++;
-      const waitTime = 300 * retryCount;
-      logger.warn(`[AUTH_TOKEN] ⚠️ [${callId}] Retrying (${retryCount}/${maxRetries}) after ${waitTime}ms with fresh token...`);
-      
-      await new Promise(resolve => setTimeout(resolve, waitTime));
+      await new Promise(resolve => setTimeout(resolve, 300 * retryCount));
       continue;
     }
     
-    const totalDuration = Date.now() - startTime;
-    logger.info(`[AUTH_TOKEN] ✅ [${callId}] authenticatedFetch SUCCESS in ${totalDuration}ms - status: ${response.status}`);
     return response;
   }
   
-  const totalDuration = Date.now() - startTime;
-  logger.error(`[AUTH_TOKEN] ❌ [${callId}] authenticatedFetch FAILED after ${totalDuration}ms`);
   throw new Error('Failed to authenticate after retries');
 };
 

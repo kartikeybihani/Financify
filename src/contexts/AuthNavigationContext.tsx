@@ -302,23 +302,16 @@ export const AuthNavigationProvider: React.FC<AuthNavigationProviderProps> = ({
    * @param currentSession - The current Supabase session (or null if signed out)
    */
   const updateNavigationState = async (currentSession: Session | null) => {
-    logger.info("[AUTH] 🧭 updateNavigationState START");
-
     // Prevent concurrent updates
     if (isUpdatingNavigationRef.current) {
-      logger.info(
-        "[AUTH] ⚠️ Navigation update already in progress, skipping duplicate call"
-      );
       return;
     }
 
-    logger.info("[AUTH] 🔒 Acquiring navigation update lock");
     isUpdatingNavigationRef.current = true;
 
     try {
       if (!currentSession?.user) {
         // No session = clear everything
-        logger.info("[AUTH] 🧭 No session user, clearing navigation state");
         profileCache.current = null;
         profileCacheUserId.current = null;
         setNavigationState(NavigationState.PRE_SIGNUP);
@@ -329,19 +322,10 @@ export const AuthNavigationProvider: React.FC<AuthNavigationProviderProps> = ({
 
       // Fetch profile - fetchProfile handles caching internally
       const userId = currentSession.user.id;
-      logger.info(
-        `[AUTH] 🧭 Fetching profile for user ${userId.substring(0, 8)}...`
-      );
       const useCache = !!(
         profileCache.current && profileCacheUserId.current === userId
       );
-      logger.info(`[AUTH] 🧭 Using cache: ${useCache}`);
-      const fetchProfileStartTime = Date.now();
       const profile = await fetchProfile(userId, 0, useCache);
-      const fetchProfileDuration = Date.now() - fetchProfileStartTime;
-      logger.info(
-        `[AUTH] 🧭 fetchProfile completed in ${fetchProfileDuration}ms`
-      );
 
       // Use the returned profile value (fetchProfile updates cache on success, but may return null on error)
       // If profile is null, fall back to cached profile if available for the same user
@@ -351,19 +335,16 @@ export const AuthNavigationProvider: React.FC<AuthNavigationProviderProps> = ({
           ? profileCache.current
           : null);
       const newState = determineNavigationState(true, finalProfile);
-      logger.info(`[AUTH] 🧭 Determined navigation state: ${newState}`);
 
       setNavigationState(newState);
       setOnboardingStep(finalProfile?.onboarding_step || 0);
       setOnboardingCompleted(finalProfile?.onboarding_completed || false);
-      logger.info("[AUTH] 🧭 Navigation state updated in React");
     } catch (error) {
-      logger.error("[AUTH] ❌ Error in updateNavigationState:", error);
+      logger.error("[AUTH] Error in updateNavigationState:", error);
       // On error, try to use cached profile if available
       if (currentSession?.user) {
         const userId = currentSession.user.id;
         if (profileCache.current && profileCacheUserId.current === userId) {
-          logger.warn("[AUTH] Using cached profile after error");
           const cachedProfile = profileCache.current;
           const newState = determineNavigationState(true, cachedProfile);
           setNavigationState(newState);
@@ -372,9 +353,7 @@ export const AuthNavigationProvider: React.FC<AuthNavigationProviderProps> = ({
         }
       }
     } finally {
-      logger.info("[AUTH] 🔓 Releasing navigation update lock");
       isUpdatingNavigationRef.current = false;
-      logger.info("[AUTH] ✅ updateNavigationState COMPLETE");
     }
   };
 
@@ -452,179 +431,76 @@ export const AuthNavigationProvider: React.FC<AuthNavigationProviderProps> = ({
    * @param newSession - The new session object from Supabase after token refresh
    */
   const handleTokenRefresh = async (newSession: Session | null) => {
-    logger.info("[AUTH] 🔄 handleTokenRefresh START");
-
     // Prevent concurrent token refresh processing
     if (isProcessingTokenRefreshRef.current) {
-      logger.info(
-        "[AUTH] ⚠️ Token refresh already in progress, skipping duplicate"
-      );
       return;
     }
 
     if (!newSession?.user) {
-      logger.warn(
-        "[AUTH] ⚠️ Token refresh called with no session user, keeping existing state"
-      );
-      // Do not sign out here; let future calls detect real session loss.
       return;
     }
 
-    logger.info("[AUTH] 🔒 Acquiring token refresh lock");
     isProcessingTokenRefreshRef.current = true;
 
     try {
-      logger.info(
-        `[AUTH] ⏳ Waiting ${INITIALIZATION_BUFFER_MS}ms for Supabase to update session internally...`
-      );
       await new Promise((resolve) =>
         setTimeout(resolve, INITIALIZATION_BUFFER_MS)
       );
-      logger.info("[AUTH] ✅ Initialization buffer complete");
 
-      logger.info("[AUTH] 🔍 Starting getUser() validation...");
       let user = null as Session["user"] | null;
       let error: any = null;
       let retryCount = 0;
 
       while (retryCount < TOKEN_REFRESH_MAX_RETRIES) {
-        logger.info(
-          `[AUTH] 🔍 getUser() attempt ${
-            retryCount + 1
-          }/${TOKEN_REFRESH_MAX_RETRIES}`
-        );
-        const getUserStartTime = Date.now();
         const result = await supabase.auth.getUser();
-        const getUserDuration = Date.now() - getUserStartTime;
         user = result.data.user;
         error = result.error;
 
-        logger.info(
-          `[AUTH] getUser() completed in ${getUserDuration}ms - user: ${
-            user?.id ? user.id.substring(0, 8) + "..." : "null"
-          }, error: ${error ? error.message : "none"}`
-        );
-
         if (user?.id || error) {
-          logger.info(
-            "[AUTH] ✅ getUser() validation complete (got user or error)"
-          );
           break; // Success or permanent error
         }
 
         retryCount++;
         if (retryCount < TOKEN_REFRESH_MAX_RETRIES) {
-          logger.info(
-            `[AUTH] ⏳ Token refresh getUser retry ${retryCount}/${TOKEN_REFRESH_MAX_RETRIES}, waiting ${
-              TOKEN_REFRESH_RETRY_DELAY_MS * retryCount
-            }ms...`
-          );
           await new Promise((resolve) =>
             setTimeout(resolve, TOKEN_REFRESH_RETRY_DELAY_MS * retryCount)
           );
         }
       }
 
-      if (error || !user?.id) {
-        logger.warn(
-          "[AUTH] Unable to fully validate user on TOKEN_REFRESHED; keeping existing session",
-          error
-        );
-      } else {
-        logger.info(
-          `[AUTH] Token refresh validated for user ${user.id.substring(
-            0,
-            8
-          )}...`
-        );
-      }
-
-      logger.info("[AUTH] 📡 Starting coordinated token refresh...");
-
       // Use the token refresh coordinator to manage the refresh lifecycle
-      // This ensures all concurrent token requests are queued and receive the new token
       const refreshFn = async (): Promise<string | null> => {
-        // Wait a bit more for Supabase to fully complete the refresh
         await new Promise((resolve) => setTimeout(resolve, 100));
 
-        // Get the new token from the session
         const {
           data: { session: latestSession },
           error: sessionError,
         } = await supabase.auth.getSession();
         if (sessionError || !latestSession?.access_token) {
-          logger.warn("[AUTH] ⚠️ Could not retrieve new token after refresh");
           return null;
         }
 
-        logger.info("[AUTH] ✅ New token retrieved from session");
         return latestSession.access_token;
       };
 
-      // Start the coordinated refresh - this will queue all concurrent token requests
       const newToken = await startTokenRefresh(refreshFn);
 
-      if (newToken) {
-        logger.info(
-          "[AUTH] ✅ Token refresh coordinator completed successfully"
-        );
-      } else {
-        logger.warn(
-          "[AUTH] ⚠️ Token refresh coordinator completed but no token received"
-        );
-      }
-
-      logger.info(
-        "[AUTH] 📡 Emitting authStateChanged event (TOKEN_REFRESHED)"
-      );
       DeviceEventEmitter.emit("authStateChanged", {
         event: "TOKEN_REFRESHED",
         session: newSession,
         validated: !!user?.id && !error && !!newToken,
       });
-      logger.info("[AUTH] ✅ authStateChanged event emitted");
 
-      logger.info(
-        "[AUTH] 🚀 Starting updateNavigationState in background (non-blocking)..."
-      );
-      const navUpdateStartTime = Date.now();
-      updateNavigationState(newSession)
-        .then(() => {
-          const navUpdateDuration = Date.now() - navUpdateStartTime;
-          logger.info(
-            `[AUTH] ✅ updateNavigationState completed in ${navUpdateDuration}ms`
-          );
-        })
-        .catch((navError) => {
-          const navUpdateDuration = Date.now() - navUpdateStartTime;
-          logger.error(
-            `[AUTH] ❌ Error updating navigation state after token refresh (took ${navUpdateDuration}ms):`,
-            navError
-          );
-        });
-      logger.info(
-        "[AUTH] ✅ updateNavigationState started in background, continuing..."
-      );
+      updateNavigationState(newSession).catch((navError) => {
+        logger.error("[AUTH] Error updating navigation state:", navError);
+      });
     } catch (error) {
-      logger.error("[AUTH] ❌ Error handling TOKEN_REFRESHED:", error);
-
-      logger.info(
-        "[AUTH] 🚀 Starting updateNavigationState in background after error..."
-      );
-      updateNavigationState(newSession)
-        .then(() => {
-          logger.info("[AUTH] ✅ updateNavigationState completed after error");
-        })
-        .catch((navError) => {
-          logger.error(
-            "[AUTH] ❌ Error updating navigation state after token refresh error:",
-            navError
-          );
-        });
+      logger.error("[AUTH] Error handling TOKEN_REFRESHED:", error);
+      updateNavigationState(newSession).catch((navError) => {
+        logger.error("[AUTH] Error updating navigation state:", navError);
+      });
     } finally {
-      logger.info("[AUTH] 🔓 Releasing token refresh lock");
       isProcessingTokenRefreshRef.current = false;
-      logger.info("[AUTH] ✅ handleTokenRefresh COMPLETE");
     }
   };
 
@@ -752,43 +628,21 @@ export const AuthNavigationProvider: React.FC<AuthNavigationProviderProps> = ({
       lastAuthEventRef.current = event;
       lastUserIdRef.current = userId;
 
-      logger.info(
-        `🔐 Auth: ${event} - hasSession: ${!!newSession}, hasUser: ${!!newSession
-          ?.user?.id}`
-      );
-
-      logger.info(`[AUTH] 📝 Updating session state immediately...`);
       setSession(newSession);
-      logger.info(`[AUTH] ✅ Session state updated`);
 
       // Handle token refresh with proper initialization handling
       if (event === "TOKEN_REFRESHED" && newSession) {
-        logger.info(
-          `[AUTH] 🔄 TOKEN_REFRESHED event received - isInitialized: ${isInitializedRef.current}`
-        );
         if (!isInitializedRef.current) {
-          logger.info(
-            "[AUTH] ⏸️ Queuing TOKEN_REFRESHED event - initialization not complete"
-          );
           pendingTokenRefreshRef.current = {
             session: newSession,
             timestamp: Date.now(),
           };
           return;
         }
-
-        logger.info(
-          `[AUTH] 🚀 Processing TOKEN_REFRESHED immediately (initialization complete)`
-        );
         await handleTokenRefresh(newSession);
-        logger.info(`[AUTH] ✅ TOKEN_REFRESHED processing complete`);
       } else {
         if (isInitializedRef.current) {
           await updateNavigationState(newSession);
-        } else {
-          logger.info(
-            `[AUTH] Event ${event} received during initialization, will process after init`
-          );
         }
       }
 

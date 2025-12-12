@@ -1,3 +1,4 @@
+// @refresh reset
 import { StyleSheet, Platform } from "react-native";
 
 // Font size constants for consistency

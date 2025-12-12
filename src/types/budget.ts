@@ -376,7 +376,6 @@ export async function getTransactionsForCategory(
       categoryIndex
     );
 
-    logger.info(`[BUDGET] Fetching transactions for category: "${targetCategoryLabel}" (resolved to key: "${targetResolved.key}")`);
 
     // Query ALL transactions (with basic filters) and filter by resolved category key in JavaScript
     // This ensures we catch all category name variations and don't miss transactions due to exact string matching
@@ -410,11 +409,9 @@ export async function getTransactionsForCategory(
     }
 
     if (!data || data.length === 0) {
-      logger.info(`[BUDGET] No transactions found in date range for user ${userId}`);
       return [];
     }
 
-    logger.info(`[BUDGET] Fetched ${data.length} transactions from database, filtering by category key "${targetResolved.key}"`);
 
     // Filter transactions by resolved category key
     // This matches the same logic used in getActualsForBudgetPeriod and spending breakdown
@@ -468,7 +465,6 @@ export async function getTransactionsForCategory(
       matchedCount++;
     });
 
-    logger.info(`[BUDGET] Category "${targetCategoryLabel}": ${matchedCount} matched, ${skippedCount} skipped out of ${data.length} total transactions`);
 
     // Results are already sorted by database query, but ensure consistency
     results.sort((a, b) => {
@@ -551,7 +547,6 @@ export async function getOrCreateCurrentBudgetPeriod(
     }
 
     if (existing) {
-      console.log(`[BUDGET] Found existing period: ${existing.period_start} to ${existing.period_end}`);
       return existing as BudgetPeriod;
     }
 
@@ -566,8 +561,6 @@ export async function getOrCreateCurrentBudgetPeriod(
       .maybeSingle();
 
     if (overlappingPeriod) {
-      console.log(`[BUDGET] Found overlapping period with wrong dates: ${overlappingPeriod.period_start} to ${overlappingPeriod.period_end}`);
-      console.log(`[BUDGET] Expected: ${periodStartStr} to ${periodEndStr}`);
       // Update the period with correct dates
       const { data: updatedPeriod, error: updateError } = await supabase
         .from("budget_periods")
@@ -579,11 +572,7 @@ export async function getOrCreateCurrentBudgetPeriod(
         .select()
         .single();
       
-      if (updateError) {
-        console.error("[BUDGET] Error updating period dates:", updateError);
-        // Continue to create new period
-      } else {
-        console.log(`[BUDGET] Updated period dates to: ${periodStartStr} to ${periodEndStr}`);
+      if (!updateError && updatedPeriod) {
         return updatedPeriod as BudgetPeriod;
       }
     }
@@ -796,8 +785,6 @@ export async function suggestInitialBudgetEntries(
     lookbackStart.setMonth(lookbackStart.getMonth() - 12);
     lookbackStart.setDate(1); // Start of month for cleaner calculation
 
-    console.log(`[BUDGET] Looking back from ${today.toISOString().split("T")[0]} to ${lookbackStart.toISOString().split("T")[0]}`);
-    logger.info(`[BUDGET] Looking back from ${today.toISOString().split("T")[0]} to ${lookbackStart.toISOString().split("T")[0]}`);
 
     // Get transactions from the past 12 months (up to today) - use new_category directly (don't rely on recurring_streams)
     // IMPORTANT: Use effective date (authorized_date || date) for consistency with actuals calculation
@@ -833,8 +820,6 @@ export async function suggestInitialBudgetEntries(
     });
 
     if (!transactions || transactions.length === 0) {
-      console.log("[BUDGET] No transactions found for budget suggestions");
-      logger.info("[BUDGET] No transactions found for budget suggestions");
       return [];
     }
 
@@ -854,8 +839,6 @@ export async function suggestInitialBudgetEntries(
       });
     const actualMonths = Math.max(1, uniqueMonths.size); // Use actual number of months with data
 
-    console.log(`[BUDGET] Found ${transactions.length} transactions across ${actualMonths} unique months`);
-    logger.info(`[BUDGET] Found ${transactions.length} transactions across ${actualMonths} unique months`);
 
     // Aggregate spending by category - prioritize new_category (user's manual categorization)
     // Track both resolved category (by slug) and original subcategories
@@ -952,13 +935,6 @@ export async function suggestInitialBudgetEntries(
         })),
       };
 
-      if (data.categoryName.toLowerCase().includes("housing")) {
-        console.log("[BUDGET] 🏠 HOUSING DEBUG:", JSON.stringify(debugInfo, null, 2));
-        logger.info(`[BUDGET] 🏠 HOUSING DEBUG:`, debugInfo);
-      } else {
-        console.log(`[BUDGET] Category: ${data.categoryName}, Total: $${data.total.toFixed(2)}, Months: ${actualMonths}, Avg: $${avgMonthly.toFixed(2)}, Suggested: $${suggested}`);
-        logger.info(`[BUDGET] Category: ${data.categoryName}, Total: $${data.total.toFixed(2)}, Months: ${actualMonths}, Avg: $${avgMonthly.toFixed(2)}, Suggested: $${suggested}`);
-      }
 
       suggestions.push({
         category_id: category?.id || null,
@@ -973,7 +949,6 @@ export async function suggestInitialBudgetEntries(
     const sortedSuggestions = suggestions
       .sort((a, b) => b.suggested_amount - a.suggested_amount);
     
-    console.log(`[BUDGET] Returning ${sortedSuggestions.length} sorted suggestions`);
     return sortedSuggestions;
   } catch (error) {
     console.error("[BUDGET] Error in suggestInitialBudgetEntries:", error);
@@ -990,13 +965,10 @@ export async function initializeBudgetForNewUserOrMonth(
   forceReinitialize: boolean = false
 ): Promise<BudgetPeriod | null> {
   try {
-    console.log("[BUDGET] Initializing budget for user:", userId, "force:", forceReinitialize);
-    logger.info("[BUDGET] Initializing budget for user:", userId, "force:", forceReinitialize);
     const categoryIndex = await buildCategoryIndex(userId);
     
     const period = await getOrCreateCurrentBudgetPeriod(userId);
     if (!period) {
-      console.log("[BUDGET] Failed to get or create budget period");
       return null;
     }
 
@@ -1006,8 +978,6 @@ export async function initializeBudgetForNewUserOrMonth(
 
     // If forcing re-initialize, delete existing entries first
     if (forceReinitialize && existingEntries.length > 0) {
-      console.log(`[BUDGET] Force re-initializing: deleting ${existingEntries.length} existing entries`);
-      logger.info(`[BUDGET] Force re-initializing: deleting ${existingEntries.length} existing entries`);
       
       const entryIds = existingEntries.map(e => e.id);
       const { error: deleteError } = await supabase
@@ -1019,7 +989,6 @@ export async function initializeBudgetForNewUserOrMonth(
         console.error("[BUDGET] Error deleting existing entries:", deleteError);
         logger.error("[BUDGET] Error deleting existing entries:", deleteError);
       } else {
-        console.log("[BUDGET] Successfully deleted existing entries");
       }
       // Reset entries cache after deletion
       existingEntries.length = 0;
@@ -1056,15 +1025,12 @@ export async function initializeBudgetForNewUserOrMonth(
     // Parse period dates as local dates to avoid timezone shifts
     const periodStart = parseLocalDate(period.period_start);
     const periodEnd = parseLocalDate(period.period_end);
-    console.log("[BUDGET] Getting budget suggestions...");
     const suggestions = await suggestInitialBudgetEntries(
       userId,
       periodStart,
       periodEnd
     );
 
-    console.log(`[BUDGET] Received ${suggestions.length} budget suggestions`);
-    logger.info(`[BUDGET] Received ${suggestions.length} budget suggestions`);
 
     // Build set of existing category keys to avoid overwriting
     const existingKeys = new Set<string>();
@@ -1105,11 +1071,8 @@ export async function initializeBudgetForNewUserOrMonth(
         console.error("[BUDGET] Error creating initial budget entries:", insertError);
         logger.error("[BUDGET] Error creating initial budget entries:", insertError);
       } else {
-        console.log(`[BUDGET] Successfully created ${entries.length} budget entries`);
-        logger.info(`[BUDGET] Successfully created ${entries.length} budget entries`);
       }
     } else {
-      console.log("[BUDGET] No new budget entries to insert (all categories covered)");
     }
 
     return period;
@@ -1330,18 +1293,10 @@ export async function getActualsForBudgetPeriod(
         // Compare date strings directly (YYYY-MM-DD format)
         const inRange = effectiveDate >= startStr && effectiveDate <= endStr;
         
-        // Debug: Log transactions being filtered out
-        if (!inRange && tx.amount) {
-          console.log(`[BUDGET] ⚠️ Transaction filtered out: ${tx.new_category || tx.top_category} $${tx.amount}, date=${tx.date}, authorized_date=${tx.authorized_date || 'null'}, effective=${effectiveDate}, period=${startStr} to ${endStr}`);
-        }
         
         return inRange;
       });
     
-    // Log transaction counts for debugging
-    if (uniqueTransactions.length !== filteredTransactions.length) {
-      console.log(`[BUDGET] Filtered ${uniqueTransactions.length} transactions down to ${filteredTransactions.length} for period ${startStr} to ${endStr}`);
-    }
 
     let overall = 0;
     const byCategory = new Map<string, number>();
@@ -1375,34 +1330,6 @@ export async function getActualsForBudgetPeriod(
       
     });
 
-    // Debug: Log summary with transaction counts and category breakdown
-    if (byCategory.size > 0) {
-      const categorySummary = Array.from(byCategory.entries())
-        .map(([cat, amt]) => `${cat}: $${amt.toFixed(2)}`)
-        .join(", ");
-      console.log(`[BUDGET] Actuals (${startStr} to ${endStr}): ${filteredTransactions.length} transactions → ${categorySummary}`);
-      
-      // Log all transaction categories found for debugging (using normalized names)
-      const categoryCounts = new Map<string, number>();
-      filteredTransactions.forEach(tx => {
-        let displayCategory: string;
-        if (tx.new_category && tx.new_category !== "INTERNAL_TRANSFER") {
-          displayCategory = tx.new_category;
-        } else if (tx.top_category && tx.top_category !== "INTERNAL_TRANSFER") {
-          displayCategory = tx.top_category;
-        } else {
-          return;
-        }
-        const resolved = resolveCategoryLabel(displayCategory, categoryIndex);
-        categoryCounts.set(resolved.label, (categoryCounts.get(resolved.label) || 0) + 1);
-      });
-      const categoryList = Array.from(categoryCounts.entries())
-        .map(([cat, count]) => `${cat} (${count})`)
-        .join(", ");
-      console.log(`[BUDGET] Transaction categories found: ${categoryList}`);
-    } else {
-      console.log(`[BUDGET] Actuals (${startStr} to ${endStr}): ${filteredTransactions.length} transactions → No spending found`);
-    }
     return { overall, byCategory };
   } catch (error) {
     console.error("[BUDGET] Error in getActualsForBudgetPeriod:", error);
@@ -1524,8 +1451,6 @@ export async function getBudgetSummary(
     const periodEnd = parseLocalDate(period.period_end);
     
     // Debug: Log period dates
-    console.log(`[BUDGET] Period from DB: ${period.period_start} to ${period.period_end}`);
-    console.log(`[BUDGET] Parsed as local dates: ${formatLocalDate(periodStart)} to ${formatLocalDate(periodEnd)}`);
     
     const actuals = await getActualsForBudgetPeriod(
       userId,

@@ -1,3 +1,4 @@
+// @refresh reset
 import { StyleSheet, Dimensions, Platform } from "react-native";
 
 const { width } = Dimensions.get('window');

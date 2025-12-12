@@ -20,7 +20,6 @@ export class SmartPreloader {
    */
   static registerTask(task: PreloadTask): void {
     this.tasks.set(task.id, task);
-    logger.info(`📋 [PRELOADER] Registered task: ${task.id} (priority: ${task.priority})`);
   }
 
   /**
@@ -113,8 +112,6 @@ export class SmartPreloader {
 
     const tasksToPreload = sectionPreloadMap[currentSection] || [];
     
-    logger.info(`🎯 [PRELOADER] Preloading for section: ${currentSection}`, tasksToPreload);
-    
     await Promise.all(tasksToPreload.map(taskId => this.executeTask(taskId)));
   }
 
@@ -145,7 +142,6 @@ export class SmartPreloader {
   static clearCache(): void {
     this.cache.clear();
     this.completedTasks.clear();
-    logger.info(`🗑️ [PRELOADER] Cleared cache and completed tasks`);
   }
 
   /**
@@ -173,7 +169,6 @@ export class SmartPreloader {
     this.runningTasks.clear();
     this.completedTasks.clear();
     this.cache.clear();
-    logger.info(`🔄 [PRELOADER] Reset preloader state`);
   }
 }
 

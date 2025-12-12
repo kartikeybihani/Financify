@@ -9,17 +9,12 @@ import { router } from "expo-router";
 import {
   View,
   Text,
-  StyleSheet,
   ScrollView,
-  Dimensions,
   TouchableOpacity,
-  ActivityIndicator,
   Modal,
-  FlatList,
   DeviceEventEmitter,
   RefreshControl,
   Animated,
-  Platform,
   Alert,
 } from "react-native";
 import { InteractionManager } from "react-native";
@@ -673,14 +668,12 @@ export default function InsightsScreen() {
         });
 
         if (staleConnections.length > 0) {
-          logger.info("Auto-syncing stale investment data...");
           // Sync silently in background - don't show loading UI
           for (const conn of staleConnections) {
             try {
               await syncSnaptradeInvestments(user.id, conn.account_id);
             } catch (error) {
               // Silently handle errors - don't show to user
-              logger.error("Auto-sync failed silently:", error);
             }
           }
         }
@@ -1482,17 +1475,6 @@ export default function InsightsScreen() {
         ([category]) => category !== "INTERNAL_TRANSFER"
       );
 
-      // Debug: Log all categories found
-      console.log("🔍 DEBUG: All categories found in current month expenses:");
-      console.log("Total categories:", filteredCategories.length);
-      filteredCategories.forEach(([category, data], index) => {
-        console.log(
-          `${index + 1}. ${category}: $${data.amount.toFixed(
-            2
-          )} (${data.percentage.toFixed(1)}%)`
-        );
-      });
-
       setCategoryBreakdown(filteredCategories);
 
       // Store current month transactions for category detail modal
@@ -1918,8 +1900,6 @@ export default function InsightsScreen() {
       const userId = await getUserId();
       if (!userId) return;
 
-      logger.info("🔍 DEBUG: Checking database state...");
-
       // 1. Check all user items
       const { data: userItems, error: itemsError } = await supabase
         .from("user_items")
@@ -1930,15 +1910,6 @@ export default function InsightsScreen() {
         logger.error("❌ Error fetching user items:", itemsError);
         return;
       }
-
-      logger.info(`🏦 DEBUG: Found ${userItems?.length || 0} user items:`);
-      userItems?.forEach((item, idx) => {
-        logger.info(
-          `  ${idx + 1}. ${item.institution_name} (${
-            item.item_id
-          }) - Last synced: ${item.last_synced_at}`
-        );
-      });
 
       // 2. Check accounts for each item
       for (const item of userItems || []) {
@@ -1954,30 +1925,10 @@ export default function InsightsScreen() {
           );
           continue;
         }
-
-        logger.info(
-          `📊 DEBUG: ${item.institution_name} (${item.item_id}) has ${
-            accounts?.length || 0
-          } accounts:`
-        );
-        accounts?.forEach((acc, idx) => {
-          logger.info(
-            `    ${idx + 1}. ${acc.name} (${acc.account_id}) - ${acc.type}/${
-              acc.subtype
-            }`
-          );
-        });
-
-        if (accounts?.length === 0) {
-          logger.info(
-            `⚠️  DEBUG: ${item.institution_name} has NO ACCOUNTS - this explains missing recurring transactions`
-          );
-        }
       }
 
       // 3. Check if there's any item_id mismatch
       const allItems = userItems?.map((i) => i.item_id) || [];
-      logger.info("🔍 DEBUG: All item_ids:", allItems);
     } catch (error) {
       logger.error("❌ Debug database state error:", error);
     }

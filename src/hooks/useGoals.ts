@@ -30,7 +30,6 @@ export function useGoals(pushChat: (sender: "user" | "finny", message: string) =
       "authStateChanged",
       async (data) => {
         if (data && data.event === "TOKEN_REFRESHED" && data.validated) {
-          logger.info("🔄 [GOALS] Token refreshed and validated, reloading goals...");
           // Add small delay to ensure session is fully propagated
           setTimeout(async () => {
             await loadGoalsWithCache();
@@ -52,10 +51,6 @@ export function useGoals(pushChat: (sender: "user" | "finny", message: string) =
         AsyncStorage.setItem(GOALS_CACHE_KEY, JSON.stringify(goals)),
         AsyncStorage.setItem(GOALS_CACHE_TIMESTAMP_KEY, timestamp)
       ]);
-      // Only log on first save or when goals count changes significantly
-      if (goals.length === 0 || goals.length % 5 === 0) {
-        logger.info("💾 [GOALS CACHE] Saved:", goals.length, "goals");
-      }
     } catch (error) {
       logger.error("❌ [GOALS CACHE] Failed to save goals to cache:", error);
     }
@@ -75,13 +70,6 @@ export function useGoals(pushChat: (sender: "user" | "finny", message: string) =
       const timestamp = parseInt(timestampString, 10);
       const now = Date.now();
       const cacheAge = now - timestamp;
-
-      // Only log cache age if it's getting close to expiry (>80% of max duration)
-      const maxAgeSeconds = CACHE_DURATION / 1000;
-      const ageSeconds = Math.round(cacheAge / 1000);
-      if (cacheAge > CACHE_DURATION * 0.8) {
-        logger.info(`📱 [GOALS CACHE] Cache expiring soon: ${ageSeconds}s/${maxAgeSeconds}s`);
-      }
 
       const cachedGoals = JSON.parse(cachedGoalsString) as Goal[];
       return cachedGoals;
@@ -119,10 +107,6 @@ export function useGoals(pushChat: (sender: "user" | "finny", message: string) =
       // Check if we need to refresh from server
       const cacheValid = await isCacheValid();
       if (!cacheValid || isInitialLoad) {
-        // Only log on initial load or when cache is truly invalid
-        if (isInitialLoad) {
-          logger.info("🔄 [GOALS CACHE] Initial load, fetching from server");
-        }
         await refreshGoalsFromServer(!!cachedGoals);
       } else {
         setLoading(false);
@@ -310,7 +294,6 @@ export function useGoals(pushChat: (sender: "user" | "finny", message: string) =
         AsyncStorage.removeItem(GOALS_CACHE_KEY),
         AsyncStorage.removeItem(GOALS_CACHE_TIMESTAMP_KEY)
       ]);
-      logger.info("🗑️ [GOALS CACHE] Cache cleared");
     } catch (error) {
       logger.error("❌ [GOALS CACHE] Failed to clear cache:", error);
     }
