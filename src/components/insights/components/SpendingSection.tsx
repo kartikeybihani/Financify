@@ -161,9 +161,11 @@ export default function SpendingSection({
   useEffect(() => {
     if (onOpenAddCategoryModalRef) {
       // Pass a stable function that calls the current ref value
-      onOpenAddCategoryModalRef(() => {
+      // This function is stored in parent's ref, not called immediately
+      const stableCallback = () => {
         openAddCategoryModalRef.current();
-      });
+      };
+      onOpenAddCategoryModalRef(stableCallback);
     }
   }, [onOpenAddCategoryModalRef]);
 

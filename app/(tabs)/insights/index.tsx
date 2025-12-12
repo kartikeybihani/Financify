@@ -255,9 +255,26 @@ export default function InsightsScreen() {
   const [searchQuery, setSearchQuery] = useState("");
   const scrollViewRef = useRef<ScrollView>(null);
   const [isBudgetMode, setIsBudgetMode] = useState(false);
-  const [openAddCategoryModal, setOpenAddCategoryModal] = useState<
-    (() => void) | null
-  >(null);
+  const openAddCategoryModalRef = useRef<(() => void) | null>(null);
+  const [hasOpenAddCategoryModal, setHasOpenAddCategoryModal] = useState(false);
+  
+  // Wrapper function that calls the ref
+  const openAddCategoryModal = useCallback(() => {
+    if (openAddCategoryModalRef.current) {
+      openAddCategoryModalRef.current();
+    }
+  }, []);
+
+  // Handler for receiving the modal open function from child
+  const handleOpenAddCategoryModalRef = useCallback((openFn: () => void) => {
+    // Store in ref immediately (safe during render)
+    openAddCategoryModalRef.current = openFn;
+    // Update flag after render completes to trigger re-render for button visibility
+    setTimeout(() => {
+      setHasOpenAddCategoryModal(true);
+    }, 0);
+  }, []);
+
   const scrollOffsetRef = useRef(0);
   const contentHeightRef = useRef(0);
   const scrollViewHeightRef = useRef(0);
@@ -2587,9 +2604,7 @@ export default function InsightsScreen() {
                     selectedYear={selectedYear}
                     onMonthSelect={handleMonthSelect}
                     onBudgetModeChange={setIsBudgetMode}
-                    onOpenAddCategoryModalRef={(openFn) =>
-                      setOpenAddCategoryModal(openFn)
-                    }
+                    onOpenAddCategoryModalRef={handleOpenAddCategoryModalRef}
                   />
                 </Animated.View>
               )}
