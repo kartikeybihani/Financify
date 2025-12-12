@@ -39,8 +39,6 @@ const CategoryTransactionsModal: React.FC<CategoryTransactionsModalProps> = ({
 }) => {
   const { height: screenHeight } = useWindowDimensions();
   const containerMaxHeight = screenHeight * 0.7;
-  const slideAnim = useRef(new Animated.Value(screenHeight)).current;
-  const [rendered, setRendered] = useState(visible);
   const [currentCategory, setCurrentCategory] = useState(category);
   const [selectedTxId, setSelectedTxId] = useState<string | null>(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
@@ -56,23 +54,8 @@ const CategoryTransactionsModal: React.FC<CategoryTransactionsModalProps> = ({
   useEffect(() => {
     if (visible && category) {
       setCurrentCategory(category);
-      setRendered(true);
-      slideAnim.setValue(screenHeight);
-      Animated.timing(slideAnim, {
-        toValue: 0,
-        duration: 180,
-        easing: Easing.out(Easing.quad),
-        useNativeDriver: true,
-      }).start();
-    } else if (rendered) {
-      Animated.timing(slideAnim, {
-        toValue: screenHeight,
-        duration: 150,
-        easing: Easing.in(Easing.quad),
-        useNativeDriver: true,
-      }).start(() => setRendered(false));
     }
-  }, [visible, category, rendered, screenHeight, slideAnim]);
+  }, [visible, category]);
 
   // Loading animation effects
   useEffect(() => {
@@ -149,7 +132,7 @@ const CategoryTransactionsModal: React.FC<CategoryTransactionsModalProps> = ({
     outputRange: ["0deg", "360deg"],
   });
 
-  if (!rendered || !currentCategory) return null;
+  if (!visible || !currentCategory) return null;
 
   // Helper to convert hex to rgba
   const hexToRgba = (hex: string, alpha: number) => {
@@ -210,20 +193,19 @@ const CategoryTransactionsModal: React.FC<CategoryTransactionsModalProps> = ({
   return (
     <Modal
       transparent
-      animationType="none"
-      visible={rendered}
+      animationType="slide"
+      visible={visible}
       onRequestClose={onClose}
       accessibilityLabel={`${currentCategory.category} transactions`}
     >
       <TouchableWithoutFeedback onPress={onClose}>
         <View style={styles.txOverlay}>
           <TouchableWithoutFeedback onPress={(e) => e.stopPropagation()}>
-            <Animated.View
+            <View
               style={[
                 styles.txContainer,
                 {
                   height: containerMaxHeight,
-                  transform: [{ translateY: slideAnim }],
                 },
               ]}
             >
@@ -407,7 +389,7 @@ const CategoryTransactionsModal: React.FC<CategoryTransactionsModalProps> = ({
                   </ScrollView>
                 )}
               </View>
-            </Animated.View>
+            </View>
           </TouchableWithoutFeedback>
 
           <TransactionDetailModal

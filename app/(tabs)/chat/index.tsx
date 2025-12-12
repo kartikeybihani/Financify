@@ -23,7 +23,7 @@ import { FontAwesome6 } from "@expo/vector-icons";
 import { useRouter, useFocusEffect } from "expo-router";
 import { ChatMessageComponent } from "@/src/components/chat/ChatMessage";
 import { NudgeGrid } from "@/src/components/chat/NudgeGrid";
-import { useChatContext } from "@/src/contexts/ChatContext";
+import { ChatProvider, useChatContext } from "@/src/contexts/ChatContext";
 import { supabase } from "@/src/lib/supabase/supabase";
 import {
   getFreshAccessToken,
@@ -57,7 +57,7 @@ const responsivePadding = (basePadding: number) => {
 const responsiveHeight = (percentage: number) =>
   screenHeight * (percentage / 100);
 
-export default function ChatScreen() {
+function ChatScreenContent() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const [userInput, setUserInput] = useState("");
@@ -821,5 +821,13 @@ export default function ChatScreen() {
         )}
       </SafeAreaView>
     </View>
+  );
+}
+
+export default function ChatScreen() {
+  return (
+    <ChatProvider>
+      <ChatScreenContent />
+    </ChatProvider>
   );
 }

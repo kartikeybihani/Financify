@@ -18,7 +18,12 @@ import { LinearGradient } from "expo-linear-gradient";
 
 export const FAB_GRADIENT_COLORS = [
   "rgba(31, 31, 31, 0.98)",
-  "rgba(78, 136, 180, 0.56)",
+  "rgba(18, 18, 18, 0.99)",
+] as const;
+
+export const FAB_BUTTON_GRADIENT_COLORS = [
+  "rgba(18, 18, 18, 1)",
+  "rgba(74, 144, 226, 1)",
 ] as const;
 
 interface AddCategoryModalProps {
@@ -48,7 +53,6 @@ const CURATED_ICONS = [
   { type: "emoji", value: "🎮", name: "Gaming" },
   { type: "emoji", value: "🎵", name: "Music" },
   { type: "emoji", value: "🎬", name: "Film" },
-  { type: "emoji", value: "💪", name: "Fitness" },
   { type: "emoji", value: "⚡", name: "Flash" },
   { type: "emoji", value: "✨", name: "Beauty" },
   { type: "emoji", value: "📚", name: "Book" },
@@ -187,7 +191,7 @@ const AddCategoryModal: React.FC<AddCategoryModalProps> = ({
       return (
         <Ionicons
           name={icon.value as keyof typeof Ionicons.glyphMap}
-          size={isRow ? 20 : 24}
+          size={isRow ? 16 : 18}
           color="#fff"
         />
       );
@@ -458,10 +462,10 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(74, 144, 226, 0.15)",
   },
   iconEmoji: {
-    fontSize: 32,
+    fontSize: 28,
   },
   iconEmojiRow: {
-    fontSize: 24,
+    fontSize: 20,
   },
   categoryInput: {
     flex: 1,
@@ -490,9 +494,9 @@ const styles = StyleSheet.create({
     paddingBottom: 5,
   },
   iconOption: {
-    width: 56,
-    height: 56,
-    borderRadius: 14,
+    width: 50,
+    height: 50,
+    borderRadius: 12,
     backgroundColor: "rgba(255,255,255,0.08)",
     alignItems: "center",
     justifyContent: "center",

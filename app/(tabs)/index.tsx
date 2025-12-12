@@ -9,6 +9,7 @@ import {
   RefreshControl,
   DeviceEventEmitter,
   Alert,
+  InteractionManager,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -415,6 +416,30 @@ export default function HomeScreen() {
   useEffect(() => {
     initializeApp();
 
+    // Defer financial data refresh to after interactions complete
+    // This ensures Home UI renders immediately with cached data
+    const interactionTask = InteractionManager.runAfterInteractions(() => {
+      // Refresh financial data in background after UI is interactive
+      const hasCachedFinancialData =
+        accounts.length > 0 || goals.length > 0 || cashEntries.length > 0;
+      if (hasCachedFinancialData) {
+        refreshFinancialData().catch((error) => {
+          logger.error("Background financial data refresh failed:", error);
+        });
+      }
+
+      // Background prefetch for other tabs after Home is interactive
+      // Prefetch goals data (low priority - already cached-first)
+      setTimeout(() => {
+        DeviceEventEmitter.emit("prefetchGoals", {});
+      }, 1000);
+
+      // Prefetch insights transactions (medium priority)
+      setTimeout(() => {
+        DeviceEventEmitter.emit("prefetchInsightsTransactions", {});
+      }, 2000);
+    });
+
     // Set up event listener for financial data updates
     const financialSubscription = DeviceEventEmitter.addListener(
       "financialDataRefreshed",
@@ -457,11 +482,12 @@ export default function HomeScreen() {
     );
 
     return () => {
+      interactionTask.cancel();
       financialSubscription.remove();
       goalsSubscription.remove();
       authSubscription.remove();
     };
-  }, []);
+  }, []); // Empty deps - only run once on mount
 
   const findClosestGoal = (goals: Goal[]) => {
     if (!goals.length) return null;
@@ -528,7 +554,10 @@ export default function HomeScreen() {
   }, [cashEntries]);
 
   // Show loading skeleton only during initial authentication check (very brief)
-  if (isInitialLoad && !userData) {
+  // Only show skeleton if we have no cached data AND no user data
+  const hasCachedData =
+    accounts.length > 0 || goals.length > 0 || cashEntries.length > 0;
+  if (isInitialLoad && !userData && !hasCachedData) {
     return <HomeScreenSkeleton showError={false} />;
   }
 
@@ -537,7 +566,8 @@ export default function HomeScreen() {
     loadingError &&
     !accessToken &&
     accounts.length === 0 &&
-    hasTriedLoading
+    hasTriedLoading &&
+    !hasCachedData
   ) {
     return <HomeScreenSkeleton showError={true} onRetry={retryLoading} />;
   }

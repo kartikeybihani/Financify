@@ -70,9 +70,12 @@ export default function TabLayout() {
   }
 
   // Fallback to standard Tabs for iOS < 26 and other platforms
+  // Note: expo-router handles lazy loading automatically via file-based routing
+  // Setting initialRouteName to "index" ensures Home loads first
+  // Moving providers to screens (ChatProvider) and using useFocusEffect achieves lazy loading
   return (
     <Tabs
-      initialRouteName="chat"
+      initialRouteName="index"
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: "#4A90E2",

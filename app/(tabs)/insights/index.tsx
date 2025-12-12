@@ -5,7 +5,7 @@ import React, {
   useMemo,
   useCallback,
 } from "react";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import {
   View,
   Text,
@@ -117,7 +117,10 @@ import {
   Insight,
 } from "@/src/types/plaid";
 import { LinearGradient } from "expo-linear-gradient";
-import { FAB_GRADIENT_COLORS } from "@/src/components/insights/components/AddCategoryModal";
+import {
+  FAB_GRADIENT_COLORS,
+  FAB_BUTTON_GRADIENT_COLORS,
+} from "@/src/components/insights/components/AddCategoryModal";
 
 // Define types
 
@@ -620,49 +623,86 @@ export default function InsightsScreen() {
     loadCachedData();
   }, []);
 
-  // Initialize data on mount: use cache first, then refresh in background
+  // Load accounts and sync status on mount (non-blocking, lightweight)
   useEffect(() => {
-    const initializeScreen = async () => {
-      // Only show initial load if we don't have cached data
-      if (!hasCachedData.current) {
-        setIsInitialLoad(true);
-      }
+    loadUserAccounts(false);
+    loadSyncStatus();
 
-      try {
-        // Try to load from database (will use cache if available)
-        const hasStoredData = await loadData();
-
-        // Load accounts for filter modal (non-blocking for first paint)
-        loadUserAccounts(false);
-        // Load sync status
-        loadSyncStatus();
-
-        // If we have cached data, refresh in background without showing loading state
-        if (hasCachedData.current) {
-          // Refresh fresh data silently in background
-          fetchFreshData().catch((error) => {
-            logger.error("Background refresh failed:", error);
-          });
-        } else if (!hasStoredData) {
-          // No cache and no stored data - show loading and fetch
-          setIsLoading(true);
-          await fetchFreshData();
-          setIsLoading(false);
+    // Listen for prefetch events from Home tab
+    const prefetchSubscription = DeviceEventEmitter.addListener(
+      "prefetchInsightsTransactions",
+      async () => {
+        // Silently prefetch transactions in background if not already loaded
+        if (!hasData.current && !isLoading) {
+          try {
+            await loadData();
+            logger.info("📦 [INSIGHTS] Prefetched transactions in background");
+          } catch (error) {
+            logger.error("Prefetch failed silently:", error);
+          }
         }
-      } catch (error) {
-        logger.error("Error during initialization:", error);
-      } finally {
-        setIsInitialLoad(false);
       }
+    );
+
+    return () => {
+      prefetchSubscription.remove();
     };
+  }, []);
 
-    // Small delay to ensure cached data is loaded first
-    const timer = setTimeout(() => {
-      initializeScreen();
-    }, 50);
+  // Initialize data when tab is focused: use cache first, then refresh in background
+  useFocusEffect(
+    useCallback(() => {
+      let isCancelled = false;
 
-    return () => clearTimeout(timer);
-  }, [getUserId]);
+      const initializeScreen = async () => {
+        // Only show initial load if we don't have cached data
+        if (!hasCachedData.current) {
+          setIsInitialLoad(true);
+        }
+
+        try {
+          // Try to load from database (will use cache if available)
+          const hasStoredData = await loadData();
+
+          // If we have cached data, refresh in background without showing loading state
+          if (hasCachedData.current) {
+            // Refresh fresh data silently in background
+            fetchFreshData().catch((error) => {
+              if (!isCancelled) {
+                logger.error("Background refresh failed:", error);
+              }
+            });
+          } else if (!hasStoredData && !isCancelled) {
+            // No cache and no stored data - show loading and fetch
+            setIsLoading(true);
+            await fetchFreshData();
+            if (!isCancelled) {
+              setIsLoading(false);
+            }
+          }
+
+          if (!isCancelled) {
+            setIsInitialLoad(false);
+          }
+        } catch (error) {
+          if (!isCancelled) {
+            logger.error("Error during initialization:", error);
+            setIsInitialLoad(false);
+          }
+        }
+      };
+
+      // Small delay to ensure cached data is loaded first
+      const timer = setTimeout(() => {
+        initializeScreen();
+      }, 50);
+
+      return () => {
+        isCancelled = true;
+        clearTimeout(timer);
+      };
+    }, [getUserId])
+  );
 
   // Auto-refresh stale investment data (>24 hours old)
   useEffect(() => {
@@ -2848,7 +2888,7 @@ export default function InsightsScreen() {
               activeOpacity={0.85}
             >
               <LinearGradient
-                colors={FAB_GRADIENT_COLORS}
+                colors={FAB_BUTTON_GRADIENT_COLORS}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
                 style={fabStyles.addButton}
