@@ -8,6 +8,7 @@ import {
   Platform,
   Image,
   Pressable,
+  Alert,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
@@ -18,15 +19,12 @@ import {
   registerSnaptradeUser,
   handleSnapTradeLogin,
   fetchSnaptradeAccounts,
-  hasSnaptradeConnection,
-  fetchSnaptradeAccountsFromStorage,
-  getStoredSnaptradeCredentials,
   storeSnaptradeCredentials,
   syncSnaptradeInvestments,
-  getSnaptradeConnectionsFromDB,
 } from "@/src/utils/integrations/snaptrade";
 import { supabase } from "@/src/lib/supabase/supabase";
 import logger from "@/src/utils/core/logger";
+import { fetchLinkToken, handlePlaidConnect } from "@/src/utils/plaid/plaid";
 import {
   INVESTMENT_INSTITUTIONS,
   INSTITUTION_LOGO_MAP,
@@ -346,9 +344,87 @@ export default function InstitutionSelectionModal({
     return brokerMapping[institutionId];
   };
 
-  const handleInstitutionPress = (institutionId: string) => {
-    // All institutions now use the same SnapTrade connection flow
-    handleInstitutionConnection(institutionId);
+  const handleInstitutionPress = async (institutionId: string) => {
+    // Wells Fargo uses Plaid, all others use SnapTrade
+    if (institutionId === "wells_fargo") {
+      await handleWellsFargoPlaidConnect();
+    } else {
+      handleInstitutionConnection(institutionId);
+    }
+  };
+
+  const handleWellsFargoPlaidConnect = async () => {
+    logger.info("🔄 Starting Wells Fargo Plaid connection...");
+    setIsConnecting(true);
+    setConnectingInstitution("wells_fargo");
+
+    try {
+      const linkToken = await fetchLinkToken();
+      await handlePlaidConnect(
+        linkToken,
+        async (itemId: string) => {
+          logger.info("✅ Wells Fargo Plaid connection successful:", {
+            itemId,
+          });
+          setIsConnecting(false);
+          setConnectingInstitution(null);
+
+          // Notify parent that connection was successful
+          if (onReopenFinancialSheet) {
+            setTimeout(() => {
+              onReopenFinancialSheet();
+            }, 1000);
+          }
+
+          onClose();
+        },
+        (error?: any) => {
+          logger.error("❌ Wells Fargo Plaid connection failed:", error);
+          setIsConnecting(false);
+          setConnectingInstitution(null);
+
+          if (
+            error?.code === "DUPLICATE_ITEM" ||
+            error?.message?.includes("already linked")
+          ) {
+            Alert.alert(
+              "Account Already Connected",
+              error.message ||
+                "This account is already connected to your account.",
+              [{ text: "OK" }]
+            );
+          } else if (error?.error?.errorCode === "INVALID_LINK_TOKEN") {
+            Alert.alert(
+              "Connection Expired",
+              "The connection session expired. Please try again.",
+              [{ text: "OK" }]
+            );
+          } else if (error?.message) {
+            Alert.alert(
+              "Connection Failed",
+              `Unable to connect: ${error.message}`,
+              [{ text: "Try Again" }]
+            );
+          } else {
+            Alert.alert("Connection Cancelled", "You can try again anytime.", [
+              { text: "OK" },
+            ]);
+          }
+        }
+      );
+    } catch (error) {
+      logger.error(
+        "❌ Failed to initiate Wells Fargo Plaid connection:",
+        error
+      );
+      setIsConnecting(false);
+      setConnectingInstitution(null);
+      Alert.alert(
+        "Connection Error",
+        "Failed to start connection. Please try again.",
+        [{ text: "OK" }]
+      );
+    }
   };
 
   const handleOtherInstitutions = async () => {

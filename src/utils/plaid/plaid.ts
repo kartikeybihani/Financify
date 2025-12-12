@@ -4,7 +4,7 @@ import { open, create, LinkSuccess, LinkEvent, LinkExit } from "react-native-pla
 import {supabase} from "@/src/lib/supabase/supabase";
 import { authenticatedFetch } from "@/src/utils/auth/authToken";
 import logger from "@/src/utils/core/logger";
-import { getPlaidInstitutionId, logInstitutionMapping } from "@/src/components/shared/modal-constants";
+import { getPlaidInstitutionId } from "@/src/components/shared/modal-constants";
 import {
   logLinkEventCallback,
   logLinkExitEvent,
@@ -83,20 +83,15 @@ export async function getPrimaryItemId(): Promise<string | null> {
 }
 
 // === Create Link Token ===
-export const fetchLinkToken = async (institution_id?: string, routing_number?: string) => {
+export const fetchLinkToken = async (institution_id?: string) => {
   const { data: { user } } = await supabase.auth.getUser();
   
   const requestBody: any = { mode: "create", user_id: user?.id };
   
-  // Add institution_id and routing_number if provided for Institution Select shortcut
+  // Add institution_id if provided
   if (institution_id) {
     requestBody.institution_id = institution_id;
     logger.info("🏦 Fetching link token for specific institution:", institution_id);
-  }
-  
-  if (routing_number) {
-    requestBody.routing_number = routing_number;
-    logger.info("🎯 Using routing number for Institution Select shortcut:", routing_number);
   }
 
   const res = await authenticatedFetch(`${BASE_URL}/api/plaid_management`, {
@@ -109,60 +104,6 @@ export const fetchLinkToken = async (institution_id?: string, routing_number?: s
   return data.link_token;
 };
 
-// === Institution-Specific Connect Flow ===
-export const handleInstitutionConnect = async (
-  institutionId: string,
-  onSuccess: (itemId: string) => void,
-  onExit?: (error?: any) => void
-) => {
-  try {
-    logger.info(`🔄 Starting institution-specific connection for: ${institutionId}`);
-    
-    // Get the Plaid institution ID
-    const plaidInstitutionId = getPlaidInstitutionId(institutionId);
-    
-    if (!plaidInstitutionId) {
-      logger.warn(`⚠️ No Plaid institution ID found for: ${institutionId}, falling back to general flow`);
-      logger.info(`🔍 Available institution mappings:`);
-      logInstitutionMapping();
-      // Fall back to general connection flow
-      const linkToken = await fetchLinkToken();
-      return handlePlaidConnect(linkToken, onSuccess, onExit);
-    }
-    
-    logger.info(`🏦 Using Plaid institution ID: ${plaidInstitutionId}`);
-    
-    // Get the routing number for Institution Select shortcut
-    const { getInstitutionRoutingNumber } = await import("@/src/components/shared/modal-constants");
-    const routingNumber = getInstitutionRoutingNumber(institutionId);
-    
-    if (routingNumber) {
-      logger.info(`🎯 Using Institution Select shortcut with routing number: ${routingNumber}`);
-      // Create link token with routing number for Institution Select shortcut
-      const linkToken = await fetchLinkToken(institutionId, routingNumber);
-      return handlePlaidConnect(linkToken, onSuccess, onExit);
-    } else {
-      logger.warn(`⚠️ No routing number found for ${institutionId}, using general flow`);
-      // Fall back to general connection flow
-      const linkToken = await fetchLinkToken();
-      return handlePlaidConnect(linkToken, onSuccess, onExit);
-    }
-  } catch (error) {
-    logger.error(`❌ Failed to connect to institution ${institutionId}:`, error);
-    
-    // Enhanced error logging for debugging
-    if (error instanceof Error && error.message.includes('invalid institution_id')) {
-      logger.error(`🔍 Institution ID Debug Info:`, {
-        requestedInstitution: institutionId,
-        plaidInstitutionId: getPlaidInstitutionId(institutionId),
-        errorMessage: error instanceof Error ? error.message : String(error),
-        suggestion: 'Check if institution is registered in Plaid Dashboard or if ID has changed'
-      });
-    }
-    
-    throw error;
-  }
-};
 
 // === Connect Flow ===
 export const handlePlaidConnect = async (

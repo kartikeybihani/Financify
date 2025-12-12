@@ -24,13 +24,14 @@ export default function CreditCardInstitutionModal({
   onClose,
   onInstitutionSelect,
 }: CreditCardInstitutionModalProps) {
-  const handleInstitutionPress = (institutionId: string) => {
-    onInstitutionSelect(institutionId);
+  const handleInstitutionPress = () => {
+    // All institutions use the same general Plaid flow
+    onInstitutionSelect("other");
     onClose();
   };
 
   const handleOtherInstitutions = () => {
-    // Handle "Other Institutions" selection
+    // Handle "Other Institutions" selection - uses general Plaid flow
     onInstitutionSelect("other");
     onClose();
   };
@@ -48,7 +49,7 @@ export default function CreditCardInstitutionModal({
       <TouchableOpacity
         key={institution.id}
         style={styles.institutionCard}
-        onPress={() => handleInstitutionPress(institution.id)}
+        onPress={handleInstitutionPress}
         activeOpacity={0.8}
       >
         <View style={styles.institutionContent}>

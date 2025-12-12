@@ -12,7 +12,7 @@ import {
   CASH_DEPOSIT_INSTITUTIONS,
   type Institution,
 } from "../shared/modal-constants";
-import { handleInstitutionConnect } from "@/src/utils/plaid/plaid";
+import { fetchLinkToken, handlePlaidConnect } from "@/src/utils/plaid/plaid";
 import logger from "@/src/utils/core/logger";
 
 interface CashDepositInstitutionModalProps {
@@ -31,29 +31,24 @@ export default function CashDepositInstitutionModal({
     string | null
   >(null);
 
-  const handleInstitutionPress = async (institutionId: string) => {
-    logger.info(`🔄 Starting ${institutionId} connection...`);
+  const handleGeneralPlaidConnect = async () => {
+    logger.info("🔄 Starting general Plaid connection...");
     setIsConnecting(true);
-    setConnectingInstitution(institutionId);
+    setConnectingInstitution("general");
 
     try {
-      await handleInstitutionConnect(
-        institutionId,
+      const linkToken = await fetchLinkToken();
+      await handlePlaidConnect(
+        linkToken,
         async (itemId: string) => {
-          logger.info("✅ Institution connection successful:", {
-            institutionId,
-            itemId,
-          });
+          logger.info("✅ Plaid connection successful:", { itemId });
           setIsConnecting(false);
           setConnectingInstitution(null);
-          onInstitutionSelect(institutionId);
+          onInstitutionSelect("other");
           onClose();
         },
         (error?: any) => {
-          logger.error(
-            `❌ Institution connection failed for ${institutionId}:`,
-            error
-          );
+          logger.error("❌ Plaid connection failed:", error);
           setIsConnecting(false);
           setConnectingInstitution(null);
 
@@ -76,7 +71,7 @@ export default function CashDepositInstitutionModal({
           } else if (error?.message) {
             Alert.alert(
               "Connection Failed",
-              `Unable to connect to ${institutionId}: ${error.message}`,
+              `Unable to connect: ${error.message}`,
               [{ text: "Try Again" }]
             );
           } else {
@@ -87,24 +82,25 @@ export default function CashDepositInstitutionModal({
         }
       );
     } catch (error) {
-      logger.error(
-        `❌ Failed to initiate connection for ${institutionId}:`,
-        error
-      );
+      logger.error("❌ Failed to initiate Plaid connection:", error);
       setIsConnecting(false);
       setConnectingInstitution(null);
       Alert.alert(
         "Connection Error",
-        `Failed to start connection to ${institutionId}. Please try again.`,
+        "Failed to start connection. Please try again.",
         [{ text: "OK" }]
       );
     }
   };
 
-  const handleOtherInstitutions = () => {
+  const handleInstitutionPress = async () => {
+    // All institutions use the same general Plaid flow
+    await handleGeneralPlaidConnect();
+  };
+
+  const handleOtherInstitutions = async () => {
     // Handle "Other Institutions" selection - use general Plaid flow
-    onInstitutionSelect("other");
-    onClose();
+    await handleGeneralPlaidConnect();
   };
 
   const handleClose = () => {
@@ -116,8 +112,7 @@ export default function CashDepositInstitutionModal({
   };
 
   const renderInstitutionCard = (institution: Institution) => {
-    const isLoadingInstitution =
-      isConnecting && connectingInstitution === institution.id;
+    const isLoadingInstitution = isConnecting;
 
     return (
       <TouchableOpacity
@@ -126,7 +121,7 @@ export default function CashDepositInstitutionModal({
           styles.institutionCard,
           isLoadingInstitution && styles.institutionCardLoading,
         ]}
-        onPress={() => handleInstitutionPress(institution.id)}
+        onPress={handleInstitutionPress}
         activeOpacity={0.8}
         disabled={isConnecting}
       >
@@ -174,16 +169,14 @@ export default function CashDepositInstitutionModal({
                   style={[
                     styles.institutionCard,
                     styles.otherInstitutionsCard,
-                    isConnecting &&
-                      connectingInstitution === "other" &&
-                      styles.institutionCardLoading,
+                    isConnecting && styles.institutionCardLoading,
                   ]}
                   onPress={handleOtherInstitutions}
                   activeOpacity={0.8}
                   disabled={isConnecting}
                 >
                   <View style={styles.institutionContent}>
-                    {isConnecting && connectingInstitution === "other" ? (
+                    {isConnecting ? (
                       <View style={styles.loadingContainer}>
                         <Ionicons name="hourglass" size={24} color="#4A90E2" />
                         <Text style={styles.loadingText}>Loading...</Text>
