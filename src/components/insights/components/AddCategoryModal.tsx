@@ -9,14 +9,17 @@ import {
   ScrollView,
   TextInput,
   Dimensions,
-  KeyboardAvoidingView,
-  Platform,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { supabase } from "@/src/lib/supabase/supabase";
 import logger from "@/src/utils/core/logger";
 import { LinearGradient } from "expo-linear-gradient";
+
+export const FAB_GRADIENT_COLORS = [
+  "rgba(31, 31, 31, 0.98)",
+  "rgba(78, 136, 180, 0.56)",
+] as const;
 
 interface AddCategoryModalProps {
   visible: boolean;
@@ -226,10 +229,7 @@ const AddCategoryModal: React.FC<AddCategoryModalProps> = ({
       <TouchableWithoutFeedback onPress={handleClose}>
         <View style={styles.overlay}>
           <TouchableWithoutFeedback onPress={(e) => e.stopPropagation()}>
-            <LinearGradient
-              colors={["rgba(31, 31, 31, 0.98)", "rgba(18, 18, 18, 0.99)"]}
-              style={styles.content}
-            >
+            <LinearGradient colors={FAB_GRADIENT_COLORS} style={styles.content}>
               <View style={styles.header}>
                 <View style={styles.headerTextContainer}>
                   <Text style={styles.headerTitle}>Add New Category</Text>

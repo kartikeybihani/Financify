@@ -116,6 +116,8 @@ import {
   CategoryBreakdown,
   Insight,
 } from "@/src/types/plaid";
+import { LinearGradient } from "expo-linear-gradient";
+import { FAB_GRADIENT_COLORS } from "@/src/components/insights/components/AddCategoryModal";
 
 // Define types
 
@@ -2842,10 +2844,17 @@ export default function InsightsScreen() {
           <View style={fabStyles.container}>
             <TouchableOpacity
               onPress={openAddCategoryModal}
-              style={fabStyles.addButton}
-              activeOpacity={0.8}
+              style={fabStyles.button}
+              activeOpacity={0.85}
             >
-              <Ionicons name="add-outline" size={24} color="#fff" />
+              <LinearGradient
+                colors={FAB_GRADIENT_COLORS}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={fabStyles.addButton}
+              >
+                <Ionicons name="add-outline" size={24} color="#fff" />
+              </LinearGradient>
             </TouchableOpacity>
           </View>
         )}
