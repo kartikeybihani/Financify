@@ -28,6 +28,18 @@ TRANSACTION & CATEGORY MANAGEMENT
    - Purpose: Get details of transactions affected by category changes
    - Used in: CategorySelector.tsx (tracking affected transactions)
 
+4. create_or_update_category_rule ⭐ ACTIVE (NEW)
+   - Creates or updates a category rule for merchant_name or transaction name matching
+   - Parameters: p_user_id (uuid), p_match_field (text), p_match_value (text), p_category_name (text)
+   - Returns: uuid (rule_id)
+   - Purpose: Creates category rules that support both merchant_name-based and name-based matching (fixes Zelle NULL merchant_name issue)
+   - Used in: CategorySelectorModal.tsx (similar transactions updates)
+   - Notes:
+     * match_field must be either 'merchant_name' or 'name'
+     * Supports user-specific and default categories
+     * Case-insensitive category name matching
+     * Updates existing rule if one exists, otherwise creates new
+
 FINANCIAL ANALYTICS & REPORTING
 -------------------------------
 
@@ -47,10 +59,13 @@ FINANCIAL ANALYTICS & REPORTING
 
 6. get_recent_transactions ⭐ ACTIVE
    - Returns recent transactions with merchant and category info
-   - Parameters: p_user_id (uuid), p_limit (integer)
+   - Parameters: p_user_id (uuid), p_limit (integer DEFAULT 50)
    - Returns: TABLE(date date, amount numeric, merchant text, category text, name text)
    - Purpose: Quick access to latest transaction data
    - Used in: store_accounts.js
+   - Notes:
+     * merchant is COALESCE(merchant_name, name)
+     * category is COALESCE(new_category, top_category, sub_category, 'uncategorized')
 
 7. get_spend_by_category ⭐ ACTIVE
    - Returns spending breakdown by category for a date range
@@ -104,52 +119,73 @@ FINANCIAL ANALYTICS & REPORTING
 GOALS & INVESTMENT TRACKING
 ---------------------------
 
-11. get_goals_overview ⭐ ACTIVE
+14. get_goals_overview ⭐ ACTIVE
    - Returns active goals with progress percentage
    - Parameters: p_user_id (uuid), p_limit (integer DEFAULT 5)
    - Returns: TABLE(label text, category text, status text, target_amount numeric, current_amount numeric, progress_pct numeric, target_date date)
    - Purpose: Financial goals tracking and progress monitoring
    - Used in: store_accounts.js
 
-12. get_investment_portfolio_summary ⭐ ACTIVE
+15. get_investment_portfolio_summary ⭐ ACTIVE
    - Returns comprehensive investment portfolio summary
    - Parameters: p_user_id (uuid)
    - Returns: TABLE(total_portfolio_value numeric, total_cash numeric, total_investments numeric, day_change numeric, day_change_percent numeric, total_change numeric, total_change_percent numeric, last_updated timestamp with time zone)
    - Purpose: Complete investment portfolio overview with performance metrics
    - Used in: investment components
 
-13. get_investment_holdings_detailed ⭐ ACTIVE
+16. get_investment_holdings_detailed ⭐ ACTIVE
    - Returns detailed investment holdings with performance data
    - Parameters: p_user_id (uuid)
    - Returns: TABLE(symbol text, description text, units numeric, price numeric, market_value numeric, unrealized_pl numeric, day_change numeric, day_change_percent numeric, security_type text, last_updated timestamp with time zone)
    - Purpose: Comprehensive investment holdings analysis with performance tracking
    - Used in: store_accounts.js, investment components
 
-14. get_investment_balances_summary ⭐ ACTIVE
+17. get_investment_balances_summary ⭐ ACTIVE
    - Returns investment account balances and performance
    - Parameters: p_user_id (uuid)
    - Returns: TABLE(cash numeric, buying_power numeric, total_value numeric, day_change numeric, day_change_percent numeric, total_change numeric, total_change_percent numeric, currency_code text, last_updated timestamp with time zone)
    - Purpose: Investment account balance and performance summary
    - Used in: investment components
 
-15. get_investment_connections ⭐ ACTIVE
+18. get_investment_connections ⭐ ACTIVE
    - Returns active investment account connections
    - Parameters: p_user_id (uuid)
    - Returns: TABLE(account_id text, brokerage_name text, account_name text, account_type text, is_active boolean, last_synced_at timestamp with time zone, connection_status text)
    - Purpose: Manage investment account connections and status
    - Used in: investment components
 
+16. get_investment_overview ⭐ ACTIVE (NEW)
+   - Returns comprehensive investment overview as JSONB (holdings, balances, options)
+   - Parameters: p_user_id (uuid)
+   - Returns: jsonb { holdings: [...], balances: [...], options: [...] }
+   - Purpose: Single function to get all investment data in one call
+   - Used in: Investment components (when full overview needed)
+
+GOALS MANAGEMENT
+----------------
+
+19. increment_goal_amount ⭐ ACTIVE (NEW)
+   - Increments goal progress amount atomically
+   - Parameters: p_goal_id (uuid), p_amount (numeric), p_is_manual (boolean DEFAULT false)
+   - Returns: numeric (new current_amount)
+   - Purpose: Thread-safe goal progress updates with manual tracking
+   - Used in: Goal tracking components
+   - Notes:
+     * Uses row-level locking to prevent race conditions
+     * Tracks manual progress separately from automatic updates
+     * Automatically uses auth.uid() for user verification
+
 RECURRING TRANSACTIONS
 ----------------------
 
-16. get_recurring_streams_active ⭐ ACTIVE
+20. get_recurring_streams_active ⭐ ACTIVE
    - Returns active recurring income/expense streams
    - Parameters: p_user_id (uuid)
    - Returns: TABLE(stream_id text, stream_type text, flow_type text, merchant_name text, category text, average_amount numeric, last_amount numeric, frequency text, first_date date, last_date date)
    - Purpose: Manages recurring transaction patterns
    - Used in: store_accounts.js
 
-17. get_recurring_next_dates ⭐ ACTIVE
+21. get_recurring_next_dates ⭐ ACTIVE
    - Calculates next occurrence dates for recurring streams
    - Parameters: p_user_id (uuid)
    - Returns: TABLE(stream_id text, stream_type text, flow_type text, merchant_name text, category text, average_amount numeric, frequency text, last_date date, first_date date, next_date date)
@@ -159,7 +195,7 @@ RECURRING TRANSACTIONS
 ACCOUNT MANAGEMENT
 ------------------
 
-18. delete_account_and_related_data ⭐ ACTIVE
+22. delete_account_and_related_data ⭐ ACTIVE
    - Deletes a Plaid account and all associated data (transactions, recurring streams)
    - Parameters: p_account_id (text), p_user_id (uuid)
    - Returns: json { should_delete_item: boolean, item_id: text, remaining_accounts: integer, deleted_account_name: text, deleted_account_mask: text }
@@ -171,17 +207,27 @@ ACCOUNT MANAGEMENT
      * Returns should_delete_item=true if this was the last account for its item_id
      * Caller should use returned metadata to determine if Plaid /item/remove API call is needed
 
+SYNC & STATUS MANAGEMENT
+-------------------------
+
+23. get_user_sync_status ⭐ ACTIVE (NEW)
+   - Returns user's sync status and statistics
+   - Parameters: p_user_id (uuid)
+   - Returns: TABLE(last_sync timestamp with time zone, sync_status text, last_automated_sync timestamp with time zone, total_items integer, successful_syncs integer, failed_syncs integer)
+   - Purpose: Get sync status and metrics for user's financial accounts
+   - Used in: Sync status components, dashboard
+
 SECURITY & CREDENTIAL MANAGEMENT
 --------------------------------
 
-19. secure_get_plaid_token ⭐ ACTIVE
+24. secure_get_plaid_token ⭐ ACTIVE
    - Securely retrieves Plaid access token from Vault
    - Parameters: p_item_id (text), p_user_id (uuid)
    - Returns: text
    - Purpose: Secure access to encrypted Plaid tokens
    - Used in: transactions_sync.js, plaid.js, refresh_data.js, store_accounts.js, plaid_management.js, refresh_recurring_transactions.js, sync-transactions function
 
-20. secure_store_plaid_token ⭐ ACTIVE
+25. secure_store_plaid_token ⭐ ACTIVE
    - Securely stores Plaid access token in Vault
    - Parameters: p_item_id (text), p_user_id (uuid), p_token (text)
    - Returns: uuid (secret_id)
@@ -192,7 +238,7 @@ SECURITY & CREDENTIAL MANAGEMENT
      * Deletes by both secret_id (from user_items.access_token_secret_id) and by name ('plaid_' || item_id)
      * Ensures no duplicate secrets exist for the same item_id
 
-21. secure_delete_plaid_token ⭐ ACTIVE
+26. secure_delete_plaid_token ⭐ ACTIVE
    - Securely deletes Plaid access token from Vault
    - Parameters: p_item_id (text), p_user_id (uuid)
    - Returns: void
@@ -204,7 +250,7 @@ SECURITY & CREDENTIAL MANAGEMENT
      * Clears access_token_secret_id from user_items table after successful deletion
      * Critical for security compliance - ensures tokens are removed when users disconnect accounts
 
-22. secure_store_snaptrade_credentials ⭐ ACTIVE
+27. secure_store_snaptrade_credentials ⭐ ACTIVE
    - Securely stores SnapTrade credentials in Vault
    - Parameters: p_user_id (uuid), p_snaptrade_user_id (text), p_account_id (text), p_user_secret (text)
    - Returns: uuid (secret_id)
@@ -214,14 +260,14 @@ SECURITY & CREDENTIAL MANAGEMENT
 AUTOMATIC CATEGORIZATION FUNCTIONS
 ----------------------------------
 
-23. apply_category_rules_to_existing_transactions ⭐ ACTIVE
+28. apply_category_rules_to_existing_transactions ⭐ ACTIVE
    - Applies category rules to existing transactions that don't have new_category set
    - Parameters: none
    - Returns: integer (updated_count)
    - Purpose: Bulk apply existing rules to uncategorized transactions
    - Used in: Automatic categorization system
 
-24. auto_apply_category_rules ⭐ ACTIVE (TRIGGER)
+29. auto_apply_category_rules ⭐ ACTIVE (TRIGGER)
    - Trigger function that automatically applies category rules to new transactions
    - Parameters: none (trigger function)
    - Returns: trigger
@@ -231,17 +277,72 @@ AUTOMATIC CATEGORIZATION FUNCTIONS
 UTILITY & TRIGGER FUNCTIONS
 ---------------------------
 
-25. update_updated_at_column ⭐ ACTIVE
+30. update_updated_at_column ⭐ ACTIVE
    - Trigger function to automatically update updated_at timestamp
    - Parameters: none (trigger function)
    - Returns: trigger
    - Purpose: Maintains audit trail for record modifications
 
-26. update_web_scrape_cache_updated_at ⭐ ACTIVE
+31. update_web_scrape_cache_updated_at ⭐ ACTIVE
    - Trigger function to update web scrape cache timestamp
    - Parameters: none (trigger function)
    - Returns: trigger
    - Purpose: Cache invalidation for web scraping data
+
+32. set_updated_at ⭐ ACTIVE (TRIGGER)
+   - Generic trigger function to set updated_at timestamp
+   - Parameters: none (trigger function)
+   - Returns: trigger
+   - Purpose: Generic updated_at maintenance for any table
+
+33. category_groupings_set_updated_at ⭐ ACTIVE (TRIGGER)
+   - Trigger function to set updated_at for category_groupings table
+   - Parameters: none (trigger function)
+   - Returns: trigger
+   - Purpose: Maintains updated_at for category groupings
+
+34. update_context_cache_updated_at ⭐ ACTIVE (TRIGGER)
+   - Trigger function to update context_cache updated_at
+   - Parameters: none (trigger function)
+   - Returns: trigger
+   - Purpose: Maintains updated_at for context cache
+
+35. update_reports_updated_at ⭐ ACTIVE (TRIGGER)
+   - Trigger function to update reports updated_at
+   - Parameters: none (trigger function)
+   - Returns: trigger
+   - Purpose: Maintains updated_at for reports table
+
+36. calculate_total_percent_change ⭐ ACTIVE (TRIGGER)
+   - Trigger function to calculate total_percent_change for investment holdings
+   - Parameters: none (trigger function)
+   - Returns: trigger
+   - Purpose: Auto-calculates percent change when market_value or total_cost_basis changes
+
+37. trg_transactions_if_recurring_sync ⭐ ACTIVE (TRIGGER)
+   - Trigger function to sync if_recurring flag when recurring_stream_id changes
+   - Parameters: none (trigger function)
+   - Returns: trigger
+   - Purpose: Keeps if_recurring flag in sync with recurring_stream_id
+
+38. prevent_merchant_name_mutation ⭐ ACTIVE (TRIGGER)
+   - Trigger function to prevent merchant_name mutation during category updates
+   - Parameters: none (trigger function)
+   - Returns: trigger
+   - Purpose: Prevents merchant_name from being incorrectly set to fallback values (e.g., "Minto Money")
+   - Notes:
+     * Only allows merchant_name changes during legitimate Plaid syncs
+     * Prevents mutation when only category is being updated
+     * Critical for fixing Zelle transaction merchant_name issues
+
+39. sync_profile_to_memories ⭐ ACTIVE (TRIGGER)
+   - Trigger function to sync profile data to user_memories when onboarding completes
+   - Parameters: none (trigger function)
+   - Returns: trigger
+   - Purpose: Automatically creates memory entries from profile data (first_name, last_name, age, occupation, intent_q1-3)
+   - Notes:
+     * Only triggers when onboarding_completed = true
+     * Creates profile_trait memories (365 day expiry) and preference memories (90 day expiry)
 
 DEPRECATED/TO BE REMOVED
 ========================
@@ -253,21 +354,23 @@ get_spending_by_merchant (removed!)
 CHAT HISTORY MANAGEMENT
 ------------------------
 
-27. get_user_chat_sessions ⭐ ACTIVE
+40. get_user_chat_sessions ⭐ ACTIVE
    - Returns user's last 5 chat sessions with metadata
    - Parameters: p_user_id (uuid)
-   - Returns: TABLE(id uuid, session_title text, first_message text, created_at timestamptz, message_count integer)
-   - Purpose: Display chat history in UI with session previews and counts
+   - Returns: TABLE(id uuid, session_title text, first_message text, created_at timestamptz, message_count integer, messages jsonb)
+   - Purpose: Display chat history in UI with session previews, counts, and full messages
    - Used in: ChatHistoryScreen.tsx
+   - Notes:
+     * Now includes full messages jsonb in return (updated return type)
 
-28. save_chat_session ⭐ ACTIVE
+41. save_chat_session ⭐ ACTIVE
    - Saves chat session and auto-cleanup (keeps only last 5 per user)
    - Parameters: p_user_id (uuid), p_session_title (text), p_first_message (text), p_messages (jsonb)
    - Returns: uuid (new session ID)
    - Purpose: Store complete conversations with automatic cleanup to prevent database bloat
    - Used in: useChat.ts (saveCurrentSession function)
 
-29. get_chat_session_messages ⭐ ACTIVE
+42. get_chat_session_messages ⭐ ACTIVE
    - Returns full chat messages for a specific session
    - Parameters: p_session_id (uuid), p_user_id (uuid)
    - Returns: jsonb (array of chat messages)
@@ -277,19 +380,66 @@ CHAT HISTORY MANAGEMENT
 ONBOARDING ANALYTICS
 --------------------
 
-30. log_onboarding_event ⭐ ACTIVE
+43. log_onboarding_event ⭐ ACTIVE
    - Logs onboarding analytics events for tracking user progress
-   - Parameters: p_stage (text), p_action (text), p_duration_ms (integer), p_error_code (text), p_metadata (jsonb)
-   - Returns: void
+   - Parameters: p_stage (text), p_action (text), p_duration_ms (integer DEFAULT NULL), p_error_code (text DEFAULT NULL), p_metadata (jsonb DEFAULT '{}')
+   - Returns: uuid (event_id)
    - Purpose: Track user behavior during onboarding (screen views, completions, Plaid outcomes, drop-offs)
    - Used in: welcome.tsx, intent.tsx, aboutyou.tsx, accountconnection.tsx, final.tsx
    - Notes:
      * Automatically captures user_id from auth.uid()
      * Stores in onboarding_events table with RLS
+     * Returns the created event ID
      * Used for analytics, A/B testing, and optimization
      * Common actions: 'view', 'complete', 'skip', 'error', 'plaid_success', 'plaid_error'
 
-TOTAL: 35 ACTIVE functions, 0 REMAINING unused functions
+CLEANUP & MAINTENANCE FUNCTIONS
+-------------------------------
+
+44. cleanup_expired_context_cache ⭐ ACTIVE
+   - Cleans up expired context cache entries
+   - Parameters: none
+   - Returns: void
+   - Purpose: Removes context_cache entries where expires_at < current time
+   - Used in: Scheduled cleanup jobs
+
+45. cleanup_expired_conversation_context ⭐ ACTIVE
+   - Cleans up expired conversation context entries
+   - Parameters: none
+   - Returns: void
+   - Purpose: Removes conversation_context entries where expires_at < NOW()
+   - Used in: Scheduled cleanup jobs
+   - Notes:
+     * Uses SECURITY DEFINER for elevated permissions
+
+46. cleanup_orphaned_plaid_secrets ⭐ ACTIVE
+   - Cleans up orphaned Plaid secrets from Vault that are no longer referenced
+   - Parameters: none
+   - Returns: TABLE(secret_id uuid, secret_name text, created_at timestamp with time zone, deletion_status text, error_message text)
+   - Purpose: Finds and deletes Plaid secrets in Vault that don't have corresponding user_items entries
+   - Used in: Maintenance/admin cleanup scripts
+   - Notes:
+     * Returns detailed status for each secret (DELETED, NOT FOUND, FAILED)
+     * Uses SECURITY DEFINER with search_path including vault schema
+     * Safe to run periodically to prevent Vault bloat
+
+USER MANAGEMENT
+---------------
+
+47. hard_delete_user ⭐ ACTIVE
+   - Hard deletes a user and ALL associated data (cascade delete)
+   - Parameters: p_uid (uuid)
+   - Returns: void
+   - Purpose: Complete user data removal for GDPR compliance or account deletion
+   - Used in: Admin functions, user deletion workflows
+   - Notes:
+     * Uses SECURITY DEFINER with search_path including auth schema
+     * Deletes in order: transactions, investments, chat sessions, goals, categories, accounts, user_items, profiles
+     * Finally calls auth.admin_delete_user() to remove Auth user
+     * CRITICAL: This is irreversible - use with extreme caution
+     * Should only be called by admin functions or with explicit user consent
+
+TOTAL: 47 ACTIVE functions, 0 REMAINING unused functions
 
 NOTES:
 - ⭐ ACTIVE functions are currently used in the codebase
@@ -303,3 +453,8 @@ NOTES:
   * secure_store_plaid_token automatically cleans up old secrets to prevent orphaned entries
 - Automatic categorization functions work with triggers for real-time categorization
 - Chat history functions use JSONB for efficient message storage and retrieval
+- Trigger functions are automatically executed by PostgreSQL triggers
+- Category rules now support both merchant_name-based and name-based matching (fixes Zelle NULL merchant_name issue)
+- Investment functions support both detailed table returns and JSONB overview format
+- Cleanup functions should be run periodically via scheduled jobs or cron
+- User deletion function (hard_delete_user) is irreversible and should be used with extreme caution

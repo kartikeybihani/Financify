@@ -444,6 +444,32 @@ export default function CategorySelectorModal({
           "Success",
           `Updated ${data} similar transactions to ${selectedCategory.name}`
         );
+
+        // Create or update category rule for future transactions
+        try {
+          const matchValue = useMerchantName ? merchantName : transactionName;
+          const matchField = useMerchantName ? "merchant_name" : "name";
+
+          const { error: ruleError } = await supabase.rpc(
+            "create_or_update_category_rule",
+            {
+              p_user_id: userId,
+              p_match_field: matchField,
+              p_match_value: matchValue,
+              p_category_name: selectedCategory.name,
+            }
+          );
+
+          if (ruleError) {
+            console.error("Error creating category rule:", ruleError);
+            // Don't fail the whole operation if rule creation fails
+          } else {
+            console.log("✅ Category rule created/updated successfully");
+          }
+        } catch (ruleErr) {
+          console.error("Exception creating category rule:", ruleErr);
+          // Don't fail the whole operation
+        }
       }
 
       // Emit enhanced global event with affected transaction data
