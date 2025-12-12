@@ -24,6 +24,7 @@ import {
   getDisplayCategory,
   shouldShowRecurringChip,
 } from "@/src/utils/categories/transactionCategory";
+import { supabase } from "@/src/lib/supabase/supabase";
 
 import {
   Account,
@@ -113,9 +114,27 @@ function TransactionsSection(props: Props) {
 
   const [searchQuery, setSearchQuery] = useState(propSearchQuery);
   const searchInputRef = useRef<TextInput>(null);
+  const [userId, setUserId] = useState<string | undefined>(undefined);
 
-  // Use the categories hook
-  const { formatCategoryName: formatCategoryFromHook } = useCategories();
+  // Fetch user ID on mount
+  useEffect(() => {
+    const fetchUserId = async () => {
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (user?.id) {
+          setUserId(user.id);
+        }
+      } catch (error) {
+        console.error("Error fetching user ID:", error);
+      }
+    };
+    fetchUserId();
+  }, []);
+
+  // Use the categories hook with userId
+  const { formatCategoryName: formatCategoryFromHook } = useCategories(userId);
 
   // Ensure modal state is properly reset
   useEffect(() => {

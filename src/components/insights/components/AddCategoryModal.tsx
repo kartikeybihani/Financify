@@ -114,7 +114,7 @@ const AddCategoryModal: React.FC<AddCategoryModalProps> = ({
         .replace(/\s+/g, "-")
         .trim();
 
-      // Handle potential slug conflicts
+      // Handle potential slug conflicts (only check within user's categories)
       let slug = baseSlug;
       let counter = 1;
       let slugExists = true;
@@ -124,6 +124,7 @@ const AddCategoryModal: React.FC<AddCategoryModalProps> = ({
           .from("categories")
           .select("id")
           .eq("slug", slug)
+          .eq("user_id", user.id)
           .limit(1);
 
         if (!existingSlug || existingSlug.length === 0) {

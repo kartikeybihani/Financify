@@ -136,6 +136,15 @@ export default function SignupScreen() {
           firstName: firstName.trim(),
           lastName: lastName.trim(),
         });
+
+        // Seed default categories for new user
+        try {
+          const { seedDefaultCategories } = await import("@/src/utils/categories/seedDefaultCategories");
+          await seedDefaultCategories(data.user.id);
+        } catch (seedError) {
+          logger.error("Error seeding default categories:", seedError);
+          // Don't block signup if category seeding fails
+        }
       }
     } catch (profileError) {
       logger.error("Error creating profile: ", profileError);

@@ -1,5 +1,5 @@
 // React hook for managing budgets
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { DeviceEventEmitter } from "react-native";
 import {
   getBudgetSummary,
@@ -54,7 +54,17 @@ export interface UseBudgetReturn {
   deleteCategory: (categoryId: string, entryId?: string | null) => Promise<boolean>;
 }
 
-export function useBudget(): UseBudgetReturn {
+type CategoryBreakdown = [
+  string,
+  {
+    amount: number;
+    percentage: number;
+    color: string;
+    hasRecurringTransactions: boolean;
+  }
+][];
+
+export function useBudget(categoryBreakdown?: CategoryBreakdown): UseBudgetReturn {
   const toKey = (name?: string | null) => (name || "").trim().toLowerCase();
   const [budgetSummary, setBudgetSummary] = useState<BudgetSummary | null>(
     null
@@ -129,11 +139,11 @@ export function useBudget(): UseBudgetReturn {
         const averages = await getHistoricalCategoryAverages(authResult.user.id, 12);
         setHistoricalAverages(averages);
 
-        // Fetch all categories from categories table
+        // Fetch all categories from categories table (user-specific only)
         const { data: categories } = await supabase
           .from("categories")
           .select("id, user_id, name, icon, color, slug, is_active, rank")
-          .or(`user_id.eq.${authResult.user.id},user_id.is.null`)
+          .eq("user_id", authResult.user.id)
           .order("rank", { ascending: true });
 
         if (categories) {
@@ -147,24 +157,16 @@ export function useBudget(): UseBudgetReturn {
             return keys;
           };
 
+          // Track hidden keys from inactive categories
           categories
-            .filter((cat: CategoryRecord) => cat.user_id === authResult.user.id && cat.is_active === false)
+            .filter((cat: CategoryRecord) => cat.is_active === false)
             .forEach((cat: CategoryRecord) => addKeys(cat).forEach((k) => hiddenKeys.add(k)));
 
+          // Add active categories
           categories
-            .filter((cat: CategoryRecord) => cat.user_id === authResult.user.id && cat.is_active !== false)
+            .filter((cat: CategoryRecord) => cat.is_active !== false)
             .forEach((cat: CategoryRecord) => {
               addKeys(cat).forEach((k) => byKey.set(k, cat));
-            });
-
-          categories
-            .filter((cat: CategoryRecord) => !cat.user_id)
-            .forEach((cat: CategoryRecord) => {
-              const keys = addKeys(cat);
-              const isHidden = Array.from(keys).some((k) => hiddenKeys.has(k));
-              const overridden = Array.from(keys).some((k) => byKey.has(k));
-              if (isHidden || overridden || cat.is_active === false) return;
-              keys.forEach((k) => byKey.set(k, cat));
             });
 
           setAllCategories(Array.from(byKey.values()));
@@ -185,9 +187,25 @@ export function useBudget(): UseBudgetReturn {
 
   // Convert budget summary to BudgetData array for BudgetView
   // Include ALL categories that have had transactions in the past OR exist in categories table
-  const budgetData: BudgetData[] = budgetSummary
-    ? (() => {
-        // Normalize actuals by key
+  // Use categoryBreakdown as source of truth for spent amounts (most accurate)
+  const budgetData: BudgetData[] = useMemo(() => {
+    if (!budgetSummary) return [];
+    
+    return (() => {
+        // Build map from categoryBreakdown (source of truth for spent amounts)
+        const breakdownByKey = new Map<string, { amount: number; label: string; color: string }>();
+        if (categoryBreakdown) {
+          categoryBreakdown.forEach(([categoryName, data]) => {
+            const key = toKey(categoryName);
+            breakdownByKey.set(key, {
+              amount: data.amount,
+              label: categoryName,
+              color: data.color,
+            });
+          });
+        }
+
+        // Normalize actuals by key (fallback if categoryBreakdown not provided)
         const actualsByKey = new Map<string, { amount: number; label: string }>();
         budgetSummary.actuals.byCategory.forEach((amount, label) => {
           const key = toKey(label);
@@ -233,6 +251,10 @@ export function useBudget(): UseBudgetReturn {
 
         // Get all categories from multiple sources
         const allCategoryKeys = new Set<string>();
+        // Prioritize categoryBreakdown keys (source of truth)
+        if (categoryBreakdown) {
+          breakdownByKey.forEach((_, key) => allCategoryKeys.add(key));
+        }
         actualsByKey.forEach((_, key) => allCategoryKeys.add(key));
         budgetEntriesMap.forEach((_, key) => allCategoryKeys.add(key));
         historicalByKey.forEach((_, key) => allCategoryKeys.add(key));
@@ -248,10 +270,17 @@ export function useBudget(): UseBudgetReturn {
             const historicalData = historicalByKey.get(categoryKey);
             const categoryMeta = categoriesByKey.get(categoryKey);
             const actualData = actualsByKey.get(categoryKey);
+            const breakdownData = breakdownByKey.get(categoryKey);
 
-            const displayName = categoryMeta?.name || entryInfo?.label || actualData?.label || categoryKey;
-            const spent = actualData?.amount || 0;
-            const categoryColor = entryInfo?.entry.category?.color || categoryMeta?.color || "#607D8B";
+            // Use categoryBreakdown as source of truth for spent amounts (most accurate)
+            // Fallback to actualsByKey if categoryBreakdown not available
+            const spent = breakdownData?.amount ?? actualData?.amount ?? 0;
+            
+            // Use display name from breakdown if available, otherwise use other sources
+            const displayName = breakdownData?.label || categoryMeta?.name || entryInfo?.label || actualData?.label || categoryKey;
+            
+            // Use color from breakdown if available, otherwise use other sources
+            const categoryColor = breakdownData?.color || entryInfo?.entry.category?.color || categoryMeta?.color || "#607D8B";
             const categoryIcon = entryInfo?.entry.category?.icon || categoryMeta?.icon || null;
             const categoryId = entryInfo?.entry.category?.id || categoryMeta?.id || null;
 
@@ -368,8 +397,8 @@ export function useBudget(): UseBudgetReturn {
           .filter((root) => toKey(root.category) !== "income");
 
         return filteredRoots.sort((a, b) => b.budget - a.budget || b.spent - a.spent);
-      })()
-    : [];
+      })();
+  }, [budgetSummary, historicalAverages, allCategories, categoryGroupings, hiddenCategoryKeys, categoryBreakdown]);
 
   // Calculate totals
   const totalBudget =
@@ -499,51 +528,86 @@ export function useBudget(): UseBudgetReturn {
     async (categoryId: string, entryId?: string | null): Promise<boolean> => {
       try {
         const authResult = await getAuthenticatedUser();
-        if (!authResult?.user?.id) return false;
+        if (!authResult?.user?.id) {
+          logger.error("❌ [BUDGET] User not authenticated for category deletion");
+          return false;
+        }
 
-        // Get category name before deleting
-        const { data: categoryData } = await supabase
-          .from("categories")
-          .select("name")
-          .eq("id", categoryId)
-          .maybeSingle();
+        const userId = authResult.user.id;
 
-        const categoryName = categoryData?.name;
+        // Step 1: Ensure "Other" category exists before moving transactions
+        const {
+          ensureOtherCategoryExists,
+          getTransactionsByResolvedCategory,
+          deactivateCategoryGroupingsForCategory,
+          deactivateCategoryRulesForCategory,
+          updateTransactionsToOtherCategory,
+          deleteBudgetEntriesForCategory,
+        } = await import("@/src/types/budget");
 
-        // Move all transactions from this category to "Other"
-        if (categoryName) {
-          // Update transactions where new_category matches the deleted category
-          const { error: updateNewCategoryError } = await supabase
-            .from("transactions")
-            .update({ new_category: "Other" })
-            .eq("user_id", authResult.user.id)
-            .eq("new_category", categoryName);
+        const otherCategoryId = await ensureOtherCategoryExists(userId);
+        if (!otherCategoryId) {
+          logger.error("❌ [BUDGET] Failed to ensure Other category exists");
+          return false;
+        }
 
-          if (updateNewCategoryError) {
-            logger.error("❌ [BUDGET] Error updating new_category:", updateNewCategoryError);
+        // Step 2: Get all transaction IDs that match this category using category resolution
+        // This catches all variations: name, slug, resolved keys, etc.
+        const matchingTransactionIds = await getTransactionsByResolvedCategory(userId, categoryId);
+
+        // Step 3: Update transactions to "Other" category (if any exist)
+        if (matchingTransactionIds.length > 0) {
+          const updatedCount = await updateTransactionsToOtherCategory(
+            userId,
+            matchingTransactionIds
+          );
+
+          if (updatedCount === -1) {
+            logger.error("❌ [BUDGET] Failed to update transactions to Other category");
+            return false;
           }
 
-          // Update transactions where top_category matches the deleted category
-          const { error: updateTopCategoryError } = await supabase
-            .from("transactions")
-            .update({ top_category: "Other" })
-            .eq("user_id", authResult.user.id)
-            .eq("top_category", categoryName)
-            .is("new_category", null);
-
-          if (updateTopCategoryError) {
-            logger.error("❌ [BUDGET] Error updating top_category:", updateTopCategoryError);
-          }
+          logger.info(
+            `✅ [BUDGET] Moved ${updatedCount} transactions to Other category`
+          );
         }
 
-        const deleted = await softDeleteCategoryForUser(authResult.user.id, categoryId);
-        if (deleted && entryId) {
-          await deleteBudgetEntry(entryId);
+        // Step 4: Deactivate category groupings involving this category
+        const groupingsDeactivated = await deactivateCategoryGroupingsForCategory(
+          userId,
+          categoryId
+        );
+        if (!groupingsDeactivated) {
+          logger.warn("⚠️ [BUDGET] Failed to deactivate category groupings, continuing...");
+          // Don't fail the whole operation for this
         }
-        if (deleted) {
-          await refreshBudget();
+
+        // Step 5: Deactivate category rules referencing this category
+        const rulesDeactivated = await deactivateCategoryRulesForCategory(userId, categoryId);
+        if (!rulesDeactivated) {
+          logger.warn("⚠️ [BUDGET] Failed to deactivate category rules, continuing...");
+          // Don't fail the whole operation for this
         }
-        return deleted;
+
+        // Step 6: Delete all budget entries for this category (across all periods)
+        const budgetEntriesDeleted = await deleteBudgetEntriesForCategory(categoryId);
+        if (!budgetEntriesDeleted) {
+          logger.warn("⚠️ [BUDGET] Failed to delete budget entries, continuing...");
+          // Don't fail the whole operation for this
+        }
+
+        // Step 7: Soft delete the category (mark as inactive)
+        const deleted = await softDeleteCategoryForUser(userId, categoryId);
+        if (!deleted) {
+          logger.error("❌ [BUDGET] Failed to soft delete category");
+          return false;
+        }
+
+        // Step 8: Refresh budget data
+        await refreshBudget();
+
+        logger.info(`✅ [BUDGET] Successfully deleted category ${categoryId}`);
+        return true;
       } catch (err) {
         logger.error("❌ [BUDGET] Error deleting category:", err);
         return false;

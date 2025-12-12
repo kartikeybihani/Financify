@@ -24,7 +24,6 @@ CREATE TABLE public.budget_entries (
   label text NOT NULL,
   limit_amount numeric NOT NULL CHECK (limit_amount >= 0::numeric),
   is_flexible boolean NOT NULL DEFAULT false,
-  sort_index integer NOT NULL DEFAULT 0,
   created_at timestamp with time zone DEFAULT now(),
   updated_at timestamp with time zone DEFAULT now(),
   CONSTRAINT budget_entries_pkey PRIMARY KEY (id),
@@ -64,7 +63,7 @@ CREATE TABLE public.categories (
   id uuid NOT NULL,
   user_id uuid,
   name text NOT NULL,
-  slug text UNIQUE,
+  slug text,
   icon text,
   color text,
   rank integer DEFAULT 0,
@@ -87,12 +86,14 @@ CREATE TABLE public.category_groupings (
 CREATE TABLE public.category_rules (
   id uuid NOT NULL,
   user_id uuid NOT NULL,
-  merchant_name text NOT NULL,
+  merchant_name text,
   top_category_id uuid NOT NULL,
   sub_category_id uuid NOT NULL,
   apply_to_past boolean DEFAULT false,
   active boolean DEFAULT true,
   created_at timestamp with time zone DEFAULT now(),
+  match_field text DEFAULT 'merchant_name'::text,
+  transaction_name text,
   CONSTRAINT category_rules_pkey PRIMARY KEY (id)
 );
 CREATE TABLE public.chat_sessions (
@@ -195,11 +196,11 @@ CREATE TABLE public.investment_balances (
   total_value numeric DEFAULT 0,
   previous_total_value numeric,
   CONSTRAINT investment_balances_pkey PRIMARY KEY (id),
-  CONSTRAINT investment_balances_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id),
   CONSTRAINT fk_ib_pair FOREIGN KEY (snaptrade_user_id) REFERENCES public.snaptrade_connections(snaptrade_user_id),
   CONSTRAINT fk_ib_pair FOREIGN KEY (account_id) REFERENCES public.snaptrade_connections(snaptrade_user_id),
   CONSTRAINT fk_ib_pair FOREIGN KEY (snaptrade_user_id) REFERENCES public.snaptrade_connections(account_id),
-  CONSTRAINT fk_ib_pair FOREIGN KEY (account_id) REFERENCES public.snaptrade_connections(account_id)
+  CONSTRAINT fk_ib_pair FOREIGN KEY (account_id) REFERENCES public.snaptrade_connections(account_id),
+  CONSTRAINT investment_balances_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
 );
 CREATE TABLE public.investment_holdings (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -227,11 +228,11 @@ CREATE TABLE public.investment_holdings (
   total_percent_change numeric,
   previous_market_value numeric,
   CONSTRAINT investment_holdings_pkey PRIMARY KEY (id),
-  CONSTRAINT investment_holdings_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id),
   CONSTRAINT fk_ih_pair FOREIGN KEY (snaptrade_user_id) REFERENCES public.snaptrade_connections(snaptrade_user_id),
   CONSTRAINT fk_ih_pair FOREIGN KEY (account_id) REFERENCES public.snaptrade_connections(snaptrade_user_id),
   CONSTRAINT fk_ih_pair FOREIGN KEY (snaptrade_user_id) REFERENCES public.snaptrade_connections(account_id),
-  CONSTRAINT fk_ih_pair FOREIGN KEY (account_id) REFERENCES public.snaptrade_connections(account_id)
+  CONSTRAINT fk_ih_pair FOREIGN KEY (account_id) REFERENCES public.snaptrade_connections(account_id),
+  CONSTRAINT investment_holdings_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
 );
 CREATE TABLE public.investment_options (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -263,11 +264,11 @@ CREATE TABLE public.investment_options (
   last_updated timestamp with time zone DEFAULT now(),
   created_at timestamp with time zone DEFAULT now(),
   CONSTRAINT investment_options_pkey PRIMARY KEY (id),
-  CONSTRAINT investment_options_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id),
   CONSTRAINT fk_io_pair FOREIGN KEY (snaptrade_user_id) REFERENCES public.snaptrade_connections(snaptrade_user_id),
   CONSTRAINT fk_io_pair FOREIGN KEY (account_id) REFERENCES public.snaptrade_connections(snaptrade_user_id),
   CONSTRAINT fk_io_pair FOREIGN KEY (snaptrade_user_id) REFERENCES public.snaptrade_connections(account_id),
-  CONSTRAINT fk_io_pair FOREIGN KEY (account_id) REFERENCES public.snaptrade_connections(account_id)
+  CONSTRAINT fk_io_pair FOREIGN KEY (account_id) REFERENCES public.snaptrade_connections(account_id),
+  CONSTRAINT investment_options_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
 );
 CREATE TABLE public.memory_summary (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -276,7 +277,7 @@ CREATE TABLE public.memory_summary (
   memory_count integer NOT NULL DEFAULT 0,
   created_at timestamp with time zone DEFAULT now(),
   CONSTRAINT memory_summary_pkey PRIMARY KEY (id),
-  CONSTRAINT memory_summary_history_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
+  CONSTRAINT memory_summary_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
 );
 CREATE TABLE public.plaid_link_events (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -340,9 +341,9 @@ CREATE TABLE public.recurring_streams (
   updated_at timestamp with time zone DEFAULT now(),
   last_synced_at timestamp with time zone DEFAULT now(),
   CONSTRAINT recurring_streams_pkey PRIMARY KEY (id),
-  CONSTRAINT recurring_streams_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id),
   CONSTRAINT recurring_streams_item_id_fkey FOREIGN KEY (item_id) REFERENCES public.user_items(item_id),
-  CONSTRAINT recurring_streams_account_id_fkey FOREIGN KEY (account_id) REFERENCES public.accounts(account_id)
+  CONSTRAINT recurring_streams_account_id_fkey FOREIGN KEY (account_id) REFERENCES public.accounts(account_id),
+  CONSTRAINT recurring_streams_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
 );
 CREATE TABLE public.reports (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -414,10 +415,10 @@ CREATE TABLE public.transactions (
   linked_goal_id uuid,
   authorized_date date,
   CONSTRAINT transactions_pkey PRIMARY KEY (id),
-  CONSTRAINT transactions_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id),
   CONSTRAINT transactions_account_id_fkey FOREIGN KEY (account_id) REFERENCES public.accounts(account_id),
   CONSTRAINT transactions_linked_goal_id_fkey FOREIGN KEY (linked_goal_id) REFERENCES public.goals(id),
-  CONSTRAINT fk_transactions_recurring_stream FOREIGN KEY (recurring_stream_id) REFERENCES public.recurring_streams(stream_id)
+  CONSTRAINT fk_transactions_recurring_stream FOREIGN KEY (recurring_stream_id) REFERENCES public.recurring_streams(stream_id),
+  CONSTRAINT transactions_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
 );
 CREATE TABLE public.user_items (
   id uuid NOT NULL DEFAULT gen_random_uuid(),

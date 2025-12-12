@@ -1,6 +1,6 @@
 // React hook for managing categories from database
-import { useState, useEffect, useCallback } from 'react';
-import { createClient } from '@supabase/supabase-js';
+import { useState, useEffect, useCallback } from "react";
+import { supabase } from "@/src/lib/supabase/supabase";
 
 // Types
 export interface Category {
@@ -14,12 +14,8 @@ export interface Category {
   is_active: boolean;
 }
 
-// Initialize Supabase client
-const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
-
 export function useCategories(userId?: string) {
+  // Initialize with empty array - will be populated by fetchCategories
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -29,33 +25,40 @@ export function useCategories(userId?: string) {
       setLoading(true);
       setError(null);
 
-      let query = supabase
+      // console.log('useCategories - Fetching categories for userId:', userId);
+
+      // Require userId - all categories are now user-specific
+      if (!userId) {
+        console.warn('useCategories - userId required');
+        setCategories([]);
+        setLoading(false);
+        return;
+      }
+
+      // Build query - only get user-specific categories
+      const query = supabase
         .from('categories')
         .select('*')
         .eq('is_active', true)
+        .eq('user_id', userId)
         .order('rank', { ascending: true });
-
-      // If user_id provided, get both default and user-specific categories
-      if (userId) {
-        query = query.or(`user_id.is.null,user_id.eq.${userId}`);
-      } else {
-        // Only get default categories
-        query = query.is('user_id', null);
-      }
 
       const { data, error: fetchError } = await query;
 
       if (fetchError) {
+        console.error('useCategories - Query error:', fetchError);
+        console.error('useCategories - Error details:', JSON.stringify(fetchError, null, 2));
         throw fetchError;
       }
 
+      // console.log('useCategories - Fetched categories:', data?.length || 0, 'categories');
+      // console.log('useCategories - Sample categories:', data?.slice(0, 3));
+      
       setCategories(data || []);
     } catch (err) {
-      console.error('Error fetching categories:', err);
+      console.error('useCategories - Exception fetching categories:', err);
       setError(err instanceof Error ? err.message : 'Failed to fetch categories');
-      // Set fallback categories
-      console.log('useCategories - Setting fallback categories');
-      setCategories(getDefaultCategories());
+      setCategories([]);
     } finally {
       setLoading(false);
     }

@@ -378,7 +378,10 @@ const CategoryTransactionsModal: React.FC<CategoryTransactionsModalProps> = ({
                                   </View>
                                 </View>
                                 <Text style={styles.txItemAmount}>
-                                  ${tx.amount.toLocaleString()}
+                                  ${tx.amount.toLocaleString("en-US", {
+                                    minimumFractionDigits: 2,
+                                    maximumFractionDigits: 2,
+                                  })}
                                 </Text>
                               </TouchableOpacity>
                             );

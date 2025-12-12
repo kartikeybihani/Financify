@@ -62,6 +62,7 @@ export default function SpendingSection({
   const slideAnim = useRef(new Animated.Value(0)).current;
 
   // Use budget hook to get real budget data
+  // Pass categoryBreakdown so spent amounts use accurate data from spending breakdown
   const {
     budgetData,
     totalBudget,
@@ -75,7 +76,7 @@ export default function SpendingSection({
     groupCategory,
     ungroupCategory,
     deleteCategory,
-  } = useBudget();
+  } = useBudget(categoryBreakdown);
 
   // Initialize budget on first mount if needed
   useEffect(() => {

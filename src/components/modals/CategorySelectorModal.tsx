@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -9,12 +9,7 @@ import {
   StyleSheet,
   Modal,
   TouchableWithoutFeedback,
-  TextInput,
-  KeyboardAvoidingView,
-  Platform,
-  Keyboard,
 } from "react-native";
-import { BlurView } from "expo-blur";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import IconButton from "@/src/components/shared/IconButton";
@@ -22,7 +17,7 @@ import * as Haptics from "expo-haptics";
 import { useCategories } from "@/src/hooks/useCategories";
 import { supabase } from "@/src/lib/supabase/supabase";
 import { DeviceEventEmitter } from "react-native";
-import { TEXT_STYLES } from "../shared/modal-constants";
+import AddCategoryModal from "@/src/components/insights/components/AddCategoryModal";
 
 interface CategorySelectorModalProps {
   visible: boolean;
@@ -44,40 +39,24 @@ export default function CategorySelectorModal({
   const insets = useSafeAreaInsets();
   const { height, width } = useWindowDimensions();
   const [loading, setLoading] = useState(false);
-  const [newCategoryName, setNewCategoryName] = useState("");
-  const [newCategoryIcon, setNewCategoryIcon] = useState("📦");
-  const [addCategoryLoading, setAddCategoryLoading] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
-  const [showAddForm, setShowAddForm] = useState(false);
+  const [showAddCategoryModal, setShowAddCategoryModal] = useState(false);
 
-  // Refs for text inputs
-  const nameInputRef = useRef<TextInput>(null);
-  const iconInputRef = useRef<TextInput>(null);
-
-  // Get current user ID
-  useEffect(() => {
-    const getUser = async () => {
-      const { data: userData } = await supabase.auth.getUser();
-      setCurrentUserId(userData.user?.id || null);
-    };
-    getUser();
-  }, []);
-
-  // Reset modal state when it becomes visible
+  // Get current user ID - fetch when modal becomes visible
   useEffect(() => {
     if (visible) {
-      // Reset form state
-      setNewCategoryName("");
-      setNewCategoryIcon("📦");
-      setAddCategoryLoading(false);
-      setShowAddForm(false);
+      const getUser = async () => {
+        const { data: userData } = await supabase.auth.getUser();
+        setCurrentUserId(userData.user?.id || null);
+      };
+      getUser();
+      // Reset add category modal state
+      setShowAddCategoryModal(false);
     }
   }, [visible]);
 
   const {
     categories,
-    getCategoryIcon,
-    getCategoryColor,
     formatCategoryName: formatCategoryFromHook,
     refreshCategories,
   } = useCategories(currentUserId || undefined);
@@ -88,135 +67,13 @@ export default function CategorySelectorModal({
   const isTallPhone = height >= 840;
 
   const handleClose = () => {
-    // Reset form state when closing
-    setNewCategoryName("");
-    setNewCategoryIcon("📦");
-    setAddCategoryLoading(false);
-    setShowAddForm(false);
+    setShowAddCategoryModal(false);
     onClose();
   };
 
   const handleAddNewCategory = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setShowAddForm(true);
-
-    // Focus on name input after a short delay
-    setTimeout(() => {
-      nameInputRef.current?.focus();
-    }, 100);
-  };
-
-  const handleCancelAddForm = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    // Dismiss keyboard first
-    Keyboard.dismiss();
-    setShowAddForm(false);
-    setNewCategoryName("");
-    setNewCategoryIcon("📦");
-  };
-
-  const handleSaveCategory = async () => {
-    if (!newCategoryName.trim()) {
-      Alert.alert("Error", "Please enter a category name");
-      return;
-    }
-
-    if (newCategoryName.length > 25) {
-      Alert.alert("Error", "Category name must be 25 characters or less");
-      return;
-    }
-
-    setAddCategoryLoading(true);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-
-    try {
-      const { data: userData } = await supabase.auth.getUser();
-      if (!userData.user) {
-        throw new Error("User not authenticated");
-      }
-
-      // Create slug from name
-      let baseSlug = newCategoryName
-        .toLowerCase()
-        .replace(/[^a-z0-9\s-]/g, "")
-        .replace(/\s+/g, "-")
-        .trim();
-
-      // Handle potential slug conflicts by adding a number suffix
-      let slug = baseSlug;
-      let counter = 1;
-      let slugExists = true;
-
-      while (slugExists) {
-        const { data: existingSlug } = await supabase
-          .from("categories")
-          .select("id")
-          .eq("slug", slug)
-          .limit(1);
-
-        if (!existingSlug || existingSlug.length === 0) {
-          slugExists = false;
-        } else {
-          slug = `${baseSlug}-${counter}`;
-          counter++;
-        }
-      }
-
-      // Get the next rank (highest rank + 1)
-      const { data: maxRankData } = await supabase
-        .from("categories")
-        .select("rank")
-        .eq("user_id", userData.user.id)
-        .order("rank", { ascending: false })
-        .limit(1);
-
-      const nextRank = maxRankData?.[0]?.rank ? maxRankData[0].rank + 1 : 1;
-
-      // Generate UUID for the new category (React Native compatible)
-      const categoryId = "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(
-        /[xy]/g,
-        function (c) {
-          const r = (Math.random() * 16) | 0;
-          const v = c == "x" ? r : (r & 0x3) | 0x8;
-          return v.toString(16);
-        }
-      );
-
-      const { data, error } = await supabase
-        .from("categories")
-        .insert({
-          id: categoryId,
-          user_id: userData.user.id,
-          name: newCategoryName.trim(),
-          slug: slug,
-          icon: newCategoryIcon,
-          color: "#4A90E2", // Default blue color
-          rank: nextRank,
-          is_active: true,
-        })
-        .select()
-        .single();
-
-      if (error) throw error;
-
-      // Refresh categories to show the new category
-      await refreshCategories();
-
-      // Reset form data and hide form
-      setNewCategoryName("");
-      setNewCategoryIcon("📦");
-      setShowAddForm(false);
-
-      Alert.alert(
-        "Success",
-        `Category "${newCategoryName}" added successfully!`
-      );
-    } catch (error) {
-      console.error("Error adding category:", error);
-      Alert.alert("Error", "Failed to add category. Please try again.");
-    } finally {
-      setAddCategoryLoading(false);
-    }
+    setShowAddCategoryModal(true);
   };
 
   const handleCategoryLongPress = (categoryId: string) => {
@@ -225,16 +82,7 @@ export default function CategorySelectorModal({
     const category = categories.find((cat) => cat.id === categoryId);
     if (!category) return;
 
-    // Only allow deleting user-created categories (not default ones)
-    if (!category.user_id) {
-      Alert.alert(
-        "Cannot Delete",
-        "Default categories cannot be deleted. You can only delete categories you've created.",
-        [{ text: "OK", style: "default" }]
-      );
-      return;
-    }
-
+    // All categories are user-owned now, so allow deletion
     Alert.alert(
       "Delete Category",
       `Are you sure you want to delete "${category.name}"? This action cannot be undone.`,
@@ -689,12 +537,6 @@ export default function CategorySelectorModal({
                             style={styles.checkmarkIcon}
                           />
                         )}
-                        {/* Show delete indicator for user-created categories */}
-                        {category.user_id && (
-                          <View style={styles.deleteIndicator}>
-                            <Text style={styles.deleteIndicatorText}>⋯</Text>
-                          </View>
-                        )}
                       </TouchableOpacity>
                     );
                   })}
@@ -717,109 +559,13 @@ export default function CategorySelectorModal({
       </TouchableWithoutFeedback>
 
       {/* Custom Add Category Form Overlay */}
-      {showAddForm && (
-        <Modal
-          visible={showAddForm}
-          transparent={true}
-          animationType="fade"
-          onRequestClose={handleCancelAddForm}
-          statusBarTranslucent={true}
-          presentationStyle="overFullScreen"
-        >
-          <KeyboardAvoidingView
-            style={styles.formOverlay}
-            behavior={Platform.OS === "ios" ? "padding" : "height"}
-          >
-            <View style={styles.formBackdrop} />
-
-            <View style={styles.formContainer}>
-              <View style={styles.formHeader}>
-                <Text style={styles.formTitle}>Add New Category</Text>
-                <IconButton
-                  icon="close"
-                  onPress={handleCancelAddForm}
-                  size={16}
-                  style={TEXT_STYLES.closeButton}
-                />
-              </View>
-
-              <View style={styles.formContent}>
-                <View style={styles.inputRow}>
-                  <View style={styles.iconInputContainer}>
-                    <Text style={styles.inputLabel}>Icon</Text>
-                    <TextInput
-                      ref={iconInputRef}
-                      style={styles.iconInput}
-                      value={newCategoryIcon}
-                      onChangeText={setNewCategoryIcon}
-                      maxLength={2}
-                      placeholder="📦"
-                      placeholderTextColor="rgba(255, 255, 255, 0.5)"
-                      returnKeyType="next"
-                      onSubmitEditing={() => {
-                        nameInputRef.current?.focus();
-                      }}
-                    />
-                  </View>
-
-                  <View style={styles.nameInputContainer}>
-                    <Text style={styles.inputLabel}>Category Name</Text>
-                    <TextInput
-                      ref={nameInputRef}
-                      style={styles.nameInput}
-                      value={newCategoryName}
-                      onChangeText={setNewCategoryName}
-                      maxLength={25}
-                      placeholder="Enter category name"
-                      placeholderTextColor="rgba(255, 255, 255, 0.5)"
-                      returnKeyType="done"
-                      onSubmitEditing={() => {
-                        if (newCategoryName.trim()) {
-                          handleSaveCategory();
-                        }
-                      }}
-                    />
-                    <Text style={styles.characterCount}>
-                      {newCategoryName.length}/25
-                    </Text>
-                  </View>
-                </View>
-                <Text style={styles.iconHint}>
-                  Tap icon field to use your phone's emoji keyboard
-                </Text>
-              </View>
-
-              <View style={styles.formActions}>
-                <TouchableOpacity
-                  style={styles.cancelFormButton}
-                  onPress={handleCancelAddForm}
-                  activeOpacity={0.7}
-                  disabled={addCategoryLoading}
-                >
-                  <Text style={styles.cancelFormButtonText}>Cancel</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[
-                    styles.saveFormButton,
-                    (!newCategoryName.trim() || addCategoryLoading) &&
-                      styles.saveFormButtonDisabled,
-                  ]}
-                  onPress={handleSaveCategory}
-                  activeOpacity={0.7}
-                  disabled={!newCategoryName.trim() || addCategoryLoading}
-                >
-                  {addCategoryLoading ? (
-                    <Text style={styles.saveFormButtonText}>Saving...</Text>
-                  ) : (
-                    <Text style={styles.saveFormButtonText}>Save</Text>
-                  )}
-                </TouchableOpacity>
-              </View>
-            </View>
-          </KeyboardAvoidingView>
-        </Modal>
-      )}
+      <AddCategoryModal
+        visible={showAddCategoryModal}
+        onClose={() => setShowAddCategoryModal(false)}
+        onCategoryAdded={async () => {
+          await refreshCategories();
+        }}
+      />
     </Modal>
   );
 }
@@ -953,138 +699,5 @@ const styles = StyleSheet.create({
     fontSize: 8,
     color: "#ffffff",
     fontWeight: "bold",
-  },
-  // Custom Form Styles
-  formOverlay: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  formBackdrop: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
-  },
-  formContainer: {
-    backgroundColor: "#1a1a1a",
-    borderRadius: 16,
-    marginHorizontal: 20,
-    maxWidth: 400,
-    width: "90%",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.25,
-    shadowRadius: 20,
-    elevation: 20,
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.1)",
-  },
-  formHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: "rgba(255, 255, 255, 0.1)",
-  },
-  formTitle: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: "#ffffff",
-  },
-  formContent: {
-    paddingHorizontal: 20,
-    paddingVertical: 20,
-  },
-  inputRow: {
-    flexDirection: "row",
-    gap: 12,
-    marginBottom: 16,
-  },
-  iconInputContainer: {
-    flex: 0.3,
-  },
-  nameInputContainer: {
-    flex: 0.7,
-  },
-  inputLabel: {
-    fontSize: 14,
-    fontWeight: "500",
-    color: "rgba(255, 255, 255, 0.8)",
-    marginBottom: 8,
-  },
-  nameInput: {
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    fontSize: 16,
-    color: "#ffffff",
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.2)",
-  },
-  iconInput: {
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    fontSize: 24,
-    color: "#ffffff",
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.2)",
-    textAlign: "center",
-  },
-  characterCount: {
-    fontSize: 12,
-    color: "rgba(255, 255, 255, 0.5)",
-    textAlign: "right",
-    marginTop: 4,
-  },
-  iconHint: {
-    fontSize: 12,
-    color: "rgba(255, 255, 255, 0.6)",
-    textAlign: "center",
-    marginTop: 8,
-    fontStyle: "italic",
-  },
-  formActions: {
-    flexDirection: "row",
-    paddingHorizontal: 20,
-    paddingBottom: 20,
-    gap: 12,
-  },
-  cancelFormButton: {
-    flex: 1,
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.2)",
-  },
-  cancelFormButtonText: {
-    fontSize: 16,
-    fontWeight: "500",
-    color: "rgba(255, 255, 255, 0.7)",
-  },
-  saveFormButton: {
-    flex: 1,
-    backgroundColor: "#4A90E2",
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: "center",
-  },
-  saveFormButtonDisabled: {
-    backgroundColor: "rgba(74, 144, 226, 0.3)",
-  },
-  saveFormButtonText: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#ffffff",
   },
 });

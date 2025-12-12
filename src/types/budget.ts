@@ -34,6 +34,7 @@ export interface BudgetEntryWithCategory extends BudgetEntry {
   category?: {
     id: string;
     name: string;
+    slug: string | null;
     color: string;
     icon: string | null;
   };
@@ -313,44 +314,28 @@ export async function softDeleteCategoryForUser(
   categoryId: string
 ): Promise<boolean> {
   try {
+    // Verify category belongs to user
     const { data: category, error } = await supabase
       .from("categories")
-      .select("id, user_id, name, slug, color, icon, rank, is_active")
+      .select("id, user_id")
       .eq("id", categoryId)
+      .eq("user_id", userId)
       .maybeSingle();
 
     if (error || !category) {
-      logger.error("[BUDGET] Category not found for delete:", error);
+      logger.error("[BUDGET] Category not found or doesn't belong to user:", error);
       return false;
     }
 
-    if (category.user_id === userId) {
-      const { error: updateError } = await supabase
-        .from("categories")
-        .update({ is_active: false })
-        .eq("id", categoryId);
-      if (updateError) {
-        logger.error("[BUDGET] Error deactivating user category:", updateError);
-        return false;
-      }
-      return true;
-    }
+    // Deactivate the category
+    const { error: updateError } = await supabase
+      .from("categories")
+      .update({ is_active: false })
+      .eq("id", categoryId)
+      .eq("user_id", userId);
 
-    // Clone default category as a user-specific inactive override
-    const newSlug = category.slug ? `${category.slug}-${userId}` : null;
-    const { error: insertError } = await supabase.from("categories").insert({
-      id: generateLocalUUID(),
-      user_id: userId,
-      name: category.name,
-      slug: newSlug,
-      color: category.color,
-      icon: category.icon,
-      rank: category.rank,
-      is_active: false,
-    });
-
-    if (insertError) {
-      logger.error("[BUDGET] Error creating inactive override for category:", insertError);
+    if (updateError) {
+      logger.error("[BUDGET] Error deactivating category:", updateError);
       return false;
     }
 
@@ -362,6 +347,347 @@ export async function softDeleteCategoryForUser(
 }
 
 /**
+ * Ensure "Other" category exists and is active for a user.
+ * Returns the category ID if successful, null otherwise.
+ */
+export async function ensureOtherCategoryExists(userId: string): Promise<string | null> {
+  if (!userId) {
+    logger.error("[BUDGET] ensureOtherCategoryExists called without userId");
+    return null;
+  }
+
+  try {
+    // Check if "Other" category exists and is active
+    // First try by name (case-insensitive)
+    let { data: existing, error: fetchError } = await supabase
+      .from("categories")
+      .select("id, is_active")
+      .eq("user_id", userId)
+      .ilike("name", "Other")
+      .maybeSingle();
+
+    // If not found by name, try by slug
+    if (!existing && (!fetchError || fetchError.code === "PGRST116")) {
+      const result = await supabase
+        .from("categories")
+        .select("id, is_active")
+        .eq("user_id", userId)
+        .eq("slug", "other")
+        .maybeSingle();
+      
+      existing = result.data;
+      fetchError = result.error;
+    }
+
+    if (fetchError && fetchError.code !== "PGRST116") {
+      // PGRST116 is "no rows returned", which is fine
+      logger.error("[BUDGET] Error checking for Other category:", fetchError);
+      return null;
+    }
+
+    if (existing) {
+      // Category exists - ensure it's active
+      if (!existing.is_active) {
+        const { error: updateError } = await supabase
+          .from("categories")
+          .update({ is_active: true })
+          .eq("id", existing.id);
+
+        if (updateError) {
+          logger.error("[BUDGET] Error activating Other category:", updateError);
+          return null;
+        }
+      }
+      return existing.id;
+    }
+
+    // Category doesn't exist - create it
+    const { data: newCategory, error: insertError } = await supabase
+      .from("categories")
+      .insert({
+        id: generateLocalUUID(),
+        user_id: userId,
+        name: "Other",
+        slug: "other",
+        icon: "📦",
+        color: "#607D8B",
+        rank: 999,
+        is_active: true,
+      })
+      .select("id")
+      .single();
+
+    if (insertError || !newCategory) {
+      logger.error("[BUDGET] Error creating Other category:", insertError);
+      return null;
+    }
+
+    return newCategory.id;
+  } catch (err) {
+    logger.error("[BUDGET] Error in ensureOtherCategoryExists:", err);
+    return null;
+  }
+}
+
+/**
+ * Deactivate all category groupings involving a specific category (as parent or child).
+ * Returns true if successful, false otherwise.
+ */
+export async function deactivateCategoryGroupingsForCategory(
+  userId: string,
+  categoryId: string
+): Promise<boolean> {
+  if (!userId || !categoryId) {
+    logger.error("[BUDGET] deactivateCategoryGroupingsForCategory called with invalid parameters", {
+      userId: !!userId,
+      categoryId: !!categoryId,
+    });
+    return false;
+  }
+
+  try {
+    const { error } = await supabase
+      .from("category_groupings")
+      .update({ active: false })
+      .eq("user_id", userId)
+      .eq("active", true)
+      .or(`parent_category_id.eq.${categoryId},child_category_id.eq.${categoryId}`);
+
+    if (error) {
+      logger.error("[BUDGET] Error deactivating category groupings:", error);
+      return false;
+    }
+
+    return true;
+  } catch (err) {
+    logger.error("[BUDGET] Error in deactivateCategoryGroupingsForCategory:", err);
+    return false;
+  }
+}
+
+/**
+ * Deactivate all category rules referencing a specific category (as top_category or sub_category).
+ * Returns true if successful, false otherwise.
+ */
+export async function deactivateCategoryRulesForCategory(
+  userId: string,
+  categoryId: string
+): Promise<boolean> {
+  if (!userId || !categoryId) {
+    logger.error("[BUDGET] deactivateCategoryRulesForCategory called with invalid parameters", {
+      userId: !!userId,
+      categoryId: !!categoryId,
+    });
+    return false;
+  }
+
+  try {
+    const { error } = await supabase
+      .from("category_rules")
+      .update({ active: false })
+      .eq("user_id", userId)
+      .eq("active", true)
+      .or(`top_category_id.eq.${categoryId},sub_category_id.eq.${categoryId}`);
+
+    if (error) {
+      logger.error("[BUDGET] Error deactivating category rules:", error);
+      return false;
+    }
+
+    return true;
+  } catch (err) {
+    logger.error("[BUDGET] Error in deactivateCategoryRulesForCategory:", err);
+    return false;
+  }
+}
+
+/**
+ * Update multiple transactions to "Other" category in batch.
+ * Updates both new_category and top_category fields appropriately.
+ * Returns the number of transactions updated, or -1 on error.
+ */
+export async function updateTransactionsToOtherCategory(
+  userId: string,
+  transactionIds: string[]
+): Promise<number> {
+  if (!userId || !transactionIds || transactionIds.length === 0) {
+    logger.error("[BUDGET] updateTransactionsToOtherCategory called with invalid parameters", {
+      userId: !!userId,
+      transactionIdsCount: transactionIds?.length || 0,
+    });
+    return -1;
+  }
+
+  try {
+    // Process in batches to avoid hitting query size limits
+    const BATCH_SIZE = 500;
+    let totalUpdated = 0;
+
+    for (let i = 0; i < transactionIds.length; i += BATCH_SIZE) {
+      const batch = transactionIds.slice(i, i + BATCH_SIZE);
+
+      // First, get the current state of these transactions to determine what to update
+      const { data: transactions, error: fetchError } = await supabase
+        .from("transactions")
+        .select("id, new_category, top_category")
+        .eq("user_id", userId)
+        .in("id", batch);
+
+      if (fetchError) {
+        logger.error("[BUDGET] Error fetching transactions for update:", fetchError);
+        continue;
+      }
+
+      if (!transactions || transactions.length === 0) {
+        continue;
+      }
+
+      // Separate transactions by whether they have new_category set
+      const transactionsWithNewCategory: string[] = [];
+      const transactionsWithOnlyTopCategory: string[] = [];
+
+      transactions.forEach((tx) => {
+        if (tx.new_category) {
+          transactionsWithNewCategory.push(tx.id);
+        } else {
+          transactionsWithOnlyTopCategory.push(tx.id);
+        }
+      });
+
+      // Update transactions that have new_category set
+      if (transactionsWithNewCategory.length > 0) {
+        const { error: updateNewError } = await supabase
+          .from("transactions")
+          .update({ new_category: "Other" })
+          .eq("user_id", userId)
+          .in("id", transactionsWithNewCategory);
+
+        if (updateNewError) {
+          logger.error("[BUDGET] Error updating new_category:", updateNewError);
+        } else {
+          totalUpdated += transactionsWithNewCategory.length;
+        }
+      }
+
+      // Update transactions that only have top_category set
+      if (transactionsWithOnlyTopCategory.length > 0) {
+        const { error: updateTopError } = await supabase
+          .from("transactions")
+          .update({ top_category: "Other" })
+          .eq("user_id", userId)
+          .in("id", transactionsWithOnlyTopCategory);
+
+        if (updateTopError) {
+          logger.error("[BUDGET] Error updating top_category:", updateTopError);
+        } else {
+          totalUpdated += transactionsWithOnlyTopCategory.length;
+        }
+      }
+    }
+
+    logger.info(`[BUDGET] Updated ${totalUpdated} transactions to Other category`);
+    return totalUpdated;
+  } catch (err) {
+    logger.error("[BUDGET] Error in updateTransactionsToOtherCategory:", err);
+    return -1;
+  }
+}
+
+/**
+ * Get all transaction IDs that match a category by resolved key.
+ * This uses category resolution to catch all variations (name, slug, etc.).
+ * Uses pagination to handle large datasets efficiently.
+ * Returns an array of transaction IDs.
+ */
+export async function getTransactionsByResolvedCategory(
+  userId: string,
+  categoryId: string
+): Promise<string[]> {
+  if (!userId || !categoryId) {
+    logger.error("[BUDGET] getTransactionsByResolvedCategory called with invalid parameters", {
+      userId: !!userId,
+      categoryId: !!categoryId,
+    });
+    return [];
+  }
+
+  try {
+    // Build category index to resolve the category
+    const categoryIndex = await buildCategoryIndex(userId);
+    
+    // Find the category by ID to get its name/slug
+    const category = categoryIndex.byId.get(categoryId);
+    if (!category) {
+      logger.warn(`[BUDGET] Category ${categoryId} not found in index`);
+      return [];
+    }
+
+    // Resolve the category to get all possible keys (name, slug variations)
+    const resolved = resolveCategoryLabel(category.name, categoryIndex);
+    const categoryKeys = new Set<string>();
+    
+    // Add all possible keys for this category
+    categoryKeys.add(categoryKey(category.name));
+    if (category.slug) {
+      categoryKeys.add(categoryKey(category.slug));
+    }
+    categoryKeys.add(categoryKey(category.name.replace(/\s+/g, "-")));
+    
+    // Also add the resolved key
+    categoryKeys.add(resolved.key);
+
+    // Fetch transactions with pagination (process in batches to handle large datasets)
+    const PAGE_SIZE = 1000;
+    const matchingIds: string[] = [];
+    let offset = 0;
+    let hasMore = true;
+
+    while (hasMore) {
+      const { data: transactions, error } = await supabase
+        .from("transactions")
+        .select("id, new_category, top_category")
+        .eq("user_id", userId)
+        .range(offset, offset + PAGE_SIZE - 1)
+        .order("date", { ascending: false });
+
+      if (error) {
+        logger.error("[BUDGET] Error fetching transactions for category resolution:", error);
+        break;
+      }
+
+      if (!transactions || transactions.length === 0) {
+        hasMore = false;
+        break;
+      }
+
+      // Filter transactions by resolved category key
+      for (const tx of transactions) {
+        const effectiveCategory = tx.new_category || tx.top_category;
+        if (!effectiveCategory) continue;
+
+        // Resolve the transaction's category
+        const txResolved = resolveCategoryLabel(effectiveCategory, categoryIndex);
+        
+        // Check if it matches any of our category keys
+        if (categoryKeys.has(txResolved.key)) {
+          matchingIds.push(tx.id);
+        }
+      }
+
+      // Check if there are more transactions to fetch
+      hasMore = transactions.length === PAGE_SIZE;
+      offset += PAGE_SIZE;
+    }
+
+    logger.info(`[BUDGET] Found ${matchingIds.length} transactions matching category ${categoryId}`);
+    return matchingIds;
+  } catch (err) {
+    logger.error("[BUDGET] Error in getTransactionsByResolvedCategory:", err);
+    return [];
+  }
+}
+
+/**
  * Fetch transactions for a specific category (all time), filtered by resolved category label.
  * FIXED: Queries all transactions and filters by resolved category key to catch all variations.
  */
@@ -369,8 +695,20 @@ export async function getTransactionsForCategory(
   userId: string,
   targetCategoryLabel: string
 ): Promise<CategoryTransaction[]> {
+  if (!userId || !targetCategoryLabel) {
+    logger.error("[BUDGET] getTransactionsForCategory called with invalid parameters", {
+      userId: !!userId,
+      targetCategoryLabel: !!targetCategoryLabel,
+    });
+    return [];
+  }
+
   try {
     const categoryIndex = await buildCategoryIndex(userId);
+    
+    if (!categoryIndex || categoryIndex.byKey.size === 0) {
+      logger.warn("[BUDGET] No categories found in index for user:", userId);
+    }
     const targetResolved = resolveCategoryLabel(
       targetCategoryLabel,
       categoryIndex
@@ -623,13 +961,13 @@ export async function getBudgetEntriesForPeriod(
         categories:category_id (
           id,
           name,
+          slug,
           color,
           icon
         )
       `
       )
-      .eq("budget_period_id", budgetPeriodId)
-      .order("sort_index", { ascending: true });
+      .eq("budget_period_id", budgetPeriodId);
 
     if (error) {
       logger.error("Error fetching budget entries:", error);
@@ -643,6 +981,7 @@ export async function getBudgetEntriesForPeriod(
         ? {
             id: entry.categories.id,
             name: entry.categories.name,
+            slug: entry.categories.slug,
             color: entry.categories.color,
             icon: entry.categories.icon,
           }
@@ -669,7 +1008,7 @@ async function buildCategoryIndex(userId: string): Promise<CategoryIndex> {
   const { data: categories, error } = await supabase
     .from("categories")
     .select("id, user_id, name, slug, color, icon, rank, is_active")
-    .or(`user_id.eq.${userId},user_id.is.null`);
+    .eq("user_id", userId);
 
   if (error || !categories) {
     logger.error("[BUDGET] Error fetching categories for index:", error);
@@ -688,34 +1027,19 @@ async function buildCategoryIndex(userId: string): Promise<CategoryIndex> {
     return keys;
   };
 
-  // Track hidden keys from user-specific inactive rows
+  // Track hidden keys from inactive categories
   categories
-    .filter((cat: CategoryRecord) => cat.user_id === userId && cat.is_active === false)
+    .filter((cat: CategoryRecord) => cat.is_active === false)
     .forEach((cat: CategoryRecord) => {
       addKeys(cat).forEach((k) => hiddenKeys.add(k));
       byId.set(cat.id, cat);
     });
 
-  // Add user-specific active categories first (override defaults)
+  // Add active categories
   categories
-    .filter((cat: CategoryRecord) => cat.user_id === userId && cat.is_active !== false)
+    .filter((cat: CategoryRecord) => cat.is_active !== false)
     .forEach((cat: CategoryRecord) => {
       const keys = addKeys(cat);
-      keys.forEach((k) => byKey.set(k, cat));
-      byId.set(cat.id, cat);
-    });
-
-  // Add default categories if not hidden or overridden
-  categories
-    .filter((cat: CategoryRecord) => !cat.user_id)
-    .forEach((cat: CategoryRecord) => {
-      const keys = addKeys(cat);
-      const isHidden = Array.from(keys).some((k) => hiddenKeys.has(k));
-      const alreadyOverridden = Array.from(keys).some((k) => byKey.has(k));
-      if (isHidden || alreadyOverridden || cat.is_active === false) {
-        byId.set(cat.id, cat);
-        return;
-      }
       keys.forEach((k) => byKey.set(k, cat));
       byId.set(cat.id, cat);
     });
@@ -1048,7 +1372,7 @@ export async function initializeBudgetForNewUserOrMonth(
         const resolved = resolveCategoryLabel(suggestion.category_name, categoryIndex);
         return !existingKeys.has(resolved.key);
       })
-      .map((suggestion, index) => {
+      .map((suggestion) => {
         const resolved = resolveCategoryLabel(suggestion.category_name, categoryIndex);
         return {
           budget_period_id: period.id,
@@ -1057,7 +1381,6 @@ export async function initializeBudgetForNewUserOrMonth(
           group_key: null,
           label: resolved.label,
           limit_amount: suggestion.suggested_amount,
-          sort_index: existingEntries.length + index,
         };
       })
       .filter((entry) => entry.category_id || entry.label);
@@ -1095,20 +1418,32 @@ export async function upsertBudgetEntry(
     label: string;
     limit_amount: number;
     is_flexible?: boolean;
-    sort_index?: number;
   }
 ): Promise<BudgetEntry | null> {
   try {
+    // Resolve category_id from label if not provided (for category entries)
+    let resolvedCategoryId = entry.category_id;
+    if (entry.scope_type === "category" && !resolvedCategoryId && entry.label) {
+      const { data: category } = await supabase
+        .from("categories")
+        .select("id")
+        .eq("name", entry.label)
+        .eq("is_active", true)
+        .maybeSingle();
+      
+      resolvedCategoryId = category?.id || null;
+    }
+
     // Check if entry exists (for category entries, check by category_id)
     let existingId: string | null = null;
 
-    if (entry.scope_type === "category" && entry.category_id) {
+    if (entry.scope_type === "category" && resolvedCategoryId) {
       const { data: existing } = await supabase
         .from("budget_entries")
         .select("id")
         .eq("budget_period_id", budgetPeriodId)
         .eq("scope_type", "category")
-        .eq("category_id", entry.category_id)
+        .eq("category_id", resolvedCategoryId)
         .maybeSingle();
 
       existingId = existing?.id || null;
@@ -1122,7 +1457,6 @@ export async function upsertBudgetEntry(
           label: entry.label,
           limit_amount: entry.limit_amount,
           is_flexible: entry.is_flexible ?? false,
-          sort_index: entry.sort_index ?? 0,
         })
         .eq("id", existingId)
         .select()
@@ -1141,12 +1475,11 @@ export async function upsertBudgetEntry(
         .insert({
           budget_period_id: budgetPeriodId,
           scope_type: entry.scope_type,
-          category_id: entry.category_id || null,
+          category_id: resolvedCategoryId || null,
           group_key: entry.group_key || null,
           label: entry.label,
           limit_amount: entry.limit_amount,
           is_flexible: entry.is_flexible ?? false,
-          sort_index: entry.sort_index ?? 0,
         })
         .select()
         .single();
@@ -1165,7 +1498,7 @@ export async function upsertBudgetEntry(
 }
 
 /**
- * Delete a budget entry
+ * Delete a budget entry by ID
  */
 export async function deleteBudgetEntry(entryId: string): Promise<boolean> {
   try {
@@ -1182,6 +1515,28 @@ export async function deleteBudgetEntry(entryId: string): Promise<boolean> {
     return true;
   } catch (error) {
     logger.error("Error in deleteBudgetEntry:", error);
+    return false;
+  }
+}
+
+/**
+ * Delete all budget entries for a category (across all periods)
+ */
+export async function deleteBudgetEntriesForCategory(categoryId: string): Promise<boolean> {
+  try {
+    const { error } = await supabase
+      .from("budget_entries")
+      .delete()
+      .eq("category_id", categoryId);
+
+    if (error) {
+      logger.error("Error deleting budget entries for category:", error);
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    logger.error("Error in deleteBudgetEntriesForCategory:", error);
     return false;
   }
 }

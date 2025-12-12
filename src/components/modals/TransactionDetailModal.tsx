@@ -131,13 +131,31 @@ export default function TransactionDetailModal({
   const [selectedAccountPerformance, setSelectedAccountPerformance] =
     useState<any>(null);
   const [accountDataLoading, setAccountDataLoading] = useState(false);
+  const [userId, setUserId] = useState<string | undefined>(undefined);
+
+  // Fetch user ID on mount
+  useEffect(() => {
+    const fetchUserId = async () => {
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (user?.id) {
+          setUserId(user.id);
+        }
+      } catch (error) {
+        console.error("Error fetching user ID:", error);
+      }
+    };
+    fetchUserId();
+  }, []);
 
   const {
     categories,
     getCategoryIcon,
     getCategoryColor,
     formatCategoryName: formatCategoryFromHook,
-  } = useCategories();
+  } = useCategories(userId);
 
   // Responsive layout flags
   const isLandscape = width > height;

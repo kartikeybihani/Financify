@@ -30,9 +30,14 @@ const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 /**
  * Fetch categories from database with caching
- * Returns default categories (user_id = null) and user-specific categories
+ * Returns user-specific categories only (userId required)
  */
-export async function getCategories(userId?: string): Promise<Category[]> {
+export async function getCategories(userId: string): Promise<Category[]> {
+  if (!userId) {
+    console.warn('getCategories - userId is required');
+    return [];
+  }
+
   const now = Date.now();
   
   // Return cached categories if still valid
@@ -41,25 +46,18 @@ export async function getCategories(userId?: string): Promise<Category[]> {
   }
 
   try {
-    let query = supabase
+    const query = supabase
       .from('categories')
       .select('*')
       .eq('is_active', true)
+      .eq('user_id', userId)
       .order('rank', { ascending: true });
-
-    // If user_id provided, get both default and user-specific categories
-    if (userId) {
-      query = query.or(`user_id.is.null,user_id.eq.${userId}`);
-    } else {
-      // Only get default categories
-      query = query.is('user_id', null);
-    }
 
     const { data, error } = await query;
 
     if (error) {
       console.error('Error fetching categories:', error);
-      return getDefaultCategories(); // Fallback to hardcoded
+      return [];
     }
 
     // Cache the results
@@ -69,7 +67,7 @@ export async function getCategories(userId?: string): Promise<Category[]> {
     return categoriesCache;
   } catch (error) {
     console.error('Category service error:', error);
-    return getDefaultCategories(); // Fallback to hardcoded
+    return [];
   }
 }
 
@@ -77,8 +75,8 @@ export async function getCategories(userId?: string): Promise<Category[]> {
  * Map Plaid category to our database categories
  * This replaces the old hardcoded mapping logic
  */
-export async function mapPlaidToCategory(plaidCategory: string | null | undefined, userId?: string): Promise<string> {
-  if (!plaidCategory) {
+export async function mapPlaidToCategory(plaidCategory: string | null | undefined, userId: string): Promise<string> {
+  if (!plaidCategory || !userId) {
     return 'Other';
   }
 
@@ -178,7 +176,10 @@ function findCategoryByName(categories: Category[], name: string): string | null
 /**
  * Get category by name for UI components
  */
-export async function getCategoryByName(name: string, userId?: string): Promise<Category | null> {
+export async function getCategoryByName(name: string, userId: string): Promise<Category | null> {
+  if (!userId) {
+    return null;
+  }
   const categories = await getCategories(userId);
   return categories.find(cat => 
     cat.name.toLowerCase() === name.toLowerCase() ||
