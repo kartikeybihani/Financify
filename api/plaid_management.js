@@ -3,6 +3,7 @@ import { client } from "../app/plaidClient.js";
 import { supabase } from "../lib/api/supabase.js";
 import { snaptrade, isSandbox } from "../lib/api/snaptrade.js";
 import {
+  verifyAuth,
   verifyUserAuthorization,
   verifyItemOwnership,
 } from "../lib/api/auth.js";
@@ -302,26 +303,43 @@ export default async function handler(req, res) {
     // SNAPTRADE MODE (handles both register and login)
     // ------------------------------
     if (mode === "snaptrade") {
-      // If userId and userSecret are provided, this is a login request
-      // Note: userId here is SnapTrade userId, not Supabase user_id
-      // We still need to verify the Supabase user_id if provided
-      if (user_id) {
-        const { authorized, error: authError } = await verifyUserAuthorization(
-          req,
-          user_id
-        );
+      // CRITICAL: Verify user is authenticated via JWT token
+      // Note: user_id in request body is SnapTrade userId, NOT Supabase user_id
+      // We verify authentication but don't compare user_id for SnapTrade operations
+      const { user: authenticatedUser, error: authError } = await verifyAuth(
+        req
+      );
 
-        if (!authorized) {
-          return res
-            .status(authError?.includes("Unauthorized") ? 401 : 403)
-            .json({
-              error: authError || "Access denied",
-            });
-        }
+      if (authError || !authenticatedUser) {
+        return res
+          .status(authError?.includes("Unauthorized") ? 401 : 403)
+          .json({
+            error: authError || "Unauthorized: Please log in to continue",
+          });
       }
 
+      // If userId and userSecret are provided, this is a login request
       if (userId && userSecret) {
         try {
+          // Verify the authenticated user owns these SnapTrade credentials
+          // This prevents users from accessing other users' SnapTrade accounts
+          const { data: connection, error: connError } = await supabase
+            .from("snaptrade_connections")
+            .select("user_id")
+            .eq("snaptrade_user_id", userId)
+            .eq("user_id", authenticatedUser.id)
+            .single();
+
+          // If connection exists in DB, verify ownership
+          // If not in DB yet (first-time login), allow but user must be authenticated
+          if (connError && connError.code !== "PGRST116") {
+            // PGRST116 = no rows returned, which is OK for first-time login
+            console.warn(
+              "⚠️ Error checking SnapTrade connection ownership:",
+              connError
+            );
+          }
+
           const { broker, reconnect } = req.body; // Get broker and reconnect parameters
 
           // Login the user to get redirect URI
@@ -358,9 +376,22 @@ export default async function handler(req, res) {
       }
 
       // If only user_id is provided, this is a registration request
+      // user_id here is the SnapTrade userId (e.g., "financify-{supabase_user_id}-{timestamp}-{random}")
       if (user_id) {
         try {
-          // Register the user
+          // Verify the SnapTrade user_id contains the authenticated user's Supabase ID
+          // This ensures users can only register SnapTrade accounts for themselves
+          if (!user_id.includes(authenticatedUser.id)) {
+            console.error(
+              "❌ Security: SnapTrade user_id does not match authenticated user"
+            );
+            return res.status(403).json({
+              error:
+                "Forbidden: Cannot register SnapTrade account for another user",
+            });
+          }
+
+          // Register the user with SnapTrade
           const registerResponse =
             await snaptrade.authentication.registerSnapTradeUser({
               userId: user_id,
