@@ -58,7 +58,7 @@ export default function PersonalityBadge({
 
       {showDetails && (
         <View style={styles.chipsContainer}>
-          {personality.traits.slice(0, 2).map((trait, index) => (
+          {personality.traits.map((trait, index) => (
             <View
               key={index}
               style={[styles.chip, { backgroundColor: colors.secondary }]}
@@ -127,7 +127,7 @@ const styles = StyleSheet.create({
   },
   chipsContainer: {
     flexDirection: "row",
-    flexWrap: "nowrap",
+    flexWrap: "wrap",
     gap: 8,
   },
   chip: {
