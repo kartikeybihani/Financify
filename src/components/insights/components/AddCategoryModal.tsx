@@ -1,15 +1,13 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
-  Animated,
   Modal,
   TouchableWithoutFeedback,
   ScrollView,
   TextInput,
-  Easing,
   Dimensions,
   KeyboardAvoidingView,
   Platform,
@@ -25,6 +23,8 @@ interface AddCategoryModalProps {
   onClose: () => void;
   onCategoryAdded: () => Promise<void>;
 }
+
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 
 // Curated set of icons - all emojis
 const CURATED_ICONS = [
@@ -71,36 +71,20 @@ const AddCategoryModal: React.FC<AddCategoryModalProps> = ({
   const [categoryName, setCategoryName] = useState("");
   const [selectedIcon, setSelectedIcon] = useState("💰");
   const [loading, setLoading] = useState(false);
-  const screenHeight = Dimensions.get("window").height;
-  const slideAnim = useRef(new Animated.Value(screenHeight)).current;
-  const [rendered, setRendered] = useState(visible);
   const insets = useSafeAreaInsets();
 
+  // Reset form when modal closes
   useEffect(() => {
-    if (visible) {
-      setRendered(true);
-      slideAnim.setValue(screenHeight);
-      Animated.timing(slideAnim, {
-        toValue: 0,
-        duration: 100,
-        easing: Easing.out(Easing.quad),
-        useNativeDriver: true,
-      }).start();
-    } else if (rendered) {
-      Animated.timing(slideAnim, {
-        toValue: screenHeight,
-        duration: 100,
-        easing: Easing.in(Easing.quad),
-        useNativeDriver: true,
-      }).start(() => {
-        setRendered(false);
+    if (!visible) {
+      // Reset form state after modal closes
+      const timer = setTimeout(() => {
         setCategoryName("");
         setSelectedIcon("💰");
-      });
+        setLoading(false);
+      }, 300); // Wait for animation to complete
+      return () => clearTimeout(timer);
     }
-  }, [visible, rendered, slideAnim, screenHeight]);
-
-  if (!rendered) return null;
+  }, [visible]);
 
   const handleSave = async () => {
     if (!categoryName.trim()) {
@@ -225,46 +209,50 @@ const AddCategoryModal: React.FC<AddCategoryModalProps> = ({
     );
   };
 
+  const handleClose = () => {
+    if (!loading) {
+      onClose();
+    }
+  };
+
   return (
     <Modal
-      transparent
-      animationType="none"
       visible={visible}
-      onRequestClose={onClose}
+      transparent
+      animationType="slide"
+      onRequestClose={handleClose}
       statusBarTranslucent={true}
     >
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        style={styles.keyboardAvoid}
-      >
-        <TouchableWithoutFeedback onPress={onClose}>
-          <View style={styles.sheetOverlay}>
-            <TouchableWithoutFeedback onPress={(e) => e.stopPropagation()}>
-              <Animated.View
-                style={[
-                  styles.sheetContainer,
+      <TouchableWithoutFeedback onPress={handleClose}>
+        <View style={styles.overlay}>
+          <TouchableWithoutFeedback onPress={(e) => e.stopPropagation()}>
+            <LinearGradient
+              colors={["rgba(31, 31, 31, 0.98)", "rgba(18, 18, 18, 0.99)"]}
+              style={styles.content}
+            >
+              <View style={styles.header}>
+                <View style={styles.headerTextContainer}>
+                  <Text style={styles.headerTitle}>Add New Category</Text>
+                </View>
+              </View>
+
+              <ScrollView
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={[
+                  styles.scrollContent,
                   {
-                    transform: [{ translateY: slideAnim }],
-                    maxHeight: screenHeight * 0.85,
-                    minHeight: Math.min(screenHeight * 0.5, 500),
-                    paddingBottom: Math.max(insets.bottom, 20),
+                    paddingBottom:
+                      Math.max(20, SCREEN_HEIGHT * 0.025) +
+                      Math.max(insets.bottom, 20),
                   },
                 ]}
+                keyboardShouldPersistTaps="handled"
+                keyboardDismissMode="interactive"
+                bounces={false}
               >
-                <View style={styles.sheetHandle} />
-                <ScrollView
-                  style={styles.scrollView}
-                  contentContainerStyle={styles.scrollContent}
-                  showsVerticalScrollIndicator={false}
-                  nestedScrollEnabled={true}
-                  keyboardShouldPersistTaps="handled"
-                  bounces={false}
-                >
-                  <View style={styles.sheetHeader}>
-                    <Text style={styles.sheetTitle}>Add New Category</Text>
-                  </View>
-
-                  {/* Top Row: Icon Box + Category Name Input */}
+                {/* Category Name Section */}
+                <View style={styles.nameSection}>
+                  <Text style={styles.sectionLabel}>CATEGORY NAME</Text>
                   <View style={styles.topRow}>
                     <TouchableOpacity
                       style={[
@@ -289,7 +277,7 @@ const AddCategoryModal: React.FC<AddCategoryModalProps> = ({
                       style={styles.categoryInput}
                       value={categoryName}
                       onChangeText={setCategoryName}
-                      placeholder="Category name"
+                      placeholder="Enter category name"
                       placeholderTextColor="rgba(255,255,255,0.4)"
                       autoFocus
                       autoCapitalize="words"
@@ -298,158 +286,171 @@ const AddCategoryModal: React.FC<AddCategoryModalProps> = ({
                       accessibilityLabel="Category name input"
                     />
                   </View>
+                </View>
 
-                  {/* Single Row of Icons */}
-                  <View style={styles.iconSection}>
-                    <Text style={styles.sectionLabel}>Choose Icon</Text>
-                    <ScrollView
-                      horizontal
-                      showsHorizontalScrollIndicator={false}
-                      style={styles.iconScroll}
-                      contentContainerStyle={styles.iconScrollContent}
-                    >
-                      {CURATED_ICONS.map((icon, index) => (
-                        <TouchableOpacity
-                          key={`${icon.type}-${icon.value}-${index}`}
-                          style={[
-                            styles.iconOption,
-                            isIconSelected(icon) && styles.iconOptionSelected,
-                          ]}
-                          onPress={() => setSelectedIcon(icon.value)}
-                          activeOpacity={0.7}
-                          accessibilityLabel={`Select ${icon.name} icon`}
-                          accessibilityRole="button"
-                          accessibilityState={{
-                            selected: isIconSelected(icon),
-                          }}
-                        >
-                          {renderIcon(icon, true)}
-                        </TouchableOpacity>
-                      ))}
-                    </ScrollView>
-                  </View>
+                {/* Icon Selection Section */}
+                <View style={styles.iconSection}>
+                  <Text style={styles.sectionLabel}>CHOOSE ICON</Text>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    style={styles.iconScroll}
+                    contentContainerStyle={styles.iconScrollContent}
+                    bounces={false}
+                  >
+                    {CURATED_ICONS.map((icon, index) => (
+                      <TouchableOpacity
+                        key={`${icon.type}-${icon.value}-${index}`}
+                        style={[
+                          styles.iconOption,
+                          isIconSelected(icon) && styles.iconOptionSelected,
+                        ]}
+                        onPress={() => setSelectedIcon(icon.value)}
+                        activeOpacity={0.7}
+                        accessibilityLabel={`Select ${icon.name} icon`}
+                        accessibilityRole="button"
+                        accessibilityState={{
+                          selected: isIconSelected(icon),
+                        }}
+                      >
+                        {renderIcon(icon, true)}
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </View>
+              </ScrollView>
 
-                  {/* Action Buttons */}
-                  <View style={styles.sheetButtonsRow}>
-                    <TouchableOpacity
-                      style={styles.sheetSecondaryButton}
-                      onPress={onClose}
-                      activeOpacity={0.7}
-                      accessibilityLabel="Cancel"
-                      accessibilityRole="button"
-                    >
-                      <LinearGradient
-                        colors={[
-                          "rgba(255, 255, 255, 0.12)",
-                          "rgba(255, 255, 255, 0.03)",
-                        ]}
-                        style={styles.glassButton}
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 1, y: 1 }}
-                      >
-                        <Text style={styles.sheetSecondaryText}>Cancel</Text>
-                      </LinearGradient>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[
-                        styles.sheetPrimaryButton,
-                        (!categoryName.trim() || loading) &&
-                          styles.buttonDisabled,
-                      ]}
-                      onPress={handleSave}
-                      disabled={!categoryName.trim() || loading}
-                      activeOpacity={0.7}
-                      accessibilityLabel={
-                        loading ? "Adding category" : "Add category"
-                      }
-                      accessibilityRole="button"
-                      accessibilityState={{
-                        disabled: !categoryName.trim() || loading,
-                      }}
-                    >
-                      <LinearGradient
-                        colors={[
-                          "rgba(74, 144, 226, 0.8)",
-                          "rgba(74, 144, 226, 0.6)",
-                        ]}
-                        style={styles.glassButton}
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 1, y: 1 }}
-                      >
-                        <Text style={styles.sheetPrimaryText}>
-                          {loading ? "Adding..." : "Add"}
-                        </Text>
-                      </LinearGradient>
-                    </TouchableOpacity>
-                  </View>
-                </ScrollView>
-              </Animated.View>
-            </TouchableWithoutFeedback>
-          </View>
-        </TouchableWithoutFeedback>
-      </KeyboardAvoidingView>
+              {/* Bottom action buttons */}
+              <View style={styles.bottomButtonRow}>
+                <TouchableOpacity
+                  style={[
+                    styles.bottomButtonContainer,
+                    styles.bottomCancelButtonContainer,
+                  ]}
+                  onPress={handleClose}
+                  disabled={loading}
+                  activeOpacity={0.7}
+                  accessibilityLabel="Cancel"
+                  accessibilityRole="button"
+                >
+                  <LinearGradient
+                    colors={[
+                      "rgba(142, 142, 147, 0.15)",
+                      "rgba(142, 142, 147, 0.05)",
+                    ]}
+                    style={styles.bottomCancelButton}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                  >
+                    <Ionicons name="close-circle" size={16} color="#fff" />
+                    <Text style={[styles.bottomButtonText, { color: "#fff" }]}>
+                      Cancel
+                    </Text>
+                  </LinearGradient>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[
+                    styles.bottomButtonContainer,
+                    styles.bottomSaveButtonContainer,
+                    (!categoryName.trim() || loading) && styles.buttonDisabled,
+                  ]}
+                  onPress={handleSave}
+                  disabled={!categoryName.trim() || loading}
+                  activeOpacity={0.7}
+                  accessibilityLabel={
+                    loading ? "Adding category" : "Add category"
+                  }
+                  accessibilityRole="button"
+                  accessibilityState={{
+                    disabled: !categoryName.trim() || loading,
+                  }}
+                >
+                  <LinearGradient
+                    colors={[
+                      "rgba(74, 144, 226, 0.15)",
+                      "rgba(74, 145, 226, 0.41)",
+                    ]}
+                    style={styles.bottomSaveButton}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                  >
+                    <Ionicons name="checkmark-circle" size={16} color="#fff" />
+                    <Text style={[styles.bottomButtonText, { color: "#fff" }]}>
+                      {loading ? "Adding..." : "Add Category"}
+                    </Text>
+                  </LinearGradient>
+                </TouchableOpacity>
+              </View>
+            </LinearGradient>
+          </TouchableWithoutFeedback>
+        </View>
+      </TouchableWithoutFeedback>
     </Modal>
   );
 };
 
 const styles = StyleSheet.create({
-  keyboardAvoid: {
+  overlay: {
     flex: 1,
-  },
-  sheetOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.75)",
+    backgroundColor: "rgba(0, 0, 0, 0.75)",
     justifyContent: "flex-end",
   },
-  sheetContainer: {
-    width: "100%",
-    backgroundColor: "#1f1f1f",
-    borderTopLeftRadius: 18,
-    borderTopRightRadius: 18,
-    padding: 18,
-    paddingTop: 10,
-    borderTopWidth: 1,
-    borderColor: "rgba(255,255,255,0.1)",
+  content: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    minHeight: SCREEN_HEIGHT * 0.5,
+    maxHeight: SCREEN_HEIGHT * 0.85,
+    width: SCREEN_WIDTH,
   },
-  scrollView: {
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: Math.max(20, SCREEN_WIDTH * 0.05),
+    paddingTop: 16,
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255,255,255,0.1)",
+  },
+  headerTextContainer: {
     flex: 1,
-  },
-  scrollContent: {
-    flexGrow: 1,
-    paddingBottom: 10,
-  },
-  sheetHandle: {
-    width: 44,
-    height: 5,
-    borderRadius: 3,
-    backgroundColor: "rgba(255,255,255,0.25)",
-    alignSelf: "center",
-    marginBottom: 16,
-  },
-  sheetHeader: {
-    marginBottom: 20,
     alignItems: "center",
   },
-  sheetTitle: {
+  headerTitle: {
+    fontSize: Math.max(18, SCREEN_WIDTH * 0.05),
+    fontWeight: "600",
     color: "#fff",
-    fontSize: 20,
-    fontWeight: "700",
     textAlign: "center",
+    paddingVertical: 7,
+  },
+  scrollContent: {
+    padding: Math.max(20, SCREEN_WIDTH * 0.05),
+  },
+  nameSection: {
+    marginBottom: 24,
+  },
+  sectionLabel: {
+    color: "rgba(255,255,255,0.6)",
+    fontSize: 11,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    marginBottom: 12,
   },
   topRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
-    marginBottom: 24,
   },
   iconBox: {
-    width: 50,
-    height: 50,
-    borderRadius: 14,
+    width: 56,
+    height: 56,
+    borderRadius: 16,
     backgroundColor: "rgba(255,255,255,0.08)",
     alignItems: "center",
     justifyContent: "center",
-    borderWidth: 1.5,
+    borderWidth: 2,
     borderColor: "rgba(255,255,255,0.12)",
   },
   iconBoxSelected: {
@@ -469,36 +470,29 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.12)",
     paddingHorizontal: 16,
-    paddingVertical: 14,
+    paddingVertical: 16,
     color: "#fff",
     fontSize: 16,
-    minHeight: 52,
+    minHeight: 56,
+    fontWeight: "500",
   },
   iconSection: {
-    marginBottom: 24,
-  },
-  sectionLabel: {
-    color: "rgba(255,255,255,0.7)",
-    fontSize: 13,
-    fontWeight: "600",
-    marginBottom: 12,
+    marginBottom: 8,
   },
   iconScroll: {
-    marginHorizontal: -18,
-    paddingHorizontal: 18,
+    marginHorizontal: -Math.max(20, SCREEN_WIDTH * 0.05),
+    paddingHorizontal: Math.max(20, SCREEN_WIDTH * 0.05),
   },
   iconScrollContent: {
-    gap: 10,
-    paddingRight: 18,
-  },
-  iconRow: {
-    flexDirection: "row",
-    gap: 10,
+    gap: 12,
+    paddingRight: Math.max(20, SCREEN_WIDTH * 0.05),
+    paddingTop: 5,
+    paddingBottom: 5,
   },
   iconOption: {
-    width: 52,
-    height: 52,
-    borderRadius: 12,
+    width: 56,
+    height: 56,
+    borderRadius: 14,
     backgroundColor: "rgba(255,255,255,0.08)",
     alignItems: "center",
     justifyContent: "center",
@@ -508,46 +502,51 @@ const styles = StyleSheet.create({
   iconOptionSelected: {
     borderColor: "#4A90E2",
     backgroundColor: "rgba(74, 144, 226, 0.2)",
+    transform: [{ scale: 1.05 }],
   },
-  sheetButtonsRow: {
+  bottomButtonRow: {
     flexDirection: "row",
-    justifyContent: "flex-end",
+    marginHorizontal: Math.max(20, SCREEN_WIDTH * 0.05),
+    marginBottom: Math.max(20, SCREEN_HEIGHT * 0.025),
+    marginTop: 5,
     gap: 12,
-    marginTop: 8,
-    paddingTop: 16,
-    borderTopWidth: 1,
-    borderTopColor: "rgba(255,255,255,0.08)",
   },
-  sheetSecondaryButton: {
-    flex: 1,
+  bottomButtonContainer: {
     borderRadius: 12,
     overflow: "hidden",
   },
-  glassButton: {
+  bottomCancelButtonContainer: {
+    flex: 0.4,
+  },
+  bottomSaveButtonContainer: {
+    flex: 0.6,
+  },
+  bottomCancelButton: {
+    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    padding: 14,
+    paddingVertical: 16,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.2)",
+    borderColor: "rgba(142, 142, 147, 0.3)",
+    gap: 8,
   },
-  sheetSecondaryText: {
-    color: "#fff",
-    fontWeight: "600",
-    fontSize: 15,
-  },
-  sheetPrimaryButton: {
-    flex: 1,
+  bottomSaveButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 16,
     borderRadius: 12,
-    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "rgba(74, 144, 226, 0.3)",
+    gap: 8,
+  },
+  bottomButtonText: {
+    fontSize: 16,
+    fontWeight: "500",
   },
   buttonDisabled: {
     opacity: 0.5,
-  },
-  sheetPrimaryText: {
-    color: "#fff",
-    fontWeight: "600",
-    fontSize: 15,
   },
 });
 
