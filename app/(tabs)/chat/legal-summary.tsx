@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import {
   View,
   Text,
@@ -13,6 +13,7 @@ import { Ionicons } from "@expo/vector-icons";
 import * as WebBrowser from "expo-web-browser";
 import IconButton from "@/src/components/shared/IconButton";
 import { TEXT_STYLES } from "@/src/components/shared/modal-constants";
+import ContactModal from "@/src/components/modals/ContactModal";
 
 interface LegalSummaryScreenProps {
   onBack: () => void;
@@ -147,6 +148,7 @@ export default function LegalSummaryScreen({
   onBack,
 }: LegalSummaryScreenProps) {
   const insets = useSafeAreaInsets();
+  const [contactVisible, setContactVisible] = useState(false);
 
   const openLink = async (url: string) => {
     try {
@@ -274,7 +276,7 @@ export default function LegalSummaryScreen({
               account, please visit our{" "}
               <Text
                 style={styles.clickableLink}
-                onPress={() => openLink("https://financify.ing")}
+                onPress={() => setContactVisible(true)}
               >
                 Help Center
               </Text>{" "}
@@ -286,6 +288,10 @@ export default function LegalSummaryScreen({
           <View style={styles.bottomPadding} />
         </ScrollView>
       </SafeAreaView>
+      <ContactModal
+        visible={contactVisible}
+        onClose={() => setContactVisible(false)}
+      />
     </View>
   );
 }

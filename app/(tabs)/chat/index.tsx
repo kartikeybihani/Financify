@@ -23,7 +23,7 @@ import { FontAwesome6 } from "@expo/vector-icons";
 import { useRouter, useFocusEffect } from "expo-router";
 import { ChatMessageComponent } from "@/src/components/chat/ChatMessage";
 import { NudgeGrid } from "@/src/components/chat/NudgeGrid";
-import { ChatProvider, useChatContext } from "@/src/contexts/ChatContext";
+import { useChatContext } from "@/src/contexts/ChatContext";
 import { supabase } from "@/src/lib/supabase/supabase";
 import {
   getFreshAccessToken,
@@ -825,9 +825,5 @@ function ChatScreenContent() {
 }
 
 export default function ChatScreen() {
-  return (
-    <ChatProvider>
-      <ChatScreenContent />
-    </ChatProvider>
-  );
+  return <ChatScreenContent />;
 }
