@@ -2588,7 +2588,7 @@ export default function InsightsScreen() {
                     onMonthSelect={handleMonthSelect}
                     onBudgetModeChange={setIsBudgetMode}
                     onOpenAddCategoryModalRef={(openFn) =>
-                      setOpenAddCategoryModal(() => openFn)
+                      setOpenAddCategoryModal(openFn)
                     }
                   />
                 </Animated.View>
