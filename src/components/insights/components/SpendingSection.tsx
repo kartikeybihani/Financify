@@ -153,9 +153,19 @@ export default function SpendingSection({
     setAddCategoryModalVisible(true);
   }, []);
 
+  // Use a ref to store the function and avoid calling setState during render
+  const openAddCategoryModalRef = useRef(openAddCategoryModal);
+  openAddCategoryModalRef.current = openAddCategoryModal;
+
+  // Set up the ref callback in useEffect to avoid calling during render
   useEffect(() => {
-    onOpenAddCategoryModalRef?.(openAddCategoryModal);
-  }, [onOpenAddCategoryModalRef, openAddCategoryModal]);
+    if (onOpenAddCategoryModalRef) {
+      // Pass a stable function that calls the current ref value
+      onOpenAddCategoryModalRef(() => {
+        openAddCategoryModalRef.current();
+      });
+    }
+  }, [onOpenAddCategoryModalRef]);
 
   // Notify parent of initial budget mode state
   useEffect(() => {

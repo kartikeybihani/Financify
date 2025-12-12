@@ -2821,7 +2821,7 @@ export default function InsightsScreen() {
       )}
 
       {/* Floating Action Button for Adding Category - Fixed to screen, only visible in budget mode */}
-      {isBudgetMode && activeSection === "spending" && openAddCategoryModal && (
+      {isBudgetMode && activeSection === "spending" && hasOpenAddCategoryModal && (
         <View style={fabStyles.container}>
           <TouchableOpacity
             onPress={openAddCategoryModal}
