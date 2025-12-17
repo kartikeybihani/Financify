@@ -626,7 +626,7 @@ async function storeConversationMemory(
   );
 
   try {
-    const response = await fetch(`${SUPERMEMORY_BASE_URL}/v3/documents`, {
+    const response = await fetch(`${SUPERMEMORY_BASE_URL}/v3/memories`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${SUPERMEMORY_API_KEY}`,
@@ -635,7 +635,7 @@ async function storeConversationMemory(
       body: JSON.stringify({
         content: memoryContent,
         metadata: memoryMetadata,
-        containerTags: [`user_${userId}`],
+        containerTag: `user_${userId}`,
       }),
     });
 
