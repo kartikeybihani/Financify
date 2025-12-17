@@ -43,7 +43,9 @@ function logConversation(logData) {
 }
 
 // Memory extraction model - small, fast, free
-const MEMORY_EXTRACTION_MODEL = "meta-llama/llama-3.3-8b-instruct:free";
+// Use env var if available, otherwise fallback to free model
+const MEMORY_EXTRACTION_MODEL =
+  process.env.OPENROUTER_MODEL || "meta-llama/llama-3.3-8b-instruct:free";
 
 // =====================
 // GOAL CONSTANTS
@@ -589,7 +591,21 @@ RULES:
     );
 
     if (!response.ok) {
-      throw new Error(`OpenRouter error ${response.status}`);
+      const errorText = await response.text();
+      let errorDetails;
+      try {
+        errorDetails = JSON.parse(errorText);
+      } catch {
+        errorDetails = errorText;
+      }
+      console.error("❌ [GOAL EXTRACTION] OpenRouter error details:", {
+        status: response.status,
+        statusText: response.statusText,
+        error: errorDetails,
+      });
+      throw new Error(
+        `OpenRouter error ${response.status}: ${JSON.stringify(errorDetails)}`
+      );
     }
 
     const data = await response.json();
@@ -703,7 +719,21 @@ RULES:
     );
 
     if (!response.ok) {
-      throw new Error(`OpenRouter error ${response.status}`);
+      const errorText = await response.text();
+      let errorDetails;
+      try {
+        errorDetails = JSON.parse(errorText);
+      } catch {
+        errorDetails = errorText;
+      }
+      console.error("❌ [GOAL ANALYSIS] OpenRouter error details:", {
+        status: response.status,
+        statusText: response.statusText,
+        error: errorDetails,
+      });
+      throw new Error(
+        `OpenRouter error ${response.status}: ${JSON.stringify(errorDetails)}`
+      );
     }
 
     const data = await response.json();
