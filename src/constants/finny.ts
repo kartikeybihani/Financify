@@ -10,7 +10,7 @@ export const INITIAL_CHAT_MESSAGES: ChatMessage[] = [
 ];
 
 export const NUDGE_OPTIONS = [
-  { id: "1", text: "Tell me about investing basics" },
+  { id: "1", text: "Tell me about investing!" },
   { id: "2", text: "How can I save more money?" },
   { id: "3", text: "What's the best way to pay off debt?" },
   { id: "4", text: "Help me create a budget" },

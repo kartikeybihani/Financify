@@ -21,9 +21,10 @@ import {
   categorizeSelectedMemories,
   loadUserMemory,
   loadUserProfile,
-  saveMemoryCandidates,
-  generateMemorySummary,
-  validateMemoriesWithSmallModel,
+  storeConversationMemory,
+  // saveMemoryCandidates removed - migrating to Supermemory
+  // generateMemorySummary removed - migrating to Supermemory
+  // validateMemoriesWithSmallModel removed - migrating to Supermemory
 } from "./memory.js";
 import {
   detectUserState,
@@ -784,479 +785,16 @@ function initializeCacheCleanup() {
   logInfo("✅ [CACHE] Periodic cleanup initialized");
 }
 
-// Heuristic pre-pass for quick memory extraction (1ms)
-function quickExtract(message) {
-  const hints = [];
-  const lower = message.toLowerCase();
-
-  // Family status
-  if (
-    lower.includes("wife") ||
-    lower.includes("husband") ||
-    lower.includes("married")
-  ) {
-    hints.push({
-      type: "profile_trait",
-      key: "profile_trait.family.marital_status",
-      value: "married",
-      confidence: 0.9,
-    });
-  }
-
-  if (
-    lower.includes("girlfriend") ||
-    lower.includes("boyfriend") ||
-    lower.includes("dating")
-  ) {
-    hints.push({
-      type: "profile_trait",
-      key: "profile_trait.family.relationship_status",
-      value: "dating",
-      confidence: 0.9,
-    });
-  }
-
-  // Living situation
-  if (lower.includes("live with") && lower.includes("parents")) {
-    hints.push({
-      type: "profile_trait",
-      key: "profile_trait.family.living_situation",
-      value: "with parents",
-      confidence: 0.9,
-    });
-  }
-
-  if (lower.includes("roommate") || lower.includes("roommates")) {
-    hints.push({
-      type: "profile_trait",
-      key: "profile_trait.family.living_situation",
-      value: "with roommates",
-      confidence: 0.9,
-    });
-  }
-
-  // Financial constraints
-  if (lower.includes("student loan") || lower.includes("student debt")) {
-    hints.push({
-      type: "constraint",
-      key: "constraint.debt.student_loans",
-      value: "has student loan debt",
-      confidence: 0.9,
-    });
-  }
-
-  if (lower.includes("credit card") && lower.includes("debt")) {
-    hints.push({
-      type: "constraint",
-      key: "constraint.debt.credit_card",
-      value: "has credit card debt",
-      confidence: 0.9,
-    });
-  }
-
-  // Goals
-  if (
-    lower.includes("kid") ||
-    lower.includes("baby") ||
-    lower.includes("children")
-  ) {
-    hints.push({
-      type: "goal",
-      key: "goal.family.children",
-      value: "planning to have children",
-      confidence: 0.9,
-    });
-  }
-
-  if (
-    lower.includes("house") ||
-    lower.includes("home") ||
-    lower.includes("buy")
-  ) {
-    hints.push({
-      type: "goal",
-      key: "goal.financial.house_down_payment",
-      value: "planning to buy a house",
-      confidence: 0.8,
-    });
-  }
-
-  // Context signals
-  if (
-    lower.includes("stressed") ||
-    lower.includes("worried") ||
-    lower.includes("anxious")
-  ) {
-    hints.push({
-      type: "context_signal",
-      key: "context_signal.financial_stress",
-      value: "experiencing financial stress",
-      confidence: 0.9,
-    });
-  }
-
-  // Age detection
-  const ageMatch = lower.match(/(\d+)\s*(years?\s*old|yo)/);
-  if (ageMatch) {
-    hints.push({
-      type: "profile_trait",
-      key: "profile_trait.age",
-      value: ageMatch[1],
-      confidence: 0.95,
-    });
-  }
-
-  // Location detection
-  const locationMatch = lower.match(/(live in|from|based in)\s+([a-z\s]+)/i);
-  if (locationMatch) {
-    hints.push({
-      type: "profile_trait",
-      key: "profile_trait.location",
-      value: locationMatch[2].trim(),
-      confidence: 0.8,
-    });
-  }
-
-  // Generic interest/hobby detection (let LLM handle specifics)
-  const interestPatterns = [
-    /(love|like|enjoy|into|passionate about|interested in)\s+([a-z\s]+)/i,
-    /(hobby|hobbies)\s+(is|are)\s+([a-z\s]+)/i,
-    /(i'm a|i am a)\s+([a-z\s]+)\s+(geek|nerd|enthusiast|fan)/i,
-  ];
-
-  for (const pattern of interestPatterns) {
-    const match = lower.match(pattern);
-    if (match) {
-      const interest = match[2] || match[3];
-      if (interest && interest.length > 2 && interest.length < 20) {
-        hints.push({
-          type: "profile_trait",
-          key: `profile_trait.interests.${interest
-            .trim()
-            .replace(/\s+/g, "_")}`,
-          value: interest.trim(),
-          confidence: 0.8,
-        });
-      }
-    }
-  }
-
-  return hints;
-}
+// quickExtract removed - migrating to Supermemory for memory extraction
 
 // Goal extraction function moved to goals.js
 // Goal feasibility analysis function moved to goals.js
 // Goal conversation handler moved to goals.js
 // Goal handler functions moved to goals.js
 
-// Hybrid memory extraction gating — cheap pre-checks before any LLM call
-function shouldRunMemoryExtraction(message, intent = "ask_personalized") {
-  try {
-    const m = (message || "").toLowerCase();
-    if (!m) return false;
+// shouldRunMemoryExtraction removed - migrating to Supermemory for memory extraction
 
-    // Block obvious non-personal requests
-    const genericAdvice = [
-      "which credit card",
-      "best credit card",
-      "what credit card",
-      "rent vs buy",
-      "what's the best",
-      "which is better",
-      "compare",
-      "comparison",
-      "rate",
-      "rates",
-      "news",
-      "limit",
-      "limits",
-    ];
-    if (genericAdvice.some((k) => m.includes(k))) return false;
-
-    // Only allow when first-person disclosures + grounded signals appear
-    const firstPerson = /\b(i|i'm|im|i am|my|we|we're|we are)\b/.test(m);
-    if (!firstPerson) return false;
-
-    // Grounded signals: age, dependents, amounts, timeframe, occupation, location, hard constraints
-    const hasAge = /(\d{2})\s*(years?\s*old|yo)\b/.test(m);
-    const hasDependents = /dependents?|kids?|children/.test(m);
-    const hasAmount = /\$?\d{2,}(,\d{3})*(\.\d+)?/.test(m);
-    const hasTimeframe =
-      /(months?|years?|by\s+\d{4}|in\s+\d{4}|next\s+(year|\d+\s*years?))/i.test(
-        m
-      );
-    const hasOccupation =
-      /(work as|i am a|i'm a)\s+[a-z\s]+/.test(m) ||
-      /(studying|study)\s+[a-z\s]+/.test(m);
-    const hasLocation = /(live in|based in|from)\s+[a-z\s]+/.test(m);
-    const hasConstraint =
-      /(student loan|student debt|credit card debt|medical debt|personal loan|car loan)/.test(
-        m
-      );
-
-    const groundedSignals = [
-      hasAge,
-      hasDependents,
-      hasAmount,
-      hasTimeframe,
-      hasOccupation,
-      hasLocation,
-      hasConstraint,
-    ].filter(Boolean).length;
-
-    // Local personal-signal gate (immigration/moving/stress/education/occupation)
-    if (localPersonalSignalGate(m)) return true;
-
-    // Require at least one grounded signal, two if intent isn't explicitly goal-related
-    if (intent === "goal_conversation") return groundedSignals >= 1;
-    return groundedSignals >= 1;
-  } catch {
-    return false;
-  }
-}
-
-// === Deterministic fallback extraction helpers ===
-function cleanValue(v) {
-  if (!v) return null;
-  const s = String(v).trim().toLowerCase();
-  if (s === "unknown" || s === "n/a" || s === "na" || s === "none") return null;
-  return String(v);
-}
-
-function sanitizeLocation(raw) {
-  if (!raw) return raw;
-  let s = String(raw).trim();
-  s = s.replace(/\s*(,|;).*$/g, "");
-  s = s.replace(/\s+and\b[\s\S]*$/i, "");
-  s = s.replace(
-    /\s+(planning|plan|thinking|saving|want|to\s+buy|buy|down payment|target)\b[\s\S]*$/i,
-    ""
-  );
-  s = s.replace(/\s+in\s+\d+\s+(years?|months?|yrs?|mos?)\b[\s\S]*$/i, "");
-  s = s.replace(/\s+/g, " ");
-  return s.trim();
-}
-
-function parseAmount(raw) {
-  if (!raw) return null;
-  const m = raw
-    .toLowerCase()
-    .match(/\$?([0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?)([km])?/i);
-  if (!m) return null;
-  let n = parseFloat(m[1].replace(/,/g, ""));
-  if (m[2] === "k") n *= 1000;
-  if (m[2] === "m") n *= 1000000;
-  return Math.round(n);
-}
-
-function extractAmount(message) {
-  const re = /(\$?[0-9][0-9,]*(?:\.[0-9]+)?[km]?)/gi;
-  const candidates = [];
-  let m;
-  const lower = message.toLowerCase();
-  const MONEY_HINTS = [
-    "$",
-    "k",
-    "m",
-    "save",
-    "saving",
-    "target",
-    "down payment",
-    "budget",
-  ];
-  const TIME_HINTS = [
-    "year",
-    "years",
-    "yr",
-    "y",
-    "month",
-    "months",
-    "mo",
-    "mos",
-  ];
-  while ((m = re.exec(message)) !== null) {
-    const token = m[1];
-    const start = m.index;
-    const end = start + token.length;
-    const around = lower.slice(
-      Math.max(0, start - 16),
-      Math.min(lower.length, end + 16)
-    );
-    const hasMoneySignal =
-      token.includes("$") ||
-      /[km]$/i.test(token.trim()) ||
-      MONEY_HINTS.some((h) => around.includes(h));
-    const hasTimeSignal = TIME_HINTS.some((h) => around.includes(h));
-    if (hasTimeSignal && !hasMoneySignal) continue;
-    const value = parseAmount(token);
-    if (value)
-      candidates.push({ value, hasSuffix: /[km]$/i.test(token.trim()) });
-  }
-  if (candidates.length === 0) return null;
-  const withSuffix = candidates.filter((c) => c.hasSuffix);
-  if (withSuffix.length > 0) return Math.max(...withSuffix.map((c) => c.value));
-  return Math.max(...candidates.map((c) => c.value));
-}
-
-function extractTimeframeYears(message) {
-  const m = message.toLowerCase().match(/(\d+)\s*(years?|yrs?|y)/);
-  if (m) return parseInt(m[1], 10);
-  const m2 = message.toLowerCase().match(/(\d+)\s*(months?|mos?|m)/);
-  if (m2) return Math.max(1, Math.round(parseInt(m2[1], 10) / 12));
-  if (/next\s+year/i.test(message)) return 1;
-  return null;
-}
-
-function extractAge(message) {
-  const m = message.toLowerCase().match(/\b(i am|i'm|im)\s*(\d{1,2})\b/);
-  if (m) return parseInt(m[2], 10);
-  return null;
-}
-
-function fallbackExtractCandidates(message, hints) {
-  const lower = (message || "").toLowerCase();
-  const out = [];
-
-  const kidsCountMatch = lower.match(/(\b\d+\b)\s*(kids?|children)/);
-  if (kidsCountMatch) {
-    const numKids = parseInt(kidsCountMatch[1], 10);
-    if (!Number.isNaN(numKids)) {
-      out.push({
-        type: "profile_trait",
-        key: "profile_trait.family.children",
-        value: numKids === 1 ? "has 1 child" : `has ${numKids} children`,
-        confidence: 0.9,
-        grounded: true,
-        evidence: [kidsCountMatch[0]],
-      });
-    }
-  }
-
-  const age = extractAge(message);
-  if (age && age >= 13 && age <= 100) {
-    out.push({
-      type: "profile_trait",
-      key: "profile_trait.age",
-      value: String(age),
-      confidence: 0.9,
-      grounded: true,
-      evidence: [String(age)],
-    });
-  }
-
-  const locMatch = lower.match(/(live in|based in|from)\s+([a-z\s]+)/i);
-  if (locMatch) {
-    const loc = sanitizeLocation(locMatch[2].trim());
-    if (loc && loc.length <= 40)
-      out.push({
-        type: "profile_trait",
-        key: "profile_trait.location",
-        value: loc,
-        confidence: 0.85,
-        grounded: true,
-        evidence: [locMatch[0]],
-      });
-  }
-  const hintLoc = (hints || []).find((h) => h.key === "profile_trait.location");
-  if (hintLoc)
-    out.push({
-      type: "profile_trait",
-      key: "profile_trait.location",
-      value: sanitizeLocation(hintLoc.value),
-      confidence: hintLoc.confidence || 0.8,
-      grounded: true,
-      evidence: [hintLoc.value],
-    });
-
-  if (/(house|home|buy a house|down payment)/i.test(message)) {
-    const amount = extractAmount(message);
-    const years = extractTimeframeYears(message);
-    const parts = [];
-    if (amount) parts.push(`target $${amount}`);
-    if (years) parts.push(`in ${years} year${years > 1 ? "s" : ""}`);
-    const val = parts.length ? parts.join(", ") : "planning to buy a house";
-    out.push({
-      type: "goal",
-      key: "goal.financial.house_down_payment",
-      value: val,
-      confidence: 0.85,
-      grounded: !!(amount || years),
-      evidence: [val],
-    });
-  }
-
-  const married = (hints || []).find(
-    (h) => h.key === "profile_trait.family.marital_status"
-  );
-  if (married)
-    out.push({
-      type: "profile_trait",
-      key: married.key,
-      value: married.value,
-      confidence: married.confidence || 0.85,
-      grounded: true,
-      evidence: [married.value],
-    });
-
-  const hintKids = (hints || []).find((h) => h.key === "goal.family.children");
-  if (hintKids && !kidsCountMatch) {
-    out.push({
-      type: "profile_trait",
-      key: "profile_trait.family.children",
-      value: "has children",
-      confidence: hintKids.confidence || 0.8,
-      grounded: true,
-      evidence: [hintKids.value],
-    });
-  }
-
-  const ccDebt = (hints || []).find(
-    (h) => h.key === "constraint.debt.credit_card"
-  );
-  if (ccDebt)
-    out.push({
-      type: "constraint",
-      key: ccDebt.key,
-      value: ccDebt.value,
-      confidence: ccDebt.confidence || 0.85,
-      grounded: true,
-      evidence: [ccDebt.value],
-    });
-
-  const unique = out.filter(
-    (m, i, self) =>
-      i === self.findIndex((x) => x.type === m.type && x.key === m.key)
-  );
-  return unique;
-}
-
-// Local gate for additional personal signals
-function localPersonalSignalGate(m) {
-  try {
-    const text = (m || "").toLowerCase();
-    if (!text) return false;
-    const edu =
-      /(college|university|degree|bachelor|masters|phd|cs degree|computer science|student|studying|study)/i.test(
-        text
-      );
-    const occ =
-      /(run|own|operate|freelance|freelancer|founder|entrepreneur|business|work as|i'm a|i am a|engineer|nurse|teacher|designer|developer)/i.test(
-        text
-      );
-    const imm =
-      /(visa|immigration|work authorization|green card|h1b|h-1b|opt|cpt|f1|j1|asylum)/i.test(
-        text
-      );
-    const move = /(moving to|relocating to|moved to)/i.test(text);
-    const stress =
-      /(stressed|anxious|worried)\s+about\s+(money|bills|debt)/i.test(text);
-    return edu || occ || imm || move || stress;
-  } catch {
-    return false;
-  }
-}
-
-// validateMemoriesWithSmallModel moved to memory.js
+// Memory extraction helper functions removed - migrating to Supermemory for memory extraction
 // Conversation logging functionality with retry logic
 async function logConversation(conversationData) {
   console.log(
@@ -2234,6 +1772,32 @@ async function handleAsk(
             console.log("✅ [STOCK CONTEXT] Context saved successfully");
           }
 
+          // Store conversation memory in Supermemory (async, non-blocking)
+          if (userId && conversationalResponse) {
+            setImmediate(async () => {
+              try {
+                await storeConversationMemory(
+                  userId,
+                  message,
+                  conversationalResponse,
+                  {
+                    intent: "ask_personalized",
+                    chat_id: context?.chat_id,
+                    topic: contextMetadata.active_topic,
+                    entity: contextMetadata.last_entity,
+                    stock_ticker: stockData.ticker,
+                  }
+                );
+              } catch (error) {
+                console.error(
+                  "❌ [FINNY] Failed to store stock conversation memory:",
+                  error
+                );
+                // Non-fatal, don't break conversation flow
+              }
+            });
+          }
+
           return response;
         } else {
           // Stock APIs failed, use fallback analysis
@@ -2289,6 +1853,30 @@ async function handleAsk(
               fallback_used: true,
             })
           );
+
+          // Store conversation memory in Supermemory (async, non-blocking)
+          if (userId && fallbackResponse) {
+            setImmediate(async () => {
+              try {
+                await storeConversationMemory(
+                  userId,
+                  message,
+                  fallbackResponse,
+                  {
+                    intent: "ask_personalized",
+                    chat_id: context?.chat_id,
+                    fallback_used: true,
+                  }
+                );
+              } catch (error) {
+                console.error(
+                  "❌ [FINNY] Failed to store fallback conversation memory:",
+                  error
+                );
+                // Non-fatal, don't break conversation flow
+              }
+            });
+          }
 
           return response;
         }
@@ -2663,10 +2251,7 @@ async function handleAsk(
     // 5) Parallel processing: Main response + Memory extraction
     const llmT0 = Date.now();
 
-    // Quick heuristic pre-pass (1ms)
-    const hints = quickExtract(message);
-
-    // Parallel execution
+    // Memory extraction removed - migrating to Supermemory
     let memoryExtraction = [];
     const [resp] = await Promise.all([
       // Main response (existing LLM)
@@ -2712,43 +2297,8 @@ async function handleAsk(
       );
     }
 
-    // Hybrid memory extraction: pre-gate + validator + deterministic fallback
-    if (shouldRunMemoryExtraction(message, intent)) {
-      const validated = await validateMemoriesWithSmallModel(
-        message,
-        hints,
-        intent
-      );
-      let merged = validated || [];
-      if (!merged || merged.length === 0) {
-        const fallback = fallbackExtractCandidates(message, hints);
-        if (fallback.length > 0) merged = fallback;
-      } else {
-        const fallback = fallbackExtractCandidates(message, hints);
-        if (fallback.length > 0) {
-          const seen = new Set(merged.map((m) => `${m.type}|${m.key}`));
-          for (const f of fallback) {
-            const k = `${f.type}|${f.key}`;
-            if (!seen.has(k)) merged.push(f);
-          }
-        }
-      }
-
-      // Filter unknown/empty values and enforce high confidence
-      memoryExtraction = (merged || [])
-        .filter((m) => m && typeof m.value === "string" && cleanValue(m.value))
-        .filter((m) => {
-          const conf = m.confidence != null ? m.confidence : m.confidence_score;
-          return conf >= 0.8;
-        })
-        .filter(
-          (m, i, self) =>
-            i === self.findIndex((x) => x.type === m.type && x.key === m.key)
-        );
-    } else {
-      memoryExtraction = [];
-      logDebug("🧠 [MEMORY] Skipping extraction (gates not satisfied)");
-    }
+    // Memory extraction removed - migrating to Supermemory for memory management
+    memoryExtraction = [];
 
     timings.llm_ms = Date.now() - llmT0;
     toolsUsed.push({
@@ -2769,19 +2319,7 @@ async function handleAsk(
     const cleanText =
       data.choices?.[0]?.message?.content ?? "I'm not sure yet. Ask me again?";
 
-    // Save memories (skip when none)
-    if (memoryExtraction.length > 0) {
-      logDebug(
-        `🧠 [FINNY] Prepared ${memoryExtraction.length} memory candidates`
-      );
-      try {
-        await saveMemoryCandidates(context?.user_id, memoryExtraction);
-      } catch (error) {
-        logError("🧠 [FINNY] Memory save failed:", error?.message);
-      }
-    } else {
-      logDebug("🧠 [FINNY] No memories to save");
-    }
+    // Memory saving will happen after topic detection (see below)
 
     // Clean any markdown formatting from the response
     const cleanedMessage = cleanResponseFormatting(
@@ -2870,6 +2408,26 @@ async function handleAsk(
         contextMetadata
       );
       console.log("✅ [CONTEXT SAVE] Context saved successfully");
+    }
+
+    // Store conversation memory in Supermemory (async, non-blocking)
+    if (userId && cleanText) {
+      setImmediate(async () => {
+        try {
+          await storeConversationMemory(userId, message, cleanText, {
+            intent: intent,
+            chat_id: context?.chat_id,
+            topic: topicDetection?.topic,
+            entity: topicDetection?.entity,
+          });
+        } catch (error) {
+          console.error(
+            "❌ [FINNY] Failed to store conversation memory:",
+            error
+          );
+          // Non-fatal, don't break conversation flow
+        }
+      });
     }
 
     return response;
@@ -5504,39 +5062,7 @@ async function handleOffTopic(message, context, conversationContext = null) {
       data.choices?.[0]?.message?.content ||
       "I'd love to help you with your finances! What financial questions can I answer for you today?";
 
-    // Off-topic: always run LLM-based memory extraction (no gating or heuristics)
-    try {
-      const validated = await validateMemoriesWithSmallModel(
-        message,
-        [],
-        "ask_personalized"
-      );
-
-      const toSave = (validated || [])
-        .filter((m) => m && typeof m.value === "string" && cleanValue(m.value))
-        .filter((m) => {
-          const conf = m.confidence != null ? m.confidence : m.confidence_score;
-          return conf >= 0.8;
-        })
-        .filter(
-          (m, i, self) =>
-            i === self.findIndex((x) => x.type === m.type && x.key === m.key)
-        );
-
-      console.log(
-        `🧠 [FINNY] Off-topic LLM memory candidates prepared: ${toSave.length}`
-      );
-
-      if (toSave.length > 0 && context?.user_id) {
-        try {
-          await saveMemoryCandidates(context.user_id, toSave);
-        } catch (e) {
-          console.log("🧠 [FINNY] Off-topic memory save failed:", e?.message);
-        }
-      }
-    } catch (e) {
-      // Non-fatal
-    }
+    // Memory extraction for off-topic removed - migrating to Supermemory
 
     // Log the off-topic interaction
     const conversationData = {
@@ -6496,16 +6022,16 @@ async function getNetWorthData(userId) {
 
 // Named exports for testing
 export {
-  quickExtract,
-  shouldRunMemoryExtraction,
-  validateMemoriesWithSmallModel,
+  // quickExtract removed - migrating to Supermemory
+  // shouldRunMemoryExtraction removed - migrating to Supermemory
+  // validateMemoriesWithSmallModel removed - migrating to Supermemory
   selectRelevantMemories,
   loadUserMemory,
-  saveMemoryCandidates,
+  // saveMemoryCandidates removed - migrating to Supermemory
   generateFallbackStockAnalysis,
   extractTickerFromMessage,
   generateTrainingDataStockAnalysis,
-  generateMemorySummary,
+  // generateMemorySummary removed - migrating to Supermemory
   getNetWorthData,
   formatNetWorthCurrency,
 };
