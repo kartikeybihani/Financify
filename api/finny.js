@@ -2412,14 +2412,31 @@ async function handleAsk(
 
     // Store conversation memory in Supermemory (async, non-blocking)
     if (userId && cleanText) {
+      console.log("🟢 [FINNY] Attempting to store memory in Supermemory...");
+      console.log("🟢 [FINNY] User ID:", userId);
+      console.log("🟢 [FINNY] Message:", message?.substring(0, 100) + "...");
+      console.log("🟢 [FINNY] Response length:", cleanText?.length || 0);
       setImmediate(async () => {
         try {
-          await storeConversationMemory(userId, message, cleanText, {
-            intent: intent,
-            chat_id: context?.chat_id,
-            topic: topicDetection?.topic,
-            entity: topicDetection?.entity,
-          });
+          console.log("🟢 [FINNY] Calling storeConversationMemory...");
+          const result = await storeConversationMemory(
+            userId,
+            message,
+            cleanText,
+            {
+              intent: intent,
+              chat_id: context?.chat_id,
+              topic: topicDetection?.topic,
+              entity: topicDetection?.entity,
+            }
+          );
+          if (result) {
+            console.log("🟢 [FINNY] Memory storage completed successfully");
+          } else {
+            console.warn(
+              "🟡 [FINNY] Memory storage returned null (may have been skipped)"
+            );
+          }
         } catch (error) {
           console.error(
             "❌ [FINNY] Failed to store conversation memory:",
@@ -2428,6 +2445,12 @@ async function handleAsk(
           // Non-fatal, don't break conversation flow
         }
       });
+    } else {
+      console.warn(
+        "🟡 [FINNY] Skipping memory storage - missing userId or cleanText"
+      );
+      console.warn("🟡 [FINNY] userId:", userId ? "present" : "missing");
+      console.warn("🟡 [FINNY] cleanText:", cleanText ? "present" : "missing");
     }
 
     return response;
