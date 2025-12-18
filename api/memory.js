@@ -641,20 +641,16 @@ async function storeConversationMemory(
     metadata
   );
 
-  // Filter out null, undefined, and empty object values (Supermemory doesn't accept them)
+  // Filter out null, undefined, empty objects, and nested objects (Supermemory only accepts primitives and string arrays)
   const cleanedMetadata = Object.fromEntries(
     Object.entries(memoryMetadata).filter(([key, value]) => {
       // Remove null, undefined
       if (value === null || value === undefined) return false;
-      // Remove empty objects
-      if (
-        typeof value === "object" &&
-        !Array.isArray(value) &&
-        Object.keys(value).length === 0
-      )
-        return false;
+      // Remove all objects (nested objects not allowed - only primitives and string arrays)
+      if (typeof value === "object" && !Array.isArray(value)) return false;
       // Remove empty arrays
       if (Array.isArray(value) && value.length === 0) return false;
+      // Only keep primitives (string, number, boolean) and non-empty string arrays
       return true;
     })
   );
