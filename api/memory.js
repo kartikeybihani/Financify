@@ -600,20 +600,9 @@ async function storeConversationMemory(
   finnyResponse,
   metadata = {}
 ) {
-  console.log("🔵 [SUPERMEMORY] === STARTING MEMORY STORAGE ===");
-  console.log("🔵 [SUPERMEMORY] User ID:", userId);
-  console.log(
-    "🔵 [SUPERMEMORY] User message:",
-    userMessage?.substring(0, 100) + "..."
-  );
-  console.log("🔵 [SUPERMEMORY] Response length:", finnyResponse?.length || 0);
-
   if (!SUPERMEMORY_API_KEY) {
     console.warn(
       "⚠️ [SUPERMEMORY] API key not configured, skipping memory storage"
-    );
-    console.warn(
-      "⚠️ [SUPERMEMORY] Set SUPERMEMORY_API_KEY environment variable"
     );
     return null;
   }
@@ -627,11 +616,6 @@ async function storeConversationMemory(
 
   // Build rich memory content from conversation
   const memoryContent = buildSupermemoryContent(userMessage, finnyResponse);
-  console.log("🔵 [SUPERMEMORY] Memory content length:", memoryContent.length);
-  console.log(
-    "🔵 [SUPERMEMORY] Memory content preview:",
-    memoryContent.substring(0, 200) + "..."
-  );
 
   // Build metadata with financial context
   const memoryMetadata = buildSupermemoryMetadata(
@@ -655,29 +639,11 @@ async function storeConversationMemory(
     })
   );
 
-  console.log(
-    "🔵 [SUPERMEMORY] Metadata (before cleaning):",
-    JSON.stringify(memoryMetadata, null, 2)
-  );
-  console.log(
-    "🔵 [SUPERMEMORY] Metadata (after cleaning):",
-    JSON.stringify(cleanedMetadata, null, 2)
-  );
-
   const requestBody = {
     content: memoryContent,
     metadata: cleanedMetadata,
     containerTags: [`user_${userId}`],
   };
-
-  console.log(
-    "🔵 [SUPERMEMORY] Request URL:",
-    `${SUPERMEMORY_BASE_URL}/v3/documents`
-  );
-  console.log(
-    "🔵 [SUPERMEMORY] Request body:",
-    JSON.stringify(requestBody, null, 2)
-  );
 
   try {
     const response = await fetch(`${SUPERMEMORY_BASE_URL}/v3/documents`, {
@@ -689,19 +655,11 @@ async function storeConversationMemory(
       body: JSON.stringify(requestBody),
     });
 
-    console.log("🔵 [SUPERMEMORY] Response status:", response.status);
-    console.log("🔵 [SUPERMEMORY] Response ok:", response.ok);
-
     if (!response.ok) {
       const errorText = await response.text();
-      console.error("❌ [SUPERMEMORY] Error response body:", errorText);
       let errorData;
       try {
         errorData = JSON.parse(errorText);
-        console.error(
-          "❌ [SUPERMEMORY] Parsed error:",
-          JSON.stringify(errorData, null, 2)
-        );
       } catch {
         errorData = { message: errorText };
       }
@@ -713,12 +671,6 @@ async function storeConversationMemory(
     }
 
     const result = await response.json();
-    console.log("✅ [SUPERMEMORY] === MEMORY STORED SUCCESSFULLY ===");
-    console.log("✅ [SUPERMEMORY] Memory ID:", result.id || "N/A");
-    console.log(
-      "✅ [SUPERMEMORY] Full response:",
-      JSON.stringify(result, null, 2)
-    );
     console.log(
       `✅ [SUPERMEMORY] Stored memory for user ${userId}: ${
         result.id || "success"
@@ -726,9 +678,7 @@ async function storeConversationMemory(
     );
     return result;
   } catch (error) {
-    console.error("❌ [SUPERMEMORY] === MEMORY STORAGE FAILED ===");
     console.error(`❌ [SUPERMEMORY] Error storing memory:`, error.message);
-    console.error("❌ [SUPERMEMORY] Error stack:", error.stack);
     // Don't throw - memory storage failures shouldn't break conversation flow
     return null;
   }

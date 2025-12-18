@@ -2020,8 +2020,9 @@ async function handleAsk(
       "- If required data is missing (e.g., no transactions or summary), explicitly say so and ask the user to refresh or connect accounts. Do NOT fabricate data.",
       "- When listing transactions, ONLY use transactions present in the provided context. If none exist, say you couldn't find recent transactions.",
       "- For amounts like net worth, ONLY use values from the context. If missing, state that it's unavailable.",
-      "- NEVER make meta-references to data sources or summaries. Avoid phrases like 'matching the summary', 'as shown in your summary', 'according to your data', or 'based on your financial summary'.",
+      "- NEVER make meta-references to data sources or summaries. Avoid phrases like 'matching the summary', 'as shown in your summary', 'according to your data', 'based on your financial summary', 'based on the data you shared', 'this is based on data', 'data you shared', or any similar phrases.",
       "- Present information as if it's naturally known, without mentioning where you got it from or how you accessed it.",
+      "- When mentioning that things might change (like net worth, balances, etc.), do it conversationally: 'If anything changes—like a new loan or a big purchase—let me know and we can update it.' Do NOT say 'based on data you shared' or 'this snapshot is based on' - just state the information naturally.",
       "",
       "RESPONSE STRUCTURE FOR BETTER MESSAGE SPLITTING:",
       "- For GOAL queries: Structure as 'Here's your current goals:' followed by all goals in bullet points in ONE cohesive message, then separate message for progress commentary",
@@ -2264,7 +2265,7 @@ async function handleAsk(
         body: JSON.stringify({
           model: OPENROUTER_MODEL,
           temperature: 0.6,
-          max_tokens: 1500,
+          max_tokens: 2000,
           stream: false,
           reasoning: { exclude: true }, // Disable reasoning output, only return actual response
           messages: [
@@ -2458,17 +2459,9 @@ async function handleAsk(
         : response.message || "");
 
     if (userId && responseTextForStorage) {
-      console.log("🟢 [FINNY] Attempting to store memory in Supermemory...");
-      console.log("🟢 [FINNY] User ID:", userId);
-      console.log("🟢 [FINNY] Message:", message?.substring(0, 100) + "...");
-      console.log(
-        "🟢 [FINNY] Response length:",
-        responseTextForStorage?.length || 0
-      );
       setImmediate(async () => {
         try {
-          console.log("🟢 [FINNY] Calling storeConversationMemory...");
-          const result = await storeConversationMemory(
+          await storeConversationMemory(
             userId,
             message,
             responseTextForStorage,
@@ -2479,13 +2472,6 @@ async function handleAsk(
               entity: topicDetection?.entity,
             }
           );
-          if (result) {
-            console.log("🟢 [FINNY] Memory storage completed successfully");
-          } else {
-            console.warn(
-              "🟡 [FINNY] Memory storage returned null (may have been skipped)"
-            );
-          }
         } catch (error) {
           console.error(
             "❌ [FINNY] Failed to store conversation memory:",
@@ -2494,20 +2480,6 @@ async function handleAsk(
           // Non-fatal, don't break conversation flow
         }
       });
-    } else {
-      console.warn(
-        "🟡 [FINNY] Skipping memory storage - missing userId or response text"
-      );
-      console.warn("🟡 [FINNY] userId:", userId ? "present" : "missing");
-      console.warn(
-        "🟡 [FINNY] responseTextForStorage:",
-        responseTextForStorage ? "present" : "missing"
-      );
-      console.warn("🟡 [FINNY] cleanText:", cleanText ? "present" : "missing");
-      console.warn(
-        "🟡 [FINNY] cleanedMessage:",
-        cleanedMessage ? "present" : "missing"
-      );
     }
 
     return response;
