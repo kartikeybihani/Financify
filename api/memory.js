@@ -52,9 +52,11 @@ export default async function handler(req, res) {
     try {
       // Fetch profile and memories from Supermemory
       // Profile is optional - if it fails, we still return memories
+      // Using list endpoint for document summaries instead of search
       const [profile, memories] = await Promise.allSettled([
         fetchSupermemoryProfile(serverUserId),
-        fetchSupermemoryMemories(serverUserId),
+        fetchSupermemoryMemoriesList(serverUserId, 100), // Use list endpoint with summaries
+        // fetchSupermemoryMemories(serverUserId), // Old search-based implementation (commented out)
       ]);
 
       // Extract results, handling failures gracefully
@@ -854,8 +856,8 @@ function buildSupermemoryContent(userMessage, finnyResponse) {
 
   // Finny's response summary
   parts.push(
-    `Finny responded: ${finnyResponse.substring(0, 500)}${
-      finnyResponse.length > 500 ? "..." : ""
+    `Finny responded: ${finnyResponse.substring(0, 1300)}${
+      finnyResponse.length > 1300 ? "..." : ""
     }`
   );
 
@@ -1210,8 +1212,90 @@ async function fetchSupermemoryProfile(userId) {
  * Fetch user memories from Supermemory using search API
  * @param {string} userId - User ID for container tag isolation
  * @returns {Promise<Array>} - Array of user memories/documents
+ * @deprecated Using fetchSupermemoryMemoriesList instead for document summaries
  */
-async function fetchSupermemoryMemories(userId) {
+// async function fetchSupermemoryMemories(userId) {
+//   if (!SUPERMEMORY_API_KEY) {
+//     console.warn(
+//       "⚠️ [SUPERMEMORY] API key not configured, cannot fetch memories"
+//     );
+//     return [];
+//   }
+
+//   if (!userId) {
+//     console.warn("⚠️ [SUPERMEMORY] No userId provided, cannot fetch memories");
+//     return [];
+//   }
+
+//   try {
+//     // Use search API with a broad query to get all user memories
+//     // Search for any content to retrieve all memories for the user
+//     const response = await fetch(`${SUPERMEMORY_BASE_URL}/v4/search`, {
+//       method: "POST",
+//       headers: {
+//         Authorization: `Bearer ${SUPERMEMORY_API_KEY}`,
+//         "Content-Type": "application/json",
+//       },
+//       body: JSON.stringify({
+//         q: "*", // Broad query to get all memories
+//         limit: 100, // Get up to 100 memories
+//         threshold: 0.0, // Low threshold to get all results
+//         rerank: false,
+//         rewriteQuery: false,
+//         include: {
+//           documents: true,
+//           summaries: false,
+//         },
+//         containerTag: `user_${userId}`, // v4 API uses singular containerTag
+//       }),
+//     });
+
+//     if (!response.ok) {
+//       const errorText = await response.text();
+//       let errorData;
+//       try {
+//         errorData = JSON.parse(errorText);
+//       } catch {
+//         errorData = { message: errorText };
+//       }
+//       throw new Error(
+//         `Supermemory API error: ${errorData.message || response.statusText} (${
+//           response.status
+//         })`
+//       );
+//     }
+
+//     const result = await response.json();
+//     // Extract documents from search results
+//     // Supermemory v4/search returns: { documents: [...], ... }
+//     const memories = result.documents || result.results || result.data || [];
+
+//     // Log first memory structure for debugging
+//     if (memories.length > 0) {
+//       console.log(
+//         `🔍 [SUPERMEMORY] Sample memory structure:`,
+//         JSON.stringify(memories[0], null, 2)
+//       );
+//     }
+
+//     console.log(
+//       `✅ [SUPERMEMORY] Fetched ${memories.length} memories for user ${userId}`
+//     );
+//     return Array.isArray(memories) ? memories : [];
+//   } catch (error) {
+//     console.error(`❌ [SUPERMEMORY] Error fetching memories:`, error.message);
+//     return [];
+//   }
+// }
+
+/**
+ * Fetch user memories from Supermemory using list documents API (v3/documents/list)
+ * Returns documents with AI-generated summaries
+ * @param {string} userId - User ID for container tag isolation
+ * @param {number} limit - Maximum number of documents to return (default: 20)
+ * @returns {Promise<Array>} - Array of documents with summary field
+ */
+async function fetchSupermemoryMemoriesList(userId, limit = 20) {
   if (!SUPERMEMORY_API_KEY) {
     console.warn(
       "⚠️ [SUPERMEMORY] API key not configured, cannot fetch memories"
@@ -1225,25 +1309,15 @@ async function fetchSupermemoryMemories(userId) {
   }
 
   try {
-    // Use search API with a broad query to get all user memories
-    // Search for any content to retrieve all memories for the user
-    const response = await fetch(`${SUPERMEMORY_BASE_URL}/v4/search`, {
+    const response = await fetch(`${SUPERMEMORY_BASE_URL}/v3/documents/list`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${SUPERMEMORY_API_KEY}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        q: "*", // Broad query to get all memories
-        limit: 100, // Get up to 100 memories
-        threshold: 0.0, // Low threshold to get all results
-        rerank: false,
-        rewriteQuery: false,
-        include: {
-          documents: true,
-          summaries: false,
-        },
-        containerTag: `user_${userId}`, // v4 API uses singular containerTag
+        containerTags: [`user_${userId}`],
+        limit: limit,
       }),
     });
 
@@ -1263,24 +1337,27 @@ async function fetchSupermemoryMemories(userId) {
     }
 
     const result = await response.json();
-    // Extract documents from search results
-    // Supermemory v4/search returns: { documents: [...], ... }
-    const memories = result.documents || result.results || result.data || [];
+    // Extract documents from list response
+    // Each document includes: id, title, status, type, summary, metadata, containerTags, createdAt, updatedAt
+    const documents = result.documents || result.data || [];
 
-    // Log first memory structure for debugging
-    if (memories.length > 0) {
+    // Log first document structure for debugging
+    if (documents.length > 0) {
       console.log(
-        `🔍 [SUPERMEMORY] Sample memory structure:`,
-        JSON.stringify(memories[0], null, 2)
+        `🔍 [SUPERMEMORY] Sample document structure:`,
+        JSON.stringify(documents[0], null, 2)
       );
     }
 
     console.log(
-      `✅ [SUPERMEMORY] Fetched ${memories.length} memories for user ${userId}`
+      `✅ [SUPERMEMORY] Fetched ${documents.length} documents for user ${userId}`
     );
-    return Array.isArray(memories) ? memories : [];
+    return Array.isArray(documents) ? documents : [];
   } catch (error) {
-    console.error(`❌ [SUPERMEMORY] Error fetching memories:`, error.message);
+    console.error(
+      `❌ [SUPERMEMORY] Error fetching documents list:`,
+      error.message
+    );
     return [];
   }
 }
@@ -1452,7 +1529,8 @@ export {
   getExpiryDate,
   storeConversationMemory,
   fetchSupermemoryProfile,
-  fetchSupermemoryMemories,
+  fetchSupermemoryMemoriesList,
+  // fetchSupermemoryMemories, // Deprecated - using fetchSupermemoryMemoriesList instead
   // saveMemoryCandidates removed - migrating to Supermemory
   // updateMemorySummary removed - Supermemory handles summarization
   // generateMemorySummary removed - Supermemory handles summarization

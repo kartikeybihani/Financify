@@ -109,6 +109,8 @@ export interface MemorySummary {
   id: string;
   summary_text: string;
   created_at: string;
+  title?: string; // Optional title from Supermemory document list
+  summary?: string; // Optional summary from Supermemory document list
 }
 
 // Memories Screen Props interface

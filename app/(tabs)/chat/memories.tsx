@@ -96,33 +96,65 @@ export default function MemoriesScreen({ onBack }: MemoriesScreenProps = {}) {
       // console.log("🔍 [MEMORIES] Raw API response:", JSON.stringify(data, null, 2));
       // console.log("🔍 [MEMORIES] Memories array:", memories);
 
-      // Map Supermemory memories to MemorySummary format
+      // OLD IMPLEMENTATION: Map Supermemory memories from v4/search endpoint
       // Supermemory v4/search returns memories with structure:
       // { id, memory (text), updatedAt, documents: [{ id, metadata: { timestamp } }] }
+      // const mappedMemories: MemorySummary[] = memories.map(
+      //   (memory: any, index: number) => {
+      //     // The actual memory text is in the "memory" field
+      //     const content = memory.memory || memory.content || "";
+
+      //     // Use the memory ID, but also store document ID if available for updates/deletes
+      //     const id = memory.id || `memory-${Date.now()}-${index}`;
+      //     const documentId = memory.documents?.[0]?.id || null;
+
+      //     // Prefer updatedAt, fallback to document metadata timestamp, then createdAt
+      //     const createdAt =
+      //       memory.updatedAt ||
+      //       memory.documents?.[0]?.metadata?.timestamp ||
+      //       memory.documents?.[0]?.createdAt ||
+      //       memory.created_at ||
+      //       memory.metadata?.timestamp ||
+      //       new Date().toISOString();
+
+      //     return {
+      //       id,
+      //       summary_text: content,
+      //       created_at: createdAt,
+      //       // Store original memory object for API operations
+      //       _originalMemory: memory,
+      //     };
+      //   }
+      // );
+
+      // NEW IMPLEMENTATION: Map Supermemory documents from v3/documents/list endpoint
+      // Each document includes: id, title, status, type, summary (AI-generated), metadata, containerTags, createdAt, updatedAt
       const mappedMemories: MemorySummary[] = memories.map(
-        (memory: any, index: number) => {
-          // The actual memory text is in the "memory" field
-          const content = memory.memory || memory.content || "";
+        (document: any, index: number) => {
+          // Use title and summary from the document
+          const title = document.title || "";
+          const summary = document.summary || "";
 
-          // Use the memory ID, but also store document ID if available for updates/deletes
-          const id = memory.id || `memory-${Date.now()}-${index}`;
-          const documentId = memory.documents?.[0]?.id || null;
+          // Combine title and summary for display
+          // We'll display title as a header and summary as the content
+          const displayText = title ? `${title}\n\n${summary}` : summary;
 
-          // Prefer updatedAt, fallback to document metadata timestamp, then createdAt
+          const id = document.id || `document-${Date.now()}-${index}`;
+
+          // Use updatedAt or createdAt
           const createdAt =
-            memory.updatedAt ||
-            memory.documents?.[0]?.metadata?.timestamp ||
-            memory.documents?.[0]?.createdAt ||
-            memory.created_at ||
-            memory.metadata?.timestamp ||
+            document.updatedAt ||
+            document.createdAt ||
             new Date().toISOString();
 
           return {
             id,
-            summary_text: content,
+            summary_text: displayText,
+            title: title, // Store title separately for potential use
+            summary: summary, // Store summary separately
             created_at: createdAt,
-            // Store original memory object for API operations
-            _originalMemory: memory,
+            // Store original document object for API operations
+            _originalMemory: document,
           };
         }
       );
@@ -426,11 +458,18 @@ export default function MemoriesScreen({ onBack }: MemoriesScreenProps = {}) {
                       <Text style={styles.dateLabel}>
                         {formatDate(memorySummary.created_at)}
                       </Text>
+                      {/* Display title if available */}
+                      {memorySummary.title && (
+                        <Text style={styles.summaryTitle}>
+                          {memorySummary.title}
+                        </Text>
+                      )}
                       <Text style={styles.summaryText}>
-                        {memorySummary.summary_text}
+                        {memorySummary.summary || memorySummary.summary_text}
                       </Text>
                     </View>
-                    <View style={styles.summaryRight}>
+                    {/* Edit and Delete icons - commented out per user request */}
+                    {/* <View style={styles.summaryRight}>
                       <TouchableOpacity
                         style={styles.editButton}
                         onPress={() => handleEditMemory(memorySummary)}
@@ -462,7 +501,7 @@ export default function MemoriesScreen({ onBack }: MemoriesScreenProps = {}) {
                           />
                         )}
                       </TouchableOpacity>
-                    </View>
+                    </View> */}
                   </View>
                 </View>
               ))}
