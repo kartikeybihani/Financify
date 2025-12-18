@@ -2264,8 +2264,9 @@ async function handleAsk(
         body: JSON.stringify({
           model: OPENROUTER_MODEL,
           temperature: 0.6,
-          max_tokens: 1200,
+          max_tokens: 1500,
           stream: false,
+          reasoning: { exclude: true }, // Disable reasoning output, only return actual response
           messages: [
             { role: "system", content: system },
             {
@@ -2337,8 +2338,9 @@ async function handleAsk(
       JSON.stringify(data.choices?.[0], null, 2)
     );
 
-    const cleanText =
-      data.choices?.[0]?.message?.content ?? "I'm not sure yet. Ask me again?";
+    // Extract response content (reasoning disabled, so content should always be present)
+    const message = data.choices?.[0]?.message || {};
+    const cleanText = message.content || "I'm not sure yet. Ask me again?";
 
     console.log("🔵 [LLM] Extracted cleanText length:", cleanText?.length || 0);
     console.log(
@@ -2346,8 +2348,8 @@ async function handleAsk(
       cleanText?.substring(0, 200) || "EMPTY"
     );
 
-    if (!cleanText || cleanText === "I'm not sure yet. Ask me again?") {
-      console.warn("⚠️ [LLM] Empty or fallback response detected!");
+    if (cleanText === "I'm not sure yet. Ask me again?") {
+      console.warn("⚠️ [LLM] Using fallback response!");
       console.warn(
         "⚠️ [LLM] Full API response:",
         JSON.stringify(data, null, 2)
