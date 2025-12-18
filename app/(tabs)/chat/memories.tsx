@@ -59,6 +59,17 @@ export default function MemoriesScreen({ onBack }: MemoriesScreenProps = {}) {
   const [deletingMemoryId, setDeletingMemoryId] = useState<string | null>(null);
   const [updatingMemoryId, setUpdatingMemoryId] = useState<string | null>(null);
 
+  // Profile memories detail view state
+  const [selectedSummary, setSelectedSummary] = useState<MemorySummary | null>(
+    null
+  );
+  const [profileMemories, setProfileMemories] = useState<any[]>([]);
+  const [loadingProfileMemories, setLoadingProfileMemories] = useState(false);
+  const [editingProfileMemory, setEditingProfileMemory] = useState<any | null>(
+    null
+  );
+  const [editProfileMemoryText, setEditProfileMemoryText] = useState("");
+
   // Fetch memories data when component mounts
   useEffect(() => {
     if (session?.user?.id) {
@@ -383,6 +394,203 @@ export default function MemoriesScreen({ onBack }: MemoriesScreenProps = {}) {
     });
   };
 
+  // Handle clicking on a summary card to show profile memories
+  const handleSummaryClick = async (summary: MemorySummary) => {
+    setSelectedSummary(summary);
+    setLoadingProfileMemories(true);
+
+    try {
+      const BASE_URL =
+        process.env.EXPO_PUBLIC_APP_BASE_URL ||
+        "https://financify-rose.vercel.app";
+
+      const response = await authenticatedFetch(
+        `${BASE_URL}/api/memory?type=profile`,
+        {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(
+          `Failed to fetch profile memories: ${response.statusText}`
+        );
+      }
+
+      const data = await response.json();
+      const memories = data.memories || [];
+
+      // Sort by date (newest first)
+      memories.sort((a: any, b: any) => {
+        const dateA = new Date(a.updatedAt || a.createdAt || 0).getTime();
+        const dateB = new Date(b.updatedAt || b.createdAt || 0).getTime();
+        return dateB - dateA;
+      });
+
+      setProfileMemories(memories);
+    } catch (error) {
+      console.error("Error fetching profile memories:", error);
+      Alert.alert("Error", "Failed to load memories. Please try again.");
+      setProfileMemories([]);
+    } finally {
+      setLoadingProfileMemories(false);
+    }
+  };
+
+  const handleCloseDetailModal = () => {
+    setSelectedSummary(null);
+    setProfileMemories([]);
+    setEditingProfileMemory(null);
+    setEditProfileMemoryText("");
+  };
+
+  // Edit profile memory
+  const handleEditProfileMemory = (memory: any) => {
+    setEditingProfileMemory(memory);
+    // Use content field if available, otherwise use summary or title
+    setEditProfileMemoryText(
+      memory.content || memory.summary || memory.title || ""
+    );
+  };
+
+  const handleCancelEditProfileMemory = () => {
+    setEditingProfileMemory(null);
+    setEditProfileMemoryText("");
+  };
+
+  const handleSaveEditProfileMemory = async () => {
+    if (!editingProfileMemory || !editProfileMemoryText.trim()) {
+      Alert.alert("Error", "Memory text cannot be empty");
+      return;
+    }
+
+    try {
+      setUpdatingMemoryId(editingProfileMemory.id);
+      const BASE_URL =
+        process.env.EXPO_PUBLIC_APP_BASE_URL ||
+        "https://financify-rose.vercel.app";
+
+      // Use the document/memory ID
+      const memoryId = editingProfileMemory.id;
+
+      const response = await authenticatedFetch(`${BASE_URL}/api/memory`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          memoryId: memoryId,
+          documentId: memoryId, // Use same ID for document
+          content: editProfileMemoryText.trim(),
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({
+          error: `HTTP ${response.status}: ${response.statusText}`,
+        }));
+        throw new Error(errorData.error || "Failed to update memory");
+      }
+
+      // Update local state
+      setProfileMemories((prev) =>
+        prev.map((m) =>
+          m.id === editingProfileMemory.id
+            ? { ...m, content: editProfileMemoryText.trim() }
+            : m
+        )
+      );
+
+      setEditingProfileMemory(null);
+      setEditProfileMemoryText("");
+      Alert.alert("Success", "Memory updated successfully");
+    } catch (error: any) {
+      console.error("Error updating profile memory:", error);
+      Alert.alert("Error", error?.message || "Failed to update memory");
+    } finally {
+      setUpdatingMemoryId(null);
+    }
+  };
+
+  // Delete profile memory
+  const handleDeleteProfileMemory = (memoryId: string) => {
+    Alert.alert(
+      "Delete Memory",
+      "Are you sure you want to delete this memory? This action cannot be undone.",
+      [
+        {
+          text: "Cancel",
+          style: "cancel",
+        },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => deleteProfileMemory(memoryId),
+        },
+      ]
+    );
+  };
+
+  const deleteProfileMemory = async (memoryId: string) => {
+    try {
+      setDeletingMemoryId(memoryId);
+
+      // Optimistic update
+      const originalMemories = [...profileMemories];
+      setProfileMemories((prev) => prev.filter((m) => m.id !== memoryId));
+
+      const BASE_URL =
+        process.env.EXPO_PUBLIC_APP_BASE_URL ||
+        "https://financify-rose.vercel.app";
+
+      const queryParams = new URLSearchParams({
+        memoryId,
+        documentId: memoryId, // Use same ID for document
+      });
+
+      const response = await authenticatedFetch(
+        `${BASE_URL}/api/memory?${queryParams.toString()}`,
+        {
+          method: "DELETE",
+          headers: {
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({
+          error: `HTTP ${response.status}: ${response.statusText}`,
+        }));
+        throw new Error(errorData.error || "Failed to delete memory");
+      }
+
+      console.log(`Profile memory deleted successfully: ${memoryId}`);
+    } catch (error: any) {
+      console.error("Error deleting profile memory:", error);
+      // Restore original state on error
+      setProfileMemories((prev) => {
+        const restored = [...prev];
+        const deletedMemory = profileMemories.find((m) => m.id === memoryId);
+        if (deletedMemory) {
+          restored.push(deletedMemory);
+          restored.sort((a, b) => {
+            const dateA = new Date(a.updatedAt || a.createdAt || 0).getTime();
+            const dateB = new Date(b.updatedAt || b.createdAt || 0).getTime();
+            return dateB - dateA;
+          });
+        }
+        return restored;
+      });
+      Alert.alert("Error", error.message || "Failed to delete memory");
+    } finally {
+      setDeletingMemoryId(null);
+    }
+  };
+
   if (loading) {
     return (
       <View style={styles.container}>
@@ -449,9 +657,11 @@ export default function MemoriesScreen({ onBack }: MemoriesScreenProps = {}) {
             <View style={styles.memorySection}>
               {/* Memory Summaries */}
               {memorySummaries.map((memorySummary, index) => (
-                <View
+                <TouchableOpacity
                   key={memorySummary.id || index}
                   style={styles.summaryCard}
+                  onPress={() => handleSummaryClick(memorySummary)}
+                  activeOpacity={0.7}
                 >
                   <View style={styles.summaryHeader}>
                     <View style={styles.summaryLeft}>
@@ -503,7 +713,7 @@ export default function MemoriesScreen({ onBack }: MemoriesScreenProps = {}) {
                       </TouchableOpacity>
                     </View> */}
                   </View>
-                </View>
+                </TouchableOpacity>
               ))}
             </View>
           )}
@@ -553,6 +763,160 @@ export default function MemoriesScreen({ onBack }: MemoriesScreenProps = {}) {
                   style={[styles.modalButton, styles.saveButton]}
                   onPress={handleSaveEdit}
                   disabled={!editText.trim() || updatingMemoryId !== null}
+                >
+                  {updatingMemoryId ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <Text style={styles.saveButtonText}>Save</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+
+        {/* Profile Memories Detail Modal */}
+        <Modal
+          visible={selectedSummary !== null}
+          transparent={true}
+          animationType="slide"
+          onRequestClose={handleCloseDetailModal}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.detailModalContent}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>All Memories</Text>
+                <TouchableOpacity
+                  onPress={handleCloseDetailModal}
+                  style={styles.modalCloseButton}
+                >
+                  <Ionicons name="close" size={24} color="#fff" />
+                </TouchableOpacity>
+              </View>
+
+              {loadingProfileMemories ? (
+                <View style={styles.loadingContainer}>
+                  <ActivityIndicator size="large" color="#4A90E2" />
+                </View>
+              ) : profileMemories.length === 0 ? (
+                <View style={styles.emptyContainer}>
+                  <Text style={styles.emptyDescription}>
+                    No memories found.
+                  </Text>
+                </View>
+              ) : (
+                <ScrollView style={styles.profileMemoriesList}>
+                  {profileMemories.map((memory, index) => (
+                    <View
+                      key={memory.id || index}
+                      style={styles.profileMemoryCard}
+                    >
+                      <View style={styles.profileMemoryHeader}>
+                        <View style={styles.profileMemoryLeft}>
+                          <Text style={styles.dateLabel}>
+                            {formatDate(
+                              memory.updatedAt ||
+                                memory.createdAt ||
+                                new Date().toISOString()
+                            )}
+                          </Text>
+                          {memory.title && (
+                            <Text style={styles.profileMemoryTitle}>
+                              {memory.title}
+                            </Text>
+                          )}
+                          <Text style={styles.profileMemoryText}>
+                            {memory.content ||
+                              memory.summary ||
+                              memory.title ||
+                              ""}
+                          </Text>
+                        </View>
+                        <View style={styles.profileMemoryRight}>
+                          <TouchableOpacity
+                            style={styles.editButton}
+                            onPress={() => handleEditProfileMemory(memory)}
+                            activeOpacity={0.7}
+                            disabled={deletingMemoryId === memory.id}
+                          >
+                            <Ionicons
+                              name="create-outline"
+                              size={22}
+                              color="#4A90E2"
+                            />
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={styles.trashButton}
+                            onPress={() => handleDeleteProfileMemory(memory.id)}
+                            activeOpacity={0.7}
+                            disabled={
+                              deletingMemoryId === memory.id ||
+                              updatingMemoryId === memory.id
+                            }
+                          >
+                            {deletingMemoryId === memory.id ? (
+                              <ActivityIndicator size="small" color="#FF4444" />
+                            ) : (
+                              <Ionicons
+                                name="trash-outline"
+                                size={22}
+                                color="#FF4444"
+                              />
+                            )}
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    </View>
+                  ))}
+                </ScrollView>
+              )}
+            </View>
+          </View>
+        </Modal>
+
+        {/* Edit Profile Memory Modal */}
+        <Modal
+          visible={editingProfileMemory !== null}
+          transparent={true}
+          animationType="slide"
+          onRequestClose={handleCancelEditProfileMemory}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Edit Memory</Text>
+                <TouchableOpacity
+                  onPress={handleCancelEditProfileMemory}
+                  style={styles.modalCloseButton}
+                >
+                  <Ionicons name="close" size={24} color="#fff" />
+                </TouchableOpacity>
+              </View>
+
+              <TextInput
+                style={styles.editInput}
+                value={editProfileMemoryText}
+                onChangeText={setEditProfileMemoryText}
+                multiline
+                numberOfLines={6}
+                placeholder="Enter memory text..."
+                placeholderTextColor="rgba(255, 255, 255, 0.5)"
+                autoFocus
+              />
+
+              <View style={styles.modalActions}>
+                <TouchableOpacity
+                  style={[styles.modalButton, styles.cancelButton]}
+                  onPress={handleCancelEditProfileMemory}
+                >
+                  <Text style={styles.cancelButtonText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.modalButton, styles.saveButton]}
+                  onPress={handleSaveEditProfileMemory}
+                  disabled={
+                    !editProfileMemoryText.trim() || updatingMemoryId !== null
+                  }
                 >
                   {updatingMemoryId ? (
                     <ActivityIndicator size="small" color="#fff" />
@@ -682,7 +1046,7 @@ const styles = {
   dateLabel: {
     fontSize: responsiveFontSize(10),
     color: "rgba(255, 255, 255, 0.5)",
-    marginBottom: 0,
+    marginBottom: responsivePadding(8),
   },
   summaryCard: {
     backgroundColor: "rgba(255, 255, 255, 0.08)",
@@ -721,6 +1085,7 @@ const styles = {
     fontSize: responsiveFontSize(16),
     fontWeight: "600" as const,
     color: "#fff",
+    marginBottom: responsivePadding(6),
   },
   trashButton: {
     padding: 8,
@@ -816,5 +1181,52 @@ const styles = {
     color: "#fff",
     fontSize: responsiveFontSize(14),
     fontWeight: "600" as const,
+  },
+  detailModalContent: {
+    backgroundColor: "#1A1A1A",
+    borderRadius: 16,
+    padding: responsivePadding(20),
+    width: screenWidth * 0.9,
+    maxWidth: 500,
+    maxHeight: screenHeight * 0.85,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.1)",
+  },
+  profileMemoriesList: {
+    maxHeight: screenHeight * 0.6,
+    marginTop: responsivePadding(16),
+  },
+  profileMemoryCard: {
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
+    borderRadius: 12,
+    paddingVertical: responsivePadding(12),
+    paddingHorizontal: responsivePadding(14),
+    marginBottom: responsivePadding(12),
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.15)",
+  },
+  profileMemoryHeader: {
+    flexDirection: "row" as const,
+    alignItems: "flex-start" as const,
+  },
+  profileMemoryLeft: {
+    flex: 1,
+    marginRight: responsivePadding(12),
+  },
+  profileMemoryRight: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    gap: 8,
+  },
+  profileMemoryTitle: {
+    fontSize: responsiveFontSize(15),
+    fontWeight: "600" as const,
+    color: "#fff",
+    marginBottom: responsivePadding(4),
+  },
+  profileMemoryText: {
+    fontSize: responsiveFontSize(13),
+    color: "rgba(255, 255, 255, 0.85)",
+    lineHeight: responsiveFontSize(18),
   },
 };
