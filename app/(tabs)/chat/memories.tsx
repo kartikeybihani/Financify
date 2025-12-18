@@ -15,7 +15,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { Dimensions } from "react-native";
 import { useAuthNavigation } from "@/src/contexts/AuthNavigationContext";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { supabase } from "@/src/lib/supabase/supabase";
+import { authenticatedFetch } from "@/src/utils/auth/authToken";
 import { MemorySummary, MemoriesScreenProps } from "@/src/types/plaid";
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
@@ -50,7 +50,6 @@ export default function MemoriesScreen({ onBack }: MemoriesScreenProps = {}) {
   };
   const [memorySummaries, setMemorySummaries] = useState<MemorySummary[]>([]);
   const [loading, setLoading] = useState(true);
-  const [deletingMemoryId, setDeletingMemoryId] = useState<string | null>(null);
 
   // Fetch memories data when component mounts
   useEffect(() => {
@@ -62,20 +61,51 @@ export default function MemoriesScreen({ onBack }: MemoriesScreenProps = {}) {
   const fetchMemoriesData = async () => {
     try {
       setLoading(true);
-      console.log("Fetching memories for user:", session?.user?.id);
+      console.log(
+        "Fetching memories from Supermemory for user:",
+        session?.user?.id
+      );
 
-      const { data: summaryData, error: summaryError } = await supabase
-        .from("memory_summary")
-        .select("id, summary_text, created_at, user_id")
-        .eq("user_id", session?.user?.id)
-        .order("created_at", { ascending: false });
+      const BASE_URL =
+        process.env.EXPO_PUBLIC_APP_BASE_URL ||
+        "https://financify-rose.vercel.app";
 
-      if (summaryError) {
-        console.error("Error fetching memory summary:", summaryError);
-        setMemorySummaries([]);
-      } else {
-        setMemorySummaries(summaryData || []);
+      const response = await authenticatedFetch(`${BASE_URL}/api/memory`, {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch memories: ${response.statusText}`);
       }
+
+      const data = await response.json();
+      const memories = data.memories || [];
+
+      // Map Supermemory memories to MemorySummary format
+      // Supermemory memories may have: id, content, metadata.timestamp, etc.
+      const mappedMemories: MemorySummary[] = memories.map((memory: any) => ({
+        id:
+          memory.id ||
+          memory.document_id ||
+          `memory-${Date.now()}-${Math.random()}`,
+        summary_text: memory.content || memory.text || memory.summary || "",
+        created_at:
+          memory.metadata?.timestamp ||
+          memory.created_at ||
+          memory.timestamp ||
+          new Date().toISOString(),
+      }));
+
+      // Sort by date (newest first)
+      mappedMemories.sort(
+        (a, b) =>
+          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      );
+
+      setMemorySummaries(mappedMemories);
     } catch (error) {
       console.error("Error fetching memories:", error);
       setMemorySummaries([]);
@@ -84,121 +114,8 @@ export default function MemoriesScreen({ onBack }: MemoriesScreenProps = {}) {
     }
   };
 
-  const handleDeleteMemory = (memoryId: string) => {
-    Alert.alert(
-      "Delete Memory",
-      `Are you sure you want to delete this memory? This action cannot be undone.`,
-      [
-        {
-          text: "Cancel",
-          style: "cancel",
-        },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: () => deleteMemorySummary(memoryId),
-        },
-      ]
-    );
-  };
-
-  const deleteMemorySummary = async (memoryId: string) => {
-    try {
-      setDeletingMemoryId(memoryId);
-
-      // Optimistic update - remove from UI immediately
-      const originalMemories = [...memorySummaries];
-      const updatedMemories = memorySummaries.filter(
-        (memory) => memory.id !== memoryId
-      );
-      setMemorySummaries(updatedMemories);
-
-      // Delete from database
-      // console.log("Attempting to delete memory:", {
-      //   memoryId,
-      //   userId: session?.user?.id,
-      // });
-
-      let deleteResult, summaryError, count;
-
-      try {
-        // Try with user authentication first
-        const result = await supabase
-          .from("memory_summary")
-          .delete({ count: "exact" })
-          .eq("id", memoryId)
-          .eq("user_id", session?.user?.id);
-
-        deleteResult = result.data;
-        summaryError = result.error;
-        count = result.count;
-
-        // console.log("Delete result (user auth):", {
-        //   deleteResult,
-        //   error: summaryError,
-        //   count,
-        // });
-      } catch (error) {
-        console.error("Delete error:", error);
-        summaryError = error;
-        count = 0;
-      }
-
-      if (summaryError || count === 0) {
-        console.warn("User deletion failed, trying alternative approach...");
-
-        // Try alternative approach - delete without user_id filter (if RLS allows)
-        try {
-          const altResult = await supabase
-            .from("memory_summary")
-            .delete({ count: "exact" })
-            .eq("id", memoryId);
-
-          console.log("Alternative delete result:", {
-            data: altResult.data,
-            error: altResult.error,
-            count: altResult.count,
-          });
-
-          if (altResult.error) {
-            throw altResult.error;
-          }
-
-          if (altResult.count === 0) {
-            throw new Error("Memory not found");
-          }
-
-          // Success with alternative approach
-          count = altResult.count;
-          summaryError = null;
-        } catch (altError: any) {
-          console.error("Alternative deletion also failed:", altError);
-          // If both approaches fail, restore the original state
-          setMemorySummaries(originalMemories);
-          const errorMessage =
-            altError instanceof Error ? altError.message : "Unknown error";
-          throw new Error("Failed to delete memory: " + errorMessage);
-        }
-      }
-
-      if (summaryError) {
-        console.error("Supabase deletion error:", summaryError);
-        // If deletion failed, restore the original state
-        setMemorySummaries(originalMemories);
-        throw summaryError;
-      }
-
-      // Success - memory is already removed from UI via optimistic update
-      console.log(`Memory deleted successfully - ${count} row(s) affected`);
-    } catch (error) {
-      console.error("Error deleting memory:", error);
-      Alert.alert("Error", "Failed to delete memory. Please try again.", [
-        { text: "OK" },
-      ]);
-    } finally {
-      setDeletingMemoryId(null);
-    }
-  };
+  // Note: Delete functionality removed - Supermemory manages memories automatically
+  // Users can view their memories but deletion is handled by Supermemory's retention policies
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
@@ -288,24 +205,7 @@ export default function MemoriesScreen({ onBack }: MemoriesScreenProps = {}) {
                         {memorySummary.summary_text}
                       </Text>
                     </View>
-                    <View style={styles.summaryRight}>
-                      <TouchableOpacity
-                        style={styles.trashButton}
-                        onPress={() => handleDeleteMemory(memorySummary.id)}
-                        activeOpacity={0.7}
-                        disabled={deletingMemoryId === memorySummary.id}
-                      >
-                        {deletingMemoryId === memorySummary.id ? (
-                          <ActivityIndicator size="small" color="#FF4444" />
-                        ) : (
-                          <Ionicons
-                            name="trash-outline"
-                            size={28}
-                            color="#FF4444"
-                          />
-                        )}
-                      </TouchableOpacity>
-                    </View>
+                    {/* Delete button removed - Supermemory manages memory retention */}
                   </View>
                 </View>
               ))}

@@ -1,6 +1,57 @@
 // api/memory.js
 import { supabase } from "../lib/api/supabase.js";
 
+// API Route Handler for Supermemory Profile (GET /api/memory)
+// This endpoint fetches user profile and memories from Supermemory
+export default async function handler(req, res) {
+  // Only allow GET requests
+  if (req.method !== "GET") {
+    return res.status(405).json({ error: "Method not allowed" });
+  }
+
+  try {
+    // Derive user from Supabase JWT instead of trusting client context
+    let serverUserId = null;
+
+    const authHeader =
+      req.headers["authorization"] || req.headers["Authorization"];
+    const token =
+      typeof authHeader === "string" && authHeader.startsWith("Bearer ")
+        ? authHeader.slice("Bearer ".length)
+        : null;
+
+    if (token) {
+      const { data: authData, error: authError } = await supabase.auth.getUser(
+        token
+      );
+      if (!authError && authData?.user?.id) {
+        serverUserId = authData.user.id;
+      }
+    }
+
+    if (!serverUserId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    // Fetch profile and memories from Supermemory
+    const [profile, memories] = await Promise.all([
+      fetchSupermemoryProfile(serverUserId),
+      fetchSupermemoryMemories(serverUserId),
+    ]);
+
+    return res.status(200).json({
+      profile: profile || null,
+      memories: memories || [],
+    });
+  } catch (error) {
+    console.error("❌ [SUPERMEMORY_PROFILE] Error:", error);
+    return res.status(500).json({
+      error: "Failed to fetch Supermemory profile",
+      message: error.message,
+    });
+  }
+}
+
 // KEY_SYNONYMS removed - migrating to Supermemory for memory management
 
 // === MEMORY MANAGEMENT FUNCTIONS ===
@@ -985,6 +1036,130 @@ async function loadUserProfile(userId) {
   }
 }
 
+/**
+ * Fetch user profile from Supermemory API v4/profile
+ * @param {string} userId - User ID for container tag isolation
+ * @returns {Promise<object>} - User profile with memories
+ */
+async function fetchSupermemoryProfile(userId) {
+  if (!SUPERMEMORY_API_KEY) {
+    console.warn(
+      "⚠️ [SUPERMEMORY] API key not configured, cannot fetch profile"
+    );
+    return null;
+  }
+
+  if (!userId) {
+    console.warn("⚠️ [SUPERMEMORY] No userId provided, cannot fetch profile");
+    return null;
+  }
+
+  try {
+    const response = await fetch(
+      `${SUPERMEMORY_BASE_URL}/v4/profile?containerTag=user_${userId}`,
+      {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${SUPERMEMORY_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      let errorData;
+      try {
+        errorData = JSON.parse(errorText);
+      } catch {
+        errorData = { message: errorText };
+      }
+      throw new Error(
+        `Supermemory API error: ${errorData.message || response.statusText} (${
+          response.status
+        })`
+      );
+    }
+
+    const result = await response.json();
+    console.log(`✅ [SUPERMEMORY] Fetched profile for user ${userId}`);
+    return result;
+  } catch (error) {
+    console.error(`❌ [SUPERMEMORY] Error fetching profile:`, error.message);
+    return null;
+  }
+}
+
+/**
+ * Fetch user memories from Supermemory using search API
+ * @param {string} userId - User ID for container tag isolation
+ * @returns {Promise<Array>} - Array of user memories/documents
+ */
+async function fetchSupermemoryMemories(userId) {
+  if (!SUPERMEMORY_API_KEY) {
+    console.warn(
+      "⚠️ [SUPERMEMORY] API key not configured, cannot fetch memories"
+    );
+    return [];
+  }
+
+  if (!userId) {
+    console.warn("⚠️ [SUPERMEMORY] No userId provided, cannot fetch memories");
+    return [];
+  }
+
+  try {
+    // Use search API with a broad query to get all user memories
+    // Search for any content to retrieve all memories for the user
+    const response = await fetch(`${SUPERMEMORY_BASE_URL}/v4/search`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${SUPERMEMORY_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        q: "*", // Broad query to get all memories
+        limit: 100, // Get up to 100 memories
+        threshold: 0.0, // Low threshold to get all results
+        rerank: false,
+        rewriteQuery: false,
+        include: {
+          documents: true,
+          summaries: false,
+        },
+        containerTag: `user_${userId}`, // v4 API uses singular containerTag
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      let errorData;
+      try {
+        errorData = JSON.parse(errorText);
+      } catch {
+        errorData = { message: errorText };
+      }
+      throw new Error(
+        `Supermemory API error: ${errorData.message || response.statusText} (${
+          response.status
+        })`
+      );
+    }
+
+    const result = await response.json();
+    // Extract documents from search results
+    const memories = result.documents || result.results || result.data || [];
+
+    console.log(
+      `✅ [SUPERMEMORY] Fetched ${memories.length} memories for user ${userId}`
+    );
+    return Array.isArray(memories) ? memories : [];
+  } catch (error) {
+    console.error(`❌ [SUPERMEMORY] Error fetching memories:`, error.message);
+    return [];
+  }
+}
+
 // Export all functions
 export {
   getSessionState,
@@ -1006,6 +1181,8 @@ export {
   isSensitiveData,
   getExpiryDate,
   storeConversationMemory,
+  fetchSupermemoryProfile,
+  fetchSupermemoryMemories,
   // saveMemoryCandidates removed - migrating to Supermemory
   // updateMemorySummary removed - Supermemory handles summarization
   // generateMemorySummary removed - Supermemory handles summarization
