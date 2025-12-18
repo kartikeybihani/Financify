@@ -640,14 +640,37 @@ async function storeConversationMemory(
     finnyResponse,
     metadata
   );
+
+  // Filter out null, undefined, and empty object values (Supermemory doesn't accept them)
+  const cleanedMetadata = Object.fromEntries(
+    Object.entries(memoryMetadata).filter(([key, value]) => {
+      // Remove null, undefined
+      if (value === null || value === undefined) return false;
+      // Remove empty objects
+      if (
+        typeof value === "object" &&
+        !Array.isArray(value) &&
+        Object.keys(value).length === 0
+      )
+        return false;
+      // Remove empty arrays
+      if (Array.isArray(value) && value.length === 0) return false;
+      return true;
+    })
+  );
+
   console.log(
-    "🔵 [SUPERMEMORY] Metadata:",
+    "🔵 [SUPERMEMORY] Metadata (before cleaning):",
     JSON.stringify(memoryMetadata, null, 2)
+  );
+  console.log(
+    "🔵 [SUPERMEMORY] Metadata (after cleaning):",
+    JSON.stringify(cleanedMetadata, null, 2)
   );
 
   const requestBody = {
     content: memoryContent,
-    metadata: memoryMetadata,
+    metadata: cleanedMetadata,
     containerTags: [`user_${userId}`],
   };
 
