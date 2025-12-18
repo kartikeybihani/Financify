@@ -61,6 +61,7 @@ export const useChat = () => {
   const [isNewSession, setIsNewSession] = useState(true);
   const [chatId, setChatId] = useState<string>(() => `chat_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`);
   const appStateRef = useRef(AppState.currentState);
+  const shouldPersistRef = useRef(false);
 
   useEffect(() => {
     loadChatMessages();
@@ -68,10 +69,32 @@ export const useChat = () => {
 
   // Note: We don't save on unmount - only save on app background or clear chat
 
+  // Update nudges when messages change; persistence is handled explicitly
   useEffect(() => {
     setShowNudges(chatMessages.length <= 1);
-    saveChatMessages();
-    // Remove auto-save - only save on app close or clear chat
+  }, [chatMessages]);
+
+  /**
+   * Persist chat messages to AsyncStorage only when:
+   * - We've explicitly marked that a save should happen (shouldPersistRef.current)
+   * - There are no in-progress streaming messages (isStreaming === true)
+   *
+   * This ensures we never save partially streamed Finny messages, which can
+   * otherwise lead to truncated responses being rehydrated when the user
+   * returns to the Finny tab.
+   */
+  useEffect(() => {
+    if (!shouldPersistRef.current) return;
+
+    // Don't persist while any message is still streaming
+    const hasStreamingMessage = chatMessages.some(
+      (m: any) => m && (m as any).isStreaming
+    );
+    if (hasStreamingMessage) return;
+
+    shouldPersistRef.current = false;
+    // Fire and forget; errors are logged inside saveChatMessages
+    void saveChatMessages();
   }, [chatMessages]);
 
   /**
@@ -423,6 +446,10 @@ export const useChat = () => {
       logger.info(`Finny: ${preview}`);
     }
     setChatMessages((prev) => [...prev, msg]);
+    // Mark for persistence after new messages are added (non-streaming only)
+    if (!(msg as any).isStreaming) {
+      shouldPersistRef.current = true;
+    }
   };
 
   const pushChatWithDelay = async (sender: "user" | "finny", message: string) => {
@@ -561,6 +588,8 @@ export const useChat = () => {
                       return [...prev, completedMessage];
                     }
                   });
+                  // Final non-streaming message is ready – persist to storage
+                  shouldPersistRef.current = true;
                 }
                 return; // Skip other processing for complete event
               }
@@ -668,6 +697,8 @@ export const useChat = () => {
                       return [...prev, completedMessage];
                     }
                   });
+                  // Final non-streaming message is ready – persist to storage
+                  shouldPersistRef.current = true;
                 }
               }
             } catch (parseError) {
@@ -824,6 +855,8 @@ export const useChat = () => {
         };
         
         setChatMessages(prev => [...prev, newMessage]);
+        // Persist after non-streaming action responses
+        shouldPersistRef.current = true;
         logger.info("🎯 [ACTION] Created new message:", newMessage);
 
         // Update goal flow state if provided
