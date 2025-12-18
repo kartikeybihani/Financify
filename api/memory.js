@@ -1338,8 +1338,24 @@ async function fetchSupermemoryMemoriesList(userId, limit = 20) {
 
     const result = await response.json();
     // Extract documents from list response
-    // Each document includes: id, title, status, type, summary, metadata, containerTags, createdAt, updatedAt
-    const documents = result.documents || result.data || [];
+    // Supermemory API returns: { memories: [...], pagination: {...} }
+    // Each document/memory includes: id, title, status, type, summary, metadata, containerTags, createdAt, updatedAt
+    const documents = result.memories || result.documents || result.data || [];
+
+    // Log full response structure for debugging
+    console.log(
+      `🔍 [SUPERMEMORY] List API response structure:`,
+      JSON.stringify(
+        {
+          hasMemories: !!result.memories,
+          hasDocuments: !!result.documents,
+          memoriesCount: result.memories?.length || 0,
+          pagination: result.pagination,
+        },
+        null,
+        2
+      )
+    );
 
     // Log first document structure for debugging
     if (documents.length > 0) {
