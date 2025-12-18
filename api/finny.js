@@ -2307,8 +2307,22 @@ async function handleAsk(
       cache_hit: false,
     });
 
+    console.log("🔵 [LLM] Response status:", resp.status);
+    console.log("🔵 [LLM] Response ok:", resp.ok);
+
     if (!resp.ok) {
+      const errorText = await resp.text();
       console.error("❌ [FINNY] OpenRouter API error:", resp.status);
+      console.error("❌ [FINNY] Error response:", errorText);
+      try {
+        const errorData = JSON.parse(errorText);
+        console.error(
+          "❌ [FINNY] Parsed error:",
+          JSON.stringify(errorData, null, 2)
+        );
+      } catch (e) {
+        console.error("❌ [FINNY] Could not parse error response");
+      }
       return {
         message: cleanResponseFormatting("I'm glitching right now—try again."),
         type: "assistant",
@@ -2316,8 +2330,29 @@ async function handleAsk(
     }
 
     const data = await resp.json();
+    console.log("🔵 [LLM] Response data keys:", Object.keys(data));
+    console.log("🔵 [LLM] Choices length:", data.choices?.length || 0);
+    console.log(
+      "🔵 [LLM] First choice:",
+      JSON.stringify(data.choices?.[0], null, 2)
+    );
+
     const cleanText =
       data.choices?.[0]?.message?.content ?? "I'm not sure yet. Ask me again?";
+
+    console.log("🔵 [LLM] Extracted cleanText length:", cleanText?.length || 0);
+    console.log(
+      "🔵 [LLM] cleanText preview:",
+      cleanText?.substring(0, 200) || "EMPTY"
+    );
+
+    if (!cleanText || cleanText === "I'm not sure yet. Ask me again?") {
+      console.warn("⚠️ [LLM] Empty or fallback response detected!");
+      console.warn(
+        "⚠️ [LLM] Full API response:",
+        JSON.stringify(data, null, 2)
+      );
+    }
 
     // Memory saving will happen after topic detection (see below)
 
@@ -2411,18 +2446,29 @@ async function handleAsk(
     }
 
     // Store conversation memory in Supermemory (async, non-blocking)
-    if (userId && cleanText) {
+    // Use cleanedMessage (actual response text) instead of cleanText (raw LLM output)
+    const responseTextForStorage =
+      cleanedMessage ||
+      cleanText ||
+      (Array.isArray(response.message)
+        ? response.message.map((m) => m.content || m).join("\n\n")
+        : response.message || "");
+
+    if (userId && responseTextForStorage) {
       console.log("🟢 [FINNY] Attempting to store memory in Supermemory...");
       console.log("🟢 [FINNY] User ID:", userId);
       console.log("🟢 [FINNY] Message:", message?.substring(0, 100) + "...");
-      console.log("🟢 [FINNY] Response length:", cleanText?.length || 0);
+      console.log(
+        "🟢 [FINNY] Response length:",
+        responseTextForStorage?.length || 0
+      );
       setImmediate(async () => {
         try {
           console.log("🟢 [FINNY] Calling storeConversationMemory...");
           const result = await storeConversationMemory(
             userId,
             message,
-            cleanText,
+            responseTextForStorage,
             {
               intent: intent,
               chat_id: context?.chat_id,
@@ -2447,10 +2493,18 @@ async function handleAsk(
       });
     } else {
       console.warn(
-        "🟡 [FINNY] Skipping memory storage - missing userId or cleanText"
+        "🟡 [FINNY] Skipping memory storage - missing userId or response text"
       );
       console.warn("🟡 [FINNY] userId:", userId ? "present" : "missing");
+      console.warn(
+        "🟡 [FINNY] responseTextForStorage:",
+        responseTextForStorage ? "present" : "missing"
+      );
       console.warn("🟡 [FINNY] cleanText:", cleanText ? "present" : "missing");
+      console.warn(
+        "🟡 [FINNY] cleanedMessage:",
+        cleanedMessage ? "present" : "missing"
+      );
     }
 
     return response;

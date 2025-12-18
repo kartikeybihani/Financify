@@ -177,6 +177,7 @@ export const getFreshAccessToken = async (): Promise<string | null> => {
   
   try {
     for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+      const getSessionStartTime = Date.now();
       try {
         const getSessionPromise = supabase.auth.getSession();
         const timeoutPromise = createTimeoutPromise(
