@@ -2339,8 +2339,9 @@ async function handleAsk(
     );
 
     // Extract response content (reasoning disabled, so content should always be present)
-    const message = data.choices?.[0]?.message || {};
-    const cleanText = message.content || "I'm not sure yet. Ask me again?";
+    const responseMessage = data.choices?.[0]?.message || {};
+    const cleanText =
+      responseMessage.content || "I'm not sure yet. Ask me again?";
 
     console.log("🔵 [LLM] Extracted cleanText length:", cleanText?.length || 0);
     console.log(
