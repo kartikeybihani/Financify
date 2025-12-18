@@ -34,14 +34,20 @@ export default async function handler(req, res) {
     }
 
     // Fetch profile and memories from Supermemory
-    const [profile, memories] = await Promise.all([
+    // Profile is optional - if it fails, we still return memories
+    const [profile, memories] = await Promise.allSettled([
       fetchSupermemoryProfile(serverUserId),
       fetchSupermemoryMemories(serverUserId),
     ]);
 
+    // Extract results, handling failures gracefully
+    const profileResult = profile.status === "fulfilled" ? profile.value : null;
+    const memoriesResult =
+      memories.status === "fulfilled" ? memories.value : [];
+
     return res.status(200).json({
-      profile: profile || null,
-      memories: memories || [],
+      profile: profileResult || null,
+      memories: Array.isArray(memoriesResult) ? memoriesResult : [],
     });
   } catch (error) {
     console.error("❌ [SUPERMEMORY_PROFILE] Error:", error);
@@ -1039,7 +1045,7 @@ async function loadUserProfile(userId) {
 /**
  * Fetch user profile from Supermemory API v4/profile
  * @param {string} userId - User ID for container tag isolation
- * @returns {Promise<object>} - User profile with memories
+ * @returns {Promise<object|null>} - User profile with memories, or null if not available
  */
 async function fetchSupermemoryProfile(userId) {
   if (!SUPERMEMORY_API_KEY) {
@@ -1066,6 +1072,14 @@ async function fetchSupermemoryProfile(userId) {
       }
     );
 
+    // Handle 404 gracefully - profile endpoint might not exist yet
+    if (response.status === 404) {
+      console.log(
+        `ℹ️ [SUPERMEMORY] Profile endpoint not available for user ${userId} (404)`
+      );
+      return null;
+    }
+
     if (!response.ok) {
       const errorText = await response.text();
       let errorData;
@@ -1074,18 +1088,21 @@ async function fetchSupermemoryProfile(userId) {
       } catch {
         errorData = { message: errorText };
       }
-      throw new Error(
-        `Supermemory API error: ${errorData.message || response.statusText} (${
-          response.status
-        })`
+      // Log but don't throw - profile is optional
+      console.warn(
+        `⚠️ [SUPERMEMORY] Profile fetch failed: ${
+          errorData.message || response.statusText
+        } (${response.status})`
       );
+      return null;
     }
 
     const result = await response.json();
     console.log(`✅ [SUPERMEMORY] Fetched profile for user ${userId}`);
     return result;
   } catch (error) {
-    console.error(`❌ [SUPERMEMORY] Error fetching profile:`, error.message);
+    // Log but don't throw - profile fetch failure shouldn't break the request
+    console.warn(`⚠️ [SUPERMEMORY] Error fetching profile:`, error.message);
     return null;
   }
 }
