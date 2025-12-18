@@ -55,10 +55,7 @@ export default async function handler(req, res) {
 
       if (isProfileMemories) {
         // Fetch all profile memories (for edit/delete functionality)
-        const memories = await fetchSupermemoryProfileMemories(
-          serverUserId,
-          100
-        );
+        const memories = await fetchSupermemoryMemories(serverUserId);
         return res.status(200).json({
           memories: Array.isArray(memories) ? memories : [],
         });
@@ -1223,38 +1220,44 @@ async function fetchSupermemoryProfile(userId) {
 }
 
 /**
- * Fetch all profile memories (all memory documents) for a user
- * Returns all documents/memories that can be edited/deleted
+ * Fetch user memories from Supermemory using search API
+ * Returns all memory documents for edit/delete functionality
  * @param {string} userId - User ID for container tag isolation
- * @param {number} limit - Maximum number of memories to return (default: 100)
- * @returns {Promise<Array>} - Array of memory documents with full details
+ * @returns {Promise<Array>} - Array of user memories/documents
  */
-async function fetchSupermemoryProfileMemories(userId, limit = 100) {
+async function fetchSupermemoryMemories(userId) {
   if (!SUPERMEMORY_API_KEY) {
     console.warn(
-      "⚠️ [SUPERMEMORY] API key not configured, cannot fetch profile memories"
+      "⚠️ [SUPERMEMORY] API key not configured, cannot fetch memories"
     );
     return [];
   }
 
   if (!userId) {
-    console.warn(
-      "⚠️ [SUPERMEMORY] No userId provided, cannot fetch profile memories"
-    );
+    console.warn("⚠️ [SUPERMEMORY] No userId provided, cannot fetch memories");
     return [];
   }
 
   try {
-    // Use list endpoint to get all memory documents for the user
-    const response = await fetch(`${SUPERMEMORY_BASE_URL}/v3/documents/list`, {
+    // Use search API with a broad query to get all user memories
+    // Search for any content to retrieve all memories for the user
+    const response = await fetch(`${SUPERMEMORY_BASE_URL}/v4/search`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${SUPERMEMORY_API_KEY}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        containerTags: [`user_${userId}`],
-        limit: limit,
+        q: "*", // Broad query to get all memories
+        limit: 100, // Get up to 100 memories
+        threshold: 0.0, // Low threshold to get all results
+        rerank: false,
+        rewriteQuery: false,
+        include: {
+          documents: true,
+          summaries: false,
+        },
+        containerTag: `user_${userId}`, // v4 API uses singular containerTag
       }),
     });
 
@@ -1274,102 +1277,27 @@ async function fetchSupermemoryProfileMemories(userId, limit = 100) {
     }
 
     const result = await response.json();
-    // Extract documents from list response
-    // Supermemory API returns: { memories: [...], pagination: {...} }
-    const memories = result.memories || result.documents || result.data || [];
+    // Extract documents from search results
+    // Supermemory v4/search returns: { documents: [...], ... }
+    const memories = result.documents || result.results || result.data || [];
+
+    // Log first memory structure for debugging
+    if (memories.length > 0) {
+      console.log(
+        `🔍 [SUPERMEMORY] Sample memory structure:`,
+        JSON.stringify(memories[0], null, 2)
+      );
+    }
 
     console.log(
-      `✅ [SUPERMEMORY] Fetched ${memories.length} profile memories for user ${userId}`
+      `✅ [SUPERMEMORY] Fetched ${memories.length} memories for user ${userId}`
     );
     return Array.isArray(memories) ? memories : [];
   } catch (error) {
-    console.error(
-      `❌ [SUPERMEMORY] Error fetching profile memories:`,
-      error.message
-    );
+    console.error(`❌ [SUPERMEMORY] Error fetching memories:`, error.message);
     return [];
   }
 }
-
-/**
- * Fetch user memories from Supermemory using search API
- * @param {string} userId - User ID for container tag isolation
- * @returns {Promise<Array>} - Array of user memories/documents
- * @deprecated Using fetchSupermemoryMemoriesList instead for document summaries
- */
-// async function fetchSupermemoryMemories(userId) {
-//   if (!SUPERMEMORY_API_KEY) {
-//     console.warn(
-//       "⚠️ [SUPERMEMORY] API key not configured, cannot fetch memories"
-//     );
-//     return [];
-//   }
-
-//   if (!userId) {
-//     console.warn("⚠️ [SUPERMEMORY] No userId provided, cannot fetch memories");
-//     return [];
-//   }
-
-//   try {
-//     // Use search API with a broad query to get all user memories
-//     // Search for any content to retrieve all memories for the user
-//     const response = await fetch(`${SUPERMEMORY_BASE_URL}/v4/search`, {
-//       method: "POST",
-//       headers: {
-//         Authorization: `Bearer ${SUPERMEMORY_API_KEY}`,
-//         "Content-Type": "application/json",
-//       },
-//       body: JSON.stringify({
-//         q: "*", // Broad query to get all memories
-//         limit: 100, // Get up to 100 memories
-//         threshold: 0.0, // Low threshold to get all results
-//         rerank: false,
-//         rewriteQuery: false,
-//         include: {
-//           documents: true,
-//           summaries: false,
-//         },
-//         containerTag: `user_${userId}`, // v4 API uses singular containerTag
-//       }),
-//     });
-
-//     if (!response.ok) {
-//       const errorText = await response.text();
-//       let errorData;
-//       try {
-//         errorData = JSON.parse(errorText);
-//       } catch {
-//         errorData = { message: errorText };
-//       }
-//       throw new Error(
-//         `Supermemory API error: ${errorData.message || response.statusText} (${
-//           response.status
-//         })`
-//       );
-//     }
-
-//     const result = await response.json();
-//     // Extract documents from search results
-//     // Supermemory v4/search returns: { documents: [...], ... }
-//     const memories = result.documents || result.results || result.data || [];
-
-//     // Log first memory structure for debugging
-//     if (memories.length > 0) {
-//       console.log(
-//         `🔍 [SUPERMEMORY] Sample memory structure:`,
-//         JSON.stringify(memories[0], null, 2)
-//       );
-//     }
-
-//     console.log(
-//       `✅ [SUPERMEMORY] Fetched ${memories.length} memories for user ${userId}`
-//     );
-//     return Array.isArray(memories) ? memories : [];
-//   } catch (error) {
-//     console.error(`❌ [SUPERMEMORY] Error fetching memories:`, error.message);
-//     return [];
-//   }
-// }
 
 /**
  * Fetch user memories from Supermemory using list documents API (v3/documents/list)
@@ -1629,8 +1557,7 @@ export {
   storeConversationMemory,
   fetchSupermemoryProfile,
   fetchSupermemoryMemoriesList,
-  fetchSupermemoryProfileMemories,
-  // fetchSupermemoryMemories, // Deprecated - using fetchSupermemoryMemoriesList instead
+  fetchSupermemoryMemories,
   // saveMemoryCandidates removed - migrating to Supermemory
   // updateMemorySummary removed - Supermemory handles summarization
   // generateMemorySummary removed - Supermemory handles summarization
