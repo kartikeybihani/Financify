@@ -4,11 +4,13 @@ import { View, Text, Animated, Easing, StyleSheet, Image } from "react-native";
 interface FinnyLoadingIndicatorProps {
   message?: string;
   color?: string;
+  imageSource?: any;
 }
 
 const FinnyLoadingIndicator: React.FC<FinnyLoadingIndicatorProps> = ({
   message = "Loading...",
   color = "#4A90E2",
+  imageSource,
 }) => {
   const loadingDotAnimations = useRef([
     new Animated.Value(0.3),
@@ -129,7 +131,9 @@ const FinnyLoadingIndicator: React.FC<FinnyLoadingIndicatorProps> = ({
           ]}
         >
           <Image
-            source={require("../../../assets/images/finnylap1.png")}
+            source={
+              imageSource || require("../../../assets/images/finnylap1.png")
+            }
             style={styles.loadingImage}
             resizeMode="cover"
           />

@@ -201,14 +201,14 @@ export default function DetailedMemoriesScreen({
   };
 
   const deleteProfileMemory = async (memoryId: string) => {
+    // Capture original list and the specific memory before making optimistic update
+    const originalMemories = [...profileMemories];
+    const memoryToDelete = originalMemories.find((m) => m.id === memoryId);
+    const documentId = memoryToDelete?.documents?.[0]?.id || memoryId;
+
     try {
       setDeletingMemoryId(memoryId);
-
-      const memoryToDelete = profileMemories.find((m) => m.id === memoryId);
-      const documentId = memoryToDelete?.documents?.[0]?.id || memoryId;
-
       // Optimistic update
-      const originalMemories = [...profileMemories];
       setProfileMemories((prev) => prev.filter((m) => m.id !== memoryId));
 
       const BASE_URL =
@@ -240,20 +240,8 @@ export default function DetailedMemoriesScreen({
       console.log(`Profile memory deleted successfully: ${memoryId}`);
     } catch (error: any) {
       console.error("Error deleting profile memory:", error);
-      // Restore original state on error
-      setProfileMemories((prev) => {
-        const restored = [...prev];
-        const deletedMemory = profileMemories.find((m) => m.id === memoryId);
-        if (deletedMemory) {
-          restored.push(deletedMemory);
-          restored.sort((a, b) => {
-            const dateA = new Date(a.updatedAt || a.createdAt || 0).getTime();
-            const dateB = new Date(b.updatedAt || b.createdAt || 0).getTime();
-            return dateB - dateA;
-          });
-        }
-        return restored;
-      });
+      // Restore original state on error using the snapshot captured before deletion
+      setProfileMemories(originalMemories);
       Alert.alert("Error", error.message || "Failed to delete memory");
     } finally {
       setDeletingMemoryId(null);

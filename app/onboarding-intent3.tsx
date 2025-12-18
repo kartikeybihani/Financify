@@ -17,6 +17,7 @@ import { supabase } from "@/src/lib/supabase/supabase";
 import logger from "@/src/utils/core/logger";
 import { logOnboardingEvent } from "@/src/utils/auth/onboarding";
 import FinanceFact from "@/src/components/onboarding/FinanceFact";
+import { authenticatedFetch } from "@/src/utils/auth/authToken";
 
 const OPTIONS = [
   {
@@ -117,7 +118,59 @@ export default function IntentQuestion3Screen() {
             .update({ onboarding_step: 3, intent_q3: selectedId })
             .eq("id", user.id);
         }
-      } catch {}
+      } catch (error) {
+        logger.error("❌ [ONBOARDING_INTENT3] Error updating profile:", error);
+      }
+
+      // Store onboarding memory in Supermemory (fire-and-forget, don't block navigation)
+      try {
+        const profileDataStr = await AsyncStorage.getItem(
+          "pending_profile_data"
+        );
+        const profileData = profileDataStr ? JSON.parse(profileDataStr) : null;
+        const intentAnswersStr = await AsyncStorage.getItem(
+          "pending_intent_answers"
+        );
+        const intentAnswers = intentAnswersStr
+          ? JSON.parse(intentAnswersStr)
+          : null;
+
+        // Only proceed if we have data to store
+        if (profileData || intentAnswers) {
+          const BASE_URL =
+            process.env.EXPO_PUBLIC_APP_BASE_URL ||
+            "https://financify-rose.vercel.app";
+
+          // Fire-and-forget: don't await, don't block navigation
+          authenticatedFetch(`${BASE_URL}/api/memory`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              type: "onboarding_profile",
+              profileData,
+              intentAnswers,
+            }),
+          }).catch((error) => {
+            // Log but don't throw - onboarding memory storage shouldn't block user flow
+            logger.warn(
+              "⚠️ [ONBOARDING_INTENT3] Failed to store onboarding memory:",
+              error
+            );
+          });
+
+          logger.info(
+            "✅ [ONBOARDING_INTENT3] Triggered onboarding memory storage"
+          );
+        }
+      } catch (error) {
+        // Log but don't throw - onboarding memory storage shouldn't block user flow
+        logger.warn(
+          "⚠️ [ONBOARDING_INTENT3] Error preparing onboarding memory storage:",
+          error
+        );
+      }
 
       router.replace("/onboarding-connect" as any);
       logOnboardingEvent({ stage: "q1_3", action: "complete" });

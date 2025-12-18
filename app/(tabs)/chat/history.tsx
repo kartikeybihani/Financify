@@ -10,6 +10,7 @@ import {
   Dimensions,
   RefreshControl,
   ActivityIndicator,
+  Image,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -89,6 +90,19 @@ const styles = {
   },
   emptyStateIcon: {
     marginBottom: responsivePadding(16),
+  },
+  emptyStateImageCircle: {
+    width: screenWidth * 0.45,
+    height: screenWidth * 0.45,
+    borderRadius: (screenWidth * 0.45) / 2,
+    overflow: "hidden" as const,
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
+    marginBottom: responsivePadding(16),
+  },
+  emptyStateImage: {
+    width: "100%",
+    height: "100%",
   },
   emptyStateTitle: {
     fontSize: responsiveFontSize(18),
@@ -341,12 +355,13 @@ export default function ChatHistoryScreen({
 
   const renderEmptyState = () => (
     <View style={styles.emptyState}>
-      <Ionicons
-        name="chatbubbles-outline"
-        size={64}
-        color="rgba(255, 255, 255, 0.3)"
-        style={styles.emptyStateIcon}
-      />
+      <View style={styles.emptyStateImageCircle}>
+        <Image
+          source={require("../../../assets/images/thinking2.png")}
+          style={styles.emptyStateImage}
+          resizeMode="cover"
+        />
+      </View>
       <Text style={styles.emptyStateTitle}>No chat history yet</Text>
       <Text style={styles.emptyStateDescription}>
         Start chatting with Finny to see your conversation history here. Your
@@ -365,7 +380,10 @@ export default function ChatHistoryScreen({
   );
 
   const renderLoading = () => (
-    <FinnyLoadingIndicator message="Loading chat history..." />
+    <FinnyLoadingIndicator
+      message="Loading chat history..."
+      imageSource={require("../../../assets/images/thinking2.png")}
+    />
   );
 
   return (

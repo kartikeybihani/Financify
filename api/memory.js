@@ -170,12 +170,47 @@ export default async function handler(req, res) {
         message: error.message,
       });
     }
+  } else if (method === "POST") {
+    // Store onboarding memory
+    try {
+      const { type, profileData, intentAnswers } = req.body;
+      console.log(
+        `🔍 [MEMORY_API] POST request - type: ${type}, hasProfileData: ${!!profileData}, hasIntentAnswers: ${!!intentAnswers}`
+      );
+
+      if (type !== "onboarding_profile") {
+        console.log(`⚠️ [MEMORY_API] POST - unsupported type: ${type}`);
+        return res.status(400).json({ error: "Unsupported type" });
+      }
+
+      const result = await storeOnboardingMemory(
+        serverUserId,
+        profileData || null,
+        intentAnswers || null
+      );
+
+      if (!result) {
+        console.log(`⚠️ [MEMORY_API] POST - failed to store onboarding memory`);
+        return res.status(500).json({
+          error: "Failed to store onboarding memory",
+        });
+      }
+
+      console.log(`✅ [MEMORY_API] POST success - stored onboarding memory`);
+      return res.status(200).json({ success: true, result });
+    } catch (error) {
+      console.error("❌ [SUPERMEMORY_ONBOARDING] Error:", error);
+      return res.status(500).json({
+        error: "Failed to store onboarding memory",
+        message: error.message,
+      });
+    }
   } else {
     console.log(`⚠️ [MEMORY_API] Method not allowed: ${method}`);
     return res.status(405).json({
       error: "Method not allowed",
       receivedMethod: method,
-      allowedMethods: ["GET", "DELETE", "PUT"],
+      allowedMethods: ["GET", "DELETE", "PUT", "POST"],
     });
   }
 }
@@ -864,6 +899,268 @@ async function storeConversationMemory(
 }
 
 /**
+ * Store onboarding profile and intent data in Supermemory
+ * @param {string} userId - User ID for container tag isolation
+ * @param {object} profileData - Profile data (age, occupation, referral)
+ * @param {object} intentAnswers - Intent answers (money_mindset, stress_level, emergency_readiness)
+ * @returns {Promise<object>} - Supermemory API response
+ */
+async function storeOnboardingMemory(userId, profileData, intentAnswers) {
+  if (!SUPERMEMORY_API_KEY) {
+    console.warn(
+      "⚠️ [SUPERMEMORY] API key not configured, skipping onboarding memory storage"
+    );
+    return null;
+  }
+
+  if (!userId) {
+    console.warn(
+      "⚠️ [SUPERMEMORY] No userId provided, skipping onboarding memory storage"
+    );
+    return null;
+  }
+
+  // Build rich memory content from onboarding data
+  const memoryContent = buildOnboardingContent(profileData, intentAnswers);
+
+  // Build metadata with onboarding context
+  const memoryMetadata = buildOnboardingMetadata(
+    userId,
+    profileData,
+    intentAnswers
+  );
+
+  // Filter out null, undefined, empty objects, and nested objects (Supermemory only accepts primitives and string arrays)
+  const cleanedMetadata = Object.fromEntries(
+    Object.entries(memoryMetadata).filter(([key, value]) => {
+      // Remove null, undefined
+      if (value === null || value === undefined) return false;
+      // Remove all objects (nested objects not allowed - only primitives and string arrays)
+      if (typeof value === "object" && !Array.isArray(value)) return false;
+      // Remove empty arrays
+      if (Array.isArray(value) && value.length === 0) return false;
+      // Only keep primitives (string, number, boolean) and non-empty string arrays
+      return true;
+    })
+  );
+
+  const requestBody = {
+    content: memoryContent,
+    metadata: cleanedMetadata,
+    containerTags: [`user_${userId}`],
+  };
+
+  try {
+    const response = await fetch(`${SUPERMEMORY_BASE_URL}/v3/documents`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${SUPERMEMORY_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(requestBody),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      let errorData;
+      try {
+        errorData = JSON.parse(errorText);
+      } catch {
+        errorData = { message: errorText };
+      }
+      throw new Error(
+        `Supermemory API error: ${errorData.message || response.statusText} (${
+          response.status
+        })`
+      );
+    }
+
+    const result = await response.json();
+    console.log(
+      `✅ [SUPERMEMORY] Stored onboarding memory for user ${userId}: ${
+        result.id || "success"
+      }`
+    );
+    return result;
+  } catch (error) {
+    console.error(
+      `❌ [SUPERMEMORY] Error storing onboarding memory:`,
+      error.message
+    );
+    // Don't throw - memory storage failures shouldn't break onboarding flow
+    return null;
+  }
+}
+
+/**
+ * Build rich memory content from onboarding data
+ * @param {object} profileData - Profile data (age, occupation, referral)
+ * @param {object} intentAnswers - Intent answers (money_mindset, stress_level, emergency_readiness)
+ * @returns {string} - Formatted memory content
+ */
+function buildOnboardingContent(profileData, intentAnswers) {
+  const parts = [];
+
+  // Profile section
+  if (profileData) {
+    const profileParts = [];
+    if (profileData.age) {
+      profileParts.push(`Age ${profileData.age}`);
+    }
+    if (profileData.occupation) {
+      profileParts.push(`Occupation: ${profileData.occupation}`);
+    }
+    if (profileData.referral) {
+      const referralLabels = {
+        tiktok: "TikTok",
+        instagram: "Instagram",
+        twitter: "Twitter/X",
+        email: "Email",
+        friend: "Friend",
+        appstore: "App Store",
+        reddit: "Reddit",
+        founder: "Founder",
+      };
+      const referralLabel =
+        referralLabels[profileData.referral] || profileData.referral;
+      profileParts.push(`Found Financify via: ${referralLabel}`);
+    }
+    if (profileParts.length > 0) {
+      parts.push(`Onboarding Profile:\n${profileParts.join("\n")}`);
+    }
+  }
+
+  // Intent answers section
+  if (intentAnswers) {
+    const intentParts = [];
+
+    // Money mindset
+    if (intentAnswers.money_mindset) {
+      const mindsetLabels = {
+        freedom: "Tool for freedom",
+        stress: "It stresses me",
+        ignore: "I kind of ignore it",
+        disciplined: "I'm disciplined",
+      };
+      const mindsetLabel =
+        mindsetLabels[intentAnswers.money_mindset] ||
+        intentAnswers.money_mindset;
+      intentParts.push(`Money mindset: ${mindsetLabel}`);
+    }
+
+    // Stress level
+    if (intentAnswers.stress_level) {
+      const stressLabels = {
+        chill: "Chill",
+        tense: "A bit tense",
+        stressed: "Stressed",
+        overwhelmed: "Overwhelmed",
+      };
+      const stressLabel =
+        stressLabels[intentAnswers.stress_level] || intentAnswers.stress_level;
+      intentParts.push(`Financial stress level: ${stressLabel}`);
+    }
+
+    // Emergency readiness
+    if (intentAnswers.emergency_readiness) {
+      const emergencyLabels = {
+        yes: "Yes",
+        maybe: "Maybe",
+        no: "No",
+        unsure: "Not sure",
+      };
+      const emergencyLabel =
+        emergencyLabels[intentAnswers.emergency_readiness] ||
+        intentAnswers.emergency_readiness;
+      intentParts.push(
+        `Emergency readiness ($1,000 expense): ${emergencyLabel}`
+      );
+    }
+
+    if (intentParts.length > 0) {
+      parts.push(`Financial Intent & Mindset:\n${intentParts.join("\n")}`);
+    }
+  }
+
+  return parts.join("\n\n");
+}
+
+/**
+ * Build metadata for onboarding memory storage
+ * @param {string} userId - User ID
+ * @param {object} profileData - Profile data (age, occupation, referral)
+ * @param {object} intentAnswers - Intent answers (money_mindset, stress_level, emergency_readiness)
+ * @returns {object} - Metadata object
+ */
+function buildOnboardingMetadata(userId, profileData, intentAnswers) {
+  const tags = ["onboarding", "profile", "intent_answers"];
+
+  // Add specific tags based on answers
+  if (intentAnswers?.money_mindset) {
+    tags.push(`money_mindset_${intentAnswers.money_mindset}`);
+  }
+  if (intentAnswers?.stress_level) {
+    tags.push(`stress_level_${intentAnswers.stress_level}`);
+  }
+  if (intentAnswers?.emergency_readiness) {
+    tags.push(`emergency_${intentAnswers.emergency_readiness}`);
+  }
+  if (profileData?.referral) {
+    tags.push(`referral_${profileData.referral}`);
+  }
+
+  // Age group tags
+  if (profileData?.age) {
+    const age = parseInt(profileData.age);
+    if (age >= 18 && age <= 24) tags.push("age_18_24");
+    else if (age >= 25 && age <= 34) tags.push("age_25_34");
+    else if (age >= 35 && age <= 44) tags.push("age_35_44");
+    else if (age >= 45 && age <= 54) tags.push("age_45_54");
+    else if (age >= 55) tags.push("age_55_plus");
+  }
+
+  // Extract financial tags from occupation text if available
+  if (profileData?.occupation) {
+    const occupationTags = extractSupermemoryFinancialTags(
+      profileData.occupation
+    );
+    tags.push(...occupationTags);
+  }
+
+  const metadata = {
+    user_id: userId,
+    timestamp: new Date().toISOString(),
+    source: "onboarding",
+    memory_type: "profile_trait",
+    onboarding_step: 3,
+    created_via: "onboarding_flow_v1",
+    tags: tags,
+    financial_relevance: "high", // Onboarding data is always highly relevant
+    context_type: "profile",
+  };
+
+  // Add raw profile data (primitives only)
+  if (profileData) {
+    if (profileData.age) metadata.age = parseInt(profileData.age);
+    if (profileData.occupation)
+      metadata.occupation = String(profileData.occupation);
+    if (profileData.referral) metadata.referral = String(profileData.referral);
+  }
+
+  // Add raw intent answers (primitives only)
+  if (intentAnswers) {
+    if (intentAnswers.money_mindset)
+      metadata.intent_q1 = String(intentAnswers.money_mindset);
+    if (intentAnswers.stress_level)
+      metadata.intent_q2 = String(intentAnswers.stress_level);
+    if (intentAnswers.emergency_readiness)
+      metadata.intent_q3 = String(intentAnswers.emergency_readiness);
+  }
+
+  return metadata;
+}
+
+/**
  * Build rich memory content from conversation
  * @param {string} userMessage - User's message
  * @param {string} finnyResponse - Finny's response
@@ -925,49 +1222,63 @@ function extractSupermemoryFinancialTags(message) {
   const tags = [];
   const lower = message.toLowerCase();
 
-  // Goal-related
-  if (/want|goal|plan|dream|target|save for/.test(lower)) {
-    tags.push("goal_mentioned");
-  }
+  // Centralized financial tag definitions for Supermemory
+  const SUPERMEMORY_FINANCIAL_TAG_RULES = [
+    {
+      // "i wanna", "tryna", "manifest", etc.
+      tag: "goal_mentioned",
+      regex:
+        /want|wanna|tryna|trying to|goal|plan|planning|dream|dreaming|target|save for|manifest/,
+    },
+    {
+      // "trip", "vacay", "getaway", "solo trip", "roadtrip", etc.
+      tag: "travel_interest",
+      regex:
+        /travel|trip|vacation|vacay|getaway|japan|europe|visit|holiday|roadtrip|road trip|solo trip|backpack|backpacking|flight|flights|plane ticket/,
+    },
+    {
+      // "cop", "grab", "upgrade", "new phone", "down payment", etc.
+      tag: "purchase_interest",
+      regex:
+        /buy|purchase|cop|cop a|grab|acquire|pick up|upgrade|afford|macbook|laptop|phone|iphone|car|tesla|whip|ride|house|home|apartment|place of my own|down payment|dp on a house/,
+    },
+    {
+      // "broke", "in the red", "loans", "cc debt", etc.
+      tag: "debt_concern",
+      regex:
+        /debt|loan|loans|student debt|student loans|credit card|cc debt|owe|pay off|payoff|in the red|collections|interest payments|minimum payment|min payment|maxed out|maxed/,
+    },
+    {
+      // "stack", "stash", "rainy day", "emergency fund", etc.
+      tag: "savings_discussion",
+      regex:
+        /save|saving up|savings|stacking|stack cash|stack bread|stash|rainy day fund|emergency fund|emergency money|safety net|cushion/,
+    },
+    {
+      // "invest", "index funds", "crypto", "bag", "portfolio", etc.
+      tag: "investment_discussion",
+      regex:
+        /invest|investment|investing|stocks?|stock market|etf|index fund|index funds|portfolio|brokerage|retirement|401k|ira|roth|roth ira|crypto|bitcoin|btc|eth|ethereum|bag|long term hold|lt hold/,
+    },
+    {
+      // "budget", "broke", "spending too much", "burning cash", etc.
+      tag: "budget_discussion",
+      regex:
+        /budget|budgeting|spending|expense|expenses|spend|spending too much|overspend|overspending|broke|burning cash|living paycheck to paycheck|paycheck to paycheck|tight on money|tight on cash|cut back|cutting back/,
+    },
+    {
+      // "paycheck", "payday", "side hustle", "gig", "raise", etc.
+      tag: "income_discussion",
+      regex:
+        /salary|income|earn|earning|paycheck|pay check|pay day|payday|wage|hourly|raise|bonus|side hustle|side gig|freelance|freelancing|contracting|overtime|ot pay/,
+    },
+  ];
 
-  // Travel
-  if (/travel|trip|vacation|japan|europe|visit|holiday/.test(lower)) {
-    tags.push("travel_interest");
-  }
-
-  // Major purchases
-  if (
-    /buy|purchase|afford|macbook|laptop|car|house|home|apartment/.test(lower)
-  ) {
-    tags.push("purchase_interest");
-  }
-
-  // Debt concerns
-  if (/debt|loan|credit card|owe|pay off|payoff/.test(lower)) {
-    tags.push("debt_concern");
-  }
-
-  // Savings
-  if (/save|savings|emergency fund|emergency/.test(lower)) {
-    tags.push("savings_discussion");
-  }
-
-  // Investment
-  if (
-    /invest|investment|stock|portfolio|retirement|401k|ira|roth/.test(lower)
-  ) {
-    tags.push("investment_discussion");
-  }
-
-  // Budget/spending
-  if (/budget|spending|expense|spend|cost/.test(lower)) {
-    tags.push("budget_discussion");
-  }
-
-  // Income
-  if (/salary|income|earn|paycheck|raise|bonus/.test(lower)) {
-    tags.push("income_discussion");
-  }
+  SUPERMEMORY_FINANCIAL_TAG_RULES.forEach(({ tag, regex }) => {
+    if (regex.test(lower)) {
+      tags.push(tag);
+    }
+  });
 
   return tags;
 }
@@ -1573,6 +1884,7 @@ export {
   isSensitiveData,
   getExpiryDate,
   storeConversationMemory,
+  storeOnboardingMemory,
   fetchSupermemoryProfile,
   fetchSupermemoryMemoriesList,
   fetchSupermemoryMemories,

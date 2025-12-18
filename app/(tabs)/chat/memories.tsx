@@ -10,6 +10,7 @@ import {
   Animated,
   LayoutAnimation,
   UIManager,
+  Image,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -528,15 +529,20 @@ export default function MemoriesScreen({ onBack }: MemoriesScreenProps = {}) {
         {/* Content */}
         <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
           {loading ? (
-            <FinnyLoadingIndicator message="Loading memories..." />
+            <FinnyLoadingIndicator
+              message="Loading memories..."
+              imageSource={require("../../../assets/images/thinking2.png")}
+            />
           ) : !hasMemories ? (
             <View style={styles.emptyContainer}>
               <View style={styles.emptyIcon}>
-                <Ionicons
-                  name="bookmark-outline"
-                  size={64}
-                  color="rgba(255, 255, 255, 0.3)"
-                />
+                <View style={styles.emptyImageCircle}>
+                  <Image
+                    source={require("../../../assets/images/thinking2.png")}
+                    style={styles.emptyImage}
+                    resizeMode="cover"
+                  />
+                </View>
               </View>
               <Text style={styles.emptyTitle}>No Memories Yet</Text>
               <Text style={styles.emptyDescription}>
@@ -760,6 +766,18 @@ const styles = {
   },
   emptyIcon: {
     marginBottom: responsivePadding(16),
+  },
+  emptyImageCircle: {
+    width: screenWidth * 0.45,
+    height: screenWidth * 0.45,
+    borderRadius: (screenWidth * 0.45) / 2,
+    overflow: "hidden" as const,
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
+  },
+  emptyImage: {
+    width: "100%",
+    height: "100%",
   },
   emptyTitle: {
     fontSize: responsiveFontSize(18),
