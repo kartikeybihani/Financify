@@ -7,8 +7,9 @@ import {
   Platform,
   ActivityIndicator,
   Alert,
-  TextInput,
-  Modal,
+  Animated,
+  LayoutAnimation,
+  UIManager,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -19,6 +20,8 @@ import { useAuthNavigation } from "@/src/contexts/AuthNavigationContext";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { authenticatedFetch } from "@/src/utils/auth/authToken";
 import { MemorySummary, MemoriesScreenProps } from "@/src/types/plaid";
+import EditMemoryModal from "@/src/components/modals/EditMemoryModal";
+import DetailedMemoriesScreen from "@/app/(tabs)/chat/detailed-memories";
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
 
@@ -43,6 +46,14 @@ export default function MemoriesScreen({ onBack }: MemoriesScreenProps = {}) {
   const router = useRouter();
   const { session } = useAuthNavigation();
 
+  // Enable LayoutAnimation on Android
+  if (
+    Platform.OS === "android" &&
+    UIManager.setLayoutAnimationEnabledExperimental
+  ) {
+    UIManager.setLayoutAnimationEnabledExperimental(true);
+  }
+
   const handleBack = () => {
     if (onBack) {
       onBack();
@@ -58,17 +69,13 @@ export default function MemoriesScreen({ onBack }: MemoriesScreenProps = {}) {
   const [editText, setEditText] = useState("");
   const [deletingMemoryId, setDeletingMemoryId] = useState<string | null>(null);
   const [updatingMemoryId, setUpdatingMemoryId] = useState<string | null>(null);
+  const [expandedSummaries, setExpandedSummaries] = useState<Set<string>>(
+    new Set()
+  );
 
-  // Profile memories detail view state
-  const [selectedSummary, setSelectedSummary] = useState<MemorySummary | null>(
-    null
-  );
-  const [profileMemories, setProfileMemories] = useState<any[]>([]);
-  const [loadingProfileMemories, setLoadingProfileMemories] = useState(false);
-  const [editingProfileMemory, setEditingProfileMemory] = useState<any | null>(
-    null
-  );
-  const [editProfileMemoryText, setEditProfileMemoryText] = useState("");
+  // Detailed memories screen animation state
+  const [showDetailedMemories, setShowDetailedMemories] = useState(false);
+  const [detailedMemoriesSlideAnimation] = useState(new Animated.Value(0));
 
   // Fetch memories data when component mounts
   useEffect(() => {
@@ -394,207 +401,70 @@ export default function MemoriesScreen({ onBack }: MemoriesScreenProps = {}) {
     });
   };
 
-  // Handle clicking on a summary card to show profile memories
-  const handleSummaryClick = async (summary: MemorySummary) => {
-    setSelectedSummary(summary);
-    setLoadingProfileMemories(true);
+  // Truncate text to approximately 30 words
+  const truncateText = (text: string, maxWords: number = 30): string => {
+    if (!text) return "";
+    const words = text.split(/\s+/);
+    if (words.length <= maxWords) return text;
+    return words.slice(0, maxWords).join(" ") + "...";
+  };
 
-    try {
-      const BASE_URL =
-        process.env.EXPO_PUBLIC_APP_BASE_URL ||
-        "https://financify-rose.vercel.app";
+  // Toggle summary expansion - only one can be expanded at a time
+  const toggleSummaryExpansion = (memoryId: string) => {
+    LayoutAnimation.configureNext(
+      LayoutAnimation.create(
+        200,
+        LayoutAnimation.Types.easeInEaseOut,
+        LayoutAnimation.Properties.opacity
+      )
+    );
 
-      const response = await authenticatedFetch(
-        `${BASE_URL}/api/memory?type=profile`,
-        {
-          method: "GET",
-          headers: {
-            "Content-Type": "application/json",
-          },
-        }
-      );
-
-      if (!response.ok) {
-        throw new Error(
-          `Failed to fetch profile memories: ${response.statusText}`
-        );
+    setExpandedSummaries((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(memoryId)) {
+        // If already expanded, collapse it
+        newSet.delete(memoryId);
+      } else {
+        // If not expanded, collapse all others and expand this one
+        newSet.clear();
+        newSet.add(memoryId);
       }
+      return newSet;
+    });
+  };
 
-      const data = await response.json();
-      const memories = data.memories || [];
-
-      // Sort by date (newest first)
-      memories.sort((a: any, b: any) => {
-        const dateA = new Date(a.updatedAt || a.createdAt || 0).getTime();
-        const dateB = new Date(b.updatedAt || b.createdAt || 0).getTime();
-        return dateB - dateA;
-      });
-
-      setProfileMemories(memories);
-    } catch (error) {
-      console.error("Error fetching profile memories:", error);
-      Alert.alert("Error", "Failed to load memories. Please try again.");
-      setProfileMemories([]);
-    } finally {
-      setLoadingProfileMemories(false);
-    }
+  // Handle opening detailed memories screen with animation
+  const handleOpenDetailModal = () => {
+    setShowDetailedMemories(true);
+    Animated.timing(detailedMemoriesSlideAnimation, {
+      toValue: 1,
+      duration: 300,
+      useNativeDriver: true,
+    }).start();
   };
 
   const handleCloseDetailModal = () => {
-    setSelectedSummary(null);
-    setProfileMemories([]);
-    setEditingProfileMemory(null);
-    setEditProfileMemoryText("");
+    Animated.timing(detailedMemoriesSlideAnimation, {
+      toValue: 0,
+      duration: 300,
+      useNativeDriver: true,
+    }).start(() => {
+      setShowDetailedMemories(false);
+    });
   };
 
-  // Edit profile memory
-  const handleEditProfileMemory = (memory: any) => {
-    setEditingProfileMemory(memory);
-    // Use content field if available, otherwise use summary or title
-    setEditProfileMemoryText(
-      memory.content || memory.summary || memory.title || ""
-    );
-  };
-
-  const handleCancelEditProfileMemory = () => {
-    setEditingProfileMemory(null);
-    setEditProfileMemoryText("");
-  };
-
-  const handleSaveEditProfileMemory = async () => {
-    if (!editingProfileMemory || !editProfileMemoryText.trim()) {
-      Alert.alert("Error", "Memory text cannot be empty");
-      return;
+  // Animation interpolation
+  const detailedMemoriesTranslateX = detailedMemoriesSlideAnimation.interpolate(
+    {
+      inputRange: [0, 1],
+      outputRange: [screenWidth, 0],
     }
-
-    try {
-      setUpdatingMemoryId(editingProfileMemory.id);
-      const BASE_URL =
-        process.env.EXPO_PUBLIC_APP_BASE_URL ||
-        "https://financify-rose.vercel.app";
-
-      // Use the document/memory ID
-      const memoryId = editingProfileMemory.id;
-
-      const response = await authenticatedFetch(`${BASE_URL}/api/memory`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          memoryId: memoryId,
-          documentId: memoryId, // Use same ID for document
-          content: editProfileMemoryText.trim(),
-        }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({
-          error: `HTTP ${response.status}: ${response.statusText}`,
-        }));
-        throw new Error(errorData.error || "Failed to update memory");
-      }
-
-      // Update local state
-      setProfileMemories((prev) =>
-        prev.map((m) =>
-          m.id === editingProfileMemory.id
-            ? { ...m, content: editProfileMemoryText.trim() }
-            : m
-        )
-      );
-
-      setEditingProfileMemory(null);
-      setEditProfileMemoryText("");
-      Alert.alert("Success", "Memory updated successfully");
-    } catch (error: any) {
-      console.error("Error updating profile memory:", error);
-      Alert.alert("Error", error?.message || "Failed to update memory");
-    } finally {
-      setUpdatingMemoryId(null);
-    }
-  };
-
-  // Delete profile memory
-  const handleDeleteProfileMemory = (memoryId: string) => {
-    Alert.alert(
-      "Delete Memory",
-      "Are you sure you want to delete this memory? This action cannot be undone.",
-      [
-        {
-          text: "Cancel",
-          style: "cancel",
-        },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: () => deleteProfileMemory(memoryId),
-        },
-      ]
-    );
-  };
-
-  const deleteProfileMemory = async (memoryId: string) => {
-    try {
-      setDeletingMemoryId(memoryId);
-
-      // Optimistic update
-      const originalMemories = [...profileMemories];
-      setProfileMemories((prev) => prev.filter((m) => m.id !== memoryId));
-
-      const BASE_URL =
-        process.env.EXPO_PUBLIC_APP_BASE_URL ||
-        "https://financify-rose.vercel.app";
-
-      const queryParams = new URLSearchParams({
-        memoryId,
-        documentId: memoryId, // Use same ID for document
-      });
-
-      const response = await authenticatedFetch(
-        `${BASE_URL}/api/memory?${queryParams.toString()}`,
-        {
-          method: "DELETE",
-          headers: {
-            "Content-Type": "application/json",
-          },
-        }
-      );
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({
-          error: `HTTP ${response.status}: ${response.statusText}`,
-        }));
-        throw new Error(errorData.error || "Failed to delete memory");
-      }
-
-      console.log(`Profile memory deleted successfully: ${memoryId}`);
-    } catch (error: any) {
-      console.error("Error deleting profile memory:", error);
-      // Restore original state on error
-      setProfileMemories((prev) => {
-        const restored = [...prev];
-        const deletedMemory = profileMemories.find((m) => m.id === memoryId);
-        if (deletedMemory) {
-          restored.push(deletedMemory);
-          restored.sort((a, b) => {
-            const dateA = new Date(a.updatedAt || a.createdAt || 0).getTime();
-            const dateB = new Date(b.updatedAt || b.createdAt || 0).getTime();
-            return dateB - dateA;
-          });
-        }
-        return restored;
-      });
-      Alert.alert("Error", error.message || "Failed to delete memory");
-    } finally {
-      setDeletingMemoryId(null);
-    }
-  };
+  );
 
   if (loading) {
     return (
       <View style={styles.container}>
-        <SafeAreaView style={{ flex: 1, marginBottom: insets.bottom - 10 }}>
+        <SafeAreaView style={{ flex: 1 }}>
           <View style={styles.header}>
             <View style={{ width: 40 }} />
             <Text style={styles.headerTitle}>Memories</Text>
@@ -612,7 +482,7 @@ export default function MemoriesScreen({ onBack }: MemoriesScreenProps = {}) {
 
   return (
     <View style={styles.container}>
-      <SafeAreaView style={{ flex: 1, marginBottom: insets.bottom - 10 }}>
+      <SafeAreaView style={{ flex: 1 }}>
         {/* Header */}
         <View style={styles.header}>
           <TouchableOpacity
@@ -655,279 +525,141 @@ export default function MemoriesScreen({ onBack }: MemoriesScreenProps = {}) {
             </View>
           ) : (
             <View style={styles.memorySection}>
-              {/* Memory Summaries */}
-              {memorySummaries.map((memorySummary, index) => (
-                <TouchableOpacity
-                  key={memorySummary.id || index}
-                  style={styles.summaryCard}
-                  onPress={() => handleSummaryClick(memorySummary)}
-                  activeOpacity={0.7}
+              {/* Detailed List Button */}
+              <TouchableOpacity
+                style={styles.detailButton}
+                onPress={handleOpenDetailModal}
+                activeOpacity={0.7}
+              >
+                <LinearGradient
+                  colors={["rgba(15, 76, 129, 0.95)", "rgba(9, 38, 76, 0.9)"]}
+                  style={styles.detailButtonGradient}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
                 >
-                  <View style={styles.summaryHeader}>
-                    <View style={styles.summaryLeft}>
-                      <Text style={styles.dateLabel}>
-                        {formatDate(memorySummary.created_at)}
-                      </Text>
-                      {/* Display title if available */}
-                      {memorySummary.title && (
-                        <Text style={styles.summaryTitle}>
-                          {memorySummary.title}
-                        </Text>
-                      )}
-                      <Text style={styles.summaryText}>
-                        {memorySummary.summary || memorySummary.summary_text}
-                      </Text>
-                    </View>
-                    {/* Edit and Delete icons - commented out per user request */}
-                    {/* <View style={styles.summaryRight}>
-                      <TouchableOpacity
-                        style={styles.editButton}
-                        onPress={() => handleEditMemory(memorySummary)}
-                        activeOpacity={0.7}
-                        disabled={deletingMemoryId === memorySummary.id}
-                      >
-                        <Ionicons
-                          name="create-outline"
-                          size={22}
-                          color="#4A90E2"
-                        />
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={styles.trashButton}
-                        onPress={() => handleDeleteMemory(memorySummary.id)}
-                        activeOpacity={0.7}
-                        disabled={
-                          deletingMemoryId === memorySummary.id ||
-                          updatingMemoryId === memorySummary.id
-                        }
-                      >
-                        {deletingMemoryId === memorySummary.id ? (
-                          <ActivityIndicator size="small" color="#FF4444" />
-                        ) : (
-                          <Ionicons
-                            name="trash-outline"
-                            size={22}
-                            color="#FF4444"
-                          />
-                        )}
-                      </TouchableOpacity>
-                    </View> */}
+                  <View style={styles.detailButtonContent}>
+                    <Text style={styles.detailButtonText}>
+                      View memories in detail
+                    </Text>
+                    <Ionicons
+                      name="arrow-forward-circle"
+                      size={20}
+                      color="#FFFFFF"
+                    />
                   </View>
-                </TouchableOpacity>
-              ))}
+                </LinearGradient>
+              </TouchableOpacity>
+
+              {/* Memory Summaries */}
+              {memorySummaries.map((memorySummary, index) => {
+                const isExpanded = expandedSummaries.has(memorySummary.id);
+                const fullText =
+                  memorySummary.summary || memorySummary.summary_text || "";
+                const displayText = isExpanded
+                  ? fullText
+                  : truncateText(fullText, 30);
+
+                return (
+                  <TouchableOpacity
+                    key={memorySummary.id || index}
+                    style={[
+                      styles.summaryCard,
+                      isExpanded && styles.summaryCardExpanded,
+                    ]}
+                    onPress={() => toggleSummaryExpansion(memorySummary.id)}
+                    activeOpacity={0.7}
+                  >
+                    {/* Expand/Collapse Icon - Top Right */}
+                    {fullText.split(/\s+/).length > 30 && (
+                      <View style={styles.expandIconContainer}>
+                        <Ionicons
+                          name={isExpanded ? "chevron-up" : "chevron-forward"}
+                          size={20}
+                          color="rgba(255, 255, 255, 0.6)"
+                        />
+                      </View>
+                    )}
+                    <View style={styles.summaryHeader}>
+                      <View style={styles.summaryLeft}>
+                        <Text style={styles.dateLabel}>
+                          {formatDate(memorySummary.created_at)}
+                        </Text>
+                        {/* Display title if available */}
+                        {memorySummary.title && (
+                          <Text style={styles.summaryTitle}>
+                            {memorySummary.title}
+                          </Text>
+                        )}
+                        <Text style={styles.summaryText}>{displayText}</Text>
+                      </View>
+                      {/* Edit and Delete icons - commented out per user request */}
+                      {/* <View style={styles.summaryRight}>
+                        <TouchableOpacity
+                          style={styles.editButton}
+                          onPress={() => handleEditMemory(memorySummary)}
+                          activeOpacity={0.7}
+                          disabled={deletingMemoryId === memorySummary.id}
+                        >
+                          <Ionicons
+                            name="create-outline"
+                            size={22}
+                            color="#4A90E2"
+                          />
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={styles.trashButton}
+                          onPress={() => handleDeleteMemory(memorySummary.id)}
+                          activeOpacity={0.7}
+                          disabled={
+                            deletingMemoryId === memorySummary.id ||
+                            updatingMemoryId === memorySummary.id
+                          }
+                        >
+                          {deletingMemoryId === memorySummary.id ? (
+                            <ActivityIndicator size="small" color="#FF4444" />
+                          ) : (
+                            <Ionicons
+                              name="trash-outline"
+                              size={22}
+                              color="#FF4444"
+                            />
+                          )}
+                        </TouchableOpacity>
+                      </View> */}
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
           )}
 
           {/* Bottom padding */}
-          <View style={{ height: responsivePadding(40) }} />
+          <View style={{ height: responsivePadding(60) + insets.bottom }} />
         </ScrollView>
 
         {/* Edit Memory Modal */}
-        <Modal
+        <EditMemoryModal
           visible={editingMemory !== null}
-          transparent={true}
-          animationType="slide"
-          onRequestClose={handleCancelEdit}
-        >
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalContent}>
-              <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>Edit Memory</Text>
-                <TouchableOpacity
-                  onPress={handleCancelEdit}
-                  style={styles.modalCloseButton}
-                >
-                  <Ionicons name="close" size={24} color="#fff" />
-                </TouchableOpacity>
-              </View>
+          editText={editText}
+          onTextChange={setEditText}
+          onSave={handleSaveEdit}
+          onCancel={handleCancelEdit}
+          isSaving={updatingMemoryId !== null}
+        />
 
-              <TextInput
-                style={styles.editInput}
-                value={editText}
-                onChangeText={setEditText}
-                multiline
-                numberOfLines={6}
-                placeholder="Enter memory text..."
-                placeholderTextColor="rgba(255, 255, 255, 0.5)"
-                autoFocus
-              />
-
-              <View style={styles.modalActions}>
-                <TouchableOpacity
-                  style={[styles.modalButton, styles.cancelButton]}
-                  onPress={handleCancelEdit}
-                >
-                  <Text style={styles.cancelButtonText}>Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.modalButton, styles.saveButton]}
-                  onPress={handleSaveEdit}
-                  disabled={!editText.trim() || updatingMemoryId !== null}
-                >
-                  {updatingMemoryId ? (
-                    <ActivityIndicator size="small" color="#fff" />
-                  ) : (
-                    <Text style={styles.saveButtonText}>Save</Text>
-                  )}
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
-        </Modal>
-
-        {/* Profile Memories Detail Modal */}
-        <Modal
-          visible={selectedSummary !== null}
-          transparent={true}
-          animationType="slide"
-          onRequestClose={handleCloseDetailModal}
-        >
-          <View style={styles.modalOverlay}>
-            <View style={styles.detailModalContent}>
-              <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>All Memories</Text>
-                <TouchableOpacity
-                  onPress={handleCloseDetailModal}
-                  style={styles.modalCloseButton}
-                >
-                  <Ionicons name="close" size={24} color="#fff" />
-                </TouchableOpacity>
-              </View>
-
-              {loadingProfileMemories ? (
-                <View style={styles.loadingContainer}>
-                  <ActivityIndicator size="large" color="#4A90E2" />
-                </View>
-              ) : profileMemories.length === 0 ? (
-                <View style={styles.emptyContainer}>
-                  <Text style={styles.emptyDescription}>
-                    No memories found.
-                  </Text>
-                </View>
-              ) : (
-                <ScrollView style={styles.profileMemoriesList}>
-                  {profileMemories.map((memory, index) => (
-                    <View
-                      key={memory.id || index}
-                      style={styles.profileMemoryCard}
-                    >
-                      <View style={styles.profileMemoryHeader}>
-                        <View style={styles.profileMemoryLeft}>
-                          <Text style={styles.dateLabel}>
-                            {formatDate(
-                              memory.updatedAt ||
-                                memory.createdAt ||
-                                new Date().toISOString()
-                            )}
-                          </Text>
-                          {memory.title && (
-                            <Text style={styles.profileMemoryTitle}>
-                              {memory.title}
-                            </Text>
-                          )}
-                          <Text style={styles.profileMemoryText}>
-                            {memory.content ||
-                              memory.summary ||
-                              memory.title ||
-                              ""}
-                          </Text>
-                        </View>
-                        <View style={styles.profileMemoryRight}>
-                          <TouchableOpacity
-                            style={styles.editButton}
-                            onPress={() => handleEditProfileMemory(memory)}
-                            activeOpacity={0.7}
-                            disabled={deletingMemoryId === memory.id}
-                          >
-                            <Ionicons
-                              name="create-outline"
-                              size={22}
-                              color="#4A90E2"
-                            />
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            style={styles.trashButton}
-                            onPress={() => handleDeleteProfileMemory(memory.id)}
-                            activeOpacity={0.7}
-                            disabled={
-                              deletingMemoryId === memory.id ||
-                              updatingMemoryId === memory.id
-                            }
-                          >
-                            {deletingMemoryId === memory.id ? (
-                              <ActivityIndicator size="small" color="#FF4444" />
-                            ) : (
-                              <Ionicons
-                                name="trash-outline"
-                                size={22}
-                                color="#FF4444"
-                              />
-                            )}
-                          </TouchableOpacity>
-                        </View>
-                      </View>
-                    </View>
-                  ))}
-                </ScrollView>
-              )}
-            </View>
-          </View>
-        </Modal>
-
-        {/* Edit Profile Memory Modal */}
-        <Modal
-          visible={editingProfileMemory !== null}
-          transparent={true}
-          animationType="slide"
-          onRequestClose={handleCancelEditProfileMemory}
-        >
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalContent}>
-              <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>Edit Memory</Text>
-                <TouchableOpacity
-                  onPress={handleCancelEditProfileMemory}
-                  style={styles.modalCloseButton}
-                >
-                  <Ionicons name="close" size={24} color="#fff" />
-                </TouchableOpacity>
-              </View>
-
-              <TextInput
-                style={styles.editInput}
-                value={editProfileMemoryText}
-                onChangeText={setEditProfileMemoryText}
-                multiline
-                numberOfLines={6}
-                placeholder="Enter memory text..."
-                placeholderTextColor="rgba(255, 255, 255, 0.5)"
-                autoFocus
-              />
-
-              <View style={styles.modalActions}>
-                <TouchableOpacity
-                  style={[styles.modalButton, styles.cancelButton]}
-                  onPress={handleCancelEditProfileMemory}
-                >
-                  <Text style={styles.cancelButtonText}>Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.modalButton, styles.saveButton]}
-                  onPress={handleSaveEditProfileMemory}
-                  disabled={
-                    !editProfileMemoryText.trim() || updatingMemoryId !== null
-                  }
-                >
-                  {updatingMemoryId ? (
-                    <ActivityIndicator size="small" color="#fff" />
-                  ) : (
-                    <Text style={styles.saveButtonText}>Save</Text>
-                  )}
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
-        </Modal>
+        {/* Detailed Memories Screen */}
+        {showDetailedMemories && (
+          <Animated.View
+            style={[
+              styles.modalContainer,
+              {
+                transform: [{ translateX: detailedMemoriesTranslateX }],
+              },
+            ]}
+          >
+            <DetailedMemoriesScreen onBack={handleCloseDetailModal} />
+          </Animated.View>
+        )}
       </SafeAreaView>
     </View>
   );
@@ -972,7 +704,7 @@ const styles = {
   content: {
     flex: 1,
     paddingHorizontal: responsivePadding(16),
-    paddingTop: responsivePadding(20),
+    paddingTop: responsivePadding(24),
   },
   loadingContainer: {
     flex: 1,
@@ -1003,6 +735,44 @@ const styles = {
   },
   memorySection: {
     marginBottom: responsivePadding(24),
+  },
+  detailButton: {
+    width: screenWidth * 0.8,
+    alignSelf: "center" as const,
+    marginBottom: responsivePadding(20),
+    borderRadius: 24,
+    overflow: "hidden" as const,
+    shadowColor: "#020617",
+    shadowOffset: {
+      width: 0,
+      height: 8,
+    },
+    shadowOpacity: 0.5,
+    shadowRadius: 14,
+    elevation: 8,
+  },
+  detailButtonGradient: {
+    paddingVertical: responsivePadding(12),
+    paddingHorizontal: responsivePadding(18),
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
+    borderRadius: 24,
+    borderWidth: 1.2,
+    borderColor: "rgba(15, 23, 42, 0.8)",
+    backgroundColor: "rgba(2, 6, 23, 0.95)",
+  },
+  detailButtonContent: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
+    gap: 8,
+  },
+  detailButtonText: {
+    fontSize: responsiveFontSize(12),
+    fontWeight: "600" as const,
+    color: "#fff",
+    letterSpacing: 0.8,
+    textTransform: "uppercase" as const,
   },
   memoryCard: {
     backgroundColor: "rgba(255, 255, 255, 0.05)",
@@ -1045,33 +815,52 @@ const styles = {
   },
   dateLabel: {
     fontSize: responsiveFontSize(10),
-    color: "rgba(255, 255, 255, 0.5)",
+    color: "rgba(255, 255, 255, 0.55)",
     marginBottom: responsivePadding(8),
+    fontWeight: "500" as const,
+    letterSpacing: 0.2,
   },
   summaryCard: {
-    backgroundColor: "rgba(255, 255, 255, 0.08)",
-    borderRadius: 12,
+    backgroundColor: "rgba(255, 255, 255, 0.06)",
+    borderRadius: 16,
     paddingVertical: responsivePadding(12),
     paddingHorizontal: responsivePadding(14),
-    marginBottom: responsivePadding(20),
+    marginBottom: responsivePadding(10),
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.15)",
+    borderColor: "rgba(255, 255, 255, 0.12)",
     shadowColor: "#000",
     shadowOffset: {
       width: 0,
-      height: 2,
+      height: 3,
     },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    elevation: 4,
+    transition: "all 0.3s ease",
+    position: "relative" as const,
+  },
+  summaryCardExpanded: {
+    backgroundColor: "rgba(255, 255, 255, 0.09)",
+    borderColor: "rgba(74, 144, 226, 0.3)",
+    borderWidth: 1.5,
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 6,
   },
   summaryHeader: {
-    flexDirection: "row" as const,
-    alignItems: "center" as const,
+    flex: 1,
   },
   summaryLeft: {
     flex: 1,
-    marginRight: responsivePadding(12),
+  },
+  expandIconContainer: {
+    position: "absolute" as const,
+    top: responsivePadding(12),
+    right: responsivePadding(12),
+    padding: 4,
+    justifyContent: "center" as const,
+    alignItems: "center" as const,
+    zIndex: 10,
   },
   summaryRight: {
     flexDirection: "row" as const,
@@ -1082,19 +871,22 @@ const styles = {
     padding: 8,
   },
   summaryTitle: {
-    fontSize: responsiveFontSize(16),
+    fontSize: responsiveFontSize(14),
     fontWeight: "600" as const,
     color: "#fff",
     marginBottom: responsivePadding(6),
+    letterSpacing: 0.1,
+    lineHeight: responsiveFontSize(19),
   },
   trashButton: {
     padding: 8,
   },
   summaryText: {
     fontSize: responsiveFontSize(12),
-    color: "rgba(255, 255, 255, 0.9)",
-    lineHeight: responsiveFontSize(16),
-    fontWeight: "600" as const,
+    color: "rgba(255, 255, 255, 0.88)",
+    lineHeight: responsiveFontSize(18),
+    fontWeight: "400" as const,
+    letterSpacing: 0.05,
   },
   clearMemoriesButton: {
     backgroundColor: "rgba(255, 68, 68, 0.15)",
@@ -1182,51 +974,13 @@ const styles = {
     fontSize: responsiveFontSize(14),
     fontWeight: "600" as const,
   },
-  detailModalContent: {
-    backgroundColor: "#1A1A1A",
-    borderRadius: 16,
-    padding: responsivePadding(20),
-    width: screenWidth * 0.9,
-    maxWidth: 500,
-    maxHeight: screenHeight * 0.85,
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.1)",
-  },
-  profileMemoriesList: {
-    maxHeight: screenHeight * 0.6,
-    marginTop: responsivePadding(16),
-  },
-  profileMemoryCard: {
-    backgroundColor: "rgba(255, 255, 255, 0.08)",
-    borderRadius: 12,
-    paddingVertical: responsivePadding(12),
-    paddingHorizontal: responsivePadding(14),
-    marginBottom: responsivePadding(12),
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.15)",
-  },
-  profileMemoryHeader: {
-    flexDirection: "row" as const,
-    alignItems: "flex-start" as const,
-  },
-  profileMemoryLeft: {
-    flex: 1,
-    marginRight: responsivePadding(12),
-  },
-  profileMemoryRight: {
-    flexDirection: "row" as const,
-    alignItems: "center" as const,
-    gap: 8,
-  },
-  profileMemoryTitle: {
-    fontSize: responsiveFontSize(15),
-    fontWeight: "600" as const,
-    color: "#fff",
-    marginBottom: responsivePadding(4),
-  },
-  profileMemoryText: {
-    fontSize: responsiveFontSize(13),
-    color: "rgba(255, 255, 255, 0.85)",
-    lineHeight: responsiveFontSize(18),
+  modalContainer: {
+    position: "absolute" as const,
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "#0F0F0F",
+    zIndex: 10,
   },
 };

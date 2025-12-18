@@ -55,9 +55,11 @@ export default async function handler(req, res) {
 
       if (isProfileMemories) {
         // Fetch all profile memories (for edit/delete functionality)
+        // v4/search returns: { results: [...], timing, total }
         const memories = await fetchSupermemoryMemories(serverUserId);
         return res.status(200).json({
-          memories: Array.isArray(memories) ? memories : [],
+          results: Array.isArray(memories) ? memories : [],
+          memories: Array.isArray(memories) ? memories : [], // Keep for backward compatibility
         });
       }
 
@@ -113,7 +115,15 @@ export default async function handler(req, res) {
       console.log(`✅ [MEMORY_API] DELETE success for ${memoryId}`);
       return res.status(200).json({ success: true, result });
     } catch (error) {
-      console.error("❌ [SUPERMEMORY_DELETE] Error:", error);
+      console.error("❌ [SUPERMEMORY_DELETE] Error:", {
+        message: error?.message,
+        name: error?.name,
+        stack: error?.stack,
+        memoryId: req?.query?.memoryId,
+        documentId: req?.query?.documentId,
+        method: req?.method,
+        url: req?.url,
+      });
       return res.status(500).json({
         error: "Failed to delete memory",
         message: error.message,
@@ -1277,9 +1287,10 @@ async function fetchSupermemoryMemories(userId) {
     }
 
     const result = await response.json();
-    // Extract documents from search results
-    // Supermemory v4/search returns: { documents: [...], ... }
-    const memories = result.documents || result.results || result.data || [];
+    // Extract memories from search results
+    // Supermemory v4/search returns: { results: [...], timing, total }
+    // Each result contains: id, memory, metadata, updatedAt, documents, chunks, etc.
+    const memories = result.results || result.documents || result.data || [];
 
     // Log first memory structure for debugging
     if (memories.length > 0) {
@@ -1430,6 +1441,8 @@ async function deleteSupermemoryMemory(documentId) {
         errorData,
         url,
         documentId,
+        // Helpful for debugging edge cases like 404
+        isNotFound: response.status === 404,
       });
       throw new Error(
         `Supermemory API error: ${errorData.message || response.statusText} (${
@@ -1441,7 +1454,12 @@ async function deleteSupermemoryMemory(documentId) {
     console.log(`✅ [SUPERMEMORY] Deleted document ${documentId}`);
     return { success: true, id: documentId };
   } catch (error) {
-    console.error(`❌ [SUPERMEMORY] Error deleting document:`, error.message);
+    console.error(`❌ [SUPERMEMORY] Error deleting document:`, {
+      message: error?.message,
+      name: error?.name,
+      stack: error?.stack,
+      documentId,
+    });
     throw error;
   }
 }
