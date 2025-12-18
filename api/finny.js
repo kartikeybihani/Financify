@@ -17,14 +17,14 @@ import {
   getConversationContext,
   updateConversationContext,
   invalidateProfileCache,
-  selectRelevantMemories,
-  categorizeSelectedMemories,
   loadUserMemory,
   loadUserProfile,
   storeConversationMemory,
   // saveMemoryCandidates removed - migrating to Supermemory
   // generateMemorySummary removed - migrating to Supermemory
   // validateMemoriesWithSmallModel removed - migrating to Supermemory
+  // selectRelevantMemories removed - Supermemory handles relevance ranking
+  // categorizeSelectedMemories removed - no longer needed with Supermemory format
 } from "../lib/memoryUtils.js";
 import {
   detectUserState,
@@ -1055,9 +1055,10 @@ export default async function handler(req, res) {
   let sessionState = getSessionState(finalUserId);
 
   // Load user profile (onboarding data) and memory in parallel
+  // Pass message for semantic search in Supermemory
   const [userProfileData, userMemory] = await Promise.all([
     loadUserProfile(finalUserId),
-    loadUserMemory(finalUserId),
+    loadUserMemory(finalUserId, message || null),
   ]);
 
   // Merge profile data with existing userProfile (from auth metadata)
@@ -1585,7 +1586,8 @@ async function handleAsk(
         logDebug("🔍 [STOCK] Available packs:", Object.keys(packs));
 
         // Get user context for personalization
-        const userMemory = await loadUserMemory(userId);
+        // Pass message for semantic search in Supermemory
+        const userMemory = await loadUserMemory(userId, message || null);
         const userProfile = context.profile || { name: null, age: null };
 
         // Get investment holdings from context packs if available
@@ -1931,61 +1933,46 @@ async function handleAsk(
       );
     }
 
-    // Smart memory context with relevance-based selection
-    const selectedMemories = selectRelevantMemories(
-      context.memory,
-      message,
-      intent,
-      context.profile
-    );
-    const categorized = categorizeSelectedMemories(selectedMemories);
-
+    // Memory context from Supermemory (already ranked by semantic search)
     const memorySections = [];
-    if (categorized.profile_trait?.length) {
-      memorySections.push(
-        `Traits: ${categorized.profile_trait
-          .map((m) => `${m.key}: ${m.value}`)
-          .join(", ")}`
-      );
-    }
-    if (categorized.constraint?.length) {
-      memorySections.push(
-        `Constraints: ${categorized.constraint
-          .map((m) => `${m.key}: ${m.value}`)
-          .join(", ")}`
-      );
-    }
-    if (categorized.preference?.length) {
-      memorySections.push(
-        `Preferences: ${categorized.preference
-          .map((m) => `${m.key}: ${m.value}`)
-          .join(", ")}`
-      );
-    }
-    if (categorized.future_plan?.length) {
-      memorySections.push(
-        `Future plans: ${categorized.future_plan
-          .map((m) => `${m.key}: ${m.value}`)
-          .join(", ")}`
-      );
-    }
-    if (categorized.context_signal?.length) {
-      memorySections.push(
-        `Context signals: ${categorized.context_signal
-          .map((m) => `${m.key}: ${m.value}`)
-          .join(", ")}`
-      );
-    }
-    if (categorized.goal?.length) {
-      memorySections.push(
-        `Goals: ${categorized.goal
-          .map((m) => `${m.key}: ${m.value}`)
-          .join(", ")}`
-      );
+    if (context.memory?.memories?.length > 0) {
+      // Group memories by context_type from metadata
+      const memoriesByType = {};
+      context.memory.memories.forEach((m) => {
+        const type = m.context_type || "general";
+        if (!memoriesByType[type]) {
+          memoriesByType[type] = [];
+        }
+        memoriesByType[type].push(m);
+      });
+
+      // Build prompt sections using summary/content from Supermemory documents
+      Object.entries(memoriesByType).forEach(([type, mems]) => {
+        const memoryTexts = mems
+          .map((m) => m.summary || m.content)
+          .filter(Boolean)
+          .join("; ");
+        if (memoryTexts) {
+          // Format context type names for readability
+          const typeLabel =
+            type === "goal"
+              ? "Goals"
+              : type === "constraint"
+              ? "Constraints"
+              : type === "preference"
+              ? "Preferences"
+              : type === "life_event"
+              ? "Life Events"
+              : type === "decision"
+              ? "Decisions"
+              : type.charAt(0).toUpperCase() + type.slice(1);
+          memorySections.push(`${typeLabel}: ${memoryTexts}`);
+        }
+      });
     }
 
     if (memorySections.length > 0) {
-      additionalSections.push("", ...memorySections);
+      additionalSections.push("", "USER MEMORIES:", ...memorySections);
     }
 
     // Add web context if available
@@ -2267,7 +2254,7 @@ async function handleAsk(
           temperature: 0.25,
           max_tokens: 5000,
           stream: false,
-          reasoning: { exclude: true }, // Disable reasoning output, only return actual response
+          // reasoning: { exclude: true }, // Disable reasoning output, only return actual response
           messages: [
             { role: "system", content: system },
             {
@@ -4980,70 +4967,48 @@ async function handleOffTopic(message, context, conversationContext = null) {
         ]
       : []),
     "",
-    // Smart memory context with relevance-based selection
-    ...(context.memory?.summary
-      ? [`User context: ${context.memory.summary}`]
-      : []),
+    // Memory context from Supermemory (already ranked by semantic search)
     ...(() => {
-      // Select relevant memories based on message and intent
-      const selectedMemories = selectRelevantMemories(
-        context.memory,
-        message,
-        "ask_personalized", // Default intent for classification
-        context.profile
-      );
-      const categorized = categorizeSelectedMemories(selectedMemories);
+      if (!context.memory?.memories?.length) return [];
 
-      return [
-        // Profile traits
-        ...(categorized.profile_trait?.length
-          ? [
-              `Traits: ${categorized.profile_trait
-                .map((m) => `${m.key}: ${m.value}`)
-                .join(", ")}`,
-            ]
-          : []),
-        // Constraints
-        ...(categorized.constraint?.length
-          ? [
-              `Constraints: ${categorized.constraint
-                .map((m) => `${m.key}: ${m.value}`)
-                .join(", ")}`,
-            ]
-          : []),
-        // Preferences
-        ...(categorized.preference?.length
-          ? [
-              `Preferences: ${categorized.preference
-                .map((m) => `${m.key}: ${m.value}`)
-                .join(", ")}`,
-            ]
-          : []),
-        // Future plans
-        ...(categorized.future_plan?.length
-          ? [
-              `Future plans: ${categorized.future_plan
-                .map((m) => `${m.key}: ${m.value}`)
-                .join(", ")}`,
-            ]
-          : []),
-        // Context signals
-        ...(categorized.context_signal?.length
-          ? [
-              `Context signals: ${categorized.context_signal
-                .map((m) => `${m.key}: ${m.value}`)
-                .join(", ")}`,
-            ]
-          : []),
-        // Goals
-        ...(categorized.goal?.length
-          ? [
-              `Goals: ${categorized.goal
-                .map((m) => `${m.key}: ${m.value}`)
-                .join(", ")}`,
-            ]
-          : []),
-      ];
+      // Group memories by context_type from metadata
+      const memoriesByType = {};
+      context.memory.memories.forEach((m) => {
+        const type = m.context_type || "general";
+        if (!memoriesByType[type]) {
+          memoriesByType[type] = [];
+        }
+        memoriesByType[type].push(m);
+      });
+
+      // Build prompt sections using summary/content from Supermemory documents
+      const memorySections = [];
+      Object.entries(memoriesByType).forEach(([type, mems]) => {
+        const memoryTexts = mems
+          .map((m) => m.summary || m.content)
+          .filter(Boolean)
+          .join("; ");
+        if (memoryTexts) {
+          // Format context type names for readability
+          const typeLabel =
+            type === "goal"
+              ? "Goals"
+              : type === "constraint"
+              ? "Constraints"
+              : type === "preference"
+              ? "Preferences"
+              : type === "life_event"
+              ? "Life Events"
+              : type === "decision"
+              ? "Decisions"
+              : type.charAt(0).toUpperCase() + type.slice(1);
+          memorySections.push(`${typeLabel}: ${memoryTexts}`);
+        }
+      });
+
+      return memorySections.length > 0
+        ? ["USER MEMORIES:", ...memorySections]
+        : [];
     })(),
     // Net worth context
     ...(netWorthData
@@ -6118,7 +6083,7 @@ export {
   // quickExtract removed - migrating to Supermemory
   // shouldRunMemoryExtraction removed - migrating to Supermemory
   // validateMemoriesWithSmallModel removed - migrating to Supermemory
-  selectRelevantMemories,
+  // selectRelevantMemories removed - Supermemory handles relevance ranking
   loadUserMemory,
   // saveMemoryCandidates removed - migrating to Supermemory
   generateFallbackStockAnalysis,
