@@ -57,22 +57,6 @@ const BudgetView: React.FC<BudgetViewProps> = ({
   let finalBudgets: BudgetData[] =
     optimisticBudgets || (budgets.length > 0 ? budgets : []);
 
-  // Debug: Log budgets with children
-  useEffect(() => {
-    logger.info(`[BUDGET VIEW] Received ${finalBudgets.length} budgets`);
-    finalBudgets.forEach((budget, idx) => {
-      if (budget.children && budget.children.length > 0) {
-        logger.info(
-          `[BUDGET VIEW] Budget[${idx}] "${budget.category}" (${
-            budget.categoryId || "no-id"
-          }) has ${budget.children.length} children: ${budget.children
-            .map((c) => `"${c.category}"`)
-            .join(", ")}`
-        );
-      }
-    });
-  }, [finalBudgets]);
-
   if (finalBudgets.length === 0) {
     // Build a fallback budget list from spending breakdown if no budgets are set
     const budgetMap = new Map<string, BudgetData>();
@@ -369,15 +353,6 @@ const BudgetView: React.FC<BudgetViewProps> = ({
                       const isExpanded = !(
                         cardCategoryId && collapsedParents.has(cardCategoryId)
                       );
-                      logger.info(
-                        `[BUDGET VIEW] Rendering ${
-                          children.length
-                        } children for "${budget.category}" (${
-                          cardCategoryId || "no-id"
-                        }), isExpanded: ${isExpanded}, children: ${children
-                          .map((c) => c.category)
-                          .join(", ")}`
-                      );
                       return (
                         <AnimatedSubcategoriesContainer isExpanded={isExpanded}>
                           {children.map((child, childIndex) => {
@@ -591,9 +566,6 @@ const AnimatedSubcategoriesContainer: React.FC<
   // Measure content height when first rendered or when expanded
   const handleContentLayout = (event: any) => {
     const { height } = event.nativeEvent.layout;
-    logger.info(
-      `[BUDGET VIEW] AnimatedSubcategoriesContainer layout: height=${height}, isExpanded=${isExpanded}, isMeasured=${isMeasured}`
-    );
     if (height > 0 && contentHeightRef.current !== height) {
       contentHeightRef.current = height;
       if (!isMeasured) {
@@ -604,15 +576,11 @@ const AnimatedSubcategoriesContainer: React.FC<
           heightAnim.setValue(height);
           opacityAnim.setValue(1);
           scaleYAnim.setValue(1);
-          logger.info(
-            `[BUDGET VIEW] Set initial expanded state: height=${height}`
-          );
         } else {
           // If collapsed, ensure height is 0
           heightAnim.setValue(0);
           opacityAnim.setValue(0);
           scaleYAnim.setValue(0);
-          logger.info(`[BUDGET VIEW] Initial state is collapsed, height=0`);
         }
       }
     }
@@ -625,9 +593,6 @@ const AnimatedSubcategoriesContainer: React.FC<
       opacityAnim.setValue(1);
       scaleYAnim.setValue(1);
       setIsMeasured(true);
-      logger.info(
-        `[BUDGET VIEW] Set initial expanded state immediately: height=${contentHeightRef.current}`
-      );
     }
   }, [isExpanded, contentHeightRef.current]);
 

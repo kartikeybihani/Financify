@@ -109,7 +109,6 @@ export function useBudget(categoryBreakdown?: CategoryBreakdown): UseBudgetRetur
       "authStateChanged",
       async (data) => {
         if (data && data.event === "TOKEN_REFRESHED" && data.validated) {
-          logger.info("🔄 [BUDGET] Token refreshed, reloading budget...");
           setTimeout(async () => {
             await loadBudget();
           }, 200);
@@ -398,7 +397,6 @@ export function useBudget(categoryBreakdown?: CategoryBreakdown): UseBudgetRetur
               baseById.set(parent.category, parentBase);
             }
             
-            logger.info(`[BUDGET] Found parent "${parent.category}" (${parentId}) in flatBudgets, indexed by UUID`);
             return;
           }
           
@@ -448,7 +446,6 @@ export function useBudget(categoryBreakdown?: CategoryBreakdown): UseBudgetRetur
             budgetById.set(parentCat.name, parentWithChildren);
             baseById.set(parentCat.name, parentBase);
             
-            logger.info(`[BUDGET] Created parent "${parentCat.name}" (${parentId}) from grouping data`);
           }
         });
         
@@ -464,12 +461,10 @@ export function useBudget(categoryBreakdown?: CategoryBreakdown): UseBudgetRetur
           const child = budgetById.get(item.categoryId);
           
           if (!parent || !child) {
-            logger.warn(`[BUDGET] Parent or child not found: parentId=${parentId}, childId=${item.categoryId}, parent=${!!parent}, child=${!!child}`);
             return;
           }
           
           if (parent.categoryId === child.categoryId) {
-            logger.warn(`[BUDGET] Parent and child are the same: ${parentId}`);
             return;
           }
 
@@ -486,8 +481,6 @@ export function useBudget(categoryBreakdown?: CategoryBreakdown): UseBudgetRetur
           
           childIds.add(item.categoryId);
           parentsWithChildren.add(parentId);
-          
-          logger.info(`[BUDGET] Attached child "${child.category}" (${item.categoryId}) to parent "${parent.category}" (${parentId}), children count: ${parent.children.length}`);
         });
 
         // Insert parent's own entry as first subcategory when it has children
@@ -513,7 +506,6 @@ export function useBudget(categoryBreakdown?: CategoryBreakdown): UseBudgetRetur
           // Skip if this is a child category - check by categoryId (UUID) not by map key
           // The map key could be UUID or category name, but childIds only contains UUIDs
           if (item.categoryId && childIds.has(item.categoryId)) {
-            logger.info(`[BUDGET] Skipping child category "${item.category}" (${item.categoryId}) from roots`);
             return;
           }
           
@@ -528,7 +520,6 @@ export function useBudget(categoryBreakdown?: CategoryBreakdown): UseBudgetRetur
               if (b.categoryId === item.categoryId) return 1;
               return b.budget - a.budget || b.spent - a.spent;
             });
-            logger.info(`[BUDGET] Root "${item.category}" (${item.categoryId || 'no-id'}) has ${item.children.length} children: ${item.children.map(c => c.category).join(', ')}`);
           }
           
           // Mark as added
@@ -555,14 +546,6 @@ export function useBudget(categoryBreakdown?: CategoryBreakdown): UseBudgetRetur
           .filter((root) => toKey(root.category) !== "income");
 
         const sortedRoots = filteredRoots.sort((a, b) => b.budget - a.budget || b.spent - a.spent);
-        
-        // Debug logging
-        logger.info(`[BUDGET] Final roots count: ${sortedRoots.length}`);
-        sortedRoots.forEach((root) => {
-          if (root.children && root.children.length > 0) {
-            logger.info(`[BUDGET] Root "${root.category}" (${root.categoryId || 'no-id'}) has ${root.children.length} children: ${root.children.map(c => `"${c.category}" (${c.categoryId || 'no-id'})`).join(', ')}`);
-          }
-        });
 
         return sortedRoots;
       })();
@@ -735,9 +718,6 @@ export function useBudget(categoryBreakdown?: CategoryBreakdown): UseBudgetRetur
             return false;
           }
 
-          logger.info(
-            `✅ [BUDGET] Moved ${updatedCount} transactions to Other category`
-          );
         }
 
         // Step 4: Deactivate category groupings involving this category
@@ -746,21 +726,18 @@ export function useBudget(categoryBreakdown?: CategoryBreakdown): UseBudgetRetur
           categoryId
         );
         if (!groupingsDeactivated) {
-          logger.warn("⚠️ [BUDGET] Failed to deactivate category groupings, continuing...");
           // Don't fail the whole operation for this
         }
 
         // Step 5: Deactivate category rules referencing this category
         const rulesDeactivated = await deactivateCategoryRulesForCategory(userId, categoryId);
         if (!rulesDeactivated) {
-          logger.warn("⚠️ [BUDGET] Failed to deactivate category rules, continuing...");
           // Don't fail the whole operation for this
         }
 
         // Step 6: Delete all budget entries for this category (across all periods)
         const budgetEntriesDeleted = await deleteBudgetEntriesForCategory(categoryId);
         if (!budgetEntriesDeleted) {
-          logger.warn("⚠️ [BUDGET] Failed to delete budget entries, continuing...");
           // Don't fail the whole operation for this
         }
 
@@ -774,7 +751,6 @@ export function useBudget(categoryBreakdown?: CategoryBreakdown): UseBudgetRetur
         // Step 8: Refresh budget data
         await refreshBudget();
 
-        logger.info(`✅ [BUDGET] Successfully deleted category ${categoryId}`);
         return true;
       } catch (err) {
         logger.error("❌ [BUDGET] Error deleting category:", err);
@@ -786,10 +762,8 @@ export function useBudget(categoryBreakdown?: CategoryBreakdown): UseBudgetRetur
 
   const initializeBudget = useCallback(async (forceReinitialize: boolean = false): Promise<boolean> => {
     try {
-      console.log("[BUDGET] Hook: Initializing budget, force:", forceReinitialize);
       const authResult = await getAuthenticatedUser();
       if (!authResult?.user?.id) {
-        console.log("[BUDGET] Hook: User not authenticated");
         return false;
       }
 
@@ -798,15 +772,11 @@ export function useBudget(categoryBreakdown?: CategoryBreakdown): UseBudgetRetur
         forceReinitialize
       );
       if (period) {
-        console.log("[BUDGET] Hook: Budget initialized, refreshing...");
         await refreshBudget();
-        console.log("[BUDGET] Hook: Budget refreshed successfully");
         return true;
       }
-      console.log("[BUDGET] Hook: Failed to initialize budget");
       return false;
     } catch (err) {
-      console.error("[BUDGET] Hook: Error initializing budget:", err);
       logger.error("[BUDGET] Hook: Error initializing budget:", err);
       return false;
     }

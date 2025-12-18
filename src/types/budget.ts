@@ -586,7 +586,6 @@ export async function updateTransactionsToOtherCategory(
       }
     }
 
-    logger.info(`[BUDGET] Updated ${totalUpdated} transactions to Other category`);
     return totalUpdated;
   } catch (err) {
     logger.error("[BUDGET] Error in updateTransactionsToOtherCategory:", err);
@@ -619,7 +618,6 @@ export async function getTransactionsByResolvedCategory(
     // Find the category by ID to get its name/slug
     const category = categoryIndex.byId.get(categoryId);
     if (!category) {
-      logger.warn(`[BUDGET] Category ${categoryId} not found in index`);
       return [];
     }
 
@@ -680,7 +678,6 @@ export async function getTransactionsByResolvedCategory(
       offset += PAGE_SIZE;
     }
 
-    logger.info(`[BUDGET] Found ${matchingIds.length} transactions matching category ${categoryId}`);
     return matchingIds;
   } catch (err) {
     logger.error("[BUDGET] Error in getTransactionsByResolvedCategory:", err);
@@ -707,9 +704,6 @@ export async function getTransactionsForCategory(
   try {
     const categoryIndex = await buildCategoryIndex(userId);
     
-    if (!categoryIndex || categoryIndex.byKey.size === 0) {
-      logger.warn("[BUDGET] No categories found in index for user:", userId);
-    }
     const targetResolved = resolveCategoryLabel(
       targetCategoryLabel,
       categoryIndex
