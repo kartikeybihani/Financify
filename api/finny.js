@@ -2263,9 +2263,9 @@ async function handleAsk(
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: OPENROUTER_MODEL,
-          temperature: 0.6,
-          max_tokens: 2000,
+          model: OPENROUTER_MODEL || SMALLER_MODEL,
+          temperature: 0.25,
+          max_tokens: 3000,
           stream: false,
           reasoning: { exclude: true }, // Disable reasoning output, only return actual response
           messages: [
