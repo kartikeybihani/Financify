@@ -2,58 +2,137 @@
 import { supabase } from "../lib/api/supabase.js";
 
 // API Route Handler for Supermemory Profile (GET /api/memory)
-// This endpoint fetches user profile and memories from Supermemory
+// Also handles DELETE and PUT for memory operations
 export default async function handler(req, res) {
-  // Only allow GET requests
-  if (req.method !== "GET") {
-    return res.status(405).json({ error: "Method not allowed" });
+  // Debug logging
+  console.log(`🔍 [MEMORY_API] Request received:`, {
+    method: req.method,
+    url: req.url,
+    query: req.query,
+    hasBody: !!req.body,
+    bodyKeys: req.body ? Object.keys(req.body) : [],
+  });
+
+  // Derive user from Supabase JWT instead of trusting client context
+  let serverUserId = null;
+
+  const authHeader =
+    req.headers["authorization"] || req.headers["Authorization"];
+  const token =
+    typeof authHeader === "string" && authHeader.startsWith("Bearer ")
+      ? authHeader.slice("Bearer ".length)
+      : null;
+
+  if (token) {
+    const { data: authData, error: authError } = await supabase.auth.getUser(
+      token
+    );
+    if (!authError && authData?.user?.id) {
+      serverUserId = authData.user.id;
+    }
   }
 
-  try {
-    // Derive user from Supabase JWT instead of trusting client context
-    let serverUserId = null;
+  if (!serverUserId) {
+    console.log(`⚠️ [MEMORY_API] Unauthorized - no userId`);
+    return res.status(401).json({ error: "Unauthorized" });
+  }
 
-    const authHeader =
-      req.headers["authorization"] || req.headers["Authorization"];
-    const token =
-      typeof authHeader === "string" && authHeader.startsWith("Bearer ")
-        ? authHeader.slice("Bearer ".length)
-        : null;
+  console.log(`✅ [MEMORY_API] Authenticated user: ${serverUserId}`);
 
-    if (token) {
-      const { data: authData, error: authError } = await supabase.auth.getUser(
-        token
-      );
-      if (!authError && authData?.user?.id) {
-        serverUserId = authData.user.id;
+  // Handle OPTIONS for CORS preflight
+  if (req.method === "OPTIONS") {
+    return res.status(200).json({});
+  }
+
+  // Handle different HTTP methods
+  const method = req.method?.toUpperCase() || req.method;
+  console.log(`🔍 [MEMORY_API] Processing ${method} request`);
+
+  if (method === "GET") {
+    try {
+      // Fetch profile and memories from Supermemory
+      // Profile is optional - if it fails, we still return memories
+      const [profile, memories] = await Promise.allSettled([
+        fetchSupermemoryProfile(serverUserId),
+        fetchSupermemoryMemories(serverUserId),
+      ]);
+
+      // Extract results, handling failures gracefully
+      const profileResult =
+        profile.status === "fulfilled" ? profile.value : null;
+      const memoriesResult =
+        memories.status === "fulfilled" ? memories.value : [];
+
+      return res.status(200).json({
+        profile: profileResult || null,
+        memories: Array.isArray(memoriesResult) ? memoriesResult : [],
+      });
+    } catch (error) {
+      console.error("❌ [SUPERMEMORY_PROFILE] Error:", error);
+      return res.status(500).json({
+        error: "Failed to fetch Supermemory profile",
+        message: error.message,
+      });
+    }
+  } else if (method === "DELETE") {
+    // Delete a memory by ID
+    try {
+      const { memoryId } = req.query;
+      console.log(`🔍 [MEMORY_API] DELETE request - memoryId: ${memoryId}`);
+
+      if (!memoryId) {
+        console.log(`⚠️ [MEMORY_API] DELETE - memoryId missing`);
+        return res.status(400).json({ error: "memoryId is required" });
       }
+
+      const result = await deleteSupermemoryMemory(memoryId);
+      console.log(`✅ [MEMORY_API] DELETE success for ${memoryId}`);
+      return res.status(200).json({ success: true, result });
+    } catch (error) {
+      console.error("❌ [SUPERMEMORY_DELETE] Error:", error);
+      return res.status(500).json({
+        error: "Failed to delete memory",
+        message: error.message,
+      });
     }
+  } else if (method === "PUT") {
+    // Update a memory by ID
+    try {
+      const { memoryId, content, metadata } = req.body;
+      console.log(
+        `🔍 [MEMORY_API] PUT request - memoryId: ${memoryId}, content length: ${
+          content?.length || 0
+        }`
+      );
 
-    if (!serverUserId) {
-      return res.status(401).json({ error: "Unauthorized" });
+      if (!memoryId) {
+        console.log(`⚠️ [MEMORY_API] PUT - memoryId missing`);
+        return res.status(400).json({ error: "memoryId is required" });
+      }
+      if (!content) {
+        console.log(`⚠️ [MEMORY_API] PUT - content missing`);
+        return res.status(400).json({ error: "content is required" });
+      }
+
+      const result = await updateSupermemoryMemory(memoryId, {
+        content,
+        metadata: metadata || {},
+      });
+      console.log(`✅ [MEMORY_API] PUT success for ${memoryId}`);
+      return res.status(200).json({ success: true, result });
+    } catch (error) {
+      console.error("❌ [SUPERMEMORY_UPDATE] Error:", error);
+      return res.status(500).json({
+        error: "Failed to update memory",
+        message: error.message,
+      });
     }
-
-    // Fetch profile and memories from Supermemory
-    // Profile is optional - if it fails, we still return memories
-    const [profile, memories] = await Promise.allSettled([
-      fetchSupermemoryProfile(serverUserId),
-      fetchSupermemoryMemories(serverUserId),
-    ]);
-
-    // Extract results, handling failures gracefully
-    const profileResult = profile.status === "fulfilled" ? profile.value : null;
-    const memoriesResult =
-      memories.status === "fulfilled" ? memories.value : [];
-
-    return res.status(200).json({
-      profile: profileResult || null,
-      memories: Array.isArray(memoriesResult) ? memoriesResult : [],
-    });
-  } catch (error) {
-    console.error("❌ [SUPERMEMORY_PROFILE] Error:", error);
-    return res.status(500).json({
-      error: "Failed to fetch Supermemory profile",
-      message: error.message,
+  } else {
+    console.log(`⚠️ [MEMORY_API] Method not allowed: ${method}`);
+    return res.status(405).json({
+      error: "Method not allowed",
+      receivedMethod: method,
+      allowedMethods: ["GET", "DELETE", "PUT"],
     });
   }
 }
@@ -1165,7 +1244,16 @@ async function fetchSupermemoryMemories(userId) {
 
     const result = await response.json();
     // Extract documents from search results
+    // Supermemory v4/search returns: { documents: [...], ... }
     const memories = result.documents || result.results || result.data || [];
+
+    // Log first memory structure for debugging
+    if (memories.length > 0) {
+      console.log(
+        `🔍 [SUPERMEMORY] Sample memory structure:`,
+        JSON.stringify(memories[0], null, 2)
+      );
+    }
 
     console.log(
       `✅ [SUPERMEMORY] Fetched ${memories.length} memories for user ${userId}`
@@ -1174,6 +1262,131 @@ async function fetchSupermemoryMemories(userId) {
   } catch (error) {
     console.error(`❌ [SUPERMEMORY] Error fetching memories:`, error.message);
     return [];
+  }
+}
+
+/**
+ * Delete a memory from Supermemory
+ * @param {string} memoryId - Memory ID to delete
+ * @returns {Promise<object>} - Delete result
+ */
+async function deleteSupermemoryMemory(memoryId) {
+  if (!SUPERMEMORY_API_KEY) {
+    throw new Error("Supermemory API key not configured");
+  }
+
+  if (!memoryId) {
+    throw new Error("memoryId is required");
+  }
+
+  try {
+    const response = await fetch(
+      `${SUPERMEMORY_BASE_URL}/v3/memories/${memoryId}`,
+      {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${SUPERMEMORY_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      let errorData;
+      try {
+        errorData = JSON.parse(errorText);
+      } catch {
+        errorData = { message: errorText };
+      }
+      throw new Error(
+        `Supermemory API error: ${errorData.message || response.statusText} (${
+          response.status
+        })`
+      );
+    }
+
+    console.log(`✅ [SUPERMEMORY] Deleted memory ${memoryId}`);
+    return { success: true, id: memoryId };
+  } catch (error) {
+    console.error(`❌ [SUPERMEMORY] Error deleting memory:`, error.message);
+    throw error;
+  }
+}
+
+/**
+ * Update a memory in Supermemory
+ * @param {string} memoryId - Memory ID to update
+ * @param {object} updateData - Update data with content and optional metadata
+ * @returns {Promise<object>} - Update result
+ */
+async function updateSupermemoryMemory(memoryId, updateData) {
+  if (!SUPERMEMORY_API_KEY) {
+    throw new Error("Supermemory API key not configured");
+  }
+
+  if (!memoryId) {
+    throw new Error("memoryId is required");
+  }
+
+  if (!updateData.content) {
+    throw new Error("content is required");
+  }
+
+  try {
+    // Filter out null, undefined, empty objects, and nested objects
+    const cleanedMetadata = updateData.metadata
+      ? Object.fromEntries(
+          Object.entries(updateData.metadata).filter(([key, value]) => {
+            if (value === null || value === undefined) return false;
+            if (typeof value === "object" && !Array.isArray(value))
+              return false;
+            if (Array.isArray(value) && value.length === 0) return false;
+            return true;
+          })
+        )
+      : {};
+
+    const requestBody = {
+      content: updateData.content,
+      ...(Object.keys(cleanedMetadata).length > 0 && {
+        metadata: cleanedMetadata,
+      }),
+    };
+
+    const response = await fetch(
+      `${SUPERMEMORY_BASE_URL}/v3/memories/${memoryId}`,
+      {
+        method: "PUT",
+        headers: {
+          Authorization: `Bearer ${SUPERMEMORY_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(requestBody),
+      }
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      let errorData;
+      try {
+        errorData = JSON.parse(errorText);
+      } catch {
+        errorData = { message: errorText };
+      }
+      throw new Error(
+        `Supermemory API error: ${errorData.message || response.statusText} (${
+          response.status
+        })`
+      );
+    }
+
+    const result = await response.json();
+    console.log(`✅ [SUPERMEMORY] Updated memory ${memoryId}`);
+    return result;
+  } catch (error) {
+    console.error(`❌ [SUPERMEMORY] Error updating memory:`, error.message);
+    throw error;
   }
 }
 

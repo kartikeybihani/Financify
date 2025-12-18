@@ -7,6 +7,8 @@ import {
   Platform,
   ActivityIndicator,
   Alert,
+  TextInput,
+  Modal,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -50,6 +52,12 @@ export default function MemoriesScreen({ onBack }: MemoriesScreenProps = {}) {
   };
   const [memorySummaries, setMemorySummaries] = useState<MemorySummary[]>([]);
   const [loading, setLoading] = useState(true);
+  const [editingMemory, setEditingMemory] = useState<MemorySummary | null>(
+    null
+  );
+  const [editText, setEditText] = useState("");
+  const [deletingMemoryId, setDeletingMemoryId] = useState<string | null>(null);
+  const [updatingMemoryId, setUpdatingMemoryId] = useState<string | null>(null);
 
   // Fetch memories data when component mounts
   useEffect(() => {
@@ -84,20 +92,37 @@ export default function MemoriesScreen({ onBack }: MemoriesScreenProps = {}) {
       const data = await response.json();
       const memories = data.memories || [];
 
+      // Debug logging (can be removed later)
+      // console.log("🔍 [MEMORIES] Raw API response:", JSON.stringify(data, null, 2));
+      // console.log("🔍 [MEMORIES] Memories array:", memories);
+
       // Map Supermemory memories to MemorySummary format
-      // Supermemory memories may have: id, content, metadata.timestamp, etc.
-      const mappedMemories: MemorySummary[] = memories.map((memory: any) => ({
-        id:
-          memory.id ||
-          memory.document_id ||
-          `memory-${Date.now()}-${Math.random()}`,
-        summary_text: memory.content || memory.text || memory.summary || "",
-        created_at:
-          memory.metadata?.timestamp ||
-          memory.created_at ||
-          memory.timestamp ||
-          new Date().toISOString(),
-      }));
+      // Supermemory v4/search returns memories with structure:
+      // { id, memory (text), updatedAt, documents: [{ metadata: { timestamp } }] }
+      const mappedMemories: MemorySummary[] = memories.map(
+        (memory: any, index: number) => {
+          // The actual memory text is in the "memory" field
+          const content = memory.memory || memory.content || "";
+
+          // Use the memory ID
+          const id = memory.id || `memory-${Date.now()}-${index}`;
+
+          // Prefer updatedAt, fallback to document metadata timestamp, then createdAt
+          const createdAt =
+            memory.updatedAt ||
+            memory.documents?.[0]?.metadata?.timestamp ||
+            memory.documents?.[0]?.createdAt ||
+            memory.created_at ||
+            memory.metadata?.timestamp ||
+            new Date().toISOString();
+
+          return {
+            id,
+            summary_text: content,
+            created_at: createdAt,
+          };
+        }
+      );
 
       // Sort by date (newest first)
       mappedMemories.sort(
@@ -114,8 +139,157 @@ export default function MemoriesScreen({ onBack }: MemoriesScreenProps = {}) {
     }
   };
 
-  // Note: Delete functionality removed - Supermemory manages memories automatically
-  // Users can view their memories but deletion is handled by Supermemory's retention policies
+  const handleEditMemory = (memory: MemorySummary) => {
+    setEditingMemory(memory);
+    setEditText(memory.summary_text);
+  };
+
+  const handleCancelEdit = () => {
+    setEditingMemory(null);
+    setEditText("");
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingMemory || !editText.trim()) {
+      Alert.alert("Error", "Memory text cannot be empty");
+      return;
+    }
+
+    try {
+      setUpdatingMemoryId(editingMemory.id);
+      const BASE_URL =
+        process.env.EXPO_PUBLIC_APP_BASE_URL ||
+        "https://financify-rose.vercel.app";
+
+      console.log("🔍 [MEMORIES] Updating memory:", {
+        memoryId: editingMemory.id,
+        contentLength: editText.trim().length,
+      });
+
+      const response = await authenticatedFetch(`${BASE_URL}/api/memory`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          memoryId: editingMemory.id,
+          content: editText.trim(),
+        }),
+      });
+
+      console.log("🔍 [MEMORIES] Update response:", {
+        status: response.status,
+        statusText: response.statusText,
+        ok: response.ok,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({
+          error: `HTTP ${response.status}: ${response.statusText}`,
+        }));
+        console.error("❌ [MEMORIES] Update error:", errorData);
+        throw new Error(errorData.error || "Failed to update memory");
+      }
+
+      // Update local state
+      setMemorySummaries((prev) =>
+        prev.map((m) =>
+          m.id === editingMemory.id
+            ? { ...m, summary_text: editText.trim() }
+            : m
+        )
+      );
+
+      setEditingMemory(null);
+      setEditText("");
+      Alert.alert("Success", "Memory updated successfully");
+    } catch (error: any) {
+      console.error("Error updating memory:", error);
+      Alert.alert("Error", error.message || "Failed to update memory");
+    } finally {
+      setUpdatingMemoryId(null);
+    }
+  };
+
+  const handleDeleteMemory = (memoryId: string) => {
+    Alert.alert(
+      "Delete Memory",
+      "Are you sure you want to delete this memory? This action cannot be undone.",
+      [
+        {
+          text: "Cancel",
+          style: "cancel",
+        },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => deleteMemory(memoryId),
+        },
+      ]
+    );
+  };
+
+  const deleteMemory = async (memoryId: string) => {
+    try {
+      setDeletingMemoryId(memoryId);
+
+      // Optimistic update - remove from UI immediately
+      const originalMemories = [...memorySummaries];
+      setMemorySummaries((prev) => prev.filter((m) => m.id !== memoryId));
+
+      const BASE_URL =
+        process.env.EXPO_PUBLIC_APP_BASE_URL ||
+        "https://financify-rose.vercel.app";
+
+      console.log("🔍 [MEMORIES] Deleting memory:", { memoryId });
+
+      const response = await authenticatedFetch(
+        `${BASE_URL}/api/memory?memoryId=${memoryId}`,
+        {
+          method: "DELETE",
+          headers: {
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      console.log("🔍 [MEMORIES] Delete response:", {
+        status: response.status,
+        statusText: response.statusText,
+        ok: response.ok,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({
+          error: `HTTP ${response.status}: ${response.statusText}`,
+        }));
+        console.error("❌ [MEMORIES] Delete error:", errorData);
+        throw new Error(errorData.error || "Failed to delete memory");
+      }
+
+      // Success - memory already removed via optimistic update
+      console.log(`Memory deleted successfully: ${memoryId}`);
+    } catch (error: any) {
+      console.error("Error deleting memory:", error);
+      // Restore original state on error
+      setMemorySummaries((prev) => {
+        const restored = [...prev];
+        const deletedMemory = memorySummaries.find((m) => m.id === memoryId);
+        if (deletedMemory) {
+          restored.push(deletedMemory);
+          restored.sort(
+            (a, b) =>
+              new Date(b.created_at).getTime() -
+              new Date(a.created_at).getTime()
+          );
+        }
+        return restored;
+      });
+      Alert.alert("Error", error.message || "Failed to delete memory");
+    } finally {
+      setDeletingMemoryId(null);
+    }
+  };
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
@@ -205,7 +379,39 @@ export default function MemoriesScreen({ onBack }: MemoriesScreenProps = {}) {
                         {memorySummary.summary_text}
                       </Text>
                     </View>
-                    {/* Delete button removed - Supermemory manages memory retention */}
+                    <View style={styles.summaryRight}>
+                      <TouchableOpacity
+                        style={styles.editButton}
+                        onPress={() => handleEditMemory(memorySummary)}
+                        activeOpacity={0.7}
+                        disabled={deletingMemoryId === memorySummary.id}
+                      >
+                        <Ionicons
+                          name="create-outline"
+                          size={22}
+                          color="#4A90E2"
+                        />
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.trashButton}
+                        onPress={() => handleDeleteMemory(memorySummary.id)}
+                        activeOpacity={0.7}
+                        disabled={
+                          deletingMemoryId === memorySummary.id ||
+                          updatingMemoryId === memorySummary.id
+                        }
+                      >
+                        {deletingMemoryId === memorySummary.id ? (
+                          <ActivityIndicator size="small" color="#FF4444" />
+                        ) : (
+                          <Ionicons
+                            name="trash-outline"
+                            size={22}
+                            color="#FF4444"
+                          />
+                        )}
+                      </TouchableOpacity>
+                    </View>
                   </View>
                 </View>
               ))}
@@ -215,6 +421,59 @@ export default function MemoriesScreen({ onBack }: MemoriesScreenProps = {}) {
           {/* Bottom padding */}
           <View style={{ height: responsivePadding(40) }} />
         </ScrollView>
+
+        {/* Edit Memory Modal */}
+        <Modal
+          visible={editingMemory !== null}
+          transparent={true}
+          animationType="slide"
+          onRequestClose={handleCancelEdit}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Edit Memory</Text>
+                <TouchableOpacity
+                  onPress={handleCancelEdit}
+                  style={styles.modalCloseButton}
+                >
+                  <Ionicons name="close" size={24} color="#fff" />
+                </TouchableOpacity>
+              </View>
+
+              <TextInput
+                style={styles.editInput}
+                value={editText}
+                onChangeText={setEditText}
+                multiline
+                numberOfLines={6}
+                placeholder="Enter memory text..."
+                placeholderTextColor="rgba(255, 255, 255, 0.5)"
+                autoFocus
+              />
+
+              <View style={styles.modalActions}>
+                <TouchableOpacity
+                  style={[styles.modalButton, styles.cancelButton]}
+                  onPress={handleCancelEdit}
+                >
+                  <Text style={styles.cancelButtonText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.modalButton, styles.saveButton]}
+                  onPress={handleSaveEdit}
+                  disabled={!editText.trim() || updatingMemoryId !== null}
+                >
+                  {updatingMemoryId ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <Text style={styles.saveButtonText}>Save</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
       </SafeAreaView>
     </View>
   );
@@ -361,8 +620,12 @@ const styles = {
     marginRight: responsivePadding(12),
   },
   summaryRight: {
-    justifyContent: "center" as const,
+    flexDirection: "row" as const,
     alignItems: "center" as const,
+    gap: 8,
+  },
+  editButton: {
+    padding: 8,
   },
   summaryTitle: {
     fontSize: responsiveFontSize(16),
@@ -391,6 +654,77 @@ const styles = {
   clearMemoriesButtonText: {
     color: "#FF4444",
     fontSize: responsiveFontSize(16),
+    fontWeight: "600" as const,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.7)",
+    justifyContent: "center" as const,
+    alignItems: "center" as const,
+    paddingHorizontal: responsivePadding(20),
+  },
+  modalContent: {
+    backgroundColor: "#1A1A1A",
+    borderRadius: 16,
+    padding: responsivePadding(20),
+    width: screenWidth * 0.9,
+    maxWidth: 500,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.1)",
+  },
+  modalHeader: {
+    flexDirection: "row" as const,
+    justifyContent: "space-between" as const,
+    alignItems: "center" as const,
+    marginBottom: responsivePadding(16),
+  },
+  modalTitle: {
+    fontSize: responsiveFontSize(20),
+    fontWeight: "600" as const,
+    color: "#fff",
+  },
+  modalCloseButton: {
+    padding: 4,
+  },
+  editInput: {
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    borderRadius: 8,
+    padding: responsivePadding(12),
+    color: "#fff",
+    fontSize: responsiveFontSize(14),
+    minHeight: 120,
+    textAlignVertical: "top" as const,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.2)",
+    marginBottom: responsivePadding(16),
+  },
+  modalActions: {
+    flexDirection: "row" as const,
+    justifyContent: "flex-end" as const,
+    gap: 12,
+  },
+  modalButton: {
+    paddingVertical: responsivePadding(10),
+    paddingHorizontal: responsivePadding(20),
+    borderRadius: 8,
+    minWidth: 80,
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
+  },
+  cancelButton: {
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+  },
+  cancelButtonText: {
+    color: "#fff",
+    fontSize: responsiveFontSize(14),
+    fontWeight: "600" as const,
+  },
+  saveButton: {
+    backgroundColor: "#4A90E2",
+  },
+  saveButtonText: {
+    color: "#fff",
+    fontSize: responsiveFontSize(14),
     fontWeight: "600" as const,
   },
 };
