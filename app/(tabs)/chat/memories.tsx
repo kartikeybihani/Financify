@@ -69,10 +69,10 @@ export default function MemoriesScreen({ onBack }: MemoriesScreenProps = {}) {
   const fetchMemoriesData = async () => {
     try {
       setLoading(true);
-      console.log(
-        "Fetching memories from Supermemory for user:",
-        session?.user?.id
-      );
+      // console.log(
+      //   "Fetching memories from Supermemory for user:",
+      //   session?.user?.id
+      // );
 
       const BASE_URL =
         process.env.EXPO_PUBLIC_APP_BASE_URL ||
@@ -98,14 +98,15 @@ export default function MemoriesScreen({ onBack }: MemoriesScreenProps = {}) {
 
       // Map Supermemory memories to MemorySummary format
       // Supermemory v4/search returns memories with structure:
-      // { id, memory (text), updatedAt, documents: [{ metadata: { timestamp } }] }
+      // { id, memory (text), updatedAt, documents: [{ id, metadata: { timestamp } }] }
       const mappedMemories: MemorySummary[] = memories.map(
         (memory: any, index: number) => {
           // The actual memory text is in the "memory" field
           const content = memory.memory || memory.content || "";
 
-          // Use the memory ID
+          // Use the memory ID, but also store document ID if available for updates/deletes
           const id = memory.id || `memory-${Date.now()}-${index}`;
+          const documentId = memory.documents?.[0]?.id || null;
 
           // Prefer updatedAt, fallback to document metadata timestamp, then createdAt
           const createdAt =
@@ -120,6 +121,8 @@ export default function MemoriesScreen({ onBack }: MemoriesScreenProps = {}) {
             id,
             summary_text: content,
             created_at: createdAt,
+            // Store original memory object for API operations
+            _originalMemory: memory,
           };
         }
       );
@@ -161,8 +164,21 @@ export default function MemoriesScreen({ onBack }: MemoriesScreenProps = {}) {
         process.env.EXPO_PUBLIC_APP_BASE_URL ||
         "https://financify-rose.vercel.app";
 
+      // Get document ID (required for Supermemory API)
+      const originalMemory = (editingMemory as any)._originalMemory;
+      const documentId = originalMemory?.documents?.[0]?.id;
+
+      if (!documentId) {
+        Alert.alert(
+          "Error",
+          "Cannot update: Document ID not found. Please refresh and try again."
+        );
+        return;
+      }
+
       console.log("🔍 [MEMORIES] Updating memory:", {
         memoryId: editingMemory.id,
+        documentId: documentId,
         contentLength: editText.trim().length,
       });
 
@@ -173,6 +189,7 @@ export default function MemoriesScreen({ onBack }: MemoriesScreenProps = {}) {
         },
         body: JSON.stringify({
           memoryId: editingMemory.id,
+          documentId: documentId, // Required: use document ID
           content: editText.trim(),
         }),
       });
@@ -241,10 +258,44 @@ export default function MemoriesScreen({ onBack }: MemoriesScreenProps = {}) {
         process.env.EXPO_PUBLIC_APP_BASE_URL ||
         "https://financify-rose.vercel.app";
 
-      console.log("🔍 [MEMORIES] Deleting memory:", { memoryId });
+      // Get document ID (required for Supermemory API)
+      const memory = memorySummaries.find((m) => m.id === memoryId);
+      const originalMemory = (memory as any)?._originalMemory;
+      const documentId = originalMemory?.documents?.[0]?.id;
+
+      if (!documentId) {
+        Alert.alert(
+          "Error",
+          "Cannot delete: Document ID not found. Please refresh and try again."
+        );
+        // Restore optimistic update
+        setMemorySummaries((prev) => {
+          const restored = [...prev];
+          if (memory) {
+            restored.push(memory);
+            restored.sort(
+              (a, b) =>
+                new Date(b.created_at).getTime() -
+                new Date(a.created_at).getTime()
+            );
+          }
+          return restored;
+        });
+        return;
+      }
+
+      console.log("🔍 [MEMORIES] Deleting memory:", {
+        memoryId,
+        documentId,
+      });
+
+      const queryParams = new URLSearchParams({
+        memoryId,
+        documentId, // Required: use document ID
+      });
 
       const response = await authenticatedFetch(
-        `${BASE_URL}/api/memory?memoryId=${memoryId}`,
+        `${BASE_URL}/api/memory?${queryParams.toString()}`,
         {
           method: "DELETE",
           headers: {

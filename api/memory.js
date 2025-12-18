@@ -77,15 +77,26 @@ export default async function handler(req, res) {
   } else if (method === "DELETE") {
     // Delete a memory by ID
     try {
-      const { memoryId } = req.query;
-      console.log(`🔍 [MEMORY_API] DELETE request - memoryId: ${memoryId}`);
+      const { memoryId, documentId } = req.query;
+      console.log(
+        `🔍 [MEMORY_API] DELETE request - memoryId: ${memoryId}, documentId: ${documentId}`
+      );
 
       if (!memoryId) {
         console.log(`⚠️ [MEMORY_API] DELETE - memoryId missing`);
         return res.status(400).json({ error: "memoryId is required" });
       }
 
-      const result = await deleteSupermemoryMemory(memoryId);
+      // Use document ID (required), fallback to memory ID if document ID not available
+      const idToUse = documentId || memoryId;
+      if (!documentId) {
+        console.log(
+          `⚠️ [MEMORY_API] No document ID provided, using memory ID as fallback: ${memoryId}`
+        );
+      }
+
+      const result = await deleteSupermemoryMemory(idToUse);
+
       console.log(`✅ [MEMORY_API] DELETE success for ${memoryId}`);
       return res.status(200).json({ success: true, result });
     } catch (error) {
@@ -98,9 +109,9 @@ export default async function handler(req, res) {
   } else if (method === "PUT") {
     // Update a memory by ID
     try {
-      const { memoryId, content, metadata } = req.body;
+      const { memoryId, documentId, content, metadata } = req.body;
       console.log(
-        `🔍 [MEMORY_API] PUT request - memoryId: ${memoryId}, content length: ${
+        `🔍 [MEMORY_API] PUT request - memoryId: ${memoryId}, documentId: ${documentId}, content length: ${
           content?.length || 0
         }`
       );
@@ -114,10 +125,19 @@ export default async function handler(req, res) {
         return res.status(400).json({ error: "content is required" });
       }
 
-      const result = await updateSupermemoryMemory(memoryId, {
+      // Use document ID (required), fallback to memory ID if document ID not available
+      const idToUse = documentId || memoryId;
+      if (!documentId) {
+        console.log(
+          `⚠️ [MEMORY_API] No document ID provided, using memory ID as fallback: ${memoryId}`
+        );
+      }
+
+      const result = await updateSupermemoryMemory(idToUse, {
         content,
         metadata: metadata || {},
       });
+
       console.log(`✅ [MEMORY_API] PUT success for ${memoryId}`);
       return res.status(200).json({ success: true, result });
     } catch (error) {
@@ -1267,29 +1287,30 @@ async function fetchSupermemoryMemories(userId) {
 
 /**
  * Delete a memory from Supermemory
- * @param {string} memoryId - Memory ID to delete
+ * @param {string} documentId - Document ID to delete (use document ID, not memory ID)
  * @returns {Promise<object>} - Delete result
  */
-async function deleteSupermemoryMemory(memoryId) {
+async function deleteSupermemoryMemory(documentId) {
   if (!SUPERMEMORY_API_KEY) {
     throw new Error("Supermemory API key not configured");
   }
 
-  if (!memoryId) {
-    throw new Error("memoryId is required");
+  if (!documentId) {
+    throw new Error("documentId is required");
   }
 
   try {
-    const response = await fetch(
-      `${SUPERMEMORY_BASE_URL}/v3/memories/${memoryId}`,
-      {
-        method: "DELETE",
-        headers: {
-          Authorization: `Bearer ${SUPERMEMORY_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-      }
-    );
+    // Correct endpoint: DELETE /v3/documents/{id}
+    const url = `${SUPERMEMORY_BASE_URL}/v3/documents/${documentId}`;
+    console.log(`🔍 [SUPERMEMORY] Deleting document at: ${url}`);
+
+    const response = await fetch(url, {
+      method: "DELETE",
+      headers: {
+        Authorization: `Bearer ${SUPERMEMORY_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+    });
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -1299,6 +1320,13 @@ async function deleteSupermemoryMemory(memoryId) {
       } catch {
         errorData = { message: errorText };
       }
+      console.error(`❌ [SUPERMEMORY] Delete failed:`, {
+        status: response.status,
+        statusText: response.statusText,
+        errorData,
+        url,
+        documentId,
+      });
       throw new Error(
         `Supermemory API error: ${errorData.message || response.statusText} (${
           response.status
@@ -1306,27 +1334,27 @@ async function deleteSupermemoryMemory(memoryId) {
       );
     }
 
-    console.log(`✅ [SUPERMEMORY] Deleted memory ${memoryId}`);
-    return { success: true, id: memoryId };
+    console.log(`✅ [SUPERMEMORY] Deleted document ${documentId}`);
+    return { success: true, id: documentId };
   } catch (error) {
-    console.error(`❌ [SUPERMEMORY] Error deleting memory:`, error.message);
+    console.error(`❌ [SUPERMEMORY] Error deleting document:`, error.message);
     throw error;
   }
 }
 
 /**
  * Update a memory in Supermemory
- * @param {string} memoryId - Memory ID to update
+ * @param {string} documentId - Document ID to update (use document ID, not memory ID)
  * @param {object} updateData - Update data with content and optional metadata
  * @returns {Promise<object>} - Update result
  */
-async function updateSupermemoryMemory(memoryId, updateData) {
+async function updateSupermemoryMemory(documentId, updateData) {
   if (!SUPERMEMORY_API_KEY) {
     throw new Error("Supermemory API key not configured");
   }
 
-  if (!memoryId) {
-    throw new Error("memoryId is required");
+  if (!documentId) {
+    throw new Error("documentId is required");
   }
 
   if (!updateData.content) {
@@ -1354,17 +1382,22 @@ async function updateSupermemoryMemory(memoryId, updateData) {
       }),
     };
 
-    const response = await fetch(
-      `${SUPERMEMORY_BASE_URL}/v3/memories/${memoryId}`,
-      {
-        method: "PUT",
-        headers: {
-          Authorization: `Bearer ${SUPERMEMORY_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(requestBody),
-      }
+    // Correct endpoint: PATCH /v3/documents/{id}
+    const url = `${SUPERMEMORY_BASE_URL}/v3/documents/${documentId}`;
+    console.log(`🔍 [SUPERMEMORY] Updating document at: ${url}`);
+    console.log(
+      `🔍 [SUPERMEMORY] Request body:`,
+      JSON.stringify(requestBody, null, 2)
     );
+
+    const response = await fetch(url, {
+      method: "PATCH", // Use PATCH, not PUT
+      headers: {
+        Authorization: `Bearer ${SUPERMEMORY_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(requestBody),
+    });
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -1374,6 +1407,13 @@ async function updateSupermemoryMemory(memoryId, updateData) {
       } catch {
         errorData = { message: errorText };
       }
+      console.error(`❌ [SUPERMEMORY] Update failed:`, {
+        status: response.status,
+        statusText: response.statusText,
+        errorData,
+        url,
+        documentId,
+      });
       throw new Error(
         `Supermemory API error: ${errorData.message || response.statusText} (${
           response.status
@@ -1382,10 +1422,10 @@ async function updateSupermemoryMemory(memoryId, updateData) {
     }
 
     const result = await response.json();
-    console.log(`✅ [SUPERMEMORY] Updated memory ${memoryId}`);
+    console.log(`✅ [SUPERMEMORY] Updated document ${documentId}`);
     return result;
   } catch (error) {
-    console.error(`❌ [SUPERMEMORY] Error updating memory:`, error.message);
+    console.error(`❌ [SUPERMEMORY] Error updating document:`, error.message);
     throw error;
   }
 }
