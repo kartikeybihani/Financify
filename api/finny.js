@@ -2254,7 +2254,7 @@ async function handleAsk(
           temperature: 0.25,
           max_tokens: 5000,
           stream: false,
-          // reasoning: { exclude: true }, // Disable reasoning output, only return actual response
+          reasoning: { exclude: true }, // Disable reasoning output, only return actual response
           messages: [
             { role: "system", content: system },
             {
