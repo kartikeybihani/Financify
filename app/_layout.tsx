@@ -1,5 +1,8 @@
 // app/(root)/_layout.tsx
 
+// Polyfill for crypto.getRandomValues (required for uuid package in React Native)
+import "react-native-get-random-values";
+
 import React from "react";
 import "react-native-reanimated";
 import { Stack } from "expo-router";

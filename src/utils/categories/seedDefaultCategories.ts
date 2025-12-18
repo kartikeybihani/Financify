@@ -1,5 +1,6 @@
 // Utility function to seed default categories for new users
 import { supabase } from "@/src/lib/supabase/supabase";
+import { generateUUID } from "@/src/utils/core/uuid";
 
 const DEFAULT_CATEGORIES = [
   { name: "Food", slug: "food", icon: "🍔", color: "#FF6B6B", rank: 1 },
@@ -48,7 +49,7 @@ export async function seedDefaultCategories(userId: string): Promise<boolean> {
 
     // Generate UUIDs and insert default categories
     const categoriesToInsert = DEFAULT_CATEGORIES.map((cat) => ({
-      id: crypto.randomUUID(),
+      id: generateUUID(),
       user_id: userId,
       name: cat.name,
       slug: cat.slug,

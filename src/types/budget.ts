@@ -1,5 +1,6 @@
 import { supabase } from "@/src/lib/supabase/supabase";
 import logger from "@/src/utils/core/logger";
+import { generateUUID } from "@/src/utils/core/uuid";
 
 export interface BudgetPeriod {
   id: string;
@@ -405,7 +406,7 @@ export async function ensureOtherCategoryExists(userId: string): Promise<string 
     const { data: newCategory, error: insertError } = await supabase
       .from("categories")
       .insert({
-        id: generateLocalUUID(),
+        id: generateUUID(),
         user_id: userId,
         name: "Other",
         slug: "other",
@@ -844,14 +845,6 @@ function parseLocalDate(dateStr: string): Date {
   return new Date(year, month, day);
 }
 
-// Lightweight UUID generator that does not rely on crypto (works in RN)
-function generateLocalUUID() {
-  const s4 = () =>
-    Math.floor((1 + Math.random()) * 0x10000)
-      .toString(16)
-      .substring(1);
-  return `${s4()}${s4()}-${s4()}-${s4()}-${s4()}-${s4()}${s4()}${s4()}`;
-}
 
 export async function getOrCreateCurrentBudgetPeriod(
   userId: string,

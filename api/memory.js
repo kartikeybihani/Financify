@@ -920,8 +920,39 @@ async function storeOnboardingMemory(userId, profileData, intentAnswers) {
     return null;
   }
 
+  // Fetch user's name from profiles table
+  let userName = null;
+  try {
+    const { data: profile, error } = await supabase
+      .from("profiles")
+      .select("first_name, last_name")
+      .eq("id", userId)
+      .maybeSingle();
+
+    if (!error && profile) {
+      const firstName = profile.first_name || null;
+      const lastName = profile.last_name || null;
+      if (firstName && lastName) {
+        userName = `${firstName} ${lastName}`;
+      } else if (firstName) {
+        userName = firstName;
+      } else if (lastName) {
+        userName = lastName;
+      }
+    }
+  } catch (error) {
+    console.warn(
+      `⚠️ [SUPERMEMORY] Could not fetch user name for onboarding memory:`,
+      error.message
+    );
+  }
+
   // Build rich memory content from onboarding data
-  const memoryContent = buildOnboardingContent(profileData, intentAnswers);
+  const memoryContent = buildOnboardingContent(
+    userName,
+    profileData,
+    intentAnswers
+  );
 
   // Build metadata with onboarding context
   const memoryMetadata = buildOnboardingMetadata(
@@ -994,23 +1025,27 @@ async function storeOnboardingMemory(userId, profileData, intentAnswers) {
 
 /**
  * Build rich memory content from onboarding data
+ * @param {string} userName - User's full name (first_name + last_name)
  * @param {object} profileData - Profile data (age, occupation, referral)
  * @param {object} intentAnswers - Intent answers (money_mindset, stress_level, emergency_readiness)
  * @returns {string} - Formatted memory content
  */
-function buildOnboardingContent(profileData, intentAnswers) {
+function buildOnboardingContent(userName, profileData, intentAnswers) {
   const parts = [];
 
   // Profile section
-  if (profileData) {
+  if (profileData || userName) {
     const profileParts = [];
-    if (profileData.age) {
+    if (userName) {
+      profileParts.push(`Name: ${userName}`);
+    }
+    if (profileData?.age) {
       profileParts.push(`Age ${profileData.age}`);
     }
-    if (profileData.occupation) {
+    if (profileData?.occupation) {
       profileParts.push(`Occupation: ${profileData.occupation}`);
     }
-    if (profileData.referral) {
+    if (profileData?.referral) {
       const referralLabels = {
         tiktok: "TikTok",
         instagram: "Instagram",
@@ -1023,10 +1058,10 @@ function buildOnboardingContent(profileData, intentAnswers) {
       };
       const referralLabel =
         referralLabels[profileData.referral] || profileData.referral;
-      profileParts.push(`Found Financify via: ${referralLabel}`);
+      profileParts.push(`Found Finny via: ${referralLabel}`);
     }
     if (profileParts.length > 0) {
-      parts.push(`Onboarding Profile:\n${profileParts.join("\n")}`);
+      parts.push(`Profile:\n${profileParts.join("\n")}`);
     }
   }
 

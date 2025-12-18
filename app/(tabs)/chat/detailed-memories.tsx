@@ -284,7 +284,9 @@ export default function DetailedMemoriesScreen({
             <FinnyLoadingIndicator message="Loading detailed memories..." />
           ) : profileMemories.length === 0 ? (
             <View style={styles.emptyContainer}>
-              <Text style={styles.emptyDescription}>No memories found.</Text>
+              <Text style={styles.emptyDescription}>
+                Didn't found specific memories yet.
+              </Text>
             </View>
           ) : (
             <View style={styles.memoriesList}>

@@ -1039,7 +1039,7 @@ export default function FinalScreen() {
             style={[styles.cardsContainer, { opacity: cardOpacity }]}
           >
             <Text style={styles.sectionTitle}>
-              Here's what we found in your spending
+              Here's what I found in your spending
             </Text>
 
             {isLoadingInsights || showLoadingAnimation ? (
@@ -1136,7 +1136,7 @@ export default function FinalScreen() {
                                 <Text style={styles.teaserTitle}>
                                   {insights.length === 1
                                     ? "3 more insights"
-                                    : "5+ more insights"}{" "}
+                                    : "7+ more insights"}{" "}
                                   waiting for you
                                 </Text>
                                 <Text style={styles.teaserSubtitle}>
@@ -1179,7 +1179,7 @@ export default function FinalScreen() {
                               </View>
                               <View style={styles.featureTextContainer}>
                                 <Text style={styles.featureTitle}>
-                                  Chat with Finny, your AI advisor
+                                  Chat with Finny, your AI Money Coach
                                 </Text>
                                 <View style={styles.featurePoints}>
                                   <View style={styles.featurePoint}>
