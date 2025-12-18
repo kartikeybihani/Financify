@@ -238,6 +238,10 @@ export default function DetailedMemoriesScreen({
       }
 
       console.log(`Profile memory deleted successfully: ${memoryId}`);
+
+      // Refresh the entire list to account for any cascade deletions
+      // (e.g., if deleting a memory linked to a document also deletes other memories linked to that document)
+      await fetchProfileMemories();
     } catch (error: any) {
       console.error("Error deleting profile memory:", error);
       // Restore original state on error using the snapshot captured before deletion
