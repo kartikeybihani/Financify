@@ -5142,7 +5142,26 @@ async function handleOffTopic(message, context, conversationContext = null) {
       data.choices?.[0]?.message?.content ||
       "I'd love to help you with your finances! What financial questions can I answer for you today?";
 
-    // Memory extraction for off-topic removed - migrating to Supermemory
+    // Store conversation memory in Supermemory (async, non-blocking)
+    const userId = context?.user_id;
+    if (userId && content) {
+      setImmediate(async () => {
+        try {
+          await storeConversationMemory(userId, message, content, {
+            intent: "off_topic",
+            chat_id: context?.chat_id,
+            category: category,
+            redirection_suggestions: redirectionSuggestions,
+          });
+        } catch (error) {
+          console.error(
+            "❌ [FINNY] Failed to store off-topic conversation memory:",
+            error
+          );
+          // Non-fatal, don't break conversation flow
+        }
+      });
+    }
 
     // Log the off-topic interaction
     const conversationData = {
@@ -5175,6 +5194,27 @@ async function handleOffTopic(message, context, conversationContext = null) {
 
     // Fallback response
     const fallbackResponse = generateFallbackRedirection(category, userProfile);
+
+    // Store conversation memory in Supermemory for fallback response (async, non-blocking)
+    const userId = context?.user_id;
+    if (userId && fallbackResponse) {
+      setImmediate(async () => {
+        try {
+          await storeConversationMemory(userId, message, fallbackResponse, {
+            intent: "off_topic",
+            chat_id: context?.chat_id,
+            category: category,
+            fallback: true,
+          });
+        } catch (error) {
+          console.error(
+            "❌ [FINNY] Failed to store off-topic fallback conversation memory:",
+            error
+          );
+          // Non-fatal, don't break conversation flow
+        }
+      });
+    }
 
     return {
       text: cleanResponseFormatting(fallbackResponse),
