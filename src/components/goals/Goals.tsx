@@ -448,17 +448,22 @@ const Goals: React.FC<GoalsProps> = ({
                     </ButtonShell>
                   ) : (
                     <LinearGradient
-                      colors={["#4A90E2", "#357ABD", "#2E6BA8"]}
+                      colors={["#FFFFFF", "#D0D0D0", "#999999"]}
                       start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 1 }}
+                      end={{ x: 0, y: 1 }}
                       style={styles.gradientButtonContainer}
                     >
                       <Ionicons
                         name="add-circle-outline"
                         size={24}
-                        color="#fff"
+                        color="#1A1A1A"
                       />
-                      <Text style={styles.primaryActionButtonText}>
+                      <Text
+                        style={[
+                          styles.primaryActionButtonText,
+                          { color: "#1A1A1A" },
+                        ]}
+                      >
                         Create your first goal
                       </Text>
                     </LinearGradient>

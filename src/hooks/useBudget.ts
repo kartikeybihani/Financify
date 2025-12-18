@@ -262,6 +262,22 @@ export function useBudget(categoryBreakdown?: CategoryBreakdown): UseBudgetRetur
           allCategoryKeys.add(toKey(cat.slug || cat.name));
         });
 
+        // CRITICAL: Add parent categories from groupings even if they have no transactions
+        // This ensures parent categories exist in flatBudgets so children can attach to them
+        categoryGroupings.forEach((g) => {
+          if (!g.active) return;
+          // Add parent category by ID lookup
+          const parentCat = allCategories.find((cat) => cat.id === g.parent_category_id);
+          if (parentCat) {
+            allCategoryKeys.add(toKey(parentCat.slug || parentCat.name));
+          }
+          // Add child category by ID lookup
+          const childCat = allCategories.find((cat) => cat.id === g.child_category_id);
+          if (childCat) {
+            allCategoryKeys.add(toKey(childCat.slug || childCat.name));
+          }
+        });
+
         // Create flat BudgetData for each category (filtered by visibility)
         const flatBudgets = Array.from(allCategoryKeys)
           .filter((categoryKey) => !hiddenCategoryKeys.has(categoryKey))
@@ -328,32 +344,150 @@ export function useBudget(categoryBreakdown?: CategoryBreakdown): UseBudgetRetur
         });
 
         // Index budgets by categoryId for grouping
+        // CRITICAL: Use categoryId as primary key, fallback to category name only if no ID
         const budgetById = new Map<string, BudgetData>();
         const baseById = new Map<string, BudgetData>();
         flatBudgets.forEach((item) => {
-          const key = item.categoryId || item.category;
-          budgetById.set(key, { ...item, children: item.children ? [...item.children] : [] });
-          baseById.set(key, { ...item, children: [] });
+          // Create a fresh object with empty children array
+          const itemWithChildren = { ...item, children: [] as BudgetData[] };
+          const itemBase = { ...item, children: [] as BudgetData[] };
+          
+          // Use categoryId as primary key when available (for proper parent-child matching)
+          if (item.categoryId) {
+            budgetById.set(item.categoryId, itemWithChildren);
+            baseById.set(item.categoryId, itemBase);
+          }
+          
+          // Also index by category name as fallback (for categories without IDs)
+          const nameKey = item.category;
+          if (!budgetById.has(nameKey)) {
+            budgetById.set(nameKey, itemWithChildren);
+            baseById.set(nameKey, itemBase);
+          }
         });
 
         const childIds = new Set<string>();
         const parentsWithChildren = new Set<string>();
-        // Attach children to parents and roll up totals
+        
+        // First pass: ensure all parent categories exist in budgetById
+        // This handles cases where parent categories don't have transactions but have children
+        categoryGroupings.forEach((g) => {
+          if (!g.active) return;
+          const parentId = g.parent_category_id;
+          
+          // Check if parent already exists in budgetById
+          let parent = budgetById.get(parentId);
+          if (parent) return; // Parent already exists
+          
+          // Try to find parent in flatBudgets by matching categoryId
+          parent = flatBudgets.find((item) => item.categoryId === parentId);
+          if (parent) {
+            // Parent exists in flatBudgets but wasn't indexed by UUID - add it
+            // Get the existing entry if it was indexed by name, or create new one
+            const existingEntry = budgetById.get(parent.category) || { ...parent, children: [] };
+            const parentWithChildren = { ...existingEntry, children: existingEntry.children ? [...existingEntry.children] : [] };
+            const parentBase = { ...existingEntry, children: [] };
+            
+            // Index by UUID
+            budgetById.set(parentId, parentWithChildren);
+            baseById.set(parentId, parentBase);
+            
+            // Also ensure it's indexed by name if not already
+            if (!budgetById.has(parent.category)) {
+              budgetById.set(parent.category, parentWithChildren);
+              baseById.set(parent.category, parentBase);
+            }
+            
+            logger.info(`[BUDGET] Found parent "${parent.category}" (${parentId}) in flatBudgets, indexed by UUID`);
+            return;
+          }
+          
+          // Parent not found - create it from grouping data
+          if (g.parent) {
+            const parentCat = g.parent;
+            const parentKey = toKey(parentCat.slug || parentCat.name);
+            const parentEntryInfo = budgetEntriesMap.get(parentKey);
+            const parentHistoricalData = historicalByKey.get(parentKey);
+            const parentBreakdownData = breakdownByKey.get(parentKey);
+            const parentActualData = actualsByKey.get(parentKey);
+            
+            const parentSpent = parentBreakdownData?.amount ?? parentActualData?.amount ?? 0;
+            let parentAutoBudget = 0;
+            if (!parentEntryInfo?.entry.limit_amount) {
+              if (parentHistoricalData) {
+                if (parentHistoricalData.months > 1) {
+                  parentAutoBudget = Math.round(parentHistoricalData.averageMonthly * 1.2);
+                } else {
+                  parentAutoBudget = Math.round(parentHistoricalData.totalSpent * 1.2);
+                }
+              } else if (parentSpent > 0) {
+                parentAutoBudget = Math.round(parentSpent * 1.2);
+              }
+            }
+            
+            const newParent: BudgetData = {
+              category: parentCat.name,
+              spent: parentSpent,
+              budget: parentEntryInfo?.entry.limit_amount || parentAutoBudget,
+              color: parentCat.color || "#607D8B",
+              icon: parentCat.icon || null,
+              categoryId: parentCat.id,
+              entryId: parentEntryInfo?.entry.id || null,
+              parentCategoryId: null,
+              children: [],
+            };
+            
+            const parentWithChildren = { ...newParent, children: [] };
+            const parentBase = { ...newParent, children: [] };
+            
+            // Index by UUID (primary)
+            budgetById.set(parentId, parentWithChildren);
+            baseById.set(parentId, parentBase);
+            
+            // Also index by name for fallback
+            budgetById.set(parentCat.name, parentWithChildren);
+            baseById.set(parentCat.name, parentBase);
+            
+            logger.info(`[BUDGET] Created parent "${parentCat.name}" (${parentId}) from grouping data`);
+          }
+        });
+        
+        // Second pass: attach children to parents and roll up totals
         flatBudgets.forEach((item) => {
           if (!item.categoryId) return;
           const parentId = groupingByChild.get(item.categoryId);
           if (!parentId) return;
+          
+          // Get parent by UUID (from grouping)
           const parent = budgetById.get(parentId);
-          const child = budgetById.get(item.categoryId) || item;
-          if (!parent || parent.categoryId === child.categoryId) return;
+          // Get child by UUID
+          const child = budgetById.get(item.categoryId);
+          
+          if (!parent || !child) {
+            logger.warn(`[BUDGET] Parent or child not found: parentId=${parentId}, childId=${item.categoryId}, parent=${!!parent}, child=${!!child}`);
+            return;
+          }
+          
+          if (parent.categoryId === child.categoryId) {
+            logger.warn(`[BUDGET] Parent and child are the same: ${parentId}`);
+            return;
+          }
 
+          // Clone child and attach to parent
           const childClone = { ...child, parentCategoryId: parentId };
-          parent.children = parent.children || [];
+          if (!parent.children) {
+            parent.children = [];
+          }
           parent.children.push(childClone);
+          
+          // Roll up totals
           parent.budget += childClone.budget;
           parent.spent += childClone.spent;
+          
           childIds.add(item.categoryId);
           parentsWithChildren.add(parentId);
+          
+          logger.info(`[BUDGET] Attached child "${child.category}" (${item.categoryId}) to parent "${parent.category}" (${parentId}), children count: ${parent.children.length}`);
         });
 
         // Insert parent's own entry as first subcategory when it has children
@@ -371,15 +505,39 @@ export function useBudget(categoryBreakdown?: CategoryBreakdown): UseBudgetRetur
         });
 
         const roots: BudgetData[] = [];
+        const addedRootIds = new Set<string>();
+        
+        // Build roots - only include items that aren't children
+        // Use categoryId as the unique identifier to avoid duplicates
         budgetById.forEach((item, id) => {
-          if (childIds.has(id)) return;
-          if (item.children) {
+          // Skip if this is a child category - check by categoryId (UUID) not by map key
+          // The map key could be UUID or category name, but childIds only contains UUIDs
+          if (item.categoryId && childIds.has(item.categoryId)) {
+            logger.info(`[BUDGET] Skipping child category "${item.category}" (${item.categoryId}) from roots`);
+            return;
+          }
+          
+          // Skip if we've already added this root (by categoryId)
+          if (item.categoryId && addedRootIds.has(item.categoryId)) return;
+          if (!item.categoryId && addedRootIds.has(id)) return;
+          
+          // Sort children if they exist
+          if (item.children && item.children.length > 0) {
             item.children.sort((a, b) => {
               if (a.categoryId === item.categoryId) return -1;
               if (b.categoryId === item.categoryId) return 1;
               return b.budget - a.budget || b.spent - a.spent;
             });
+            logger.info(`[BUDGET] Root "${item.category}" (${item.categoryId || 'no-id'}) has ${item.children.length} children: ${item.children.map(c => c.category).join(', ')}`);
           }
+          
+          // Mark as added
+          if (item.categoryId) {
+            addedRootIds.add(item.categoryId);
+          } else {
+            addedRootIds.add(id);
+          }
+          
           roots.push(item);
         });
 
@@ -396,7 +554,17 @@ export function useBudget(categoryBreakdown?: CategoryBreakdown): UseBudgetRetur
           }))
           .filter((root) => toKey(root.category) !== "income");
 
-        return filteredRoots.sort((a, b) => b.budget - a.budget || b.spent - a.spent);
+        const sortedRoots = filteredRoots.sort((a, b) => b.budget - a.budget || b.spent - a.spent);
+        
+        // Debug logging
+        logger.info(`[BUDGET] Final roots count: ${sortedRoots.length}`);
+        sortedRoots.forEach((root) => {
+          if (root.children && root.children.length > 0) {
+            logger.info(`[BUDGET] Root "${root.category}" (${root.categoryId || 'no-id'}) has ${root.children.length} children: ${root.children.map(c => `"${c.category}" (${c.categoryId || 'no-id'})`).join(', ')}`);
+          }
+        });
+
+        return sortedRoots;
       })();
   }, [budgetSummary, historicalAverages, allCategories, categoryGroupings, hiddenCategoryKeys, categoryBreakdown]);
 

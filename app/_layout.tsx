@@ -16,6 +16,7 @@ import AuthNavigationProvider, {
 } from "@/src/contexts/AuthNavigationContext";
 import NavigationLoadingScreen from "@/src/components/shared/NavigationLoadingScreen";
 import { runStorageMigrationV2 } from "@/src/utils/core/migrate";
+import { runCacheMigration } from "@/src/shared/utils/cacheMigration";
 import logger from "@/src/utils/core/logger";
 import { ActionSheetProvider } from "@expo/react-native-action-sheet";
 import { setupGlobalErrorHandling } from "@/src/utils/core/errorBoundary";
@@ -81,6 +82,8 @@ export default function RootLayout() {
         try {
           // Run storage migration before anything else
           await runStorageMigrationV2();
+          // Run cache migration to clear old global cache keys
+          await runCacheMigration();
         } catch (error) {
           logger.error("Migration error:", error);
         }

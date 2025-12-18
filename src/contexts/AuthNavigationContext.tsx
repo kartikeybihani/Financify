@@ -365,25 +365,59 @@ export const AuthNavigationProvider: React.FC<AuthNavigationProviderProps> = ({
    */
   const clearAllCache = async () => {
     try {
+      // Import cache clearing functions dynamically to avoid circular dependencies
+      const { clearInvestmentCache } = await import(
+        "@/src/shared/utils/investmentCache"
+      );
+      const { clearRecurringCache } = await import(
+        "@/src/shared/utils/recurringCache"
+      );
+      const { clearTransactionsCache } = await import(
+        "@/src/shared/utils/transactionCache"
+      );
+      const { clearSpendingCache } = await import(
+        "@/src/shared/utils/spendingCache"
+      );
+
+      // Clear all user-specific caches (passing undefined clears all user caches)
+      await Promise.all([
+        clearInvestmentCache(), // Clears all user investment caches
+        clearRecurringCache(), // Clears all user recurring caches
+        clearTransactionsCache(), // Clears all user transaction caches
+        clearSpendingCache(), // Clears all user spending caches
+      ]);
+
+      // Clear other app-specific cache keys
       await AsyncStorage.multiRemove([
         "onboarding_complete",
         "user_authenticated",
         "userData",
         "onboarding_started",
-        "@goals_cache",
-        "@cash_cache",
-        "@balances_cache",
-        "@recurring_cache",
-        "@investment_cache",
         // CRITICAL: Clear chat data to prevent cross-user data leakage
         "chatMessages",
         "chatId",
         "currentChatUserId",
+        // Clear old global cache keys (for backward compatibility during migration)
+        "cached_investment_data",
+        "cached_investment_data_timestamp",
+        "cached_recurring_transactions",
+        "cached_recurring_transactions_timestamp",
+        "cached_account_balances",
+        "cached_account_balances_timestamp",
+        "cached_transactions",
+        "cached_transactions_timestamp",
+        "cached_spending_breakdown",
+        "cached_spending_breakdown_timestamp",
+        "cached_goals",
+        "cached_goals_timestamp",
       ]);
+
       profileCache.current = null;
       profileCacheUserId.current = null;
+
+      logger.info("🗑️ [CACHE] All caches cleared on logout");
     } catch (error) {
-      logger.error("Error clearing cache:", error);
+      logger.error("❌ [CACHE] Error clearing cache:", error);
     }
   };
 

@@ -9,12 +9,16 @@ import { supabase } from "@/src/lib/supabase/supabase";
 import { useCashEntries } from "./useCashEntries";
 import logger from "@/src/utils/core/logger";
 import { getAuthenticatedUser } from "@/src/utils/auth/auth";
+import { CACHE_CONFIG } from "@/src/shared/constants/cacheConfig";
 
-const BALANCES_CACHE_KEY = "cached_account_balances";
-const BALANCES_CACHE_TIMESTAMP_KEY = "cached_account_balances_timestamp";
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes in milliseconds
 
+// Helper to generate user-specific cache keys
+const getBalancesCacheKey = (userId: string) => `${CACHE_CONFIG.KEYS.ACCOUNT_BALANCES}_${userId}`;
+const getBalancesCacheTimestampKey = (userId: string) => `${CACHE_CONFIG.KEYS.ACCOUNT_BALANCES_TIMESTAMP}_${userId}`;
+
 interface CachedBalances {
+  userId: string; // CRITICAL: Track which user this cache belongs to
   accounts: Account[];
   timestamp: number;
 }
@@ -28,32 +32,49 @@ export function useAccountBalances() {
   const { entries: cashEntries, totalCash, refreshCash } = useCashEntries();
 
   // Cache management functions
-  const saveBalancesToCache = async (accounts: Account[]): Promise<void> => {
+  const saveBalancesToCache = async (userId: string, accounts: Account[]): Promise<void> => {
     try {
+      if (!userId) {
+        logger.error("❌ [BALANCES CACHE] Cannot save cache without userId");
+        return;
+      }
+
       const cacheData: CachedBalances = {
+        userId, // Store userId in cached data for validation
         accounts,
         timestamp: Date.now(),
       };
       
+      const cacheKey = getBalancesCacheKey(userId);
+      const timestampKey = getBalancesCacheTimestampKey(userId);
+      
       await Promise.all([
-        AsyncStorage.setItem(BALANCES_CACHE_KEY, JSON.stringify(cacheData)),
-        AsyncStorage.setItem(BALANCES_CACHE_TIMESTAMP_KEY, cacheData.timestamp.toString())
+        AsyncStorage.setItem(cacheKey, JSON.stringify(cacheData)),
+        AsyncStorage.setItem(timestampKey, cacheData.timestamp.toString())
       ]);
-      logger.info("💾 [BALANCES CACHE] Account balances saved to cache:", accounts.length, "accounts");
+      logger.info("💾 [BALANCES CACHE] Account balances saved to cache for user:", userId.substring(0, 8), accounts.length, "accounts");
     } catch (error) {
       logger.error("❌ [BALANCES CACHE] Failed to save balances to cache:", error);
     }
   };
 
-  const loadBalancesFromCache = async (): Promise<Account[] | null> => {
+  const loadBalancesFromCache = async (userId: string): Promise<Account[] | null> => {
     try {
+      if (!userId) {
+        logger.error("❌ [BALANCES CACHE] Cannot load cache without userId");
+        return null;
+      }
+
+      const cacheKey = getBalancesCacheKey(userId);
+      const timestampKey = getBalancesCacheTimestampKey(userId);
+
       const [cachedBalancesString, timestampString] = await Promise.all([
-        AsyncStorage.getItem(BALANCES_CACHE_KEY),
-        AsyncStorage.getItem(BALANCES_CACHE_TIMESTAMP_KEY)
+        AsyncStorage.getItem(cacheKey),
+        AsyncStorage.getItem(timestampKey)
       ]);
 
       if (!cachedBalancesString || !timestampString) {
-        logger.info("📭 [BALANCES CACHE] No cached balances found");
+        logger.info("📭 [BALANCES CACHE] No cached balances found for user:", userId.substring(0, 8));
         return null;
       }
 
@@ -64,7 +85,18 @@ export function useAccountBalances() {
       logger.info(`📱 [BALANCES CACHE] Cache age: ${Math.round(cacheAge / 1000)}s (max: ${CACHE_DURATION / 1000}s)`);
 
       const cachedData: CachedBalances = JSON.parse(cachedBalancesString);
-      logger.info("📱 [BALANCES CACHE] Loaded from cache:", cachedData.accounts.length, "accounts");
+
+      // CRITICAL SECURITY CHECK: Verify cache belongs to current user
+      if (cachedData.userId !== userId) {
+        logger.error("🔒 [BALANCES CACHE] SECURITY: Cache belongs to different user! Clearing cache.", {
+          cachedUserId: cachedData.userId?.substring(0, 8),
+          currentUserId: userId.substring(0, 8)
+        });
+        await clearBalancesCache(userId);
+        return null;
+      }
+
+      logger.info("📱 [BALANCES CACHE] Loaded from cache for user:", userId.substring(0, 8), cachedData.accounts.length, "accounts");
       return cachedData.accounts;
     } catch (error) {
       logger.error("❌ [BALANCES CACHE] Failed to load balances from cache:", error);
@@ -72,9 +104,12 @@ export function useAccountBalances() {
     }
   };
 
-  const isCacheValid = async (): Promise<boolean> => {
+  const isCacheValid = async (userId: string): Promise<boolean> => {
     try {
-      const timestampString = await AsyncStorage.getItem(BALANCES_CACHE_TIMESTAMP_KEY);
+      if (!userId) return false;
+
+      const timestampKey = getBalancesCacheTimestampKey(userId);
+      const timestampString = await AsyncStorage.getItem(timestampKey);
       if (!timestampString) return false;
 
       const timestamp = parseInt(timestampString, 10);
@@ -90,8 +125,16 @@ export function useAccountBalances() {
 
   const loadBalancesWithCache = async (): Promise<void> => {
     try {
+      const authResult = await getAuthenticatedUser();
+      if (!authResult?.user?.id) {
+        logger.error("❌ [BALANCES CACHE] User not authenticated");
+        return;
+      }
+
+      const userId = authResult.user.id;
+
       // Always try to load from cache first for immediate UI update
-      const cachedAccounts = await loadBalancesFromCache();
+      const cachedAccounts = await loadBalancesFromCache(userId);
       if (cachedAccounts && cachedAccounts.length > 0) {
         logger.info("⚡ [BALANCES CACHE] Using cached balances for immediate display");
         setAccounts(cachedAccounts);
@@ -99,7 +142,7 @@ export function useAccountBalances() {
       }
 
       // Check if we need to refresh from server
-      const cacheValid = await isCacheValid();
+      const cacheValid = await isCacheValid(userId);
       if (!cacheValid || isInitialLoad) {
         logger.info("🔄 [BALANCES CACHE] Cache invalid or initial load, fetching from server");
         await refreshBalancesFromServer(!!cachedAccounts);
@@ -141,7 +184,7 @@ export function useAccountBalances() {
         setAccounts(accounts);
         
         // Save to cache after successful fetch
-        await saveBalancesToCache(accounts);
+        await saveBalancesToCache(user.id, accounts);
       } else {
         logger.info("📊 [BALANCES] No accounts found");
         setAccounts([]);
@@ -159,13 +202,29 @@ export function useAccountBalances() {
     await refreshBalancesFromServer(false);
   };
 
-  const clearBalancesCache = async (): Promise<void> => {
+  const clearBalancesCache = async (userId?: string): Promise<void> => {
     try {
-      await Promise.all([
-        AsyncStorage.removeItem(BALANCES_CACHE_KEY),
-        AsyncStorage.removeItem(BALANCES_CACHE_TIMESTAMP_KEY)
-      ]);
-      logger.info("🗑️ [BALANCES CACHE] Cache cleared");
+      if (userId) {
+        // Clear specific user's cache
+        const cacheKey = getBalancesCacheKey(userId);
+        const timestampKey = getBalancesCacheTimestampKey(userId);
+        await Promise.all([
+          AsyncStorage.removeItem(cacheKey),
+          AsyncStorage.removeItem(timestampKey)
+        ]);
+        logger.info("🗑️ [BALANCES CACHE] Cache cleared for user:", userId.substring(0, 8));
+      } else {
+        // Clear all user caches (for migration/logout)
+        const allKeys = await AsyncStorage.getAllKeys();
+        const balanceKeys = allKeys.filter(key => 
+          key.startsWith(CACHE_CONFIG.KEYS.ACCOUNT_BALANCES) ||
+          key.startsWith(CACHE_CONFIG.KEYS.ACCOUNT_BALANCES_TIMESTAMP)
+        );
+        if (balanceKeys.length > 0) {
+          await AsyncStorage.multiRemove(balanceKeys);
+          logger.info("🗑️ [BALANCES CACHE] Cleared all user caches:", balanceKeys.length, "keys");
+        }
+      }
     } catch (error) {
       logger.error("❌ [BALANCES CACHE] Failed to clear cache:", error);
     }

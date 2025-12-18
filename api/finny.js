@@ -25,7 +25,7 @@ import {
   // saveMemoryCandidates removed - migrating to Supermemory
   // generateMemorySummary removed - migrating to Supermemory
   // validateMemoriesWithSmallModel removed - migrating to Supermemory
-} from "./memory.js";
+} from "../lib/memoryUtils.js";
 import {
   detectUserState,
   buildContextAwarePrompt,
@@ -2378,9 +2378,10 @@ async function handleAsk(
     };
 
     // Log the conversation
+    // Bug fix: Log cleanedMessage (actual response sent to user) instead of cleanText (raw LLM output)
     const conversationData = {
       user_message: redactPII(message),
-      finny_response: redactPII(cleanText),
+      finny_response: redactPII(cleanedMessage),
       timestamp: new Date().toISOString(),
       user_id: context?.user_id || "unknown",
       intent: "ask_personalized",

@@ -573,15 +573,21 @@ export default function InsightsScreen() {
   useEffect(() => {
     const loadCachedData = async () => {
       try {
+        // Wait for userId to be available
+        if (!userId) {
+          logger.info("⏳ Waiting for userId before loading cache...");
+          return;
+        }
+
         // Clear spending cache on mount to force recalculation with new date parsing logic
         // This ensures old cached data with buggy date logic doesn't persist
-        await clearSpendingCache();
+        await clearSpendingCache(userId);
 
         // Don't load cached spending breakdown anymore - it's month-specific and may have
         // been calculated with old buggy date logic. Always reprocess from transactions.
 
         // Load cached transactions (most important for smooth UX)
-        const cachedTransactions = await loadTransactionsFromCache();
+        const cachedTransactions = await loadTransactionsFromCache(userId);
         if (cachedTransactions && cachedTransactions.length > 0) {
           logger.info(
             "📦 Loading cached transactions on mount:",
@@ -600,7 +606,7 @@ export default function InsightsScreen() {
         }
 
         // Load cached investment data
-        const cachedInvestmentData = await loadInvestmentFromCache();
+        const cachedInvestmentData = await loadInvestmentFromCache(userId);
         if (cachedInvestmentData) {
           logger.info("📦 Loading cached investment data on mount");
           setInvestmentHoldings(cachedInvestmentData.holdings);
@@ -610,7 +616,7 @@ export default function InsightsScreen() {
         }
 
         // Load cached recurring data
-        const cachedRecurringData = await loadRecurringFromCache();
+        const cachedRecurringData = await loadRecurringFromCache(userId);
         if (cachedRecurringData) {
           logger.info("📦 Loading cached recurring data on mount");
           setRecurringData(cachedRecurringData);
@@ -621,7 +627,7 @@ export default function InsightsScreen() {
     };
 
     loadCachedData();
-  }, []);
+  }, [userId]);
 
   // Load accounts and sync status on mount (non-blocking, lightweight)
   useEffect(() => {
@@ -929,8 +935,14 @@ export default function InsightsScreen() {
 
   const loadData = async () => {
     try {
+      const currentUserId = userId || (await getUserId());
+      if (!currentUserId) {
+        logger.error("No authenticated user");
+        return false;
+      }
+
       // First check cache (already loaded in mount effect, but check again)
-      const cachedTransactions = await loadTransactionsFromCache();
+      const cachedTransactions = await loadTransactionsFromCache(currentUserId);
       if (cachedTransactions && cachedTransactions.length > 0) {
         logger.info(
           "Insights: Using cached transactions:",
@@ -944,15 +956,9 @@ export default function InsightsScreen() {
 
       logger.info("Insights: Loading data from Supabase...");
 
-      const userId = await getUserId();
-      if (!userId) {
-        logger.error("No authenticated user");
-        return false;
-      }
-
       // Fetch recent transactions using the new plaid utils
       // Fetch more transactions to support 2 years of month history (estimate ~1000 transactions)
-      const transactions = await getRecentTransactions(userId, 1000);
+      const transactions = await getRecentTransactions(currentUserId, 1000);
 
       if (transactions && transactions.length > 0) {
         logger.info(
@@ -964,7 +970,7 @@ export default function InsightsScreen() {
         hasData.current = true;
 
         // Save to cache for next time
-        await saveTransactionsToCache(transactions);
+        await saveTransactionsToCache(currentUserId, transactions);
         return true;
       }
 
@@ -1003,7 +1009,7 @@ export default function InsightsScreen() {
         hasData.current = true;
 
         // Save to cache for smooth next load
-        await saveTransactionsToCache(transactions);
+        await saveTransactionsToCache(userId, transactions);
       } else {
         logger.info("Insights: No transactions found");
       }
@@ -1579,15 +1585,17 @@ export default function InsightsScreen() {
       setRealInsights(newInsights);
 
       // Save spending breakdown to cache for smooth UX
-      const spendingCacheData = {
-        categoryBreakdown: filteredCategories,
-        currentMonthTransactions: currentMonthExpenses,
-        totalSpent,
-        displayPeriod,
-      };
-      saveSpendingToCache(spendingCacheData).catch((error) => {
-        logger.error("Failed to save spending to cache:", error);
-      });
+      if (userId) {
+        const spendingCacheData = {
+          categoryBreakdown: filteredCategories,
+          currentMonthTransactions: currentMonthExpenses,
+          totalSpent,
+          displayPeriod,
+        };
+        saveSpendingToCache(userId, spendingCacheData).catch((error) => {
+          logger.error("Failed to save spending to cache:", error);
+        });
+      }
     },
     [
       selectedMonth,
@@ -1809,10 +1817,16 @@ export default function InsightsScreen() {
   // Load investment data with AsyncStorage cache
   const loadInvestmentData = async () => {
     try {
+      const currentUserId = userId || (await getUserId());
+      if (!currentUserId) {
+        logger.error("No authenticated user loading investment data");
+        return false;
+      }
+
       logger.info("Insights: Loading investment data...");
 
       // First, try to load from cache
-      const cachedData = await loadInvestmentFromCache();
+      const cachedData = await loadInvestmentFromCache(currentUserId);
       if (cachedData) {
         logger.info("📦 Using cached investment data");
         setInvestmentHoldings(cachedData.holdings);
@@ -1881,7 +1895,10 @@ export default function InsightsScreen() {
         setInvestmentConnections(investmentData.connections);
 
         // Save to cache for future use
-        await saveInvestmentToCache(investmentData);
+        const currentUserId = userId || (await getUserId());
+        if (currentUserId) {
+          await saveInvestmentToCache(currentUserId, investmentData);
+        }
         return true;
       }
 
@@ -1892,7 +1909,10 @@ export default function InsightsScreen() {
       setInvestmentConnections([]);
 
       // Save empty data to cache to avoid repeated DB calls
-      await saveInvestmentToCache(investmentData);
+      const currentUserId = userId || (await getUserId());
+      if (currentUserId) {
+        await saveInvestmentToCache(currentUserId, investmentData);
+      }
       return false;
     } catch (err) {
       logger.error("Failed to load investment data:", err);
@@ -1996,10 +2016,16 @@ export default function InsightsScreen() {
   // Load recurring transactions with AsyncStorage cache
   const loadRecurringTransactions = async () => {
     try {
+      const currentUserId = userId || (await getUserId());
+      if (!currentUserId) {
+        logger.error("No authenticated user loading recurring transactions");
+        return;
+      }
+
       logger.info("🔄 Loading recurring transactions...");
 
       // First, try to load from cache
-      const cachedData = await loadRecurringFromCache();
+      const cachedData = await loadRecurringFromCache(currentUserId);
       if (cachedData) {
         logger.info("📦 Using cached recurring transactions data");
         setRecurringData(cachedData);
@@ -2036,7 +2062,10 @@ export default function InsightsScreen() {
       setRecurringData(data);
 
       // Save to cache for future use
-      await saveRecurringToCache(data);
+      const currentUserId = userId || (await getUserId());
+      if (currentUserId) {
+        await saveRecurringToCache(currentUserId, data);
+      }
 
       logger.info(
         "✅ Recurring transactions loaded from database:",

@@ -12,6 +12,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { Dimensions } from "react-native";
+import { useRouter } from "expo-router";
 import { useAuthNavigation } from "@/src/contexts/AuthNavigationContext";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { authenticatedFetch } from "@/src/utils/auth/authToken";
@@ -44,7 +45,16 @@ export default function DetailedMemoriesScreen({
   onBack,
 }: DetailedMemoriesScreenProps = {}) {
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const { session } = useAuthNavigation();
+
+  const handleBack = () => {
+    if (onBack) {
+      onBack();
+    } else {
+      router.back();
+    }
+  };
 
   const [profileMemories, setProfileMemories] = useState<any[]>([]);
   const [loadingProfileMemories, setLoadingProfileMemories] = useState(true);
@@ -259,7 +269,7 @@ export default function DetailedMemoriesScreen({
         <View style={styles.header}>
           <TouchableOpacity
             style={styles.closeButton}
-            onPress={onBack}
+            onPress={handleBack}
             activeOpacity={0.7}
           >
             <LinearGradient

@@ -9,7 +9,8 @@ import {
   Dimensions,
   Platform,
 } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
+import IconButton from "../shared/IconButton";
 
 const { width: screenWidth } = Dimensions.get("window");
 
@@ -57,12 +58,7 @@ export default function EditMemoryModal({
         <View style={styles.modalContent}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Edit Memory</Text>
-            <TouchableOpacity
-              onPress={onCancel}
-              style={styles.modalCloseButton}
-            >
-              <Ionicons name="close" size={24} color="#fff" />
-            </TouchableOpacity>
+            <IconButton onPress={onCancel} icon="close" size={24} />
           </View>
 
           <TextInput
@@ -77,22 +73,40 @@ export default function EditMemoryModal({
           />
 
           <View style={styles.modalActions}>
-            <TouchableOpacity
-              style={[styles.modalButton, styles.cancelButton]}
-              onPress={onCancel}
-            >
-              <Text style={styles.cancelButtonText}>Cancel</Text>
+            <TouchableOpacity onPress={onCancel} activeOpacity={0.7}>
+              <LinearGradient
+                colors={[
+                  "rgba(255, 255, 255, 0.15)",
+                  "rgba(255, 255, 255, 0.08)",
+                ]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.modalButton}
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </LinearGradient>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.modalButton, styles.saveButton]}
               onPress={onSave}
               disabled={!editText.trim() || isSaving}
+              activeOpacity={0.7}
             >
-              {isSaving ? (
-                <ActivityIndicator size="small" color="#fff" />
-              ) : (
-                <Text style={styles.saveButtonText}>Save</Text>
-              )}
+              <LinearGradient
+                colors={["#4A90E2", "#5BA3F5", "#6BB6FF"]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={[
+                  styles.modalButton,
+                  styles.saveButton,
+                  (!editText.trim() || isSaving) && styles.disabledButton,
+                ]}
+              >
+                {isSaving ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={styles.saveButtonText}>Save</Text>
+                )}
+              </LinearGradient>
             </TouchableOpacity>
           </View>
         </View>
@@ -129,9 +143,6 @@ const styles = {
     fontWeight: "600" as const,
     color: "#fff",
   },
-  modalCloseButton: {
-    padding: 4,
-  },
   editInput: {
     backgroundColor: "rgba(255, 255, 255, 0.1)",
     borderRadius: 8,
@@ -152,25 +163,34 @@ const styles = {
   modalButton: {
     paddingVertical: responsivePadding(10),
     paddingHorizontal: responsivePadding(20),
-    borderRadius: 8,
+    borderRadius: 20,
     minWidth: 80,
     alignItems: "center" as const,
     justifyContent: "center" as const,
-  },
-  cancelButton: {
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+    elevation: 4,
+    borderWidth: 0,
   },
   cancelButtonText: {
-    color: "#fff",
+    color: "#E0E0E0",
     fontSize: responsiveFontSize(14),
     fontWeight: "600" as const,
+    letterSpacing: 0.3,
   },
   saveButton: {
-    backgroundColor: "#4A90E2",
+    shadowColor: "#4A90E2",
+    shadowOpacity: 0.4,
   },
   saveButtonText: {
-    color: "#fff",
+    color: "#FFFFFF",
     fontSize: responsiveFontSize(14),
     fontWeight: "600" as const,
+    letterSpacing: 0.3,
+  },
+  disabledButton: {
+    opacity: 0.5,
   },
 };

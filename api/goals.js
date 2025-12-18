@@ -44,8 +44,7 @@ function logConversation(logData) {
 
 // Memory extraction model - small, fast, free
 // Use env var if available, otherwise fallback to free model
-const MEMORY_EXTRACTION_MODEL =
-  process.env.OPENROUTER_MODEL || "meta-llama/llama-3.3-8b-instruct:free";
+const MEMORY_EXTRACTION_MODEL = "meta-llama/llama-3.3-8b-instruct:free";
 
 // =====================
 // GOAL CONSTANTS

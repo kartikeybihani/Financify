@@ -57,6 +57,22 @@ const BudgetView: React.FC<BudgetViewProps> = ({
   let finalBudgets: BudgetData[] =
     optimisticBudgets || (budgets.length > 0 ? budgets : []);
 
+  // Debug: Log budgets with children
+  useEffect(() => {
+    logger.info(`[BUDGET VIEW] Received ${finalBudgets.length} budgets`);
+    finalBudgets.forEach((budget, idx) => {
+      if (budget.children && budget.children.length > 0) {
+        logger.info(
+          `[BUDGET VIEW] Budget[${idx}] "${budget.category}" (${
+            budget.categoryId || "no-id"
+          }) has ${budget.children.length} children: ${budget.children
+            .map((c) => `"${c.category}"`)
+            .join(", ")}`
+        );
+      }
+    });
+  }, [finalBudgets]);
+
   if (finalBudgets.length === 0) {
     // Build a fallback budget list from spending breakdown if no budgets are set
     const budgetMap = new Map<string, BudgetData>();
@@ -313,8 +329,11 @@ const BudgetView: React.FC<BudgetViewProps> = ({
                 budget.categoryId || entryInfo?.categoryId || null;
               const children = budget.children || [];
 
-              // Use categoryId if available, otherwise fallback to category name + index for uniqueness
-              const uniqueKey = cardCategoryId || `${budget.category}-${index}`;
+              // CRITICAL: Always include index to ensure uniqueness, even when categoryId exists
+              // This prevents duplicate keys when multiple budgets share the same categoryId
+              const uniqueKey = cardCategoryId
+                ? `${cardCategoryId}-${index}`
+                : `${budget.category}-${index}`;
 
               return (
                 <View key={uniqueKey}>
@@ -345,38 +364,49 @@ const BudgetView: React.FC<BudgetViewProps> = ({
                     delay={index * 30}
                     onOpenActions={() => openTransactions(budget)}
                   />
-                  {children.length > 0 && (
-                    <AnimatedSubcategoriesContainer
-                      isExpanded={
-                        !(
-                          cardCategoryId && collapsedParents.has(cardCategoryId)
-                        )
-                      }
-                    >
-                      {children.map((child, childIndex) => {
-                        const childProgress =
-                          child.budget > 0
-                            ? (child.spent / child.budget) * 100
-                            : 0;
-                        const childStatusColor = getStatusColor(childProgress);
-                        // Use categoryId if available, otherwise use category name + index for uniqueness
-                        const childUniqueKey =
-                          child.categoryId ||
-                          `${budget.category}-${child.category}-${childIndex}`;
-                        return (
-                          <SubcategoryRow
-                            key={childUniqueKey}
-                            item={child}
-                            statusColor={childStatusColor}
-                            formatCategoryName={formatCategoryName}
-                            onOpenActions={() =>
-                              openTransactions(child, budget.category)
-                            }
-                          />
-                        );
-                      })}
-                    </AnimatedSubcategoriesContainer>
-                  )}
+                  {children.length > 0 &&
+                    (() => {
+                      const isExpanded = !(
+                        cardCategoryId && collapsedParents.has(cardCategoryId)
+                      );
+                      logger.info(
+                        `[BUDGET VIEW] Rendering ${
+                          children.length
+                        } children for "${budget.category}" (${
+                          cardCategoryId || "no-id"
+                        }), isExpanded: ${isExpanded}, children: ${children
+                          .map((c) => c.category)
+                          .join(", ")}`
+                      );
+                      return (
+                        <AnimatedSubcategoriesContainer isExpanded={isExpanded}>
+                          {children.map((child, childIndex) => {
+                            const childProgress =
+                              child.budget > 0
+                                ? (child.spent / child.budget) * 100
+                                : 0;
+                            const childStatusColor =
+                              getStatusColor(childProgress);
+                            // CRITICAL: Always include childIndex to ensure uniqueness, even when categoryId exists
+                            // This prevents duplicate keys when multiple children share the same categoryId
+                            const childUniqueKey = child.categoryId
+                              ? `${child.categoryId}-${index}-${childIndex}`
+                              : `${budget.category}-${child.category}-${index}-${childIndex}`;
+                            return (
+                              <SubcategoryRow
+                                key={childUniqueKey}
+                                item={child}
+                                statusColor={childStatusColor}
+                                formatCategoryName={formatCategoryName}
+                                onOpenActions={() =>
+                                  openTransactions(child, budget.category)
+                                }
+                              />
+                            );
+                          })}
+                        </AnimatedSubcategoriesContainer>
+                      );
+                    })()}
                 </View>
               );
             })}
@@ -561,25 +591,53 @@ const AnimatedSubcategoriesContainer: React.FC<
   // Measure content height when first rendered or when expanded
   const handleContentLayout = (event: any) => {
     const { height } = event.nativeEvent.layout;
+    logger.info(
+      `[BUDGET VIEW] AnimatedSubcategoriesContainer layout: height=${height}, isExpanded=${isExpanded}, isMeasured=${isMeasured}`
+    );
     if (height > 0 && contentHeightRef.current !== height) {
       contentHeightRef.current = height;
       if (!isMeasured) {
         setIsMeasured(true);
-        // Set initial values
+        // Set initial values based on expanded state
         if (isExpanded) {
+          // If expanded, set to full height immediately
           heightAnim.setValue(height);
           opacityAnim.setValue(1);
           scaleYAnim.setValue(1);
+          logger.info(
+            `[BUDGET VIEW] Set initial expanded state: height=${height}`
+          );
+        } else {
+          // If collapsed, ensure height is 0
+          heightAnim.setValue(0);
+          opacityAnim.setValue(0);
+          scaleYAnim.setValue(0);
+          logger.info(`[BUDGET VIEW] Initial state is collapsed, height=0`);
         }
       }
     }
   };
 
+  // Handle initial expanded state - if expanded and we have height, show immediately
+  useEffect(() => {
+    if (isExpanded && contentHeightRef.current > 0 && !isMeasured) {
+      heightAnim.setValue(contentHeightRef.current);
+      opacityAnim.setValue(1);
+      scaleYAnim.setValue(1);
+      setIsMeasured(true);
+      logger.info(
+        `[BUDGET VIEW] Set initial expanded state immediately: height=${contentHeightRef.current}`
+      );
+    }
+  }, [isExpanded, contentHeightRef.current]);
+
   useEffect(() => {
     if (!isMeasured) return; // Wait for initial measurement
 
+    // When animating height, ALL animations must use useNativeDriver: false
+    // Height is not supported by native driver, so opacity and scaleY must also use JS driver
     if (isExpanded) {
-      // Expanding: height + scale with bounce effect
+      // Expanding: all animations use JS driver since height is involved
       Animated.parallel([
         Animated.timing(heightAnim, {
           toValue: contentHeightRef.current,
@@ -591,25 +649,25 @@ const AnimatedSubcategoriesContainer: React.FC<
           toValue: 1,
           duration: 250,
           easing: Easing.out(Easing.cubic),
-          useNativeDriver: true,
+          useNativeDriver: false, // Must match height animation driver
         }),
         Animated.sequence([
           Animated.timing(scaleYAnim, {
             toValue: 1.08, // Slight overshoot for bounce effect
             duration: 200,
             easing: Easing.out(Easing.cubic),
-            useNativeDriver: true,
+            useNativeDriver: false, // Must match height animation driver
           }),
           Animated.spring(scaleYAnim, {
             toValue: 1,
             tension: 50,
             friction: 7,
-            useNativeDriver: true,
+            useNativeDriver: false, // Must match height animation driver
           }),
         ]),
       ]).start();
     } else {
-      // Collapsing: smooth shrink
+      // Collapsing: all animations use JS driver
       Animated.parallel([
         Animated.timing(heightAnim, {
           toValue: 0,
@@ -621,38 +679,51 @@ const AnimatedSubcategoriesContainer: React.FC<
           toValue: 0,
           duration: 200,
           easing: Easing.in(Easing.cubic),
-          useNativeDriver: true,
+          useNativeDriver: false, // Must match height animation driver
         }),
         Animated.timing(scaleYAnim, {
           toValue: 0,
           duration: 250,
           easing: Easing.in(Easing.cubic),
-          useNativeDriver: true,
+          useNativeDriver: false, // Must match height animation driver
         }),
       ]).start();
     }
   }, [isExpanded, isMeasured]);
 
   return (
-    <Animated.View
-      style={[
-        styles.subcategoriesContainer,
-        {
-          height: heightAnim,
-          opacity: opacityAnim,
-          transform: [
-            {
-              scaleY: scaleYAnim,
-            },
-          ],
-          overflow: "hidden",
-        },
-      ]}
-    >
-      <View onLayout={handleContentLayout} style={{ width: "100%" }}>
+    <>
+      {/* Hidden measurement view - always rendered to get accurate height */}
+      <View
+        style={{
+          position: "absolute",
+          opacity: 0,
+          zIndex: -1,
+          width: "100%",
+        }}
+        onLayout={handleContentLayout}
+      >
         {children}
       </View>
-    </Animated.View>
+      {/* Visible animated container */}
+      <Animated.View
+        style={[
+          styles.subcategoriesContainer,
+          {
+            height: heightAnim,
+            opacity: opacityAnim,
+            transform: [
+              {
+                scaleY: scaleYAnim,
+              },
+            ],
+            overflow: "hidden",
+          },
+        ]}
+      >
+        <View style={{ width: "100%" }}>{children}</View>
+      </Animated.View>
+    </>
   );
 };
 

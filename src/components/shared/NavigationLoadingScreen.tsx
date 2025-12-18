@@ -120,7 +120,7 @@ export default function NavigationLoadingScreen({
           </View>
 
           {/* App Name */}
-          <Text style={styles.appName}>Financify</Text>
+          <Text style={styles.appName}>Finny</Text>
           <Text style={styles.tagline}>Powered by Next Gen AI</Text>
 
           {/* Loading Message */}

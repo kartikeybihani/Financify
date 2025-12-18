@@ -677,7 +677,7 @@ export default function InvestmentsScreen({
       await refreshSnaptradeInvestments(user.id, first.account_id);
 
       // Clear cache to ensure fresh data
-      await clearInvestmentCache();
+      await clearInvestmentCache(user.id);
 
       // Step 2: Wait for SnapTrade to process the refresh (they need time to update their cache)
       logger.info("⏳ Waiting for SnapTrade to process refresh (5 seconds)...");
