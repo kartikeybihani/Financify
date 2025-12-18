@@ -22,6 +22,7 @@ import { authenticatedFetch } from "@/src/utils/auth/authToken";
 import { MemorySummary, MemoriesScreenProps } from "@/src/types/plaid";
 import EditMemoryModal from "@/src/components/modals/EditMemoryModal";
 import DetailedMemoriesScreen from "@/app/(tabs)/chat/detailed-memories";
+import FinnyLoadingIndicator from "@/src/components/shared/FinnyLoadingIndicator";
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
 
@@ -72,6 +73,9 @@ export default function MemoriesScreen({ onBack }: MemoriesScreenProps = {}) {
   const [expandedSummaries, setExpandedSummaries] = useState<Set<string>>(
     new Set()
   );
+  const chevronAnimations = React.useRef(
+    new Map<string, Animated.Value>()
+  ).current;
 
   // Detailed memories screen animation state
   const [showDetailedMemories, setShowDetailedMemories] = useState(false);
@@ -419,8 +423,18 @@ export default function MemoriesScreen({ onBack }: MemoriesScreenProps = {}) {
       )
     );
 
+    const ensureAnimation = (id: string) => {
+      if (!chevronAnimations.has(id)) {
+        chevronAnimations.set(id, new Animated.Value(0));
+      }
+      return chevronAnimations.get(id)!;
+    };
+
     setExpandedSummaries((prev) => {
+      const prevExpandedId = prev.size ? Array.from(prev)[0] : null;
       const newSet = new Set(prev);
+
+      let nextExpandedId: string | null = null;
       if (newSet.has(memoryId)) {
         // If already expanded, collapse it
         newSet.delete(memoryId);
@@ -428,7 +442,27 @@ export default function MemoriesScreen({ onBack }: MemoriesScreenProps = {}) {
         // If not expanded, collapse all others and expand this one
         newSet.clear();
         newSet.add(memoryId);
+        nextExpandedId = memoryId;
       }
+
+      // Animate previous expanded chevron to collapsed
+      if (prevExpandedId && prevExpandedId !== memoryId) {
+        const anim = ensureAnimation(prevExpandedId);
+        Animated.timing(anim, {
+          toValue: 0,
+          duration: 200,
+          useNativeDriver: true,
+        }).start();
+      }
+
+      // Animate current chevron based on new state
+      const currentAnim = ensureAnimation(memoryId);
+      Animated.timing(currentAnim, {
+        toValue: nextExpandedId ? 1 : 0,
+        duration: 200,
+        useNativeDriver: true,
+      }).start();
+
       return newSet;
     });
   };
@@ -461,22 +495,7 @@ export default function MemoriesScreen({ onBack }: MemoriesScreenProps = {}) {
     }
   );
 
-  if (loading) {
-    return (
-      <View style={styles.container}>
-        <SafeAreaView style={{ flex: 1 }}>
-          <View style={styles.header}>
-            <View style={{ width: 40 }} />
-            <Text style={styles.headerTitle}>Memories</Text>
-            <View style={{ width: 40 }} />
-          </View>
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color="#4A90E2" />
-          </View>
-        </SafeAreaView>
-      </View>
-    );
-  }
+  // Removed early return - show header consistently even during loading
 
   const hasMemories = memorySummaries && memorySummaries.length > 0;
 
@@ -508,7 +527,9 @@ export default function MemoriesScreen({ onBack }: MemoriesScreenProps = {}) {
 
         {/* Content */}
         <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-          {!hasMemories ? (
+          {loading ? (
+            <FinnyLoadingIndicator message="Loading memories..." />
+          ) : !hasMemories ? (
             <View style={styles.emptyContainer}>
               <View style={styles.emptyIcon}>
                 <Ionicons
@@ -559,6 +580,21 @@ export default function MemoriesScreen({ onBack }: MemoriesScreenProps = {}) {
                   ? fullText
                   : truncateText(fullText, 30);
 
+                // Ensure chevron animation value exists for this memory
+                if (!chevronAnimations.has(memorySummary.id)) {
+                  chevronAnimations.set(
+                    memorySummary.id,
+                    new Animated.Value(isExpanded ? 1 : 0)
+                  );
+                }
+                const chevronAnim = chevronAnimations.get(
+                  memorySummary.id
+                ) as Animated.Value;
+                const chevronRotate = chevronAnim.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: ["0deg", "90deg"], // right → down
+                });
+
                 return (
                   <TouchableOpacity
                     key={memorySummary.id || index}
@@ -571,13 +607,18 @@ export default function MemoriesScreen({ onBack }: MemoriesScreenProps = {}) {
                   >
                     {/* Expand/Collapse Icon - Top Right */}
                     {fullText.split(/\s+/).length > 30 && (
-                      <View style={styles.expandIconContainer}>
+                      <Animated.View
+                        style={[
+                          styles.expandIconContainer,
+                          { transform: [{ rotate: chevronRotate }] },
+                        ]}
+                      >
                         <Ionicons
-                          name={isExpanded ? "chevron-up" : "chevron-forward"}
+                          name="chevron-forward"
                           size={20}
                           color="rgba(255, 255, 255, 0.6)"
                         />
-                      </View>
+                      </Animated.View>
                     )}
                     <View style={styles.summaryHeader}>
                       <View style={styles.summaryLeft}>

@@ -10,11 +10,11 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import IconButton from "@/src/components/shared/IconButton";
-import { TEXT_STYLES } from "@/src/components/shared/modal-constants";
+import { useRouter } from "expo-router";
+import { LinearGradient } from "expo-linear-gradient";
 
 interface HowFinnyWorksScreenProps {
-  onBack: () => void;
+  onBack?: () => void;
 }
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
@@ -58,6 +58,18 @@ const styles = {
     letterSpacing: 0.5,
     flex: 1,
     textAlign: "center" as const,
+  },
+  closeButton: {
+    padding: 8,
+  },
+  closeButtonCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.2)",
   },
   content: {
     flex: 1,
@@ -180,18 +192,38 @@ export default function HowFinnyWorksScreen({
   onBack,
 }: HowFinnyWorksScreenProps) {
   const insets = useSafeAreaInsets();
+  const router = useRouter();
+
+  const handleBack = () => {
+    if (onBack) {
+      onBack();
+    } else {
+      router.back();
+    }
+  };
 
   return (
     <View style={styles.container}>
       <SafeAreaView style={{ flex: 1, marginBottom: insets.bottom - 10 }}>
         {/* Header */}
         <View style={styles.header}>
-          <IconButton
-            icon="chevron-back"
-            onPress={onBack}
-            size={22}
-            style={TEXT_STYLES.closeButton}
-          />
+          <TouchableOpacity
+            style={styles.closeButton}
+            onPress={handleBack}
+            activeOpacity={0.7}
+          >
+            <LinearGradient
+              colors={[
+                "rgba(255, 255, 255, 0.15)",
+                "rgba(255, 255, 255, 0.05)",
+              ]}
+              style={styles.closeButtonCircle}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+            >
+              <Ionicons name="chevron-back" size={22} color="#fff" />
+            </LinearGradient>
+          </TouchableOpacity>
           <Text style={styles.headerTitle}>How Finny Works</Text>
           <View style={{ width: 40 }} />
         </View>

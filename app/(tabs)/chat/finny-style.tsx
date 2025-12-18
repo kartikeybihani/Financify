@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -6,17 +6,17 @@ import {
   Platform,
   Dimensions,
   Alert,
-  Animated,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import IconButton from "@/src/components/shared/IconButton";
+import { useRouter } from "expo-router";
+import { LinearGradient } from "expo-linear-gradient";
 import { supabase } from "@/src/lib/supabase/supabase";
 import logger from "@/src/utils/core/logger";
 
 interface FinnyStyleScreenProps {
-  onBack: () => void;
+  onBack?: () => void;
 }
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
@@ -60,6 +60,18 @@ const styles = {
     letterSpacing: 0.5,
     flex: 1,
     textAlign: "center" as const,
+  },
+  closeButton: {
+    padding: 8,
+  },
+  closeButtonCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.2)",
   },
   content: {
     flex: 1,
@@ -191,12 +203,19 @@ const StyleOption: React.FC<StyleOptionProps> = ({
 
 export default function FinnyStyleScreen({ onBack }: FinnyStyleScreenProps) {
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const [selectedStyle, setSelectedStyle] = useState<
-    "conversational" | "direct" | "witty" | null
-  >(null);
-  const [isLoading, setIsLoading] = useState(true);
+    "conversational" | "direct" | "witty"
+  >("conversational");
   const [isSaving, setIsSaving] = useState(false);
-  const fadeAnim = useRef(new Animated.Value(0)).current;
+
+  const handleBack = () => {
+    if (onBack) {
+      onBack();
+    } else {
+      router.back();
+    }
+  };
 
   const styleOptions = [
     {
@@ -246,14 +265,8 @@ export default function FinnyStyleScreen({ onBack }: FinnyStyleScreenProps) {
       } catch (error) {
         logger.error("[FinnyStyle] Error loading style:", error);
       } finally {
-        // Always set the style (defaults to conversational) and fade in
+        // Always set the style (defaults to conversational)
         setSelectedStyle(style);
-        setIsLoading(false);
-        Animated.timing(fadeAnim, {
-          toValue: 1,
-          duration: 200,
-          useNativeDriver: true,
-        }).start();
       }
     };
 
@@ -347,20 +360,29 @@ export default function FinnyStyleScreen({ onBack }: FinnyStyleScreenProps) {
       <SafeAreaView style={{ flex: 1, marginBottom: insets.bottom - 10 }}>
         {/* Header */}
         <View style={styles.header}>
-          <IconButton icon="chevron-back" onPress={onBack} size={22} />
+          <TouchableOpacity
+            style={styles.closeButton}
+            onPress={handleBack}
+            activeOpacity={0.7}
+          >
+            <LinearGradient
+              colors={[
+                "rgba(255, 255, 255, 0.15)",
+                "rgba(255, 255, 255, 0.05)",
+              ]}
+              style={styles.closeButtonCircle}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+            >
+              <Ionicons name="chevron-back" size={22} color="#fff" />
+            </LinearGradient>
+          </TouchableOpacity>
           <Text style={styles.headerTitle}>Finny's Style</Text>
           <View style={{ width: 40 }} />
         </View>
 
         {/* Content */}
-        <Animated.View
-          style={[
-            styles.content,
-            {
-              opacity: fadeAnim,
-            },
-          ]}
-        >
+        <View style={styles.content}>
           <View style={styles.section}>
             <View style={styles.styleOptionsContainer}>
               {styleOptions.map((option, index) => (
@@ -368,17 +390,15 @@ export default function FinnyStyleScreen({ onBack }: FinnyStyleScreenProps) {
                   key={option.id}
                   title={option.title}
                   subtitle={option.subtitle}
-                  isSelected={
-                    selectedStyle !== null && selectedStyle === option.id
-                  }
+                  isSelected={selectedStyle === option.id}
                   onPress={() => handleStyleSelect(option.id)}
                   isLast={index === styleOptions.length - 1}
-                  disabled={isLoading || isSaving}
+                  disabled={isSaving}
                 />
               ))}
             </View>
           </View>
-        </Animated.View>
+        </View>
       </SafeAreaView>
     </View>
   );

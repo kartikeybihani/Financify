@@ -16,6 +16,7 @@ import { useAuthNavigation } from "@/src/contexts/AuthNavigationContext";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { authenticatedFetch } from "@/src/utils/auth/authToken";
 import EditMemoryModal from "@/src/components/modals/EditMemoryModal";
+import FinnyLoadingIndicator from "@/src/components/shared/FinnyLoadingIndicator";
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
 
@@ -288,9 +289,7 @@ export default function DetailedMemoriesScreen({
         {/* Content */}
         <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
           {loadingProfileMemories ? (
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color="#4A90E2" />
-            </View>
+            <FinnyLoadingIndicator message="Loading detailed memories..." />
           ) : profileMemories.length === 0 ? (
             <View style={styles.emptyContainer}>
               <Text style={styles.emptyDescription}>No memories found.</Text>

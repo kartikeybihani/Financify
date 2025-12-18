@@ -8,6 +8,7 @@ import {
   Modal,
   TouchableWithoutFeedback,
   ScrollView,
+  Easing,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -344,36 +345,38 @@ const BudgetView: React.FC<BudgetViewProps> = ({
                     delay={index * 30}
                     onOpenActions={() => openTransactions(budget)}
                   />
-                  {children.length > 0 &&
-                    !(
-                      cardCategoryId && collapsedParents.has(cardCategoryId)
-                    ) && (
-                      <View style={styles.subcategoriesContainer}>
-                        {children.map((child, childIndex) => {
-                          const childProgress =
-                            child.budget > 0
-                              ? (child.spent / child.budget) * 100
-                              : 0;
-                          const childStatusColor =
-                            getStatusColor(childProgress);
-                          // Use categoryId if available, otherwise use category name + index for uniqueness
-                          const childUniqueKey =
-                            child.categoryId ||
-                            `${budget.category}-${child.category}-${childIndex}`;
-                          return (
-                            <SubcategoryRow
-                              key={childUniqueKey}
-                              item={child}
-                              statusColor={childStatusColor}
-                              formatCategoryName={formatCategoryName}
-                              onOpenActions={() =>
-                                openTransactions(child, budget.category)
-                              }
-                            />
-                          );
-                        })}
-                      </View>
-                    )}
+                  {children.length > 0 && (
+                    <AnimatedSubcategoriesContainer
+                      isExpanded={
+                        !(
+                          cardCategoryId && collapsedParents.has(cardCategoryId)
+                        )
+                      }
+                    >
+                      {children.map((child, childIndex) => {
+                        const childProgress =
+                          child.budget > 0
+                            ? (child.spent / child.budget) * 100
+                            : 0;
+                        const childStatusColor = getStatusColor(childProgress);
+                        // Use categoryId if available, otherwise use category name + index for uniqueness
+                        const childUniqueKey =
+                          child.categoryId ||
+                          `${budget.category}-${child.category}-${childIndex}`;
+                        return (
+                          <SubcategoryRow
+                            key={childUniqueKey}
+                            item={child}
+                            statusColor={childStatusColor}
+                            formatCategoryName={formatCategoryName}
+                            onOpenActions={() =>
+                              openTransactions(child, budget.category)
+                            }
+                          />
+                        );
+                      })}
+                    </AnimatedSubcategoriesContainer>
+                  )}
                 </View>
               );
             })}
@@ -537,6 +540,119 @@ const BudgetView: React.FC<BudgetViewProps> = ({
         }}
       />
     </View>
+  );
+};
+
+// Animated Subcategories Container Component
+interface AnimatedSubcategoriesContainerProps {
+  children: React.ReactNode;
+  isExpanded: boolean;
+}
+
+const AnimatedSubcategoriesContainer: React.FC<
+  AnimatedSubcategoriesContainerProps
+> = ({ children, isExpanded }) => {
+  const heightAnim = useRef(new Animated.Value(0)).current;
+  const opacityAnim = useRef(new Animated.Value(0)).current;
+  const scaleYAnim = useRef(new Animated.Value(0)).current;
+  const contentHeightRef = useRef(0);
+  const [isMeasured, setIsMeasured] = useState(false);
+
+  // Measure content height when first rendered or when expanded
+  const handleContentLayout = (event: any) => {
+    const { height } = event.nativeEvent.layout;
+    if (height > 0 && contentHeightRef.current !== height) {
+      contentHeightRef.current = height;
+      if (!isMeasured) {
+        setIsMeasured(true);
+        // Set initial values
+        if (isExpanded) {
+          heightAnim.setValue(height);
+          opacityAnim.setValue(1);
+          scaleYAnim.setValue(1);
+        }
+      }
+    }
+  };
+
+  useEffect(() => {
+    if (!isMeasured) return; // Wait for initial measurement
+
+    if (isExpanded) {
+      // Expanding: height + scale with bounce effect
+      Animated.parallel([
+        Animated.timing(heightAnim, {
+          toValue: contentHeightRef.current,
+          duration: 300,
+          easing: Easing.bezier(0.4, 0.0, 0.2, 1),
+          useNativeDriver: false,
+        }),
+        Animated.timing(opacityAnim, {
+          toValue: 1,
+          duration: 250,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        Animated.sequence([
+          Animated.timing(scaleYAnim, {
+            toValue: 1.08, // Slight overshoot for bounce effect
+            duration: 200,
+            easing: Easing.out(Easing.cubic),
+            useNativeDriver: true,
+          }),
+          Animated.spring(scaleYAnim, {
+            toValue: 1,
+            tension: 50,
+            friction: 7,
+            useNativeDriver: true,
+          }),
+        ]),
+      ]).start();
+    } else {
+      // Collapsing: smooth shrink
+      Animated.parallel([
+        Animated.timing(heightAnim, {
+          toValue: 0,
+          duration: 250,
+          easing: Easing.bezier(0.4, 0.0, 0.2, 1),
+          useNativeDriver: false,
+        }),
+        Animated.timing(opacityAnim, {
+          toValue: 0,
+          duration: 200,
+          easing: Easing.in(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        Animated.timing(scaleYAnim, {
+          toValue: 0,
+          duration: 250,
+          easing: Easing.in(Easing.cubic),
+          useNativeDriver: true,
+        }),
+      ]).start();
+    }
+  }, [isExpanded, isMeasured]);
+
+  return (
+    <Animated.View
+      style={[
+        styles.subcategoriesContainer,
+        {
+          height: heightAnim,
+          opacity: opacityAnim,
+          transform: [
+            {
+              scaleY: scaleYAnim,
+            },
+          ],
+          overflow: "hidden",
+        },
+      ]}
+    >
+      <View onLayout={handleContentLayout} style={{ width: "100%" }}>
+        {children}
+      </View>
+    </Animated.View>
   );
 };
 
@@ -927,6 +1043,8 @@ const CategoryBudgetCard: React.FC<CategoryBudgetCardProps> = ({
   onToggleCollapse,
 }) => {
   const fadeAnim = useRef(new Animated.Value(0)).current;
+  const arrowScaleAnim = useRef(new Animated.Value(1)).current;
+  const arrowOpacityAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     Animated.timing(fadeAnim, {
@@ -936,6 +1054,40 @@ const CategoryBudgetCard: React.FC<CategoryBudgetCardProps> = ({
       useNativeDriver: true,
     }).start();
   }, []);
+
+  // Animate arrow when collapsing/expanding
+  useEffect(() => {
+    Animated.sequence([
+      Animated.parallel([
+        Animated.timing(arrowScaleAnim, {
+          toValue: 0.85,
+          duration: 100,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        Animated.timing(arrowOpacityAnim, {
+          toValue: 0.6,
+          duration: 100,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+      ]),
+      Animated.parallel([
+        Animated.timing(arrowScaleAnim, {
+          toValue: 1,
+          duration: 200,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        Animated.timing(arrowOpacityAnim, {
+          toValue: 1,
+          duration: 200,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+      ]),
+    ]).start();
+  }, [isCollapsed]);
 
   // Use icon from database if available, otherwise fallback to emoji or default
   const getCategoryIconDisplay = (
@@ -985,14 +1137,23 @@ const CategoryBudgetCard: React.FC<CategoryBudgetCardProps> = ({
                 style={styles.dropdownTouchable}
                 activeOpacity={0.7}
               >
-                <View
+                <Animated.View
                   style={[
-                    styles.dropdownTriangle,
-                    isCollapsed
-                      ? styles.dropdownTriangleCollapsed
-                      : styles.dropdownTriangleExpanded,
+                    {
+                      transform: [{ scale: arrowScaleAnim }],
+                      opacity: arrowOpacityAnim,
+                    },
                   ]}
-                />
+                >
+                  <View
+                    style={[
+                      styles.dropdownTriangle,
+                      isCollapsed
+                        ? styles.dropdownTriangleCollapsed
+                        : styles.dropdownTriangleExpanded,
+                    ]}
+                  />
+                </Animated.View>
               </TouchableOpacity>
             ) : (
               <View style={[styles.dotIndicator, { backgroundColor: color }]} />

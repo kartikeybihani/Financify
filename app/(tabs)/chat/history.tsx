@@ -20,6 +20,7 @@ import { useAuthNavigation } from "@/src/contexts/AuthNavigationContext";
 import { useChatContext } from "@/src/contexts/ChatContext";
 import { supabase } from "@/src/lib/supabase/supabase";
 import { ChatSession } from "@/src/types/chatHistory";
+import FinnyLoadingIndicator from "@/src/components/shared/FinnyLoadingIndicator";
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
 
@@ -364,9 +365,7 @@ export default function ChatHistoryScreen({
   );
 
   const renderLoading = () => (
-    <View style={styles.loadingContainer}>
-      <ActivityIndicator size="large" color="#4A90E2" />
-    </View>
+    <FinnyLoadingIndicator message="Loading chat history..." />
   );
 
   return (
