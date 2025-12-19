@@ -161,13 +161,16 @@ const Goals: React.FC<GoalsProps> = ({
       };
       setLocalGoalsData((prev) => [optimisticGoal, ...prev]);
 
-      // Persist in background; server refresh will reconcile and replace temp
-      await addManualGoal(goalInput);
-      if (propRefreshGoals) {
-        await propRefreshGoals();
-      } else {
-        await refreshGoals();
-      }
+      // Show notification immediately for instant feedback
+      setState((prev: GoalsState) => ({
+        ...prev,
+        showAddGoalModal: false,
+        notification: {
+          visible: true,
+          message: "Yay! You created a new milestone!",
+          action: "create",
+        },
+      }));
 
       // Trigger subtle celebration animation
       Animated.sequence([
@@ -185,17 +188,17 @@ const Goals: React.FC<GoalsProps> = ({
         }),
       ]).start();
 
-      setState((prev: GoalsState) => ({
-        ...prev,
-        showAddGoalModal: false,
-        notification: {
-          visible: true,
-          message: "Yay! You created a new milestone!",
-          action: "create",
-        },
-      }));
+      // Persist in background; server refresh will reconcile and replace temp
+      await addManualGoal(goalInput);
+      if (propRefreshGoals) {
+        await propRefreshGoals();
+      } else {
+        await refreshGoals();
+      }
     } catch (err) {
       logger.error("Manual goal save failed:", err);
+      // Revert optimistic update on error
+      setLocalGoalsData((prev) => prev.filter((g) => g.id !== tempId));
       setState((prev: GoalsState) => ({
         ...prev,
         notification: {

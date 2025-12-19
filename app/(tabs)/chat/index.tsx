@@ -449,7 +449,23 @@ function ChatScreenContent() {
         return;
       }
 
-      // Submit love_it feedback to database
+      // Find the user's message that prompted this Finny response
+      // Look for the most recent user message before this Finny message
+      const messageIndex = chatMessages.findIndex(
+        (msg) => msg.id === messageId
+      );
+      let userMessage = "";
+      if (messageIndex > 0) {
+        // Look backwards for the last user message
+        for (let i = messageIndex - 1; i >= 0; i--) {
+          if (chatMessages[i].sender === "user") {
+            userMessage = chatMessages[i].text;
+            break;
+          }
+        }
+      }
+
+      // Submit love_it feedback to database (existing flow)
       try {
         const result = await submitLoveIt({
           messageId,
@@ -470,6 +486,47 @@ function ChatScreenContent() {
         }
       } catch (error) {
         console.error("Error submitting thumbs up:", error);
+      }
+
+      // Store feedback in Supermemory (Phase 1.1)
+      try {
+        const BASE_URL =
+          process.env.EXPO_PUBLIC_APP_BASE_URL ||
+          "https://financify-rose.vercel.app";
+
+        // Get user's finny_style preference if available
+        // We'll fetch this from the profile, but for now we'll let the server extract it
+        const response = await authenticatedFetch(`${BASE_URL}/api/memory`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            type: "message_feedback",
+            messageId,
+            feedbackType: "positive",
+            finnyResponse: message.text,
+            userMessage: userMessage || "Unknown user message",
+            messageMetadata: {
+              messageType: message.type,
+              hasActions: !!message.actions,
+              hasGoalOffer: !!message.goalOffer,
+            },
+          }),
+        });
+
+        if (!response.ok) {
+          console.warn(
+            "⚠️ Failed to store feedback in Supermemory:",
+            response.statusText
+          );
+          // Non-critical, don't show error to user
+        } else {
+          console.log("✅ Feedback stored in Supermemory");
+        }
+      } catch (error) {
+        console.error("Error storing feedback in Supermemory:", error);
+        // Non-critical, don't break user experience
       }
     },
     [chatMessages, currentSessionId]
@@ -810,6 +867,25 @@ function ChatScreenContent() {
                   hasActions: !!reportedMessage.actions,
                   hasGoalOffer: !!reportedMessage.goalOffer,
                 }
+              : undefined
+          }
+          userMessage={
+            reportedMessageId
+              ? (() => {
+                  // Find the user's message that prompted this Finny response
+                  const messageIndex = chatMessages.findIndex(
+                    (msg) => msg.id === reportedMessageId
+                  );
+                  if (messageIndex > 0) {
+                    // Look backwards for the last user message
+                    for (let i = messageIndex - 1; i >= 0; i--) {
+                      if (chatMessages[i].sender === "user") {
+                        return chatMessages[i].text;
+                      }
+                    }
+                  }
+                  return undefined;
+                })()
               : undefined
           }
         />

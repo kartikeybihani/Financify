@@ -9,6 +9,8 @@ import {
   deleteSupermemoryMemory,
   updateSupermemoryMemory,
   storeOnboardingMemory,
+  storeMessageFeedback,
+  loadUserProfile,
 } from "../lib/memoryUtils.js";
 
 // Simple in-memory cache for list endpoint (UI display)
@@ -224,40 +226,123 @@ export default async function handler(req, res) {
       });
     }
   } else if (method === "POST") {
-    // Store onboarding memory
+    // Handle different POST types
     try {
-      const { type, profileData, intentAnswers } = req.body;
-      console.log(
-        `🔍 [MEMORY_API] POST request - type: ${type}, hasProfileData: ${!!profileData}, hasIntentAnswers: ${!!intentAnswers}`
-      );
+      const { type } = req.body;
+      console.log(`🔍 [MEMORY_API] POST request - type: ${type}`);
 
-      if (type !== "onboarding_profile") {
+      if (type === "onboarding_profile") {
+        // Store onboarding memory
+        const { profileData, intentAnswers } = req.body;
+        console.log(
+          `🔍 [MEMORY_API] POST - onboarding_profile, hasProfileData: ${!!profileData}, hasIntentAnswers: ${!!intentAnswers}`
+        );
+
+        const result = await storeOnboardingMemory(
+          serverUserId,
+          profileData || null,
+          intentAnswers || null
+        );
+
+        if (!result) {
+          console.log(
+            `⚠️ [MEMORY_API] POST - failed to store onboarding memory`
+          );
+          return res.status(500).json({
+            error: "Failed to store onboarding memory",
+          });
+        }
+
+        // Invalidate cache after storing new memory
+        invalidateListCache(serverUserId);
+
+        console.log(`✅ [MEMORY_API] POST success - stored onboarding memory`);
+        return res.status(200).json({ success: true, result });
+      } else if (type === "message_feedback") {
+        // Store message feedback (like/dislike)
+        const {
+          messageId,
+          feedbackType,
+          finnyResponse,
+          userMessage,
+          messageMetadata,
+          reportText,
+        } = req.body;
+
+        console.log(
+          `🔍 [MEMORY_API] POST - message_feedback, messageId: ${messageId}, feedbackType: ${feedbackType}`
+        );
+
+        if (!messageId || !feedbackType || !finnyResponse || !userMessage) {
+          console.log(`⚠️ [MEMORY_API] POST - missing required fields`);
+          return res.status(400).json({
+            error:
+              "Missing required fields: messageId, feedbackType, finnyResponse, userMessage",
+          });
+        }
+
+        if (feedbackType !== "positive" && feedbackType !== "negative") {
+          console.log(
+            `⚠️ [MEMORY_API] POST - invalid feedbackType: ${feedbackType}`
+          );
+          return res.status(400).json({
+            error: "feedbackType must be 'positive' or 'negative'",
+          });
+        }
+
+        // Load user profile to get finny_style preference
+        let finnyStyle = null;
+        try {
+          const profile = await loadUserProfile(serverUserId);
+          finnyStyle = profile?.finny_style || null;
+        } catch (error) {
+          console.warn(
+            `⚠️ [MEMORY_API] Could not load finny_style, continuing without it:`,
+            error.message
+          );
+        }
+
+        // Add finny_style to messageMetadata if available
+        const enrichedMetadata = {
+          ...(messageMetadata || {}),
+          finny_style: finnyStyle,
+        };
+
+        const result = await storeMessageFeedback(
+          serverUserId,
+          messageId,
+          feedbackType,
+          finnyResponse,
+          userMessage,
+          enrichedMetadata,
+          reportText || null
+        );
+
+        if (!result) {
+          console.log(
+            `⚠️ [MEMORY_API] POST - failed to store message feedback`
+          );
+          return res.status(500).json({
+            error: "Failed to store message feedback",
+          });
+        }
+
+        // Invalidate cache after storing new memory
+        invalidateListCache(serverUserId);
+
+        console.log(`✅ [MEMORY_API] POST success - stored message feedback`);
+        return res.status(200).json({ success: true, result });
+      } else {
         console.log(`⚠️ [MEMORY_API] POST - unsupported type: ${type}`);
-        return res.status(400).json({ error: "Unsupported type" });
-      }
-
-      const result = await storeOnboardingMemory(
-        serverUserId,
-        profileData || null,
-        intentAnswers || null
-      );
-
-      if (!result) {
-        console.log(`⚠️ [MEMORY_API] POST - failed to store onboarding memory`);
-        return res.status(500).json({
-          error: "Failed to store onboarding memory",
+        return res.status(400).json({
+          error: "Unsupported type",
+          supportedTypes: ["onboarding_profile", "message_feedback"],
         });
       }
-
-      // Invalidate cache after storing new memory
-      invalidateListCache(serverUserId);
-
-      console.log(`✅ [MEMORY_API] POST success - stored onboarding memory`);
-      return res.status(200).json({ success: true, result });
     } catch (error) {
-      console.error("❌ [SUPERMEMORY_ONBOARDING] Error:", error);
+      console.error("❌ [SUPERMEMORY_POST] Error:", error);
       return res.status(500).json({
-        error: "Failed to store onboarding memory",
+        error: "Failed to store memory",
         message: error.message,
       });
     }
