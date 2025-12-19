@@ -1946,10 +1946,17 @@ async function handleAsk(
         memoriesByType[type].push(m);
       });
 
-      // Build prompt sections using summary/content from Supermemory documents
+      // Build prompt sections using content from Supermemory documents
+      // Note: v4/search returns 'memory' field (mapped to 'content'), not 'summary'
+      // Summaries are only available in list endpoint, not search endpoint
       Object.entries(memoriesByType).forEach(([type, mems]) => {
+        // Use content (which contains the memory text from v4/search)
+        // Limit each memory to 200 chars to avoid prompt bloat
         const memoryTexts = mems
-          .map((m) => m.summary || m.content)
+          .map((m) => {
+            const text = m.content || m.summary || "";
+            return text.length > 200 ? text.substring(0, 200) + "..." : text;
+          })
           .filter(Boolean)
           .join("; ");
         if (memoryTexts) {
@@ -5002,11 +5009,18 @@ async function handleOffTopic(message, context, conversationContext = null) {
         memoriesByType[type].push(m);
       });
 
-      // Build prompt sections using summary/content from Supermemory documents
+      // Build prompt sections using content from Supermemory documents
+      // Note: v4/search returns 'memory' field (mapped to 'content'), not 'summary'
+      // Summaries are only available in list endpoint, not search endpoint
       const memorySections = [];
       Object.entries(memoriesByType).forEach(([type, mems]) => {
+        // Use content (which contains the memory text from v4/search)
+        // Limit each memory to 200 chars to avoid prompt bloat
         const memoryTexts = mems
-          .map((m) => m.summary || m.content)
+          .map((m) => {
+            const text = m.content || m.summary || "";
+            return text.length > 200 ? text.substring(0, 200) + "..." : text;
+          })
           .filter(Boolean)
           .join("; ");
         if (memoryTexts) {

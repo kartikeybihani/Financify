@@ -11,6 +11,30 @@ import {
   storeOnboardingMemory,
 } from "../lib/memoryUtils.js";
 
+// Simple in-memory cache for list endpoint (UI display)
+// Key: userId, Value: { data: [...], timestamp: number }
+const listCache = new Map();
+const LIST_CACHE_TTL_MS = 30000; // 30 seconds cache for list endpoint
+
+function getCachedList(userId) {
+  const cached = listCache.get(userId);
+  if (!cached) return null;
+  const age = Date.now() - cached.timestamp;
+  if (age > LIST_CACHE_TTL_MS) {
+    listCache.delete(userId);
+    return null;
+  }
+  return cached.data;
+}
+
+function setCachedList(userId, data) {
+  listCache.set(userId, { data, timestamp: Date.now() });
+}
+
+function invalidateListCache(userId) {
+  listCache.delete(userId);
+}
+
 export default async function handler(req, res) {
   // Debug logging
   console.log(`🔍 [MEMORY_API] Request received:`, {
@@ -74,17 +98,32 @@ export default async function handler(req, res) {
       // Default: Fetch profile and memory summaries from Supermemory
       // Profile is optional - if it fails, we still return memories
       // Using list endpoint for document summaries instead of search
+      // Check cache first for list endpoint (UI display optimization)
+      let memoriesResult = getCachedList(serverUserId);
+      const shouldFetchMemories = memoriesResult === null;
+
       const [profile, memories] = await Promise.allSettled([
         fetchSupermemoryProfile(serverUserId),
-        fetchSupermemoryMemoriesList(serverUserId, 100), // Use list endpoint with summaries
-        // fetchSupermemoryMemories(serverUserId), // Old search-based implementation (commented out)
+        shouldFetchMemories
+          ? fetchSupermemoryMemoriesList(serverUserId, 100) // Use list endpoint with summaries
+          : Promise.resolve(memoriesResult),
       ]);
+
+      // Update cache if we fetched fresh data
+      if (shouldFetchMemories && memories.status === "fulfilled") {
+        setCachedList(serverUserId, memories.value);
+        memoriesResult = memories.value;
+      } else if (!shouldFetchMemories) {
+        // Use cached data
+        memoriesResult = memoriesResult || [];
+      } else {
+        // Fetch failed, use empty array
+        memoriesResult = memories.status === "fulfilled" ? memories.value : [];
+      }
 
       // Extract results, handling failures gracefully
       const profileResult =
         profile.status === "fulfilled" ? profile.value : null;
-      const memoriesResult =
-        memories.status === "fulfilled" ? memories.value : [];
 
       return res.status(200).json({
         profile: profileResult || null,
@@ -119,6 +158,9 @@ export default async function handler(req, res) {
       }
 
       const result = await deleteSupermemoryMemory(idToUse);
+
+      // Invalidate cache after deletion
+      invalidateListCache(serverUserId);
 
       console.log(`✅ [MEMORY_API] DELETE success for ${memoryId}`);
       return res.status(200).json({ success: true, result });
@@ -169,6 +211,9 @@ export default async function handler(req, res) {
         metadata: metadata || {},
       });
 
+      // Invalidate cache after update
+      invalidateListCache(serverUserId);
+
       console.log(`✅ [MEMORY_API] PUT success for ${memoryId}`);
       return res.status(200).json({ success: true, result });
     } catch (error) {
@@ -203,6 +248,9 @@ export default async function handler(req, res) {
           error: "Failed to store onboarding memory",
         });
       }
+
+      // Invalidate cache after storing new memory
+      invalidateListCache(serverUserId);
 
       console.log(`✅ [MEMORY_API] POST success - stored onboarding memory`);
       return res.status(200).json({ success: true, result });
