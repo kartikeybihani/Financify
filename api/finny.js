@@ -119,6 +119,10 @@ const SUMMARY_MODEL = "deepseek/deepseek-r1-0528-qwen3-8b:free";
 const classificationCache = new Map();
 const CLASSIFICATION_CACHE_TTL = 60 * 60 * 1000; // 1 hour in milliseconds
 
+// Memory cache - in-memory cache for memory search results (to avoid duplicate loads)
+const memoryCache = new Map();
+const MEMORY_CACHE_TTL = 5 * 60 * 1000; // 5 minutes - memories can change, but same query within 5min should reuse
+
 // Data cache - in-memory cache for user data with different TTLs
 const dataCache = new Map();
 
@@ -367,6 +371,76 @@ function setCachedClassification(message, result) {
     for (const [key, value] of classificationCache.entries()) {
       if (now >= value.expires_at) {
         classificationCache.delete(key);
+      }
+    }
+  }
+}
+
+// Generate a cache key for memory search (user-specific)
+function generateMemoryCacheKey(userId, query) {
+  if (!query || typeof query !== "string" || query.trim().length === 0) {
+    return null;
+  }
+  // Normalize the query for better cache hits
+  const normalized = query
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, " ") // Normalize whitespace
+    .substring(0, 200); // Limit length for cache key
+
+  return `${userId}:${normalized}`;
+}
+
+// Get cached memory result
+function getCachedMemory(userId, query) {
+  const key = generateMemoryCacheKey(userId, query);
+  if (!key) return null;
+
+  const cached = memoryCache.get(key);
+
+  if (cached && Date.now() < cached.expires_at) {
+    logDebug(
+      `✅ [MEMORY_CACHE] Cache HIT for user ${userId}, query: "${query.substring(
+        0,
+        50
+      )}..."`
+    );
+    return cached.result;
+  }
+
+  if (cached) {
+    logDebug(
+      `⏰ [MEMORY_CACHE] Cache EXPIRED for user ${userId}, query: "${query.substring(
+        0,
+        50
+      )}..."`
+    );
+    memoryCache.delete(key);
+  }
+
+  return null;
+}
+
+// Set cached memory result
+function setCachedMemory(userId, query, result) {
+  const key = generateMemoryCacheKey(userId, query);
+  if (!key) return;
+
+  const expires_at = Date.now() + MEMORY_CACHE_TTL;
+  memoryCache.set(key, { result, expires_at });
+  logDebug(
+    `💾 [MEMORY_CACHE] Cached memory result for user ${userId}, query: "${query.substring(
+      0,
+      50
+    )}..."`
+  );
+
+  // Clean up expired entries periodically (every 100 cache writes)
+  if (memoryCache.size % 100 === 0) {
+    const now = Date.now();
+    for (const [key, value] of memoryCache.entries()) {
+      if (now >= value.expires_at) {
+        memoryCache.delete(key);
       }
     }
   }
@@ -1057,11 +1131,37 @@ export default async function handler(req, res) {
   let sessionState = getSessionState(finalUserId);
 
   // Load user profile (onboarding data), memory, and feedback patterns in parallel
+  // OPTIMIZED: Check memory cache first to avoid duplicate Supermemory API calls
   // Pass message for semantic search in Supermemory
   // Also retrieve feedback patterns for response adaptation
-  const [userProfileData, userMemory, feedbackPatterns] = await Promise.all([
+  let userMemory;
+  if (message) {
+    // Check cache first
+    const cachedMemory = getCachedMemory(finalUserId, message);
+    if (cachedMemory) {
+      userMemory = cachedMemory;
+      logInfo(
+        `⚡ [MEMORY_CACHE] Using cached memories for message: "${message.substring(
+          0,
+          50
+        )}..."`
+      );
+    } else {
+      // Load from Supermemory and cache the result
+      userMemory = await loadUserMemory(finalUserId, message);
+      // Always cache the result (even if empty) to avoid repeated API calls for same query
+      // loadUserMemory always returns { memories: [], totalCount: 0 } on error/null, so it's safe
+      if (userMemory && typeof userMemory === "object") {
+        setCachedMemory(finalUserId, message, userMemory);
+      }
+    }
+  } else {
+    // No message provided, load empty memories
+    userMemory = await loadUserMemory(finalUserId, null);
+  }
+
+  const [userProfileData, feedbackPatterns] = await Promise.all([
     loadUserProfile(finalUserId),
-    loadUserMemory(finalUserId, message || null),
     retrieveFeedbackPatterns(finalUserId, null), // Will extract topic from message later if needed
   ]);
 
@@ -1592,8 +1692,9 @@ async function handleAsk(
         logDebug("🔍 [STOCK] Available packs:", Object.keys(packs));
 
         // Get user context for personalization
-        // Pass message for semantic search in Supermemory
-        const userMemory = await loadUserMemory(userId, message || null);
+        // Use cached memory from context if available, otherwise load (will use cache)
+        const userMemory =
+          context.memory || (await loadUserMemory(userId, message || null));
         const userProfile = context.profile || { name: null, age: null };
 
         // Get investment holdings from context packs if available
