@@ -3972,9 +3972,7 @@ function detectConversationTopic(message, conversationContext) {
 
   // 1. INVESTMENT & STOCKS (Gen Z loves crypto and stocks)
   if (
-    /\b(stock|stocks|invest|investment|portfolio|trading|buy|sell)\b/i.test(
-      text
-    ) ||
+    /\b(stock|stocks|invest|investment|portfolio|trading)\b/i.test(text) ||
     /\b(apple|aapl|tesla|tsla|bitcoin|btc|ethereum|eth|crypto|cryptocurrency)\b/i.test(
       text
     ) ||
