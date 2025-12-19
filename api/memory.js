@@ -290,22 +290,25 @@ export default async function handler(req, res) {
           });
         }
 
-        // Load user profile to get finny_style preference
+        // Load user profile to get finny_style preference and user name
         let finnyStyle = null;
+        let userName = null;
         try {
           const profile = await loadUserProfile(serverUserId);
           finnyStyle = profile?.finny_style || null;
+          userName = profile?.name || null;
         } catch (error) {
           console.warn(
-            `⚠️ [MEMORY_API] Could not load finny_style, continuing without it:`,
+            `⚠️ [MEMORY_API] Could not load profile, continuing without it:`,
             error.message
           );
         }
 
-        // Add finny_style to messageMetadata if available
+        // Add finny_style and userName to messageMetadata if available
         const enrichedMetadata = {
           ...(messageMetadata || {}),
           finny_style: finnyStyle,
+          userName: userName,
         };
 
         const result = await storeMessageFeedback(

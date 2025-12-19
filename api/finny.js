@@ -1784,6 +1784,7 @@ async function handleAsk(
                   conversationalResponse,
                   {
                     intent: "ask_personalized",
+                    userName: context?.profile?.name || null,
                     chat_id: context?.chat_id,
                     topic: contextMetadata.active_topic,
                     entity: contextMetadata.last_entity,
@@ -1866,6 +1867,7 @@ async function handleAsk(
                   fallbackResponse,
                   {
                     intent: "ask_personalized",
+                    userName: context?.profile?.name || null,
                     chat_id: context?.chat_id,
                     fallback_used: true,
                   }
@@ -2465,6 +2467,7 @@ async function handleAsk(
               chat_id: context?.chat_id,
               topic: topicDetection?.topic,
               entity: topicDetection?.entity,
+              userName: context?.profile?.name || null,
             }
           );
         } catch (error) {
@@ -5133,6 +5136,7 @@ async function handleOffTopic(message, context, conversationContext = null) {
             chat_id: context?.chat_id,
             category: category,
             redirection_suggestions: redirectionSuggestions,
+            userName: context?.profile?.name || null,
           });
         } catch (error) {
           console.error(
@@ -5186,6 +5190,7 @@ async function handleOffTopic(message, context, conversationContext = null) {
             chat_id: context?.chat_id,
             category: category,
             fallback: true,
+            userName: context?.profile?.name || null,
           });
         } catch (error) {
           console.error(
