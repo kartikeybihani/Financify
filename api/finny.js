@@ -20,6 +20,8 @@ import {
   loadUserMemory,
   loadUserProfile,
   storeConversationMemory,
+  retrieveFeedbackPatterns,
+  buildFeedbackContext,
   // saveMemoryCandidates removed - migrating to Supermemory
   // generateMemorySummary removed - migrating to Supermemory
   // validateMemoriesWithSmallModel removed - migrating to Supermemory
@@ -1054,11 +1056,13 @@ export default async function handler(req, res) {
 
   let sessionState = getSessionState(finalUserId);
 
-  // Load user profile (onboarding data) and memory in parallel
+  // Load user profile (onboarding data), memory, and feedback patterns in parallel
   // Pass message for semantic search in Supermemory
-  const [userProfileData, userMemory] = await Promise.all([
+  // Also retrieve feedback patterns for response adaptation
+  const [userProfileData, userMemory, feedbackPatterns] = await Promise.all([
     loadUserProfile(finalUserId),
     loadUserMemory(finalUserId, message || null),
+    retrieveFeedbackPatterns(finalUserId, null), // Will extract topic from message later if needed
   ]);
 
   // Merge profile data with existing userProfile (from auth metadata)
@@ -1082,6 +1086,8 @@ export default async function handler(req, res) {
     conversation_context: conversationContext, // Keep both for compatibility
     // NEW: Add memory reading
     memory: userMemory,
+    // NEW: Add feedback patterns for adaptation
+    feedbackPatterns: feedbackPatterns,
   };
 
   // === PROFILE CACHE INVALIDATION ===
@@ -1933,6 +1939,18 @@ async function handleAsk(
           ? "- Add more humor and light-heartedness while staying professional"
           : "- Use conversational, friendly tone (default)"
       );
+    }
+
+    // Feedback-based adaptation (Phase 1.3)
+    // Prioritize deep understanding of user's thinking and preferences
+    if (context.feedbackPatterns) {
+      const feedbackContext = buildFeedbackContext(context.feedbackPatterns);
+      if (feedbackContext) {
+        additionalSections.push("", feedbackContext);
+        console.log(
+          `✅ [ADAPTATION] Added feedback context with ${context.feedbackPatterns.preferences.length} preferences and ${context.feedbackPatterns.deepInsights.length} deep insights`
+        );
+      }
     }
 
     // Memory context from Supermemory (already ranked by semantic search)
@@ -5381,59 +5399,7 @@ async function limitedBraveSearch(query) {
 // === Stocks via Finnhub ===
 function looksLikeStockQuery(message) {
   const m = message.toLowerCase();
-
-  // FIRST: Check for personal portfolio queries that should NOT go to stock analysis
-  const personalPortfolioPatterns = [
-    /\b(what holdings do i own|my holdings|my portfolio|my investments|my stocks|my shares|what do i own|show my portfolio|show my holdings|my investment portfolio|my stock portfolio)\b/i,
-    /\b(holdings|portfolio|investments)\b.*\b(do i have|do i own|my|mine|show me|what are)\b/i,
-    /\b(investment advice|investment help|portfolio advice|portfolio help)\b/i,
-  ];
-
-  // If it's a personal portfolio query, don't route to stock analysis
-  if (personalPortfolioPatterns.some((pattern) => pattern.test(message))) {
-    console.log(
-      "🎯 [STOCK_ROUTING] Personal portfolio query detected, NOT routing to stock analysis"
-    );
-    return false;
-  }
-
-  // Check for general financial advice that should NOT go to stock analysis
-  const generalFinancialPatterns = [
-    /\b(emergency fund|emergency savings|savings|budget|budgeting|expenses|spending|debt|loan|mortgage|retirement|401k|ira)\b/i,
-    /\b(how much should i|what should i|financial planning|money management)\b/i,
-    /\b(save|saving|spend|spending|invest|investing)\b.*\b(money|dollars|amount)\b/i,
-  ];
-
-  // If it's general financial advice, don't route to stock analysis
-  if (generalFinancialPatterns.some((pattern) => pattern.test(message))) {
-    console.log(
-      "🎯 [STOCK_ROUTING] General financial advice query detected, NOT routing to stock analysis"
-    );
-    return false;
-  }
-
-  // Check for explicit stock analysis keywords (more specific)
-  const stockAnalysisKeywords =
-    /\b(stock|stocks|ticker|share|shares|price|quote|buy|sell|valuation|pt|price target|market cap|pe ratio|earnings|dividend|analyst|recommendation|trading|trader)\b/;
-
-  // Check for company names or ticker symbols (but be more strict)
-  const hasTickerSymbol =
-    /\b[A-Z]{1,5}\b/.test(message) &&
-    /\b(stock|share|ticker|quote|price|analysis)\b/i.test(message);
-
-  // Check for natural language patterns that indicate stock analysis interest
-  const naturalLanguagePatterns = [
-    /\b(tell me about|show me|get me|what about|how is|how are)\b.*\b(stock|company|corp|inc|ltd|llc)\b/i,
-    /\b(about|regarding|concerning)\b.*\b[A-Z]{1,5}\b/i,
-    /\b(should i buy|is.*good|worth.*investing|add.*portfolio)\b/i,
-    /\b(apple|microsoft|google|amazon|tesla|meta|nvidia|netflix|uber|airbnb|spotify|twitter|snapchat|zoom|palantir|snowflake|shopify|square|paypal|coinbase|robinhood|doordash|peloton)\b/i,
-  ];
-
-  const hasNaturalLanguage = naturalLanguagePatterns.some((pattern) =>
-    pattern.test(message)
-  );
-
-  return stockAnalysisKeywords.test(m) || hasTickerSymbol || hasNaturalLanguage;
+  return /\bstock\b/.test(m);
 }
 
 function looksLikeStockDeepQuery(message) {
