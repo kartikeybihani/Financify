@@ -241,19 +241,19 @@ async function setPersistentCache(dataType, userId, data, params = {}) {
 
 // OPTIMIZED: Unified cache TTL strategy for better performance
 const CACHE_TTL = {
-  // Fast-changing data (5 minutes) - in-memory priority
-  financial_summary: 5 * 60 * 1000, // 5 minutes
-  summary_min: 5 * 60 * 1000, // 5 minutes (reduced from 15)
-  net_worth: 5 * 60 * 1000, // 5 minutes (reduced from 10)
+  // Fast-changing data (50 minutes) - extended for prebuild optimization
+  financial_summary: 50 * 60 * 1000, // 50 minutes
+  summary_min: 50 * 60 * 1000, // 50 minutes (extended for prebuild)
+  net_worth: 50 * 60 * 1000, // 50 minutes (extended for prebuild)
 
-  // Medium-changing data (15 minutes)
-  spend_data: 15 * 60 * 1000, // 15 minutes (reduced from 30)
-  goals_overview: 15 * 60 * 1000, // 15 minutes (reduced from 60)
-  cashflow_monthly: 15 * 60 * 1000, // 15 minutes (reduced from 30)
+  // Medium-changing data (50 minutes) - extended for prebuild optimization
+  spend_data: 50 * 60 * 1000, // 50 minutes (extended for prebuild)
+  goals_overview: 50 * 60 * 1000, // 50 minutes (extended for prebuild)
+  cashflow_monthly: 50 * 60 * 1000, // 50 minutes (extended for prebuild)
 
-  // Slow-changing data (30-60 minutes)
-  investments_all: 60 * 60 * 1000, // 1 hour (reduced from 6 hours)
-  category_transactions: 30 * 60 * 1000, // 30 minutes
+  // Slow-changing data (50-60 minutes)
+  investments_all: 50 * 60 * 1000, // 50 minutes (extended for prebuild)
+  category_transactions: 50 * 60 * 1000, // 50 minutes (extended for prebuild)
 };
 
 // Centralized mapping from "needs" to pack keys and persistent cache types
@@ -4463,7 +4463,7 @@ async function handlePrebuildContext(userId) {
   const startTime = Date.now();
 
   try {
-    // Check if context is already cached and fresh (within 5 minute TTL)
+    // Check if context is already cached and fresh (within 50 minute TTL)
     // This prevents unnecessary rebuilding when user visits Finny tab multiple times
     const commonContexts = [
       "summary_min",
@@ -4521,14 +4521,14 @@ async function handlePrebuildContext(userId) {
         summaryMinKeys: basePack ? Object.keys(basePack) : [],
       });
 
-      // Cache base context for 5 minutes
+      // Cache base context for 50 minutes
       if (basePack) {
         await setCachedUserData(
           NEED_CONFIG.summary_min.cacheType,
           userId,
           basePack,
           {
-            ttl: 5 * 60 * 1000,
+            ttl: 50 * 60 * 1000,
           }
         );
         logInfo("✅ [PREBUILD] Base context cached successfully");
@@ -4567,7 +4567,7 @@ async function handlePrebuildContext(userId) {
             NEED_CONFIG.invest_holdings.cacheType,
             userId,
             investPack,
-            { ttl: 5 * 60 * 1000 }
+            { ttl: 50 * 60 * 1000 }
           );
           logInfo("✅ [PREBUILD] Investment context cached");
           logInfo("🔍 [PREBUILD] Investment context data:", {
@@ -4601,7 +4601,7 @@ async function handlePrebuildContext(userId) {
             NEED_CONFIG.goals_overview.cacheType,
             userId,
             goalsPack,
-            { ttl: 5 * 60 * 1000 }
+            { ttl: 50 * 60 * 1000 }
           );
           logInfo("✅ [PREBUILD] Goals context cached");
           logInfo("🔍 [PREBUILD] Goals context data:", {
@@ -4634,7 +4634,7 @@ async function handlePrebuildContext(userId) {
             NEED_CONFIG.cashflow_monthly.cacheType,
             userId,
             cashflowPack,
-            { ttl: 5 * 60 * 1000 }
+            { ttl: 50 * 60 * 1000 }
           );
           logInfo("✅ [PREBUILD] Cashflow context cached");
           logInfo("🔍 [PREBUILD] Cashflow context data:", {
@@ -4668,7 +4668,7 @@ async function handlePrebuildContext(userId) {
             userId,
             spendPack,
             {
-              ttl: 5 * 60 * 1000,
+              ttl: 50 * 60 * 1000,
             }
           );
           logInfo("✅ [PREBUILD] Spend context cached");
