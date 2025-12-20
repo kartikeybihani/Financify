@@ -396,30 +396,9 @@ export default function FinnySettingsScreen() {
     });
   };
 
-  const handleClearChat = () => {
-    Alert.alert(
-      "Clear Chat",
-      "Are you sure you want to delete all conversation data? This action cannot be undone.",
-      [
-        {
-          text: "Cancel",
-          style: "cancel",
-        },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: async () => {
-            // Clear chat messages immediately for instant UI feedback
-            await clearChat();
-
-            // Navigate back to chat screen immediately
-            router.replace("/(tabs)/chat");
-
-            // Database operations happen in the background via clearChat()
-          },
-        },
-      ]
-    );
+  const handleClearChat = async () => {
+    await clearChat();
+    router.replace("/(tabs)/chat");
   };
 
   const settingsTranslateX = slideAnimation.interpolate({

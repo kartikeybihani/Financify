@@ -11,6 +11,7 @@ import {
   RefreshControl,
   ActivityIndicator,
   Image,
+  ImageStyle,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -70,7 +71,7 @@ const styles = {
   emptyStateImage: {
     width: "100%",
     height: "100%",
-  },
+  } as ImageStyle,
   emptyStateTitle: {
     fontSize: responsiveFontSize(18),
     fontWeight: "600" as const,
@@ -258,7 +259,6 @@ export default function ChatHistoryScreen({
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-
   const fetchSessions = useCallback(async () => {
     try {
       if (!session?.user?.id) {
@@ -301,7 +301,7 @@ export default function ChatHistoryScreen({
   const handleSessionPress = async (sessionId: string) => {
     try {
       await loadSession(sessionId);
-      handleBack();
+      onBack?.();
     } catch (err) {
       console.error("Error loading session:", err);
       Alert.alert("Error", "Failed to load chat session");
