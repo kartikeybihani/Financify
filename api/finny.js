@@ -1136,44 +1136,74 @@ export default async function handler(req, res) {
 
   let sessionState = getSessionState(finalUserId);
 
-  // Load user profile (onboarding data), memory, and feedback patterns in parallel
-  // OPTIMIZED: Check memory cache first to avoid duplicate Supermemory API calls
-  // Pass message for semantic search in Supermemory
-  // Also retrieve feedback patterns for response adaptation
-  const memoryLoadingStartTime = Date.now();
-  let userMemory;
-  if (message) {
-    // Check cache first
-    const cachedMemory = getCachedMemory(finalUserId, message);
-    if (cachedMemory) {
-      userMemory = cachedMemory;
-      logInfo(
-        `⚡ [MEMORY_CACHE] Using cached memories for message: "${message.substring(
-          0,
-          50
-        )}..."`
-      );
-    } else {
-      // Load from Supermemory and cache the result
-      userMemory = await loadUserMemory(finalUserId, message);
-      // Always cache the result (even if empty) to avoid repeated API calls for same query
-      // loadUserMemory always returns { memories: [], totalCount: 0 } on error/null, so it's safe
-      if (userMemory && typeof userMemory === "object") {
-        setCachedMemory(finalUserId, message, userMemory);
-      }
-    }
-  } else {
-    // No message provided, load empty memories
-    userMemory = await loadUserMemory(finalUserId, null);
-  }
-  timings.memory_loading_ms = Date.now() - memoryLoadingStartTime;
+  // Load user profile, memory, and feedback patterns only when needed
+  // OPTIMIZED: Only load for "ask" action (not needed for classify or prebuild_context)
+  let userMemory = { memories: [], totalCount: 0 };
+  let userProfileData = {
+    name: null,
+    age: null,
+    occupation: null,
+    finny_style: "conversational",
+    intent_context: "",
+  };
+  let feedbackPatterns = {
+    preferences: [],
+    patterns: {},
+    deepInsights: [],
+  };
 
-  const profileLoadingStartTime = Date.now();
-  const [userProfileData, feedbackPatterns] = await Promise.all([
-    loadUserProfile(finalUserId),
-    retrieveFeedbackPatterns(finalUserId, null), // Will extract topic from message later if needed
-  ]);
-  timings.profile_loading_ms = Date.now() - profileLoadingStartTime;
+  // Only load memory and profile data for "ask" action
+  if (action === "ask") {
+    // Load memory (only for ask handler)
+    const memoryLoadingStartTime = Date.now();
+    if (message) {
+      // Check cache first
+      const cachedMemory = getCachedMemory(finalUserId, message);
+      if (cachedMemory) {
+        userMemory = cachedMemory;
+        logInfo(
+          `⚡ [MEMORY_CACHE] Using cached memories for message: "${message.substring(
+            0,
+            50
+          )}..."`
+        );
+      } else {
+        // Load from Supermemory and cache the result
+        userMemory = await loadUserMemory(finalUserId, message);
+        // Always cache the result (even if empty) to avoid repeated API calls for same query
+        // loadUserMemory always returns { memories: [], totalCount: 0 } on error/null, so it's safe
+        if (userMemory && typeof userMemory === "object") {
+          setCachedMemory(finalUserId, message, userMemory);
+        }
+      }
+    } else {
+      // No message provided, load empty memories
+      userMemory = await loadUserMemory(finalUserId, null);
+    }
+    timings.memory_loading_ms = Date.now() - memoryLoadingStartTime;
+
+    // Load profile and feedback patterns in parallel (only for ask handler)
+    const profileLoadingStartTime = Date.now();
+    const [profileData, feedback] = await Promise.all([
+      loadUserProfile(finalUserId),
+      retrieveFeedbackPatterns(finalUserId, null), // Will extract topic from message later if needed
+    ]);
+    userProfileData = profileData;
+    feedbackPatterns = feedback;
+    timings.profile_loading_ms = Date.now() - profileLoadingStartTime;
+  } else {
+    // For classify and prebuild_context: Skip memory and feedback patterns
+    // Only load minimal profile if needed (but classification doesn't need user data)
+    if (action === "classify") {
+      // Classification doesn't need user data - skip profile loading
+      timings.memory_loading_ms = 0;
+      timings.profile_loading_ms = 0;
+    } else {
+      // prebuild_context: Skip everything
+      timings.memory_loading_ms = 0;
+      timings.profile_loading_ms = 0;
+    }
+  }
 
   // Merge profile data with existing userProfile (from auth metadata)
   const enrichedProfile = {
@@ -4433,153 +4463,224 @@ async function handlePrebuildContext(userId) {
   const startTime = Date.now();
 
   try {
-    // Build base context pack first (highest priority)
-    logInfo("📦 [PREBUILD] Building base context pack...");
-    const baseContext = await buildContextPacks(userId, ["summary_min"], {});
-    const basePack =
-      baseContext?.packs?.[NEED_CONFIG.summary_min.packKey] || null;
-    logInfo("🔍 [PREBUILD] Base context result:", {
-      hasBaseContext: !!baseContext,
-      hasPacks: !!baseContext?.packs,
-      hasSummaryMin: !!basePack,
-      summaryMinKeys: basePack ? Object.keys(basePack) : [],
-    });
+    // Check if context is already cached and fresh (within 5 minute TTL)
+    // This prevents unnecessary rebuilding when user visits Finny tab multiple times
+    const commonContexts = [
+      "summary_min",
+      "invest_holdings",
+      "goals_overview",
+      "cashflow_monthly",
+    ];
 
-    // Cache base context for 5 minutes
-    if (basePack) {
-      await setCachedUserData(
-        NEED_CONFIG.summary_min.cacheType,
-        userId,
-        basePack,
-        {
-          ttl: 5 * 60 * 1000,
-        }
+    const cachedContexts = {};
+    let allCached = true;
+
+    for (const need of commonContexts) {
+      const cacheType = NEED_CONFIG[need]?.cacheType || need;
+      const cached = await getCachedUserData(cacheType, userId);
+      cachedContexts[need] = !!cached;
+      if (!cached) {
+        allCached = false;
+      }
+    }
+
+    // If all contexts are already cached and fresh, return early
+    if (allCached) {
+      const totalTime = Date.now() - startTime;
+      logInfo(
+        `⚡ [PREBUILD] All contexts already cached and fresh (checked in ${totalTime}ms)`
       );
-      logInfo("✅ [PREBUILD] Base context cached successfully");
-      logInfo("🔍 [PREBUILD] Base context data:", {
-        hasNetWorth: !!basePack.netWorth,
-        hasTransactions: !!basePack.recentTransactions,
-        hasSpendByCategory: !!basePack.spendByCategory,
+      return {
+        success: true,
+        message: "Context already cached and fresh",
+        baseContextReady: true,
+        backgroundContexts: commonContexts,
+        buildTime: totalTime,
+        cached: true,
+      };
+    }
+
+    logInfo(
+      `📦 [PREBUILD] Some contexts missing, rebuilding... (cached: ${
+        Object.keys(cachedContexts)
+          .filter((k) => cachedContexts[k])
+          .join(", ") || "none"
+      })`
+    );
+
+    // Build base context pack first (highest priority) - only if not cached
+    if (!cachedContexts.summary_min) {
+      logInfo("📦 [PREBUILD] Building base context pack...");
+      const baseContext = await buildContextPacks(userId, ["summary_min"], {});
+      const basePack =
+        baseContext?.packs?.[NEED_CONFIG.summary_min.packKey] || null;
+      logInfo("🔍 [PREBUILD] Base context result:", {
+        hasBaseContext: !!baseContext,
+        hasPacks: !!baseContext?.packs,
+        hasSummaryMin: !!basePack,
+        summaryMinKeys: basePack ? Object.keys(basePack) : [],
       });
+
+      // Cache base context for 5 minutes
+      if (basePack) {
+        await setCachedUserData(
+          NEED_CONFIG.summary_min.cacheType,
+          userId,
+          basePack,
+          {
+            ttl: 5 * 60 * 1000,
+          }
+        );
+        logInfo("✅ [PREBUILD] Base context cached successfully");
+        logInfo("🔍 [PREBUILD] Base context data:", {
+          hasNetWorth: !!basePack.netWorth,
+          hasTransactions: !!basePack.recentTransactions,
+          hasSpendByCategory: !!basePack.spendByCategory,
+        });
+      } else {
+        logWarn("❌ [PREBUILD] Base context failed to build or cache");
+        logDebug("🔍 [PREBUILD] Debug info:", {
+          baseContext: baseContext,
+          packs: baseContext?.packs,
+          basePack: basePack,
+        });
+      }
     } else {
-      logWarn("❌ [PREBUILD] Base context failed to build or cache");
-      logDebug("🔍 [PREBUILD] Debug info:", {
-        baseContext: baseContext,
-        packs: baseContext?.packs,
-        basePack: basePack,
-      });
+      logInfo("✅ [PREBUILD] Base context already cached, skipping build");
     }
 
     // Build other context packs in background (after base is ready)
     logInfo("🔄 [PREBUILD] Starting background context building...");
 
-    // Build investment context
-    try {
-      const investContext = await buildContextPacks(
-        userId,
-        ["invest_holdings"],
-        {}
-      );
-      const investPack =
-        investContext?.packs?.[NEED_CONFIG.invest_holdings.packKey] || null;
-      if (investContext && investContext.packs && investPack) {
-        await setCachedUserData(
-          NEED_CONFIG.invest_holdings.cacheType,
+    // Build investment context (only if not cached)
+    if (!cachedContexts.invest_holdings) {
+      try {
+        const investContext = await buildContextPacks(
           userId,
-          investPack,
-          { ttl: 5 * 60 * 1000 }
+          ["invest_holdings"],
+          {}
         );
-        logInfo("✅ [PREBUILD] Investment context cached");
-        logInfo("🔍 [PREBUILD] Investment context data:", {
-          hasHoldings: !!investPack.holdings,
-          holdingsCount: investPack.holdings?.length || 0,
-        });
-      } else {
-        logWarn("❌ [PREBUILD] Investment context failed to build");
+        const investPack =
+          investContext?.packs?.[NEED_CONFIG.invest_holdings.packKey] || null;
+        if (investContext && investContext.packs && investPack) {
+          await setCachedUserData(
+            NEED_CONFIG.invest_holdings.cacheType,
+            userId,
+            investPack,
+            { ttl: 5 * 60 * 1000 }
+          );
+          logInfo("✅ [PREBUILD] Investment context cached");
+          logInfo("🔍 [PREBUILD] Investment context data:", {
+            hasHoldings: !!investPack.holdings,
+            holdingsCount: investPack.holdings?.length || 0,
+          });
+        } else {
+          logWarn("❌ [PREBUILD] Investment context failed to build");
+        }
+      } catch (error) {
+        logError("❌ [PREBUILD] Investment context failed:", error);
       }
-    } catch (error) {
-      logError("❌ [PREBUILD] Investment context failed:", error);
+    } else {
+      logInfo(
+        "✅ [PREBUILD] Investment context already cached, skipping build"
+      );
     }
 
-    // Build goals context
-    try {
-      const goalsContext = await buildContextPacks(
-        userId,
-        ["goals_overview"],
-        {}
-      );
-      const goalsPack =
-        goalsContext?.packs?.[NEED_CONFIG.goals_overview.packKey] || null;
-      if (goalsContext && goalsContext.packs && goalsPack) {
-        await setCachedUserData(
-          NEED_CONFIG.goals_overview.cacheType,
+    // Build goals context (only if not cached)
+    if (!cachedContexts.goals_overview) {
+      try {
+        const goalsContext = await buildContextPacks(
           userId,
-          goalsPack,
-          { ttl: 5 * 60 * 1000 }
+          ["goals_overview"],
+          {}
         );
-        logInfo("✅ [PREBUILD] Goals context cached");
-        logInfo("🔍 [PREBUILD] Goals context data:", {
-          hasGoals: !!goalsPack.goals,
-          goalsCount: goalsPack.goals?.length || 0,
-        });
-      } else {
-        logWarn("❌ [PREBUILD] Goals context failed to build");
+        const goalsPack =
+          goalsContext?.packs?.[NEED_CONFIG.goals_overview.packKey] || null;
+        if (goalsContext && goalsContext.packs && goalsPack) {
+          await setCachedUserData(
+            NEED_CONFIG.goals_overview.cacheType,
+            userId,
+            goalsPack,
+            { ttl: 5 * 60 * 1000 }
+          );
+          logInfo("✅ [PREBUILD] Goals context cached");
+          logInfo("🔍 [PREBUILD] Goals context data:", {
+            hasGoals: !!goalsPack.goals,
+            goalsCount: goalsPack.goals?.length || 0,
+          });
+        } else {
+          logWarn("❌ [PREBUILD] Goals context failed to build");
+        }
+      } catch (error) {
+        logError("❌ [PREBUILD] Goals context failed:", error);
       }
-    } catch (error) {
-      logError("❌ [PREBUILD] Goals context failed:", error);
+    } else {
+      logInfo("✅ [PREBUILD] Goals context already cached, skipping build");
     }
 
-    // Build cashflow context
-    try {
-      const cashflowContext = await buildContextPacks(
-        userId,
-        ["cashflow_monthly"],
-        {}
-      );
-      const cashflowPack =
-        cashflowContext?.packs?.[NEED_CONFIG.cashflow_monthly.packKey] || null;
-      if (cashflowContext && cashflowContext.packs && cashflowPack) {
-        await setCachedUserData(
-          NEED_CONFIG.cashflow_monthly.cacheType,
+    // Build cashflow context (only if not cached)
+    if (!cachedContexts.cashflow_monthly) {
+      try {
+        const cashflowContext = await buildContextPacks(
           userId,
-          cashflowPack,
-          { ttl: 5 * 60 * 1000 }
+          ["cashflow_monthly"],
+          {}
         );
-        logInfo("✅ [PREBUILD] Cashflow context cached");
-        logInfo("🔍 [PREBUILD] Cashflow context data:", {
-          hasCashflow: !!cashflowPack.cashflow,
-          cashflowMonths: cashflowPack.cashflow?.length || 0,
-        });
-      } else {
-        logWarn("❌ [PREBUILD] Cashflow context failed to build");
+        const cashflowPack =
+          cashflowContext?.packs?.[NEED_CONFIG.cashflow_monthly.packKey] ||
+          null;
+        if (cashflowContext && cashflowContext.packs && cashflowPack) {
+          await setCachedUserData(
+            NEED_CONFIG.cashflow_monthly.cacheType,
+            userId,
+            cashflowPack,
+            { ttl: 5 * 60 * 1000 }
+          );
+          logInfo("✅ [PREBUILD] Cashflow context cached");
+          logInfo("🔍 [PREBUILD] Cashflow context data:", {
+            hasCashflow: !!cashflowPack.cashflow,
+            cashflowMonths: cashflowPack.cashflow?.length || 0,
+          });
+        } else {
+          logWarn("❌ [PREBUILD] Cashflow context failed to build");
+        }
+      } catch (error) {
+        logError("❌ [PREBUILD] Cashflow context failed:", error);
       }
-    } catch (error) {
-      logError("❌ [PREBUILD] Cashflow context failed:", error);
+    } else {
+      logInfo("✅ [PREBUILD] Cashflow context already cached, skipping build");
     }
 
-    // Build spend context for last 30 days
+    // Build spend context for last 30 days (always check cache first due to date range params)
     try {
-      const spendContext = await buildContextPacks(userId, ["spend_total"], {
+      const cachedSpend = await getCachedUserData("spend_data", userId, {
         period: getDateRange(30),
       });
-      const spendPack =
-        spendContext?.packs?.[NEED_CONFIG.spend_total.packKey] || null;
-      if (spendContext && spendContext.packs && spendPack) {
-        await setCachedUserData(
-          NEED_CONFIG.spend_total.cacheType,
-          userId,
-          spendPack,
-          {
-            ttl: 5 * 60 * 1000,
-          }
-        );
-        logInfo("✅ [PREBUILD] Spend context cached");
-        logInfo("🔍 [PREBUILD] Spend context data:", {
-          hasSpendSummary: !!spendPack.total,
-          totalSpend: spendPack.total || 0,
+      if (!cachedSpend) {
+        const spendContext = await buildContextPacks(userId, ["spend_total"], {
+          period: getDateRange(30),
         });
+        const spendPack =
+          spendContext?.packs?.[NEED_CONFIG.spend_total.packKey] || null;
+        if (spendContext && spendContext.packs && spendPack) {
+          await setCachedUserData(
+            NEED_CONFIG.spend_total.cacheType,
+            userId,
+            spendPack,
+            {
+              ttl: 5 * 60 * 1000,
+            }
+          );
+          logInfo("✅ [PREBUILD] Spend context cached");
+          logInfo("🔍 [PREBUILD] Spend context data:", {
+            hasSpendSummary: !!spendPack.total,
+            totalSpend: spendPack.total || 0,
+          });
+        } else {
+          logWarn("❌ [PREBUILD] Spend context failed to build");
+        }
       } else {
-        logWarn("❌ [PREBUILD] Spend context failed to build");
+        logInfo("✅ [PREBUILD] Spend context already cached, skipping build");
       }
     } catch (error) {
       logError("❌ [PREBUILD] Spend context failed:", error);
