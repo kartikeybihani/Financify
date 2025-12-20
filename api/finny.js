@@ -873,11 +873,6 @@ function initializeCacheCleanup() {
 // Memory extraction helper functions removed - migrating to Supermemory for memory extraction
 // Conversation logging functionality with retry logic
 async function logConversation(conversationData) {
-  console.log(
-    "🔄 [CONVERSATION_LOG] logConversation called with:",
-    conversationData?.timestamp
-  );
-
   const maxRetries = 3;
   const retryDelay = 1000; // 1 second
 
@@ -930,10 +925,6 @@ async function logConversation(conversationData) {
           if (retry.error) {
             throw new Error(`Fallback insert failed: ${retry.error.message}`);
           } else {
-            console.log(
-              "📝 [CONVERSATION_LOG] Logged (fallback) to Supabase:",
-              conversationData.timestamp
-            );
             return; // Success
           }
         } else if (
@@ -952,10 +943,6 @@ async function logConversation(conversationData) {
           return;
         }
       } else {
-        logDebug(
-          "📝 [CONVERSATION_LOG] Logged conversation to Supabase:",
-          conversationData.timestamp
-        );
         return; // Success
       }
     } catch (error) {
@@ -2007,7 +1994,12 @@ async function handleAsk(
       transactions: packs.base?.recentTransactions || [],
     };
     const userState = detectUserState(message, financialDataForState);
-    console.log("🎯 [PROMPT ENGINE] Detected user state:", userState);
+    logInfo("🎯 [PROMPT ENGINE] Detected user state:", {
+      emotionalState: userState.emotionalState,
+      financialState: userState.financialState,
+      urgency: userState.urgency,
+      needs: userState.needs,
+    });
 
     // 5) Build context-aware prompt using new prompt engine
     let system = buildContextAwarePrompt(
@@ -2031,6 +2023,7 @@ async function handleAsk(
 
     // Communication style preference
     if (context.profile?.finny_style) {
+      logInfo(`🎨 [FINNY_STYLE] Using style: ${context.profile.finny_style}`);
       additionalSections.push(
         "",
         `COMMUNICATION STYLE PREFERENCE: User prefers ${context.profile.finny_style} communication style. Adjust your tone accordingly:`,
@@ -2040,6 +2033,8 @@ async function handleAsk(
           ? "- Add more humor and light-heartedness while staying professional"
           : "- Use conversational, friendly tone (default)"
       );
+    } else {
+      logInfo("🎨 [FINNY_STYLE] No style preference found, using default");
     }
 
     // Feedback-based adaptation (Phase 1.3)
@@ -2362,10 +2357,22 @@ async function handleAsk(
     }
 
     const contextNote = contextLines.join("\n");
-    logDebug("🔍 [FINNY] Context note:", contextNote);
 
     // 5) Parallel processing: Main response + Memory extraction
     const llmT0 = Date.now();
+
+    // Build full user message with context
+    const userMessage = `Context:\n${contextNote}\n\nUser: ${message}`;
+
+    // Log the complete prompt being sent to LLM
+    logInfo("📝 [PROMPT] Full prompt being sent to LLM:");
+    console.log("=".repeat(80));
+    console.log("SYSTEM PROMPT:");
+    console.log(system);
+    console.log("\n" + "=".repeat(80));
+    console.log("USER MESSAGE:");
+    console.log(userMessage);
+    console.log("=".repeat(80));
 
     // Memory extraction removed - migrating to Supermemory
     let memoryExtraction = [];
@@ -2387,32 +2394,12 @@ async function handleAsk(
             { role: "system", content: system },
             {
               role: "user",
-              content: `Context:\n${contextNote}\n\nUser: ${message}`,
+              content: userMessage,
             },
           ],
         }),
       }),
     ]);
-
-    // 🔍 DEBUG: Log context extraction after LLM call
-    logDebug("🔍 [CONTEXT DEBUG] After LLM call:");
-    logDebug("  - Message:", message);
-    logDebug("  - Context provided:", contextNote ? "YES" : "NO");
-    if (contextNote) {
-      logDebug("  - Context content:", contextNote.substring(0, 200) + "...");
-    }
-    logDebug(
-      "  - Conversation context loaded:",
-      context?.conversationContext ? "YES" : "NO"
-    );
-    if (context?.conversationContext) {
-      logDebug("  - Active topic:", context.conversationContext.active_topic);
-      logDebug("  - Last entity:", context.conversationContext.last_entity);
-      logDebug(
-        "  - Pending action:",
-        context.conversationContext.pending_action
-      );
-    }
 
     // Memory extraction removed - migrating to Supermemory for memory management
     memoryExtraction = [];
@@ -2424,21 +2411,18 @@ async function handleAsk(
       cache_hit: false,
     });
 
-    console.log("🔵 [LLM] Response status:", resp.status);
-    console.log("🔵 [LLM] Response ok:", resp.ok);
-
     if (!resp.ok) {
       const errorText = await resp.text();
-      console.error("❌ [FINNY] OpenRouter API error:", resp.status);
-      console.error("❌ [FINNY] Error response:", errorText);
+      logError("❌ [FINNY] OpenRouter API error:", resp.status);
+      logError("❌ [FINNY] Error response:", errorText);
       try {
         const errorData = JSON.parse(errorText);
-        console.error(
+        logError(
           "❌ [FINNY] Parsed error:",
           JSON.stringify(errorData, null, 2)
         );
       } catch (e) {
-        console.error("❌ [FINNY] Could not parse error response");
+        logError("❌ [FINNY] Could not parse error response");
       }
       return {
         message: cleanResponseFormatting("I'm glitching right now—try again."),
@@ -2447,23 +2431,14 @@ async function handleAsk(
     }
 
     const data = await resp.json();
-    console.log("🔵 [LLM] Response data keys:", Object.keys(data));
-    console.log("🔵 [LLM] Choices length:", data.choices?.length || 0);
-    console.log(
-      "🔵 [LLM] First choice:",
-      JSON.stringify(data.choices?.[0], null, 2)
-    );
+    logInfo("✅ [LLM] Response received (status:", resp.status + ")");
 
     // Extract response content (reasoning disabled, so content should always be present)
     const responseMessage = data.choices?.[0]?.message || {};
     const cleanText =
       responseMessage.content || "I'm not sure yet. Ask me again?";
 
-    console.log("🔵 [LLM] Extracted cleanText length:", cleanText?.length || 0);
-    console.log(
-      "🔵 [LLM] cleanText preview:",
-      cleanText?.substring(0, 200) || "EMPTY"
-    );
+    logInfo("📝 [LLM] Response length:", cleanText?.length || 0, "chars");
 
     if (cleanText === "I'm not sure yet. Ask me again?") {
       console.warn("⚠️ [LLM] Using fallback response!");
@@ -2541,20 +2516,13 @@ async function handleAsk(
       pending_action: topicDetection.pending_action,
     };
 
-    // Log topic detection for debugging
+    // Log topic detection for debugging (only if topic detected)
     if (topicDetection.topic) {
-      console.log(`🎯 [TOPIC] Detected: ${topicDetection.topic}`);
-      console.log(`🎯 [TOPIC] Entity:`, topicDetection.entity);
-      console.log(
-        `🎯 [TOPIC] Pending action: ${topicDetection.pending_action}`
-      );
+      logInfo(`🎯 [TOPIC] Detected: ${topicDetection.topic}`);
     }
 
     // Update conversation context SYNCHRONOUSLY to ensure it's saved before response
     if (context?.chat_id) {
-      console.log(
-        "🔍 [CONTEXT SAVE] Saving context synchronously before response"
-      );
       await updateConversationContext(
         context.user_id,
         context.chat_id,
@@ -2562,7 +2530,6 @@ async function handleAsk(
         response.message, // Use updated message with goal offer
         contextMetadata
       );
-      console.log("✅ [CONTEXT SAVE] Context saved successfully");
     }
 
     // Store conversation memory in Supermemory (async, non-blocking)
@@ -3998,21 +3965,6 @@ function financialConceptHeuristic(raw) {
 function detectConversationTopic(message, conversationContext) {
   const text = message.toLowerCase();
 
-  // 🔍 DEBUG: Log topic detection
-  console.log("🔍 [TOPIC DEBUG] Detecting conversation topic:");
-  console.log("  - Message:", message);
-  console.log(
-    "  - Conversation context:",
-    conversationContext ? "EXISTS" : "NULL"
-  );
-  if (conversationContext) {
-    console.log("  - Active topic:", conversationContext.active_topic);
-    console.log(
-      "  - Last entity:",
-      JSON.stringify(conversationContext.last_entity)
-    );
-  }
-
   // 0. TOPIC CLEARING PATTERNS (Check FIRST - highest priority)
   // Clear active topic if the new message is clearly about a different topic
   const topicClearingPatterns = [
@@ -4031,11 +3983,6 @@ function detectConversationTopic(message, conversationContext) {
   );
 
   if (hasTopicClearingPattern && conversationContext?.active_topic) {
-    console.log(
-      "🔄 [TOPIC CLEARING] Detected topic change, clearing active topic"
-    );
-    console.log("  - Previous topic:", conversationContext.active_topic);
-    console.log("  - New topic pattern detected");
     // Clear the active topic to start fresh
     conversationContext.active_topic = null;
     conversationContext.last_entity = null;
@@ -4053,16 +4000,8 @@ function detectConversationTopic(message, conversationContext) {
     const hasContinuationPattern = continuationPatterns.some((pattern) =>
       pattern.test(text)
     );
-    console.log("🔍 [CONTINUATION DEBUG] Checking continuation patterns:");
-    console.log("  - Has continuation pattern:", hasContinuationPattern);
-    console.log("  - Active topic:", conversationContext.active_topic);
-    console.log(
-      "  - Last entity:",
-      JSON.stringify(conversationContext.last_entity)
-    );
 
     if (hasContinuationPattern) {
-      console.log("✅ [CONTINUATION] Pattern detected, inheriting context");
       return {
         topic: conversationContext.active_topic,
         entity: conversationContext.last_entity || {},
