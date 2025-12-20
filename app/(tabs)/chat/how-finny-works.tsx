@@ -3,15 +3,12 @@ import {
   View,
   Text,
   ScrollView,
-  TouchableOpacity,
   Platform,
   Dimensions,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
-import { LinearGradient } from "expo-linear-gradient";
+import ChatScreenHeader from "@/src/components/shared/ChatScreenHeader";
 
 interface HowFinnyWorksScreenProps {
   onBack?: () => void;
@@ -39,37 +36,6 @@ const styles = {
   container: {
     flex: 1,
     backgroundColor: "#0F0F0F",
-  },
-  header: {
-    flexDirection: "row" as const,
-    alignItems: "center" as const,
-    justifyContent: "space-between" as const,
-    paddingHorizontal: responsivePadding(16),
-    paddingTop: Platform.OS === "ios" ? 8 : 12,
-    paddingBottom: 10,
-    backgroundColor: "transparent",
-    borderBottomWidth: 1,
-    borderBottomColor: "rgba(30, 30, 30, 0.8)",
-  },
-  headerTitle: {
-    fontSize: responsiveFontSize(18),
-    fontWeight: "600" as const,
-    color: "#fff",
-    letterSpacing: 0.5,
-    flex: 1,
-    textAlign: "center" as const,
-  },
-  closeButton: {
-    padding: 8,
-  },
-  closeButtonCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: "center" as const,
-    justifyContent: "center" as const,
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.2)",
   },
   content: {
     flex: 1,
@@ -192,41 +158,12 @@ export default function HowFinnyWorksScreen({
   onBack,
 }: HowFinnyWorksScreenProps) {
   const insets = useSafeAreaInsets();
-  const router = useRouter();
-
-  const handleBack = () => {
-    if (onBack) {
-      onBack();
-    } else {
-      router.back();
-    }
-  };
 
   return (
     <View style={styles.container}>
       <SafeAreaView style={{ flex: 1, marginBottom: insets.bottom - 10 }}>
         {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity
-            style={styles.closeButton}
-            onPress={handleBack}
-            activeOpacity={0.7}
-          >
-            <LinearGradient
-              colors={[
-                "rgba(255, 255, 255, 0.15)",
-                "rgba(255, 255, 255, 0.05)",
-              ]}
-              style={styles.closeButtonCircle}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-            >
-              <Ionicons name="chevron-back" size={22} color="#fff" />
-            </LinearGradient>
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>How Finny Works</Text>
-          <View style={{ width: 40 }} />
-        </View>
+        <ChatScreenHeader title="How Finny Works" onBack={onBack} />
 
         {/* Content */}
         <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>

@@ -14,14 +14,12 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
-import { LinearGradient } from "expo-linear-gradient";
 import { useAuthNavigation } from "@/src/contexts/AuthNavigationContext";
 import { useChatContext } from "@/src/contexts/ChatContext";
 import { supabase } from "@/src/lib/supabase/supabase";
 import { ChatSession } from "@/src/types/chatHistory";
 import FinnyLoadingIndicator from "@/src/components/shared/FinnyLoadingIndicator";
+import ChatScreenHeader from "@/src/components/shared/ChatScreenHeader";
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
 
@@ -45,37 +43,6 @@ const styles = {
   container: {
     flex: 1,
     backgroundColor: "#0F0F0F",
-  },
-  header: {
-    flexDirection: "row" as const,
-    alignItems: "center" as const,
-    justifyContent: "space-between" as const,
-    paddingHorizontal: responsivePadding(16),
-    paddingTop: Platform.OS === "ios" ? 8 : 12,
-    paddingBottom: 10,
-    backgroundColor: "transparent",
-    borderBottomWidth: 1,
-    borderBottomColor: "rgba(30, 30, 30, 0.8)",
-  },
-  headerTitle: {
-    fontSize: responsiveFontSize(18),
-    fontWeight: "600" as const,
-    color: "#fff",
-    letterSpacing: 0.5,
-    flex: 1,
-    textAlign: "center" as const,
-  },
-  backButton: {
-    padding: 8,
-  },
-  backButtonCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: "center" as const,
-    justifyContent: "center" as const,
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.2)",
   },
   content: {
     flex: 1,
@@ -284,7 +251,6 @@ export default function ChatHistoryScreen({
   onBack,
 }: ChatHistoryScreenProps = {}) {
   const insets = useSafeAreaInsets();
-  const router = useRouter();
   const { session } = useAuthNavigation();
   const { loadSession } = useChatContext();
   const [sessions, setSessions] = useState<ChatSession[]>([]);
@@ -292,13 +258,6 @@ export default function ChatHistoryScreen({
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const handleBack = () => {
-    if (onBack) {
-      onBack();
-    } else {
-      router.back();
-    }
-  };
 
   const fetchSessions = useCallback(async () => {
     try {
@@ -390,27 +349,7 @@ export default function ChatHistoryScreen({
     <View style={styles.container}>
       <SafeAreaView style={{ flex: 1, marginBottom: insets.bottom - 10 }}>
         {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={handleBack}
-            activeOpacity={0.7}
-          >
-            <LinearGradient
-              colors={[
-                "rgba(255, 255, 255, 0.15)",
-                "rgba(255, 255, 255, 0.05)",
-              ]}
-              style={styles.backButtonCircle}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-            >
-              <Ionicons name="chevron-back" size={22} color="#fff" />
-            </LinearGradient>
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Chat History</Text>
-          <View style={{ width: 40 }} />
-        </View>
+        <ChatScreenHeader title="Chat History" onBack={onBack} />
 
         {/* Content */}
         <View style={styles.content}>

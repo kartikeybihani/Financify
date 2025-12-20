@@ -49,50 +49,34 @@ const openURL = async (url: string) => {
   }
 };
 
-// Function to generate elegant link text based on context
+// Function to extract domain name from URL for display
+const extractDomainName = (url: string): string => {
+  try {
+    // Extract domain from URL
+    const domain = url.replace(/^https?:\/\//, "").split("/")[0];
+    
+    // Remove common subdomain prefixes
+    const cleanDomain = domain.replace(/^(www\.|api\.|app\.|blog\.|mail\.|mobile\.)/, "");
+    
+    // Split by dots and get the main domain part (before TLD)
+    const parts = cleanDomain.split(".");
+    
+    // If there are multiple parts, get the main domain name (usually second-to-last)
+    // For example: "chase.com" -> "chase", "subdomain.github.com" -> "github"
+    let mainDomain = parts.length >= 2 ? parts[parts.length - 2] : parts[0];
+    
+    // Capitalize first letter
+    return mainDomain.charAt(0).toUpperCase() + mainDomain.slice(1);
+  } catch (error) {
+    // Fallback to generic text if extraction fails
+    return "view link";
+  }
+};
+
+// Function to generate elegant link text based on domain name
 const generateLinkText = (url: string, context: string = "") => {
-  const domain = url.replace(/^https?:\/\//, "").split("/")[0];
-
-  // Check for specific patterns in the surrounding context
-  const lowerContext = context.toLowerCase();
-
-  if (
-    lowerContext.includes("check") ||
-    lowerContext.includes("visit") ||
-    lowerContext.includes("see")
-  ) {
-    return "here";
-  }
-  if (lowerContext.includes("learn") || lowerContext.includes("more")) {
-    return "learn more";
-  }
-  if (lowerContext.includes("source") || lowerContext.includes("reference")) {
-    return "source";
-  }
-  if (lowerContext.includes("apply") || lowerContext.includes("application")) {
-    return "apply here";
-  }
-  if (
-    lowerContext.includes("eligibility") ||
-    lowerContext.includes("qualify")
-  ) {
-    return "check eligibility";
-  }
-  if (
-    lowerContext.includes("documentation") ||
-    lowerContext.includes("documents")
-  ) {
-    return "view docs";
-  }
-
-  // Domain-based fallbacks
-  if (domain.includes("gov")) return "official site";
-  if (domain.includes("nyc.gov")) return "NYC portal";
-  if (domain.includes("usa.gov")) return "USAGov";
-  if (domain.includes("hcr.ny.gov")) return "HCR portal";
-
-  // Generic fallback
-  return "view link";
+  // Extract and return the domain name (e.g., "Chase" from chase.com)
+  return extractDomainName(url);
 };
 
 // Function to parse text and render links with elegant text
