@@ -2503,15 +2503,10 @@ async function handleAsk(
       }),
     ]);
 
-    timings.llm_ms = Date.now() - llmT0;
-    // Update parent timings if provided
-    if (requestTimings) {
-      requestTimings.llm_ms = timings.llm_ms;
-    }
-
     // Memory extraction removed - migrating to Supermemory for memory management
     memoryExtraction = [];
 
+    // Measure LLM response time (single measurement, not duplicated)
     timings.llm_ms = Date.now() - llmT0;
     // Update parent timings if provided
     if (requestTimings) {
