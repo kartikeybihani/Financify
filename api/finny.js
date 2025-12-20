@@ -2160,6 +2160,13 @@ async function handleAsk(
         console.log(
           `✅ [ADAPTATION] Added feedback context with ${context.feedbackPatterns.preferences.length} preferences and ${context.feedbackPatterns.deepInsights.length} deep insights`
         );
+        // Log the actual preferences being added to prompt
+        if (context.feedbackPatterns.preferences.length > 0) {
+          console.log(`📝 [ADAPTATION] Preferences being added to prompt:`);
+          context.feedbackPatterns.preferences.forEach((pref, idx) => {
+            console.log(`  ${idx + 1}. ${pref}`);
+          });
+        }
       }
     }
 
