@@ -54,17 +54,20 @@ const extractDomainName = (url: string): string => {
   try {
     // Extract domain from URL
     const domain = url.replace(/^https?:\/\//, "").split("/")[0];
-    
+
     // Remove common subdomain prefixes
-    const cleanDomain = domain.replace(/^(www\.|api\.|app\.|blog\.|mail\.|mobile\.)/, "");
-    
+    const cleanDomain = domain.replace(
+      /^(www\.|api\.|app\.|blog\.|mail\.|mobile\.)/,
+      ""
+    );
+
     // Split by dots and get the main domain part (before TLD)
     const parts = cleanDomain.split(".");
-    
+
     // If there are multiple parts, get the main domain name (usually second-to-last)
     // For example: "chase.com" -> "chase", "subdomain.github.com" -> "github"
     let mainDomain = parts.length >= 2 ? parts[parts.length - 2] : parts[0];
-    
+
     // Capitalize first letter
     return mainDomain.charAt(0).toUpperCase() + mainDomain.slice(1);
   } catch (error) {
