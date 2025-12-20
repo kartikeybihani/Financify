@@ -2389,7 +2389,7 @@ async function handleAsk(
           temperature: 0.25,
           max_tokens: 5000,
           stream: false,
-          reasoning: { exclude: true }, // Disable reasoning output, only return actual response
+          reasoning: { effort: "minimal", exclude: true }, // Disable reasoning output, only return actual response
           messages: [
             { role: "system", content: system },
             {
@@ -2433,19 +2433,38 @@ async function handleAsk(
     const data = await resp.json();
     logInfo("✅ [LLM] Response received (status:", resp.status + ")");
 
-    // Extract response content (reasoning disabled, so content should always be present)
+    // Extract response content
     const responseMessage = data.choices?.[0]?.message || {};
+    const finishReason = data.choices?.[0]?.finish_reason;
+    const usage = data.usage || {};
+
+    // Check if response was cut off due to token limits
+    if (finishReason === "length" && !responseMessage.content) {
+      logWarn("⚠️ [LLM] Response cut off due to token limit!");
+      logWarn("⚠️ [LLM] Token usage:", {
+        prompt_tokens: usage.prompt_tokens,
+        completion_tokens: usage.completion_tokens,
+        reasoning_tokens: usage.reasoning_tokens,
+        max_tokens: 8000,
+      });
+      logWarn("⚠️ [LLM] Model may be using reasoning tokens despite exclusion");
+    }
+
     const cleanText =
       responseMessage.content || "I'm not sure yet. Ask me again?";
 
     logInfo("📝 [LLM] Response length:", cleanText?.length || 0, "chars");
+    if (usage.reasoning_tokens) {
+      logInfo("🧠 [LLM] Reasoning tokens used:", usage.reasoning_tokens);
+    }
 
     if (cleanText === "I'm not sure yet. Ask me again?") {
-      console.warn("⚠️ [LLM] Using fallback response!");
-      console.warn(
-        "⚠️ [LLM] Full API response:",
-        JSON.stringify(data, null, 2)
-      );
+      logWarn("⚠️ [LLM] Using fallback response!");
+      if (finishReason === "length") {
+        logWarn(
+          "⚠️ [LLM] Response was cut off - consider using a non-reasoning model or increasing max_tokens further"
+        );
+      }
     }
 
     // Memory saving will happen after topic detection (see below)
