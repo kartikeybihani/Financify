@@ -399,6 +399,7 @@ export default function FinnySettingsScreen() {
   const handleClearChat = async () => {
     await clearChat();
     router.replace("/(tabs)/chat");
+    router.back();
   };
 
   const settingsTranslateX = slideAnimation.interpolate({

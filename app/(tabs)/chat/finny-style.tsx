@@ -13,6 +13,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { supabase } from "@/src/lib/supabase/supabase";
 import logger from "@/src/utils/core/logger";
 import ChatScreenHeader from "@/src/components/shared/ChatScreenHeader";
+import { authenticatedFetch } from "@/src/utils/auth/authToken";
 
 interface FinnyStyleScreenProps {
   onBack?: () => void;
@@ -266,25 +267,42 @@ export default function FinnyStyleScreen({ onBack }: FinnyStyleScreenProps) {
 
       // Invalidate profile cache on server
       try {
-        const {
-          data: { session },
-        } = await supabase.auth.getSession();
-        if (session?.access_token) {
-          await fetch("/api/finny", {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${session.access_token}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              action: "invalidate_profile_cache",
-            }),
-          });
-          logger.info("[FinnyStyle] Profile cache invalidated");
+        const BASE_URL =
+          process.env.EXPO_PUBLIC_APP_BASE_URL ||
+          "https://financify-rose.vercel.app";
+
+        const cacheResponse = await authenticatedFetch(`${BASE_URL}/api/finny`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            action: "invalidate_profile_cache",
+          }),
+        });
+        
+        if (cacheResponse.ok) {
+          logger.info("[FinnyStyle] Profile cache invalidated successfully");
+        } else {
+          const errorText = await cacheResponse.text();
+          logger.warn(
+            `[FinnyStyle] Profile cache invalidation returned non-OK status: ${cacheResponse.status}`,
+            errorText
+          );
+          Alert.alert(
+            "Warning",
+            "Failed to update Finny's style immediately. The change will take effect on your next message.",
+            [{ text: "OK" }]
+          );
         }
-      } catch (cacheError) {
+      } catch (cacheError: any) {
         logger.warn("[FinnyStyle] Failed to invalidate cache:", cacheError);
-        // Non-critical, don't throw
+        Alert.alert(
+          "Warning",
+          "Failed to update Finny's style immediately. The change will take effect on your next message.",
+          [{ text: "OK" }]
+        );
+        // Non-critical, don't throw - style is saved in DB, cache will refresh eventually
       }
     } catch (error: any) {
       logger.error("[FinnyStyle] Error saving style:", error);
