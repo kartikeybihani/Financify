@@ -966,6 +966,21 @@ async function logConversation(conversationData) {
 initializeCacheCleanup();
 
 export default async function handler(req, res) {
+  // Initialize timing tracker for entire request
+  const requestStartTime = Date.now();
+  const timings = {
+    auth_ms: 0,
+    context_loading_ms: 0,
+    memory_loading_ms: 0,
+    profile_loading_ms: 0,
+    classification_ms: 0,
+    web_search_ms: 0,
+    context_packs_ms: 0,
+    handler_ms: 0,
+    llm_ms: 0,
+    total_ms: 0,
+  };
+
   logInfo("🤖 [FINNY] Request received:", req.method);
 
   if (req.method !== "POST") {
@@ -991,6 +1006,7 @@ export default async function handler(req, res) {
   let serverUserId = null;
   let userProfile = { name: null, age: null };
   const requestId = generateRequestId();
+  const authStartTime = Date.now();
   try {
     const authHeader =
       req.headers["authorization"] || req.headers["Authorization"];
@@ -1024,6 +1040,7 @@ export default async function handler(req, res) {
   } catch (e) {
     console.error("⚠️ [FINNY] Auth verification failed:", e?.message);
   }
+  timings.auth_ms = Date.now() - authStartTime;
 
   // Build safe context that overrides any client-provided user_id
   // But fall back to client-provided user_id if no JWT token is present (for testing)
@@ -1069,6 +1086,7 @@ export default async function handler(req, res) {
   // Skip context loading for first message in chat session
   let conversationContext = null;
   let isFirstMessage = false;
+  const contextLoadingStartTime = Date.now();
 
   if (chatId) {
     // Check if this is the first message by looking for existing context
@@ -1095,6 +1113,7 @@ export default async function handler(req, res) {
       logDebug("🔍 [CONTEXT DEBUG] Continuing conversation - loading context");
     }
   }
+  timings.context_loading_ms = Date.now() - contextLoadingStartTime;
 
   // 🔍 DEBUG: Log conversation context loading (debug only)
   logDebug("🔍 [CONTEXT DEBUG] Loading conversation context:");
@@ -1121,6 +1140,7 @@ export default async function handler(req, res) {
   // OPTIMIZED: Check memory cache first to avoid duplicate Supermemory API calls
   // Pass message for semantic search in Supermemory
   // Also retrieve feedback patterns for response adaptation
+  const memoryLoadingStartTime = Date.now();
   let userMemory;
   if (message) {
     // Check cache first
@@ -1146,11 +1166,14 @@ export default async function handler(req, res) {
     // No message provided, load empty memories
     userMemory = await loadUserMemory(finalUserId, null);
   }
+  timings.memory_loading_ms = Date.now() - memoryLoadingStartTime;
 
+  const profileLoadingStartTime = Date.now();
   const [userProfileData, feedbackPatterns] = await Promise.all([
     loadUserProfile(finalUserId),
     retrieveFeedbackPatterns(finalUserId, null), // Will extract topic from message later if needed
   ]);
+  timings.profile_loading_ms = Date.now() - profileLoadingStartTime;
 
   // Merge profile data with existing userProfile (from auth metadata)
   const enrichedProfile = {
@@ -1226,31 +1249,38 @@ export default async function handler(req, res) {
 
   try {
     let response;
+    const handlerStartTime = Date.now();
 
     switch (finalAction) {
-      case "classify":
+      case "classify": {
+        const classifyStartTime = Date.now();
         response = await handleClassify(
           message,
           safeContext,
           conversationContext
         );
+        timings.classification_ms = Date.now() - classifyStartTime;
         break;
-      case "ask":
+      }
+      case "ask": {
         response = await handleAsk(
           message,
           safeContext,
           "ask_personalized",
           classification,
-          conversationContext
+          conversationContext,
+          timings // Pass timings object to track web search and context packs
         );
         break;
-      case "off_topic":
+      }
+      case "off_topic": {
         response = await handleOffTopic(
           message,
           safeContext,
           conversationContext
         );
         break;
+      }
       case "goal_conversation": {
         // Check for goal action buttons
         if (message === "cancel_goal") {
@@ -1353,6 +1383,47 @@ export default async function handler(req, res) {
         return res.status(400).json({ error: "Invalid action" });
     }
 
+    timings.handler_ms = Date.now() - handlerStartTime;
+
+    // Calculate total time until streaming starts
+    timings.total_ms = Date.now() - requestStartTime;
+
+    // Log all timings in seconds
+    const formatTime = (ms) => (ms / 1000).toFixed(3);
+    console.log("\n" + "=".repeat(80));
+    console.log("⏱️  [TIMING] Request Performance Breakdown:");
+    console.log("=".repeat(80));
+    console.log(`  Auth:              ${formatTime(timings.auth_ms)}s`);
+    console.log(
+      `  Context Loading:   ${formatTime(timings.context_loading_ms)}s`
+    );
+    console.log(
+      `  Memory Loading:    ${formatTime(timings.memory_loading_ms)}s`
+    );
+    console.log(
+      `  Profile Loading:   ${formatTime(timings.profile_loading_ms)}s`
+    );
+    if (timings.classification_ms > 0) {
+      console.log(
+        `  Classification:    ${formatTime(timings.classification_ms)}s`
+      );
+    }
+    if (timings.web_search_ms > 0) {
+      console.log(`  Web Search:        ${formatTime(timings.web_search_ms)}s`);
+    }
+    if (timings.context_packs_ms > 0) {
+      console.log(
+        `  Context Packs:     ${formatTime(timings.context_packs_ms)}s`
+      );
+    }
+    console.log(`  Handler:           ${formatTime(timings.handler_ms)}s`);
+    if (timings.llm_ms > 0) {
+      console.log(`  LLM Response:      ${formatTime(timings.llm_ms)}s`);
+    }
+    console.log("  " + "-".repeat(76));
+    console.log(`  TOTAL (to stream): ${formatTime(timings.total_ms)}s`);
+    console.log("=".repeat(80) + "\n");
+
     // Handle streaming vs regular response
     if (wantsStreaming) {
       console.log("🔄 [STREAMING] Starting streaming response");
@@ -1374,6 +1445,13 @@ export default async function handler(req, res) {
       }
 
       if (textToStream) {
+        const streamingStartTime = Date.now();
+        const timeToFirstChunk = streamingStartTime - requestStartTime;
+        console.log(
+          `🔄 [STREAMING] Starting stream (${(timeToFirstChunk / 1000).toFixed(
+            3
+          )}s to first chunk)`
+        );
         console.log(
           "🔄 [STREAMING] Streaming text:",
           textToStream.substring(0, 100) + "..."
@@ -1508,7 +1586,8 @@ async function handleAsk(
   context,
   intent = "ask_personalized",
   classificationResult = null,
-  conversationContext = null
+  conversationContext = null,
+  requestTimings = null // Optional: parent request timings object
 ) {
   logInfo("🔍 [FINNY] Starting ask handler for message:", message);
   const startTime = Date.now();
@@ -1623,6 +1702,10 @@ async function handleAsk(
         }
 
         timings.web_ms = Date.now() - webStartTime;
+        // Update parent timings if provided
+        if (requestTimings) {
+          requestTimings.web_search_ms = timings.web_ms;
+        }
 
         if (webResults.length > 0) {
           webSummary = webResults
@@ -1655,11 +1738,17 @@ async function handleAsk(
     }
 
     // 3) Build targeted context packs
+    const contextPacksStartTime = Date.now();
     const { packs, gaps, contextHeader } = await buildContextPacks(
       userId,
       needs,
       slots
     );
+    const contextPacksTime = Date.now() - contextPacksStartTime;
+    // Update parent timings if provided
+    if (requestTimings) {
+      requestTimings.context_packs_ms = contextPacksTime;
+    }
 
     logInfo("📦 [FINNY] Context packs built:", Object.keys(packs));
     logInfo("⚠️ [FINNY] Data gaps:", gaps);
@@ -2002,11 +2091,22 @@ async function handleAsk(
     });
 
     // 5) Build context-aware prompt using new prompt engine
+    // Pass finny_style directly to prompt engine (now handled early in prompt)
+    const finnyStyle = context.profile?.finny_style || null;
+    if (finnyStyle) {
+      logInfo(`🎨 [FINNY_STYLE] Using style: ${finnyStyle}`);
+    } else {
+      logInfo(
+        "🎨 [FINNY_STYLE] No style preference found, using default conversational"
+      );
+    }
+
     let system = buildContextAwarePrompt(
       message,
       context,
       financialDataForState,
-      userState
+      userState,
+      finnyStyle
     );
 
     // Add additional context sections that aren't handled by prompt engine
@@ -2019,22 +2119,6 @@ async function handleAsk(
         "USER'S FINANCIAL PERSPECTIVE (from onboarding - use as reference, may not be current):",
         context.profile.intent_context
       );
-    }
-
-    // Communication style preference
-    if (context.profile?.finny_style) {
-      logInfo(`🎨 [FINNY_STYLE] Using style: ${context.profile.finny_style}`);
-      additionalSections.push(
-        "",
-        `COMMUNICATION STYLE PREFERENCE: User prefers ${context.profile.finny_style} communication style. Adjust your tone accordingly:`,
-        context.profile.finny_style === "direct"
-          ? "- Be more direct and to-the-point, focus on facts and numbers"
-          : context.profile.finny_style === "witty"
-          ? "- Add more humor and light-heartedness while staying professional"
-          : "- Use conversational, friendly tone (default)"
-      );
-    } else {
-      logInfo("🎨 [FINNY_STYLE] No style preference found, using default");
     }
 
     // Feedback-based adaptation (Phase 1.3)
@@ -2066,12 +2150,35 @@ async function handleAsk(
       // Note: v4/search returns 'memory' field (mapped to 'content'), not 'summary'
       // Summaries are only available in list endpoint, not search endpoint
       Object.entries(memoriesByType).forEach(([type, mems]) => {
+        // Truncate at sentence boundaries (max 250 chars) to avoid prompt bloat
+        const truncateAtSentence = (text, maxLength = 250) => {
+          if (text.length <= maxLength) return text;
+          // Find last sentence boundary before maxLength
+          const truncated = text.substring(0, maxLength);
+          const lastPeriod = truncated.lastIndexOf(".");
+          const lastExclamation = truncated.lastIndexOf("!");
+          const lastQuestion = truncated.lastIndexOf("?");
+          const lastBoundary = Math.max(
+            lastPeriod,
+            lastExclamation,
+            lastQuestion
+          );
+          if (lastBoundary > maxLength * 0.5) {
+            // Only use boundary if it's not too early (at least 50% through)
+            return text.substring(0, lastBoundary + 1);
+          }
+          // Fallback: truncate at word boundary
+          const lastSpace = truncated.lastIndexOf(" ");
+          return (
+            text.substring(0, lastSpace > 0 ? lastSpace : maxLength) + "..."
+          );
+        };
+
         // Use content (which contains the memory text from v4/search)
-        // Limit each memory to 200 chars to avoid prompt bloat
         const memoryTexts = mems
           .map((m) => {
             const text = m.content || m.summary || "";
-            return text.length > 200 ? text.substring(0, 200) + "..." : text;
+            return truncateAtSentence(text);
           })
           .filter(Boolean)
           .join("; ");
@@ -2118,75 +2225,39 @@ async function handleAsk(
       }
     }
 
-    // Add standard response guidelines (these are always needed)
+    // Add data-specific response guidelines (consolidated, non-redundant)
     additionalSections.push(
       "",
-      "ADDITIONAL RESPONSE GUIDELINES:",
-      "- ALWAYS prioritize web search results over training data for current information (rates, limits, rules, etc.)",
-      "- If user asks about 'accounts', show individual account names, balances, and types from the provided account data",
-      "- If user asks 'net worth' or 'what's my net worth', ALWAYS include a brief breakdown: show total plus top 2–3 contributors across what you have and what you owe (e.g., cash, investments, credit card debt). Use simple language like 'money you have' instead of 'assets' and 'money you owe' instead of 'liabilities'. Keep it concise, no long lists",
-      "- If user asks about 'investments' or 'holdings', then show ALL holdings with their symbols, descriptions, and market values. Do not limit to top ones - show the complete portfolio",
-      "- If user asks for 'investment advice' or 'financial advice', focus on actionable recommendations, not data dumps",
-      "- If required data is missing (e.g., no transactions or summary), explicitly say so and ask the user to refresh or connect accounts. Do NOT fabricate data.",
-      "- When listing transactions, ONLY use transactions present in the provided context. If none exist, say you couldn't find recent transactions.",
-      "- For amounts like net worth, ONLY use values from the context. If missing, state that it's unavailable.",
-      "- NEVER make meta-references to data sources or summaries. Avoid phrases like 'matching the summary', 'as shown in your summary', 'according to your data', 'based on your financial summary', 'based on the data you shared', 'this is based on data', 'data you shared', or any similar phrases.",
-      "- Present information as if it's naturally known, without mentioning where you got it from or how you accessed it.",
-      "- When mentioning that things might change (like net worth, balances, etc.), do it conversationally: 'If anything changes—like a new loan or a big purchase—let me know and we can update it.' Do NOT say 'based on data you shared' or 'this snapshot is based on' - just state the information naturally.",
+      "DATA HANDLING:",
+      "- Prioritize web search results over training data for current information",
+      "- Query-specific: 'accounts' → show names/balances/types. 'net worth' → include breakdown (top 2-3 contributors). 'investments/holdings' → show ALL holdings. 'investment advice' → actionable recommendations, not data dumps",
+      "- Missing data: Explicitly say so, ask to refresh/connect accounts. Never fabricate data",
+      "- Use only data from context. If missing, state unavailable",
       "",
-      "RESPONSE STRUCTURE FOR BETTER MESSAGE SPLITTING:",
-      "- For GOAL queries: Structure as 'Here's your current goals:' followed by all goals in bullet points in ONE cohesive message, then separate message for progress commentary",
-      "- For INVESTMENT HOLDINGS queries: List ALL holdings with their details in bullet points. Do not limit to top holdings - show the complete portfolio",
-      "- For INVESTMENT advice: Group related bullet points (sector overlap, risk tolerance, diversification) together in logical chunks",
-      "- Use clear section breaks with phrases like 'Bottom line:', 'Heads up:', 'Hit me up if you need help' to create natural split points",
-      "- Keep related content together - don't split mid-concept or mid-sentence",
-      "- End with actionable next steps or encouragement in a separate message when appropriate",
+      "MESSAGE STRUCTURE:",
+      "- Goals: List all in one message, then separate commentary. Investments: Show complete portfolio. Investment advice: Group related points",
+      "- Use natural split points: 'Bottom line:', 'Heads up:', 'Hit me up if you need help'",
+      "- Goal queries: No source links, focus on personal data only",
       "",
-      "GOAL QUERY DETECTION:",
-      "- If user asks about their goals (current goals, my goals, goal progress, etc.), this is a personal data query",
-      "- For goal queries, do NOT include any source links or external references",
-      "- Focus purely on their personal goal data and provide encouragement/advice without external sources",
-      "",
-      "CRITICAL FORMATTING RULES:",
-      "- NEVER use markdown headers (no ###, ##, #) or hashtags",
-      "- NEVER use numbered headers with emojis (like ### 1️⃣)",
-      "- You CAN use double asterisks (**text**) for emphasis - the chat system will handle the formatting",
-      "- NEVER use single asterisks (*text*) or underscores (__text__, _text_)",
-      "- NEVER use code blocks (`code` or ```code```)",
-      "- Write in plain text format - like you're texting a friend",
-      "- Use simple line breaks and bullet points with dashes (-) instead of markdown",
-      "- Keep the conversational tone natural and chat-like",
-      "- Avoid any formatting that would look robotic or structured",
+      "FORMATTING:",
+      "- Plain text only. No markdown headers/code blocks. Use ** for emphasis, dashes (-) for bullets",
       "",
       "DATA INTERPRETATION:",
-      "- IMPORTANT: In transaction data, EXPENSE means money spent (going out), INCOME means money received (coming in).",
-      "- CREDIT CARD DATA STRUCTURE: For credit cards, 'current_balance' is the debt amount (what you owe), and 'available_balance' is the credit limit. Available credit = credit limit - debt.",
-      "- SPENDING BY CATEGORY INTERPRETATION: When you see 'Spending by category' data, these represent RECURRING monthly expenses. Housing = rent/mortgage, Food = groceries, Transportation = commute costs, etc. Use this to estimate upcoming obligations when suggesting cash use for emergencies.",
+      "- EXPENSE = money spent (out), INCOME = money received (in). Credit cards: current_balance = debt, available_balance = credit limit",
+      "- Spending by category = RECURRING monthly expenses (Housing=rent, Food=groceries, etc.)",
       "",
-      "FINANCIAL PROJECTIONS & CALCULATIONS:",
-      "- When users ask about retirement, FIRE, or financial goals, perform compound growth calculations using their actual data",
-      "- Use realistic assumptions: 7% annual return for investments, 3% inflation for long-term projections",
-      "- For retirement projections: Target 25x annual expenses (4% rule) unless user specifies different amount",
-      "- Calculate monthly savings needed to reach goals and provide specific, actionable recommendations",
-      "- Show both optimistic and conservative scenarios when appropriate",
-      "- Always explain the math behind your projections in simple terms",
-      "- If user asks 'can I achieve X goal', provide a clear yes/no with supporting calculations",
-      "- EMERGENCY CASH CALCULATIONS: When suggesting using cash for emergencies, ALWAYS calculate: Available cash - Emergency expense - Upcoming monthly obligations (from spending by category) = Remaining buffer. If remaining buffer is tight (< $500), acknowledge the constraint and suggest alternatives (payment plans, credit, prioritizing bills). Don't just say 'you have enough' - show the full financial picture.",
+      "CALCULATIONS:",
+      "- Retirement/FIRE: 7% return, 3% inflation, 25x expenses (4% rule). Show optimistic/conservative scenarios. Explain math simply",
+      "- Emergency cash: Available - Expense - Upcoming obligations = Remaining buffer. If tight (<$500), suggest alternatives",
       "",
       "DISCLAIMERS:",
-      "- Only add investment disclaimer ('Note: This response is for informational purposes and does not constitute financial advice.') when the user asks specifically about investments, investing advice, or investment-related recommendations.",
-      "",
-      "CRITICAL: AVOID SUGGESTING COMPETITOR FINANCIAL APPS:",
-      "- NEVER suggest using Mint, YNAB, Personal Capital, or other budgeting/expense tracking apps",
-      "- NEVER recommend external financial advisory apps or money management tools",
-      "- You ARE the financial advisor and app - always suggest using Finny's features for budgeting, expense tracking, and financial analysis",
-      "- You CAN suggest legitimate financial services that Finny doesn't provide:",
-      "  * Credit score checks (Credit Karma, Experian, etc.)",
-      "  * Bank transfers or account management through their actual banks",
-      "  * Investment platforms for specific needs Finny doesn't cover",
-      "  * Insurance providers or other non-competitive financial services",
-      "- Always end responses by encouraging users to ask Finny about their specific financial questions"
+      "- Investment disclaimer only for investment-related queries. Never suggest competitors (Mint, YNAB, Personal Capital). Suggest Finny features. Can suggest: credit checks, bank transfers, investment platforms, insurance"
     );
+
+    // Add context header to system prompt (not user message) - BEFORE joining
+    if (contextHeader) {
+      additionalSections.push("", "CONTEXT INFORMATION:", contextHeader);
+    }
 
     // Combine base prompt with additional sections
     system = system + "\n\n" + additionalSections.join("\n");
@@ -2197,7 +2268,8 @@ async function handleAsk(
       hasBase: !!packs.base,
       baseKeys: packs.base ? Object.keys(packs.base) : [],
     });
-    const contextLines = [contextHeader];
+
+    const contextLines = [];
 
     if (packs.base) {
       logDebug("🔍 [CONTEXT] Building context from packs.base:", {
@@ -2401,10 +2473,20 @@ async function handleAsk(
       }),
     ]);
 
+    timings.llm_ms = Date.now() - llmT0;
+    // Update parent timings if provided
+    if (requestTimings) {
+      requestTimings.llm_ms = timings.llm_ms;
+    }
+
     // Memory extraction removed - migrating to Supermemory for memory management
     memoryExtraction = [];
 
     timings.llm_ms = Date.now() - llmT0;
+    // Update parent timings if provided
+    if (requestTimings) {
+      requestTimings.llm_ms = timings.llm_ms;
+    }
     toolsUsed.push({
       name: "llm",
       latency_ms: timings.llm_ms,
@@ -2585,9 +2667,18 @@ async function handleAsk(
       });
     }
 
+    // Update handler time in parent timings if provided
+    if (requestTimings) {
+      requestTimings.handler_ms = Date.now() - startTime;
+    }
+
     return response;
   } catch (error) {
     console.error("❌ [FINNY] Ask handler error:", error);
+    // Update handler time even on error
+    if (requestTimings) {
+      requestTimings.handler_ms = Date.now() - startTime;
+    }
     return {
       message: cleanResponseFormatting(
         "I'm having some technical difficulties right now. Please try again in a moment."
@@ -5091,13 +5182,32 @@ async function handleOffTopic(message, context, conversationContext = null) {
       // Note: v4/search returns 'memory' field (mapped to 'content'), not 'summary'
       // Summaries are only available in list endpoint, not search endpoint
       const memorySections = [];
+
+      // Truncate at sentence boundaries (max 250 chars) to avoid prompt bloat
+      const truncateAtSentence = (text, maxLength = 250) => {
+        if (text.length <= maxLength) return text;
+        const truncated = text.substring(0, maxLength);
+        const lastPeriod = truncated.lastIndexOf(".");
+        const lastExclamation = truncated.lastIndexOf("!");
+        const lastQuestion = truncated.lastIndexOf("?");
+        const lastBoundary = Math.max(
+          lastPeriod,
+          lastExclamation,
+          lastQuestion
+        );
+        if (lastBoundary > maxLength * 0.5) {
+          return text.substring(0, lastBoundary + 1);
+        }
+        const lastSpace = truncated.lastIndexOf(" ");
+        return text.substring(0, lastSpace > 0 ? lastSpace : maxLength) + "...";
+      };
+
       Object.entries(memoriesByType).forEach(([type, mems]) => {
         // Use content (which contains the memory text from v4/search)
-        // Limit each memory to 200 chars to avoid prompt bloat
         const memoryTexts = mems
           .map((m) => {
             const text = m.content || m.summary || "";
-            return text.length > 200 ? text.substring(0, 200) + "..." : text;
+            return truncateAtSentence(text);
           })
           .filter(Boolean)
           .join("; ");

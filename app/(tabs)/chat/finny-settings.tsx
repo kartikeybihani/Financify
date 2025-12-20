@@ -25,6 +25,8 @@ import { useAuthNavigation } from "@/src/contexts/AuthNavigationContext";
 import { useChatContext } from "@/src/contexts/ChatContext";
 import { SettingItemProps, MemorySummary } from "@/src/types/plaid";
 import { TEXT_STYLES } from "@/src/components/shared/modal-constants";
+import { supabase } from "@/src/lib/supabase/supabase";
+import logger from "@/src/utils/core/logger";
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
 
@@ -229,6 +231,52 @@ export default function FinnySettingsScreen() {
   const [legalSummarySlideAnimation] = useState(new Animated.Value(0));
   const [howFinnyWorksSlideAnimation] = useState(new Animated.Value(0));
   const [historySlideAnimation] = useState(new Animated.Value(0));
+  const [currentStyle, setCurrentStyle] = useState<
+    "conversational" | "direct" | "witty"
+  >("conversational");
+  const [currentCheckinFrequency, setCurrentCheckinFrequency] = useState<
+    "daily" | "3times" | "weekly" | "never"
+  >("daily");
+
+  const loadSettings = async () => {
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user?.id) {
+        logger.warn("[FinnySettings] No authenticated user found");
+        return;
+      }
+
+      const { data: profile, error } = await supabase
+        .from("profiles")
+        .select("finny_style, checkin_frequency")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      if (error) {
+        logger.error("[FinnySettings] Error loading settings:", error);
+      } else {
+        if (profile?.finny_style) {
+          setCurrentStyle(
+            profile.finny_style as "conversational" | "direct" | "witty"
+          );
+        }
+        if (profile?.checkin_frequency) {
+          setCurrentCheckinFrequency(
+            profile.checkin_frequency as "daily" | "3times" | "weekly" | "never"
+          );
+        }
+      }
+    } catch (error) {
+      logger.error("[FinnySettings] Error loading settings:", error);
+    }
+  };
+
+  useEffect(() => {
+    loadSettings();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const openMemories = () => {
     setShowMemories(true);
@@ -265,6 +313,8 @@ export default function FinnySettingsScreen() {
       useNativeDriver: true,
     }).start(() => {
       setShowStyle(false);
+      // Reload settings to get updated style
+      loadSettings();
     });
   };
 
@@ -284,6 +334,8 @@ export default function FinnySettingsScreen() {
       useNativeDriver: true,
     }).start(() => {
       setShowCheckin(false);
+      // Reload settings to get updated check-in frequency
+      loadSettings();
     });
   };
 
@@ -433,6 +485,38 @@ export default function FinnySettingsScreen() {
     outputRange: [screenWidth, 0],
   });
 
+  const getStyleDescription = (
+    style: "conversational" | "direct" | "witty"
+  ): string => {
+    switch (style) {
+      case "conversational":
+        return "Conversational";
+      case "direct":
+        return "Direct";
+      case "witty":
+        return "Witty";
+      default:
+        return "Conversational";
+    }
+  };
+
+  const getCheckinDescription = (
+    frequency: "daily" | "3times" | "weekly" | "never"
+  ): string => {
+    switch (frequency) {
+      case "daily":
+        return "Daily";
+      case "3times":
+        return "3 Times a Week";
+      case "weekly":
+        return "Weekly";
+      case "never":
+        return "Never";
+      default:
+        return "Daily";
+    }
+  };
+
   return (
     <View style={styles.container}>
       <SafeAreaView style={{ flex: 1, marginBottom: insets.bottom - 10 }}>
@@ -477,7 +561,7 @@ export default function FinnySettingsScreen() {
                 <SettingItem
                   icon="chatbubble-outline"
                   title="Style"
-                  description="Conversational"
+                  description={getStyleDescription(currentStyle)}
                   onPress={openStyle}
                   rightElement={
                     <Ionicons name="chevron-forward" size={20} color="#666" />
@@ -487,7 +571,7 @@ export default function FinnySettingsScreen() {
                 <SettingItem
                   icon="notifications-outline"
                   title="Check-in notifications"
-                  description="Like daily"
+                  description={getCheckinDescription(currentCheckinFrequency)}
                   onPress={openCheckin}
                   rightElement={
                     <Ionicons name="chevron-forward" size={20} color="#666" />
