@@ -11,6 +11,10 @@ import {
   storeOnboardingMemory,
   storeMessageFeedback,
   loadUserProfile,
+  getCachedSupermemoryDocuments,
+  cacheSupermemoryDocuments,
+  deleteCachedSupermemoryDocument,
+  updateCachedSupermemoryDocument,
 } from "../lib/memoryUtils.js";
 
 // Simple in-memory cache for list endpoint (UI display)
@@ -88,12 +92,50 @@ export default async function handler(req, res) {
       const isProfileMemories = req.query.type === "profile";
 
       if (isProfileMemories) {
-        // Fetch all profile memories (for edit/delete functionality)
-        // v4/search returns: { results: [...], timing, total }
+        // Fetch profile memories with caching
+        // 1. Check cache first - return immediately if valid
+        // 2. Refresh in background if cache is invalid/empty
+        
+        let cachedMemories = await getCachedSupermemoryDocuments(serverUserId);
+        const hasValidCache = cachedMemories !== null && cachedMemories.length > 0;
+        
+        // Return cached data immediately if available
+        if (hasValidCache) {
+          console.log(`✅ [MEMORY_API] Returning ${cachedMemories.length} cached memories for user ${serverUserId}`);
+          
+          // Refresh in background (fire and forget - don't await)
+          (async () => {
+            try {
+              console.log(`🔄 [MEMORY_API] Background refresh for user ${serverUserId}`);
+              const freshMemories = await fetchSupermemoryMemories(serverUserId);
+              if (Array.isArray(freshMemories) && freshMemories.length > 0) {
+                await cacheSupermemoryDocuments(serverUserId, freshMemories);
+                console.log(`✅ [MEMORY_API] Background refresh completed for user ${serverUserId}`);
+              }
+            } catch (error) {
+              console.warn(`⚠️ [MEMORY_API] Background refresh failed:`, error.message);
+            }
+          })();
+          
+          return res.status(200).json({
+            results: cachedMemories,
+            memories: cachedMemories, // Keep for backward compatibility
+          });
+        }
+        
+        // No valid cache - fetch fresh from API
+        console.log(`🔄 [MEMORY_API] No valid cache, fetching fresh memories for user ${serverUserId}`);
         const memories = await fetchSupermemoryMemories(serverUserId);
+        const memoriesArray = Array.isArray(memories) ? memories : [];
+        
+        // Cache the fresh results
+        if (memoriesArray.length > 0) {
+          await cacheSupermemoryDocuments(serverUserId, memoriesArray);
+        }
+        
         return res.status(200).json({
-          results: Array.isArray(memories) ? memories : [],
-          memories: Array.isArray(memories) ? memories : [], // Keep for backward compatibility
+          results: memoriesArray,
+          memories: memoriesArray, // Keep for backward compatibility
         });
       }
 
@@ -163,6 +205,9 @@ export default async function handler(req, res) {
 
       // Invalidate cache after deletion
       invalidateListCache(serverUserId);
+      
+      // Delete from database cache
+      await deleteCachedSupermemoryDocument(serverUserId, memoryId);
 
       console.log(`✅ [MEMORY_API] DELETE success for ${memoryId}`);
       return res.status(200).json({ success: true, result });
@@ -215,6 +260,12 @@ export default async function handler(req, res) {
 
       // Invalidate cache after update
       invalidateListCache(serverUserId);
+      
+      // Update database cache
+      await updateCachedSupermemoryDocument(serverUserId, memoryId, {
+        content,
+        updated_at: new Date().toISOString(),
+      });
 
       console.log(`✅ [MEMORY_API] PUT success for ${memoryId}`);
       return res.status(200).json({ success: true, result });
