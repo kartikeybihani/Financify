@@ -4681,7 +4681,7 @@ async function handleClassify(message, context, conversationContext = null) {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: OPENROUTER_MODEL,
+          model: SMALLER_MODEL, // Use reliable model for classification (JSON mode)
           temperature: 0.1,
           max_tokens: 350, // Allow slightly longer responses for stability
           top_p: 0.9, // Add top_p for better stability

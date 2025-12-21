@@ -410,8 +410,7 @@ const styles = {
     justifyContent: "center" as const,
   },
   emptyImage: {
-    width: "100%",
-    height: "100%",
+    flex: 1,
   },
   emptyTitle: {
     fontSize: responsiveFontSize(18),
