@@ -2114,8 +2114,13 @@ async function handleAsk(
       cashflow: packs.cashflow,
       spend: packs.spend,
       transactions: packs.base?.recentTransactions || [],
+      accounts: packs.base?.accounts || packs.accounts || [], // Include accounts for credit utilization detection
     };
-    const userState = detectUserState(message, financialDataForState);
+    const userState = detectUserState(
+      message,
+      financialDataForState,
+      classificationResult
+    );
 
     // Consolidated user state log with better formatting
     console.log(`\n🎯 [USER_STATE] Detected:`);
@@ -2130,34 +2135,12 @@ async function handleAsk(
     // Pass finny_style directly to prompt engine (now handled early in prompt)
     const finnyStyle = context.profile?.finny_style || null;
 
-    let system = buildContextAwarePrompt(
-      message,
-      context,
-      financialDataForState,
-      userState,
-      finnyStyle
-    );
-
-    // Add additional context sections that aren't handled by prompt engine
-    const additionalSections = [];
-
-    // User profile financial perspective (from onboarding)
-    if (context.profile?.intent_context) {
-      additionalSections.push(
-        "",
-        "USER'S FINANCIAL PERSPECTIVE (from onboarding - use as reference, may not be current):",
-        context.profile.intent_context
-      );
-    }
-
-    // Feedback-based adaptation (Phase 1.3)
-    // Prioritize deep understanding of user's thinking and preferences
+    // Build feedback context if available (for prompt engine)
+    let feedbackContext = null;
     if (context.feedbackPatterns) {
-      const feedbackContext = buildFeedbackContext(context.feedbackPatterns);
+      feedbackContext = buildFeedbackContext(context.feedbackPatterns);
       if (feedbackContext) {
-        additionalSections.push("", feedbackContext);
         const { preferences, deepInsights } = context.feedbackPatterns;
-
         // Single consolidated log with visual formatting
         console.log(`\n📋 [ADAPTATION] Feedback Context Added:`);
         console.log(
@@ -2171,283 +2154,32 @@ async function handleAsk(
       }
     }
 
-    // Memory context from Supermemory (already ranked by semantic search)
-    const memorySections = [];
-    if (context.memory?.memories?.length > 0) {
-      // Group memories by context_type from metadata
-      const memoriesByType = {};
-      context.memory.memories.forEach((m) => {
-        const type = m.context_type || "general";
-        if (!memoriesByType[type]) {
-          memoriesByType[type] = [];
-        }
-        memoriesByType[type].push(m);
-      });
+    // Add feedback context to context object for prompt engine
+    const contextWithFeedback = {
+      ...context,
+      feedbackContext,
+    };
 
-      // Build prompt sections using content from Supermemory documents
-      // Note: v4/search returns 'memory' field (mapped to 'content'), not 'summary'
-      // Summaries are only available in list endpoint, not search endpoint
-      Object.entries(memoriesByType).forEach(([type, mems]) => {
-        // Truncate at sentence boundaries (max 250 chars) to avoid prompt bloat
-        const truncateAtSentence = (text, maxLength = 250) => {
-          if (text.length <= maxLength) return text;
-          // Find last sentence boundary before maxLength
-          const truncated = text.substring(0, maxLength);
-          const lastPeriod = truncated.lastIndexOf(".");
-          const lastExclamation = truncated.lastIndexOf("!");
-          const lastQuestion = truncated.lastIndexOf("?");
-          const lastBoundary = Math.max(
-            lastPeriod,
-            lastExclamation,
-            lastQuestion
-          );
-          if (lastBoundary > maxLength * 0.5) {
-            // Only use boundary if it's not too early (at least 50% through)
-            return text.substring(0, lastBoundary + 1);
-          }
-          // Fallback: truncate at word boundary
-          const lastSpace = truncated.lastIndexOf(" ");
-          return (
-            text.substring(0, lastSpace > 0 ? lastSpace : maxLength) + "..."
-          );
-        };
-
-        // Use content (which contains the memory text from v4/search)
-        const memoryTexts = mems
-          .map((m) => {
-            const text = m.content || m.summary || "";
-            return truncateAtSentence(text);
-          })
-          .filter(Boolean)
-          .join("; ");
-        if (memoryTexts) {
-          // Format context type names for readability
-          const typeLabel =
-            type === "goal"
-              ? "Goals"
-              : type === "constraint"
-              ? "Constraints"
-              : type === "preference"
-              ? "Preferences"
-              : type === "life_event"
-              ? "Life Events"
-              : type === "decision"
-              ? "Decisions"
-              : type.charAt(0).toUpperCase() + type.slice(1);
-          memorySections.push(`${typeLabel}: ${memoryTexts}`);
-        }
-      });
-    }
-
-    if (memorySections.length > 0) {
-      additionalSections.push("", "USER MEMORIES:", ...memorySections);
-    }
-
-    // Add web context if available
-    if (webSummary) {
-      additionalSections.push(
-        "",
-        "WEB CONTEXT:",
-        "The following is current information from web search:",
-        "",
-        webSummary,
-        "",
-        "IMPORTANT: Use the web search results above for current information. These results are more up-to-date than training data.",
-        "",
-        "SOURCE INCLUSION: When using web search results, ALWAYS include 2-3 most relevant source URLs in your response. Format them as links at the end of your response under a 'Sources:' section. Choose the most authoritative and directly relevant sources. Do NOT overwhelm with too many sources - quality over quantity.",
-        "",
-        "LINK PROVISION: When suggesting users go online for additional resources (like checking credit scores, applying for credit cards, or accessing specific services), ALWAYS provide the direct link if you have it. This saves users time and provides immediate access to the resources you're recommending."
-      );
-      if (context.userPrompt) {
-        additionalSections.push("", "USER GUIDANCE:", context.userPrompt);
-      }
-    }
-
-    // Add data-specific response guidelines (consolidated, non-redundant)
-    additionalSections.push(
-      "",
-      "DATA HANDLING:",
-      "- Prioritize web search results over training data for current information",
-      "- Query-specific: 'accounts' → show names/balances/types. 'net worth' → include breakdown (top 2-3 contributors). 'investments/holdings' → show ALL holdings. 'investment advice' → actionable recommendations, not data dumps",
-      "- Missing data: Explicitly say so, ask to refresh/connect accounts. Never fabricate data",
-      "- Use only data from context. If missing, state unavailable",
-      "",
-      "MESSAGE STRUCTURE:",
-      "- Goals: List all in one message, then separate commentary. Investments: Show complete portfolio. Investment advice: Group related points",
-      "- Use natural split points: 'Bottom line:', 'Heads up:', 'Hit me up if you need help'",
-      "- Goal queries: No source links, focus on personal data only",
-      "",
-      "FORMATTING:",
-      "- Plain text only. No markdown headers/code blocks. Use ** for emphasis, dashes (-) for bullets",
-      "",
-      "DATA INTERPRETATION:",
-      "- EXPENSE = money spent (out), INCOME = money received (in). Credit cards: current_balance = debt, available_balance = credit limit",
-      "- Spending by category = RECURRING monthly expenses (Housing=rent, Food=groceries, etc.)",
-      "",
-      "CALCULATIONS:",
-      "- Retirement/FIRE: 7% return, 3% inflation, 25x expenses (4% rule). Show optimistic/conservative scenarios. Explain math simply",
-      "- Emergency cash: Available - Expense - Upcoming obligations = Remaining buffer. If tight (<$500), suggest alternatives",
-      "",
-      "DISCLAIMERS:",
-      "- Investment disclaimer only for investment-related queries. Never suggest competitors (Mint, YNAB, Personal Capital). Suggest Finny features. Can suggest: credit checks, bank transfers, investment platforms, insurance"
+    // Build complete prompt using 6-layer architecture
+    // Prompt engine now handles: web context, feedback patterns, memories, intent context, user prompt
+    const system = buildContextAwarePrompt(
+      message,
+      contextWithFeedback,
+      financialDataForState,
+      userState,
+      finnyStyle,
+      classificationResult, // Pass classification result for intent-first architecture
+      webSummary, // Web context
+      contextHeader // Context header
     );
 
-    // Add context header to system prompt (not user message) - BEFORE joining
-    if (contextHeader) {
-      additionalSections.push("", "CONTEXT INFORMATION:", contextHeader);
-    }
-
-    // Combine base prompt with additional sections
-    system = system + "\n\n" + additionalSections.join("\n");
-
-    // Build context from packs
-    logDebug("🔍 [CONTEXT] Building context from packs:", {
-      packsKeys: Object.keys(packs),
-      hasBase: !!packs.base,
-      baseKeys: packs.base ? Object.keys(packs.base) : [],
-    });
-
+    // Build minimal user message context (query-specific data only, not raw dumps)
+    // Financial data is already synthesized in prompt engine Layer 2
+    // Only include query-specific context that prompt engine can't synthesize
     const contextLines = [];
 
-    if (packs.base) {
-      logDebug("🔍 [CONTEXT] Building context from packs.base:", {
-        hasBase: !!packs.base,
-        baseKeys: Object.keys(packs.base || {}),
-        netWorth: packs.base?.netWorth,
-        liquidAssets: packs.base?.liquidAssets,
-      });
-      contextLines.push("Financial Summary:");
-      contextLines.push(`Net Worth: $${packs.base.netWorth}`);
-      contextLines.push(`Money You Have (Cash): $${packs.base.liquidAssets}`);
-      contextLines.push(`Investments Total: $${packs.base.investmentsTotal}`);
-      contextLines.push(
-        `Money You Owe (Debt): $${packs.base.totalLiabilities}`
-      );
-
-      if (packs.base.accounts?.length > 0) {
-        contextLines.push("Your accounts:");
-        packs.base.accounts.forEach((account) => {
-          const balance =
-            account.current_balance || account.available_balance || 0;
-          const accountName =
-            account.name || account.official_name || "Unknown Account";
-          const accountType = account.type || "Unknown Type";
-          contextLines.push(
-            `${accountName} (${accountType}): $${Number(balance).toFixed(2)}`
-          );
-        });
-      }
-
-      if (packs.base.recentTransactions?.length > 0) {
-        contextLines.push("Recent transactions:");
-        packs.base.recentTransactions.forEach((txn) => {
-          const amount = Math.abs(txn.amount);
-          const transactionType = txn.amount < 0 ? "INCOME" : "EXPENSE";
-          const sign = txn.amount < 0 ? "-" : "+";
-          contextLines.push(
-            `${txn.date}: ${sign}$${amount.toFixed(2)} (${transactionType}) - ${
-              txn.merchant
-            }`
-          );
-        });
-      }
-
-      if (packs.base.spendByCategory?.length > 0) {
-        contextLines.push("Spending by category:");
-        packs.base.spendByCategory.forEach((category) => {
-          contextLines.push(
-            `${category.category}: $${Number(category.total_spend).toFixed(
-              2
-            )} (${category.txn_count} transactions)`
-          );
-        });
-      }
-    }
-
-    if (packs.spend) {
-      contextLines.push(
-        `Spending for ${packs.spend.period || "selected period"}:`
-      );
-      contextLines.push(
-        `Total: $${packs.spend.total} (${packs.spend.count} transactions)`
-      );
-
-      if (packs.spend.category) {
-        contextLines.push(`Category: ${packs.spend.category}`);
-      }
-
-      if (packs.spend.transactions?.length > 0) {
-        contextLines.push("Transactions:");
-        packs.spend.transactions.forEach((txn) => {
-          const amount = Math.abs(txn.amount);
-          const transactionType = txn.amount < 0 ? "INCOME" : "EXPENSE";
-          const sign = txn.amount < 0 ? "-" : "+";
-          contextLines.push(
-            `${txn.date}: ${sign}$${amount.toFixed(2)} (${transactionType}) - ${
-              txn.merchant
-            }`
-          );
-        });
-      }
-    }
-
-    // Add detailed category transactions when available
-    if (packs.categoryDetails) {
-      contextLines.push(
-        `${packs.categoryDetails.category} transactions (${packs.categoryDetails.period}):`
-      );
-      packs.categoryDetails.transactions.forEach((txn) => {
-        const amount = Math.abs(txn.amount);
-        const transactionType = txn.amount < 0 ? "INCOME" : "EXPENSE";
-        const sign = txn.amount < 0 ? "-" : "+";
-        contextLines.push(
-          `${txn.date}: ${sign}$${amount.toFixed(2)} (${transactionType}) - ${
-            txn.merchant || txn.name
-          }`
-        );
-      });
-    }
-
-    if (packs.invest?.holdings?.length > 0) {
-      contextLines.push(
-        `Investment holdings (${packs.invest.holdings.length} total):`
-      );
-      packs.invest.holdings.forEach((holding) => {
-        contextLines.push(
-          `${holding.symbol} (${holding.description}): ${
-            holding.units
-          } shares, $${holding.market_value.toFixed(2)}`
-        );
-      });
-    }
-
-    if (packs.goals?.goals?.length > 0) {
-      contextLines.push("Current goals:");
-      packs.goals.goals.forEach((goal) => {
-        contextLines.push(
-          `${goal.label}: $${goal.current_amount.toFixed(
-            2
-          )} / $${goal.target_amount.toFixed(2)} (${
-            goal.progress_pct
-          }%) - Due ${goal.target_date}`
-        );
-      });
-    }
-
-    if (packs.cashflow?.cashflow?.length > 0) {
-      contextLines.push("Recent cashflow:");
-      packs.cashflow.cashflow.forEach((cf) => {
-        contextLines.push(
-          `${cf.month}: Income $${cf.income.toFixed(
-            2
-          )}, Expenses $${cf.expense.toFixed(2)}, Net $${cf.net.toFixed(2)}`
-        );
-      });
-    }
-
-    // Add conversation context if available
+    // Add conversation context if available (for continuity)
     if (conversationContext?.active_topic || conversationContext?.last_entity) {
-      contextLines.push("\n--- Conversation Context ---");
       if (conversationContext.active_topic) {
         contextLines.push(`Active topic: ${conversationContext.active_topic}`);
       }
@@ -2466,17 +2198,22 @@ async function handleAsk(
       }
     }
 
-    const contextNote = contextLines.join("\n");
+    // Only add query-specific data that's needed for this specific query
+    // The prompt engine already has synthesized financial data
+    // Only add here if user explicitly asks for specific data (e.g., "show me my accounts")
+    const contextNote = contextLines.length > 0 ? contextLines.join("\n") : "";
 
     // 5) Parallel processing: Main response + Memory extraction
     const llmT0 = Date.now();
 
-    // Build full user message with context
-    const userMessage = `Context:\n${contextNote}\n\nUser: ${message}`;
+    // Build user message (minimal context - financial data is in system prompt)
+    const userMessage = contextNote
+      ? `Context:\n${contextNote}\n\nUser: ${message}`
+      : message;
 
     // Log prompt summary (full prompt too verbose - use debug mode if needed)
     const promptSize = Math.round(system.length / 100) / 10;
-    const contextSize = Math.round(contextLines.join("\n").length / 100) / 10;
+    const contextSize = Math.round(contextNote.length / 100) / 10;
     logInfo(
       `📝 [PROMPT] Ready (system: ${promptSize}k chars, context: ${contextSize}k chars)`
     );
@@ -2879,9 +2616,7 @@ function splitLongResponse(text) {
 // Enhanced web search detection patterns
 function detectWebSearchNeeded(message) {
   const lowerMessage = message.toLowerCase();
-  // Do not trigger web search for off-topic queries (e.g., weather)
-  const offTopicCheck = detectOffTopic(message);
-  if (offTopicCheck.isOffTopic && offTopicCheck.confidence >= 0.7) return false;
+  // Off-topic detection removed - let classification layer handle it
 
   // Production-optimized web search keywords
   const webKeywords = [
@@ -4009,6 +3744,8 @@ function financialConceptHeuristic(raw) {
   if (investmentAdvicePatterns.some((pattern) => text.includes(pattern))) {
     return {
       intent: "ask_personalized",
+      intent_type: "actionable",
+      emotional_state: "neutral",
       needs_web: false,
       needs_user_data: true,
       state: null,
@@ -4046,6 +3783,8 @@ function financialConceptHeuristic(raw) {
   if (isPersonalQuery) {
     return {
       intent: "ask_personalized",
+      intent_type: "exploratory",
+      emotional_state: "neutral",
       needs_web: false,
       needs_user_data: true,
       state: null,
@@ -4103,6 +3842,8 @@ function financialConceptHeuristic(raw) {
     // Classify based on whether it's personal or general
     return {
       intent: "ask_personalized",
+      intent_type: "exploratory",
+      emotional_state: "neutral",
       needs_web: false,
       needs_user_data: isPersonalQuery,
       state: null,
@@ -4738,6 +4479,8 @@ async function handleClassify(message, context, conversationContext = null) {
     console.log("❌ [FINNY] Missing or invalid text parameter");
     return {
       intent: "ask_personalized",
+      intent_type: null,
+      emotional_state: "neutral",
       needs_web: false,
       needs_user_data: true,
       state: null,
@@ -4757,6 +4500,13 @@ async function handleClassify(message, context, conversationContext = null) {
       cachedResult.needs_web !== undefined &&
       cachedResult.needs_user_data !== undefined
     ) {
+      // Ensure new fields exist (backward compatibility with old cache entries)
+      if (!cachedResult.intent_type && cachedResult.intent !== "off_topic") {
+        cachedResult.intent_type = null;
+      }
+      if (!cachedResult.emotional_state) {
+        cachedResult.emotional_state = "neutral";
+      }
       console.log(
         `⚡ [FINNY] Using cached classification result (${
           Date.now() - startTime
@@ -4782,6 +4532,9 @@ async function handleClassify(message, context, conversationContext = null) {
     console.log(`✅ [FINNY] Goal detection heuristic: ${goalDetection.reason}`);
     const result = {
       intent: goalDetection.intent,
+      intent_type:
+        goalDetection.intent === "goal_conversation" ? "actionable" : null,
+      emotional_state: "neutral",
       needs_web: false,
       needs_user_data: true,
       state: null,
@@ -4827,6 +4580,8 @@ async function handleClassify(message, context, conversationContext = null) {
     console.log("✅ [FINNY] Heuristic detected web search needed");
     const result = {
       intent: "ask_personalized",
+      intent_type: "exploratory",
+      emotional_state: "neutral",
       needs_web: true,
       needs_user_data: false,
       state: null,
@@ -4838,33 +4593,7 @@ async function handleClassify(message, context, conversationContext = null) {
     return result;
   }
 
-  // Check for off-topic LAST (after financial heuristics) with confidence scoring
-  const offTopicResult = detectOffTopic(text, context?.conversation_context);
-  if (offTopicResult.isOffTopic) {
-    // Hybrid approach: Only route to handleOffTopic if confidence >= 0.7
-    if (offTopicResult.confidence >= 0.7) {
-      console.log(
-        `✅ [FINNY] Heuristic detected off-topic query (confidence: ${offTopicResult.confidence})`
-      );
-      const result = {
-        intent: "off_topic",
-        needs_web: false,
-        needs_user_data: false,
-        state: null,
-        entities: [],
-        confidence: offTopicResult.confidence,
-        heuristic: true,
-      };
-      setCachedClassification(text, result);
-      return result;
-    } else {
-      // Low confidence off-topic - let LLM decide (route to handleAsk)
-      console.log(
-        `⚠️ [FINNY] Low confidence off-topic (${offTopicResult.confidence}), routing to handleAsk for LLM decision`
-      );
-      // Continue to LLM classification
-    }
-  }
+  // Off-topic detection removed - let classification layer handle it
 
   try {
     // Create a timeout promise that rejects after 8 seconds (increased for stability)
@@ -4893,64 +4622,137 @@ async function handleClassify(message, context, conversationContext = null) {
             {
               role: "system",
               content: [
-                "You are Financify's intent router. Classify the user message into exactly one intent and set flags.",
+                "You are Finny's intelligent classification system. Analyze user messages to understand their intent, emotional state, and what resources they need.",
                 "",
-                "Intents:",
-                "- ask_personalized: user's finances (spending, accounts, goals, investments)",
-                "- goal_conversation: saving/targets/feasibility conversations",
-                "- off_topic: non-financial (weather, love, relationships, etc)",
+                "=== PRIMARY INTENT CLASSIFICATION ===",
+                "Classify into exactly ONE primary intent:",
+                "- ask_personalized: Questions about user's finances (spending, accounts, goals, investments, affordability, advice)",
+                "- goal_conversation: Creating NEW goals or setting savings targets (explicit goal creation statements)",
+                "- off_topic: Non-financial topics (weather, cooking, entertainment, general chat, etc)",
                 "",
-                "Flag rules (can combine):",
-                "- needs_user_data=true when the answer requires the user's actual data (spend, net worth, accounts, goals, personal recommendations, spending tips, budget advice)",
-                "- needs_web=true when the answer requires current/2024-2025 info (limits, rates, brackets, market/news, card offers, credit card recommendations, best cards, card comparisons)",
+                "=== INTENT TYPE (What user wants to accomplish) ===",
+                "Detect the underlying intent type (can combine with primary intent):",
+                "- exploratory: Learning, understanding concepts ('tell me about investing', 'explain Roth IRA', 'what is a 401k')",
+                "- actionable: Specific steps or how-to ('how do I save', 'what should I do', 'help me budget')",
+                "- emotional_support: Seeking reassurance, validation ('I'm worried about money', 'am I doing okay?')",
+                "- crisis: Immediate urgent help needed ('can't pay rent', 'overdraft', 'need money now')",
+                "- planning: Long-term strategy ('retirement planning', 'investment strategy', 'financial plan')",
                 "",
-                "CRITICAL: Spending, budget, and financial tips/queries ALWAYS need user data:",
-                "- 'Give me a spending tip' → intent:ask_personalized, needs_web:false, needs_user_data:true",
-                "- 'Spending tips' → intent:ask_personalized, needs_web:false, needs_user_data:true",
-                "- 'Budget advice' → intent:ask_personalized, needs_web:false, needs_user_data:true",
-                "- 'How can I save money?' → intent:ask_personalized, needs_web:false, needs_user_data:true",
-                "- 'Where am I spending too much?' → intent:ask_personalized, needs_web:false, needs_user_data:true",
-                "- 'Help me reduce expenses' → intent:ask_personalized, needs_web:false, needs_user_data:true",
+                "=== EMOTIONAL STATE DETECTION ===",
+                "Detect emotional state from language and context (be nuanced, avoid false positives):",
+                "- neutral: No strong emotional signals detected",
+                "- anxious: Worry, stress, uncertainty ('worried', 'stressed', 'anxious', 'nervous', 'afraid')",
+                "- panicked: Urgent crisis language ('can't pay', 'overdraft', 'declined', 'bounced', 'emergency', 'need money now')",
+                "- ashamed: Shame, guilt, embarrassment ('ashamed', 'embarrassed', 'feel stupid', 'should have', 'failure')",
+                "- overwhelmed: Too much to handle ('overwhelmed', 'too much', 'can't handle', 'drowning', 'don't know where to start')",
+                "- fomo: Fear of missing out ('saw on tiktok', 'everyone's doing', 'fomo', 'impulse', 'couldn't resist')",
                 "",
-                "CRITICAL: Investment advice queries should NEVER need web search:",
-                "- 'Investment advice' → intent:ask_personalized, needs_web:false, needs_user_data:true",
-                "- 'What should I invest in?' → intent:ask_personalized, needs_web:false, needs_user_data:true",
-                "- 'Portfolio advice' → intent:ask_personalized, needs_web:false, needs_user_data:true",
-                "- 'Investment recommendations' → intent:ask_personalized, needs_web:false, needs_user_data:true",
-                "- 'Analyze my investment strategy' → intent:ask_personalized, needs_web:false, needs_user_data:true",
+                "CRITICAL EMOTIONAL DETECTION RULES:",
+                "- Only detect emotional state if there are CLEAR signals. Don't infer emotions from neutral questions.",
+                "- 'Tell me about investing' → neutral (informational query, no emotional distress)",
+                "- 'I'm worried about my debt' → anxious (explicit worry)",
+                "- 'Can I afford Italy trip?' → neutral (affordability question, not emotional)",
+                "- 'I can't pay my rent this month' → panicked (crisis language)",
+                "- 'I feel stupid for spending so much' → ashamed (self-blame language)",
                 "",
-                "CRITICAL: Goal queries should NEVER need web search:",
-                "- 'Show my goals/Current goals' → intent:goal_conversation, needs_web:false, needs_user_data:true",
+                "=== FLAG RULES (can combine) ===",
+                "- needs_user_data=true: Answer requires user's actual data (spend, net worth, accounts, goals, personal recommendations, affordability checks)",
+                "- needs_web=true: Answer requires current/2024-2025 info (limits, rates, brackets, market/news, card offers, current regulations)",
                 "",
-                "CRITICAL: Affordability and advice queries are ask_personalized, NOT goal_conversation:",
-                "- 'Can I afford X?' → ask_personalized (user wants to know if they can afford something now)",
-                "- 'What's a good emergency amount for me?' → ask_personalized (user wants personalized advice)",
-                "- 'Should I buy X?' → ask_personalized (user wants purchase advice)",
-                "- 'Is it worth it to buy X?' → ask_personalized (user wants value assessment)",
+                "=== CRITICAL CLASSIFICATION RULES ===",
                 "",
-                "goal_conversation is ONLY for creating NEW goals or setting savings targets:",
-                "- 'I want to save $5000 for a house' → goal_conversation (user wants to CREATE a goal)",
-                "- 'Let's set a goal to save for vacation' → goal_conversation (user wants to CREATE a goal)",
+                "1. Affordability queries are ALWAYS ask_personalized (not goal_conversation):",
+                "   - 'Can I afford X?' → ask_personalized, needs_user_data:true, intent_type:actionable",
+                "   - 'Can I afford to go Italy trip?' → ask_personalized, needs_user_data:true, intent_type:actionable",
+                "   - 'Can I go afford a $1500 trip?' → ask_personalized, needs_user_data:true, intent_type:actionable",
                 "",
-                "CRITICAL: Credit card queries ALWAYS need web search for current offers/rates:",
-                "- 'What credit card should I get?' → needs_web:true (current offers)",
-                "- 'Best credit card for me' → needs_web:true (current offers)",
-                "- 'Which card should I apply for?' → needs_web:true (current offers)",
+                "2. Investment advice queries NEVER need web search:",
+                "   - 'Tell me about investing' → ask_personalized, needs_web:false, needs_user_data:true, intent_type:exploratory",
+                "   - 'Investment advice' → ask_personalized, needs_web:false, needs_user_data:true, intent_type:actionable",
+                "   - 'What should I invest in?' → ask_personalized, needs_web:false, needs_user_data:true, intent_type:actionable",
                 "",
-                "Examples:",
-                '"What is the Roth IRA limit for 2025?" → {intent:"ask_personalized", needs_web:true, needs_user_data:false}',
-                '"How much did I spend last month?" → {intent:"ask_personalized", needs_web:false, needs_user_data:true}',
-                '"Give me a spending tip" → {intent:"ask_personalized", needs_web:false, needs_user_data:true}',
-                '"I want to save $5000 for a house" → {intent:"goal_conversation", needs_web:false, needs_user_data:true}',
-                '"What solid credit card should I get?" → {intent:"ask_personalized", needs_web:true, needs_user_data:true}',
-                '"Which credit card should I get?" → {intent:"ask_personalized", needs_web:true, needs_user_data:true}',
-                '"Rent vs buy in Phoenix at 7% for me" → {intent:"ask_personalized", needs_web:true, needs_user_data:true, state:"AZ"}',
-                '"What\'s the weather?" → {intent:"off_topic", needs_web:false, needs_user_data:false}',
-                '"Can I afford a $10000 watch?" → {intent:"ask_personalized", needs_web:false, needs_user_data:true}',
-                '"What\'s a good emergency amount for me?" → {intent:"ask_personalized", needs_web:false, needs_user_data:true}',
+                "3. Goal queries NEVER need web search:",
+                "   - 'Show my goals' → ask_personalized, needs_web:false, needs_user_data:true (inquiry, not creation)",
+                "   - 'I want to save $5000 for a house' → goal_conversation, needs_web:false, needs_user_data:true (creation)",
                 "",
-                "Return ONLY JSON (no code fences, no commentary):",
-                '{"intent":"ask_personalized|goal_conversation|off_topic","needs_web":true|false,"needs_user_data":true|false,"state":null|"AZ","entities":[],"confidence":0.0-1.0}',
+                "4. Advice-seeking queries are ask_personalized (not goal_conversation):",
+                "   - 'What's a good emergency amount for me?' → ask_personalized, needs_user_data:true, intent_type:actionable",
+                "   - 'Should I buy X?' → ask_personalized, needs_user_data:true, intent_type:actionable",
+                "   - 'Is it worth it to buy X?' → ask_personalized, needs_user_data:true, intent_type:actionable",
+                "",
+                "5. Credit card queries ALWAYS need web search:",
+                "   - 'What credit card should I get?' → ask_personalized, needs_web:true, needs_user_data:true",
+                "",
+                "6. Spending, budget, and financial tips/queries ALWAYS need user data:",
+                "   - 'Give me a spending tip' → intent:ask_personalized, needs_web:false, needs_user_data:true",
+                "   - 'Spending tips' → intent:ask_personalized, needs_web:false, needs_user_data:true",
+                "   - 'Budget advice' → intent:ask_personalized, needs_web:false, needs_user_data:true",
+                "   - 'How can I save money?' → intent:ask_personalized, needs_web:false, needs_user_data:true",
+                "",
+                "=== EXAMPLES ===",
+                "",
+                'Query: "What is the Roth IRA limit for 2025?"',
+                'Response: {"intent":"ask_personalized","intent_type":"exploratory","emotional_state":"neutral","needs_web":true,"needs_user_data":false,"confidence":0.95}',
+                "",
+                'Query: "How much did I spend last month?"',
+                'Response: {"intent":"ask_personalized","intent_type":"exploratory","emotional_state":"neutral","needs_web":false,"needs_user_data":true,"confidence":0.95}',
+                "",
+                'Query: "Tell me about investing!"',
+                'Response: {"intent":"ask_personalized","intent_type":"exploratory","emotional_state":"neutral","needs_web":false,"needs_user_data":true,"confidence":0.9}',
+                "",
+                'Query: "Can I afford to go Italy trip?"',
+                'Response: {"intent":"ask_personalized","intent_type":"actionable","emotional_state":"neutral","needs_web":false,"needs_user_data":true,"confidence":0.95}',
+                "",
+                'Query: "I\'m worried about my debt"',
+                'Response: {"intent":"ask_personalized","intent_type":"emotional_support","emotional_state":"anxious","needs_web":false,"needs_user_data":true,"confidence":0.9}',
+                "",
+                'Query: "I can\'t pay my rent this month"',
+                'Response: {"intent":"ask_personalized","intent_type":"crisis","emotional_state":"panicked","needs_web":false,"needs_user_data":true,"confidence":0.95}',
+                "",
+                'Query: "I want to save $5000 for a house"',
+                'Response: {"intent":"goal_conversation","intent_type":"actionable","emotional_state":"neutral","needs_web":false,"needs_user_data":true,"confidence":0.95}',
+                "",
+                'Query: "What\'s the weather?"',
+                'Response: {"intent":"off_topic","intent_type":null,"emotional_state":"neutral","needs_web":false,"needs_user_data":false,"confidence":0.95}',
+                "",
+                'Query: "I feel stupid for spending so much on that"',
+                'Response: {"intent":"ask_personalized","intent_type":"emotional_support","emotional_state":"ashamed","needs_web":false,"needs_user_data":true,"confidence":0.9}',
+                "",
+                "=== OUTPUT FORMAT ===",
+                "CRITICAL: You MUST return ONLY valid JSON. No markdown, no code fences, no extra text, no comments.",
+                "The JSON must be parseable by JSON.parse(). Follow this EXACT structure:",
+                "",
+                '{"intent":"ask_personalized","intent_type":"exploratory","emotional_state":"neutral","needs_web":false,"needs_user_data":true,"state":null,"entities":[],"confidence":0.95}',
+                "",
+                "Valid JSON format rules:",
+                "- Use double quotes for all strings",
+                "- Use lowercase true/false (not True/False)",
+                "- Use null (not NULL or None)",
+                "- No trailing commas",
+                "- No extra whitespace or line breaks inside JSON",
+                "- All fields must be present",
+                "",
+                "Field requirements:",
+                "- intent: REQUIRED string (ask_personalized|goal_conversation|off_topic)",
+                "- intent_type: string or null (exploratory|actionable|emotional_support|crisis|planning|null)",
+                "- emotional_state: REQUIRED string (neutral|anxious|panicked|ashamed|overwhelmed|fomo)",
+                "- needs_web: REQUIRED boolean (true|false)",
+                "- needs_user_data: REQUIRED boolean (true|false)",
+                "- state: string or null (state code like AZ, CA, or null)",
+                "- entities: REQUIRED array (empty array [] if none)",
+                "- confidence: REQUIRED number (0.0-1.0)",
+                "",
+                "CRITICAL: Meta/system questions about AI capabilities are ALWAYS off_topic:",
+                "- 'Can you learn from our conversations?' → off_topic",
+                "- 'Do you remember our previous chat?' → off_topic",
+                "- 'Are you an AI?' → off_topic",
+                "- 'How do you work?' → off_topic",
+                "",
+                "IMPORTANT:",
+                "- Be precise with emotional_state: only detect if CLEAR signals exist, default to 'neutral'",
+                "- intent_type can be null for off_topic queries",
+                "- confidence should reflect how certain you are (0.9+ for clear cases, 0.7-0.9 for ambiguous)",
+                "- Return ONLY the JSON object, nothing else",
               ].join("\n"),
             },
             {
@@ -5015,6 +4817,25 @@ async function handleClassify(message, context, conversationContext = null) {
         console.log("❌ [FINNY] Malformed structure:", out);
         throw new Error("Missing required classification fields");
       }
+
+      // Validate new fields with defaults
+      if (
+        !out.intent_type ||
+        (out.intent !== "off_topic" && !out.intent_type)
+      ) {
+        // intent_type can be null for off_topic, but should exist for others
+        if (out.intent !== "off_topic") {
+          console.log("⚠️ [FINNY] Missing intent_type, defaulting to null");
+          out.intent_type = null;
+        }
+      }
+
+      if (!out.emotional_state) {
+        console.log(
+          "⚠️ [FINNY] Missing emotional_state, defaulting to neutral"
+        );
+        out.emotional_state = "neutral";
+      }
     } catch (parseError) {
       console.log(
         "❌ [FINNY] JSON parse/validation error, using fallback classification"
@@ -5028,6 +4849,8 @@ async function handleClassify(message, context, conversationContext = null) {
         console.log("✅ [FINNY] Using goal detection fallback");
         out = {
           intent: "goal_conversation",
+          intent_type: "actionable",
+          emotional_state: "neutral",
           needs_web: false,
           needs_user_data: true,
           state: null,
@@ -5040,6 +4863,8 @@ async function handleClassify(message, context, conversationContext = null) {
         // Default fallback
         out = {
           intent: "ask_personalized",
+          intent_type: null,
+          emotional_state: "neutral",
           needs_web: false,
           needs_user_data: true,
           state: null,
@@ -5089,28 +4914,14 @@ async function handleClassify(message, context, conversationContext = null) {
 
     // Enhanced heuristic fallbacks in priority order
 
-    // 1. Off-topic detection (highest priority)
-    const offTopicCheck = detectOffTopic(message);
-    if (offTopicCheck.isOffTopic && offTopicCheck.confidence >= 0.7) {
-      console.log("✅ [FINNY] Using off-topic heuristic fallback");
-      return {
-        intent: "off_topic",
-        needs_web: false,
-        needs_user_data: false,
-        state: null,
-        entities: [],
-        confidence: 0.9,
-        fallback: true,
-        timeout_fallback: e?.message?.includes("timeout") || false,
-      };
-    }
-
-    // 2. Web search detection
+    // 1. Web search detection
     const webSearchHeuristic = detectWebSearchNeeded(message);
     if (webSearchHeuristic) {
       console.log("✅ [FINNY] Using web search heuristic fallback");
       return {
         intent: "ask_personalized",
+        intent_type: "exploratory",
+        emotional_state: "neutral",
         needs_web: true,
         needs_user_data: false,
         state: null,
@@ -5132,6 +4943,8 @@ async function handleClassify(message, context, conversationContext = null) {
       );
       return {
         intent: "goal_conversation",
+        intent_type: "actionable",
+        emotional_state: "neutral",
         needs_web: false,
         needs_user_data: true,
         state: null,
@@ -5151,6 +4964,8 @@ async function handleClassify(message, context, conversationContext = null) {
       );
       return {
         ...heuristic,
+        intent_type: heuristic.intent_type || null,
+        emotional_state: heuristic.emotional_state || "neutral",
         fallback: true,
         timeout_fallback: e?.message?.includes("timeout") || false,
       };
@@ -5160,6 +4975,8 @@ async function handleClassify(message, context, conversationContext = null) {
     console.log("🔄 [FINNY] Using default ask_personalized fallback");
     return {
       intent: "ask_personalized",
+      intent_type: null,
+      emotional_state: "neutral",
       needs_web: false,
       needs_user_data: true,
       state: null,

@@ -6,7 +6,7 @@
 // Configuration
 const OPENROUTER_API_KEY =
   "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";
-const OPENROUTER_MODEL = "openai/gpt-oss-20b:free";
+const OPENROUTER_MODEL = "meta-llama/llama-3.2-3b-instruct:free";
 
 // Cache for testing
 const classificationCache = new Map();
@@ -377,6 +377,8 @@ function financialConceptHeuristic(text) {
   if (detectOffTopic(text)) {
     return {
       intent: "off_topic",
+      intent_type: null,
+      emotional_state: "neutral",
       needs_web: false,
       needs_user_data: false,
       state: null,
@@ -405,6 +407,8 @@ function financialConceptHeuristic(text) {
   if (investmentAdvicePatterns.some((pattern) => lower.includes(pattern))) {
     return {
       intent: "ask_personalized",
+      intent_type: "actionable",
+      emotional_state: "neutral",
       needs_web: false,
       needs_user_data: true,
       state: null,
@@ -432,6 +436,8 @@ function financialConceptHeuristic(text) {
   ) {
     return {
       intent: "ask_personalized",
+      intent_type: "exploratory",
+      emotional_state: "neutral",
       needs_web: false,
       needs_user_data: true,
       state: null,
@@ -451,6 +457,8 @@ function financialConceptHeuristic(text) {
   ) {
     return {
       intent: "goal_conversation",
+      intent_type: "actionable",
+      emotional_state: "neutral",
       needs_web: false,
       needs_user_data: true,
       state: null,
@@ -464,6 +472,8 @@ function financialConceptHeuristic(text) {
   if (detectWebSearchNeeded(text)) {
     return {
       intent: "ask_personalized",
+      intent_type: "exploratory",
+      emotional_state: "neutral",
       needs_web: true,
       needs_user_data: false,
       state: null,
@@ -598,6 +608,8 @@ async function handleClassify(message, context, conversationContext = null) {
     console.log("❌ [TEST] Missing or invalid text parameter");
     return {
       intent: "ask_personalized",
+      intent_type: null,
+      emotional_state: "neutral",
       needs_web: false,
       needs_user_data: true,
       state: null,
@@ -642,6 +654,9 @@ async function handleClassify(message, context, conversationContext = null) {
     console.log(`✅ [TEST] Goal detection heuristic: ${goalDetection.reason}`);
     const result = {
       intent: goalDetection.intent,
+      intent_type:
+        goalDetection.intent === "goal_conversation" ? "actionable" : null,
+      emotional_state: "neutral",
       needs_web: false,
       needs_user_data: true,
       state: null,
@@ -672,6 +687,8 @@ async function handleClassify(message, context, conversationContext = null) {
     console.log("✅ [TEST] Heuristic detected web search needed");
     const result = {
       intent: "ask_personalized",
+      intent_type: "exploratory",
+      emotional_state: "neutral",
       needs_web: true,
       needs_user_data: false,
       state: null,
@@ -715,7 +732,7 @@ async function handleClassify(message, context, conversationContext = null) {
       {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${OPENROUTER_API_KEY}`,
+          Authorization: `Bearer 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`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
@@ -727,49 +744,131 @@ async function handleClassify(message, context, conversationContext = null) {
             {
               role: "system",
               content: [
-                "You are Financify's intent router. Classify the user message into exactly one intent and set flags.",
+                "You are Finny's intelligent classification system. Analyze user messages to understand their intent, emotional state, and what resources they need.",
                 "",
-                "Intents:",
-                "- ask_personalized: user's finances (spending, accounts, goals, investments)",
-                "- goal_conversation: saving/targets/feasibility conversations",
-                "- off_topic: non-financial (weather, love, relationships, etc)",
+                "=== PRIMARY INTENT CLASSIFICATION ===",
+                "Classify into exactly ONE primary intent:",
+                "- ask_personalized: Questions about user's finances (spending, accounts, goals, investments, affordability, advice)",
+                "- goal_conversation: Creating NEW goals or setting savings targets (explicit goal creation statements)",
+                "- off_topic: Non-financial topics (weather, cooking, entertainment, general chat, etc)",
                 "",
-                "Flag rules (can combine):",
-                "- needs_user_data=true when the answer requires the user's actual data (spend, net worth, accounts, goals, personal recommendations)",
-                "- needs_web=true when the answer requires current/2024-2025 info (limits, rates, brackets, market/news, card offers)",
+                "=== INTENT TYPE (What user wants to accomplish) ===",
+                "Detect the underlying intent type (can combine with primary intent):",
+                "- exploratory: Learning, understanding concepts ('tell me about investing', 'explain Roth IRA', 'what is a 401k')",
+                "- actionable: Specific steps or how-to ('how do I save', 'what should I do', 'help me budget')",
+                "- emotional_support: Seeking reassurance, validation ('I'm worried about money', 'am I doing okay?')",
+                "- crisis: Immediate urgent help needed ('can't pay rent', 'overdraft', 'need money now')",
+                "- planning: Long-term strategy ('retirement planning', 'investment strategy', 'financial plan')",
                 "",
-                "CRITICAL: Investment advice queries should NEVER need web search:",
-                "- 'Investment advice' → intent:ask_personalized, needs_web:false, needs_user_data:true",
-                "- 'What should I invest in?' → intent:ask_personalized, needs_web:false, needs_user_data:true",
-                "- 'Portfolio advice' → intent:ask_personalized, needs_web:false, needs_user_data:true",
-                "- 'Investment recommendations' → intent:ask_personalized, needs_web:false, needs_user_data:true",
-                "- 'Analyze my investment strategy' → intent:ask_personalized, needs_web:false, needs_user_data:true",
+                "=== EMOTIONAL STATE DETECTION ===",
+                "Detect emotional state from language and context (be nuanced, avoid false positives):",
+                "- neutral: No strong emotional signals detected",
+                "- anxious: Worry, stress, uncertainty ('worried', 'stressed', 'anxious', 'nervous', 'afraid')",
+                "- panicked: Urgent crisis language ('can't pay', 'overdraft', 'declined', 'bounced', 'emergency', 'need money now')",
+                "- ashamed: Shame, guilt, embarrassment ('ashamed', 'embarrassed', 'feel stupid', 'should have', 'failure')",
+                "- overwhelmed: Too much to handle ('overwhelmed', 'too much', 'can't handle', 'drowning', 'don't know where to start')",
+                "- fomo: Fear of missing out ('saw on tiktok', 'everyone's doing', 'fomo', 'impulse', 'couldn't resist')",
                 "",
-                "CRITICAL: Goal queries should NEVER need web search:",
-                "- 'Show my goals/Current goals' → intent:goal_conversation, needs_web:false, needs_user_data:true",
+                "CRITICAL EMOTIONAL DETECTION RULES:",
+                "- Only detect emotional state if there are CLEAR signals. Don't infer emotions from neutral questions.",
+                "- 'Tell me about investing' → neutral (informational query, no emotional distress)",
+                "- 'I'm worried about my debt' → anxious (explicit worry)",
+                "- 'Can I afford Italy trip?' → neutral (affordability question, not emotional)",
+                "- 'I can't pay my rent this month' → panicked (crisis language)",
+                "- 'I feel stupid for spending so much' → ashamed (self-blame language)",
                 "",
-                "CRITICAL: Affordability and advice queries are ask_personalized, NOT goal_conversation:",
-                "- 'Can I afford X?' → ask_personalized (user wants to know if they can afford something now)",
-                "- 'What's a good emergency amount for me?' → ask_personalized (user wants personalized advice)",
-                "- 'Should I buy X?' → ask_personalized (user wants purchase advice)",
-                "- 'Is it worth it to buy X?' → ask_personalized (user wants value assessment)",
+                "=== FLAG RULES (can combine) ===",
+                "- needs_user_data=true: Answer requires user's actual data (spend, net worth, accounts, goals, personal recommendations, affordability checks)",
+                "- needs_web=true: Answer requires current/2024-2025 info (limits, rates, brackets, market/news, card offers, current regulations)",
                 "",
-                "goal_conversation is ONLY for creating NEW goals or setting savings targets:",
-                "- 'I want to save $5000 for a house' → goal_conversation (user wants to CREATE a goal)",
-                "- 'Let's set a goal to save for vacation' → goal_conversation (user wants to CREATE a goal)",
+                "=== CRITICAL CLASSIFICATION RULES ===",
                 "",
-                "Examples:",
-                '"What is the Roth IRA limit for 2025?" → {intent:"ask_personalized", needs_web:true, needs_user_data:false}',
-                '"How much did I spend last month?" → {intent:"ask_personalized", needs_web:false, needs_user_data:true}',
-                '"I want to save $5000 for a house" → {intent:"goal_conversation", needs_web:false, needs_user_data:true}',
-                '"Which credit card should I get?" → {intent:"ask_personalized", needs_web:true, needs_user_data:true}',
-                '"Rent vs buy in Phoenix at 7% for me" → {intent:"ask_personalized", needs_web:true, needs_user_data:true, state:"AZ"}',
-                '"What\'s the weather?" → {intent:"off_topic", needs_web:false, needs_user_data:false}',
-                '"Can I afford a $10000 watch?" → {intent:"ask_personalized", needs_web:false, needs_user_data:true}',
-                '"What\'s a good emergency amount for me?" → {intent:"ask_personalized", needs_web:false, needs_user_data:true}',
+                "1. Affordability queries are ALWAYS ask_personalized (not goal_conversation):",
+                "   - 'Can I afford X?' → ask_personalized, needs_user_data:true, intent_type:actionable",
+                "   - 'Can I afford to go Italy trip?' → ask_personalized, needs_user_data:true, intent_type:actionable",
+                "   - 'Can I go afford a $1500 trip?' → ask_personalized, needs_user_data:true, intent_type:actionable",
                 "",
-                "Return ONLY JSON (no code fences, no commentary):",
-                '{"intent":"ask_personalized|goal_conversation|off_topic","needs_web":true|false,"needs_user_data":true|false,"state":null|"AZ","entities":[],"confidence":0.0-1.0}',
+                "2. Investment advice queries NEVER need web search:",
+                "   - 'Tell me about investing' → ask_personalized, needs_web:false, needs_user_data:true, intent_type:exploratory",
+                "   - 'Investment advice' → ask_personalized, needs_web:false, needs_user_data:true, intent_type:actionable",
+                "   - 'What should I invest in?' → ask_personalized, needs_web:false, needs_user_data:true, intent_type:actionable",
+                "",
+                "3. Goal queries NEVER need web search:",
+                "   - 'Show my goals' → ask_personalized, needs_web:false, needs_user_data:true (inquiry, not creation)",
+                "   - 'I want to save $5000 for a house' → goal_conversation, needs_web:false, needs_user_data:true (creation)",
+                "",
+                "4. Advice-seeking queries are ask_personalized (not goal_conversation):",
+                "   - 'What's a good emergency amount for me?' → ask_personalized, needs_user_data:true, intent_type:actionable",
+                "   - 'Should I buy X?' → ask_personalized, needs_user_data:true, intent_type:actionable",
+                "   - 'Is it worth it to buy X?' → ask_personalized, needs_user_data:true, intent_type:actionable",
+                "",
+                "5. Credit card queries ALWAYS need web search:",
+                "   - 'What credit card should I get?' → ask_personalized, needs_web:true, needs_user_data:true",
+                "",
+                "=== EXAMPLES ===",
+                "",
+                'Query: "What is the Roth IRA limit for 2025?"',
+                'Response: {"intent":"ask_personalized","intent_type":"exploratory","emotional_state":"neutral","needs_web":true,"needs_user_data":false,"confidence":0.95}',
+                "",
+                'Query: "How much did I spend last month?"',
+                'Response: {"intent":"ask_personalized","intent_type":"exploratory","emotional_state":"neutral","needs_web":false,"needs_user_data":true,"confidence":0.95}',
+                "",
+                'Query: "Tell me about investing!"',
+                'Response: {"intent":"ask_personalized","intent_type":"exploratory","emotional_state":"neutral","needs_web":false,"needs_user_data":true,"confidence":0.9}',
+                "",
+                'Query: "Can I afford to go Italy trip?"',
+                'Response: {"intent":"ask_personalized","intent_type":"actionable","emotional_state":"neutral","needs_web":false,"needs_user_data":true,"confidence":0.95}',
+                "",
+                'Query: "I\'m worried about my debt"',
+                'Response: {"intent":"ask_personalized","intent_type":"emotional_support","emotional_state":"anxious","needs_web":false,"needs_user_data":true,"confidence":0.9}',
+                "",
+                'Query: "I can\'t pay my rent this month"',
+                'Response: {"intent":"ask_personalized","intent_type":"crisis","emotional_state":"panicked","needs_web":false,"needs_user_data":true,"confidence":0.95}',
+                "",
+                'Query: "I want to save $5000 for a house"',
+                'Response: {"intent":"goal_conversation","intent_type":"actionable","emotional_state":"neutral","needs_web":false,"needs_user_data":true,"confidence":0.95}',
+                "",
+                'Query: "What\'s the weather?"',
+                'Response: {"intent":"off_topic","intent_type":null,"emotional_state":"neutral","needs_web":false,"needs_user_data":false,"confidence":0.95}',
+                "",
+                'Query: "I feel stupid for spending so much on that"',
+                'Response: {"intent":"ask_personalized","intent_type":"emotional_support","emotional_state":"ashamed","needs_web":false,"needs_user_data":true,"confidence":0.9}',
+                "",
+                "=== OUTPUT FORMAT ===",
+                "CRITICAL: You MUST return ONLY valid JSON. No markdown, no code fences, no extra text, no comments.",
+                "The JSON must be parseable by JSON.parse(). Follow this EXACT structure:",
+                "",
+                '{"intent":"ask_personalized","intent_type":"exploratory","emotional_state":"neutral","needs_web":false,"needs_user_data":true,"state":null,"entities":[],"confidence":0.95}',
+                "",
+                "Valid JSON format rules:",
+                "- Use double quotes for all strings",
+                "- Use lowercase true/false (not True/False)",
+                "- Use null (not NULL or None)",
+                "- No trailing commas",
+                "- No extra whitespace or line breaks inside JSON",
+                "- All fields must be present",
+                "",
+                "Field requirements:",
+                "- intent: REQUIRED string (ask_personalized|goal_conversation|off_topic)",
+                "- intent_type: string or null (exploratory|actionable|emotional_support|crisis|planning|null)",
+                "- emotional_state: REQUIRED string (neutral|anxious|panicked|ashamed|overwhelmed|fomo)",
+                "- needs_web: REQUIRED boolean (true|false)",
+                "- needs_user_data: REQUIRED boolean (true|false)",
+                "- state: string or null (state code like AZ, CA, or null)",
+                "- entities: REQUIRED array (empty array [] if none)",
+                "- confidence: REQUIRED number (0.0-1.0)",
+                "",
+                "CRITICAL: Meta/system questions about AI capabilities are ALWAYS off_topic:",
+                "- 'Can you learn from our conversations?' → off_topic",
+                "- 'Do you remember our previous chat?' → off_topic",
+                "- 'Are you an AI?' → off_topic",
+                "- 'How do you work?' → off_topic",
+                "",
+                "IMPORTANT:",
+                "- Be precise with emotional_state: only detect if CLEAR signals exist, default to 'neutral'",
+                "- intent_type can be null for off_topic queries",
+                "- confidence should reflect how certain you are (0.9+ for clear cases, 0.7-0.9 for ambiguous)",
+                "- Return ONLY the JSON object, nothing else",
               ].join("\n"),
             },
             {
@@ -834,6 +933,23 @@ async function handleClassify(message, context, conversationContext = null) {
         console.log("❌ [TEST] Malformed structure:", out);
         throw new Error("Missing required classification fields");
       }
+
+      // Validate new fields with defaults
+      if (
+        !out.intent_type ||
+        (out.intent !== "off_topic" && !out.intent_type)
+      ) {
+        // intent_type can be null for off_topic, but should exist for others
+        if (out.intent !== "off_topic") {
+          console.log("⚠️ [TEST] Missing intent_type, defaulting to null");
+          out.intent_type = null;
+        }
+      }
+
+      if (!out.emotional_state) {
+        console.log("⚠️ [TEST] Missing emotional_state, defaulting to neutral");
+        out.emotional_state = "neutral";
+      }
     } catch (parseError) {
       console.log(
         "❌ [TEST] JSON parse/validation error, using fallback classification"
@@ -847,6 +963,8 @@ async function handleClassify(message, context, conversationContext = null) {
         console.log("✅ [TEST] Using goal detection fallback");
         out = {
           intent: "goal_conversation",
+          intent_type: "actionable",
+          emotional_state: "neutral",
           needs_web: false,
           needs_user_data: true,
           state: null,
@@ -859,6 +977,8 @@ async function handleClassify(message, context, conversationContext = null) {
         // Default fallback
         out = {
           intent: "ask_personalized",
+          intent_type: null,
+          emotional_state: "neutral",
           needs_web: false,
           needs_user_data: true,
           state: null,
@@ -891,10 +1011,18 @@ async function handleClassify(message, context, conversationContext = null) {
     // Enhanced heuristic fallbacks in priority order
 
     // 1. Off-topic detection (highest priority)
-    if (detectOffTopic(message)) {
+    const offTopicCheck = detectOffTopic(message);
+    if (
+      offTopicCheck &&
+      (typeof offTopicCheck === "object"
+        ? offTopicCheck.isOffTopic
+        : offTopicCheck)
+    ) {
       console.log("✅ [TEST] Using off-topic heuristic fallback");
       return {
         intent: "off_topic",
+        intent_type: null,
+        emotional_state: "neutral",
         needs_web: false,
         needs_user_data: false,
         state: null,
@@ -911,6 +1039,8 @@ async function handleClassify(message, context, conversationContext = null) {
       console.log("✅ [TEST] Using web search heuristic fallback");
       return {
         intent: "ask_personalized",
+        intent_type: "exploratory",
+        emotional_state: "neutral",
         needs_web: true,
         needs_user_data: false,
         state: null,
@@ -932,6 +1062,8 @@ async function handleClassify(message, context, conversationContext = null) {
       );
       return {
         intent: "goal_conversation",
+        intent_type: "actionable",
+        emotional_state: "neutral",
         needs_web: false,
         needs_user_data: true,
         state: null,
@@ -960,6 +1092,8 @@ async function handleClassify(message, context, conversationContext = null) {
     console.log("🔄 [TEST] Using default ask_personalized fallback");
     return {
       intent: "ask_personalized",
+      intent_type: null,
+      emotional_state: "neutral",
       needs_web: false,
       needs_user_data: true,
       state: null,
@@ -986,6 +1120,12 @@ async function testSingleMessage(message) {
 
     console.log("📊 Classification Results:");
     console.log(`  Intent: ${classification.intent}`);
+    if (classification.intent_type) {
+      console.log(`  Intent Type: ${classification.intent_type}`);
+    }
+    if (classification.emotional_state) {
+      console.log(`  Emotional State: ${classification.emotional_state}`);
+    }
     console.log(`  needs_web: ${classification.needs_web}`);
     console.log(`  needs_user_data: ${classification.needs_user_data}`);
     console.log(`  confidence: ${classification.confidence}`);
@@ -1163,6 +1303,11 @@ async function runHardballTests() {
       q: "Can I go afford a $1500 trip?",
       expected: "ask_personalized",
       note: "Should be ask_personalized (affordability check with typo 'go afford'), NOT goal_conversation",
+    },
+    {
+      q: "Can I afford to go Italy trip?",
+      expected: "ask_personalized",
+      note: "Should be ask_personalized (affordability check with natural language variation), NOT goal_conversation",
     },
   ];
 
