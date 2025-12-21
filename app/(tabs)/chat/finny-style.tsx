@@ -14,6 +14,10 @@ import { supabase } from "@/src/lib/supabase/supabase";
 import logger from "@/src/utils/core/logger";
 import ChatScreenHeader from "@/src/components/shared/ChatScreenHeader";
 import { authenticatedFetch } from "@/src/utils/auth/authToken";
+import {
+  getCachedFinnyStyle,
+  cacheFinnyStyle,
+} from "@/src/utils/profile/profileCache";
 
 interface FinnyStyleScreenProps {
   onBack?: () => void;
@@ -172,11 +176,12 @@ const StyleOption: React.FC<StyleOptionProps> = ({
 
 export default function FinnyStyleScreen({ onBack }: FinnyStyleScreenProps) {
   const insets = useSafeAreaInsets();
+  // Initialize with cached value immediately to avoid flicker
+  // Use lazy initializer pattern - this will be set immediately in useEffect
   const [selectedStyle, setSelectedStyle] = useState<
-    "conversational" | "direct" | "witty"
-  >("conversational");
+    "conversational" | "direct" | "witty" | null
+  >(null);
   const [isSaving, setIsSaving] = useState(false);
-
 
   const styleOptions = [
     {
@@ -196,38 +201,55 @@ export default function FinnyStyleScreen({ onBack }: FinnyStyleScreenProps) {
     },
   ];
 
-  // Load current style from database on mount
+  // Load current style from cache first (instant), then verify with DB
   useEffect(() => {
     const loadFinnyStyle = async () => {
-      let style: "conversational" | "direct" | "witty" = "conversational";
+      // Step 1: Load from memory cache immediately (truly instant, synchronous)
+      const cachedStyle = getCachedFinnyStyle();
+      const initialStyle = cachedStyle || "conversational";
+      setSelectedStyle(initialStyle);
 
+      // Step 2: Fetch from DB to verify and update cache if different
       try {
         const {
           data: { user },
         } = await supabase.auth.getUser();
         if (!user?.id) {
           logger.warn("[FinnyStyle] No authenticated user found");
-        } else {
-          const { data: profile, error } = await supabase
-            .from("profiles")
-            .select("finny_style")
-            .eq("id", user.id)
-            .maybeSingle();
+          return;
+        }
 
-          if (error) {
-            logger.error("[FinnyStyle] Error loading style:", error);
-          } else if (profile?.finny_style) {
-            style = profile.finny_style as
-              | "conversational"
-              | "direct"
-              | "witty";
+        const { data: profile, error } = await supabase
+          .from("profiles")
+          .select("finny_style")
+          .eq("id", user.id)
+          .maybeSingle();
+
+        if (error) {
+          logger.error("[FinnyStyle] Error loading style:", error);
+          return;
+        }
+
+        if (profile?.finny_style) {
+          const dbStyle = profile.finny_style as
+            | "conversational"
+            | "direct"
+            | "witty";
+
+          // Update cache if DB value differs from cached
+          if (dbStyle !== cachedStyle) {
+            await cacheFinnyStyle(dbStyle);
+            setSelectedStyle(dbStyle);
+          }
+        } else {
+          // No style in DB, ensure cache matches default
+          if (!cachedStyle) {
+            await cacheFinnyStyle("conversational");
+            setSelectedStyle("conversational");
           }
         }
       } catch (error) {
         logger.error("[FinnyStyle] Error loading style:", error);
-      } finally {
-        // Always set the style (defaults to conversational)
-        setSelectedStyle(style);
       }
     };
 
@@ -238,8 +260,8 @@ export default function FinnyStyleScreen({ onBack }: FinnyStyleScreenProps) {
   const handleStyleSelect = async (
     style: "conversational" | "direct" | "witty"
   ) => {
-    // Don't update if already selected
-    if (selectedStyle === style) return;
+    // Don't update if already selected or still loading
+    if (selectedStyle === style || selectedStyle === null) return;
 
     // Optimistically update UI
     setSelectedStyle(style);
@@ -263,6 +285,8 @@ export default function FinnyStyleScreen({ onBack }: FinnyStyleScreenProps) {
         throw error;
       }
 
+      // Update cache immediately
+      await cacheFinnyStyle(style);
       logger.info("[FinnyStyle] Style saved successfully:", style);
 
       // Invalidate profile cache on server
@@ -271,16 +295,19 @@ export default function FinnyStyleScreen({ onBack }: FinnyStyleScreenProps) {
           process.env.EXPO_PUBLIC_APP_BASE_URL ||
           "https://financify-rose.vercel.app";
 
-        const cacheResponse = await authenticatedFetch(`${BASE_URL}/api/finny`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            action: "invalidate_profile_cache",
-          }),
-        });
-        
+        const cacheResponse = await authenticatedFetch(
+          `${BASE_URL}/api/finny`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              action: "invalidate_profile_cache",
+            }),
+          }
+        );
+
         if (cacheResponse.ok) {
           logger.info("[FinnyStyle] Profile cache invalidated successfully");
         } else {
@@ -323,9 +350,12 @@ export default function FinnyStyleScreen({ onBack }: FinnyStyleScreenProps) {
           .eq("id", user.id)
           .maybeSingle();
         if (profile?.finny_style) {
-          setSelectedStyle(
-            profile.finny_style as "conversational" | "direct" | "witty"
-          );
+          const dbStyle = profile.finny_style as
+            | "conversational"
+            | "direct"
+            | "witty";
+          setSelectedStyle(dbStyle);
+          await cacheFinnyStyle(dbStyle);
         }
       }
     } finally {
@@ -351,7 +381,7 @@ export default function FinnyStyleScreen({ onBack }: FinnyStyleScreenProps) {
                   isSelected={selectedStyle === option.id}
                   onPress={() => handleStyleSelect(option.id)}
                   isLast={index === styleOptions.length - 1}
-                  disabled={isSaving}
+                  disabled={isSaving || selectedStyle === null}
                 />
               ))}
             </View>

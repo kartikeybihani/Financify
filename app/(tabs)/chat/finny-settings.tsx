@@ -27,6 +27,12 @@ import { SettingItemProps, MemorySummary } from "@/src/types/plaid";
 import { TEXT_STYLES } from "@/src/components/shared/modal-constants";
 import { supabase } from "@/src/lib/supabase/supabase";
 import logger from "@/src/utils/core/logger";
+import {
+  getCachedFinnyStyle,
+  getCachedCheckinFrequency,
+  cacheFinnyStyle,
+  cacheCheckinFrequency,
+} from "@/src/utils/profile/profileCache";
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
 
@@ -231,14 +237,23 @@ export default function FinnySettingsScreen() {
   const [legalSummarySlideAnimation] = useState(new Animated.Value(0));
   const [howFinnyWorksSlideAnimation] = useState(new Animated.Value(0));
   const [historySlideAnimation] = useState(new Animated.Value(0));
+  // Initialize with cached values immediately to avoid flicker
   const [currentStyle, setCurrentStyle] = useState<
-    "conversational" | "direct" | "witty"
-  >("conversational");
+    "conversational" | "direct" | "witty" | null
+  >(null);
   const [currentCheckinFrequency, setCurrentCheckinFrequency] = useState<
-    "daily" | "3times" | "weekly" | "never"
-  >("daily");
+    "daily" | "3times" | "weekly" | "never" | null
+  >(null);
 
   const loadSettings = async () => {
+    // Step 1: Load from memory cache immediately (truly instant, synchronous)
+    const cachedStyle = getCachedFinnyStyle();
+    const cachedCheckin = getCachedCheckinFrequency();
+
+    setCurrentStyle(cachedStyle || "conversational");
+    setCurrentCheckinFrequency(cachedCheckin || "daily");
+
+    // Step 2: Fetch from DB to verify and update cache if different
     try {
       const {
         data: { user },
@@ -256,16 +271,30 @@ export default function FinnySettingsScreen() {
 
       if (error) {
         logger.error("[FinnySettings] Error loading settings:", error);
-      } else {
-        if (profile?.finny_style) {
-          setCurrentStyle(
-            profile.finny_style as "conversational" | "direct" | "witty"
-          );
+        return;
+      }
+
+      if (profile?.finny_style) {
+        const dbStyle = profile.finny_style as
+          | "conversational"
+          | "direct"
+          | "witty";
+        setCurrentStyle(dbStyle);
+        // Update cache if DB value differs from cached
+        if (dbStyle !== cachedStyle) {
+          await cacheFinnyStyle(dbStyle);
         }
-        if (profile?.checkin_frequency) {
-          setCurrentCheckinFrequency(
-            profile.checkin_frequency as "daily" | "3times" | "weekly" | "never"
-          );
+      }
+      if (profile?.checkin_frequency) {
+        const dbCheckin = profile.checkin_frequency as
+          | "daily"
+          | "3times"
+          | "weekly"
+          | "never";
+        setCurrentCheckinFrequency(dbCheckin);
+        // Update cache if DB value differs from cached
+        if (dbCheckin !== cachedCheckin) {
+          await cacheCheckinFrequency(dbCheckin);
         }
       }
     } catch (error) {
@@ -306,14 +335,14 @@ export default function FinnySettingsScreen() {
     }).start();
   };
 
-  const closeStyle = () => {
+  const closeStyle = async () => {
     Animated.timing(styleSlideAnimation, {
       toValue: 0,
       duration: 300,
       useNativeDriver: true,
     }).start(() => {
       setShowStyle(false);
-      // Reload settings to get updated style
+      // Reload settings to get updated style (will use cache for instant display)
       loadSettings();
     });
   };
@@ -327,14 +356,14 @@ export default function FinnySettingsScreen() {
     }).start();
   };
 
-  const closeCheckin = () => {
+  const closeCheckin = async () => {
     Animated.timing(checkinSlideAnimation, {
       toValue: 0,
       duration: 300,
       useNativeDriver: true,
     }).start(() => {
       setShowCheckin(false);
-      // Reload settings to get updated check-in frequency
+      // Reload settings to get updated check-in frequency (will use cache for instant display)
       loadSettings();
     });
   };
@@ -466,8 +495,9 @@ export default function FinnySettingsScreen() {
   });
 
   const getStyleDescription = (
-    style: "conversational" | "direct" | "witty"
+    style: "conversational" | "direct" | "witty" | null
   ): string => {
+    if (!style) return "Loading...";
     switch (style) {
       case "conversational":
         return "Conversational";
@@ -481,8 +511,9 @@ export default function FinnySettingsScreen() {
   };
 
   const getCheckinDescription = (
-    frequency: "daily" | "3times" | "weekly" | "never"
+    frequency: "daily" | "3times" | "weekly" | "never" | null
   ): string => {
+    if (!frequency) return "Loading...";
     switch (frequency) {
       case "daily":
         return "Daily";

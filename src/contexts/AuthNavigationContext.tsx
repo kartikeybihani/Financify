@@ -387,6 +387,12 @@ export const AuthNavigationProvider: React.FC<AuthNavigationProviderProps> = ({
         clearSpendingCache(), // Clears all user spending caches
       ]);
 
+      // Clear profile cache (finny_style, checkin_frequency)
+      const { clearProfileCache } = await import(
+        "@/src/utils/profile/profileCache"
+      );
+      await clearProfileCache();
+
       // Clear other app-specific cache keys
       await AsyncStorage.multiRemove([
         "onboarding_complete",
@@ -578,6 +584,14 @@ export const AuthNavigationProvider: React.FC<AuthNavigationProviderProps> = ({
 
     const initializeAuth = async () => {
       try {
+        // Initialize profile cache from AsyncStorage (non-blocking)
+        const { initializeProfileCache } = await import(
+          "@/src/utils/profile/profileCache"
+        );
+        initializeProfileCache().catch((error) => {
+          logger.warn("[AUTH] Failed to initialize profile cache:", error);
+        });
+
         // Get initial session
         const {
           data: { session: initialSession },

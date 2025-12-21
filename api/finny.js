@@ -1420,39 +1420,33 @@ export default async function handler(req, res) {
 
     // Log all timings in seconds
     const formatTime = (ms) => (ms / 1000).toFixed(3);
-    console.log("\n" + "=".repeat(80));
-    console.log("⏱️  [TIMING] Request Performance Breakdown:");
-    console.log("=".repeat(80));
-    console.log(`  Auth:              ${formatTime(timings.auth_ms)}s`);
+
+    // Consolidated timing log
+    console.log(`\n⏱️  [TIMING] Total: ${formatTime(timings.total_ms)}s`);
     console.log(
-      `  Context Loading:   ${formatTime(timings.context_loading_ms)}s`
+      `   └─ Handler: ${formatTime(timings.handler_ms)}s | LLM: ${formatTime(
+        timings.llm_ms || 0
+      )}s | Memory: ${formatTime(
+        timings.memory_loading_ms
+      )}s | Profile: ${formatTime(timings.profile_loading_ms)}s`
     );
-    console.log(
-      `  Memory Loading:    ${formatTime(timings.memory_loading_ms)}s`
-    );
-    console.log(
-      `  Profile Loading:   ${formatTime(timings.profile_loading_ms)}s`
+
+    // Detailed breakdown only in debug mode
+    logDebug("⏱️  [TIMING] Detailed breakdown:");
+    logDebug(
+      `   Auth: ${formatTime(timings.auth_ms)}s | Context: ${formatTime(
+        timings.context_loading_ms
+      )}s`
     );
     if (timings.classification_ms > 0) {
-      console.log(
-        `  Classification:    ${formatTime(timings.classification_ms)}s`
-      );
+      logDebug(`   Classification: ${formatTime(timings.classification_ms)}s`);
     }
     if (timings.web_search_ms > 0) {
-      console.log(`  Web Search:        ${formatTime(timings.web_search_ms)}s`);
+      logDebug(`   Web Search: ${formatTime(timings.web_search_ms)}s`);
     }
     if (timings.context_packs_ms > 0) {
-      console.log(
-        `  Context Packs:     ${formatTime(timings.context_packs_ms)}s`
-      );
+      logDebug(`   Context Packs: ${formatTime(timings.context_packs_ms)}s`);
     }
-    console.log(`  Handler:           ${formatTime(timings.handler_ms)}s`);
-    if (timings.llm_ms > 0) {
-      console.log(`  LLM Response:      ${formatTime(timings.llm_ms)}s`);
-    }
-    console.log("  " + "-".repeat(76));
-    console.log(`  TOTAL (to stream): ${formatTime(timings.total_ms)}s`);
-    console.log("=".repeat(80) + "\n");
 
     // Handle streaming vs regular response
     if (wantsStreaming) {
@@ -2113,23 +2107,19 @@ async function handleAsk(
       transactions: packs.base?.recentTransactions || [],
     };
     const userState = detectUserState(message, financialDataForState);
-    logInfo("🎯 [PROMPT ENGINE] Detected user state:", {
-      emotionalState: userState.emotionalState,
-      financialState: userState.financialState,
-      urgency: userState.urgency,
-      needs: userState.needs,
-    });
+
+    // Consolidated user state log with better formatting
+    console.log(`\n🎯 [USER_STATE] Detected:`);
+    console.log(
+      `   └─ Emotional: ${userState.emotionalState} | Financial: ${userState.financialState} | Urgency: ${userState.urgency}`
+    );
+    if (userState.needs.length > 0) {
+      console.log(`   └─ Needs: [${userState.needs.join(", ")}]`);
+    }
 
     // 5) Build context-aware prompt using new prompt engine
     // Pass finny_style directly to prompt engine (now handled early in prompt)
     const finnyStyle = context.profile?.finny_style || null;
-    if (finnyStyle) {
-      logInfo(`🎨 [FINNY_STYLE] Using style: ${finnyStyle}`);
-    } else {
-      logInfo(
-        "🎨 [FINNY_STYLE] No style preference found, using default conversational"
-      );
-    }
 
     let system = buildContextAwarePrompt(
       message,
@@ -2157,14 +2147,16 @@ async function handleAsk(
       const feedbackContext = buildFeedbackContext(context.feedbackPatterns);
       if (feedbackContext) {
         additionalSections.push("", feedbackContext);
+        const { preferences, deepInsights } = context.feedbackPatterns;
+
+        // Single consolidated log with visual formatting
+        console.log(`\n📋 [ADAPTATION] Feedback Context Added:`);
         console.log(
-          `✅ [ADAPTATION] Added feedback context with ${context.feedbackPatterns.preferences.length} preferences and ${context.feedbackPatterns.deepInsights.length} deep insights`
+          `   └─ ${preferences.length} preferences, ${deepInsights.length} deep insights`
         );
-        // Log the actual preferences being added to prompt
-        if (context.feedbackPatterns.preferences.length > 0) {
-          console.log(`📝 [ADAPTATION] Preferences being added to prompt:`);
-          context.feedbackPatterns.preferences.forEach((pref, idx) => {
-            console.log(`  ${idx + 1}. ${pref}`);
+        if (preferences.length > 0) {
+          preferences.forEach((pref, idx) => {
+            console.log(`      ${idx + 1}. ${pref}`);
           });
         }
       }
@@ -2473,15 +2465,20 @@ async function handleAsk(
     // Build full user message with context
     const userMessage = `Context:\n${contextNote}\n\nUser: ${message}`;
 
-    // Log the complete prompt being sent to LLM
-    logInfo("📝 [PROMPT] Full prompt being sent to LLM:");
-    console.log("=".repeat(80));
-    console.log("SYSTEM PROMPT:");
-    console.log(system);
-    console.log("\n" + "=".repeat(80));
-    console.log("USER MESSAGE:");
-    console.log(userMessage);
-    console.log("=".repeat(80));
+    // Log prompt summary (full prompt too verbose - use debug mode if needed)
+    const promptSize = Math.round(system.length / 100) / 10;
+    const contextSize = Math.round(contextLines.join("\n").length / 100) / 10;
+    logInfo(
+      `📝 [PROMPT] Ready (system: ${promptSize}k chars, context: ${contextSize}k chars)`
+    );
+    logDebug("📝 [PROMPT] Full prompt:");
+    logDebug("=".repeat(80));
+    logDebug("SYSTEM PROMPT:");
+    logDebug(system);
+    logDebug("\n" + "=".repeat(80));
+    logDebug("USER MESSAGE:");
+    logDebug(userMessage);
+    logDebug("=".repeat(80));
 
     // Memory extraction removed - migrating to Supermemory
     let memoryExtraction = [];

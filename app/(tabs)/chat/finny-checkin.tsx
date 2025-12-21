@@ -14,6 +14,10 @@ import { notificationService } from "@/src/utils/core/notificationService";
 import { supabase } from "@/src/lib/supabase/supabase";
 import logger from "@/src/utils/core/logger";
 import ChatScreenHeader from "@/src/components/shared/ChatScreenHeader";
+import {
+  getCachedCheckinFrequency,
+  cacheCheckinFrequency,
+} from "@/src/utils/profile/profileCache";
 
 interface FinnyCheckinScreenProps {
   onBack?: () => void;
@@ -163,11 +167,11 @@ export default function FinnyCheckinScreen({
   onBack,
 }: FinnyCheckinScreenProps) {
   const insets = useSafeAreaInsets();
+  // Initialize with cached value immediately to avoid flicker
   const [selectedFrequency, setSelectedFrequency] = useState<
-    "daily" | "3times" | "weekly" | "never"
-  >("daily");
+    "daily" | "3times" | "weekly" | "never" | null
+  >(null);
   const [isSaving, setIsSaving] = useState(false);
-
 
   const frequencyOptions = [
     {
@@ -188,39 +192,56 @@ export default function FinnyCheckinScreen({
     },
   ];
 
-  // Load current frequency from database on mount
+  // Load current frequency from cache first (instant), then verify with DB
   useEffect(() => {
     const loadCheckinFrequency = async () => {
-      let frequency: "daily" | "3times" | "weekly" | "never" = "daily";
+      // Step 1: Load from memory cache immediately (truly instant, synchronous)
+      const cachedFrequency = getCachedCheckinFrequency();
+      const initialFrequency = cachedFrequency || "daily";
+      setSelectedFrequency(initialFrequency);
 
+      // Step 2: Fetch from DB to verify and update cache if different
       try {
         const {
           data: { user },
         } = await supabase.auth.getUser();
         if (!user?.id) {
           logger.warn("[FinnyCheckin] No authenticated user found");
-        } else {
-          const { data: profile, error } = await supabase
-            .from("profiles")
-            .select("checkin_frequency")
-            .eq("id", user.id)
-            .maybeSingle();
+          return;
+        }
 
-          if (error) {
-            logger.error("[FinnyCheckin] Error loading frequency:", error);
-          } else if (profile?.checkin_frequency) {
-            frequency = profile.checkin_frequency as
-              | "daily"
-              | "3times"
-              | "weekly"
-              | "never";
+        const { data: profile, error } = await supabase
+          .from("profiles")
+          .select("checkin_frequency")
+          .eq("id", user.id)
+          .maybeSingle();
+
+        if (error) {
+          logger.error("[FinnyCheckin] Error loading frequency:", error);
+          return;
+        }
+
+        if (profile?.checkin_frequency) {
+          const dbFrequency = profile.checkin_frequency as
+            | "daily"
+            | "3times"
+            | "weekly"
+            | "never";
+
+          // Update cache if DB value differs from cached
+          if (dbFrequency !== cachedFrequency) {
+            await cacheCheckinFrequency(dbFrequency);
+            setSelectedFrequency(dbFrequency);
+          }
+        } else {
+          // No frequency in DB, ensure cache matches default
+          if (!cachedFrequency) {
+            await cacheCheckinFrequency("daily");
+            setSelectedFrequency("daily");
           }
         }
       } catch (error) {
         logger.error("[FinnyCheckin] Error loading frequency:", error);
-      } finally {
-        // Always set the frequency (defaults to daily)
-        setSelectedFrequency(frequency);
       }
     };
 
@@ -231,8 +252,8 @@ export default function FinnyCheckinScreen({
   const handleFrequencySelect = async (
     frequency: "daily" | "3times" | "weekly" | "never"
   ) => {
-    // Don't update if already selected
-    if (selectedFrequency === frequency) return;
+    // Don't update if already selected or still loading
+    if (selectedFrequency === frequency || selectedFrequency === null) return;
 
     // Optimistically update UI
     setSelectedFrequency(frequency);
@@ -257,6 +278,8 @@ export default function FinnyCheckinScreen({
         throw dbError;
       }
 
+      // Update cache immediately
+      await cacheCheckinFrequency(frequency);
       logger.info("[FinnyCheckin] Frequency saved successfully:", frequency);
 
       // Request notification permissions if not already granted (only if not "never")
@@ -300,9 +323,13 @@ export default function FinnyCheckinScreen({
           .eq("id", user.id)
           .maybeSingle();
         if (profile?.checkin_frequency) {
-          setSelectedFrequency(
-            profile.checkin_frequency as "daily" | "3times" | "weekly" | "never"
-          );
+          const dbFrequency = profile.checkin_frequency as
+            | "daily"
+            | "3times"
+            | "weekly"
+            | "never";
+          setSelectedFrequency(dbFrequency);
+          await cacheCheckinFrequency(dbFrequency);
         }
       }
     } finally {
@@ -327,7 +354,7 @@ export default function FinnyCheckinScreen({
                   isSelected={selectedFrequency === option.id}
                   onPress={() => handleFrequencySelect(option.id)}
                   isLast={index === frequencyOptions.length - 1}
-                  disabled={isSaving}
+                  disabled={isSaving || selectedFrequency === null}
                 />
               ))}
             </View>
