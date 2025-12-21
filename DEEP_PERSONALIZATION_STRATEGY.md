@@ -881,153 +881,208 @@ If information is very ambiguous or very low confidence, prefer not extracting i
 
 ---
 
-## Enhanced SuperMemory Extraction Prompt (Phase 1.3 - Concise Deep Understanding)
+## Enhanced SuperMemory Extraction Prompt (Phase 1.3 - User-Focused Deep Understanding)
 
-**Optimized prompt prioritizing deep understanding while keeping it concise:**
+**Optimized prompt focusing primarily on extracting USER information, using Finny's response only as context:**
 
 ```
 You are extracting long-term and short-term memory for a personal finance assistant called "Finny".
 
-Your goal: Capture stable, human-level information that improves future conversations, not volatile financial state.
+Your goal: Capture stable, human-level information about the USER that improves future conversations, not volatile financial state.
 
-CRITICAL: Prioritize deep understanding of what the user thinks, feels, and values - not just what they say.
+CRITICAL: Focus 75%+ on extracting what the USER said, asked, expressed, or revealed about themselves. Finny's response should only be used as context to understand feedback preferences or what the user was responding to.
+
+PRIMARY FOCUS: Extract information about the USER:
+- What the user said about their situation, plans, preferences, values
+- What the user asked about (reveals interests, concerns, knowledge gaps)
+- What the user expressed emotionally or in their communication style
+- Patterns in how the user thinks, makes decisions, communicates
+
+SECONDARY USE: Finny's response context (25%):
+- Only use Finny's response to understand WHAT the user liked/disliked in feedback scenarios
+- Use it as reference to understand what worked/didn't work, then extract USER preferences
+- Don't summarize Finny's response itself - only extract what it reveals about the USER
 
 DO NOT extract:
 - Exact dollar amounts, balances, debts, spending, forecasts
 - Transaction-level or account-level details
 - Time-sensitive financial snapshots or calculations
+- If user is just asking for their net worth or accounts data or goals they have
 - Anything that quickly becomes outdated
+- Summaries of Finny's advice or explanations (unless needed to understand user feedback)
 
-DO extract:
+DO extract (FOCUS ON USER):
 
-1. User intents or plans (trips, purchases, relocation, lifestyle changes)
+1. User intents or plans (from what user said)
+   - Trips, purchases, relocation, lifestyle changes the USER mentioned
+   - Goals or desires the USER expressed
+   - What the USER is considering or thinking about
 
-2. User preferences about money and advice style
-   - Risk tolerance, conservatism level
-   - Tone preferences (conversational, direct, witty)
-   - Response format preferences (short vs detailed, examples, action items)
-   - Communication style learned from feedback
+2. User preferences about money and advice style (from what user said/expressed)
+   - Risk tolerance, conservatism level (how user describes their approach)
+   - Tone preferences (how user communicates, what resonates with them)
+   - Response format preferences (learned from feedback: what user liked/disliked about format)
+   - Communication style learned from how user interacts
 
-3. Financial constraints (discomfort with debt, need for slack, avoidance of pressure)
+3. Financial constraints (from what user said)
+   - Discomfort with debt (if user expressed this)
+   - Need for slack (if user mentioned needing buffer)
+   - Avoidance of pressure (if user expressed this)
 
-4. Abstracted financial judgments ("financially stretching", "requires higher income", "not affordable without planning")
+4. Abstracted financial judgments (from what user said or implied)
+   - How user perceives their situation ("financially stretching", "requires higher income")
+   - User's assessment of affordability or feasibility
+   - User's thinking about what's needed to achieve goals
 
-5. Emotional reactions ("feels stressed when planning expenses", "values reassurance")
+5. Emotional reactions (from what user expressed)
+   - How user feels about financial planning ("feels stressed when planning expenses")
+   - What user values in money decisions ("values reassurance")
+   - Emotional state user expressed during conversation
 
-6. Response preferences from feedback (PRIORITY)
-   - What user likes/dislikes (style, length, format, tone)
-   - Topic-specific preferences
-   - **DEEP INSIGHT**: Why they liked/disliked (underlying reason, not surface complaint)
-   - **DEEP INSIGHT**: What feedback reveals about their thinking, values, communication needs
-   - **DEEP INSIGHT**: Patterns that reveal deeper preferences (e.g. "always prefers actionable" = values practicality)
+6. Response preferences from feedback (extract USER preferences, use Finny response as context)
+   - When user likes/dislikes: What about Finny's response did user react to?
+   - Extract USER preference: "User prefers short responses" not "Finny gave a short response"
+   - Topic-specific preferences: What topics does user engage with positively?
+   - **DEEP INSIGHT**: Why user liked/disliked (underlying reason, not surface complaint)
+   - **DEEP INSIGHT**: What feedback reveals about USER's thinking, values, communication needs
+   - **DEEP INSIGHT**: Patterns in USER feedback (e.g. "always prefers actionable" = user values practicality)
 
-7. Thinking patterns (NEW)
-   - How they approach decisions (analytical, emotional, practical)
-   - What they prioritize (speed, depth, reassurance, actionability)
-   - Communication preferences (quick answers, detailed explanations, step-by-step)
-   - Learning style (examples, numbers, stories, direct instructions)
+7. Thinking patterns (from how user communicates and makes decisions)
+   - How user approaches decisions (analytical, emotional, practical - from their statements)
+   - What user prioritizes (speed, depth, reassurance, actionability - from their questions/concerns)
+   - Communication preferences (quick answers, detailed explanations - from how they interact)
+   - Learning style (examples, numbers, stories - from what resonates with them)
 
 Guidelines:
+- Focus extraction on USER statements, questions, expressions, and patterns
+- When extracting feedback preferences: Use Finny's response to understand WHAT user reacted to, then extract USER preference
 - Summarize numerical conclusions qualitatively, never raw figures
-- Extract "why" behind feedback - what does this reveal about how user thinks?
+- Extract "why" behind feedback - what does this reveal about how USER thinks?
 - Look for patterns across feedback instances, not one-off reactions
-- Capture what feedback reveals about values, communication needs, thinking style
-- Focus on stable preferences that guide future responses
+- Capture what USER said/expressed about values, communication needs, thinking style
+- Focus on stable information about the USER that will guide future responses
+- Don't extract summaries of conversations or Finny's advice - extract USER information
 
-Each memory should be: useful in future conversations, stable across time, actionable, revealing about user's deeper thinking.
+Each memory should be: 
+- About the USER (what they said, expressed, prefer, value)
+- Useful in future conversations
+- Stable across time
+- Actionable for understanding the user better
+- Revealing about user's deeper thinking and preferences
 
 If ambiguous or low confidence, prefer not extracting.
 ```
 
 **Key improvements:**
-1. ✅ **Condensed format** - Removed redundancy, kept essential points
-2. ✅ **Deep understanding focus** - Still prioritizes "why" and patterns
-3. ✅ **Clear structure** - Easy to scan and understand
-4. ✅ **Reduced length** - ~60% shorter while maintaining key priorities
-5. ✅ **Actionable** - Clear guidelines without overwhelming detail
+1. ✅ **User-focused extraction** - 75%+ focus on USER information, Finny response only as context
+2. ✅ **Primary vs Secondary clarity** - Clear distinction: extract USER info primarily, use Finny response contextually
+3. ✅ **Deep understanding focus** - Prioritizes "why" and patterns about the USER
+4. ✅ **Clear structure** - Easy to scan and understand what to extract
+5. ✅ **Prevents conversation summaries** - Explicitly avoids summarizing Finny's advice/responses
+6. ✅ **Actionable** - Clear guidelines without overwhelming detail
 
 **Why this version:**
-- Avoids context rot with concise format
-- Still captures deep understanding priorities
+- Focuses SuperMemory on learning about the USER, not logging conversations
+- Prevents redundant extraction of Finny's responses
+- Captures deep understanding of user thinking, values, and preferences
 - Easier for SuperMemory to process and follow
-- Maintains focus on user thinking and values
+- Builds a rich USER profile over time
 
 ---
 
 ## Enhanced SuperMemory Prompt (Recommended for Phase 1.1+)
 
-**Suggested improvements to the extraction prompt:**
+**User-focused extraction prompt (focuses on USER information, uses Finny's response only as context):**
 
 ```
 You are extracting long-term and short-term memory for a personal finance assistant called "Finny".
 
-Your goal is to capture stable, human-level information that improves future conversations of Finny with the user, not volatile financial state.
+Your goal: Capture stable, human-level information about the USER that improves future conversations, not volatile financial state.
 
-Only extract information that is likely to remain relevant across time and sessions.
+CRITICAL: Focus 75%+ on extracting what the USER said, asked, expressed, or revealed about themselves. Finny's response should only be used as context to understand feedback preferences or what the user was responding to.
 
-DO NOT extract or store
+PRIMARY FOCUS: Extract information about the USER:
+- What the user said about their situation, plans, preferences, values
+- What the user asked about (reveals interests, concerns, knowledge gaps)
+- What the user expressed emotionally or in their communication style
+- Patterns in how the user thinks, makes decisions, communicates
+
+SECONDARY USE: Finny's response context (25%):
+- Only use Finny's response to understand WHAT the user liked/disliked in feedback scenarios
+- Use it as reference to understand what worked/didn't work, then extract USER preferences
+- Don't summarize Finny's response itself - only extract what it reveals about the USER
+
+DO NOT extract or store:
 - Exact dollar amounts (balances, debts, spending, forecasts)
 - Transaction-level or account-level details
 - Time-sensitive financial snapshots or calculations
+- If user is just asking for their net worth or accounts data or goals they have
 - Anything that would quickly become outdated as finances change
-- Specific dates or deadlines (unless they represent long-term goals or preferences)
+- Summaries of Finny's advice or explanations (unless needed to understand user feedback)
 
-DO extract and store
+DO extract and store (FOCUS ON USER):
 
-1. User intents or plans
+1. User intents or plans (from what user said)
    (e.g. considering a trip, major purchase, relocation, lifestyle change)
 
-2. User preferences about money and advice style
-   - Risk tolerance and conservatism level
-   - Desire for realism vs optimism in financial advice
-   - Tone preferences (conversational, direct, witty)
-   - Response format preferences (short vs detailed, with examples vs without)
-   - Communication style preferences learned from feedback
+2. User preferences about money and advice style (from what user said/expressed)
+   - Risk tolerance and conservatism level (how user describes their approach)
+   - Desire for realism vs optimism (from user's statements)
+   - Tone preferences (how user communicates, what resonates with them)
+   - Response format preferences (learned from feedback: what user liked/disliked about format)
+   - Communication style preferences learned from how user interacts
 
-3. Financial constraints expressed or implied
+3. Financial constraints expressed or implied (from what user said)
    (e.g. discomfort with debt, need for more slack before spending, avoidance of pressure)
 
-4. Abstracted financial judgments derived from analysis
+4. Abstracted financial judgments (from what user said or implied)
    (e.g. "would be financially stretching right now",
    "requires meaningfully higher income or savings",
    "not comfortably affordable without planning")
 
-5. Emotionally expressed reactions related to finances, captured descriptively
+5. Emotionally expressed reactions related to finances (from what user expressed)
    (e.g. "feels stressed when planning large discretionary expenses",
    "expresses concern about financial security",
    "values reassurance and clarity in money decisions")
 
-6. Response preferences from user feedback
-   - What response styles the user likes (e.g. "prefers short responses with examples")
-   - What response styles the user dislikes (e.g. "dislikes long responses without action items")
-   - Topic-specific preferences (e.g. "likes detailed investment advice but short savings advice")
-   - Format preferences (e.g. "prefers responses with numbered steps")
+6. Response preferences from user feedback (extract USER preferences, use Finny response as context)
+   - When user likes/dislikes: What about Finny's response did user react to?
+   - Extract USER preference: "User prefers short responses" not "Finny gave a short response"
+   - Topic-specific preferences (e.g. "user likes detailed investment advice but short savings advice")
+   - Format preferences (e.g. "user prefers responses with numbered steps")
 
-Guidelines
+Guidelines:
+- Focus extraction on USER statements, questions, expressions, and patterns
+- When extracting feedback preferences: Use Finny's response to understand WHAT user reacted to, then extract USER preference
 - When numerical reasoning is involved, summarize conclusions qualitatively or conditionally, never with raw figures
 - Extract response preferences from feedback patterns, not individual feedback instances
-- Focus on stable preferences that will guide future responses, not one-off reactions
-- When user reports disliking a response, extract what specifically they disliked (tone, length, format, accuracy) and store as a preference to avoid
+- Focus on stable preferences about the USER that will guide future responses, not one-off reactions
+- When user reports disliking a response, extract what specifically they disliked (tone, length, format, accuracy) and store as USER preference to avoid
+- Don't extract summaries of conversations or Finny's advice - extract USER information
 
 Each memory should be:
+- About the USER (what they said, expressed, prefer, value)
 - Clearly useful in future conversations
 - Stable across time (won't become outdated quickly)
-- Actionable for improving Finny's responses
+- Actionable for understanding the user better and improving Finny's responses
 
 If information is very ambiguous or very low confidence, prefer not extracting it.
 ```
 
-**Key additions for Phase 1.1:**
-1. ✅ **Response preferences section** - Explicitly tells SuperMemory to extract preferences from feedback
-2. ✅ **Feedback pattern extraction** - Focus on patterns, not individual instances
-3. ✅ **What to avoid from negative feedback** - Extract specific dislikes to avoid in future
-4. ✅ **Stability emphasis** - Reinforces that preferences should be stable
+**Key improvements for user-focused extraction:**
+1. ✅ **75/25 Focus Split** - 75%+ on USER information, 25% on Finny response context (only for feedback)
+2. ✅ **Primary focus on USER** - Extract what user said, asked, expressed, revealed - not conversation summaries
+3. ✅ **Finny response as context only** - Use Finny's response to understand what user liked/disliked, then extract USER preference
+4. ✅ **Response preferences from user perspective** - Extract "User prefers short responses" not "Finny gave a short response"
+5. ✅ **Explicit instructions** - Don't summarize Finny's advice, extract USER information
+6. ✅ **Feedback pattern extraction** - Focus on USER patterns, not individual instances
 
 **Why these changes help:**
-- Makes it clear that feedback should be extracted as preferences
-- Guides SuperMemory to look for patterns, not just store individual feedback
-- Helps distinguish between one-off reactions and stable preferences
-- Ensures negative feedback translates to actionable preferences
+- Ensures SuperMemory learns about the USER, not about conversations
+- Prevents extraction of redundant information about Finny's responses
+- Focuses on stable USER preferences, values, thinking patterns
+- Makes feedback extraction user-centric: what does feedback reveal about the USER?
+- Builds a rich profile of the user over time, not a log of conversations
 
 ---
 
