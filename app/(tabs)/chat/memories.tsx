@@ -253,7 +253,8 @@ export default function MemoriesScreen({ onBack }: MemoriesScreenProps = {}) {
                 <View style={styles.emptyImageCircle}>
                   <Image
                     source={require("../../../assets/images/thinking2.png")}
-                    resizeMode="cover"
+                    resizeMode="contain"
+                    style={styles.emptyImage}
                   />
                 </View>
               </View>
@@ -407,6 +408,10 @@ const styles = {
     overflow: "hidden" as const,
     alignItems: "center" as const,
     justifyContent: "center" as const,
+  },
+  emptyImage: {
+    width: "100%",
+    height: "100%",
   },
   emptyTitle: {
     fontSize: responsiveFontSize(18),

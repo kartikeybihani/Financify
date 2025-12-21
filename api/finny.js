@@ -2125,8 +2125,21 @@ async function handleAsk(
     // Consolidated user state log with better formatting
     console.log(`\n🎯 [USER_STATE] Detected:`);
     console.log(
-      `   └─ Emotional: ${userState.emotionalState} | Financial: ${userState.financialState} | Urgency: ${userState.urgency}`
+      `   └─ Emotional: ${
+        userState.emotionalState
+      } (confidence: ${userState.confidence.emotional.toFixed(
+        2
+      )}) | Financial: ${userState.financialState} | Urgency: ${
+        userState.urgency
+      }`
     );
+    if (classificationResult) {
+      console.log(
+        `   └─ Classification: ${classificationResult.intent} (${
+          classificationResult.intent_type || "none"
+        }) | Confidence: ${classificationResult.confidence.toFixed(2)}`
+      );
+    }
     if (userState.needs.length > 0) {
       console.log(`   └─ Needs: [${userState.needs.join(", ")}]`);
     }
@@ -2326,6 +2339,59 @@ async function handleAsk(
 
     // Memory saving will happen after topic detection (see below)
 
+    // Basic response validation (log warnings, don't block)
+    const validationIssues = [];
+
+    // Check 1: Intent fulfillment (basic check)
+    if (classificationResult?.intent) {
+      const intentKeywords = {
+        ask_personalized: ["you", "your", "spend", "account", "goal", "invest"],
+        goal_conversation: ["goal", "save", "target", "create"],
+        off_topic: [], // Off-topic handled separately
+      };
+      const keywords = intentKeywords[classificationResult.intent] || [];
+      const responseLower = cleanText.toLowerCase();
+      const hasIntentKeywords =
+        keywords.length === 0 ||
+        keywords.some((k) => responseLower.includes(k));
+
+      if (!hasIntentKeywords && classificationResult.confidence > 0.8) {
+        validationIssues.push(
+          `Low intent match for ${classificationResult.intent}`
+        );
+      }
+    }
+
+    // Check 2: Response length (too short might be incomplete)
+    if (cleanText.length < 50 && classificationResult?.intent !== "off_topic") {
+      validationIssues.push("Response too short (<50 chars)");
+    }
+
+    // Check 3: Crisis mode compliance (if crisis detected)
+    if (
+      userState.emotionalState === "panicked" &&
+      userState.confidence.emotional > 0.8
+    ) {
+      const hasLongTermTerms = /retirement|invest|long.term|future|years/.test(
+        cleanText.toLowerCase()
+      );
+      if (hasLongTermTerms) {
+        validationIssues.push(
+          "Crisis mode: Response mentions long-term planning (should be immediate only)"
+        );
+      }
+    }
+
+    // Log validation results
+    if (validationIssues.length > 0) {
+      logWarn("⚠️ [VALIDATION] Response validation issues:");
+      validationIssues.forEach((issue, idx) => {
+        logWarn(`   ${idx + 1}. ${issue}`);
+      });
+    } else {
+      logInfo("✅ [VALIDATION] Response passed basic validation checks");
+    }
+
     // Clean any markdown formatting from the response
     const cleanedMessage = cleanResponseFormatting(
       gaps.length > 0
@@ -2350,9 +2416,9 @@ async function handleAsk(
       finny_response: redactPII(cleanedMessage),
       timestamp: new Date().toISOString(),
       user_id: context?.user_id || "unknown",
-      intent: "ask_personalized",
+      intent: classificationResult?.intent || "ask_personalized",
       entities: [],
-      confidence: 1.0,
+      confidence: classificationResult?.confidence || 1.0,
       response_time_ms: Date.now() - startTime,
       sources_used:
         webResults.length > 0 ? [...toolsUsed, "brave-search"] : toolsUsed,
@@ -2362,6 +2428,7 @@ async function handleAsk(
       request_id: generateRequestId(),
       web_research: webResults.length > 0,
       classification_result: classificationResult,
+      validation_issues: validationIssues.length > 0 ? validationIssues : null,
       metrics: {
         intent: "ask_personalized",
         latency_ms: {
