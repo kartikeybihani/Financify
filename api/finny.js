@@ -22,6 +22,8 @@ import {
   storeConversationMemory,
   retrieveFeedbackPatterns,
   buildFeedbackContext,
+  setPrebuildContextActive,
+  clearPrebuildContextActive,
   // saveMemoryCandidates removed - migrating to Supermemory
   // generateMemorySummary removed - migrating to Supermemory
   // validateMemoriesWithSmallModel removed - migrating to Supermemory
@@ -1407,7 +1409,14 @@ export default async function handler(req, res) {
         break;
       }
       case "prebuild_context":
-        response = await handlePrebuildContext(finalUserId);
+        // Set flag to suppress memory storage warnings during prebuild_context
+        setPrebuildContextActive(finalUserId);
+        try {
+          response = await handlePrebuildContext(finalUserId);
+        } finally {
+          // Always clear the flag, even if there's an error
+          clearPrebuildContextActive(finalUserId);
+        }
         break;
       default:
         return res.status(400).json({ error: "Invalid action" });
