@@ -322,6 +322,21 @@ function generateClassificationCacheKey(message) {
   return normalized;
 }
 
+// Clear all heuristic cache entries (one-time cleanup)
+function clearHeuristicCacheEntries() {
+  let cleared = 0;
+  for (const [key, value] of classificationCache.entries()) {
+    if (value?.result?.heuristic === true || value?.result?.heuristic === "true") {
+      classificationCache.delete(key);
+      cleared++;
+    }
+  }
+  if (cleared > 0) {
+    console.log(`🧹 [CACHE] Cleared ${cleared} heuristic cache entries`);
+  }
+  return cleared;
+}
+
 // Get cached classification result
 function getCachedClassification(message) {
   const key = generateClassificationCacheKey(message);
@@ -4842,6 +4857,13 @@ async function handleClassify(message, context, conversationContext = null) {
     message
   );
   const startTime = Date.now();
+  
+  // One-time cleanup: Clear all heuristic cache entries on first classification call
+  // This ensures old heuristic results don't persist
+  if (!global.heuristicCacheCleared) {
+    clearHeuristicCacheEntries();
+    global.heuristicCacheCleared = true;
+  }
 
   const { text, user } = { text: message, user: context };
   if (!text || typeof text !== "string") {
@@ -4869,7 +4891,7 @@ async function handleClassify(message, context, conversationContext = null) {
     console.log(`🔍 [FINNY] Cache HIT - Cached result:`, JSON.stringify(cachedResult, null, 2));
     // INVALIDATE old heuristic-based cache entries - they were created with rigid code
     // Check for heuristic flag (could be boolean true or string "true")
-    const isHeuristic = cachedResult.heuristic === true || cachedResult.heuristic === "true";
+    const isHeuristic = cachedResult.heuristic === true || cachedResult.heuristic === "true" || cachedResult.heuristic === 1;
     if (isHeuristic) {
       console.log(
         "⚠️ [FINNY] Invalidating old heuristic-based cache entry (using new LLM-based classification)"
@@ -4880,45 +4902,47 @@ async function handleClassify(message, context, conversationContext = null) {
       console.log(
         `✅ [FINNY] Heuristic cache entry deleted (success: ${deleted}), proceeding with LLM classification`
       );
-      // Clear the cached result to prevent any accidental return
+      // Force cachedResult to null and skip all return paths
       cachedResult = null;
       // Continue to LLM classification below - DO NOT return cached result
-    } else if (
-      cachedResult &&
-      cachedResult.intent &&
-      typeof cachedResult.intent === "string" &&
-      cachedResult.needs_web !== undefined &&
-      cachedResult.needs_user_data !== undefined
-    ) {
-      // Ensure new fields exist (backward compatibility with old cache entries)
-      if (!cachedResult.intent_type && cachedResult.intent !== "off_topic") {
-        cachedResult.intent_type = null;
-      }
-      if (!cachedResult.emotional_state) {
-        cachedResult.emotional_state = "neutral";
-      }
-      if (!Array.isArray(cachedResult.entities)) {
-        cachedResult.entities = [];
-      }
-      if (cachedResult.ticker === undefined) {
-        cachedResult.ticker = null;
-      }
-      if (
-        cachedResult.intent === "stock_query" &&
-        cachedResult.ticker &&
-        cachedResult.entities.length === 0
-      ) {
-        cachedResult.entities = [cachedResult.ticker];
-      }
-      // Double-check: Never return heuristic results
-      if (cachedResult.heuristic === true || cachedResult.heuristic === "true") {
+    }
+    
+    // Only proceed with cached result if it's NOT heuristic and is valid
+    if (cachedResult && 
+        cachedResult.intent &&
+        typeof cachedResult.intent === "string" &&
+        cachedResult.needs_web !== undefined &&
+        cachedResult.needs_user_data !== undefined) {
+      // Final safety check: Never return heuristic results
+      const stillHeuristic = cachedResult.heuristic === true || cachedResult.heuristic === "true" || cachedResult.heuristic === 1;
+      if (stillHeuristic) {
         console.log(
-          "❌ [FINNY] ERROR: Attempted to return heuristic result! This should never happen. Invalidating cache."
+          "❌ [FINNY] ERROR: Cached result still has heuristic flag! Invalidating cache and forcing LLM classification."
         );
         const key = generateClassificationCacheKey(text);
         classificationCache.delete(key);
-        // Fall through to LLM classification
+        cachedResult = null; // Force to null to skip return
       } else {
+        // Ensure new fields exist (backward compatibility with old cache entries)
+        if (!cachedResult.intent_type && cachedResult.intent !== "off_topic") {
+          cachedResult.intent_type = null;
+        }
+        if (!cachedResult.emotional_state) {
+          cachedResult.emotional_state = "neutral";
+        }
+        if (!Array.isArray(cachedResult.entities)) {
+          cachedResult.entities = [];
+        }
+        if (cachedResult.ticker === undefined) {
+          cachedResult.ticker = null;
+        }
+        if (
+          cachedResult.intent === "stock_query" &&
+          cachedResult.ticker &&
+          cachedResult.entities.length === 0
+        ) {
+          cachedResult.entities = [cachedResult.ticker];
+        }
         console.log(
           `⚡ [FINNY] Using cached classification result (${
             Date.now() - startTime
@@ -4929,10 +4953,11 @@ async function handleClassify(message, context, conversationContext = null) {
           ticker: cachedResult.ticker,
           confidence: cachedResult.confidence,
           entities: cachedResult.entities,
+          heuristic: cachedResult.heuristic, // Log to verify it's not heuristic
         });
         return cachedResult;
       }
-    } else {
+    } else if (cachedResult) {
       console.log(
         "⚠️ [FINNY] Cached classification is malformed, invalidating cache"
       );
