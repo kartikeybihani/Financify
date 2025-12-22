@@ -322,15 +322,31 @@ function generateClassificationCacheKey(message) {
   return normalized;
 }
 
-// Clear all heuristic cache entries (one-time cleanup)
+// Clear all heuristic cache entries - check ALL possible heuristic indicators
 function clearHeuristicCacheEntries() {
   let cleared = 0;
+  const keysToDelete = [];
+  
+  // First pass: collect keys to delete
   for (const [key, value] of classificationCache.entries()) {
-    if (value?.result?.heuristic === true || value?.result?.heuristic === "true") {
-      classificationCache.delete(key);
-      cleared++;
+    const result = value?.result;
+    if (result && result.hasOwnProperty('heuristic')) {
+      const isHeuristic = result.heuristic === true || 
+                         result.heuristic === "true" || 
+                         result.heuristic === 1 ||
+                         result.heuristic === "1";
+      if (isHeuristic) {
+        keysToDelete.push(key);
+        cleared++;
+      }
     }
   }
+  
+  // Second pass: delete collected keys
+  for (const key of keysToDelete) {
+    classificationCache.delete(key);
+  }
+  
   if (cleared > 0) {
     console.log(`🧹 [CACHE] Cleared ${cleared} heuristic cache entries`);
   }
@@ -1308,6 +1324,27 @@ export default async function handler(req, res) {
           conversationContext
         );
         timings.classification_ms = Date.now() - classifyStartTime;
+        
+        // CRITICAL FINAL CHECK: Never return heuristic results
+        if (response && response.hasOwnProperty('heuristic') && 
+            (response.heuristic === true || response.heuristic === "true" || response.heuristic === 1)) {
+          console.log("🚨 [FINNY] CRITICAL: Response has heuristic flag! Blocking return and forcing fresh LLM classification.");
+          console.log("🚨 [FINNY] Response was:", JSON.stringify(response, null, 2));
+          
+          // Clear cache for this specific message to force fresh classification
+          const key = generateClassificationCacheKey(message);
+          classificationCache.delete(key);
+          console.log("🧹 [FINNY] Cleared cache for message, forcing fresh LLM call");
+          
+          // Call handleClassify again - it will now bypass cache and call LLM
+          response = await handleClassify(message, safeContext, conversationContext);
+          
+          // Final check on new response
+          if (response && response.hasOwnProperty('heuristic') && response.heuristic) {
+            console.log("🚨 [FINNY] CRITICAL ERROR: LLM returned heuristic! This should never happen. Removing flag.");
+            delete response.heuristic;
+          }
+        }
         break;
       }
       case "ask": {
@@ -4858,12 +4895,9 @@ async function handleClassify(message, context, conversationContext = null) {
   );
   const startTime = Date.now();
   
-  // One-time cleanup: Clear all heuristic cache entries on first classification call
-  // This ensures old heuristic results don't persist
-  if (!global.heuristicCacheCleared) {
-    clearHeuristicCacheEntries();
-    global.heuristicCacheCleared = true;
-  }
+  // ALWAYS clear heuristic cache entries - don't trust old cache
+  const clearedCount = clearHeuristicCacheEntries();
+  console.log(`🧹 [FINNY] Cleared ${clearedCount} heuristic cache entries before classification`);
 
   const { text, user } = { text: message, user: context };
   if (!text || typeof text !== "string") {
@@ -4882,29 +4916,35 @@ async function handleClassify(message, context, conversationContext = null) {
     };
   }
 
-  // Check cache first
+  // Check cache AFTER clearing heuristic entries
   const cacheKey = generateClassificationCacheKey(text);
   console.log(`🔍 [FINNY] Cache key generated: "${cacheKey}"`);
   console.log(`🔍 [FINNY] Original message: "${text}"`);
   let cachedResult = getCachedClassification(text);
+  
+  // CRITICAL: Never return heuristic results - check and delete immediately
   if (cachedResult) {
     console.log(`🔍 [FINNY] Cache HIT - Cached result:`, JSON.stringify(cachedResult, null, 2));
-    // INVALIDATE old heuristic-based cache entries - they were created with rigid code
-    // Check for heuristic flag (could be boolean true or string "true")
-    const isHeuristic = cachedResult.heuristic === true || cachedResult.heuristic === "true" || cachedResult.heuristic === 1;
-    if (isHeuristic) {
+    
+    // Check for ANY heuristic indicator
+    const hasHeuristicFlag = cachedResult.hasOwnProperty('heuristic') && 
+                             (cachedResult.heuristic === true || 
+                              cachedResult.heuristic === "true" || 
+                              cachedResult.heuristic === 1 ||
+                              cachedResult.heuristic === "1");
+    
+    if (hasHeuristicFlag) {
       console.log(
-        "⚠️ [FINNY] Invalidating old heuristic-based cache entry (using new LLM-based classification)"
+        "🚨 [FINNY] CRITICAL: Found heuristic result in cache! Deleting immediately."
       );
-      console.log(`⚠️ [FINNY] Heuristic value: ${cachedResult.heuristic} (type: ${typeof cachedResult.heuristic})`);
+      console.log(`🚨 [FINNY] Heuristic value: ${cachedResult.heuristic} (type: ${typeof cachedResult.heuristic})`);
       const key = generateClassificationCacheKey(text);
       const deleted = classificationCache.delete(key);
       console.log(
-        `✅ [FINNY] Heuristic cache entry deleted (success: ${deleted}), proceeding with LLM classification`
+        `✅ [FINNY] Heuristic cache entry deleted (success: ${deleted}), forcing LLM classification`
       );
-      // Force cachedResult to null and skip all return paths
+      // CRITICAL: Set to null to prevent ANY return
       cachedResult = null;
-      // Continue to LLM classification below - DO NOT return cached result
     }
     
     // Only proceed with cached result if it's NOT heuristic and is valid
@@ -4943,19 +4983,30 @@ async function handleClassify(message, context, conversationContext = null) {
         ) {
           cachedResult.entities = [cachedResult.ticker];
         }
-        console.log(
-          `⚡ [FINNY] Using cached classification result (${
-            Date.now() - startTime
-          }ms)`
-        );
-        console.log(`⚡ [FINNY] Cached result details:`, {
-          intent: cachedResult.intent,
-          ticker: cachedResult.ticker,
-          confidence: cachedResult.confidence,
-          entities: cachedResult.entities,
-          heuristic: cachedResult.heuristic, // Log to verify it's not heuristic
-        });
-        return cachedResult;
+        // ABSOLUTE FINAL CHECK: Never return heuristic results
+        if (cachedResult.hasOwnProperty('heuristic') && 
+            (cachedResult.heuristic === true || cachedResult.heuristic === "true" || cachedResult.heuristic === 1)) {
+          console.log("🚨 [FINNY] CRITICAL ERROR: About to return heuristic result! Blocking return.");
+          const key = generateClassificationCacheKey(text);
+          classificationCache.delete(key);
+          cachedResult = null;
+          // Fall through to LLM
+        } else {
+          console.log(
+            `⚡ [FINNY] Using cached classification result (${
+              Date.now() - startTime
+            }ms)`
+          );
+          console.log(`⚡ [FINNY] Cached result details:`, {
+            intent: cachedResult.intent,
+            ticker: cachedResult.ticker,
+            confidence: cachedResult.confidence,
+            entities: cachedResult.entities,
+            hasHeuristic: cachedResult.hasOwnProperty('heuristic'),
+            heuristicValue: cachedResult.heuristic,
+          });
+          return cachedResult;
+        }
       }
     } else if (cachedResult) {
       console.log(
@@ -5353,12 +5404,24 @@ async function handleClassify(message, context, conversationContext = null) {
       classification_result: out,
     };
 
+    // CRITICAL: Never cache heuristic results - ensure out doesn't have heuristic flag
+    if (out.hasOwnProperty('heuristic')) {
+      console.log("⚠️ [FINNY] Removing heuristic flag from LLM result before caching");
+      delete out.heuristic;
+    }
+    
     // Cache the result for future use
     setCachedClassification(text, out);
 
     // Log conversation asynchronously to reduce latency
     setImmediate(() => logConversation(conversationData));
 
+    // Final safety check before returning
+    if (out.hasOwnProperty('heuristic') && out.heuristic) {
+      console.log("🚨 [FINNY] CRITICAL: LLM returned heuristic result! Removing flag.");
+      delete out.heuristic;
+    }
+    
     return out;
   } catch (e) {
     console.error("❌ [FINNY] Classification error:", e?.message);
