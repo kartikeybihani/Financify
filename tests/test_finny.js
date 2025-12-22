@@ -56,6 +56,13 @@ async function testFinnyQuery(message, userId = TEST_USER_ID) {
   try {
     // Step 1: Classify the message
     console.log("🎯 Step 1: Classifying message...");
+    console.log(`📤 [REQUEST] Sending classification request:`);
+    console.log(`   - Message: "${message}"`);
+    console.log(`   - Message length: ${message.length}`);
+    console.log(`   - Message type: ${typeof message}`);
+    console.log(`   - User ID: ${userId}`);
+    
+    const classifyRequestStart = Date.now();
     const classifyRes = await fetch(`${BASE_URL}/api/finny`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -66,11 +73,38 @@ async function testFinnyQuery(message, userId = TEST_USER_ID) {
       }),
     });
 
+    const classifyRequestTime = Date.now() - classifyRequestStart;
+    console.log(`⏱️  [TIMING] Classification request took: ${classifyRequestTime}ms`);
+    console.log(`📥 [RESPONSE] Status: ${classifyRes.status} ${classifyRes.statusText}`);
+
     const classifyData = await classifyRes.json();
-    console.log(`✅ Classification: ${classifyData.intent}`);
+    console.log(`\n📊 [CLASSIFICATION] Full response:`);
+    console.log(JSON.stringify(classifyData, null, 2));
+    console.log(`\n✅ Classification Result:`);
+    console.log(`   - Intent: ${classifyData.intent}`);
+    console.log(`   - Intent Type: ${classifyData.intent_type || 'null'}`);
+    console.log(`   - Confidence: ${classifyData.confidence || 'N/A'}`);
+    console.log(`   - Ticker: ${classifyData.ticker || 'null'}`);
+    console.log(`   - Entities: ${JSON.stringify(classifyData.entities || [])}`);
+    console.log(`   - Needs Web: ${classifyData.needs_web}`);
+    console.log(`   - Needs User Data: ${classifyData.needs_user_data}`);
+    console.log(`   - Emotional State: ${classifyData.emotional_state || 'N/A'}`);
+    if (classifyData.fallback) {
+      console.log(`   ⚠️  FALLBACK USED`);
+    }
+    if (classifyData.timeout_fallback) {
+      console.log(`   ⏰ TIMEOUT FALLBACK USED`);
+    }
 
     // Step 2: Ask Finny
-    console.log("🤖 Step 2: Asking Finny...");
+    console.log("\n🤖 Step 2: Asking Finny...");
+    console.log(`📤 [REQUEST] Sending ask request:`);
+    console.log(`   - Message: "${message}"`);
+    console.log(`   - Classification intent: ${classifyData.intent}`);
+    console.log(`   - Classification ticker: ${classifyData.ticker || 'null'}`);
+    console.log(`   - User ID: ${userId}`);
+    
+    const askRequestStart = Date.now();
     const askRes = await fetch(`${BASE_URL}/api/finny`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -78,34 +112,65 @@ async function testFinnyQuery(message, userId = TEST_USER_ID) {
         action: "ask",
         message: message,
         context: { user_id: userId },
+        classification: classifyData, // Pass classification result
       }),
     });
 
+    const askRequestTime = Date.now() - askRequestStart;
+    console.log(`⏱️  [TIMING] Ask request took: ${askRequestTime}ms`);
+    console.log(`📥 [RESPONSE] Status: ${askRes.status} ${askRes.statusText}`);
+
     const askData = await askRes.json();
+    console.log(`\n📊 [ASK] Response received:`);
+    if (askData.message) {
+      console.log(`   - Message length: ${askData.message.length} chars`);
+      console.log(`   - Message preview: ${askData.message.substring(0, 200)}...`);
+    }
 
     if (askRes.ok) {
-      console.log("✅ Response received:");
-      console.log("─".repeat(40));
+      console.log("\n✅ [SUCCESS] Full response received:");
+      console.log("─".repeat(80));
       console.log(askData.message);
-      console.log("─".repeat(40));
+      console.log("─".repeat(80));
 
       // Log context packs info if available
       if (askData.context_packs) {
         console.log(
-          `📦 Context packs used: ${askData.context_packs.join(", ")}`
+          `\n📦 Context packs used: ${askData.context_packs.join(", ")}`
         );
       }
       if (askData.data_gaps) {
-        console.log(`⚠️  Data gaps: ${askData.data_gaps.join(", ")}`);
+        console.log(`\n⚠️  Data gaps: ${askData.data_gaps.join(", ")}`);
+      }
+      if (askData.stock_candidate) {
+        console.log(`\n📈 Stock candidate: ${JSON.stringify(askData.stock_candidate)}`);
+      }
+      if (askData.actions) {
+        console.log(`\n🔘 Actions available: ${JSON.stringify(askData.actions)}`);
+      }
+
+      // Compare classification vs actual handling
+      console.log(`\n🔍 [COMPARISON] Classification vs Handling:`);
+      console.log(`   - Classification intent: ${classifyData.intent}`);
+      console.log(`   - Classification ticker: ${classifyData.ticker || 'null'}`);
+      if (askData.intent) {
+        console.log(`   - Response intent: ${askData.intent}`);
+      }
+      if (askData.stock_candidate?.ticker) {
+        console.log(`   - Stock candidate ticker: ${askData.stock_candidate.ticker}`);
       }
 
       return askData;
     } else {
-      console.error("❌ Error:", askData);
+      console.error("\n❌ [ERROR] Request failed:");
+      console.error(`   - Status: ${askRes.status}`);
+      console.error(`   - Response:`, JSON.stringify(askData, null, 2));
       return null;
     }
   } catch (error) {
-    console.error("❌ Test failed:", error.message);
+    console.error("\n❌ [EXCEPTION] Test failed:");
+    console.error(`   - Error: ${error.message}`);
+    console.error(`   - Stack: ${error.stack}`);
     return null;
   }
 }

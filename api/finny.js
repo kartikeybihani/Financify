@@ -4861,8 +4861,12 @@ async function handleClassify(message, context, conversationContext = null) {
   }
 
   // Check cache first
+  const cacheKey = generateClassificationCacheKey(text);
+  console.log(`🔍 [FINNY] Cache key generated: "${cacheKey}"`);
+  console.log(`🔍 [FINNY] Original message: "${text}"`);
   const cachedResult = getCachedClassification(text);
   if (cachedResult) {
+    console.log(`🔍 [FINNY] Cache HIT - Cached result:`, JSON.stringify(cachedResult, null, 2));
     // INVALIDATE old heuristic-based cache entries - they were created with rigid code
     if (cachedResult.heuristic === true) {
       console.log(
@@ -4902,6 +4906,12 @@ async function handleClassify(message, context, conversationContext = null) {
           Date.now() - startTime
         }ms)`
       );
+      console.log(`⚡ [FINNY] Cached result details:`, {
+        intent: cachedResult.intent,
+        ticker: cachedResult.ticker,
+        confidence: cachedResult.confidence,
+        entities: cachedResult.entities,
+      });
       return cachedResult;
     } else {
       console.log(
@@ -4919,6 +4929,10 @@ async function handleClassify(message, context, conversationContext = null) {
   // No rigid heuristics - all classification is handled by LLM
   // This ensures flexible detection of stocks, goals, and all other intents
 
+  console.log(`🔍 [FINNY] Cache MISS - Making LLM classification request`);
+  console.log(`🔍 [FINNY] Model: ${SMALLER_MODEL}`);
+  console.log(`🔍 [FINNY] Message being classified: "${text}"`);
+
   try {
     // Create a timeout promise that rejects after 8 seconds (increased for stability)
     const timeoutPromise = new Promise((_, reject) => {
@@ -4928,21 +4942,12 @@ async function handleClassify(message, context, conversationContext = null) {
       );
     });
 
-    // Create the fetch promise
-    const fetchPromise = fetch(
-      "https://openrouter.ai/api/v1/chat/completions",
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${process.env.OPENROUTER_GROK_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: SMALLER_MODEL, // Use reliable model for classification (JSON mode)
-          temperature: 0.1,
-          max_tokens: 350, // Allow slightly longer responses for stability
-          top_p: 0.9, // Add top_p for better stability
-          messages: [
+    const requestBody = {
+      model: SMALLER_MODEL, // Use reliable model for classification (JSON mode)
+      temperature: 0.1,
+      max_tokens: 350, // Allow slightly longer responses for stability
+      top_p: 0.9, // Add top_p for better stability
+      messages: [
             {
               role: "system",
               content: [
@@ -5159,22 +5164,45 @@ async function handleClassify(message, context, conversationContext = null) {
           response_format: {
             type: "json_object",
           },
-        }),
+        };
+    
+    console.log(`🔍 [FINNY] Request body (first 500 chars of system prompt):`, 
+      JSON.stringify(requestBody).substring(0, 500) + "...");
+    
+    // Create the fetch promise
+    const fetchPromise = fetch(
+      "https://openrouter.ai/api/v1/chat/completions",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${process.env.OPENROUTER_GROK_KEY ? '***' : 'MISSING'}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(requestBody),
       }
     );
 
+    console.log(`🔍 [FINNY] API request sent, waiting for response...`);
+    const apiCallStart = Date.now();
     // Race between fetch and timeout
     const r = await Promise.race([fetchPromise, timeoutPromise]);
+    const apiCallTime = Date.now() - apiCallStart;
+    console.log(`⏱️  [FINNY] API call completed in ${apiCallTime}ms`);
 
     if (!r.ok) {
       const errText = await r.text();
       throw new Error(`OpenRouter error ${r.status}: ${errText}`);
     }
     const data = await r.json();
-    console.log("🔍 [FINNY] Classification data inside handleClassify:", data);
+    console.log("🔍 [FINNY] Raw API response received");
+    console.log(`🔍 [FINNY] Response model: ${data.model || 'N/A'}`);
+    console.log(`🔍 [FINNY] Response usage:`, data.usage || 'N/A');
     const content = data.choices?.[0]?.message?.content;
+    console.log(`🔍 [FINNY] Response content length: ${content?.length || 0}`);
+    console.log(`🔍 [FINNY] Response content preview: ${content?.substring(0, 200) || 'N/A'}...`);
     if (!content) {
       console.log("❌ [FINNY] No content in response");
+      console.log("❌ [FINNY] Full response:", JSON.stringify(data, null, 2));
       throw new Error("No content");
     }
 
@@ -5189,8 +5217,10 @@ async function handleClassify(message, context, conversationContext = null) {
 
     // Handle incomplete JSON responses
     let out;
+    console.log(`🔍 [FINNY] Cleaned content: ${cleanContent.substring(0, 300)}...`);
     try {
       out = JSON.parse(cleanContent);
+      console.log(`🔍 [FINNY] Parsed JSON successfully:`, JSON.stringify(out, null, 2));
 
       // VALIDATION: Check if the parsed result has the correct structure
       // If 'intent' field is missing or has wrong type, treat as malformed
