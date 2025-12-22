@@ -2416,13 +2416,13 @@ async function handleAsk(
       };
     } else {
       // Non-streaming - split on backend for backward compatibility
-      const splitMessages = splitLongResponse(cleanedMessage);
+    const splitMessages = splitLongResponse(cleanedMessage);
       response = {
-        message:
-          splitMessages.length === 1 ? splitMessages[0].content : splitMessages,
-        type: "assistant",
-        isSplit: splitMessages.length > 1,
-      };
+      message:
+        splitMessages.length === 1 ? splitMessages[0].content : splitMessages,
+      type: "assistant",
+      isSplit: splitMessages.length > 1,
+    };
     }
 
     // Log the conversation
@@ -5487,6 +5487,12 @@ async function streamTextChunks(res, text, chunkSize = 15) {
 
     // Send chunk when we reach chunkSize words or at the end
     if (currentChunk.split(" ").length >= chunkSize || i === words.length - 1) {
+      // CRITICAL: Add trailing space if there are more words coming
+      // This ensures word boundaries are preserved when chunks are concatenated
+      if (i < words.length - 1) {
+        currentChunk += " ";
+      }
+      
       sendStreamEvent(res, "text_chunk", { text: currentChunk });
       currentChunk = "";
 

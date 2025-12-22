@@ -244,10 +244,73 @@ export function processStreamingText(
 
   if (splitAt > processedLength && splitAt <= accumulatedText.length) {
     // We found a good split point
-    const newPart = accumulatedText.substring(processedLength, splitAt).trim();
+    // CRITICAL: splitAt points to the START of the next part, so:
+    // - completed part: [processedLength, splitAt)
+    // - streaming part: [splitAt, end]
+    const rawPart = accumulatedText.substring(processedLength, splitAt);
+    
+    // Trim only leading whitespace (preserve newlines for formatting)
+    let newPart = rawPart.replace(/^[ \t]+/, '');
+    
+    // For trailing whitespace: preserve single spaces (they're word boundaries)
+    // Only trim excessive trailing whitespace (2+ spaces or newlines)
+    // This prevents losing spaces between words like "cost of" -> "costof"
+    const trailingWhitespace = newPart.match(/\s+$/);
+    if (trailingWhitespace) {
+      if (trailingWhitespace[0].length > 1) {
+        // Multiple trailing spaces/newlines - trim to single space if next char needs it
+        const nextChar = accumulatedText[splitAt] || '';
+        if (nextChar && nextChar !== ' ' && nextChar !== '\n' && !/[.!?;:,\n]/.test(nextChar)) {
+          // Next char is a letter/number - preserve single space
+          newPart = newPart.replace(/\s+$/, ' ');
+        } else {
+          // Next char is whitespace or punctuation - safe to trim all
+          newPart = newPart.replace(/\s+$/, '');
+        }
+      }
+      // If single trailing space, keep it (it's a word boundary)
+    }
+    
     if (newPart) {
       const updatedCompleted = [...completedParts, newPart];
-      const newStreaming = accumulatedText.substring(splitAt);
+      
+      // Get streaming text starting exactly at splitAt
+      // Trim only leading spaces/tabs (not newlines - they're formatting)
+      let newStreaming = accumulatedText.substring(splitAt);
+      newStreaming = newStreaming.replace(/^[ \t]+/, '');
+      
+      // Verify no overlap: completed part should end before streaming starts
+      const completedEnd = processedLength + newPart.length;
+      const streamingStart = splitAt;
+      
+      if (completedEnd > streamingStart) {
+        console.error("❌ [SPLITTER] OVERLAP DETECTED!", {
+          completedEnd,
+          streamingStart,
+          overlap: completedEnd - streamingStart,
+          completedPart: newPart.slice(-20),
+          streamingPart: newStreaming.substring(0, 20)
+        });
+        // Fix overlap by adjusting
+        newStreaming = accumulatedText.substring(completedEnd);
+        newStreaming = newStreaming.replace(/^[ \t]+/, '');
+      }
+      
+      console.log("✂️ [SPLITTER] Split detected:", {
+        splitAt,
+        processedLength,
+        completedEnd,
+        streamingStart,
+        accumulatedLength: accumulatedText.length,
+        rawPartLength: rawPart.length,
+        trimmedPartLength: newPart.length,
+        partCount: completedParts.length + 1,
+        completedEndsWith: newPart.slice(-15),
+        streamingStartsWith: newStreaming.substring(0, 15),
+        nextChar: accumulatedText[splitAt] || '(end)',
+        hasSpaceBetween: newPart.endsWith(' ') || newStreaming.startsWith(' ') || accumulatedText[splitAt] === ' '
+      });
+      
       return {
         completedParts: updatedCompleted,
         currentStreamingText: newStreaming

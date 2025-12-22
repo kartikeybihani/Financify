@@ -585,10 +585,10 @@ export const useChat = () => {
                         updated[lastIndex] = {
                           ...updated[lastIndex],
                           text: finalProcessed.currentStreamingText || finalProcessed.completedParts[finalProcessed.completedParts.length - 1] || finalMessage,
-                          isStreaming: false,
-                          ...(data.actions && { actions: data.actions }),
-                          ...(data.type && { type: data.type })
-                        };
+                        isStreaming: false,
+                        ...(data.actions && { actions: data.actions }),
+                        ...(data.type && { type: data.type })
+                      };
                       }
                     }
                     
@@ -628,21 +628,51 @@ export const useChat = () => {
                 setProgressStatus(data.status);
                 setIsTyping(true);
               } else if (data.text) {
-                // Accumulate text (preserve spacing - don't force space between chunks)
-                accumulatedText += data.text;
+                // Accumulate text chunks from backend
+                // Backend now sends chunks with trailing spaces to preserve word boundaries
+                const textChunk = data.text;
+                const beforeLength = accumulatedText.length;
                 
-                if (STREAM_DEBUG) {
-                  console.log("📝 [STREAMING] Accumulated text length:", accumulatedText.length, "Completed parts:", completedParts.length);
-                }
+                // Simple concatenation - backend handles spacing correctly
+                accumulatedText += textChunk;
+                const afterLength = accumulatedText.length;
+                
+                // Log text chunk details for debugging
+                console.log("📥 [STREAMING] Text chunk received:", {
+                  chunkLength: textChunk.length,
+                  chunkPreview: textChunk.substring(0, 100) + (textChunk.length > 100 ? '...' : ''),
+                  chunkEndsWithSpace: textChunk.endsWith(' '),
+                  chunkStartsWithSpace: textChunk.startsWith(' '),
+                  beforeAccumulated: beforeLength,
+                  afterAccumulated: afterLength,
+                  accumulatedPreview: accumulatedText.substring(Math.max(0, accumulatedText.length - 100)),
+                  spaceCount: (accumulatedText.match(/ /g) || []).length,
+                  completedParts: completedParts.length
+                });
                 
                 // Process streaming text to check for splits
                 const processed = processStreamingText(accumulatedText, completedParts, maxMessages);
                 
+                console.log("🔄 [STREAMING] After processing:", {
+                  accumulatedLength: accumulatedText.length,
+                  processedCompletedParts: processed.completedParts.length,
+                  processedStreamingLength: processed.currentStreamingText.length,
+                  processedStreamingPreview: processed.currentStreamingText.substring(0, 100) + (processed.currentStreamingText.length > 100 ? '...' : ''),
+                  streamingSpaces: (processed.currentStreamingText.match(/ /g) || []).length
+                });
+                
                 // Check if we have a new completed part (split detected)
                 if (processed.completedParts.length > completedParts.length) {
-                  if (STREAM_DEBUG) {
-                    console.log("✂️ [SPLIT] Detected split! New completed part:", processed.completedParts.length);
-                  }
+                  console.log("🎯 [SPLIT] New completed part detected!", {
+                    previousPartsCount: completedParts.length,
+                    newPartsCount: processed.completedParts.length,
+                    newPartIndex: processed.completedParts.length - 1,
+                    newPartLength: processed.completedParts[processed.completedParts.length - 1].length,
+                    newPartPreview: processed.completedParts[processed.completedParts.length - 1].substring(0, 150) + '...',
+                    newPartSpaces: (processed.completedParts[processed.completedParts.length - 1].match(/ /g) || []).length,
+                    remainingStreamingLength: processed.currentStreamingText.length
+                  });
+                  
                   // A new part was completed - convert the current streaming message to completed
                   const newPart = processed.completedParts[processed.completedParts.length - 1];
                   completedParts = processed.completedParts;
@@ -650,6 +680,15 @@ export const useChat = () => {
                   // Update the existing streaming message to be the completed part
                   if (messageIds.length > 0) {
                     const completedMessageId = messageIds[messageIds.length - 1];
+                    console.log("💾 [SPLIT] Finalizing message:", {
+                      messageId: completedMessageId,
+                      textLength: newPart.length,
+                      textPreview: newPart.substring(0, 150) + '...',
+                      spaceCount: (newPart.match(/ /g) || []).length,
+                      hasLeadingSpace: newPart.startsWith(' '),
+                      hasTrailingSpace: newPart.endsWith(' ')
+                    });
+                    
                     setChatMessages(prev => {
                       const existingIndex = prev.findIndex(msg => msg.id === completedMessageId);
                       if (existingIndex >= 0) {
@@ -659,9 +698,6 @@ export const useChat = () => {
                           text: newPart,
                           isStreaming: false
                         };
-                        if (STREAM_DEBUG) {
-                          console.log("✅ [SPLIT] Finalized message:", completedMessageId);
-                        }
                         return updated;
                       }
                       return prev;
@@ -695,7 +731,7 @@ export const useChat = () => {
                     // Need a new ID for streaming message (after a split)
                     activeMessageId = `${baseMessageId}-${completedParts.length + 1}`;
                     messageIds.push(activeMessageId);
-                    if (STREAM_DEBUG) {
+                if (STREAM_DEBUG) {
                       console.log("🆕 [STREAMING] Created new message ID:", activeMessageId);
                     }
                   } else {
@@ -708,6 +744,21 @@ export const useChat = () => {
                     // Use processed streaming text if available, otherwise fall back to accumulated
                     // (fallback only needed when messageIds.length === 0, i.e., first message)
                     const displayText = hasStreamingText ? processed.currentStreamingText : accumulatedText;
+                    
+                    // Log display text details
+                    if (STREAM_DEBUG || existingIndex === -1) {
+                      console.log("📺 [DISPLAY] Updating streaming message:", {
+                        messageId: activeMessageId,
+                        isNew: existingIndex === -1,
+                        displayTextLength: displayText.length,
+                        displayTextPreview: displayText.substring(0, 100) + (displayText.length > 100 ? '...' : ''),
+                        spaceCount: (displayText.match(/ /g) || []).length,
+                        wordCount: displayText.split(/\s+/).filter(w => w.length > 0).length,
+                        hasStreamingText,
+                        usingProcessed: hasStreamingText
+                      });
+                    }
+                    
                     if (existingIndex >= 0) {
                       const updated = [...prev];
                       updated[existingIndex] = {
@@ -715,9 +766,6 @@ export const useChat = () => {
                         text: displayText,
                         isStreaming: true
                       };
-                      if (STREAM_DEBUG) {
-                        console.log("🔄 [STREAMING] Updated streaming message:", activeMessageId, "length:", displayText.length);
-                      }
                       return updated;
                     } else {
                       const newMessage: ChatMessage = {
@@ -728,9 +776,6 @@ export const useChat = () => {
                         type: "text" as const,
                         isStreaming: true
                       };
-                      if (STREAM_DEBUG) {
-                        console.log("✨ [STREAMING] Created new streaming message:", newMessage.id, "length:", displayText.length);
-                      }
                       return [...prev, newMessage];
                     }
                   });
@@ -759,12 +804,32 @@ export const useChat = () => {
                 
                 // Update accumulated text with final message if different
                 if (finalMessage && typeof finalMessage === 'string' && finalMessage !== accumulatedText) {
+                  console.log("🔄 [FINAL] Accumulated text updated from final message:", {
+                    oldLength: accumulatedText.length,
+                    newLength: finalMessage.length,
+                    difference: finalMessage.length - accumulatedText.length
+                  });
                   accumulatedText = finalMessage;
                 }
                 
                 // Process final message to ensure all parts are completed
                 if (finalMessage && typeof finalMessage === 'string' && finalMessage.trim()) {
+                  console.log("🏁 [FINAL] Processing final message:", {
+                    finalMessageLength: finalMessage.length,
+                    finalMessagePreview: finalMessage.substring(0, 200) + (finalMessage.length > 200 ? '...' : ''),
+                    finalMessageSpaces: (finalMessage.match(/ /g) || []).length,
+                    completedPartsBefore: completedParts.length,
+                    accumulatedTextLength: accumulatedText.length
+                  });
+                  
                   const finalProcessed = processStreamingText(finalMessage, completedParts, maxMessages);
+                  
+                  console.log("🏁 [FINAL] After processing:", {
+                    finalCompletedParts: finalProcessed.completedParts.length,
+                    finalStreamingLength: finalProcessed.currentStreamingText.length,
+                    finalStreamingPreview: finalProcessed.currentStreamingText.substring(0, 200) + (finalProcessed.currentStreamingText.length > 200 ? '...' : ''),
+                    finalStreamingSpaces: (finalProcessed.currentStreamingText.match(/ /g) || []).length
+                  });
                   
                   // Finalize any remaining streaming message
                   setChatMessages(prev => {
@@ -775,13 +840,23 @@ export const useChat = () => {
                       const lastMessageId = messageIds[messageIds.length - 1];
                       const lastIndex = updated.findIndex(msg => msg.id === lastMessageId);
                       if (lastIndex >= 0 && updated[lastIndex].isStreaming) {
+                        const finalText = finalProcessed.currentStreamingText || finalProcessed.completedParts[finalProcessed.completedParts.length - 1] || finalMessage;
+                        
+                        console.log("🏁 [FINAL] Finalizing last message:", {
+                          messageId: lastMessageId,
+                          finalTextLength: finalText.length,
+                          finalTextPreview: finalText.substring(0, 200) + (finalText.length > 200 ? '...' : ''),
+                          finalTextSpaces: (finalText.match(/ /g) || []).length,
+                          source: finalProcessed.currentStreamingText ? 'currentStreamingText' : (finalProcessed.completedParts.length > 0 ? 'completedParts' : 'finalMessage')
+                        });
+                        
                         updated[lastIndex] = {
                           ...updated[lastIndex],
-                          text: finalProcessed.currentStreamingText || finalProcessed.completedParts[finalProcessed.completedParts.length - 1] || finalMessage,
-                          isStreaming: false,
-                          ...(data.actions && { actions: data.actions }),
-                          ...(data.type && { type: data.type })
-                        };
+                          text: finalText,
+                        isStreaming: false,
+                        ...(data.actions && { actions: data.actions }),
+                        ...(data.type && { type: data.type })
+                      };
                       }
                     }
                     
