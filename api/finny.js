@@ -1587,7 +1587,7 @@ export default async function handler(req, res) {
           const tickerDisplay = updatedTicker;
           const confirmationMessage = `I found **${tickerDisplay}**. Would you like me to analyze this stock?`;
 
-          response = {
+          const updateResponse = {
             message: confirmationMessage,
             type: "assistant",
             intent: "ask_personalized",
@@ -1607,6 +1607,28 @@ export default async function handler(req, res) {
               },
             ],
           };
+
+          // 📊 LOGGING: Log updated ticker confirmation UI state
+          console.log(`\n🎨 [UI_STATE] Updated ticker confirmation UI flags:`);
+          console.log(
+            `   - hideActions: ${
+              updateResponse.hideActions
+                ? "✅ HIDDEN"
+                : "❌ VISIBLE (will show buttons)"
+            }`
+          );
+          console.log(
+            `   - hideFeedback: ${
+              updateResponse.hideFeedback
+                ? "✅ HIDDEN (thumbs will NOT show)"
+                : "❌ VISIBLE"
+            }`
+          );
+          console.log(
+            `   - actions count: ${updateResponse.actions.length} (Yes, Change Ticker)`
+          );
+
+          response = updateResponse;
           break;
         }
 
@@ -2060,7 +2082,7 @@ async function handleAsk(
         const tickerDisplay = stockCandidate.ticker;
         const confirmationMessage = `Okay! Just wanted to confirm, you want me to analyze **${tickerDisplay}**?`;
 
-        return {
+        const confirmationResponse = {
           message: confirmationMessage,
           type: "assistant",
           intent: "ask_personalized",
@@ -2080,15 +2102,54 @@ async function handleAsk(
             },
           ],
         };
+
+        // 📊 LOGGING: Log confirmation message UI state
+        console.log(`\n🎨 [UI_STATE] Confirmation message UI flags:`);
+        console.log(
+          `   - hideActions: ${
+            confirmationResponse.hideActions
+              ? "✅ HIDDEN"
+              : "❌ VISIBLE (will show buttons)"
+          }`
+        );
+        console.log(
+          `   - hideFeedback: ${
+            confirmationResponse.hideFeedback
+              ? "✅ HIDDEN (thumbs will NOT show)"
+              : "❌ VISIBLE"
+          }`
+        );
+        console.log(
+          `   - actions count: ${confirmationResponse.actions.length} (Yes, Change Ticker)`
+        );
+
+        return confirmationResponse;
       }
     }
 
     // 3.5) Check if this is a stock query after building context packs
+    // Also check if we have stock_override (user confirmed ticker) - that's definitely a stock query!
     logDebug(
       "🔍 [STOCK_ROUTING] Checking if message looks like stock query:",
       message
     );
-    const isStockQuery = looksLikeStockQuery(message);
+    const hasStockOverride = !!context?.stock_override?.ticker;
+    const isStockQuery = looksLikeStockQuery(message) || hasStockOverride;
+    console.log(`\n🔍 [STOCK_ROUTING] Stock query detection:`);
+    console.log(`   - Message: "${message}"`);
+    console.log(
+      `   - looksLikeStockQuery: ${
+        looksLikeStockQuery(message) ? "✅ YES" : "❌ NO"
+      }`
+    );
+    console.log(
+      `   - hasStockOverride: ${
+        hasStockOverride ? `✅ YES (${context.stock_override.ticker})` : "❌ NO"
+      }`
+    );
+    console.log(
+      `   - Final isStockQuery: ${isStockQuery ? "✅ YES" : "❌ NO"}`
+    );
     logDebug("🔍 [STOCK_ROUTING] Result:", isStockQuery);
 
     if (isStockQuery) {
@@ -2115,11 +2176,58 @@ async function handleAsk(
         let stockPlan = null;
         const stockOverride = context?.stock_override?.ticker || null;
 
-        // Deep analysis is default for all stock queries (but skip planning if we already have ticker from confirmation)
-        if (looksLikeStockDeepQuery(message) && !stockOverride) {
+        // 📊 LOGGING: Show which path will be taken
+        console.log(`\n🔍 [STOCK_ROUTING] Determining analysis path:`);
+        console.log(`   - Message: "${message}"`);
+        console.log(
+          `   - Has stockOverride: ${
+            stockOverride ? `✅ YES (${stockOverride})` : "❌ NO"
+          }`
+        );
+        console.log(
+          `   - looksLikeStockDeepQuery: ${
+            looksLikeStockDeepQuery(message) ? "✅ YES" : "❌ NO"
+          }`
+        );
+        // Deep query ALWAYS runs for stock queries (even with stockOverride)
+        // stockOverride just provides the ticker, but we still want comprehensive analysis
+        const willUseDeepQuery = looksLikeStockDeepQuery(message);
+        const willUseOverride = !!stockOverride && !willUseDeepQuery;
+        const willUseSimple = !willUseDeepQuery && !willUseOverride;
+        console.log(
+          `   - Path decision: ${
+            willUseDeepQuery
+              ? stockOverride
+                ? "🔵 DEEP QUERY (with stockOverride ticker)"
+                : "🔵 DEEP QUERY"
+              : willUseOverride
+              ? "🟢 STOCK OVERRIDE (fast)"
+              : "🟡 SIMPLE QUERY"
+          }`
+        );
+
+        // Deep analysis is default for all stock queries - ALWAYS run deep query for comprehensive analysis
+        if (looksLikeStockDeepQuery(message)) {
+          console.log(
+            `\n🔵 [STOCK] DEEP QUERY PATH: Using LLM planning for comprehensive analysis`
+          );
           logDebug("🔍 [STOCK] Deep query detected, using advanced analysis");
+
+          // Use stockOverride ticker if available, otherwise let planStockRequest determine ticker
           stockPlan = await planStockRequest(message);
           logDebug("🔍 [STOCK] Stock plan result:", stockPlan);
+
+          // Override ticker in plan if we have stockOverride (user confirmed ticker)
+          if (stockOverride && stockPlan) {
+            stockPlan = {
+              ...stockPlan,
+              ticker_candidates: [stockOverride],
+            };
+            console.log(
+              `🔵 [STOCK] Overriding plan ticker with stockOverride: ${stockOverride}`
+            );
+          }
+
           const exec = await executeStockPlan(stockPlan || {}, message);
           logDebug("🔍 [STOCK] Execute result:", exec);
 
@@ -2180,8 +2288,12 @@ async function handleAsk(
               `🔄 [STOCK] Stock plan check failed (${reason}), falling back to simple query or fallback`
             );
           }
-        } else if (stockOverride) {
-          // When we have stockOverride (from confirmation), skip planning and fetch directly for faster response
+        } else if (stockOverride && !looksLikeStockDeepQuery(message)) {
+          // Only use fast path if we have stockOverride AND it's not a deep query
+          // Deep queries should always use the planning path above
+          console.log(
+            `\n🟢 [STOCK] STOCK OVERRIDE PATH (simple query): Fetching directly (ticker: ${stockOverride})`
+          );
           logDebug(
             "🔍 [STOCK] Using stockOverride, skipping planStockRequest for faster response"
           );
@@ -2194,6 +2306,13 @@ async function handleAsk(
             console.log(
               `✅ [STOCK] Using stockData from stockOverride (price: ${snapshot.current})`
             );
+            console.log(
+              `📊 [STOCK] Snapshot summary: price=$${
+                snapshot.current
+              }, hasProfile=${!!snapshot.profile}, hasMetrics=${!!snapshot.metrics}, recsCount=${
+                snapshot.recommendations?.length || 0
+              }, newsCount=${snapshot.news?.length || 0}`
+            );
           } else {
             console.log(
               `⚠️ [STOCK] Stock snapshot failed for override ticker ${stockOverride}, will try simple query path`
@@ -2201,6 +2320,9 @@ async function handleAsk(
           }
         } else {
           // Simple stock query
+          console.log(
+            `\n🟡 [STOCK] SIMPLE QUERY PATH: Using cached data with fallback`
+          );
           const stockResponse = await getCachedDataWithFallback(
             "stock_snapshot",
             stockOverride
@@ -2273,6 +2395,30 @@ async function handleAsk(
             message: cleanResponseFormatting(conversationalResponse),
             type: "assistant",
           };
+
+          // 📊 LOGGING: Log button and feedback visibility for final stock response
+          console.log(`\n🎨 [UI_STATE] Final stock response UI flags:`);
+          console.log(
+            `   - hideActions: ${
+              response.hideActions
+                ? "✅ HIDDEN"
+                : "❌ VISIBLE (default: visible)"
+            }`
+          );
+          console.log(
+            `   - hideFeedback: ${
+              response.hideFeedback
+                ? "✅ HIDDEN"
+                : "❌ VISIBLE (default: visible)"
+            }`
+          );
+          console.log(`   - actions count: ${response.actions?.length || 0}`);
+          console.log(
+            `   - has stock_candidate: ${!!response.stock_candidate}`
+          );
+          console.log(
+            `   - Response length: ${response.message?.length || 0} chars`
+          );
 
           // Log with enhanced data
           setImmediate(() =>

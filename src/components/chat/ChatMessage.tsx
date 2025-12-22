@@ -435,6 +435,15 @@ export const ChatMessageComponent = memo(
     const [lineCount, setLineCount] = useState(1);
     const [clicked, setClicked] = useState(false);
 
+    // 📊 FRONTEND LOGGING: Log button and feedback visibility on mount/update
+    useEffect(() => {
+      console.log(`🎨 [FRONTEND_UI] Message ${message.id} UI state:`);
+      console.log(`   - hideActions: ${message.hideActions ? "✅ HIDDEN" : "❌ VISIBLE"}`);
+      console.log(`   - hideFeedback: ${message.hideFeedback ? "✅ HIDDEN" : "❌ VISIBLE"}`);
+      console.log(`   - actions count: ${message.actions?.length || 0}`);
+      console.log(`   - clicked state: ${clicked ? "✅ CLICKED (buttons hidden)" : "❌ NOT CLICKED"}`);
+    }, [message.id, message.hideActions, message.hideFeedback, message.actions?.length, clicked]);
+
     // Memoize expensive calculations
     const isUser = useMemo(() => message.sender === "user", [message.sender]);
     const isFirstInGroup = useMemo(
@@ -538,6 +547,14 @@ export const ChatMessageComponent = memo(
     }
 
     // Check for action buttons (regardless of type, as long as actions exist and not hidden)
+    // 📊 FRONTEND LOGGING: Log button visibility state
+    if (message.actions && message.actions.length > 0) {
+      console.log(`🎨 [FRONTEND_UI] Action buttons state for message ${message.id}:`);
+      console.log(`   - hideActions: ${message.hideActions ? "✅ HIDDEN" : "❌ VISIBLE"}`);
+      console.log(`   - actions count: ${message.actions.length}`);
+      console.log(`   - action labels: ${message.actions.map(a => a.label).join(", ")}`);
+    }
+    
     if (message.actions && message.actions.length > 0 && !message.hideActions) {
       const finnyTailColor = pickTailColor([...finnyGradient], "left");
 
@@ -680,7 +697,7 @@ export const ChatMessageComponent = memo(
 
     // Display message as single string (no splitting)
     // Defensive: handle undefined/null text during streaming
-    const messageText = message?.text ?? "";
+    const messageText = typeof message?.text === "string" ? message.text : String(message?.text || "");
 
     // Don't render if there's no text at all
     if (!messageText || messageText.trim() === "") {
@@ -760,9 +777,16 @@ export const ChatMessageComponent = memo(
               )}
             </View>
             {/* Feedback buttons - hide for initial welcome message and confirmation messages */}
-            {isLastInGroup &&
-              message.id !== "welcome" &&
-              !message.hideFeedback && (
+            {/* 📊 FRONTEND LOGGING: Log feedback button visibility */}
+            {(() => {
+              const shouldShowFeedback = isLastInGroup && message.id !== "welcome" && !message.hideFeedback;
+              console.log(`🎨 [FRONTEND_UI] Feedback buttons state for message ${message.id}:`);
+              console.log(`   - isLastInGroup: ${isLastInGroup}`);
+              console.log(`   - message.id: ${message.id}`);
+              console.log(`   - hideFeedback: ${message.hideFeedback ? "✅ HIDDEN" : "❌ VISIBLE"}`);
+              console.log(`   - Will show feedback: ${shouldShowFeedback ? "✅ YES" : "❌ NO"}`);
+              return shouldShowFeedback;
+            })() && (
                 <View style={styles.feedbackButtons}>
                   <TouchableOpacity
                     style={styles.feedbackButton}

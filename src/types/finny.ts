@@ -42,6 +42,8 @@ export interface ChatMessage {
     action: "goal_confirm" | "goal_decline" | string;
     style?: "primary" | "secondary";
   }>;
+  hideFeedback?: boolean; // Hide feedback buttons (thumbs up/down) for confirmation messages
+  hideActions?: boolean; // Hide action buttons after they're clicked
 }
 
 export type Intent =

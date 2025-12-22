@@ -564,7 +564,9 @@ export const useChat = () => {
                         isStreaming: false,
                         ...(data.actions && { actions: data.actions }),
                         ...(resolvedType && { type: resolvedType }),
-                        ...(stockCandidate && { stockCandidate })
+                        ...(stockCandidate && { stockCandidate }),
+                        ...(data.hideFeedback !== undefined && { hideFeedback: data.hideFeedback }),
+                        ...(data.hideActions !== undefined && { hideActions: data.hideActions }),
                       };
                     }
                     
@@ -664,7 +666,9 @@ export const useChat = () => {
                         isStreaming: false,
                         ...(data.actions && { actions: data.actions }),
                         ...(resolvedType && { type: resolvedType }),
-                        ...(stockCandidate && { stockCandidate })
+                        ...(stockCandidate && { stockCandidate }),
+                        ...(data.hideFeedback !== undefined && { hideFeedback: data.hideFeedback }),
+                        ...(data.hideActions !== undefined && { hideActions: data.hideActions }),
                       };
                     }
                     
@@ -1253,6 +1257,8 @@ export const useChat = () => {
           type: "action",
           actions: data.actions,
           ...(stockCandidate && { stockCandidate }),
+          ...(data.hideFeedback !== undefined && { hideFeedback: data.hideFeedback }),
+          ...(data.hideActions !== undefined && { hideActions: data.hideActions }),
         };
 
         // Add typing delay for action messages
@@ -1297,7 +1303,25 @@ export const useChat = () => {
       if (data.isSplit && Array.isArray(data.message)) {
         await handleSplitMessages(data.message);
       } else {
-        await pushChatWithDelay("finny", message);
+        // Create message object with UI flags from backend
+        // Ensure message is always a string
+        const messageText = typeof message === "string" ? message : String(message || "");
+        const finnyMessage: ChatMessage = {
+          id: `finny-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          sender: "finny",
+          text: messageText,
+          timestamp: Date.now(),
+          type: "text",
+          ...(stockCandidate && { stockCandidate }),
+          ...(data.hideFeedback !== undefined && { hideFeedback: data.hideFeedback }),
+          ...(data.hideActions !== undefined && { hideActions: data.hideActions }),
+        };
+        
+        // Add typing delay for finny messages
+        setIsTyping(true);
+        await new Promise((resolve) => setTimeout(resolve, 1000 + Math.random() * 1000));
+        pushChat(finnyMessage);
+        setIsTyping(false);
       }
     } catch (error) {
       const totalDuration = Date.now() - funcStartTime;
