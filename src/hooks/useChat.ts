@@ -643,43 +643,45 @@ export const useChat = () => {
                   if (STREAM_DEBUG) {
                     console.log("✂️ [SPLIT] Detected split! New completed part:", processed.completedParts.length);
                   }
-                  // A new part was completed - finalize the previous message and create new one
+                  // A new part was completed - convert the current streaming message to completed
                   const newPart = processed.completedParts[processed.completedParts.length - 1];
                   completedParts = processed.completedParts;
                   
-                  // Finalize the previous message if it exists
+                  // Update the existing streaming message to be the completed part
                   if (messageIds.length > 0) {
-                    const prevMessageId = messageIds[messageIds.length - 1];
+                    const completedMessageId = messageIds[messageIds.length - 1];
                     setChatMessages(prev => {
-                      const existingIndex = prev.findIndex(msg => msg.id === prevMessageId);
+                      const existingIndex = prev.findIndex(msg => msg.id === completedMessageId);
                       if (existingIndex >= 0) {
                         const updated = [...prev];
                         updated[existingIndex] = {
                           ...updated[existingIndex],
+                          text: newPart,
                           isStreaming: false
                         };
+                        if (STREAM_DEBUG) {
+                          console.log("✅ [SPLIT] Finalized message:", completedMessageId);
+                        }
                         return updated;
                       }
                       return prev;
                     });
+                  } else {
+                    // No existing message, create a new one for the completed part
+                    const newMessageId = `${baseMessageId}-${completedParts.length}`;
+                    messageIds.push(newMessageId);
+                    setChatMessages(prev => {
+                      const newMessage: ChatMessage = {
+                        id: newMessageId,
+                        sender: "finny" as const,
+                        text: newPart,
+                        timestamp: Date.now(),
+                        type: "text" as const,
+                        isStreaming: false
+                      };
+                      return [...prev, newMessage];
+                    });
                   }
-                  
-                  // Create new message ID for the completed part
-                  const newMessageId = `${baseMessageId}-${completedParts.length}`;
-                  messageIds.push(newMessageId);
-                  
-                  // Add the completed part as a finalized message
-                  setChatMessages(prev => {
-                    const newMessage: ChatMessage = {
-                      id: newMessageId,
-                      sender: "finny" as const,
-                      text: newPart,
-                      timestamp: Date.now(),
-                      type: "text" as const,
-                      isStreaming: false
-                    };
-                    return [...prev, newMessage];
-                  });
                 }
                 
                 // Update or create the current streaming message

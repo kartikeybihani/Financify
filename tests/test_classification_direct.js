@@ -6,7 +6,7 @@
 // Configuration
 const OPENROUTER_API_KEY =
   "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";
-const OPENROUTER_MODEL = "meta-llama/llama-3.3-8b-instruct:free";
+const OPENROUTER_MODEL = "meta-llama/llama-3.3-70b-instruct:free";
 
 // Cache for testing
 const classificationCache = new Map();

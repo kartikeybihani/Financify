@@ -112,7 +112,7 @@ function redactPII(text) {
 const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL;
 
 // Memory extraction model - small, fast, free
-const SMALLER_MODEL = "meta-llama/llama-3.3-8b-instruct:free";
+const SMALLER_MODEL = "meta-llama/llama-3.3-70b-instruct:free";
 
 // Session summarization model (LLM) via OpenRouter
 const SUMMARY_MODEL = "deepseek/deepseek-r1-0528-qwen3-8b:free";
