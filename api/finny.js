@@ -5831,75 +5831,92 @@ async function planStockRequest(message) {
       !!process.env.OPENROUTER_GROK_KEY
     );
 
-    const r = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${process.env.OPENROUTER_GROK_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: OPENROUTER_MODEL || "meta-llama/llama-3.3-8b-instruct:free",
-        temperature: 0.1,
-        messages: [
-          {
-            role: "system",
-            content: [
-              "You are a stock request planner.",
-              "Given a user query, decide what the user wants to fetch.",
-              "Return JSON only matching the schema.",
-            ].join("\n"),
-          },
-          { role: "user", content: message },
-        ],
-        response_format: {
-          type: "json_schema",
-          json_schema: {
-            name: "stock_plan",
-            strict: true,
-            schema: {
-              type: "object",
-              additionalProperties: false,
-              properties: {
-                ticker_candidates: { type: "array", items: { type: "string" } },
-                company_candidates: {
-                  type: "array",
-                  items: { type: "string" },
-                },
-                wants: {
-                  type: "array",
-                  items: {
-                    type: "string",
-                    enum: [
-                      "price",
-                      "market_cap",
-                      "pe",
-                      "ps",
-                      "volume",
-                      "52w",
-                      "earnings",
-                      "guidance",
-                      "dividend",
-                      "news",
-                      "filings",
-                      "analyst_targets",
-                      "insider",
-                    ],
+    // Add timeout to prevent hangs
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(
+        () => reject(new Error("Stock planner timeout after 10 seconds")),
+        10000
+      );
+    });
+
+    const fetchPromise = fetch(
+      "https://openrouter.ai/api/v1/chat/completions",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${process.env.OPENROUTER_GROK_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: OPENROUTER_MODEL || "meta-llama/llama-3.3-8b-instruct:free",
+          temperature: 0.1,
+          messages: [
+            {
+              role: "system",
+              content: [
+                "You are a stock request planner.",
+                "Given a user query, decide what the user wants to fetch.",
+                "Return JSON only matching the schema.",
+              ].join("\n"),
+            },
+            { role: "user", content: message },
+          ],
+          response_format: {
+            type: "json_schema",
+            json_schema: {
+              name: "stock_plan",
+              strict: true,
+              schema: {
+                type: "object",
+                additionalProperties: false,
+                properties: {
+                  ticker_candidates: {
+                    type: "array",
+                    items: { type: "string" },
                   },
+                  company_candidates: {
+                    type: "array",
+                    items: { type: "string" },
+                  },
+                  wants: {
+                    type: "array",
+                    items: {
+                      type: "string",
+                      enum: [
+                        "price",
+                        "market_cap",
+                        "pe",
+                        "ps",
+                        "volume",
+                        "52w",
+                        "earnings",
+                        "guidance",
+                        "dividend",
+                        "news",
+                        "filings",
+                        "analyst_targets",
+                        "insider",
+                      ],
+                    },
+                  },
+                  horizon: { type: ["string", "null"] },
+                  needs_web: { type: "boolean" },
                 },
-                horizon: { type: ["string", "null"] },
-                needs_web: { type: "boolean" },
+                required: [
+                  "ticker_candidates",
+                  "company_candidates",
+                  "wants",
+                  "needs_web",
+                ],
               },
-              required: [
-                "ticker_candidates",
-                "company_candidates",
-                "wants",
-                "needs_web",
-              ],
             },
           },
-        },
-      }),
-    });
+        }),
+      }
+    );
+
+    // Race between fetch and timeout
+    const r = await Promise.race([fetchPromise, timeoutPromise]);
 
     if (!r.ok) {
       const errorText = await r.text();
