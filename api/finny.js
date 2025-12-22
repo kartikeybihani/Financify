@@ -1510,10 +1510,22 @@ export default async function handler(req, res) {
 
             // Hide action buttons and show feedback buttons after confirmation
             // Ensure response is an object before modifying
+            console.log(
+              `🔍 [CONFIRM_STOCK] Response received from handleAsk:`,
+              typeof response,
+              response?.hideActions,
+              response?.hideFeedback
+            );
+
             if (response && typeof response === "object") {
+              // Force set these properties to ensure buttons are hidden
               response.hideActions = true; // Hide action buttons (Yes/Change Ticker)
               response.hideFeedback = false; // Show feedback buttons (thumbs up/down) for final analysis
               response.actions = []; // Clear any actions
+
+              console.log(
+                `✅ [CONFIRM_STOCK] Response flags set - hideActions: ${response.hideActions}, hideFeedback: ${response.hideFeedback}`
+              );
             } else {
               // If response is not an object, wrap it
               response = {
@@ -1523,6 +1535,9 @@ export default async function handler(req, res) {
                 hideFeedback: false,
                 actions: [],
               };
+              console.log(
+                `✅ [CONFIRM_STOCK] Wrapped response with flags - hideActions: ${response.hideActions}, hideFeedback: ${response.hideFeedback}`
+              );
             }
 
             // Only clear state AFTER successful completion
@@ -2401,12 +2416,24 @@ async function handleAsk(
               stockPlan
             );
 
+          // Ensure comprehensive analysis was generated (not just summary)
+          const isComprehensiveAnalysis =
+            conversationalResponse && conversationalResponse.length > 1000;
+          if (!isComprehensiveAnalysis) {
+            console.warn(
+              `⚠️ [STOCK] Response appears to be summary (${
+                conversationalResponse?.length || 0
+              } chars), not comprehensive analysis`
+            );
+          }
+
           const response = {
             message: cleanResponseFormatting(conversationalResponse),
             type: "assistant",
             hideActions: true, // Always hide action buttons for final stock analysis
             hideFeedback: false, // Show feedback buttons for final analysis
             actions: [], // Ensure no actions are present
+            _comprehensiveAnalysis: isComprehensiveAnalysis, // Internal flag for debugging
           };
 
           // 📊 LOGGING: Log button and feedback visibility for final stock response
@@ -5854,8 +5881,15 @@ async function generateConversationalStockResponse(
   stockPlan = null
 ) {
   // Always generate comprehensive analysis using LLM for all stock queries
+  console.log(`\n🔍 [STOCK_ANALYSIS] ========================================`);
   console.log(
     `🔍 [STOCK_ANALYSIS] Generating comprehensive analysis for ${stockData.ticker}`
+  );
+  console.log(`🔍 [STOCK_ANALYSIS] User message: "${userMessage}"`);
+  console.log(
+    `🔍 [STOCK_ANALYSIS] Stock data available: current=${
+      stockData.current
+    }, hasProfile=${!!stockData.profile}, hasMetrics=${!!stockData.metrics}`
   );
 
   // Build the base summary with all available data
@@ -5952,9 +5986,28 @@ Provide a comprehensive, detailed analysis that includes:
 6. **Investment Considerations**: Balanced view of opportunities and risks
 7. **Industry Context**: How the company fits within its industry
 
-Be specific, data-driven, and provide actionable insights. Use the exact data provided above. Format the response in a clear, professional manner with appropriate sections.`;
+Be specific, data-driven, and provide actionable insights. Use the exact data provided above. Format the response in a clear, professional manner with appropriate sections and spacing.`;
 
   try {
+    // Check if API key is available
+    if (!process.env.OPENROUTER_GROK_KEY) {
+      console.error(
+        "❌ [STOCK_ANALYSIS] OPENROUTER_GROK_KEY not found, falling back to summary"
+      );
+      console.log(
+        `⚠️ [STOCK_ANALYSIS] Falling back to base summary (no API key)`
+      );
+      return baseSummary;
+    }
+
+    // Use Llama 3.3 70B for comprehensive stock analysis
+    const STOCK_ANALYSIS_MODEL = "meta-llama/llama-3.3-70b-instruct:free";
+
+    console.log(
+      `🔍 [STOCK_ANALYSIS] Calling LLM API with model: ${STOCK_ANALYSIS_MODEL}`
+    );
+    const llmStartTime = Date.now();
+
     const response = await fetch(
       "https://openrouter.ai/api/v1/chat/completions",
       {
@@ -5964,9 +6017,9 @@ Be specific, data-driven, and provide actionable insights. Use the exact data pr
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: OPENROUTER_MODEL,
+          model: STOCK_ANALYSIS_MODEL,
           temperature: 0.3,
-          max_tokens: 4000, // Allow comprehensive analysis responses
+          max_tokens: 8000, // Allow comprehensive analysis responses
           messages: [
             {
               role: "system",
@@ -5977,6 +6030,11 @@ Be specific, data-driven, and provide actionable insights. Use the exact data pr
           ],
         }),
       }
+    );
+
+    const llmDuration = Date.now() - llmStartTime;
+    console.log(
+      `🔍 [STOCK_ANALYSIS] LLM API response received in ${llmDuration}ms (status: ${response.status})`
     );
 
     if (response.ok) {
@@ -5993,19 +6051,29 @@ Be specific, data-driven, and provide actionable insights. Use the exact data pr
 
       if (content && content.trim()) {
         console.log(
-          `✅ [STOCK_ANALYSIS] Generated comprehensive analysis (length: ${content.length} chars)`
+          `✅ [STOCK_ANALYSIS] Generated comprehensive analysis (length: ${content.length} chars, duration: ${llmDuration}ms)`
         );
         return content;
+      } else {
+        console.error(
+          "❌ [STOCK_ANALYSIS] LLM returned empty content. Response data:",
+          JSON.stringify(data, null, 2).substring(0, 500)
+        );
       }
     } else {
+      const errorText = await response
+        .text()
+        .catch(() => "Unable to read error");
       console.error(
-        "❌ [STOCK_ANALYSIS] LLM API request failed:",
-        response.status,
-        response.statusText
+        `❌ [STOCK_ANALYSIS] LLM API request failed: ${response.status} ${response.statusText}`
+      );
+      console.error(
+        `❌ [STOCK_ANALYSIS] Error details: ${errorText.substring(0, 500)}`
       );
     }
   } catch (error) {
     console.error("❌ [STOCK_ANALYSIS] Analysis generation failed:", error);
+    console.error("❌ [STOCK_ANALYSIS] Error stack:", error.stack);
   }
 
   // Fallback to base summary if LLM fails
