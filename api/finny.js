@@ -5971,15 +5971,20 @@ async function executeStockPlan(plan, message) {
   const wants = plan?.wants || [];
   const preferredTicker = plan?.ticker_candidates?.[0] || null;
   console.log("🔍 [EXECUTE_STOCK] Preferred ticker:", preferredTicker);
+  console.log(`[FINNHUB] Starting stock plan execution for: ${message}`);
 
   const { ticker } = preferredTicker
     ? { ticker: preferredTicker }
     : await resolveTickerForQuery(message);
 
   console.log("🔍 [EXECUTE_STOCK] Final ticker:", ticker);
-  if (!ticker) return { error: "Could not resolve ticker" };
+  if (!ticker) {
+    console.error(`[FINNHUB] Could not resolve ticker for: ${message}`);
+    return { error: "Could not resolve ticker" };
+  }
 
   // Base snapshot always
+  console.log(`[FINNHUB] Fetching base snapshot for ticker: ${ticker}`);
   const base = await fetchStockSnapshot(ticker);
   if (base?.error) return base;
 
@@ -5991,20 +5996,36 @@ async function executeStockPlan(plan, message) {
 
   // Earnings
   if (wants.includes("earnings")) {
+    console.log(`[FINNHUB] Fetching earnings for ${ticker}`);
     extra.earnings = await fetchJson(
       `https://finnhub.io/api/v1/stock/earnings?symbol=${ticker}&token=${apiKey}`
+    );
+    console.log(
+      `[FINNHUB] Earnings ${
+        extra.earnings ? "fetched" : "failed"
+      } for ${ticker}`
     );
   }
   // Filings
   if (wants.includes("filings")) {
+    console.log(`[FINNHUB] Fetching filings for ${ticker}`);
     extra.filings = await fetchJson(
       `https://finnhub.io/api/v1/filings?symbol=${ticker}&token=${apiKey}`
+    );
+    console.log(
+      `[FINNHUB] Filings ${extra.filings ? "fetched" : "failed"} for ${ticker}`
     );
   }
   // Insider
   if (wants.includes("insider")) {
+    console.log(`[FINNHUB] Fetching insider transactions for ${ticker}`);
     extra.insider = await fetchJson(
       `https://finnhub.io/api/v1/stock/insider-transactions?symbol=${ticker}&token=${apiKey}`
+    );
+    console.log(
+      `[FINNHUB] Insider transactions ${
+        extra.insider ? "fetched" : "failed"
+      } for ${ticker}`
     );
   }
 
