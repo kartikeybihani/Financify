@@ -4863,8 +4863,15 @@ async function handleClassify(message, context, conversationContext = null) {
   // Check cache first
   const cachedResult = getCachedClassification(text);
   if (cachedResult) {
-    // Validate cached result structure before using it
-    if (
+    // INVALIDATE old heuristic-based cache entries - they were created with rigid code
+    if (cachedResult.heuristic === true) {
+      console.log(
+        "⚠️ [FINNY] Invalidating old heuristic-based cache entry (using new LLM-based classification)"
+      );
+      const key = generateClassificationCacheKey(text);
+      classificationCache.delete(key);
+      // Continue to LLM classification below
+    } else if (
       cachedResult.intent &&
       typeof cachedResult.intent === "string" &&
       cachedResult.needs_web !== undefined &&
