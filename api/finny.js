@@ -2104,16 +2104,10 @@ async function handleAsk(
         let stockPlan = null;
         const stockOverride = context?.stock_override?.ticker || null;
 
-        // Try deep query first
-        if (looksLikeStockDeepQuery(message)) {
+        // Try deep query first (but skip planning if we already have ticker from confirmation)
+        if (looksLikeStockDeepQuery(message) && !stockOverride) {
           logDebug("🔍 [STOCK] Deep query detected, using advanced analysis");
           stockPlan = await planStockRequest(message);
-          if (stockOverride) {
-            stockPlan = {
-              ...(stockPlan || {}),
-              ticker_candidates: [stockOverride],
-            };
-          }
           logDebug("🔍 [STOCK] Stock plan result:", stockPlan);
           const exec = await executeStockPlan(stockPlan || {}, message);
           logDebug("🔍 [STOCK] Execute result:", exec);
@@ -2173,6 +2167,25 @@ async function handleAsk(
               : "Unknown reason";
             console.log(
               `🔄 [STOCK] Stock plan check failed (${reason}), falling back to simple query or fallback`
+            );
+          }
+        } else if (stockOverride) {
+          // When we have stockOverride (from confirmation), skip planning and fetch directly for faster response
+          logDebug(
+            "🔍 [STOCK] Using stockOverride, skipping planStockRequest for faster response"
+          );
+          const snapshot = await fetchStockSnapshot(stockOverride);
+          if (snapshot && !snapshot.error && snapshot.current != null) {
+            stockData = {
+              ...snapshot,
+              ticker: stockOverride,
+            };
+            console.log(
+              `✅ [STOCK] Using stockData from stockOverride (price: ${snapshot.current})`
+            );
+          } else {
+            console.log(
+              `⚠️ [STOCK] Stock snapshot failed for override ticker ${stockOverride}, will try simple query path`
             );
           }
         } else {
