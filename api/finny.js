@@ -1508,11 +1508,21 @@ export default async function handler(req, res) {
               wantsStreaming
             );
 
-            // Hide action buttons and feedback buttons after confirmation
+            // Hide action buttons and show feedback buttons after confirmation
+            // Ensure response is an object before modifying
             if (response && typeof response === "object") {
-              response.hideActions = true;
-              response.hideFeedback = true;
-              response.actions = [];
+              response.hideActions = true; // Hide action buttons (Yes/Change Ticker)
+              response.hideFeedback = false; // Show feedback buttons (thumbs up/down) for final analysis
+              response.actions = []; // Clear any actions
+            } else {
+              // If response is not an object, wrap it
+              response = {
+                message: response || "Stock analysis completed",
+                type: "assistant",
+                hideActions: true,
+                hideFeedback: false,
+                actions: [],
+              };
             }
 
             // Only clear state AFTER successful completion
@@ -2394,6 +2404,9 @@ async function handleAsk(
           const response = {
             message: cleanResponseFormatting(conversationalResponse),
             type: "assistant",
+            hideActions: true, // Always hide action buttons for final stock analysis
+            hideFeedback: false, // Show feedback buttons for final analysis
+            actions: [], // Ensure no actions are present
           };
 
           // 📊 LOGGING: Log button and feedback visibility for final stock response
@@ -5840,8 +5853,164 @@ async function generateConversationalStockResponse(
   investmentHoldings,
   stockPlan = null
 ) {
-  // Use deterministic summary only; no additional prompting
-  return buildStockDataSummary(stockData, stockPlan);
+  // Always generate comprehensive analysis using LLM for all stock queries
+  console.log(
+    `🔍 [STOCK_ANALYSIS] Generating comprehensive analysis for ${stockData.ticker}`
+  );
+
+  // Build the base summary with all available data
+  const baseSummary = buildStockDataSummary(stockData, stockPlan);
+
+  // Format stock data for LLM context
+  const stockDataContext = {
+    ticker: stockData.ticker,
+    name: stockData.profile?.name || stockData.ticker,
+    currentPrice: stockData.current,
+    change: stockData.change,
+    changePercent: stockData.changePercent,
+    high: stockData.high,
+    low: stockData.low,
+    prevClose: stockData.prevClose,
+    open: stockData.open,
+    industry: stockData.profile?.finnhubIndustry,
+    marketCap: stockData.profile?.marketCapitalization,
+    employees: stockData.profile?.employeeTotal,
+    description: stockData.profile?.description,
+    peRatio:
+      stockData.metrics?.peBasicExclExtraTTM || stockData.metrics?.peBasicTTM,
+    psRatio: stockData.metrics?.psTTM,
+    recommendations: stockData.recommendations?.[0] || null,
+    news: stockData.news || [],
+    earnings: stockData.extra?.earnings || null,
+    filings: stockData.extra?.filings || null,
+    insider: stockData.extra?.insider || null,
+  };
+
+  // Build comprehensive analysis prompt
+  const analysisPrompt = `You are a financial analyst providing comprehensive stock analysis. Based on the following stock data for ${
+    stockDataContext.ticker
+  }, provide a detailed, comprehensive analysis.
+
+Stock Data:
+- Company: ${stockDataContext.name} (${stockDataContext.ticker})
+- Current Price: $${stockDataContext.currentPrice || "N/A"}${
+    stockDataContext.changePercent
+      ? ` (${
+          stockDataContext.changePercent > 0 ? "+" : ""
+        }${stockDataContext.changePercent.toFixed(2)}%)`
+      : ""
+  }
+- Industry: ${stockDataContext.industry || "N/A"}
+${
+  stockDataContext.marketCap
+    ? `- Market Cap: $${stockDataContext.marketCap.toLocaleString()}`
+    : ""
+}
+${
+  stockDataContext.peRatio
+    ? `- P/E Ratio: ${stockDataContext.peRatio.toFixed(2)}`
+    : ""
+}
+${
+  stockDataContext.psRatio
+    ? `- P/S Ratio: ${stockDataContext.psRatio.toFixed(2)}`
+    : ""
+}
+${
+  stockDataContext.recommendations
+    ? `- Analyst Recommendations: ${
+        stockDataContext.recommendations.strongBuy || 0
+      } Strong Buy, ${stockDataContext.recommendations.buy || 0} Buy, ${
+        stockDataContext.recommendations.hold || 0
+      } Hold, ${stockDataContext.recommendations.sell || 0} Sell, ${
+        stockDataContext.recommendations.strongSell || 0
+      } Strong Sell`
+    : ""
+}
+${
+  stockDataContext.description
+    ? `- Company Description: ${stockDataContext.description.substring(0, 500)}`
+    : ""
+}
+${
+  stockDataContext.news && stockDataContext.news.length > 0
+    ? `- Recent News Headlines: ${stockDataContext.news
+        .slice(0, 3)
+        .map((n) => n.headline)
+        .join("; ")}`
+    : ""
+}
+
+User Query: ${userMessage}
+
+Provide a comprehensive, detailed analysis that includes:
+1. **Current Market Position**: Current price, recent performance, and market trends
+2. **Financial Metrics**: Detailed analysis of P/E, P/S ratios and what they indicate
+3. **Valuation Assessment**: Market cap, company size, and valuation context
+4. **Analyst Sentiment**: Breakdown of analyst recommendations and what they mean
+5. **Recent Developments**: Key news and events affecting the stock
+6. **Investment Considerations**: Balanced view of opportunities and risks
+7. **Industry Context**: How the company fits within its industry
+
+Be specific, data-driven, and provide actionable insights. Use the exact data provided above. Format the response in a clear, professional manner with appropriate sections.`;
+
+  try {
+    const response = await fetch(
+      "https://openrouter.ai/api/v1/chat/completions",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${process.env.OPENROUTER_GROK_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: OPENROUTER_MODEL,
+          temperature: 0.3,
+          max_tokens: 4000, // Allow comprehensive analysis responses
+          messages: [
+            {
+              role: "system",
+              content:
+                "You are a financial analyst providing comprehensive, detailed stock analysis. Always use the exact data provided and give thorough, actionable insights. Be specific and data-driven.",
+            },
+            { role: "user", content: analysisPrompt },
+          ],
+        }),
+      }
+    );
+
+    if (response.ok) {
+      const data = await response.json();
+      const content = data.choices?.[0]?.message?.content;
+      const finishReason = data.choices?.[0]?.finish_reason;
+
+      // Check if response was truncated
+      if (finishReason === "length") {
+        console.warn(
+          "⚠️ [STOCK_ANALYSIS] Comprehensive analysis response was truncated due to token limit"
+        );
+      }
+
+      if (content && content.trim()) {
+        console.log(
+          `✅ [STOCK_ANALYSIS] Generated comprehensive analysis (length: ${content.length} chars)`
+        );
+        return content;
+      }
+    } else {
+      console.error(
+        "❌ [STOCK_ANALYSIS] LLM API request failed:",
+        response.status,
+        response.statusText
+      );
+    }
+  } catch (error) {
+    console.error("❌ [STOCK_ANALYSIS] Analysis generation failed:", error);
+  }
+
+  // Fallback to base summary if LLM fails
+  console.log(`⚠️ [STOCK_ANALYSIS] Falling back to base summary`);
+  return baseSummary;
 }
 
 // Fallback function for when stock APIs fail
