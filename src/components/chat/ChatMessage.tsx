@@ -340,6 +340,7 @@ interface ChatMessageProps {
       amount: number | null;
       showButton: boolean;
     };
+    hideFeedback?: boolean; // Hide feedback buttons for confirmation messages
   };
   showSender?: boolean;
   onAction?: (action: string, message?: ChatMessageProps["message"]) => void;
@@ -616,25 +617,31 @@ export const ChatMessageComponent = memo(
                   <BubbleTail side="left" color={finnyTailColor} />
                 )}
               </View>
-              {/* Feedback buttons - hide for initial welcome message */}
-              {isLastInGroup && message.id !== "welcome" && (
-                <View style={styles.feedbackButtons}>
-                  <TouchableOpacity
-                    style={styles.feedbackButton}
-                    onPress={() => onThumbUp?.(message.id)}
-                    activeOpacity={0.7}
-                  >
-                    <FontAwesome name="thumbs-o-up" size={15} color="#888" />
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.feedbackButton}
-                    onPress={() => onThumbDown?.(message.id)}
-                    activeOpacity={0.7}
-                  >
-                    <FontAwesome name="thumbs-o-down" size={15} color="#888" />
-                  </TouchableOpacity>
-                </View>
-              )}
+              {/* Feedback buttons - hide for initial welcome message and confirmation messages */}
+              {isLastInGroup &&
+                message.id !== "welcome" &&
+                !message.hideFeedback && (
+                  <View style={styles.feedbackButtons}>
+                    <TouchableOpacity
+                      style={styles.feedbackButton}
+                      onPress={() => onThumbUp?.(message.id)}
+                      activeOpacity={0.7}
+                    >
+                      <FontAwesome name="thumbs-o-up" size={15} color="#888" />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.feedbackButton}
+                      onPress={() => onThumbDown?.(message.id)}
+                      activeOpacity={0.7}
+                    >
+                      <FontAwesome
+                        name="thumbs-o-down"
+                        size={15}
+                        color="#888"
+                      />
+                    </TouchableOpacity>
+                  </View>
+                )}
             </View>
           </View>
           {message.stockCandidate?.ticker && (
@@ -753,25 +760,27 @@ export const ChatMessageComponent = memo(
                 <BubbleTail side="left" color={finnyTailColor} />
               )}
             </View>
-            {/* Feedback buttons - hide for initial welcome message */}
-            {isLastInGroup && message.id !== "welcome" && (
-              <View style={styles.feedbackButtons}>
-                <TouchableOpacity
-                  style={styles.feedbackButton}
-                  onPress={() => onThumbUp?.(message.id)}
-                  activeOpacity={0.7}
-                >
-                  <FontAwesome name="thumbs-o-up" size={15} color="#888" />
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.feedbackButton}
-                  onPress={() => onThumbDown?.(message.id)}
-                  activeOpacity={0.7}
-                >
-                  <FontAwesome name="thumbs-o-down" size={15} color="#888" />
-                </TouchableOpacity>
-              </View>
-            )}
+            {/* Feedback buttons - hide for initial welcome message and confirmation messages */}
+            {isLastInGroup &&
+              message.id !== "welcome" &&
+              !message.hideFeedback && (
+                <View style={styles.feedbackButtons}>
+                  <TouchableOpacity
+                    style={styles.feedbackButton}
+                    onPress={() => onThumbUp?.(message.id)}
+                    activeOpacity={0.7}
+                  >
+                    <FontAwesome name="thumbs-o-up" size={15} color="#888" />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.feedbackButton}
+                    onPress={() => onThumbDown?.(message.id)}
+                    activeOpacity={0.7}
+                  >
+                    <FontAwesome name="thumbs-o-down" size={15} color="#888" />
+                  </TouchableOpacity>
+                </View>
+              )}
           </View>
         </Animated.View>
       </Animated.View>

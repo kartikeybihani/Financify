@@ -2048,13 +2048,14 @@ async function handleAsk(
 
         // Improved confirmation message with ticker displayed
         const tickerDisplay = stockCandidate.ticker;
-        const confirmationMessage = `I found **${tickerDisplay}** in your message. Would you like me to analyze this stock?`;
+        const confirmationMessage = `Okay! Just wanted to confirm, you want me to analyze **${tickerDisplay}**?`;
 
         return {
           message: confirmationMessage,
           type: "assistant",
           intent: "ask_personalized",
           stock_candidate: { ticker: stockCandidate.ticker },
+          hideFeedback: true, // Hide feedback buttons for confirmation messages
           actions: [
             {
               label: "Yes",
@@ -2872,8 +2873,25 @@ function cleanResponseFormatting(response) {
   cleaned = cleaned.replace(/```[\s\S]*?```/g, "");
   cleaned = cleaned.replace(/`([^`]+)`/g, "$1");
 
-  // Remove markdown tables (| col1 | col2 |)
-  cleaned = cleaned.replace(/\|.*\|/g, "");
+  // Convert markdown tables to plain text format (preserve content, remove table formatting)
+  // Process table rows line by line to preserve content
+  cleaned = cleaned
+    .split("\n")
+    .map((line) => {
+      // If line contains table separators (|), convert to readable format
+      if (line.includes("|") && line.trim().startsWith("|")) {
+        // Extract cells from table row
+        const cells = line
+          .split("|")
+          .map((cell) => cell.trim())
+          .filter((cell) => cell && !cell.match(/^[-:]+$/)); // Remove separator rows
+        if (cells.length > 0) {
+          return cells.join(" | ");
+        }
+      }
+      return line;
+    })
+    .join("\n");
 
   // Remove horizontal rules (--- or ***)
   cleaned = cleaned.replace(/^[-*]{3,}$/gm, "");
@@ -5713,6 +5731,7 @@ Provide a detailed analysis including:
         body: JSON.stringify({
           model: OPENROUTER_MODEL,
           temperature: 0.3,
+          max_tokens: 4000, // Allow comprehensive analysis responses
           messages: [
             {
               role: "system",
@@ -5727,9 +5746,27 @@ Provide a detailed analysis including:
 
     if (response.ok) {
       const data = await response.json();
-      return (
-        data.choices?.[0]?.message?.content ||
-        generateTrainingDataStockAnalysis(ticker, userMessage)
+      const content = data.choices?.[0]?.message?.content;
+      const finishReason = data.choices?.[0]?.finish_reason;
+
+      // Check if response was truncated
+      if (finishReason === "length") {
+        console.warn(
+          "⚠️ [FALLBACK] Stock analysis response was truncated due to token limit"
+        );
+      }
+
+      if (content && content.trim()) {
+        return content;
+      }
+
+      // Fallback to training data if no content
+      return generateTrainingDataStockAnalysis(ticker, userMessage);
+    } else {
+      console.error(
+        "❌ [FALLBACK] API request failed:",
+        response.status,
+        response.statusText
       );
     }
   } catch (error) {
