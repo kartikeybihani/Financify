@@ -639,6 +639,7 @@ export const ChatMessageComponent = memo(
           </View>
           {message.stockCandidate?.ticker && (
             <View style={styles.tickerBadge}>
+              <Text style={styles.tickerBadgeLabel}>TICKER:</Text>
               <Text style={styles.tickerBadgeText}>
                 {message.stockCandidate.ticker}
               </Text>
@@ -896,20 +897,30 @@ const styles = StyleSheet.create({
   tickerBadge: {
     alignSelf: "flex-start",
     marginLeft: 12,
-    marginTop: 4,
-    marginBottom: 2,
-    paddingHorizontal: responsivePadding(10),
-    paddingVertical: responsivePadding(6),
-    borderRadius: 12,
-    backgroundColor: "rgba(255, 255, 255, 0.12)",
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.2)",
+    marginTop: 8,
+    marginBottom: 4,
+    paddingHorizontal: responsivePadding(16),
+    paddingVertical: responsivePadding(12),
+    borderRadius: 14,
+    backgroundColor: "rgba(255, 255, 255, 0.15)",
+    borderWidth: 1.5,
+    borderColor: "rgba(255, 255, 255, 0.3)",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    minWidth: 120,
+  },
+  tickerBadgeLabel: {
+    color: "rgba(255, 255, 255, 0.7)",
+    fontWeight: "500",
+    fontSize: responsiveFontSize(11),
+    letterSpacing: 0.3,
   },
   tickerBadgeText: {
     color: "#FFFFFF",
-    fontWeight: "600",
-    fontSize: responsiveFontSize(12),
-    letterSpacing: 0.5,
+    fontWeight: "700",
+    fontSize: responsiveFontSize(16),
+    letterSpacing: 1,
   },
 });
 

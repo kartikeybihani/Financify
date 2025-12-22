@@ -675,22 +675,6 @@ async function cleanupSupabaseCache() {
 }
 
 // Comprehensive cache cleanup (both in-memory and Supabase)
-async function cleanupAllCaches() {
-  logInfo("🧹 [CACHE] Starting comprehensive cache cleanup...");
-
-  const inMemoryCleaned = await cleanupInMemoryCache();
-  const supabaseCleaned = await cleanupSupabaseCache();
-
-  logInfo(
-    `✅ [CACHE] Cleanup complete - In-memory: ${inMemoryCleaned}, Supabase: ${supabaseCleaned}`
-  );
-
-  return {
-    inMemoryCleaned,
-    supabaseCleaned,
-    totalCleaned: inMemoryCleaned + supabaseCleaned,
-  };
-}
 
 // Smart cache invalidation for specific user or data type
 async function invalidateUserCache(userId, dataType = null) {
@@ -1541,7 +1525,7 @@ export default async function handler(req, res) {
                   style: "primary",
                 },
                 {
-                  label: "Change",
+                  label: "Change Ticker",
                   action: "change_stock",
                   style: "secondary",
                 },
@@ -1571,7 +1555,7 @@ export default async function handler(req, res) {
               intent: "ask_personalized",
               actions: [
                 {
-                  label: "Change",
+                  label: "Change Ticker",
                   action: "change_stock",
                   style: "secondary",
                 },
@@ -1593,7 +1577,7 @@ export default async function handler(req, res) {
 
           // Improved confirmation message with ticker displayed
           const tickerDisplay = updatedTicker;
-          const confirmationMessage = `I detected **${tickerDisplay}**. Want me to analyze this stock?`;
+          const confirmationMessage = `I found **${tickerDisplay}**. Would you like me to analyze this stock?`;
 
           response = {
             message: confirmationMessage,
@@ -1607,7 +1591,7 @@ export default async function handler(req, res) {
                 style: "primary",
               },
               {
-                label: "Change",
+                label: "Change Ticker",
                 action: "change_stock",
                 style: "secondary",
               },
@@ -2064,7 +2048,7 @@ async function handleAsk(
 
         // Improved confirmation message with ticker displayed
         const tickerDisplay = stockCandidate.ticker;
-        const confirmationMessage = `I detected **${tickerDisplay}**. Want me to analyze this stock?`;
+        const confirmationMessage = `I found **${tickerDisplay}** in your message. Would you like me to analyze this stock?`;
 
         return {
           message: confirmationMessage,
@@ -2078,7 +2062,7 @@ async function handleAsk(
               style: "primary",
             },
             {
-              label: "Change",
+              label: "Change Ticker",
               action: "change_stock",
               style: "secondary",
             },
@@ -3083,237 +3067,6 @@ function detectWebSearchNeeded(message) {
 }
 
 // Enhanced off-topic detection with confidence scoring
-function detectOffTopic(message, conversationContext = null) {
-  const lower = message.toLowerCase();
-
-  // Comprehensive financial terms list - if message contains any, it's NOT off-topic
-  const financeTerms = [
-    // Core financial terms
-    "money",
-    "financial",
-    "finance",
-    "finances",
-    "wealth",
-    "budget",
-    "budgeting",
-    "expense",
-    "expenses",
-    "income",
-    "salary",
-    "wage",
-    "earn",
-    "earning",
-    "debt",
-    "loan",
-    "mortgage",
-    "rent",
-    "renting",
-    "lease",
-    "payment",
-    "payments",
-    "cost",
-    "costs",
-    "price",
-    "prices",
-    "expensive",
-    "cheap",
-    "afford",
-    "affordable",
-    "save",
-    "saving",
-    "spend",
-    "spent",
-    "spending",
-    "invest",
-    "investment",
-    "investments",
-    "account",
-    "accounts",
-    "balance",
-    "net worth",
-    "credit",
-    "debit",
-    "card",
-    "cards",
-    "transaction",
-    "transactions",
-    "bill",
-    "cash",
-    "dollar",
-    "dollars",
-    "cent",
-    "cents",
-    // Investment terms
-    "stock",
-    "stocks",
-    "ira",
-    "401k",
-    "roth",
-    "rate",
-    "rates",
-    "limit",
-    "limits",
-    // Purchase/housing terms
-    "buy",
-    "buying",
-    "purchase",
-    "house",
-    "home",
-    // Goal terms
-    "goal",
-    "goals",
-    "achieve",
-  ];
-
-  // If message contains financial terms, it's NOT off-topic
-  if (financeTerms.some((term) => lower.includes(term))) {
-    return { isOffTopic: false, confidence: 0.0 };
-  }
-
-  // Strong off-topic indicators (high confidence)
-  const strongOffTopicPatterns = [
-    // Weather & environment
-    "what's the weather",
-    "weather today",
-    "weather forecast",
-    "temperature today",
-    "is it raining",
-    "is it sunny",
-    "what's the weather like",
-
-    // Cooking & food
-    "recipe for",
-    "cooking",
-    "baking",
-
-    // Entertainment
-    "what movie",
-    "netflix",
-    "tv show",
-    "entertainment",
-    "cinema",
-    "actor",
-    "actress",
-    "director",
-    "oscar",
-    "award",
-    "film",
-
-    // Philosophy / existential
-    "meaning of life",
-    "purpose of life",
-    "existential",
-
-    // AI meta
-    "surpass human intelligence",
-    "are you an ai",
-    "do you know that you're an ai",
-    "can you learn from our previous conversations",
-
-    // Humor / riddles
-    "why did the chicken cross the road",
-    "riddle",
-    "tell me a joke",
-    "amuse me",
-
-    // Technical support
-    "computer",
-    "laptop",
-    "phone",
-    "internet",
-    "wifi",
-    "password",
-    "login",
-    "software",
-    "app",
-    "download",
-    "install",
-    "update",
-    "virus",
-    "bug",
-
-    // Academic
-    "homework",
-    "assignment",
-    "school",
-    "university",
-    "college",
-    "study",
-    "exam",
-    "test",
-    "grade",
-    "teacher",
-    "professor",
-  ];
-
-  if (strongOffTopicPatterns.some((p) => lower.includes(p))) {
-    return { isOffTopic: true, confidence: 0.9 }; // High confidence
-  }
-
-  // Weak off-topic indicators (medium confidence)
-  const weakOffTopicPatterns = [
-    // General greetings (might be followed by financial question)
-    "hello",
-    "hi",
-    "hey",
-    "how are you",
-    "what's up",
-    "good morning",
-    "good evening",
-
-    // Broad weather
-    "weather",
-    "forecast",
-
-    // Ethics / morality
-    "acceptable to lie",
-    "is it ok to lie",
-    "is it ever acceptable",
-    "ethical",
-    "morality",
-    "moral",
-
-    // Emotions (but could be financial stress)
-    "feeling really down",
-    "depressed",
-    "anxious",
-    "anxiety",
-    "sad",
-
-    // Culture / etiquette
-    "best practices for greeting",
-    "etiquette",
-    "cultural",
-
-    // General chat
-    "joke",
-    "funny",
-    "laugh",
-    "humor",
-  ];
-
-  if (weakOffTopicPatterns.some((p) => lower.includes(p))) {
-    return { isOffTopic: true, confidence: 0.6 }; // Medium confidence
-  }
-
-  // Trust/meta questions (medium-high confidence)
-  const trustPatterns = [
-    "can i trust you",
-    "are you trustworthy",
-    "can we trust",
-    "is this trustworthy",
-    "are you reliable",
-    "can i trust this",
-    "can i rely on you",
-  ];
-
-  if (trustPatterns.some((p) => lower.includes(p))) {
-    return { isOffTopic: true, confidence: 0.75 }; // Medium-high confidence
-  }
-
-  // No off-topic detected
-  return { isOffTopic: false, confidence: 0.0 };
-}
 
 // === CONTEXT PLANNER ===
 // Deterministic context planning to fix "sometimes it works" issue
@@ -4116,183 +3869,6 @@ async function cacheOperationData(operation, data) {
   await setCachedUserData(cfg.cacheType, operation.userId, data, params);
 }
 
-function isStockActionable(message) {
-  return /\b(should|buy|invest|investing|investment|purchase|sell|hold)\b/i.test(
-    message || ""
-  );
-}
-
-// Heuristic: detect clearly in-scope financial concept questions to avoid false off-topic
-function financialConceptHeuristic(raw) {
-  const text = (raw || "").toLowerCase();
-  if (!text) return null;
-
-  const stockDetection = detectStockCandidate(raw);
-  if (stockDetection) {
-    const actionable = isStockActionable(raw);
-    return {
-      intent: "stock_query",
-      intent_type: actionable ? "actionable" : "exploratory",
-      emotional_state: "neutral",
-      needs_web: false,
-      needs_user_data: actionable,
-      state: null,
-      entities: stockDetection.entities || [],
-      ticker: stockDetection.ticker,
-      confidence: stockDetection.confidence,
-      heuristic: true,
-    };
-  }
-
-  if (detectOffTopic(raw)) {
-    return {
-      intent: "off_topic",
-      intent_type: null,
-      emotional_state: "neutral",
-      needs_web: false,
-      needs_user_data: false,
-      state: null,
-      entities: [],
-      ticker: null,
-      confidence: 0.9,
-      heuristic: true,
-    };
-  }
-
-  // Investment advice queries - should NOT need web search
-  const investmentAdvicePatterns = [
-    "investment advice",
-    "investing advice",
-    "investment recommendations",
-    "what should i invest in",
-    "investment suggestions",
-    "portfolio advice",
-    "investment guidance",
-    "investment help",
-    "investing help",
-    "what to invest in",
-    "investment tips",
-    "investing tips",
-  ];
-
-  if (investmentAdvicePatterns.some((pattern) => text.includes(pattern))) {
-    return {
-      intent: "ask_personalized",
-      intent_type: "actionable",
-      emotional_state: "neutral",
-      needs_web: false,
-      needs_user_data: true,
-      state: null,
-      entities: [],
-      ticker: null,
-      confidence: 0.9,
-      heuristic: true,
-    };
-  }
-
-  // Personal financial data queries - should NOT need web search
-  const personalFinancialPatterns = [
-    "my net worth",
-    "net worth",
-    "my spend",
-    "my spending",
-    "my transaction",
-    "my balance",
-    "my account",
-    "my money",
-    "my financial",
-    "how much did i",
-    "what did i spend",
-    "my expenses",
-    "my income",
-    "my assets",
-    "my goals",
-    "current goals",
-    "what are my goals",
-  ];
-
-  const isPersonalQuery = personalFinancialPatterns.some((pattern) =>
-    text.includes(pattern)
-  );
-
-  if (isPersonalQuery) {
-    return {
-      intent: "ask_personalized",
-      intent_type: "exploratory",
-      emotional_state: "neutral",
-      needs_web: false,
-      needs_user_data: true,
-      state: null,
-      entities: [],
-      ticker: null,
-      confidence: 0.9,
-      heuristic: true,
-    };
-  }
-
-  // If contains these finance keywords, treat as in-scope concept unless it's about app/tech
-  const financeKeywords = [
-    "credit",
-    "debit",
-    "card",
-    "apr",
-    "interest",
-    "loan",
-    "mortgage",
-    "budget",
-    "budgeting",
-    "saving",
-    "savings",
-    "checking",
-    "account",
-    "fico",
-    "credit score",
-    "bnpl",
-    "tax",
-    "ira",
-    "401k",
-    "roth",
-    "brokerage",
-    "stock",
-    "stocks",
-    "etf",
-    "mutual fund",
-    "dividend",
-    "net worth",
-    "cashflow",
-    "cash flow",
-  ];
-
-  const hasFinanceKeyword = financeKeywords.some((k) => text.includes(k));
-
-  // Specific: credit vs debit concept
-  const creditAndDebit = text.includes("credit") && text.includes("debit");
-  const vsOrDifference =
-    creditAndDebit &&
-    (text.includes(" vs ") ||
-      text.includes("difference") ||
-      text.includes("b/w") ||
-      text.includes("between"));
-
-  if (vsOrDifference || hasFinanceKeyword) {
-    // Classify based on whether it's personal or general
-    return {
-      intent: "ask_personalized",
-      intent_type: "exploratory",
-      emotional_state: "neutral",
-      needs_web: false,
-      needs_user_data: isPersonalQuery,
-      state: null,
-      entities: [],
-      ticker: null,
-      confidence: 0.85,
-      heuristic: true,
-    };
-  }
-
-  return null;
-}
-
 function detectConversationTopic(message, conversationContext) {
   const text = message.toLowerCase();
 
@@ -4536,117 +4112,6 @@ function detectConversationTopic(message, conversationContext) {
     entity: {},
     pending_action: null,
   };
-}
-
-function detectGoalIntent(message, conversationContext) {
-  const lower = message.toLowerCase();
-
-  // Check if there's an active goal flow in session state
-  const activeGoalFlow = conversationContext?.goal_flow;
-  const isContinuingGoalFlow = activeGoalFlow && activeGoalFlow.active;
-
-  // 0.5. Check for advice-seeking patterns FIRST (these override goal creation patterns)
-  const adviceSeekingPatterns = [
-    /\bshould\s+i\s+(?:save|buy|invest|spend)/i, // "Should I save/buy/invest"
-    /\bis\s+it\s+(?:worth|smart|good|wise)/i, // "Is it worth/smart/good"
-    /\bcan\s+i\s+afford/i, // "Can I afford"
-    /\bwhat'?s?\s+a\s+good/i, // "What's a good"
-    /\bhow\s+much\s+(?:should|can|could)/i, // "How much should/can/could"
-  ];
-
-  if (adviceSeekingPatterns.some((p) => p.test(message))) {
-    console.log(
-      "✅ [GOAL] Advice-seeking pattern detected → routing to ask_personalized"
-    );
-    return {
-      intent: "ask_personalized",
-      confidence: 0.9,
-      reason: "advice_query",
-    };
-  }
-
-  // 1. EXPLICIT goal creation patterns (high confidence)
-  const explicitGoalPatterns = [
-    /\b(?:create|set|add|make)\s+(?:a\s+)?(?:new\s+)?goal/i,
-    /\bgoal\s+(?:for|to)\s+(?:save|buy)/i,
-    /\b(?:i\s+want\s+to|i'd\s+like\s+to|let'?s)\s+save\s+\$?\d+[k]?\s+(?:for|toward)/i, // "I want to save $5000 for" or "Let's save $5000 for"
-    /\btarget\s+(?:amount|of)\s+\$?\d+/i, // "target amount $5000"
-  ];
-
-  if (explicitGoalPatterns.some((p) => p.test(message))) {
-    console.log("✅ [GOAL] Explicit goal creation detected");
-    return {
-      intent: "goal_conversation",
-      confidence: 0.95,
-      reason: "goal_creation",
-    };
-  }
-
-  // 1.5. If there's an active goal flow, any response is likely goal-related
-  if (isContinuingGoalFlow) {
-    // Check if it's clearly off-topic
-    const offTopicKeywords = ["weather"];
-    const isOffTopic = offTopicKeywords.some((keyword) =>
-      lower.includes(keyword)
-    );
-
-    if (!isOffTopic) {
-      console.log("✅ [GOAL] Continuing active goal flow detected");
-      return {
-        intent: "goal_conversation",
-        confidence: 0.85,
-        reason: "continuing_goal_flow",
-      };
-    }
-  }
-
-  // 2. INQUIRY about existing goals (should be ask_personalized, NOT goal_conversation)
-  const goalInquiryPatterns = [
-    /\b(?:what are|show|list|tell me|display)\s+(?:my\s+)?(?:current\s+)?goals?\b/i,
-    /\bam\s+i\s+on\s+track.*goals?\b/i,
-    /\bgoal\s+(?:progress|status|update)/i,
-    /\bhow.*doing.*goals?\b/i,
-  ];
-
-  if (goalInquiryPatterns.some((p) => p.test(message))) {
-    console.log(
-      "✅ [GOAL] Goal inquiry detected → routing to ask_personalized"
-    );
-    return {
-      intent: "ask_personalized",
-      confidence: 0.9,
-      reason: "data_query",
-    };
-  }
-
-  // 3. NOT goal creation - general financial queries (affordability, advice, recommendations)
-  const nonGoalPatterns = [
-    /\bcan\s+i\s+afford/i, // Affordability check
-    /\bshould\s+i\s+buy/i, // Purchase advice
-    /\bis\s+it\s+worth\s+it/i, // Value assessment
-    /\bis\s+it\s+smart\s+to/i, // Advice seeking
-    /\bwhat.*(?:spend|spent)/i, // Spending analysis
-    /\bhow\s+much.*(?:spend|spent)/i, // Spending questions
-    /\bwhere.*(?:money|spending)/i, // Transaction queries
-    /\bshow.*(?:transactions|spending)/i, // Transaction display
-    /\bafford.*\$\d+/i, // "afford $1000" patterns
-    /\bafford.*\d+[k]/i, // "afford 5k" patterns
-    /\bwhat.*(?:good|recommended|suggested).*(?:emergency|savings|amount)/i, // Advice queries like "what's a good emergency amount"
-    /\bhow\s+much.*(?:should|can|could).*(?:save|have|keep)/i, // Advice on amounts
-    /\b(?:good|ideal|recommended|suggested).*(?:emergency|savings|fund|amount)/i, // General advice patterns
-  ];
-
-  if (nonGoalPatterns.some((p) => p.test(message))) {
-    console.log("✅ [GOAL] Non-goal financial query detected");
-    return {
-      intent: "ask_personalized",
-      confidence: 0.9,
-      reason: "financial_analysis",
-    };
-  }
-
-  // Default: no strong signal, let LLM decide
-  return null;
 }
 
 async function handlePrebuildContext(userId) {
@@ -5251,11 +4716,6 @@ async function handleClassify(message, context, conversationContext = null) {
       },
     };
 
-    console.log(
-      `🔍 [FINNY] Request body (first 500 chars of system prompt):`,
-      JSON.stringify(requestBody).substring(0, 500) + "..."
-    );
-
     // Create the fetch promise
     const fetchPromise = fetch(
       "https://openrouter.ai/api/v1/chat/completions",
@@ -5269,28 +4729,17 @@ async function handleClassify(message, context, conversationContext = null) {
       }
     );
 
-    console.log(`🔍 [FINNY] API request sent, waiting for response...`);
     const apiCallStart = Date.now();
     // Race between fetch and timeout
     const r = await Promise.race([fetchPromise, timeoutPromise]);
     const apiCallTime = Date.now() - apiCallStart;
-    console.log(`⏱️  [FINNY] API call completed in ${apiCallTime}ms`);
 
     if (!r.ok) {
       const errText = await r.text();
       throw new Error(`OpenRouter error ${r.status}: ${errText}`);
     }
     const data = await r.json();
-    console.log("🔍 [FINNY] Raw API response received");
-    console.log(`🔍 [FINNY] Response model: ${data.model || "N/A"}`);
-    console.log(`🔍 [FINNY] Response usage:`, data.usage || "N/A");
     const content = data.choices?.[0]?.message?.content;
-    console.log(`🔍 [FINNY] Response content length: ${content?.length || 0}`);
-    console.log(
-      `🔍 [FINNY] Response content preview: ${
-        content?.substring(0, 200) || "N/A"
-      }...`
-    );
     if (!content) {
       console.log("❌ [FINNY] No content in response");
       console.log("❌ [FINNY] Full response:", JSON.stringify(data, null, 2));
@@ -5308,15 +4757,8 @@ async function handleClassify(message, context, conversationContext = null) {
 
     // Handle incomplete JSON responses
     let out;
-    console.log(
-      `🔍 [FINNY] Cleaned content: ${cleanContent.substring(0, 300)}...`
-    );
     try {
       out = JSON.parse(cleanContent);
-      console.log(
-        `🔍 [FINNY] Parsed JSON successfully:`,
-        JSON.stringify(out, null, 2)
-      );
 
       // VALIDATION: Check if the parsed result has the correct structure
       // If 'intent' field is missing or has wrong type, treat as malformed
@@ -5807,16 +5249,6 @@ function generateFinancialRedirectionSuggestions(category, userProfile) {
   };
 
   return suggestions[category] || suggestions.general;
-}
-
-function generateFallbackRedirection(category, userProfile) {
-  const name = userProfile.name || "there";
-  const suggestions = generateFinancialRedirectionSuggestions(
-    category,
-    userProfile
-  );
-
-  return `Hi ${name}! I can't help with that, but I'd love to help you with your finances! How about we discuss ${suggestions[0]} or ${suggestions[1]}? What financial questions do you have?`;
 }
 
 // =====================
