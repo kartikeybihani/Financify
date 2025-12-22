@@ -1508,6 +1508,13 @@ export default async function handler(req, res) {
               wantsStreaming
             );
 
+            // Hide action buttons and feedback buttons after confirmation
+            if (response && typeof response === "object") {
+              response.hideActions = true;
+              response.hideFeedback = true;
+              response.actions = [];
+            }
+
             // Only clear state AFTER successful completion
             mergeSessionState(finalUserId, { stock_flow: null });
           } catch (error) {
@@ -1518,6 +1525,7 @@ export default async function handler(req, res) {
                 "Something went wrong analyzing the stock. Please try again.",
               type: "assistant",
               stock_candidate: { ticker: stockFlow.ticker },
+              hideFeedback: true, // Hide feedback buttons for error messages
               actions: [
                 {
                   label: "Retry",
@@ -1584,6 +1592,8 @@ export default async function handler(req, res) {
             type: "assistant",
             intent: "ask_personalized",
             stock_candidate: { ticker: updatedTicker },
+            hideFeedback: true, // Hide feedback buttons for confirmation messages
+            hideActions: false, // Show action buttons initially
             actions: [
               {
                 label: "Yes",
@@ -2055,7 +2065,8 @@ async function handleAsk(
           type: "assistant",
           intent: "ask_personalized",
           stock_candidate: { ticker: stockCandidate.ticker },
-          hideFeedback: true, // Hide feedback buttons for confirmation messages
+          hideFeedback: true, // Hide feedback buttons for confirmation messages - NEVER show thumbs
+          hideActions: false, // Show action buttons initially, frontend will hide on click
           actions: [
             {
               label: "Yes",
@@ -2104,7 +2115,7 @@ async function handleAsk(
         let stockPlan = null;
         const stockOverride = context?.stock_override?.ticker || null;
 
-        // Try deep query first (but skip planning if we already have ticker from confirmation)
+        // Deep analysis is default for all stock queries (but skip planning if we already have ticker from confirmation)
         if (looksLikeStockDeepQuery(message) && !stockOverride) {
           logDebug("🔍 [STOCK] Deep query detected, using advanced analysis");
           stockPlan = await planStockRequest(message);
@@ -5467,40 +5478,10 @@ function looksLikeStockQuery(message) {
 }
 
 function looksLikeStockDeepQuery(message) {
-  const m = message.toLowerCase();
-
-  // Original deep analysis triggers (specific financial metrics)
-  const deepAnalysisTriggers =
-    m.includes("more") ||
-    m.includes("market cap") ||
-    m.includes("cap") ||
-    m.includes("earnings") ||
-    m.includes("guidance") ||
-    m.includes("dividend") ||
-    m.includes("pe") ||
-    m.includes("p/e") ||
-    m.includes("ps") ||
-    m.includes("filings") ||
-    m.includes("insider") ||
-    m.includes("target") ||
-    m.includes("52w") ||
-    m.includes("52-week");
-
-  // Natural language stock queries that should use LLM-based approach
-  const naturalLanguageStockQueries = [
-    /\b(tell me about|show me|get me|what about|how is|how are)\b.*\b(stock|company|corp|inc|ltd|llc)\b/i,
-    /\b(about|regarding|concerning)\b.*\b[A-Z]{1,5}\b/i,
-    /\b(should i buy|is.*good|worth.*investing|add.*portfolio)\b/i,
-    /\b(apple|microsoft|google|amazon|tesla|meta|nvidia|netflix|uber|airbnb|spotify|twitter|snapchat|zoom|palantir|snowflake|shopify|square|paypal|coinbase|robinhood|doordash|peloton)\b/i,
-    /\b(analysis|analyze|research|researching)\b.*\b(stock|company|investment)\b/i,
-    /\b(performance|price|valuation|value|worth)\b.*\b(stock|company|investment)\b/i,
-  ];
-
-  const hasNaturalLanguage = naturalLanguageStockQueries.some((pattern) =>
-    pattern.test(message)
-  );
-
-  return deepAnalysisTriggers || hasNaturalLanguage;
+  // Deep analysis is now the default for all stock queries
+  // Only check if it's actually a stock query (handled by caller)
+  // This ensures all stock queries get comprehensive analysis
+  return true;
 }
 
 async function planStockRequest(message) {

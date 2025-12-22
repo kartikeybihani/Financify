@@ -173,9 +173,8 @@ const ActionButton = ({
 
   const handlePress = () => {
     if (clicked || !onAction) return;
-    if (shouldLock) {
-      setClicked(true);
-    }
+    // Always lock/hide button when clicked (for both Yes and Change Ticker)
+    setClicked(true);
     onAction(btn.action, message);
   };
 
@@ -538,8 +537,8 @@ export const ChatMessageComponent = memo(
       );
     }
 
-    // Check for action buttons (regardless of type, as long as actions exist)
-    if (message.actions && message.actions.length > 0) {
+    // Check for action buttons (regardless of type, as long as actions exist and not hidden)
+    if (message.actions && message.actions.length > 0 && !message.hideActions) {
       const finnyTailColor = pickTailColor([...finnyGradient], "left");
 
       return (
@@ -670,7 +669,7 @@ export const ChatMessageComponent = memo(
                 onAction={onAction}
                 clicked={clicked}
                 setClicked={setClicked}
-                shouldLock={btn.action !== "change_stock"}
+                shouldLock={true} // Always lock/hide buttons when clicked
                 message={message}
               />
             ))}
