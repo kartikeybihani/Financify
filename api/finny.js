@@ -4909,95 +4909,8 @@ async function handleClassify(message, context, conversationContext = null) {
     }
   }
 
-  const stockDetection = detectStockCandidate(text);
-  if (stockDetection) {
-    const actionable = isStockActionable(text);
-    const result = {
-      intent: "stock_query",
-      intent_type: actionable ? "actionable" : "exploratory",
-      emotional_state: "neutral",
-      needs_web: false,
-      needs_user_data: actionable,
-      state: null,
-      entities: stockDetection.entities || [],
-      ticker: stockDetection.ticker,
-      confidence: stockDetection.confidence,
-      heuristic: true,
-    };
-    setCachedClassification(text, result);
-    return result;
-  }
-
-  // Check for goal intent (before LLM call for efficiency)
-  const goalDetection = detectGoalIntent(text, context?.conversation_context);
-  if (goalDetection) {
-    console.log(`✅ [FINNY] Goal detection heuristic: ${goalDetection.reason}`);
-    const result = {
-      intent: goalDetection.intent,
-      intent_type:
-        goalDetection.intent === "goal_conversation" ? "actionable" : null,
-      emotional_state: "neutral",
-      needs_web: false,
-      needs_user_data: true,
-      state: null,
-      entities: [],
-      ticker: null,
-      confidence: goalDetection.confidence,
-      heuristic: true,
-      reason: goalDetection.reason,
-    };
-    setCachedClassification(text, result);
-    return result;
-  }
-
-  // Positive heuristic for common financial concept questions (BEFORE off-topic detection)
-  const heuristic = financialConceptHeuristic(text);
-  if (heuristic) {
-    // If both personal data and web recency patterns, set both flags
-    const needsWebToo = detectWebSearchNeeded(text) === true;
-    const merged = needsWebToo ? { ...heuristic, needs_web: true } : heuristic;
-
-    console.log("✅ [FINNY] Heuristic classified (with combined flags check)");
-    setCachedClassification(text, merged);
-    setImmediate(() =>
-      logConversation({
-        user_message: message,
-        finny_response: `Heuristic classification: ${merged.intent} (confidence: ${merged.confidence})`,
-        timestamp: new Date().toISOString(),
-        user_id: context?.user_id || "unknown",
-        intent: "classify",
-        entities: merged.entities,
-        confidence: merged.confidence,
-        response_time_ms: Date.now() - startTime,
-        sources_used: [],
-        cached: false,
-        classification_result: merged,
-      })
-    );
-    return merged;
-  }
-
-  // Enhanced heuristic for web search detection
-  const webSearchHeuristic = detectWebSearchNeeded(text);
-  if (webSearchHeuristic) {
-    console.log("✅ [FINNY] Heuristic detected web search needed");
-    const result = {
-      intent: "ask_personalized",
-      intent_type: "exploratory",
-      emotional_state: "neutral",
-      needs_web: true,
-      needs_user_data: false,
-      state: null,
-      entities: [],
-      ticker: null,
-      confidence: 0.9,
-      heuristic: true,
-    };
-    setCachedClassification(text, result);
-    return result;
-  }
-
-  // Off-topic detection removed - let classification layer handle it
+  // No rigid heuristics - all classification is handled by LLM
+  // This ensures flexible detection of stocks, goals, and all other intents
 
   try {
     // Create a timeout promise that rejects after 8 seconds (increased for stability)
@@ -5094,14 +5007,18 @@ async function handleClassify(message, context, conversationContext = null) {
                 "   - 'Should I buy Tesla?' → stock_query, needs_web:false, needs_user_data:true, ticker:'TSLA' (SPECIFIC company)",
                 "   - 'What's the market cap of Microsoft?' → stock_query, needs_web:false, needs_user_data:false, ticker:'MSFT' (SPECIFIC company)",
                 "   - 'How is NVIDIA doing?' → stock_query, needs_web:false, needs_user_data:false, ticker:'NVDA' (SPECIFIC company)",
+                "   - 'Do an analysis on Micron Tech stock' → stock_query, needs_web:false, needs_user_data:false, ticker:'MU' (SPECIFIC company - detect ANY company name, not just hard-coded ones)",
+                "   - 'Analyze Intel Corporation' → stock_query, needs_web:false, needs_user_data:false, ticker:'INTC' (SPECIFIC company)",
                 "   - 'What stocks should I buy?' → ask_personalized, needs_user_data:true (GENERAL - no specific ticker)",
                 "   - 'What stocks are good?' → ask_personalized, needs_user_data:true (GENERAL - no specific ticker)",
                 "   - 'Tell me about the stock market' → ask_personalized, needs_web:true (GENERAL - no specific ticker)",
                 "",
                 "7. TICKER DETECTION RULES:",
                 "   - ONLY classify as stock_query if a SPECIFIC ticker symbol OR company name is mentioned",
-                "   - Extract ticker symbols (1-5 uppercase letters): AAPL, TSLA, MSFT, GOOGL, etc.",
-                "   - Map company names to tickers: Apple→AAPL, Tesla→TSLA, Microsoft→MSFT, Google→GOOGL, Amazon→AMZN, Meta→META, NVIDIA→NVDA",
+                "   - Extract ticker symbols (1-5 uppercase letters): AAPL, TSLA, MSFT, GOOGL, MU, etc.",
+                "   - Detect ANY company name mentioned in the query, not just well-known ones",
+                "   - Common company names: Apple→AAPL, Tesla→TSLA, Microsoft→MSFT, Google→GOOGL, Amazon→AMZN, Meta→META, NVIDIA→NVDA, Micron→MU, Intel→INTC, etc.",
+                "   - If a company name is mentioned (even if not in a hard-coded list), classify as stock_query and extract the company name",
                 "   - If multiple tickers detected, include all in entities array",
                 "   - If ticker is ambiguous (e.g., 'Apple' without context), set confidence < 0.8",
                 "   - If NO specific ticker/company mentioned, use ask_personalized (NOT stock_query)",
@@ -5158,6 +5075,12 @@ async function handleClassify(message, context, conversationContext = null) {
                 "",
                 'Query: "What stocks should I buy?"',
                 'Response: {"intent":"ask_personalized","intent_type":"actionable","emotional_state":"neutral","needs_web":false,"needs_user_data":true,"ticker":null,"entities":[],"confidence":0.9}',
+                "",
+                'Query: "do an analysis on micron tech stock"',
+                'Response: {"intent":"stock_query","intent_type":"exploratory","emotional_state":"neutral","needs_web":false,"needs_user_data":false,"ticker":"MU","entities":["MU"],"confidence":0.9}',
+                "",
+                'Query: "Analyze Intel Corporation for me"',
+                'Response: {"intent":"stock_query","intent_type":"exploratory","emotional_state":"neutral","needs_web":false,"needs_user_data":false,"ticker":"INTC","entities":["INTC"],"confidence":0.9}',
                 "",
                 "=== OUTPUT FORMAT ===",
                 "CRITICAL: You MUST return ONLY valid JSON. No markdown, no code fences, no extra text, no comments.",
@@ -5292,38 +5215,19 @@ async function handleClassify(message, context, conversationContext = null) {
       console.log("❌ [FINNY] Error:", parseError.message);
       console.log("❌ [FINNY] Raw content was:", cleanContent);
 
-      // Use goal detection fallback instead of trying to parse malformed JSON
-      const goalDetection = detectGoalIntent(message, conversationContext);
-      if (goalDetection && goalDetection.intent === "goal_conversation") {
-        console.log("✅ [FINNY] Using goal detection fallback");
-        out = {
-          intent: "goal_conversation",
-          intent_type: "actionable",
-          emotional_state: "neutral",
-          needs_web: false,
-          needs_user_data: true,
-          state: null,
-          entities: [],
-          ticker: null,
-          confidence: goalDetection.confidence,
-          fallback: true,
-          detection_reason: goalDetection.reason,
-        };
-      } else {
-        // Default fallback
-        out = {
-          intent: "ask_personalized",
-          intent_type: null,
-          emotional_state: "neutral",
-          needs_web: false,
-          needs_user_data: true,
-          state: null,
-          entities: [],
-          ticker: null,
-          confidence: 0.8,
-          fallback: true,
-        };
-      }
+      // Default fallback for malformed JSON - no rigid heuristics
+      out = {
+        intent: "ask_personalized",
+        intent_type: null,
+        emotional_state: "neutral",
+        needs_web: false,
+        needs_user_data: true,
+        state: null,
+        entities: [],
+        ticker: null,
+        confidence: 0.8,
+        fallback: true,
+      };
     }
     console.log("🔍 [FINNY] Validated classification result:", out);
 
@@ -5371,92 +5275,8 @@ async function handleClassify(message, context, conversationContext = null) {
       );
     }
 
-    // Enhanced heuristic fallbacks in priority order
-
-    // 1. Off-topic detection
-    const offTopicCheck = detectOffTopic(message);
-    if (
-      offTopicCheck &&
-      (typeof offTopicCheck === "object"
-        ? offTopicCheck.isOffTopic
-        : offTopicCheck)
-    ) {
-      console.log("✅ [FINNY] Using off-topic heuristic fallback");
-      return {
-        intent: "off_topic",
-        intent_type: null,
-        emotional_state: "neutral",
-        needs_web: false,
-        needs_user_data: false,
-        state: null,
-        entities: [],
-        ticker: null,
-        confidence: 0.9,
-        fallback: true,
-        timeout_fallback: e?.message?.includes("timeout") || false,
-      };
-    }
-
-    // 2. Web search detection
-    const webSearchHeuristic = detectWebSearchNeeded(message);
-    if (webSearchHeuristic) {
-      console.log("✅ [FINNY] Using web search heuristic fallback");
-      return {
-        intent: "ask_personalized",
-        intent_type: "exploratory",
-        emotional_state: "neutral",
-        needs_web: true,
-        needs_user_data: false,
-        state: null,
-        entities: [],
-        ticker: null,
-        confidence: 0.8,
-        fallback: true,
-        timeout_fallback: e?.message?.includes("timeout") || false,
-      };
-    }
-
-    // 3. Goal conversation detection (using tightened detection with context)
-    const goalDetection = detectGoalIntent(
-      message,
-      context?.conversation_context
-    );
-    if (goalDetection && goalDetection.intent === "goal_conversation") {
-      console.log(
-        `✅ [FINNY] Using goal conversation heuristic fallback (reason: ${goalDetection.reason})`
-      );
-      return {
-        intent: "goal_conversation",
-        intent_type: "actionable",
-        emotional_state: "neutral",
-        needs_web: false,
-        needs_user_data: true,
-        state: null,
-        entities: [],
-        ticker: null,
-        confidence: goalDetection.confidence,
-        fallback: true,
-        timeout_fallback: e?.message?.includes("timeout") || false,
-        detection_reason: goalDetection.reason,
-      };
-    }
-
-    // Heuristic fallback if available
-    const heuristic = financialConceptHeuristic(message);
-    if (heuristic) {
-      console.log(
-        "✅ [FINNY] Using heuristic fallback after classification error"
-      );
-      return {
-        ...heuristic,
-        intent_type: heuristic.intent_type || null,
-        emotional_state: heuristic.emotional_state || "neutral",
-        fallback: true,
-        timeout_fallback: e?.message?.includes("timeout") || false,
-      };
-    }
-
     // Default fallback for any classification error
+    // No rigid heuristics - if LLM fails, use safe default
     console.log("🔄 [FINNY] Using default ask_personalized fallback");
     return {
       intent: "ask_personalized",
