@@ -2117,11 +2117,62 @@ async function handleAsk(
           logDebug("🔍 [STOCK] Stock plan result:", stockPlan);
           const exec = await executeStockPlan(stockPlan || {}, message);
           logDebug("🔍 [STOCK] Execute result:", exec);
+
+          // 🔍 DIAGNOSTIC: Log why the check might fail
+          if (exec.error) {
+            console.log(
+              `⚠️ [STOCK] executeStockPlan returned error:`,
+              exec.error
+            );
+          } else if (!exec.data) {
+            console.log(`⚠️ [STOCK] executeStockPlan has no data field`);
+          } else if (exec.data.current == null) {
+            const reason = exec.data._usingPrevCloseFallback
+              ? "Using prevClose fallback (market may be closed)"
+              : "Current price is null/undefined (no prevClose available)";
+            console.log(
+              `⚠️ [STOCK] executeStockPlan data.current is null/undefined:`,
+              {
+                hasData: !!exec.data,
+                current: exec.data.current,
+                currentType: typeof exec.data.current,
+                prevClose: exec.data.prevClose,
+                usingPrevCloseFallback:
+                  exec.data._usingPrevCloseFallback || false,
+                hasProfile: !!exec.data.profile,
+                hasMetrics: !!exec.data.metrics,
+                hasRecommendations: !!exec.data.recommendations,
+                ticker: exec.ticker,
+                reason: reason,
+              }
+            );
+          }
+
           if (!exec.error && exec.data?.current != null) {
-            stockData = exec;
+            // Flatten the structure: exec has { ticker, data: {...}, extra }
+            // but buildStockDataSummary expects { ticker, current, profile, ... }
+            stockData = {
+              ...exec.data, // Spread all the snapshot data (current, profile, metrics, etc.)
+              ticker: exec.ticker, // Ensure ticker is at top level
+              planWants: exec.planWants, // Preserve plan wants for summary
+              extra: exec.extra, // Preserve extra data (earnings, filings, etc.)
+            };
+            const priceSource = exec.data._usingPrevCloseFallback
+              ? "prevClose (market closed)"
+              : "current";
+            console.log(
+              `✅ [STOCK] Using stockData from executeStockPlan (price: ${exec.data.current}, source: ${priceSource})`
+            );
           } else {
-            logDebug(
-              "🔍 [STOCK] Stock plan failed, falling back to simple query"
+            const reason = exec.error
+              ? `Error: ${exec.error}`
+              : !exec.data
+              ? "No data field"
+              : exec.data.current == null
+              ? "Current price is null (market may be closed or data unavailable)"
+              : "Unknown reason";
+            console.log(
+              `🔄 [STOCK] Stock plan check failed (${reason}), falling back to simple query or fallback`
             );
           }
         } else {
@@ -2322,9 +2373,12 @@ async function handleAsk(
 
           return response;
         } else {
-          // Stock APIs failed, use fallback analysis
+          // Stock APIs failed or returned incomplete data, use fallback analysis
+          const fallbackReason = stockData
+            ? "Stock data exists but current price is null (market may be closed)"
+            : "Stock APIs failed or returned no data";
           console.log(
-            "🔄 [FALLBACK] Stock APIs failed, using fallback analysis"
+            `🔄 [FALLBACK] ${fallbackReason}, using fallback analysis`
           );
           const fallbackResponse = await generateFallbackStockAnalysis(
             stockOverride,
@@ -5668,15 +5722,38 @@ async function generateFallbackStockAnalysis(
   // Use web search as fallback for current data
   try {
     const searchQuery = `${extractedTicker} stock analysis market cap financials`;
+    console.log(`🔍 [FALLBACK] Performing Brave search: "${searchQuery}"`);
     const webResults = await limitedBraveSearch(searchQuery);
 
     if (webResults && webResults.length > 0) {
+      console.log(
+        `✅ [FALLBACK] Brave search returned ${webResults.length} results:`
+      );
+      webResults.forEach((result, idx) => {
+        console.log(`   ${idx + 1}. ${result.title || "No title"}`);
+        console.log(`      URL: ${result.url || "No URL"}`);
+        console.log(
+          `      Snippet: ${(
+            result.snippet ||
+            result.content ||
+            "No snippet"
+          ).substring(0, 100)}...`
+        );
+      });
+
       const analysis = await generateStockAnalysisFromWebData(
         extractedTicker,
         webResults,
         userMessage
       );
+      console.log(
+        `✅ [FALLBACK] Generated analysis from web data (length: ${
+          analysis?.length || 0
+        } chars)`
+      );
       return analysis;
+    } else {
+      console.warn(`⚠️ [FALLBACK] Brave search returned no results`);
     }
   } catch (error) {
     console.error("❌ [FALLBACK] Web search failed:", error);

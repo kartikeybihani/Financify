@@ -123,6 +123,28 @@ async function testStockSnapshot(ticker) {
       return { success: false, error: snapshot.error };
     }
 
+    // 🔍 DIAGNOSTIC: Log the raw quote data structure
+    console.log(`\n🔍 [DIAGNOSTIC] Raw snapshot structure:`);
+    console.log(
+      `   - Has 'current' field: ${
+        snapshot.current !== null && snapshot.current !== undefined
+          ? "✅"
+          : "❌"
+      }`
+    );
+    console.log(`   - 'current' value: ${snapshot.current}`);
+    console.log(`   - 'current' type: ${typeof snapshot.current}`);
+    console.log(`   - 'prevClose' value: ${snapshot.prevClose}`);
+    console.log(
+      `   - Using prevClose fallback: ${
+        snapshot._usingPrevCloseFallback || false
+      }`
+    );
+    console.log(`   - Has 'error' field: ${snapshot.error ? "✅" : "❌"}`);
+    if (snapshot.error) {
+      console.log(`   - Error value: ${JSON.stringify(snapshot.error)}`);
+    }
+
     console.log(`\n📊 Stock Data:`);
     console.log(`   Current Price: $${snapshot.current || "N/A"}`);
     console.log(
@@ -225,6 +247,88 @@ function testStockDetection(query) {
 }
 
 /**
+ * Test the exact condition that causes fallback - simulate executeStockPlan return structure
+ */
+async function testExecuteStockPlanCondition(ticker) {
+  console.log(
+    `\n🔍 Testing executeStockPlan condition check for ticker: ${ticker}`
+  );
+  console.log("─".repeat(80));
+
+  try {
+    // Fetch snapshot (this is what executeStockPlan does)
+    const snapshot = await fetchStockSnapshot(ticker);
+
+    // Simulate the structure that executeStockPlan returns
+    const exec = {
+      ticker: ticker,
+      planWants: [],
+      data: snapshot, // This is the base snapshot
+      extra: {},
+    };
+
+    console.log(`\n📊 Simulated executeStockPlan result structure:`);
+    console.log(`   - Has error: ${exec.error ? "✅ YES" : "❌ NO"}`);
+    console.log(`   - Has data: ${exec.data ? "✅ YES" : "❌ NO"}`);
+    if (exec.data) {
+      console.log(`   - data.current: ${exec.data.current}`);
+      console.log(`   - data.current type: ${typeof exec.data.current}`);
+      console.log(`   - data.current === null: ${exec.data.current === null}`);
+      console.log(
+        `   - data.current === undefined: ${exec.data.current === undefined}`
+      );
+      console.log(`   - data.current != null: ${exec.data.current != null}`);
+      console.log(`   - data.prevClose: ${exec.data.prevClose}`);
+      console.log(
+        `   - Using prevClose fallback: ${
+          exec.data._usingPrevCloseFallback || false
+        }`
+      );
+      console.log(`   - Has profile: ${!!exec.data.profile}`);
+      console.log(`   - Has metrics: ${!!exec.data.metrics}`);
+      console.log(`   - Has recommendations: ${!!exec.data.recommendations}`);
+      console.log(`   - Has news: ${!!exec.data.news?.length}`);
+    }
+    console.log(`   - Has ticker: ${exec.ticker ? "✅ YES" : "❌ NO"}`);
+
+    // Check the exact condition used in handleAsk
+    const condition = !exec.error && exec.data?.current != null;
+    console.log(
+      `\n🔍 Condition check: !exec.error && exec.data?.current != null`
+    );
+    console.log(`   - !exec.error: ${!exec.error}`);
+    console.log(
+      `   - exec.data?.current != null: ${exec.data?.current != null}`
+    );
+    console.log(`   - Final result: ${condition ? "✅ PASS" : "❌ FAIL"}`);
+
+    if (!condition) {
+      console.log(
+        `\n⚠️  ⚠️  ⚠️  THIS WOULD TRIGGER FALLBACK ANALYSIS ⚠️  ⚠️  ⚠️`
+      );
+      console.log(
+        `   Reason: ${
+          exec.error ? "Has error" : "data.current is null/undefined"
+        }`
+      );
+    } else {
+      console.log(`\n✅ Condition passed - would use Finnhub data`);
+    }
+
+    return {
+      success: condition,
+      exec,
+      condition,
+      wouldUseFallback: !condition,
+    };
+  } catch (error) {
+    console.error(`❌ Error testing condition:`, error.message);
+    console.error(error.stack);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
  * Test full stock query flow through Finny API
  */
 async function testFullStockQuery(query, userId = TEST_USER_ID) {
@@ -319,15 +423,21 @@ async function testFullStockQuery(query, userId = TEST_USER_ID) {
 /**
  * Test a single stock query end-to-end
  */
-async function testSingleStock(query) {
+async function testSingleStock(query, options = {}) {
+  const { skipFullQuery = false } = options;
+
   console.log("\n" + "═".repeat(80));
   console.log(`🧪 Testing Stock Analysis: "${query}"`);
+  if (skipFullQuery) {
+    console.log(`⚠️  Skipping full Finny API query (use --full to include)`);
+  }
   console.log("═".repeat(80));
 
   const results = {
     detection: null,
     resolution: null,
     snapshot: null,
+    executePlanCondition: null,
     fullQuery: null,
   };
 
@@ -346,12 +456,22 @@ async function testSingleStock(query) {
   const resolvedTicker = results.resolution.ticker;
   if (resolvedTicker) {
     results.snapshot = await testStockSnapshot(resolvedTicker);
+
+    // 3b. Test executeStockPlan condition (diagnostic)
+    results.executePlanCondition = await testExecuteStockPlanCondition(
+      resolvedTicker
+    );
   } else {
     console.log(`\n⚠️  Skipping snapshot test - no ticker resolved`);
   }
 
-  // 4. Test full query flow
-  results.fullQuery = await testFullStockQuery(query);
+  // 4. Test full query flow (optional)
+  if (!skipFullQuery) {
+    results.fullQuery = await testFullStockQuery(query);
+  } else {
+    console.log(`\n⏭️  Skipping full Finny API query test`);
+    results.fullQuery = { success: null, skipped: true };
+  }
 
   // Summary
   console.log("\n" + "═".repeat(80));
@@ -383,9 +503,13 @@ async function testSingleStock(query) {
       console.log(`   - Has News: ${results.snapshot.hasNews ? "✅" : "❌"}`);
     }
   }
-  console.log(
-    `✅ Full Query Flow: ${results.fullQuery.success ? "PASS" : "FAIL"}`
-  );
+  if (results.fullQuery?.skipped) {
+    console.log(`⏭️  Full Query Flow: SKIPPED (use --full to test)`);
+  } else {
+    console.log(
+      `✅ Full Query Flow: ${results.fullQuery?.success ? "PASS" : "FAIL"}`
+    );
+  }
 
   return results;
 }
@@ -393,8 +517,13 @@ async function testSingleStock(query) {
 /**
  * Run all test cases
  */
-async function runAllTests() {
+async function runAllTests(options = {}) {
+  const { skipFullQuery = false } = options;
+
   console.log("🚀 Running All Stock Analysis Tests");
+  if (skipFullQuery) {
+    console.log(`⚠️  Skipping full Finny API queries (use --full to include)`);
+  }
   console.log("═".repeat(80));
 
   const results = [];
@@ -404,7 +533,7 @@ async function runAllTests() {
     console.log(`Test Case: ${testCase.type} - "${testCase.query}"`);
     console.log("=".repeat(80));
 
-    const result = await testSingleStock(testCase.query);
+    const result = await testSingleStock(testCase.query, { skipFullQuery });
     results.push({
       testCase,
       result,
@@ -412,7 +541,7 @@ async function runAllTests() {
         result.detection.success &&
         result.resolution.success &&
         (result.snapshot?.success ?? true) &&
-        result.fullQuery.success,
+        (skipFullQuery ? true : result.fullQuery?.success),
     });
 
     // Small delay between tests
@@ -501,7 +630,10 @@ async function main() {
     process.exit(1);
   }
 
-  const query = process.argv[2];
+  // Parse command line arguments
+  const args = process.argv.slice(2);
+  const skipFullQuery = !args.includes("--full");
+  const query = args.find((arg) => !arg.startsWith("--"));
 
   if (!query) {
     console.log("\n❌ Please provide a query to test");
@@ -509,6 +641,10 @@ async function main() {
     console.log('       node tests/test_stock_analysis.js "Apple"');
     console.log('       node tests/test_stock_analysis.js "What about Tesla?"');
     console.log("       node tests/test_stock_analysis.js all");
+    console.log("\nOptions:");
+    console.log(
+      "  --full    Include full Finny API query test (default: skipped)"
+    );
     console.log("\nExample queries:");
     TEST_CASES.slice(0, 5).forEach((q, i) => {
       console.log(`  ${i + 1}. "${q.query}" (${q.type})`);
@@ -517,9 +653,9 @@ async function main() {
   }
 
   if (query === "all") {
-    await runAllTests();
+    await runAllTests({ skipFullQuery });
   } else {
-    await testSingleStock(query);
+    await testSingleStock(query, { skipFullQuery });
   }
 }
 
