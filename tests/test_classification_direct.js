@@ -1330,7 +1330,7 @@ async function testSingleMessage(message) {
 
     // Call the classification function directly
     const classification = await handleClassify(message, {
-      user_id: "79952f35-b607-40d6-a32e-d81386882eb7",
+      user_id: "f948c4ab-dc68-41d5-89bf-1935653cca37",
     });
     const responseTime = Date.now() - startTime;
 

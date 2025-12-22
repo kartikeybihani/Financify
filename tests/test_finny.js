@@ -19,7 +19,7 @@ dotenv.config();
 const BASE_URL =
   process.env.APP_BASE_URL || "https://financify-rose.vercel.app";
 const TEST_USER_ID =
-  process.env.TEST_USER_ID || "79952f35-b607-40d6-a32e-d81386882eb7";
+  process.env.TEST_USER_ID || "f948c4ab-dc68-41d5-89bf-1935653cca37";
 
 // Test queries to verify different scenarios
 const TEST_QUERIES = [
@@ -61,7 +61,7 @@ async function testFinnyQuery(message, userId = TEST_USER_ID) {
     console.log(`   - Message length: ${message.length}`);
     console.log(`   - Message type: ${typeof message}`);
     console.log(`   - User ID: ${userId}`);
-    
+
     const classifyRequestStart = Date.now();
     const classifyRes = await fetch(`${BASE_URL}/api/finny`, {
       method: "POST",
@@ -74,21 +74,29 @@ async function testFinnyQuery(message, userId = TEST_USER_ID) {
     });
 
     const classifyRequestTime = Date.now() - classifyRequestStart;
-    console.log(`⏱️  [TIMING] Classification request took: ${classifyRequestTime}ms`);
-    console.log(`📥 [RESPONSE] Status: ${classifyRes.status} ${classifyRes.statusText}`);
+    console.log(
+      `⏱️  [TIMING] Classification request took: ${classifyRequestTime}ms`
+    );
+    console.log(
+      `📥 [RESPONSE] Status: ${classifyRes.status} ${classifyRes.statusText}`
+    );
 
     const classifyData = await classifyRes.json();
     console.log(`\n📊 [CLASSIFICATION] Full response:`);
     console.log(JSON.stringify(classifyData, null, 2));
     console.log(`\n✅ Classification Result:`);
     console.log(`   - Intent: ${classifyData.intent}`);
-    console.log(`   - Intent Type: ${classifyData.intent_type || 'null'}`);
-    console.log(`   - Confidence: ${classifyData.confidence || 'N/A'}`);
-    console.log(`   - Ticker: ${classifyData.ticker || 'null'}`);
-    console.log(`   - Entities: ${JSON.stringify(classifyData.entities || [])}`);
+    console.log(`   - Intent Type: ${classifyData.intent_type || "null"}`);
+    console.log(`   - Confidence: ${classifyData.confidence || "N/A"}`);
+    console.log(`   - Ticker: ${classifyData.ticker || "null"}`);
+    console.log(
+      `   - Entities: ${JSON.stringify(classifyData.entities || [])}`
+    );
     console.log(`   - Needs Web: ${classifyData.needs_web}`);
     console.log(`   - Needs User Data: ${classifyData.needs_user_data}`);
-    console.log(`   - Emotional State: ${classifyData.emotional_state || 'N/A'}`);
+    console.log(
+      `   - Emotional State: ${classifyData.emotional_state || "N/A"}`
+    );
     if (classifyData.fallback) {
       console.log(`   ⚠️  FALLBACK USED`);
     }
@@ -101,9 +109,9 @@ async function testFinnyQuery(message, userId = TEST_USER_ID) {
     console.log(`📤 [REQUEST] Sending ask request:`);
     console.log(`   - Message: "${message}"`);
     console.log(`   - Classification intent: ${classifyData.intent}`);
-    console.log(`   - Classification ticker: ${classifyData.ticker || 'null'}`);
+    console.log(`   - Classification ticker: ${classifyData.ticker || "null"}`);
     console.log(`   - User ID: ${userId}`);
-    
+
     const askRequestStart = Date.now();
     const askRes = await fetch(`${BASE_URL}/api/finny`, {
       method: "POST",
@@ -124,7 +132,9 @@ async function testFinnyQuery(message, userId = TEST_USER_ID) {
     console.log(`\n📊 [ASK] Response received:`);
     if (askData.message) {
       console.log(`   - Message length: ${askData.message.length} chars`);
-      console.log(`   - Message preview: ${askData.message.substring(0, 200)}...`);
+      console.log(
+        `   - Message preview: ${askData.message.substring(0, 200)}...`
+      );
     }
 
     if (askRes.ok) {
@@ -143,21 +153,29 @@ async function testFinnyQuery(message, userId = TEST_USER_ID) {
         console.log(`\n⚠️  Data gaps: ${askData.data_gaps.join(", ")}`);
       }
       if (askData.stock_candidate) {
-        console.log(`\n📈 Stock candidate: ${JSON.stringify(askData.stock_candidate)}`);
+        console.log(
+          `\n📈 Stock candidate: ${JSON.stringify(askData.stock_candidate)}`
+        );
       }
       if (askData.actions) {
-        console.log(`\n🔘 Actions available: ${JSON.stringify(askData.actions)}`);
+        console.log(
+          `\n🔘 Actions available: ${JSON.stringify(askData.actions)}`
+        );
       }
 
       // Compare classification vs actual handling
       console.log(`\n🔍 [COMPARISON] Classification vs Handling:`);
       console.log(`   - Classification intent: ${classifyData.intent}`);
-      console.log(`   - Classification ticker: ${classifyData.ticker || 'null'}`);
+      console.log(
+        `   - Classification ticker: ${classifyData.ticker || "null"}`
+      );
       if (askData.intent) {
         console.log(`   - Response intent: ${askData.intent}`);
       }
       if (askData.stock_candidate?.ticker) {
-        console.log(`   - Stock candidate ticker: ${askData.stock_candidate.ticker}`);
+        console.log(
+          `   - Stock candidate ticker: ${askData.stock_candidate.ticker}`
+        );
       }
 
       return askData;

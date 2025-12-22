@@ -4864,18 +4864,27 @@ async function handleClassify(message, context, conversationContext = null) {
   const cacheKey = generateClassificationCacheKey(text);
   console.log(`🔍 [FINNY] Cache key generated: "${cacheKey}"`);
   console.log(`🔍 [FINNY] Original message: "${text}"`);
-  const cachedResult = getCachedClassification(text);
+  let cachedResult = getCachedClassification(text);
   if (cachedResult) {
     console.log(`🔍 [FINNY] Cache HIT - Cached result:`, JSON.stringify(cachedResult, null, 2));
     // INVALIDATE old heuristic-based cache entries - they were created with rigid code
-    if (cachedResult.heuristic === true) {
+    // Check for heuristic flag (could be boolean true or string "true")
+    const isHeuristic = cachedResult.heuristic === true || cachedResult.heuristic === "true";
+    if (isHeuristic) {
       console.log(
         "⚠️ [FINNY] Invalidating old heuristic-based cache entry (using new LLM-based classification)"
       );
+      console.log(`⚠️ [FINNY] Heuristic value: ${cachedResult.heuristic} (type: ${typeof cachedResult.heuristic})`);
       const key = generateClassificationCacheKey(text);
-      classificationCache.delete(key);
-      // Continue to LLM classification below
+      const deleted = classificationCache.delete(key);
+      console.log(
+        `✅ [FINNY] Heuristic cache entry deleted (success: ${deleted}), proceeding with LLM classification`
+      );
+      // Clear the cached result to prevent any accidental return
+      cachedResult = null;
+      // Continue to LLM classification below - DO NOT return cached result
     } else if (
+      cachedResult &&
       cachedResult.intent &&
       typeof cachedResult.intent === "string" &&
       cachedResult.needs_web !== undefined &&
@@ -4901,18 +4910,28 @@ async function handleClassify(message, context, conversationContext = null) {
       ) {
         cachedResult.entities = [cachedResult.ticker];
       }
-      console.log(
-        `⚡ [FINNY] Using cached classification result (${
-          Date.now() - startTime
-        }ms)`
-      );
-      console.log(`⚡ [FINNY] Cached result details:`, {
-        intent: cachedResult.intent,
-        ticker: cachedResult.ticker,
-        confidence: cachedResult.confidence,
-        entities: cachedResult.entities,
-      });
-      return cachedResult;
+      // Double-check: Never return heuristic results
+      if (cachedResult.heuristic === true || cachedResult.heuristic === "true") {
+        console.log(
+          "❌ [FINNY] ERROR: Attempted to return heuristic result! This should never happen. Invalidating cache."
+        );
+        const key = generateClassificationCacheKey(text);
+        classificationCache.delete(key);
+        // Fall through to LLM classification
+      } else {
+        console.log(
+          `⚡ [FINNY] Using cached classification result (${
+            Date.now() - startTime
+          }ms)`
+        );
+        console.log(`⚡ [FINNY] Cached result details:`, {
+          intent: cachedResult.intent,
+          ticker: cachedResult.ticker,
+          confidence: cachedResult.confidence,
+          entities: cachedResult.entities,
+        });
+        return cachedResult;
+      }
     } else {
       console.log(
         "⚠️ [FINNY] Cached classification is malformed, invalidating cache"
