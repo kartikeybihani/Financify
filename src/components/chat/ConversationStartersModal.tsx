@@ -9,6 +9,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
+import IconButton from "../shared/IconButton";
 
 const CONVERSATION_STARTERS = [
   "What's the best way to start saving for retirement?",
@@ -48,9 +49,7 @@ const ConversationStartersModal = ({
         >
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Conversation Starters</Text>
-            <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-              <Ionicons name="close" size={24} color="#888" />
-            </TouchableOpacity>
+            <IconButton onPress={onClose} icon="close" size={20} />
           </View>
 
           <View style={styles.questionsContainer}>
@@ -124,9 +123,6 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: "600",
     color: "#fff",
-  },
-  closeButton: {
-    padding: 4,
   },
   questionsList: {
     paddingHorizontal: 0,

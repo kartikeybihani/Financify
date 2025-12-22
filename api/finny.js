@@ -1301,7 +1301,8 @@ export default async function handler(req, res) {
           "ask_personalized",
           classification,
           conversationContext,
-          timings // Pass timings object to track web search and context packs
+          timings, // Pass timings object to track web search and context packs
+          wantsStreaming // Pass streaming preference
         );
         break;
       }
@@ -1623,7 +1624,8 @@ async function handleAsk(
   intent = "ask_personalized",
   classificationResult = null,
   conversationContext = null,
-  requestTimings = null // Optional: parent request timings object
+  requestTimings = null, // Optional: parent request timings object
+  wantsStreaming = false // Whether client wants streaming response
 ) {
   logInfo("🔍 [FINNY] Starting ask handler for message:", message);
   const startTime = Date.now();
@@ -2414,13 +2416,13 @@ async function handleAsk(
       };
     } else {
       // Non-streaming - split on backend for backward compatibility
-    const splitMessages = splitLongResponse(cleanedMessage);
+      const splitMessages = splitLongResponse(cleanedMessage);
       response = {
-      message:
-        splitMessages.length === 1 ? splitMessages[0].content : splitMessages,
-      type: "assistant",
-      isSplit: splitMessages.length > 1,
-    };
+        message:
+          splitMessages.length === 1 ? splitMessages[0].content : splitMessages,
+        type: "assistant",
+        isSplit: splitMessages.length > 1,
+      };
     }
 
     // Log the conversation
