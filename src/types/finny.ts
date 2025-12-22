@@ -34,6 +34,9 @@ export interface ChatMessage {
   timestamp?: number;
   type?: "text" | "action";
   isStreaming?: boolean; // New field to indicate if message is being streamed
+  stockCandidate?: {
+    ticker: string;
+  };
   actions?: Array<{
     label: string;
     action: "goal_confirm" | "goal_decline" | string;

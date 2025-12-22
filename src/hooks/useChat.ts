@@ -523,6 +523,12 @@ export const useChat = () => {
                 const finalMessage = (data.message && typeof data.message === 'string') 
                   ? data.message 
                   : (accumulatedText && typeof accumulatedText === 'string' ? accumulatedText : '');
+                const stockCandidatePayload = data.stock_candidate || data.stockCandidate;
+                const stockCandidate =
+                  stockCandidatePayload && typeof stockCandidatePayload === 'string'
+                    ? { ticker: stockCandidatePayload }
+                    : stockCandidatePayload;
+                const resolvedType = data.actions ? "action" : data.type;
                 
                 // Only set if we have a valid string
                 if (finalMessage && typeof finalMessage === 'string') {
@@ -557,7 +563,8 @@ export const useChat = () => {
                         text: finalMessage,
                         isStreaming: false,
                         ...(data.actions && { actions: data.actions }),
-                        ...(data.type && { type: data.type })
+                        ...(resolvedType && { type: resolvedType }),
+                        ...(stockCandidate && { stockCandidate })
                       };
                     }
                     
@@ -616,6 +623,12 @@ export const useChat = () => {
                 const finalMessage = (data.message && typeof data.message === 'string')
                   ? data.message
                   : (accumulatedText && typeof accumulatedText === 'string' ? accumulatedText : '');
+                const stockCandidatePayload = data.stock_candidate || data.stockCandidate;
+                const stockCandidate =
+                  stockCandidatePayload && typeof stockCandidatePayload === 'string'
+                    ? { ticker: stockCandidatePayload }
+                    : stockCandidatePayload;
+                const resolvedType = data.actions ? "action" : data.type;
                 
                 // Only set if we have a valid string
                 if (finalMessage && typeof finalMessage === 'string') {
@@ -650,7 +663,8 @@ export const useChat = () => {
                         text: finalMessage,
                         isStreaming: false,
                         ...(data.actions && { actions: data.actions }),
-                        ...(data.type && { type: data.type })
+                        ...(resolvedType && { type: resolvedType }),
+                        ...(stockCandidate && { stockCandidate })
                       };
                     }
                     
@@ -661,7 +675,8 @@ export const useChat = () => {
                         updated[updated.length - 1] = {
                           ...lastMsg,
                           actions: data.actions,
-                          type: "action" as const
+                          type: "action" as const,
+                          ...(stockCandidate && { stockCandidate })
                         };
                       }
                     }
@@ -784,7 +799,10 @@ export const useChat = () => {
   };
 
   // Handle action button clicks without creating new messages
-  const handleActionButton = async (action: string) => {
+  const handleActionButton = async (
+    action: string,
+    payload?: { ticker?: string }
+  ) => {
     const BASE_URL = process.env.EXPO_PUBLIC_APP_BASE_URL || "https://financify-rose.vercel.app";
     try {
       // Get user_id for the API calls
@@ -801,20 +819,47 @@ export const useChat = () => {
         return;
       }
 
+      const goalActions = new Set([
+        "confirm",
+        "confirm_create_goal",
+        "start_over_goal",
+        "skip_category",
+        "cancel_goal",
+        "edit_goal",
+        "create_anyway",
+        "modify",
+      ]);
+      const stockActions = new Set(["confirm_stock", "update_stock_ticker"]);
+      const isGoalAction = goalActions.has(action);
+      const isStockAction = stockActions.has(action);
+      const apiAction = isStockAction ? "stock_conversation" : "goal_conversation";
+
+      const requestBody: any = {
+        action: apiAction,
+        message: action,
+        chat_id: chatId,
+        context: isGoalAction && goalFlow ? { goal_flow: goalFlow } : {},
+        stream: false,
+      };
+
+      if (isStockAction && payload?.ticker) {
+        requestBody.ticker = payload.ticker;
+      }
+
       // Send action to backend in existing conversation context
       const res = await authenticatedFetch(`${BASE_URL}/api/finny`, {
         method: "POST",
-        body: JSON.stringify({
-          action: "goal_conversation",
-          message: action,
-          chat_id: chatId,
-          context: goalFlow ? { goal_flow: goalFlow } : {},
-          stream: false
-        }),
+        body: JSON.stringify(requestBody),
       });
 
       const data = await res.json();
       logger.info("🎯 [ACTION] API Response:", data);
+
+      const stockCandidatePayload = data.stock_candidate || data.stockCandidate;
+      const stockCandidate =
+        stockCandidatePayload && typeof stockCandidatePayload === "string"
+          ? { ticker: stockCandidatePayload }
+          : stockCandidatePayload;
 
       // Create a new message with the response (don't update existing message)
       if (data.message) {
@@ -824,7 +869,8 @@ export const useChat = () => {
           text: data.message,
           timestamp: Date.now(),
           type: data.actions && data.actions.length > 0 ? "action" as const : "text" as const,
-          ...(data.actions && { actions: data.actions })
+          ...(data.actions && { actions: data.actions }),
+          ...(stockCandidate && { stockCandidate })
         };
         
         setChatMessages(prev => [...prev, newMessage]);
@@ -1172,34 +1218,43 @@ export const useChat = () => {
         message = `**Projection Results**\n\nTarget: $${proj.swr_target.toLocaleString()}\nProjected: $${proj.projected_nest_egg.toLocaleString()}\nYears to target: ${proj.years_to_target}\n\n${proj.notes.join('\n')}`;
       } else if (data.intent === "goal_conversation") {
         // CHECK GOAL CONVERSATION FIRST before generic assistant type check!
-        
+
         // Persist flow state if provided
         if (data.goal_flow && data.goal_flow.active) {
           setGoalFlow(data.goal_flow);
         } else {
           setGoalFlow(null);
         }
-        
-        // Handle goal messages with actions - check for actions regardless of type
-        if (data.actions && Array.isArray(data.actions) && data.actions.length > 0) {
-          // Create action message
-          const actionMessage: ChatMessage = {
-            id: `finny-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-            sender: "finny",
-            text: data.message || "Let's set a goal.",
-            timestamp: Date.now(),
-            type: "action",
-            actions: data.actions,
-          };
-          
-          // Add typing delay for action messages
-          setIsTyping(true);
-          await new Promise((resolve) => setTimeout(resolve, 1000 + Math.random() * 1000));
-          pushChat(actionMessage);
-          setIsTyping(false);
-          
-          return; // Don't process as regular message
-        }
+      }
+
+      const hasActions = data.actions && Array.isArray(data.actions) && data.actions.length > 0;
+      const stockCandidatePayload = data.stock_candidate || data.stockCandidate;
+      const stockCandidate =
+        stockCandidatePayload && typeof stockCandidatePayload === "string"
+          ? { ticker: stockCandidatePayload }
+          : stockCandidatePayload;
+
+      if (hasActions) {
+        const actionMessage: ChatMessage = {
+          id: `finny-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          sender: "finny",
+          text: data.message || "Here are the next steps.",
+          timestamp: Date.now(),
+          type: "action",
+          actions: data.actions,
+          ...(stockCandidate && { stockCandidate }),
+        };
+
+        // Add typing delay for action messages
+        setIsTyping(true);
+        await new Promise((resolve) => setTimeout(resolve, 1000 + Math.random() * 1000));
+        pushChat(actionMessage);
+        setIsTyping(false);
+
+        return; // Don't process as regular message
+      }
+
+      if (data.intent === "goal_conversation") {
         message = data.message || "Let's set a goal.";
       } else if ((data.intent === "ask_personalized" || data.type === "assistant") && data.message) {
         // Generic assistant/ask responses (must come AFTER goal_conversation check)

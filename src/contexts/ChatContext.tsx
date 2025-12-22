@@ -24,7 +24,10 @@ interface ChatContextType {
     messageText: string,
     startTime?: number
   ) => Promise<void>;
-  handleActionButton: (action: string) => Promise<void>;
+  handleActionButton: (
+    action: string,
+    payload?: { ticker?: string }
+  ) => Promise<void>;
   startNewSession: () => Promise<void>;
   loadSession: (sessionId: string) => Promise<void>;
 }

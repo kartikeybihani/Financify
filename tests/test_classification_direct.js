@@ -373,7 +373,32 @@ function detectOffTopic(message) {
 function financialConceptHeuristic(text) {
   const lower = text.toLowerCase();
 
-  // Check for off-topic first (highest priority)
+  // Check for stock tickers BEFORE off-topic (stock queries are financial, not off-topic)
+  const stockDetection = detectStockTicker(text);
+  if (stockDetection) {
+    return {
+      intent: stockDetection.intent,
+      intent_type: text.match(
+        /\b(should|buy|invest|investing|investment|purchase|sell|hold)\b/i
+      )
+        ? "actionable"
+        : "exploratory",
+      emotional_state: "neutral",
+      needs_web: false,
+      needs_user_data: text.match(
+        /\b(should|buy|invest|investing|investment|purchase|sell|hold)\b/i
+      )
+        ? true
+        : false,
+      state: null,
+      entities: stockDetection.entities || [],
+      ticker: stockDetection.ticker,
+      confidence: stockDetection.confidence,
+      heuristic: true,
+    };
+  }
+
+  // Check for off-topic (after stock detection)
   if (detectOffTopic(text)) {
     return {
       intent: "off_topic",
@@ -383,6 +408,7 @@ function financialConceptHeuristic(text) {
       needs_user_data: false,
       state: null,
       entities: [],
+      ticker: null,
       confidence: 0.9,
       heuristic: true,
     };
@@ -413,6 +439,7 @@ function financialConceptHeuristic(text) {
       needs_user_data: true,
       state: null,
       entities: [],
+      ticker: null,
       confidence: 0.9,
       heuristic: true,
     };
@@ -442,6 +469,7 @@ function financialConceptHeuristic(text) {
       needs_user_data: true,
       state: null,
       entities: [],
+      ticker: null,
       confidence: 0.9,
       heuristic: true,
     };
@@ -478,8 +506,270 @@ function financialConceptHeuristic(text) {
       needs_user_data: false,
       state: null,
       entities: [],
+      ticker: null,
       confidence: 0.9,
       heuristic: true,
+    };
+  }
+
+  return null;
+}
+
+// Stock ticker detection - runs BEFORE other heuristics
+function detectStockTicker(message) {
+  const lowerMessage = message.toLowerCase();
+
+  // Company name to ticker mapping
+  const companyToTicker = {
+    apple: "AAPL",
+    tesla: "TSLA",
+    microsoft: "MSFT",
+    google: "GOOGL",
+    alphabet: "GOOGL",
+    amazon: "AMZN",
+    meta: "META",
+    facebook: "META",
+    nvidia: "NVDA",
+    "nvidia corporation": "NVDA",
+    netflix: "NFLX",
+    disney: "DIS",
+    "walt disney": "DIS",
+    jpmorgan: "JPM",
+    "jpmorgan chase": "JPM",
+    "bank of america": "BAC",
+    "goldman sachs": "GS",
+    visa: "V",
+    mastercard: "MA",
+    paypal: "PYPL",
+    salesforce: "CRM",
+    oracle: "ORCL",
+    intel: "INTC",
+    amd: "AMD",
+    "advanced micro devices": "AMD",
+    "coca cola": "KO",
+    pepsico: "PEP",
+    walmart: "WMT",
+    "home depot": "HD",
+    mcdonalds: "MCD",
+    starbucks: "SBUX",
+    nike: "NKE",
+    adobe: "ADBE",
+    cisco: "CSCO",
+    ibm: "IBM",
+    "international business machines": "IBM",
+  };
+
+  const knownTickers = new Set(Object.values(companyToTicker));
+
+  // Check for company names (including single-word matches)
+  let detectedTicker = null;
+  let detectedCompany = null;
+
+  // First check for exact single-word company names (e.g., "Apple", "Tesla")
+  const singleWordCompanies = {
+    apple: "AAPL",
+    tesla: "TSLA",
+    microsoft: "MSFT",
+    google: "GOOGL",
+    amazon: "AMZN",
+    meta: "META",
+    nvidia: "NVDA",
+    netflix: "NFLX",
+    disney: "DIS",
+    visa: "V",
+    paypal: "PYPL",
+    salesforce: "CRM",
+    oracle: "ORCL",
+    intel: "INTC",
+    amd: "AMD",
+    nike: "NKE",
+    adobe: "ADBE",
+    cisco: "CSCO",
+    ibm: "IBM",
+  };
+
+  const companyNamesUpper = new Set(
+    Object.keys(singleWordCompanies).map((name) => name.toUpperCase())
+  );
+
+  // Common ticker symbols (1-5 uppercase letters) - be more specific
+  // Look for ticker patterns that are likely actual stock symbols
+  const tickerPattern = /\b([A-Z]{2,5})\b/g;
+  const tickerMatches = [];
+  let match;
+
+  // Extract potential ticker symbols (only from original casing)
+  // Filter out common words that aren't tickers (expanded list)
+  const commonWords = new Set([
+    "I",
+    "AM",
+    "AN",
+    "AS",
+    "AT",
+    "BE",
+    "BY",
+    "DO",
+    "GO",
+    "HE",
+    "IF",
+    "IN",
+    "IS",
+    "IT",
+    "ME",
+    "MY",
+    "NO",
+    "OF",
+    "ON",
+    "OR",
+    "SO",
+    "TO",
+    "UP",
+    "US",
+    "WE",
+    "THE",
+    "AND",
+    "FOR",
+    "ARE",
+    "BUT",
+    "NOT",
+    "YOU",
+    "ALL",
+    "CAN",
+    "HER",
+    "WAS",
+    "ONE",
+    "OUR",
+    "OUT",
+    "DAY",
+    "GET",
+    "HAS",
+    "HIM",
+    "HIS",
+    "HOW",
+    "ITS",
+    "MAY",
+    "NEW",
+    "NOW",
+    "OLD",
+    "SEE",
+    "TWO",
+    "WAY",
+    "WHO",
+    "BOY",
+    "DID",
+    "LET",
+    "PUT",
+    "SAY",
+    "SHE",
+    "TOO",
+    "USE",
+    "WHAT",
+    "ABOUT",
+    "TELL",
+    "BUY",
+    "SELL",
+    "PRICE",
+    "STOCK",
+    "STOCKS",
+    "MARKET",
+    "MARKETS",
+    "WITH",
+    "THIS",
+    "THAT",
+    "THESE",
+    "THOSE",
+    "THERE",
+    "HERE",
+    "YOUR",
+    "YOURS",
+    "FROM",
+    "WILL",
+    "WOULD",
+    "COULD",
+    "SHOULD",
+    "MIGHT",
+    "WANT",
+    "NEED",
+    "GOOD",
+    "BEST",
+    "WORST",
+    "WHEN",
+    "WHERE",
+    "WHY",
+    "WHICH",
+    "WHOM",
+    "DOING",
+  ]);
+  while ((match = tickerPattern.exec(message)) !== null) {
+    const potentialTicker = match[1];
+    if (commonWords.has(potentialTicker)) {
+      continue;
+    }
+    if (
+      companyNamesUpper.has(potentialTicker) &&
+      !knownTickers.has(potentialTicker)
+    ) {
+      continue;
+    }
+    if (!tickerMatches.includes(potentialTicker)) {
+      tickerMatches.push(potentialTicker);
+    }
+  }
+  // Check if message is just a single company name
+  const words = lowerMessage.trim().split(/\s+/);
+  if (words.length === 1 && singleWordCompanies[words[0]]) {
+    detectedTicker = singleWordCompanies[words[0]];
+    detectedCompany = words[0];
+  } else {
+    // Check for company names in longer messages
+    for (const [company, ticker] of Object.entries(companyToTicker)) {
+      if (lowerMessage.includes(company)) {
+        detectedCompany = company;
+        detectedTicker = ticker;
+        break;
+      }
+    }
+  }
+
+  // If we found ticker symbols, use the first one (prioritize explicit tickers)
+  if (tickerMatches.length > 0) {
+    detectedTicker = tickerMatches[0];
+  }
+
+  // Only return stock_query if we found a SPECIFIC ticker/company
+  // General queries like "What stocks should I buy?" should NOT trigger this
+  if (detectedTicker) {
+    // Check if this is a general stock market query (no specific ticker context)
+    const generalStockPatterns = [
+      /what stocks? should i (buy|invest|purchase)/i,
+      /what (stocks?|companies) (should|would|do) you (recommend|suggest)/i,
+      /best stocks? (to|for)/i,
+      /top stocks?/i,
+      /stock market/i,
+      /stock exchange/i,
+    ];
+
+    // If it's a general query WITHOUT a specific ticker/company, don't treat as stock_query
+    const isGeneralQuery = generalStockPatterns.some((pattern) =>
+      pattern.test(message)
+    );
+    if (isGeneralQuery && !detectedCompany && tickerMatches.length === 0) {
+      return null;
+    }
+
+    // For single-word company names without context, lower confidence
+    let confidence = 0.95;
+    if (words.length === 1 && detectedCompany) {
+      confidence = 0.7; // Lower confidence for ambiguous single-word queries
+    } else if (detectedCompany && !tickerMatches.length) {
+      confidence = 0.85; // Medium confidence for company names
+    }
+
+    return {
+      intent: "stock_query",
+      ticker: detectedTicker,
+      entities: tickerMatches.length > 0 ? tickerMatches : [detectedTicker],
+      confidence: confidence,
     };
   }
 
@@ -614,6 +904,7 @@ async function handleClassify(message, context, conversationContext = null) {
       needs_user_data: true,
       state: null,
       entities: [],
+      ticker: null,
       confidence: 0.1,
       fallback: true,
     };
@@ -648,6 +939,35 @@ async function handleClassify(message, context, conversationContext = null) {
     }
   }
 
+  // Check for stock ticker FIRST (before goal detection)
+  // Stock queries require a SPECIFIC ticker/company - general queries should not trigger this
+  const stockDetection = detectStockTicker(text);
+  if (stockDetection) {
+    console.log(`✅ [TEST] Stock ticker detected: ${stockDetection.ticker}`);
+    const result = {
+      intent: stockDetection.intent,
+      intent_type: text.match(
+        /\b(should|buy|invest|investing|investment|purchase|sell|hold)\b/i
+      )
+        ? "actionable"
+        : "exploratory",
+      emotional_state: "neutral",
+      needs_web: false,
+      needs_user_data: text.match(
+        /\b(should|buy|invest|investing|investment|purchase|sell|hold)\b/i
+      )
+        ? true
+        : false,
+      state: null,
+      entities: stockDetection.entities || [],
+      ticker: stockDetection.ticker,
+      confidence: stockDetection.confidence,
+      heuristic: true,
+    };
+    setCachedClassification(text, result);
+    return result;
+  }
+
   // Check for goal intent (before LLM call for efficiency)
   const goalDetection = detectGoalIntent(text, context?.conversation_context);
   if (goalDetection) {
@@ -661,6 +981,7 @@ async function handleClassify(message, context, conversationContext = null) {
       needs_user_data: true,
       state: null,
       entities: [],
+      ticker: null,
       confidence: goalDetection.confidence,
       heuristic: true,
       reason: goalDetection.reason,
@@ -750,6 +1071,7 @@ async function handleClassify(message, context, conversationContext = null) {
                 "Classify into exactly ONE primary intent:",
                 "- ask_personalized: Questions about user's finances (spending, accounts, goals, investments, affordability, advice)",
                 "- goal_conversation: Creating NEW goals or setting savings targets (explicit goal creation statements)",
+                "- stock_query: Questions about specific stocks, tickers, or companies (e.g., 'What about Apple?', 'Tell me about AAPL', 'Should I buy Tesla stock?')",
                 "- off_topic: Non-financial topics (weather, cooking, entertainment, general chat, etc)",
                 "",
                 "=== INTENT TYPE (What user wants to accomplish) ===",
@@ -805,6 +1127,24 @@ async function handleClassify(message, context, conversationContext = null) {
                 "5. Credit card queries ALWAYS need web search:",
                 "   - 'What credit card should I get?' → ask_personalized, needs_web:true, needs_user_data:true",
                 "",
+                "6. Stock queries REQUIRE a SPECIFIC ticker/company - general queries are ask_personalized:",
+                "   - 'What about Apple stock?' → stock_query, needs_web:false, needs_user_data:false, ticker:'AAPL' (SPECIFIC company)",
+                "   - 'Tell me about AAPL' → stock_query, needs_web:false, needs_user_data:false, ticker:'AAPL' (SPECIFIC ticker)",
+                "   - 'Should I buy Tesla?' → stock_query, needs_web:false, needs_user_data:true, ticker:'TSLA' (SPECIFIC company)",
+                "   - 'What's the market cap of Microsoft?' → stock_query, needs_web:false, needs_user_data:false, ticker:'MSFT' (SPECIFIC company)",
+                "   - 'How is NVIDIA doing?' → stock_query, needs_web:false, needs_user_data:false, ticker:'NVDA' (SPECIFIC company)",
+                "   - 'What stocks should I buy?' → ask_personalized, needs_user_data:true (GENERAL - no specific ticker)",
+                "   - 'What stocks are good?' → ask_personalized, needs_user_data:true (GENERAL - no specific ticker)",
+                "   - 'Tell me about the stock market' → ask_personalized, needs_web:true (GENERAL - no specific ticker)",
+                "",
+                "7. TICKER DETECTION RULES:",
+                "   - ONLY classify as stock_query if a SPECIFIC ticker symbol OR company name is mentioned",
+                "   - Extract ticker symbols (1-5 uppercase letters): AAPL, TSLA, MSFT, GOOGL, etc.",
+                "   - Map company names to tickers: Apple→AAPL, Tesla→TSLA, Microsoft→MSFT, Google→GOOGL, Amazon→AMZN, Meta→META, NVIDIA→NVDA",
+                "   - If multiple tickers detected, include all in entities array",
+                "   - If ticker is ambiguous (e.g., 'Apple' without context), set confidence < 0.8",
+                "   - If NO specific ticker/company mentioned, use ask_personalized (NOT stock_query)",
+                "",
                 "=== EXAMPLES ===",
                 "",
                 'Query: "What is the Roth IRA limit for 2025?"',
@@ -834,11 +1174,29 @@ async function handleClassify(message, context, conversationContext = null) {
                 'Query: "I feel stupid for spending so much on that"',
                 'Response: {"intent":"ask_personalized","intent_type":"emotional_support","emotional_state":"ashamed","needs_web":false,"needs_user_data":true,"confidence":0.9}',
                 "",
+                'Query: "What about Apple stock?"',
+                'Response: {"intent":"stock_query","intent_type":"exploratory","emotional_state":"neutral","needs_web":false,"needs_user_data":false,"ticker":"AAPL","entities":["AAPL"],"confidence":0.95}',
+                "",
+                'Query: "Tell me about TSLA"',
+                'Response: {"intent":"stock_query","intent_type":"exploratory","emotional_state":"neutral","needs_web":false,"needs_user_data":false,"ticker":"TSLA","entities":["TSLA"],"confidence":0.98}',
+                "",
+                'Query: "Should I buy Tesla?"',
+                'Response: {"intent":"stock_query","intent_type":"actionable","emotional_state":"neutral","needs_web":false,"needs_user_data":true,"ticker":"TSLA","entities":["TSLA"],"confidence":0.9}',
+                "",
+                'Query: "What\'s Apple doing?"',
+                'Response: {"intent":"stock_query","intent_type":"exploratory","emotional_state":"neutral","needs_web":false,"needs_user_data":false,"ticker":"AAPL","entities":["AAPL"],"confidence":0.75}',
+                "",
+                'Query: "Tell me about the stock market"',
+                'Response: {"intent":"ask_personalized","intent_type":"exploratory","emotional_state":"neutral","needs_web":true,"needs_user_data":false,"ticker":null,"entities":[],"confidence":0.9}',
+                "",
+                'Query: "What stocks should I buy?"',
+                'Response: {"intent":"ask_personalized","intent_type":"actionable","emotional_state":"neutral","needs_web":false,"needs_user_data":true,"ticker":null,"entities":[],"confidence":0.9}',
+                "",
                 "=== OUTPUT FORMAT ===",
                 "CRITICAL: You MUST return ONLY valid JSON. No markdown, no code fences, no extra text, no comments.",
                 "The JSON must be parseable by JSON.parse(). Follow this EXACT structure:",
                 "",
-                '{"intent":"ask_personalized","intent_type":"exploratory","emotional_state":"neutral","needs_web":false,"needs_user_data":true,"state":null,"entities":[],"confidence":0.95}',
+                '{"intent":"ask_personalized","intent_type":"exploratory","emotional_state":"neutral","needs_web":false,"needs_user_data":true,"state":null,"entities":[],"ticker":null,"confidence":0.95}',
                 "",
                 "Valid JSON format rules:",
                 "- Use double quotes for all strings",
@@ -849,14 +1207,22 @@ async function handleClassify(message, context, conversationContext = null) {
                 "- All fields must be present",
                 "",
                 "Field requirements:",
-                "- intent: REQUIRED string (ask_personalized|goal_conversation|off_topic)",
+                "- intent: REQUIRED string (ask_personalized|goal_conversation|stock_query|off_topic)",
                 "- intent_type: string or null (exploratory|actionable|emotional_support|crisis|planning|null)",
                 "- emotional_state: REQUIRED string (neutral|anxious|panicked|ashamed|overwhelmed|fomo)",
                 "- needs_web: REQUIRED boolean (true|false)",
                 "- needs_user_data: REQUIRED boolean (true|false)",
                 "- state: string or null (state code like AZ, CA, or null)",
-                "- entities: REQUIRED array (empty array [] if none)",
+                "- entities: REQUIRED array (empty array [] if none, or ticker symbols if stock_query)",
+                "- ticker: string or null (ticker symbol like 'AAPL', 'TSLA', or null if not stock_query or ambiguous)",
                 "- confidence: REQUIRED number (0.0-1.0)",
+                "",
+                "TICKER EXTRACTION RULES:",
+                "- For stock_query intent, extract ticker symbol from message",
+                "- If ticker is clear (e.g., 'AAPL', 'TSLA'), set ticker field and confidence >= 0.9",
+                "- If company name maps to ticker (e.g., 'Apple'→'AAPL'), set ticker and confidence >= 0.8",
+                "- If ticker is ambiguous or unclear, set ticker:null and confidence < 0.8",
+                "- Always include ticker in entities array if detected",
                 "",
                 "CRITICAL: Meta/system questions about AI capabilities are ALWAYS off_topic:",
                 "- 'Can you learn from our conversations?' → off_topic",
@@ -950,6 +1316,17 @@ async function handleClassify(message, context, conversationContext = null) {
         console.log("⚠️ [TEST] Missing emotional_state, defaulting to neutral");
         out.emotional_state = "neutral";
       }
+
+      // Validate ticker field (required for stock_query, optional for others)
+      if (out.intent === "stock_query" && !out.ticker) {
+        console.log(
+          "⚠️ [TEST] stock_query intent but no ticker detected, setting to null"
+        );
+        out.ticker = null;
+      }
+      if (out.ticker === undefined) {
+        out.ticker = null;
+      }
     } catch (parseError) {
       console.log(
         "❌ [TEST] JSON parse/validation error, using fallback classification"
@@ -969,6 +1346,7 @@ async function handleClassify(message, context, conversationContext = null) {
           needs_user_data: true,
           state: null,
           entities: [],
+          ticker: null,
           confidence: goalDetection.confidence,
           fallback: true,
           detection_reason: goalDetection.reason,
@@ -983,6 +1361,7 @@ async function handleClassify(message, context, conversationContext = null) {
           needs_user_data: true,
           state: null,
           entities: [],
+          ticker: null,
           confidence: 0.8,
           fallback: true,
         };
@@ -993,6 +1372,7 @@ async function handleClassify(message, context, conversationContext = null) {
     // Defensive post-process so your app never crashes
     if (!out.state || typeof out.state !== "string") out.state = null;
     if (!Array.isArray(out.entities)) out.entities = [];
+    if (out.ticker === undefined) out.ticker = null;
 
     // Cache the result for future use
     setCachedClassification(text, out);
@@ -1027,6 +1407,7 @@ async function handleClassify(message, context, conversationContext = null) {
         needs_user_data: false,
         state: null,
         entities: [],
+        ticker: null,
         confidence: 0.9,
         fallback: true,
         timeout_fallback: e?.message?.includes("timeout") || false,
@@ -1045,6 +1426,7 @@ async function handleClassify(message, context, conversationContext = null) {
         needs_user_data: false,
         state: null,
         entities: [],
+        ticker: null,
         confidence: 0.8,
         fallback: true,
         timeout_fallback: e?.message?.includes("timeout") || false,
@@ -1068,6 +1450,7 @@ async function handleClassify(message, context, conversationContext = null) {
         needs_user_data: true,
         state: null,
         entities: [],
+        ticker: null,
         confidence: goalDetection.confidence,
         fallback: true,
         timeout_fallback: e?.message?.includes("timeout") || false,
@@ -1098,6 +1481,7 @@ async function handleClassify(message, context, conversationContext = null) {
       needs_user_data: true,
       state: null,
       entities: [],
+      ticker: null,
       confidence: 0.1,
       fallback: true,
       timeout_fallback: e?.message?.includes("timeout") || false,
@@ -1131,6 +1515,10 @@ async function testSingleMessage(message) {
     console.log(`  confidence: ${classification.confidence}`);
     console.log(`  response_time: ${responseTime}ms`);
 
+    if (classification.ticker) {
+      console.log(`  ticker: ${classification.ticker}`);
+    }
+
     if (classification.entities && classification.entities.length > 0) {
       console.log(`  entities: ${JSON.stringify(classification.entities)}`);
     }
@@ -1155,6 +1543,15 @@ async function testSingleMessage(message) {
       console.log("  ✅ Correctly identified as goal-related query");
     } else if (classification.intent === "off_topic") {
       console.log("  ✅ Correctly identified as off-topic (non-financial)");
+    } else if (classification.intent === "stock_query") {
+      console.log("  ✅ Correctly identified as stock query");
+      if (classification.ticker) {
+        console.log(`  📈 Ticker detected: ${classification.ticker}`);
+      } else {
+        console.log(
+          "  ⚠️  Stock query but no ticker detected (may need confirmation)"
+        );
+      }
     }
 
     if (classification.needs_web) {
@@ -1375,13 +1772,16 @@ if (
   } else if (testType === "hardball") {
     console.log("🔥 Running hardball tests...");
     runHardballTests().catch(console.error);
+  } else if (testType === "stock") {
+    console.log("📈 Running stock query tests...");
+    runStockQueryTests().catch(console.error);
   } else {
     console.log("Running curveball tests...");
     runCurveballTests().catch(console.error);
   }
 }
 
-export { testSingleMessage, handleClassify };
+export { testSingleMessage, handleClassify, runStockQueryTests };
 
 // Curveball hard tests
 async function runCurveballTests() {
@@ -1451,4 +1851,247 @@ async function runCurveballTests() {
   console.log(
     `\nCurveball summary: ${pass}/${tests.length} off_topic as expected`
   );
+}
+
+// Stock query test cases - Easy, Medium, Hard
+async function runStockQueryTests() {
+  const tests = [
+    // EASY TESTS - Clear ticker symbols
+    {
+      q: "What about AAPL?",
+      expected: {
+        intent: "stock_query",
+        ticker: "AAPL",
+        confidence: 0.95,
+        note: "Clear ticker symbol - should be high confidence",
+      },
+    },
+    {
+      q: "Tell me about TSLA",
+      expected: {
+        intent: "stock_query",
+        ticker: "TSLA",
+        confidence: 0.95,
+        note: "Clear ticker symbol with 'tell me about' pattern",
+      },
+    },
+    {
+      q: "Should I buy MSFT?",
+      expected: {
+        intent: "stock_query",
+        ticker: "MSFT",
+        needs_user_data: true,
+        confidence: 0.9,
+        note: "Clear ticker with investment advice question",
+      },
+    },
+    {
+      q: "What's the price of GOOGL?",
+      expected: {
+        intent: "stock_query",
+        ticker: "GOOGL",
+        confidence: 0.95,
+        note: "Clear ticker with price query",
+      },
+    },
+
+    // MEDIUM TESTS - Company names that map to tickers
+    {
+      q: "What about Apple stock?",
+      expected: {
+        intent: "stock_query",
+        ticker: "AAPL",
+        confidence: 0.85,
+        note: "Company name 'Apple' should map to AAPL",
+      },
+    },
+    {
+      q: "Tell me about Tesla",
+      expected: {
+        intent: "stock_query",
+        ticker: "TSLA",
+        confidence: 0.8,
+        note: "Company name 'Tesla' should map to TSLA (medium confidence due to ambiguity)",
+      },
+    },
+    {
+      q: "How is Microsoft doing?",
+      expected: {
+        intent: "stock_query",
+        ticker: "MSFT",
+        confidence: 0.8,
+        note: "Company name 'Microsoft' should map to MSFT",
+      },
+    },
+    {
+      q: "Should I invest in NVIDIA?",
+      expected: {
+        intent: "stock_query",
+        ticker: "NVDA",
+        needs_user_data: true,
+        confidence: 0.85,
+        note: "Company name 'NVIDIA' should map to NVDA with investment advice",
+      },
+    },
+
+    // HARD TESTS - Ambiguous or unclear cases
+    {
+      q: "What about Apple?",
+      expected: {
+        intent: "stock_query",
+        ticker: "AAPL",
+        confidence: 0.7,
+        note: "Ambiguous - could be company or stock, should detect as stock_query but lower confidence",
+      },
+    },
+    {
+      q: "Tell me about the stock market",
+      expected: {
+        intent: "ask_personalized",
+        ticker: null,
+        needs_web: true,
+        confidence: 0.9,
+        note: "General stock market query - NOT stock_query (no specific ticker)",
+      },
+    },
+    {
+      q: "What stocks should I buy?",
+      expected: {
+        intent: "ask_personalized",
+        ticker: null,
+        needs_user_data: true,
+        confidence: 0.9,
+        note: "General investment advice - NOT stock_query (no specific ticker)",
+      },
+    },
+    {
+      q: "Apple",
+      expected: {
+        intent: "stock_query",
+        ticker: "AAPL",
+        confidence: 0.6,
+        note: "Very ambiguous - single word could be anything, but in financial context likely stock",
+      },
+    },
+    {
+      q: "What's happening with AMZN and MSFT?",
+      expected: {
+        intent: "stock_query",
+        ticker: "AMZN",
+        entities: ["AMZN", "MSFT"],
+        confidence: 0.9,
+        note: "Multiple tickers detected - should include both in entities",
+      },
+    },
+    {
+      q: "Is Apple a good investment?",
+      expected: {
+        intent: "stock_query",
+        ticker: "AAPL",
+        needs_user_data: true,
+        confidence: 0.85,
+        note: "Investment question about company - should map to AAPL",
+      },
+    },
+  ];
+
+  console.log("\n" + "=".repeat(80));
+  console.log("📈 STOCK QUERY TESTS - Easy, Medium, Hard Cases");
+  console.log("=".repeat(80));
+
+  let pass = 0;
+  let total = tests.length;
+
+  for (let i = 0; i < tests.length; i++) {
+    const t = tests[i];
+    console.log(`\n${i + 1}. Testing: "${t.q}"`);
+    console.log(
+      `   Expected: intent=${t.expected.intent}, ticker=${t.expected.ticker}, confidence>=${t.expected.confidence}`
+    );
+    console.log(`   Note: ${t.note}`);
+    console.log("-".repeat(80));
+
+    try {
+      const { classification } = await testSingleMessage(t.q);
+      const actual = classification?.intent;
+      const actualTicker = classification?.ticker;
+      const actualConfidence = classification?.confidence;
+      const actualNeedsUserData = classification?.needs_user_data;
+
+      // Check intent match
+      const intentMatch = actual === t.expected.intent;
+
+      // Check ticker match (null/undefined matches null, or exact match)
+      const tickerMatch =
+        (t.expected.ticker === null &&
+          (actualTicker === null || actualTicker === undefined)) ||
+        (t.expected.ticker && actualTicker === t.expected.ticker);
+
+      // Check confidence threshold
+      const confidenceMatch = actualConfidence >= t.expected.confidence;
+
+      // Check needs_user_data if specified
+      const needsUserDataMatch =
+        t.expected.needs_user_data === undefined ||
+        actualNeedsUserData === t.expected.needs_user_data;
+
+      const isCorrect =
+        intentMatch && tickerMatch && confidenceMatch && needsUserDataMatch;
+
+      if (isCorrect) {
+        pass++;
+        console.log(`   ✅ PASS`);
+        console.log(`      Intent: ${actual} (expected: ${t.expected.intent})`);
+        console.log(
+          `      Ticker: ${actualTicker} (expected: ${t.expected.ticker})`
+        );
+        console.log(
+          `      Confidence: ${actualConfidence} (expected: >=${t.expected.confidence})`
+        );
+        if (t.expected.needs_user_data !== undefined) {
+          console.log(
+            `      Needs User Data: ${actualNeedsUserData} (expected: ${t.expected.needs_user_data})`
+          );
+        }
+      } else {
+        console.log(`   ❌ FAIL`);
+        if (!intentMatch) {
+          console.log(
+            `      Intent mismatch: got ${actual}, expected ${t.expected.intent}`
+          );
+        }
+        if (!tickerMatch) {
+          console.log(
+            `      Ticker mismatch: got ${actualTicker}, expected ${t.expected.ticker}`
+          );
+        }
+        if (!confidenceMatch) {
+          console.log(
+            `      Confidence too low: got ${actualConfidence}, expected >=${t.expected.confidence}`
+          );
+        }
+        if (!needsUserDataMatch) {
+          console.log(
+            `      Needs user data mismatch: got ${actualNeedsUserData}, expected ${t.expected.needs_user_data}`
+          );
+        }
+        console.log(
+          `      Full result:`,
+          JSON.stringify(classification, null, 2)
+        );
+      }
+    } catch (error) {
+      console.log(`   ❌ ERROR: ${error.message}`);
+    }
+  }
+
+  console.log("\n" + "=".repeat(80));
+  console.log(`📊 STOCK QUERY TEST SUMMARY: ${pass}/${total} passed`);
+  console.log("=".repeat(80));
+
+  if (pass === total) {
+    console.log("🎉 All stock query tests passed!");
+  } else {
+    console.log(`⚠️  ${total - pass} test(s) failed`);
+  }
 }

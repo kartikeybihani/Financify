@@ -9,6 +9,7 @@ import {
   fetchStockSnapshot,
   buildStockDataSummary,
   fetchJson,
+  detectStockCandidate,
 } from "../lib/stocks.js";
 import {
   getSessionState,
@@ -1409,6 +1410,102 @@ export default async function handler(req, res) {
         }
         break;
       }
+      case "stock_conversation": {
+        const stockFlow = sessionState?.stock_flow;
+
+        if (message === "confirm_stock") {
+          if (!stockFlow?.ticker) {
+            response = {
+              message:
+                "I couldn't find a ticker to analyze. Please tell me which stock you want.",
+              type: "assistant",
+            };
+            break;
+          }
+
+          mergeSessionState(finalUserId, { stock_flow: null });
+
+          const stockContext = {
+            ...safeContext,
+            skip_stock_confirmation: true,
+            stock_override: { ticker: stockFlow.ticker },
+          };
+
+          response = await handleAsk(
+            stockFlow.original_message || `${stockFlow.ticker} stock`,
+            stockContext,
+            "ask_personalized",
+            null,
+            conversationContext,
+            timings,
+            wantsStreaming
+          );
+          break;
+        }
+
+        if (message === "update_stock_ticker") {
+          const rawTicker = otherParams?.ticker || otherParams?.stock_ticker;
+          const updatedTicker =
+            typeof rawTicker === "string"
+              ? rawTicker.toUpperCase().trim()
+              : "";
+
+          if (!/^[A-Z]{1,5}$/.test(updatedTicker)) {
+            response = {
+              message:
+                "That doesn't look like a valid ticker. Please enter 1-5 letters.",
+              type: "assistant",
+              intent: "ask_personalized",
+              actions: [
+                {
+                  label: "Change",
+                  action: "change_stock",
+                  style: "secondary",
+                },
+              ],
+            };
+            break;
+          }
+
+          const updatedFlow = {
+            active: true,
+            ticker: updatedTicker,
+            original_message: stockFlow?.original_message || null,
+            stage: "awaiting_confirmation",
+            entities: [updatedTicker],
+            source: "manual",
+          };
+
+          mergeSessionState(finalUserId, { stock_flow: updatedFlow });
+
+          response = {
+            message: "Got it. Want me to run an analysis?",
+            type: "assistant",
+            intent: "ask_personalized",
+            stock_candidate: { ticker: updatedTicker },
+            actions: [
+              {
+                label: "Yes",
+                action: "confirm_stock",
+                style: "primary",
+              },
+              {
+                label: "Change",
+                action: "change_stock",
+                style: "secondary",
+              },
+            ],
+          };
+          break;
+        }
+
+        response = {
+          message:
+            "I can analyze a specific stock if you share a ticker symbol.",
+          type: "assistant",
+        };
+        break;
+      }
       case "prebuild_context":
         // Set flag to suppress memory storage warnings during prebuild_context
         setPrebuildContextActive(finalUserId);
@@ -1791,6 +1888,38 @@ async function handleAsk(
     logInfo("📦 [FINNY] Context packs built:", Object.keys(packs));
     logInfo("⚠️ [FINNY] Data gaps:", gaps);
 
+    const stockCandidate = detectStockCandidate(message);
+    if (stockCandidate && !context?.skip_stock_confirmation) {
+      const stockFlow = {
+        active: true,
+        ticker: stockCandidate.ticker,
+        original_message: message,
+        stage: "awaiting_confirmation",
+        entities: stockCandidate.entities || [],
+        source: stockCandidate.source || null,
+      };
+      mergeSessionState(userId, { stock_flow: stockFlow });
+
+      return {
+        message: "I found a ticker. Want me to run an analysis?",
+        type: "assistant",
+        intent: "ask_personalized",
+        stock_candidate: { ticker: stockCandidate.ticker },
+        actions: [
+          {
+            label: "Yes",
+            action: "confirm_stock",
+            style: "primary",
+          },
+          {
+            label: "Change",
+            action: "change_stock",
+            style: "secondary",
+          },
+        ],
+      };
+    }
+
     // 3.5) Check if this is a stock query after building context packs
     logDebug(
       "🔍 [STOCK_ROUTING] Checking if message looks like stock query:",
@@ -1821,11 +1950,15 @@ async function handleAsk(
 
         let stockData = null;
         let stockPlan = null;
+        const stockOverride = context?.stock_override?.ticker || null;
 
         // Try deep query first
         if (looksLikeStockDeepQuery(message)) {
           logDebug("🔍 [STOCK] Deep query detected, using advanced analysis");
           stockPlan = await planStockRequest(message);
+          if (stockOverride) {
+            stockPlan = { ...(stockPlan || {}), ticker_candidates: [stockOverride] };
+          }
           logDebug("🔍 [STOCK] Stock plan result:", stockPlan);
           const exec = await executeStockPlan(stockPlan || {}, message);
           logDebug("🔍 [STOCK] Execute result:", exec);
@@ -1840,11 +1973,13 @@ async function handleAsk(
           // Simple stock query
           const stockResponse = await getCachedDataWithFallback(
             "stock_snapshot",
-            message.toLowerCase().trim(),
+            stockOverride ? `override:${stockOverride}` : message.toLowerCase().trim(),
             async () => {
-              const { ticker, queryUsed } = await resolveTickerForQuery(
-                message
-              );
+              if (stockOverride) {
+                const snapshot = await fetchStockSnapshot(stockOverride);
+                return { ...snapshot, ticker: stockOverride, queryUsed: stockOverride };
+              }
+              const { ticker, queryUsed } = await resolveTickerForQuery(message);
               if (!ticker) {
                 return {
                   error: "Could not resolve ticker from query",
@@ -2029,7 +2164,7 @@ async function handleAsk(
             "🔄 [FALLBACK] Stock APIs failed, using fallback analysis"
           );
           const fallbackResponse = await generateFallbackStockAnalysis(
-            null, // ticker will be extracted from message
+            stockOverride,
             message,
             userProfile,
             userMemory
@@ -5560,8 +5695,7 @@ async function limitedBraveSearch(query) {
 
 // === Stocks via Finnhub ===
 function looksLikeStockQuery(message) {
-  const m = message.toLowerCase();
-  return /\bstock\b/.test(m);
+  return !!detectStockCandidate(message);
 }
 
 function looksLikeStockDeepQuery(message) {

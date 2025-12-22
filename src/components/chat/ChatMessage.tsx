@@ -138,11 +138,15 @@ const ActionButton = ({
   onAction,
   clicked,
   setClicked,
+  shouldLock = true,
+  message,
 }: {
   btn: any;
-  onAction?: (action: string) => void;
+  onAction?: (action: string, message?: ChatMessageProps["message"]) => void;
   clicked: boolean;
   setClicked: (value: boolean) => void;
+  shouldLock?: boolean;
+  message?: ChatMessageProps["message"];
 }) => {
   const [isPressed, setIsPressed] = useState(false);
   const pressAnim = useRef(new Animated.Value(1)).current;
@@ -168,10 +172,11 @@ const ActionButton = ({
   };
 
   const handlePress = () => {
-    if (!clicked && onAction) {
+    if (clicked || !onAction) return;
+    if (shouldLock) {
       setClicked(true);
-      onAction(btn.action);
     }
+    onAction(btn.action, message);
   };
 
   return (
@@ -327,6 +332,9 @@ interface ChatMessageProps {
       action: string;
       style?: "primary" | "secondary";
     }>;
+    stockCandidate?: {
+      ticker: string;
+    };
     goalOffer?: {
       item: string;
       amount: number | null;
@@ -334,7 +342,7 @@ interface ChatMessageProps {
     };
   };
   showSender?: boolean;
-  onAction?: (action: string) => void;
+  onAction?: (action: string, message?: ChatMessageProps["message"]) => void;
   onThumbUp?: (messageId: string) => void;
   onThumbDown?: (messageId: string) => void;
   // For grouping logic
@@ -629,6 +637,13 @@ export const ChatMessageComponent = memo(
               )}
             </View>
           </View>
+          {message.stockCandidate?.ticker && (
+            <View style={styles.tickerBadge}>
+              <Text style={styles.tickerBadgeText}>
+                {message.stockCandidate.ticker}
+              </Text>
+            </View>
+          )}
           {/* Action buttons below the bubble */}
           <View
             style={{
@@ -647,6 +662,8 @@ export const ChatMessageComponent = memo(
                 onAction={onAction}
                 clicked={clicked}
                 setClicked={setClicked}
+                shouldLock={btn.action !== "change_stock"}
+                message={message}
               />
             ))}
           </View>
@@ -875,6 +892,24 @@ const styles = StyleSheet.create({
   feedbackButton: {
     borderRadius: 14,
     padding: 8,
+  },
+  tickerBadge: {
+    alignSelf: "flex-start",
+    marginLeft: 12,
+    marginTop: 4,
+    marginBottom: 2,
+    paddingHorizontal: responsivePadding(10),
+    paddingVertical: responsivePadding(6),
+    borderRadius: 12,
+    backgroundColor: "rgba(255, 255, 255, 0.12)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.2)",
+  },
+  tickerBadgeText: {
+    color: "#FFFFFF",
+    fontWeight: "600",
+    fontSize: responsiveFontSize(12),
+    letterSpacing: 0.5,
   },
 });
 

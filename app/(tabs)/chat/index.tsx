@@ -33,6 +33,7 @@ import styles from "@/src/styles/chatStyles";
 import TypingIndicator from "@/src/components/chat/TypingIndicator";
 import ConversationStartersModal from "@/src/components/chat/ConversationStartersModal";
 import ReportModal from "@/src/components/modals/ReportModal";
+import StockTickerEditModal from "@/src/components/modals/StockTickerEditModal";
 import FeedbackNotification from "@/src/components/chat/FeedbackNotification";
 import { submitLoveIt } from "@/src/utils/analytics/reports";
 
@@ -64,6 +65,8 @@ function ChatScreenContent() {
   const [showScrollButton, setShowScrollButton] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
   const [showStartersModal, setShowStartersModal] = useState(false);
+  const [showStockTickerModal, setShowStockTickerModal] = useState(false);
+  const [stockTickerDraft, setStockTickerDraft] = useState("");
   const [dimensions, setDimensions] = useState(Dimensions.get("window"));
   const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
@@ -547,7 +550,7 @@ function ChatScreenContent() {
 
   // Memoized action handler to prevent recreation
   const handleMessageAction = useCallback(
-    async (action: string) => {
+    async (action: string, message?: any) => {
       console.log("🎯 [ACTION] Button clicked:", action);
 
       // Handle cancel actions immediately without API calls
@@ -556,6 +559,13 @@ function ChatScreenContent() {
           "finny",
           "No worries! Let me know if you have any other questions. 😊"
         );
+        return;
+      }
+
+      if (action === "change_stock") {
+        const candidate = message?.stockCandidate?.ticker || "";
+        setStockTickerDraft(candidate);
+        setShowStockTickerModal(true);
         return;
       }
 
@@ -570,6 +580,13 @@ function ChatScreenContent() {
         // Send action directly to backend and update existing message
         await handleActionButton(action);
         setIsTyping(false);
+        return;
+      }
+
+      if (action === "confirm_stock") {
+        setIsTyping(true);
+        await handleActionButton(action);
+        setIsTyping(false);
       }
     },
     [
@@ -578,6 +595,8 @@ function ChatScreenContent() {
       handleFinnyResponse,
       handleActionButton,
       setIsTyping,
+      setShowStockTickerModal,
+      setStockTickerDraft,
     ]
   );
 
@@ -847,6 +866,22 @@ function ChatScreenContent() {
           onSelectQuestion={(question) => {
             setUserInput(question);
             handleSend(question);
+          }}
+        />
+
+        <StockTickerEditModal
+          visible={showStockTickerModal}
+          defaultTicker={stockTickerDraft}
+          onClose={() => {
+            setShowStockTickerModal(false);
+            setStockTickerDraft("");
+          }}
+          onSubmit={async (ticker) => {
+            setShowStockTickerModal(false);
+            setStockTickerDraft("");
+            setIsTyping(true);
+            await handleActionButton("update_stock_ticker", { ticker });
+            setIsTyping(false);
           }}
         />
 
