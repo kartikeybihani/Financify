@@ -1467,14 +1467,17 @@ export default async function handler(req, res) {
       });
 
       // Extract the text to stream from the response
+      // For streaming, response.message is always a string (no backend splitting)
       let textToStream = null;
       if (typeof response.message === "string") {
         textToStream = response.message;
       } else if (typeof response.text === "string") {
         textToStream = response.text;
-      } else if (Array.isArray(response.message)) {
-        // Handle split messages
-        textToStream = response.message.map((m) => m.content || m).join("\n\n");
+      } else {
+        // Fallback: handle array (shouldn't happen for streaming, but just in case)
+        textToStream = Array.isArray(response.message)
+          ? response.message.map((m) => m.content || m).join("\n\n")
+          : String(response.message || "");
       }
 
       if (textToStream) {
@@ -2399,15 +2402,26 @@ async function handleAsk(
         : cleanText
     );
 
-    // Split long responses into digestible chunks for better UX
+    // For streaming: frontend handles splitting during stream (no backend splitting needed)
+    // For non-streaming: split long responses into digestible chunks for better UX
+    let response;
+    if (wantsStreaming) {
+      // Streaming - send raw text, frontend will split intelligently
+      response = {
+        message: cleanedMessage,
+        type: "assistant",
+        isSplit: false,
+      };
+    } else {
+      // Non-streaming - split on backend for backward compatibility
     const splitMessages = splitLongResponse(cleanedMessage);
-
-    const response = {
+      response = {
       message:
         splitMessages.length === 1 ? splitMessages[0].content : splitMessages,
       type: "assistant",
       isSplit: splitMessages.length > 1,
     };
+    }
 
     // Log the conversation
     // Bug fix: Log cleanedMessage (actual response sent to user) instead of cleanText (raw LLM output)
@@ -5129,7 +5143,7 @@ async function handleOffTopic(message, context, conversationContext = null) {
       "",
       "RESPONSE STRUCTURE:",
       "- Acknowledge their feelings (1-2 sentences)",
-      "- Show empathy and understanding",
+    "- Show empathy and understanding",
       "- Connect to finance naturally (e.g., 'Financial stress can make everything harder. Let's talk about...')",
       "- Offer specific financial help related to their situation",
       "",
@@ -5146,92 +5160,92 @@ async function handleOffTopic(message, context, conversationContext = null) {
       "- Never dismiss their feelings",
       "- Always connect to finance",
       "- Offer specific, actionable financial help",
-    ].join("\n");
+  ].join("\n");
 
-    try {
-      const response = await fetch(
-        "https://openrouter.ai/api/v1/chat/completions",
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${process.env.OPENROUTER_GROK_KEY}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            model: SMALLER_MODEL,
+  try {
+    const response = await fetch(
+      "https://openrouter.ai/api/v1/chat/completions",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${process.env.OPENROUTER_GROK_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: SMALLER_MODEL,
             temperature: 0.7,
             max_tokens: 300,
-            messages: [
-              {
-                role: "system",
+          messages: [
+            {
+              role: "system",
                 content: ventingPrompt,
-              },
-              {
-                role: "user",
-                content: `${message}${
-                  userProfile.name
-                    ? `\n\n(Note: The user's name is ${userProfile.name})`
-                    : ""
-                }${
-                  netWorthData
-                    ? `\n\n(Financial context: Net worth ${netWorthData.formatted.net_worth}, ${netWorthData.formatted.liquid_assets} cash, ${netWorthData.formatted.investments_total} invested, ${netWorthData.formatted.total_liabilities} debt)`
-                    : ""
-                }`,
-              },
-            ],
-          }),
-        }
-      );
+            },
+            {
+              role: "user",
+              content: `${message}${
+                userProfile.name
+                  ? `\n\n(Note: The user's name is ${userProfile.name})`
+                  : ""
+              }${
+                netWorthData
+                  ? `\n\n(Financial context: Net worth ${netWorthData.formatted.net_worth}, ${netWorthData.formatted.liquid_assets} cash, ${netWorthData.formatted.investments_total} invested, ${netWorthData.formatted.total_liabilities} debt)`
+                  : ""
+              }`,
+            },
+          ],
+        }),
+      }
+    );
 
-      const data = await response.json();
-      const content =
-        data.choices?.[0]?.message?.content ||
+    const data = await response.json();
+    const content =
+      data.choices?.[0]?.message?.content ||
         "I'm here to help with your finances. What financial questions can I answer?";
 
       // Store conversation memory
-      const userId = context?.user_id;
-      if (userId && content) {
-        setImmediate(async () => {
-          try {
-            await storeConversationMemory(userId, message, content, {
-              intent: "off_topic",
-              chat_id: context?.chat_id,
+    const userId = context?.user_id;
+    if (userId && content) {
+      setImmediate(async () => {
+        try {
+          await storeConversationMemory(userId, message, content, {
+            intent: "off_topic",
+            chat_id: context?.chat_id,
               category: "venting",
-              userName: context?.profile?.name || null,
-            });
-          } catch (error) {
-            console.error(
+            userName: context?.profile?.name || null,
+          });
+        } catch (error) {
+          console.error(
               "❌ [FINNY] Failed to store venting conversation memory:",
-              error
-            );
-          }
-        });
-      }
+            error
+          );
+        }
+      });
+    }
 
       // Log the interaction
       setImmediate(() =>
         logConversation({
           user_message: redactPII(message),
           finny_response: redactPII(content),
-          timestamp: new Date().toISOString(),
-          user_id: context?.user_id || "unknown",
-          intent: "off_topic",
-          entities: [],
-          confidence: 1.0,
-          response_time_ms: Date.now() - startTime,
-          sources_used: [],
-          cached: false,
+      timestamp: new Date().toISOString(),
+      user_id: context?.user_id || "unknown",
+      intent: "off_topic",
+      entities: [],
+      confidence: 1.0,
+      response_time_ms: Date.now() - startTime,
+      sources_used: [],
+      cached: false,
           category: "venting",
         })
       );
 
-      return {
-        text: cleanResponseFormatting(content),
-        type: "assistant",
-        intent: "off_topic",
+    return {
+      text: cleanResponseFormatting(content),
+      type: "assistant",
+      intent: "off_topic",
         category: "venting",
-      };
-    } catch (error) {
+    };
+  } catch (error) {
       console.error("❌ [FINNY] Venting handler error:", error);
       return {
         text: "I'm here to help with your finances. Financial planning can sometimes help reduce stress. What financial questions do you have?",

@@ -692,19 +692,21 @@ export const useChat = () => {
                   // If we just split, we need a new ID for the streaming portion
                   let activeMessageId: string;
                   if (messageIds.length === completedParts.length) {
-                    // Need a new ID for streaming message
+                    // Need a new ID for streaming message (after a split)
                     activeMessageId = `${baseMessageId}-${completedParts.length + 1}`;
                     messageIds.push(activeMessageId);
                     if (STREAM_DEBUG) {
                       console.log("🆕 [STREAMING] Created new message ID:", activeMessageId);
                     }
                   } else {
-                    // Use existing streaming message ID
+                    // Use existing streaming message ID (no split occurred)
                     activeMessageId = messageIds[messageIds.length - 1];
                   }
                   
                   setChatMessages(prev => {
                     const existingIndex = prev.findIndex(msg => msg.id === activeMessageId);
+                    // Use processed streaming text if available, otherwise fall back to accumulated
+                    // (fallback only needed when messageIds.length === 0, i.e., first message)
                     const displayText = hasStreamingText ? processed.currentStreamingText : accumulatedText;
                     if (existingIndex >= 0) {
                       const updated = [...prev];
@@ -872,7 +874,9 @@ export const useChat = () => {
     }
   };
 
-  // Handle split messages with Gen Z-optimized timing
+  // Handle split messages for non-streaming responses (backward compatibility)
+  // NOTE: This is only used when streaming is disabled. Currently streaming is always enabled,
+  // so this function is kept for backward compatibility only.
   const handleSplitMessages = async (splitMessages: Array<{type: string, content: string}>) => {
     try {
       console.log(`[Frontend] Processing ${splitMessages.length} split messages`);
