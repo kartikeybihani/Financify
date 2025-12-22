@@ -1,12 +1,27 @@
 /**
  * Direct Classification Test with Improved Prompting
  * Tests the classification function directly with enhanced web search detection
+ *
+ * Usage:
+ *   node tests/test_classification_direct.js "your query here"
+ *   node tests/test_classification_direct.js hardball
+ *   node tests/test_classification_direct.js stock
  */
+
+// Import production functions to ensure test matches production logic
+import { detectStockCandidate } from "../lib/stocks.js";
 
 // Configuration
 const OPENROUTER_API_KEY =
   "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";
 const OPENROUTER_MODEL = "meta-llama/llama-3.3-70b-instruct:free";
+
+// Stock actionable detection - matches production
+function isStockActionable(message) {
+  return /\b(should|buy|invest|investing|investment|purchase|sell|hold)\b/i.test(
+    message || ""
+  );
+}
 
 // Cache for testing
 const classificationCache = new Map();
@@ -374,22 +389,15 @@ function financialConceptHeuristic(text) {
   const lower = text.toLowerCase();
 
   // Check for stock tickers BEFORE off-topic (stock queries are financial, not off-topic)
-  const stockDetection = detectStockTicker(text);
+  const stockDetection = detectStockCandidate(text);
   if (stockDetection) {
+    const actionable = isStockActionable(text);
     return {
-      intent: stockDetection.intent,
-      intent_type: text.match(
-        /\b(should|buy|invest|investing|investment|purchase|sell|hold)\b/i
-      )
-        ? "actionable"
-        : "exploratory",
+      intent: "stock_query",
+      intent_type: actionable ? "actionable" : "exploratory",
       emotional_state: "neutral",
       needs_web: false,
-      needs_user_data: text.match(
-        /\b(should|buy|invest|investing|investment|purchase|sell|hold)\b/i
-      )
-        ? true
-        : false,
+      needs_user_data: actionable,
       state: null,
       entities: stockDetection.entities || [],
       ticker: stockDetection.ticker,
@@ -913,13 +921,33 @@ async function handleClassify(message, context, conversationContext = null) {
   // Check cache first
   const cachedResult = getCachedClassification(text);
   if (cachedResult) {
-    // Validate cached result structure before using it
+    // Validate cached result structure before using it - matches production
     if (
       cachedResult.intent &&
       typeof cachedResult.intent === "string" &&
       cachedResult.needs_web !== undefined &&
       cachedResult.needs_user_data !== undefined
     ) {
+      // Ensure new fields exist (backward compatibility with old cache entries)
+      if (!cachedResult.intent_type && cachedResult.intent !== "off_topic") {
+        cachedResult.intent_type = null;
+      }
+      if (!cachedResult.emotional_state) {
+        cachedResult.emotional_state = "neutral";
+      }
+      if (!Array.isArray(cachedResult.entities)) {
+        cachedResult.entities = [];
+      }
+      if (cachedResult.ticker === undefined) {
+        cachedResult.ticker = null;
+      }
+      if (
+        cachedResult.intent === "stock_query" &&
+        cachedResult.ticker &&
+        cachedResult.entities.length === 0
+      ) {
+        cachedResult.entities = [cachedResult.ticker];
+      }
       console.log(
         `⚡ [TEST] Using cached classification result (${
           Date.now() - startTime
@@ -939,25 +967,18 @@ async function handleClassify(message, context, conversationContext = null) {
     }
   }
 
-  // Check for stock ticker FIRST (before goal detection)
+  // Check for stock candidate FIRST (before goal detection) - matches production logic
   // Stock queries require a SPECIFIC ticker/company - general queries should not trigger this
-  const stockDetection = detectStockTicker(text);
+  const stockDetection = detectStockCandidate(text);
   if (stockDetection) {
     console.log(`✅ [TEST] Stock ticker detected: ${stockDetection.ticker}`);
+    const actionable = isStockActionable(text);
     const result = {
-      intent: stockDetection.intent,
-      intent_type: text.match(
-        /\b(should|buy|invest|investing|investment|purchase|sell|hold)\b/i
-      )
-        ? "actionable"
-        : "exploratory",
+      intent: "stock_query",
+      intent_type: actionable ? "actionable" : "exploratory",
       emotional_state: "neutral",
       needs_web: false,
-      needs_user_data: text.match(
-        /\b(should|buy|invest|investing|investment|purchase|sell|hold)\b/i
-      )
-        ? true
-        : false,
+      needs_user_data: actionable,
       state: null,
       entities: stockDetection.entities || [],
       ticker: stockDetection.ticker,
@@ -1014,6 +1035,7 @@ async function handleClassify(message, context, conversationContext = null) {
       needs_user_data: false,
       state: null,
       entities: [],
+      ticker: null,
       confidence: 0.9,
       heuristic: true,
     };
@@ -1021,22 +1043,7 @@ async function handleClassify(message, context, conversationContext = null) {
     return result;
   }
 
-  // Check for off-topic LAST (after financial heuristics)
-  const offTopicHeuristic = detectOffTopic(text);
-  if (offTopicHeuristic) {
-    console.log("✅ [TEST] Heuristic detected off-topic query");
-    const result = {
-      intent: "off_topic",
-      needs_web: false,
-      needs_user_data: false,
-      state: null,
-      entities: [],
-      confidence: 0.9,
-      heuristic: true,
-    };
-    setCachedClassification(text, result);
-    return result;
-  }
+  // Off-topic detection removed - let classification layer handle it (matches production)
 
   try {
     // Create a timeout promise that rejects after 8 seconds (increased for stability)
@@ -1755,29 +1762,70 @@ async function runHardballTests() {
   }
 }
 
-// Run if called directly
-if (
-  typeof window === "undefined" &&
-  import.meta.url === `file://${process.argv[1]}`
-) {
+// Run if called directly with node
+// Check if this is the main module (works for both CommonJS and ES modules)
+const isMainModule =
+  import.meta.url === `file://${process.argv[1]}` ||
+  import.meta.url.endsWith("test_classification_direct.js") ||
+  process.argv[1]?.endsWith("test_classification_direct.js");
+
+if (isMainModule) {
   const userMessage = process.argv[2];
   const testType = process.argv[3];
 
-  if (userMessage) {
+  if (
+    userMessage &&
+    userMessage !== "hardball" &&
+    userMessage !== "stock" &&
+    userMessage !== "curveball"
+  ) {
+    // User provided a query string
     console.log("🚀 Testing Single Statement");
     console.log(`Testing: "${userMessage}"`);
     console.log("=".repeat(50));
 
-    testSingleMessage(userMessage).catch(console.error);
-  } else if (testType === "hardball") {
+    testSingleMessage(userMessage)
+      .then(() => {
+        console.log("\n✅ Test completed");
+        process.exit(0);
+      })
+      .catch((error) => {
+        console.error("❌ Test failed:", error);
+        process.exit(1);
+      });
+  } else if (userMessage === "hardball" || testType === "hardball") {
     console.log("🔥 Running hardball tests...");
-    runHardballTests().catch(console.error);
-  } else if (testType === "stock") {
+    runHardballTests()
+      .then(() => {
+        console.log("\n✅ Hardball tests completed");
+        process.exit(0);
+      })
+      .catch((error) => {
+        console.error("❌ Hardball tests failed:", error);
+        process.exit(1);
+      });
+  } else if (userMessage === "stock" || testType === "stock") {
     console.log("📈 Running stock query tests...");
-    runStockQueryTests().catch(console.error);
+    runStockQueryTests()
+      .then(() => {
+        console.log("\n✅ Stock query tests completed");
+        process.exit(0);
+      })
+      .catch((error) => {
+        console.error("❌ Stock query tests failed:", error);
+        process.exit(1);
+      });
   } else {
     console.log("Running curveball tests...");
-    runCurveballTests().catch(console.error);
+    runCurveballTests()
+      .then(() => {
+        console.log("\n✅ Curveball tests completed");
+        process.exit(0);
+      })
+      .catch((error) => {
+        console.error("❌ Curveball tests failed:", error);
+        process.exit(1);
+      });
   }
 }
 

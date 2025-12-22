@@ -1439,32 +1439,61 @@ export default async function handler(req, res) {
             break;
           }
 
-          mergeSessionState(finalUserId, { stock_flow: null });
-
           const stockContext = {
             ...safeContext,
             skip_stock_confirmation: true,
             stock_override: { ticker: stockFlow.ticker },
           };
 
-          response = await handleAsk(
-            stockFlow.original_message || `${stockFlow.ticker} stock`,
-            stockContext,
-            "ask_personalized",
-            null,
-            conversationContext,
-            timings,
-            wantsStreaming
-          );
+          try {
+            response = await handleAsk(
+              stockFlow.original_message || `${stockFlow.ticker} stock`,
+              stockContext,
+              "ask_personalized",
+              null,
+              conversationContext,
+              timings,
+              wantsStreaming
+            );
+
+            // Only clear state AFTER successful completion
+            mergeSessionState(finalUserId, { stock_flow: null });
+          } catch (error) {
+            logError("❌ [STOCK] Error during stock analysis:", error);
+            // Keep stock_flow state so user can retry
+            response = {
+              message:
+                "Something went wrong analyzing the stock. Please try again.",
+              type: "assistant",
+              stock_candidate: { ticker: stockFlow.ticker },
+              actions: [
+                {
+                  label: "Retry",
+                  action: "confirm_stock",
+                  style: "primary",
+                },
+                {
+                  label: "Change",
+                  action: "change_stock",
+                  style: "secondary",
+                },
+              ],
+            };
+          }
           break;
         }
 
         if (message === "update_stock_ticker") {
           const rawTicker = otherParams?.ticker || otherParams?.stock_ticker;
-          const updatedTicker =
-            typeof rawTicker === "string"
-              ? rawTicker.toUpperCase().trim()
-              : "";
+          if (!rawTicker || typeof rawTicker !== "string") {
+            response = {
+              message: "Please provide a valid ticker symbol.",
+              type: "assistant",
+              intent: "ask_personalized",
+            };
+            break;
+          }
+          const updatedTicker = rawTicker.toUpperCase().trim().slice(0, 5);
 
           if (!/^[A-Z]{1,5}$/.test(updatedTicker)) {
             response = {
@@ -1494,8 +1523,12 @@ export default async function handler(req, res) {
 
           mergeSessionState(finalUserId, { stock_flow: updatedFlow });
 
+          // Improved confirmation message with ticker displayed
+          const tickerDisplay = updatedTicker;
+          const confirmationMessage = `I detected **${tickerDisplay}**. Want me to analyze this stock?`;
+
           response = {
-            message: "Got it. Want me to run an analysis?",
+            message: confirmationMessage,
             type: "assistant",
             intent: "ask_personalized",
             stock_candidate: { ticker: updatedTicker },
@@ -1904,36 +1937,86 @@ async function handleAsk(
     logInfo("📦 [FINNY] Context packs built:", Object.keys(packs));
     logInfo("⚠️ [FINNY] Data gaps:", gaps);
 
-    const stockCandidate = detectStockCandidate(message);
-    if (stockCandidate && !context?.skip_stock_confirmation) {
-      const stockFlow = {
-        active: true,
-        ticker: stockCandidate.ticker,
-        original_message: message,
-        stage: "awaiting_confirmation",
-        entities: stockCandidate.entities || [],
-        source: stockCandidate.source || null,
-      };
-      mergeSessionState(userId, { stock_flow: stockFlow });
+    // Check for stock candidate - prioritize classification result if available
+    let stockCandidate = null;
+    if (
+      classificationResult?.intent === "stock_query" &&
+      classificationResult?.ticker
+    ) {
+      // Validate and normalize ticker from classification
+      const ticker = String(classificationResult.ticker).toUpperCase().trim();
 
-      return {
-        message: "I found a ticker. Want me to run an analysis?",
-        type: "assistant",
-        intent: "ask_personalized",
-        stock_candidate: { ticker: stockCandidate.ticker },
-        actions: [
-          {
-            label: "Yes",
-            action: "confirm_stock",
-            style: "primary",
-          },
-          {
-            label: "Change",
-            action: "change_stock",
-            style: "secondary",
-          },
-        ],
-      };
+      // Validate ticker format (1-5 uppercase letters)
+      if (!/^[A-Z]{1,5}$/.test(ticker)) {
+        logWarn(
+          `⚠️ [STOCK] Invalid ticker format from classification: ${ticker}, falling back to detection`
+        );
+        // Fall back to detection
+        stockCandidate = detectStockCandidate(message);
+      } else {
+        // Use classification result if it detected a stock query with ticker
+        stockCandidate = {
+          ticker: ticker,
+          entities: classificationResult.entities || [ticker],
+          confidence: classificationResult.confidence || 0.9,
+          source: "classification",
+        };
+        logDebug(
+          "🔍 [STOCK] Using stock candidate from classification:",
+          stockCandidate
+        );
+      }
+    } else {
+      // Fallback to detectStockCandidate if classification didn't catch it
+      stockCandidate = detectStockCandidate(message);
+      if (stockCandidate) {
+        logDebug(
+          "🔍 [STOCK] Using stock candidate from detection:",
+          stockCandidate
+        );
+      }
+    }
+
+    // Show confirmation prompt if we found a stock candidate and confirmation is not skipped
+    if (stockCandidate && !context?.skip_stock_confirmation) {
+      // Defensive check for ticker
+      if (!stockCandidate.ticker) {
+        logError("❌ [STOCK] stockCandidate missing ticker:", stockCandidate);
+        // Fall through to regular stock query handling
+      } else {
+        const stockFlow = {
+          active: true,
+          ticker: stockCandidate.ticker,
+          original_message: message,
+          stage: "awaiting_confirmation",
+          entities: stockCandidate.entities || [],
+          source: stockCandidate.source || null,
+        };
+        mergeSessionState(userId, { stock_flow: stockFlow });
+
+        // Improved confirmation message with ticker displayed
+        const tickerDisplay = stockCandidate.ticker;
+        const confirmationMessage = `I detected **${tickerDisplay}**. Want me to analyze this stock?`;
+
+        return {
+          message: confirmationMessage,
+          type: "assistant",
+          intent: "ask_personalized",
+          stock_candidate: { ticker: stockCandidate.ticker },
+          actions: [
+            {
+              label: "Yes",
+              action: "confirm_stock",
+              style: "primary",
+            },
+            {
+              label: "Change",
+              action: "change_stock",
+              style: "secondary",
+            },
+          ],
+        };
+      }
     }
 
     // 3.5) Check if this is a stock query after building context packs
@@ -1973,7 +2056,10 @@ async function handleAsk(
           logDebug("🔍 [STOCK] Deep query detected, using advanced analysis");
           stockPlan = await planStockRequest(message);
           if (stockOverride) {
-            stockPlan = { ...(stockPlan || {}), ticker_candidates: [stockOverride] };
+            stockPlan = {
+              ...(stockPlan || {}),
+              ticker_candidates: [stockOverride],
+            };
           }
           logDebug("🔍 [STOCK] Stock plan result:", stockPlan);
           const exec = await executeStockPlan(stockPlan || {}, message);
@@ -1989,13 +2075,21 @@ async function handleAsk(
           // Simple stock query
           const stockResponse = await getCachedDataWithFallback(
             "stock_snapshot",
-            stockOverride ? `override:${stockOverride}` : message.toLowerCase().trim(),
+            stockOverride
+              ? `override:${stockOverride}`
+              : message.toLowerCase().trim(),
             async () => {
               if (stockOverride) {
                 const snapshot = await fetchStockSnapshot(stockOverride);
-                return { ...snapshot, ticker: stockOverride, queryUsed: stockOverride };
+                return {
+                  ...snapshot,
+                  ticker: stockOverride,
+                  queryUsed: stockOverride,
+                };
               }
-              const { ticker, queryUsed } = await resolveTickerForQuery(message);
+              const { ticker, queryUsed } = await resolveTickerForQuery(
+                message
+              );
               if (!ticker) {
                 return {
                   error: "Could not resolve ticker from query",
@@ -2567,13 +2661,13 @@ async function handleAsk(
       };
     } else {
       // Non-streaming - split on backend for backward compatibility
-    const splitMessages = splitLongResponse(cleanedMessage);
+      const splitMessages = splitLongResponse(cleanedMessage);
       response = {
-      message:
-        splitMessages.length === 1 ? splitMessages[0].content : splitMessages,
-      type: "assistant",
-      isSplit: splitMessages.length > 1,
-    };
+        message:
+          splitMessages.length === 1 ? splitMessages[0].content : splitMessages,
+        type: "assistant",
+        isSplit: splitMessages.length > 1,
+      };
     }
 
     // Log the conversation
@@ -5237,7 +5331,11 @@ async function handleClassify(message, context, conversationContext = null) {
     if (!out.state || typeof out.state !== "string") out.state = null;
     if (!Array.isArray(out.entities)) out.entities = [];
     if (out.ticker === undefined) out.ticker = null;
-    if (out.intent === "stock_query" && out.ticker && out.entities.length === 0) {
+    if (
+      out.intent === "stock_query" &&
+      out.ticker &&
+      out.entities.length === 0
+    ) {
       out.entities = [out.ticker];
     }
 
@@ -5450,7 +5548,7 @@ async function handleOffTopic(message, context, conversationContext = null) {
       "",
       "RESPONSE STRUCTURE:",
       "- Acknowledge their feelings (1-2 sentences)",
-    "- Show empathy and understanding",
+      "- Show empathy and understanding",
       "- Connect to finance naturally (e.g., 'Financial stress can make everything harder. Let's talk about...')",
       "- Offer specific financial help related to their situation",
       "",
@@ -5467,92 +5565,92 @@ async function handleOffTopic(message, context, conversationContext = null) {
       "- Never dismiss their feelings",
       "- Always connect to finance",
       "- Offer specific, actionable financial help",
-  ].join("\n");
+    ].join("\n");
 
-  try {
-    const response = await fetch(
-      "https://openrouter.ai/api/v1/chat/completions",
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${process.env.OPENROUTER_GROK_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: SMALLER_MODEL,
+    try {
+      const response = await fetch(
+        "https://openrouter.ai/api/v1/chat/completions",
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${process.env.OPENROUTER_GROK_KEY}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model: SMALLER_MODEL,
             temperature: 0.7,
             max_tokens: 300,
-          messages: [
-            {
-              role: "system",
+            messages: [
+              {
+                role: "system",
                 content: ventingPrompt,
-            },
-            {
-              role: "user",
-              content: `${message}${
-                userProfile.name
-                  ? `\n\n(Note: The user's name is ${userProfile.name})`
-                  : ""
-              }${
-                netWorthData
-                  ? `\n\n(Financial context: Net worth ${netWorthData.formatted.net_worth}, ${netWorthData.formatted.liquid_assets} cash, ${netWorthData.formatted.investments_total} invested, ${netWorthData.formatted.total_liabilities} debt)`
-                  : ""
-              }`,
-            },
-          ],
-        }),
-      }
-    );
+              },
+              {
+                role: "user",
+                content: `${message}${
+                  userProfile.name
+                    ? `\n\n(Note: The user's name is ${userProfile.name})`
+                    : ""
+                }${
+                  netWorthData
+                    ? `\n\n(Financial context: Net worth ${netWorthData.formatted.net_worth}, ${netWorthData.formatted.liquid_assets} cash, ${netWorthData.formatted.investments_total} invested, ${netWorthData.formatted.total_liabilities} debt)`
+                    : ""
+                }`,
+              },
+            ],
+          }),
+        }
+      );
 
-    const data = await response.json();
-    const content =
-      data.choices?.[0]?.message?.content ||
+      const data = await response.json();
+      const content =
+        data.choices?.[0]?.message?.content ||
         "I'm here to help with your finances. What financial questions can I answer?";
 
       // Store conversation memory
-    const userId = context?.user_id;
-    if (userId && content) {
-      setImmediate(async () => {
-        try {
-          await storeConversationMemory(userId, message, content, {
-            intent: "off_topic",
-            chat_id: context?.chat_id,
+      const userId = context?.user_id;
+      if (userId && content) {
+        setImmediate(async () => {
+          try {
+            await storeConversationMemory(userId, message, content, {
+              intent: "off_topic",
+              chat_id: context?.chat_id,
               category: "venting",
-            userName: context?.profile?.name || null,
-          });
-        } catch (error) {
-          console.error(
+              userName: context?.profile?.name || null,
+            });
+          } catch (error) {
+            console.error(
               "❌ [FINNY] Failed to store venting conversation memory:",
-            error
-          );
-        }
-      });
-    }
+              error
+            );
+          }
+        });
+      }
 
       // Log the interaction
       setImmediate(() =>
         logConversation({
           user_message: redactPII(message),
           finny_response: redactPII(content),
-      timestamp: new Date().toISOString(),
-      user_id: context?.user_id || "unknown",
-      intent: "off_topic",
-      entities: [],
-      confidence: 1.0,
-      response_time_ms: Date.now() - startTime,
-      sources_used: [],
-      cached: false,
+          timestamp: new Date().toISOString(),
+          user_id: context?.user_id || "unknown",
+          intent: "off_topic",
+          entities: [],
+          confidence: 1.0,
+          response_time_ms: Date.now() - startTime,
+          sources_used: [],
+          cached: false,
           category: "venting",
         })
       );
 
-    return {
-      text: cleanResponseFormatting(content),
-      type: "assistant",
-      intent: "off_topic",
+      return {
+        text: cleanResponseFormatting(content),
+        type: "assistant",
+        intent: "off_topic",
         category: "venting",
-    };
-  } catch (error) {
+      };
+    } catch (error) {
       console.error("❌ [FINNY] Venting handler error:", error);
       return {
         text: "I'm here to help with your finances. Financial planning can sometimes help reduce stress. What financial questions do you have?",
@@ -5797,7 +5895,7 @@ async function streamTextChunks(res, text, chunkSize = 15) {
       if (i < words.length - 1) {
         currentChunk += " ";
       }
-      
+
       sendStreamEvent(res, "text_chunk", { text: currentChunk });
       currentChunk = "";
 

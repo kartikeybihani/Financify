@@ -585,8 +585,14 @@ function ChatScreenContent() {
 
       if (action === "confirm_stock") {
         setIsTyping(true);
-        await handleActionButton(action);
-        setIsTyping(false);
+        try {
+          await handleActionButton(action);
+        } catch (error) {
+          console.error("❌ [ACTION] Error confirming stock:", error);
+          pushChat("finny", "Something went wrong. Please try again.");
+        } finally {
+          setIsTyping(false);
+        }
       }
     },
     [
