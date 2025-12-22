@@ -1070,6 +1070,8 @@ export const useChat = () => {
         ];
         const randomMessage = funMessages[Math.floor(Math.random() * funMessages.length)];
         setProgressStatus(randomMessage);
+      } else if (classifyData.intent === "stock_query") {
+        setProgressStatus("Checking that ticker...");
       } else if (classifyData.intent === "ask_personalized") {
         // Check if web search is needed for more specific progress message
         if (classifyData.needs_web) {
@@ -1100,7 +1102,11 @@ export const useChat = () => {
       // 2) Route to appropriate handler based on classification
       // Use XMLHttpRequest for streaming, fetch for regular responses
       if (useStreaming) {
-        const requestBody = !goalFlow?.active && classifyData.intent === "ask_personalized" 
+        const isAskIntent =
+          !goalFlow?.active &&
+          (classifyData.intent === "ask_personalized" ||
+            classifyData.intent === "stock_query");
+        const requestBody = isAskIntent
           ? {
               action: "ask",
               message: messageText,
@@ -1179,7 +1185,11 @@ export const useChat = () => {
 
       // Regular fetch for non-streaming requests
       let res;
-      if (!goalFlow?.active && classifyData.intent === "ask_personalized") {
+      const isAskIntent =
+        !goalFlow?.active &&
+        (classifyData.intent === "ask_personalized" ||
+          classifyData.intent === "stock_query");
+      if (isAskIntent) {
         res = await authenticatedFetch(`${BASE_URL}/api/finny`, {
           method: "POST",
           body: JSON.stringify({
@@ -1256,7 +1266,12 @@ export const useChat = () => {
 
       if (data.intent === "goal_conversation") {
         message = data.message || "Let's set a goal.";
-      } else if ((data.intent === "ask_personalized" || data.type === "assistant") && data.message) {
+      } else if (
+        (data.intent === "ask_personalized" ||
+          data.intent === "stock_query" ||
+          data.type === "assistant") &&
+        data.message
+      ) {
         // Generic assistant/ask responses (must come AFTER goal_conversation check)
         message = data.message;
       } else if (data.intent === "off_topic" && data.text) {

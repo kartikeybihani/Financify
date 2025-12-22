@@ -1296,10 +1296,26 @@ export default async function handler(req, res) {
         break;
       }
       case "ask": {
+        const askIntent =
+          classification?.intent === "stock_query"
+            ? "stock_query"
+            : "ask_personalized";
         response = await handleAsk(
           message,
           safeContext,
-          "ask_personalized",
+          askIntent,
+          classification,
+          conversationContext,
+          timings, // Pass timings object to track web search and context packs
+          wantsStreaming // Pass streaming preference
+        );
+        break;
+      }
+      case "stock_query": {
+        response = await handleAsk(
+          message,
+          safeContext,
+          "stock_query",
           classification,
           conversationContext,
           timings, // Pass timings object to track web search and context packs
@@ -3938,10 +3954,48 @@ async function cacheOperationData(operation, data) {
   await setCachedUserData(cfg.cacheType, operation.userId, data, params);
 }
 
+function isStockActionable(message) {
+  return /\b(should|buy|invest|investing|investment|purchase|sell|hold)\b/i.test(
+    message || ""
+  );
+}
+
 // Heuristic: detect clearly in-scope financial concept questions to avoid false off-topic
 function financialConceptHeuristic(raw) {
   const text = (raw || "").toLowerCase();
   if (!text) return null;
+
+  const stockDetection = detectStockCandidate(raw);
+  if (stockDetection) {
+    const actionable = isStockActionable(raw);
+    return {
+      intent: "stock_query",
+      intent_type: actionable ? "actionable" : "exploratory",
+      emotional_state: "neutral",
+      needs_web: false,
+      needs_user_data: actionable,
+      state: null,
+      entities: stockDetection.entities || [],
+      ticker: stockDetection.ticker,
+      confidence: stockDetection.confidence,
+      heuristic: true,
+    };
+  }
+
+  if (detectOffTopic(raw)) {
+    return {
+      intent: "off_topic",
+      intent_type: null,
+      emotional_state: "neutral",
+      needs_web: false,
+      needs_user_data: false,
+      state: null,
+      entities: [],
+      ticker: null,
+      confidence: 0.9,
+      heuristic: true,
+    };
+  }
 
   // Investment advice queries - should NOT need web search
   const investmentAdvicePatterns = [
@@ -3968,6 +4022,7 @@ function financialConceptHeuristic(raw) {
       needs_user_data: true,
       state: null,
       entities: [],
+      ticker: null,
       confidence: 0.9,
       heuristic: true,
     };
@@ -4007,6 +4062,7 @@ function financialConceptHeuristic(raw) {
       needs_user_data: true,
       state: null,
       entities: [],
+      ticker: null,
       confidence: 0.9,
       heuristic: true,
     };
@@ -4066,6 +4122,7 @@ function financialConceptHeuristic(raw) {
       needs_user_data: isPersonalQuery,
       state: null,
       entities: [],
+      ticker: null,
       confidence: 0.85,
       heuristic: true,
     };
@@ -4703,6 +4760,7 @@ async function handleClassify(message, context, conversationContext = null) {
       needs_user_data: true,
       state: null,
       entities: [],
+      ticker: null,
       confidence: 0.1,
       fallback: true,
     };
@@ -4725,6 +4783,19 @@ async function handleClassify(message, context, conversationContext = null) {
       if (!cachedResult.emotional_state) {
         cachedResult.emotional_state = "neutral";
       }
+      if (!Array.isArray(cachedResult.entities)) {
+        cachedResult.entities = [];
+      }
+      if (cachedResult.ticker === undefined) {
+        cachedResult.ticker = null;
+      }
+      if (
+        cachedResult.intent === "stock_query" &&
+        cachedResult.ticker &&
+        cachedResult.entities.length === 0
+      ) {
+        cachedResult.entities = [cachedResult.ticker];
+      }
       console.log(
         `⚡ [FINNY] Using cached classification result (${
           Date.now() - startTime
@@ -4744,6 +4815,25 @@ async function handleClassify(message, context, conversationContext = null) {
     }
   }
 
+  const stockDetection = detectStockCandidate(text);
+  if (stockDetection) {
+    const actionable = isStockActionable(text);
+    const result = {
+      intent: "stock_query",
+      intent_type: actionable ? "actionable" : "exploratory",
+      emotional_state: "neutral",
+      needs_web: false,
+      needs_user_data: actionable,
+      state: null,
+      entities: stockDetection.entities || [],
+      ticker: stockDetection.ticker,
+      confidence: stockDetection.confidence,
+      heuristic: true,
+    };
+    setCachedClassification(text, result);
+    return result;
+  }
+
   // Check for goal intent (before LLM call for efficiency)
   const goalDetection = detectGoalIntent(text, context?.conversation_context);
   if (goalDetection) {
@@ -4757,6 +4847,7 @@ async function handleClassify(message, context, conversationContext = null) {
       needs_user_data: true,
       state: null,
       entities: [],
+      ticker: null,
       confidence: goalDetection.confidence,
       heuristic: true,
       reason: goalDetection.reason,
@@ -4804,6 +4895,7 @@ async function handleClassify(message, context, conversationContext = null) {
       needs_user_data: false,
       state: null,
       entities: [],
+      ticker: null,
       confidence: 0.9,
       heuristic: true,
     };
@@ -4846,6 +4938,7 @@ async function handleClassify(message, context, conversationContext = null) {
                 "Classify into exactly ONE primary intent:",
                 "- ask_personalized: Questions about user's finances (spending, accounts, goals, investments, affordability, advice)",
                 "- goal_conversation: Creating NEW goals or setting savings targets (explicit goal creation statements)",
+                "- stock_query: Questions about specific stocks, tickers, or companies (e.g., 'What about Apple?', 'Tell me about AAPL', 'Should I buy Tesla stock?')",
                 "- off_topic: Non-financial topics (weather, cooking, entertainment, general chat, etc)",
                 "",
                 "=== INTENT TYPE (What user wants to accomplish) ===",
@@ -4901,7 +4994,25 @@ async function handleClassify(message, context, conversationContext = null) {
                 "5. Credit card queries ALWAYS need web search:",
                 "   - 'What credit card should I get?' → ask_personalized, needs_web:true, needs_user_data:true",
                 "",
-                "6. Spending, budget, and financial tips/queries ALWAYS need user data:",
+                "6. Stock queries REQUIRE a SPECIFIC ticker/company - general queries are ask_personalized:",
+                "   - 'What about Apple stock?' → stock_query, needs_web:false, needs_user_data:false, ticker:'AAPL' (SPECIFIC company)",
+                "   - 'Tell me about AAPL' → stock_query, needs_web:false, needs_user_data:false, ticker:'AAPL' (SPECIFIC ticker)",
+                "   - 'Should I buy Tesla?' → stock_query, needs_web:false, needs_user_data:true, ticker:'TSLA' (SPECIFIC company)",
+                "   - 'What's the market cap of Microsoft?' → stock_query, needs_web:false, needs_user_data:false, ticker:'MSFT' (SPECIFIC company)",
+                "   - 'How is NVIDIA doing?' → stock_query, needs_web:false, needs_user_data:false, ticker:'NVDA' (SPECIFIC company)",
+                "   - 'What stocks should I buy?' → ask_personalized, needs_user_data:true (GENERAL - no specific ticker)",
+                "   - 'What stocks are good?' → ask_personalized, needs_user_data:true (GENERAL - no specific ticker)",
+                "   - 'Tell me about the stock market' → ask_personalized, needs_web:true (GENERAL - no specific ticker)",
+                "",
+                "7. TICKER DETECTION RULES:",
+                "   - ONLY classify as stock_query if a SPECIFIC ticker symbol OR company name is mentioned",
+                "   - Extract ticker symbols (1-5 uppercase letters): AAPL, TSLA, MSFT, GOOGL, etc.",
+                "   - Map company names to tickers: Apple→AAPL, Tesla→TSLA, Microsoft→MSFT, Google→GOOGL, Amazon→AMZN, Meta→META, NVIDIA→NVDA",
+                "   - If multiple tickers detected, include all in entities array",
+                "   - If ticker is ambiguous (e.g., 'Apple' without context), set confidence < 0.8",
+                "   - If NO specific ticker/company mentioned, use ask_personalized (NOT stock_query)",
+                "",
+                "8. Spending, budget, and financial tips/queries ALWAYS need user data:",
                 "   - 'Give me a spending tip' → intent:ask_personalized, needs_web:false, needs_user_data:true",
                 "   - 'Spending tips' → intent:ask_personalized, needs_web:false, needs_user_data:true",
                 "   - 'Budget advice' → intent:ask_personalized, needs_web:false, needs_user_data:true",
@@ -4936,11 +5047,29 @@ async function handleClassify(message, context, conversationContext = null) {
                 'Query: "I feel stupid for spending so much on that"',
                 'Response: {"intent":"ask_personalized","intent_type":"emotional_support","emotional_state":"ashamed","needs_web":false,"needs_user_data":true,"confidence":0.9}',
                 "",
+                'Query: "What about Apple stock?"',
+                'Response: {"intent":"stock_query","intent_type":"exploratory","emotional_state":"neutral","needs_web":false,"needs_user_data":false,"ticker":"AAPL","entities":["AAPL"],"confidence":0.95}',
+                "",
+                'Query: "Tell me about TSLA"',
+                'Response: {"intent":"stock_query","intent_type":"exploratory","emotional_state":"neutral","needs_web":false,"needs_user_data":false,"ticker":"TSLA","entities":["TSLA"],"confidence":0.98}',
+                "",
+                'Query: "Should I buy Tesla?"',
+                'Response: {"intent":"stock_query","intent_type":"actionable","emotional_state":"neutral","needs_web":false,"needs_user_data":true,"ticker":"TSLA","entities":["TSLA"],"confidence":0.9}',
+                "",
+                'Query: "What\'s Apple doing?"',
+                'Response: {"intent":"stock_query","intent_type":"exploratory","emotional_state":"neutral","needs_web":false,"needs_user_data":false,"ticker":"AAPL","entities":["AAPL"],"confidence":0.75}',
+                "",
+                'Query: "Tell me about the stock market"',
+                'Response: {"intent":"ask_personalized","intent_type":"exploratory","emotional_state":"neutral","needs_web":true,"needs_user_data":false,"ticker":null,"entities":[],"confidence":0.9}',
+                "",
+                'Query: "What stocks should I buy?"',
+                'Response: {"intent":"ask_personalized","intent_type":"actionable","emotional_state":"neutral","needs_web":false,"needs_user_data":true,"ticker":null,"entities":[],"confidence":0.9}',
+                "",
                 "=== OUTPUT FORMAT ===",
                 "CRITICAL: You MUST return ONLY valid JSON. No markdown, no code fences, no extra text, no comments.",
                 "The JSON must be parseable by JSON.parse(). Follow this EXACT structure:",
                 "",
-                '{"intent":"ask_personalized","intent_type":"exploratory","emotional_state":"neutral","needs_web":false,"needs_user_data":true,"state":null,"entities":[],"confidence":0.95}',
+                '{"intent":"ask_personalized","intent_type":"exploratory","emotional_state":"neutral","needs_web":false,"needs_user_data":true,"state":null,"entities":[],"ticker":null,"confidence":0.95}',
                 "",
                 "Valid JSON format rules:",
                 "- Use double quotes for all strings",
@@ -4951,14 +5080,22 @@ async function handleClassify(message, context, conversationContext = null) {
                 "- All fields must be present",
                 "",
                 "Field requirements:",
-                "- intent: REQUIRED string (ask_personalized|goal_conversation|off_topic)",
+                "- intent: REQUIRED string (ask_personalized|goal_conversation|stock_query|off_topic)",
                 "- intent_type: string or null (exploratory|actionable|emotional_support|crisis|planning|null)",
                 "- emotional_state: REQUIRED string (neutral|anxious|panicked|ashamed|overwhelmed|fomo)",
                 "- needs_web: REQUIRED boolean (true|false)",
                 "- needs_user_data: REQUIRED boolean (true|false)",
                 "- state: string or null (state code like AZ, CA, or null)",
-                "- entities: REQUIRED array (empty array [] if none)",
+                "- entities: REQUIRED array (empty array [] if none, or ticker symbols if stock_query)",
+                "- ticker: string or null (ticker symbol like 'AAPL', 'TSLA', or null if not stock_query or ambiguous)",
                 "- confidence: REQUIRED number (0.0-1.0)",
+                "",
+                "TICKER EXTRACTION RULES:",
+                "- For stock_query intent, extract ticker symbol from message",
+                "- If ticker is clear (e.g., 'AAPL', 'TSLA'), set ticker field and confidence >= 0.9",
+                "- If company name maps to ticker (e.g., 'Apple'→'AAPL'), set ticker and confidence >= 0.8",
+                "- If ticker is ambiguous or unclear, set ticker:null and confidence < 0.8",
+                "- Always include ticker in entities array if detected",
                 "",
                 "CRITICAL: Meta/system questions about AI capabilities are ALWAYS off_topic:",
                 "- 'Can you learn from our conversations?' → off_topic",
@@ -5073,6 +5210,7 @@ async function handleClassify(message, context, conversationContext = null) {
           needs_user_data: true,
           state: null,
           entities: [],
+          ticker: null,
           confidence: goalDetection.confidence,
           fallback: true,
           detection_reason: goalDetection.reason,
@@ -5087,6 +5225,7 @@ async function handleClassify(message, context, conversationContext = null) {
           needs_user_data: true,
           state: null,
           entities: [],
+          ticker: null,
           confidence: 0.8,
           fallback: true,
         };
@@ -5097,6 +5236,10 @@ async function handleClassify(message, context, conversationContext = null) {
     // Defensive post-process so your app never crashes
     if (!out.state || typeof out.state !== "string") out.state = null;
     if (!Array.isArray(out.entities)) out.entities = [];
+    if (out.ticker === undefined) out.ticker = null;
+    if (out.intent === "stock_query" && out.ticker && out.entities.length === 0) {
+      out.entities = [out.ticker];
+    }
 
     // Log the classification
     const conversationData = {
@@ -5132,7 +5275,31 @@ async function handleClassify(message, context, conversationContext = null) {
 
     // Enhanced heuristic fallbacks in priority order
 
-    // 1. Web search detection
+    // 1. Off-topic detection
+    const offTopicCheck = detectOffTopic(message);
+    if (
+      offTopicCheck &&
+      (typeof offTopicCheck === "object"
+        ? offTopicCheck.isOffTopic
+        : offTopicCheck)
+    ) {
+      console.log("✅ [FINNY] Using off-topic heuristic fallback");
+      return {
+        intent: "off_topic",
+        intent_type: null,
+        emotional_state: "neutral",
+        needs_web: false,
+        needs_user_data: false,
+        state: null,
+        entities: [],
+        ticker: null,
+        confidence: 0.9,
+        fallback: true,
+        timeout_fallback: e?.message?.includes("timeout") || false,
+      };
+    }
+
+    // 2. Web search detection
     const webSearchHeuristic = detectWebSearchNeeded(message);
     if (webSearchHeuristic) {
       console.log("✅ [FINNY] Using web search heuristic fallback");
@@ -5144,6 +5311,7 @@ async function handleClassify(message, context, conversationContext = null) {
         needs_user_data: false,
         state: null,
         entities: [],
+        ticker: null,
         confidence: 0.8,
         fallback: true,
         timeout_fallback: e?.message?.includes("timeout") || false,
@@ -5167,6 +5335,7 @@ async function handleClassify(message, context, conversationContext = null) {
         needs_user_data: true,
         state: null,
         entities: [],
+        ticker: null,
         confidence: goalDetection.confidence,
         fallback: true,
         timeout_fallback: e?.message?.includes("timeout") || false,
@@ -5199,6 +5368,7 @@ async function handleClassify(message, context, conversationContext = null) {
       needs_user_data: true,
       state: null,
       entities: [],
+      ticker: null,
       confidence: 0.1,
       fallback: true,
       timeout_fallback: e?.message?.includes("timeout") || false,

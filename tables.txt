@@ -381,6 +381,22 @@ CREATE TABLE public.snaptrade_connections (
   CONSTRAINT snaptrade_connections_pkey PRIMARY KEY (id),
   CONSTRAINT snaptrade_connections_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
 );
+CREATE TABLE public.supermemory_documents (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL,
+  memory_id text NOT NULL,
+  memory_content text,
+  document_id text NOT NULL,
+  document_title text,
+  document_summary text,
+  metadata jsonb DEFAULT '{}'::jsonb,
+  updated_at timestamp with time zone,
+  created_at timestamp with time zone,
+  synced_at timestamp with time zone DEFAULT now(),
+  cache_invalidated_at timestamp with time zone,
+  CONSTRAINT supermemory_documents_pkey PRIMARY KEY (id),
+  CONSTRAINT supermemory_documents_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
+);
 CREATE TABLE public.sync_logs (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   sync_type text NOT NULL DEFAULT 'scheduled'::text,
@@ -437,19 +453,6 @@ CREATE TABLE public.user_items (
   sync_status text DEFAULT 'pending'::text,
   CONSTRAINT user_items_pkey PRIMARY KEY (id),
   CONSTRAINT user_items_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
-);
-CREATE TABLE public.user_memories (
-  id uuid NOT NULL DEFAULT gen_random_uuid(),
-  user_id uuid NOT NULL,
-  memory_type text NOT NULL,
-  key text NOT NULL,
-  value text NOT NULL,
-  confidence_score numeric DEFAULT 0.0 CHECK (confidence_score >= 0::numeric AND confidence_score <= 1::numeric),
-  expires_at timestamp with time zone,
-  created_at timestamp with time zone DEFAULT now(),
-  updated_at timestamp with time zone DEFAULT now(),
-  CONSTRAINT user_memories_pkey PRIMARY KEY (id),
-  CONSTRAINT user_memories_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
 );
 CREATE TABLE public.web_scrape_cache (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
