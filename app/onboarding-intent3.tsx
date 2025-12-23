@@ -232,7 +232,7 @@ export default function IntentQuestion3Screen() {
             {OPTIONS.map((option) => renderOption(option))}
           </View>
 
-          <FinanceFact />
+          <FinanceFact screenKey="onboarding-intent3" />
         </ScrollView>
       </SafeAreaView>
     </LinearGradient>

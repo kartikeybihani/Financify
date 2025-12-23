@@ -26,6 +26,12 @@ export const QUICK_TIME_PERIODS: TimePeriod[] = [
     description: "Quarterly view",
   },
   {
+    id: "6months",
+    label: "Last 6 Months",
+    emoji: "📉",
+    description: "Half-year view",
+  },
+  {
     id: "12months",
     label: "Last 12 months",
     emoji: "📈",

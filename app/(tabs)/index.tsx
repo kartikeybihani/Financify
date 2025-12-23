@@ -18,6 +18,7 @@ import { supabase } from "@/src/lib/supabase/supabase";
 import { getPrimaryItemId, addNewBankAccount } from "@/src/utils/plaid/plaid";
 import { Goal } from "@/src/types/finny";
 import { useUnifiedFinancialData } from "@/src/hooks/useUnifiedFinancialData";
+import { useSpendingData } from "@/src/hooks/useSpendingData";
 import logger from "@/src/utils/core/logger";
 
 // New optimized components
@@ -109,11 +110,12 @@ export default function HomeScreen() {
   const [selectedAccountPerformance, setSelectedAccountPerformance] =
     useState<any>(null);
 
-  // Dummy spending data (will be replaced with real data in Phase 3)
-  const spendingData = {
-    threeMonths: 12450,
-    lastMonth: 3890,
-  };
+  // Real spending data from transactions
+  const {
+    spendingData,
+    loading: spendingLoading,
+    refresh: refreshSpendingData,
+  } = useSpendingData(totalBalance);
 
   // Currency formatter cache
   const formatterCache = useRef(new Map<string, Intl.NumberFormat>());
@@ -311,6 +313,9 @@ export default function HomeScreen() {
       logger.info("Refreshing financial data with unified hook...");
       // Single unified refresh instead of 2-3 separate calls
       await refreshFinancialData();
+
+      // Refresh spending data
+      await refreshSpendingData();
 
       // Load background data
       await loadBackgroundData();
@@ -615,12 +620,25 @@ export default function HomeScreen() {
           }
         >
           {/* Finny Message */}
-          <FinnyMessage />
+          <FinnyMessage
+            goals={goals}
+            spendingData={spendingData}
+            totalBalance={totalBalance}
+            investmentsTotal={investmentsTotal}
+            liabilitiesTotal={liabilitiesTotal}
+            netWorthChange={spendingData.netWorthChange}
+          />
 
           {/* Net Worth Carousel */}
           <QuickStats
             totalBalance={totalBalance}
-            spendingData={spendingData}
+            spendingData={{
+              threeMonths: spendingData.threeMonths,
+              lastMonth: spendingData.lastMonth,
+              threeMonthsChange: spendingData.threeMonthsChange,
+              lastMonthChange: spendingData.lastMonthChange,
+              netWorthChange: spendingData.netWorthChange,
+            }}
             formatCurrency={formatCurrency}
           />
 

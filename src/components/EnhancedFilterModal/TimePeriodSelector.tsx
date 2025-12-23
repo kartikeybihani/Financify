@@ -23,6 +23,7 @@ const getQuickPeriodBackgroundColor = (periodId: string) => {
     "7days": "#e8f4fd", // Light blue
     "30days": "#e8f5e8", // Light green
     "3months": "#fff3e0", // Light orange
+    "6months": "#fffde7", // Light yellow
     "12months": "#f3e5f5", // Light purple
   };
   return colorMap[periodId] || "#f8f9fa";
@@ -33,6 +34,7 @@ const getQuickPeriodBorderColor = (periodId: string) => {
     "7days": "#4A90E2",
     "30days": "#27AE60",
     "3months": "#F39C12",
+    "6months": "#F1C40F",
     "12months": "#8E44AD",
   };
   return colorMap[periodId] || "#4A90E2";

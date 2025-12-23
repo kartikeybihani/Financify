@@ -22,6 +22,7 @@ import GoalNotification from "@/src/components/goals/GoalNotification";
 import AddGoalModal from "@/src/components/goals/AddGoalModal";
 import GoalItem from "@/src/components/goals/GoalItem";
 import GoalDetailModal from "@/src/components/goals/GoalDetailModal";
+import FinanceFact from "@/src/components/onboarding/FinanceFact";
 import { styles } from "@/src/styles/goalsStyles";
 import { useGoals } from "@/src/hooks/useGoals";
 import { Goal } from "@/src/types/finny";
@@ -493,15 +494,20 @@ const Goals: React.FC<GoalsProps> = ({
             </Text>
           </View>
         ) : (
-          sortedGoalsData.map((item, index) => (
-            <GoalItem
-              key={item.id}
-              item={item}
-              index={index}
-              animation={goalsAnimations[index]}
-              onPress={() => setSelectedGoal(item)}
-            />
-          ))
+          <>
+            {sortedGoalsData.map((item, index) => (
+              <GoalItem
+                key={item.id}
+                item={item}
+                index={index}
+                animation={goalsAnimations[index]}
+                onPress={() => setSelectedGoal(item)}
+              />
+            ))}
+            <View style={{ paddingHorizontal: 16, paddingTop: 16, paddingBottom: 16 }}>
+              <FinanceFact screenKey="goals" />
+            </View>
+          </>
         )}
       </ScrollView>
 

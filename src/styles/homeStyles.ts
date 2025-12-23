@@ -363,7 +363,7 @@ export const styles = StyleSheet.create({
   },
   finnyMessageText: {
     color: "#fff",
-    fontSize: FONTS.base,
+    fontSize: FONTS.sm,
     fontWeight: "500",
     fontFamily: Platform.OS === "ios" ? "System" : "sans-serif",
     letterSpacing: 0.3,

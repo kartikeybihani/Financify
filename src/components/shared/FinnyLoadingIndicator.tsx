@@ -77,7 +77,7 @@ const FinnyLoadingIndicator: React.FC<FinnyLoadingIndicatorProps> = ({
       easing: Easing.linear,
       useNativeDriver: true,
     });
-    
+
     // Call onComplete when ring rotation finishes
     ringRotation.start((finished) => {
       if (finished && onCompleteRef.current) {
@@ -122,7 +122,7 @@ const FinnyLoadingIndicator: React.FC<FinnyLoadingIndicatorProps> = ({
   // Calculate circle properties for SVG
   const ringRadius = 107; // (220 - 6) / 2, accounting for 3px border width
   const circumference = 2 * Math.PI * ringRadius;
-  
+
   // Animate stroke-dashoffset from full circumference to 0
   // This creates the effect of the arc growing from 0% to 100%
   const strokeDashoffset = loadingRingRotate.interpolate({
@@ -134,11 +134,7 @@ const FinnyLoadingIndicator: React.FC<FinnyLoadingIndicatorProps> = ({
     <View style={styles.container}>
       <View style={styles.imageWrapper}>
         {/* SVG Circular Progress Ring */}
-        <Svg
-          width={220}
-          height={220}
-          style={styles.svgContainer}
-        >
+        <Svg width={220} height={220} style={styles.svgContainer}>
           {/* Background circle (full, semi-transparent) */}
           <Circle
             cx={110}

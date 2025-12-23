@@ -3607,16 +3607,33 @@ function extractSlots(message) {
       end: now.toISOString().split("T")[0],
       months: monthsCount, // Flag for using get_spend_by_category_periods
     };
-  } else if (
+  }
+  // Multi-year patterns (e.g., "last 1 year", "past 2 years", "last year")
+  else if (
     lowerMessage.includes("last year") ||
-    lowerMessage.includes("past year")
+    lowerMessage.includes("past year") ||
+    lowerMessage.includes("previous year")
   ) {
-    monthsCount = 12;
-    const startDate = new Date(now.getFullYear() - 1, now.getMonth(), 1);
+    // Check for "last 1 year" or "past 1 year" explicitly
+    const yearMatch = lowerMessage.match(
+      /(?:last|past|previous)\s+(\d+)\s+years?/
+    );
+    if (yearMatch) {
+      const yearsCount = parseInt(yearMatch[1], 10);
+      monthsCount = yearsCount * 12;
+    } else {
+      // Default to 1 year if just "last year" or "past year"
+      monthsCount = 12;
+    }
+    const startDate = new Date(
+      now.getFullYear(),
+      now.getMonth() - monthsCount,
+      1
+    );
     period = {
       start: startDate.toISOString().split("T")[0],
       end: now.toISOString().split("T")[0],
-      months: 12,
+      months: monthsCount,
     };
   } else if (lowerMessage.includes("last month")) {
     const firstOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);

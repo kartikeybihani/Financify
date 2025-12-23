@@ -10,6 +10,9 @@ interface QuickStatsProps {
   spendingData: {
     threeMonths: number;
     lastMonth: number;
+    threeMonthsChange: number;
+    lastMonthChange: number;
+    netWorthChange: number;
   };
   formatCurrency: (amount: number, currency?: string, options?: any) => string;
 }
@@ -18,6 +21,17 @@ export const QuickStats: React.FC<QuickStatsProps> = React.memo(
   ({ totalBalance, spendingData, formatCurrency }) => {
     const [activeSlide, setActiveSlide] = useState(0);
     const screenWidth = Dimensions.get("window").width;
+
+    // Helper to safely format percentage changes
+    const formatPercentage = (value: number): string => {
+      if (isNaN(value) || !isFinite(value)) return "0.0";
+      return value.toFixed(1);
+    };
+
+    // Helper to check if value is valid
+    const isValid = (value: number): boolean => {
+      return !isNaN(value) && isFinite(value);
+    };
 
     const handleScroll = (event: any) => {
       const slideIndex = Math.round(
@@ -49,11 +63,29 @@ export const QuickStats: React.FC<QuickStatsProps> = React.memo(
                   })}
                 </Text>
                 <View style={styles.spendingTrend}>
-                  <Ionicons name="trending-down" size={16} color="#FF6B6B" />
+                  {isValid(spendingData.threeMonthsChange) &&
+                  spendingData.threeMonthsChange >= 0 ? (
+                    <Ionicons name="trending-up" size={16} color="#FF6B6B" />
+                  ) : (
+                    <Ionicons name="trending-down" size={16} color="#4ECDC4" />
+                  )}
                   <Text
-                    style={[styles.netWorthTrendText, { color: "#FF6B6B" }]}
+                    style={[
+                      styles.netWorthTrendText,
+                      {
+                        color:
+                          isValid(spendingData.threeMonthsChange) &&
+                          spendingData.threeMonthsChange >= 0
+                            ? "#FF6B6B"
+                            : "#4ECDC4",
+                      },
+                    ]}
                   >
-                    +12.4% vs prev
+                    {isValid(spendingData.threeMonthsChange) &&
+                    spendingData.threeMonthsChange >= 0
+                      ? "+"
+                      : ""}
+                    {formatPercentage(spendingData.threeMonthsChange)}% vs prev
                   </Text>
                 </View>
               </View>
@@ -67,11 +99,29 @@ export const QuickStats: React.FC<QuickStatsProps> = React.memo(
                   })}
                 </Text>
                 <View style={styles.spendingTrend}>
-                  <Ionicons name="trending-up" size={16} color="#4ECDC4" />
+                  {isValid(spendingData.lastMonthChange) &&
+                  spendingData.lastMonthChange >= 0 ? (
+                    <Ionicons name="trending-up" size={16} color="#FF6B6B" />
+                  ) : (
+                    <Ionicons name="trending-down" size={16} color="#4ECDC4" />
+                  )}
                   <Text
-                    style={[styles.netWorthTrendText, { color: "#4ECDC4" }]}
+                    style={[
+                      styles.netWorthTrendText,
+                      {
+                        color:
+                          isValid(spendingData.lastMonthChange) &&
+                          spendingData.lastMonthChange >= 0
+                            ? "#FF6B6B"
+                            : "#4ECDC4",
+                      },
+                    ]}
                   >
-                    -8.2% vs prev
+                    {isValid(spendingData.lastMonthChange) &&
+                    spendingData.lastMonthChange >= 0
+                      ? "+"
+                      : ""}
+                    {formatPercentage(spendingData.lastMonthChange)}% vs prev
                   </Text>
                 </View>
               </View>
@@ -93,8 +143,30 @@ export const QuickStats: React.FC<QuickStatsProps> = React.memo(
               })}
             </Text>
             <View style={styles.netWorthTrend}>
-              <Ionicons name="trending-up" size={16} color="#4ECDC4" />
-              <Text style={styles.netWorthTrendText}>+2.4% this month</Text>
+              {isValid(spendingData.netWorthChange) &&
+              spendingData.netWorthChange >= 0 ? (
+                <Ionicons name="trending-up" size={16} color="#4ECDC4" />
+              ) : (
+                <Ionicons name="trending-down" size={16} color="#FF6B6B" />
+              )}
+              <Text
+                style={[
+                  styles.netWorthTrendText,
+                  {
+                    color:
+                      isValid(spendingData.netWorthChange) &&
+                      spendingData.netWorthChange >= 0
+                        ? "#4ECDC4"
+                        : "#FF6B6B",
+                  },
+                ]}
+              >
+                {isValid(spendingData.netWorthChange) &&
+                spendingData.netWorthChange >= 0
+                  ? "+"
+                  : ""}
+                {formatPercentage(spendingData.netWorthChange)}% this month
+              </Text>
             </View>
           </View>
         </ScrollView>

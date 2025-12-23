@@ -184,7 +184,7 @@ export default function IntentQuestion1Screen() {
             {OPTIONS.map((option) => renderOption(option))}
           </View>
 
-          <FinanceFact />
+          <FinanceFact screenKey="onboarding-intent1" />
         </ScrollView>
       </SafeAreaView>
     </LinearGradient>

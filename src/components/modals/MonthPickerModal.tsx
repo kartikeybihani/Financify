@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -8,6 +8,7 @@ import {
   TouchableWithoutFeedback,
   ScrollView,
   Dimensions,
+  Animated,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -93,6 +94,82 @@ const MonthPickerModal: React.FC<MonthPickerModalProps> = ({
     };
   }, []);
 
+  // Find initial year index based on selectedYear, default to most recent (index 0)
+  const initialYearIndex = useMemo(() => {
+    const index = years.findIndex((y) => y === selectedYear);
+    return index >= 0 ? index : 0;
+  }, [years, selectedYear]);
+
+  const [currentYearIndex, setCurrentYearIndex] = useState(initialYearIndex);
+  const slideAnim = useRef(new Animated.Value(0)).current;
+  const fadeAnim = useRef(new Animated.Value(1)).current;
+  const slideDirection = useRef<"left" | "right">("right");
+
+  // Update current year index when modal opens or selectedYear changes
+  useEffect(() => {
+    if (visible) {
+      setCurrentYearIndex(initialYearIndex);
+      // Reset animations when modal opens
+      slideAnim.setValue(0);
+      fadeAnim.setValue(1);
+    }
+  }, [visible, initialYearIndex, slideAnim, fadeAnim]);
+
+  // Animate when year changes
+  useEffect(() => {
+    const direction = slideDirection.current === "left" ? -1 : 1;
+    
+    // Fade out and slide out
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 0,
+        duration: 150,
+        useNativeDriver: true,
+      }),
+      Animated.timing(slideAnim, {
+        toValue: direction * SCREEN_WIDTH * 0.3,
+        duration: 150,
+        useNativeDriver: true,
+      }),
+    ]).start(() => {
+      // Reset position and fade in from opposite direction
+      slideAnim.setValue(-direction * SCREEN_WIDTH * 0.3);
+      fadeAnim.setValue(0);
+      
+      Animated.parallel([
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 200,
+          useNativeDriver: true,
+        }),
+        Animated.spring(slideAnim, {
+          toValue: 0,
+          tension: 50,
+          friction: 8,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    });
+  }, [currentYearIndex, slideAnim, fadeAnim]);
+
+  const currentYear = years[currentYearIndex];
+  const canGoPrevious = currentYearIndex < years.length - 1;
+  const canGoNext = currentYearIndex > 0;
+
+  const handlePreviousYear = () => {
+    if (canGoPrevious) {
+      slideDirection.current = "right";
+      setCurrentYearIndex((prev) => prev + 1);
+    }
+  };
+
+  const handleNextYear = () => {
+    if (canGoNext) {
+      slideDirection.current = "left";
+      setCurrentYearIndex((prev) => prev - 1);
+    }
+  };
+
   const isSelected = (month: number, year: number) => {
     return month === selectedMonth && year === selectedYear;
   };
@@ -138,66 +215,106 @@ const MonthPickerModal: React.FC<MonthPickerModalProps> = ({
                 bounces={true}
                 keyboardShouldPersistTaps="handled"
               >
-                {years.map((year, yearIndex) => (
-                  <View key={year}>
-                    {yearIndex === 1 && <View style={styles.yearDivider} />}
-                    <View style={styles.yearSection}>
-                      {/* Year Header */}
-                      <View style={styles.yearHeader}>
-                        <Text style={styles.yearText}>{year}</Text>
-                      </View>
+                <View style={styles.yearSection}>
+                  {/* Year Header with Navigation Arrows */}
+                  <View style={styles.yearHeader}>
+                    <TouchableOpacity
+                      onPress={handlePreviousYear}
+                      disabled={!canGoPrevious}
+                      style={[
+                        styles.yearNavButton,
+                        !canGoPrevious && styles.yearNavButtonDisabled,
+                      ]}
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons
+                        name="chevron-back"
+                        size={20}
+                        color={
+                          canGoPrevious
+                            ? "#4A90E2"
+                            : "rgba(255,255,255,0.2)"
+                        }
+                      />
+                    </TouchableOpacity>
 
-                      {/* Month Grid */}
-                      <View style={styles.monthGrid}>
-                        {monthsByYear[year].map(
-                          ({ month, year: monthYear }) => {
-                            const selected = isSelected(month, monthYear);
-                            const current = isCurrentMonth(month, monthYear);
+                    <Text style={styles.yearText}>{currentYear}</Text>
 
-                            return (
-                              <TouchableOpacity
-                                key={`${monthYear}-${month}`}
-                                style={[
-                                  styles.monthChip,
-                                  selected && styles.monthChipSelected,
-                                  current &&
-                                    !selected &&
-                                    styles.monthChipCurrent,
-                                ]}
-                                onPress={() =>
-                                  handleMonthSelect(month, monthYear)
-                                }
-                                activeOpacity={0.7}
-                              >
-                                <View style={styles.monthChipContent}>
-                                  <Text
-                                    style={[
-                                      styles.monthChipText,
-                                      selected && styles.monthChipTextSelected,
-                                      current &&
-                                        !selected &&
-                                        styles.monthChipTextCurrent,
-                                    ]}
-                                  >
-                                    {MONTH_NAMES[month]}
-                                  </Text>
-                                  {selected && (
-                                    <Ionicons
-                                      name="checkmark-circle"
-                                      size={14}
-                                      color="#4A90E2"
-                                      style={styles.checkmarkIcon}
-                                    />
-                                  )}
-                                </View>
-                              </TouchableOpacity>
-                            );
-                          }
-                        )}
-                      </View>
-                    </View>
+                    <TouchableOpacity
+                      onPress={handleNextYear}
+                      disabled={!canGoNext}
+                      style={[
+                        styles.yearNavButton,
+                        !canGoNext && styles.yearNavButtonDisabled,
+                      ]}
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons
+                        name="chevron-forward"
+                        size={20}
+                        color={
+                          canGoNext ? "#4A90E2" : "rgba(255,255,255,0.2)"
+                        }
+                      />
+                    </TouchableOpacity>
                   </View>
-                ))}
+
+                  {/* Month Grid with Animation */}
+                  <Animated.View
+                    style={[
+                      styles.monthGridContainer,
+                      {
+                        opacity: fadeAnim,
+                        transform: [{ translateX: slideAnim }],
+                      },
+                    ]}
+                  >
+                    <View style={styles.monthGrid}>
+                      {monthsByYear[currentYear]?.map(
+                        ({ month, year: monthYear }) => {
+                          const selected = isSelected(month, monthYear);
+                          const current = isCurrentMonth(month, monthYear);
+
+                          return (
+                            <TouchableOpacity
+                              key={`${monthYear}-${month}`}
+                              style={[
+                                styles.monthChip,
+                                selected && styles.monthChipSelected,
+                                current && !selected && styles.monthChipCurrent,
+                              ]}
+                              onPress={() => handleMonthSelect(month, monthYear)}
+                              activeOpacity={0.7}
+                            >
+                              <View style={styles.monthChipContent}>
+                                <Text
+                                  style={[
+                                    styles.monthChipText,
+                                    selected && styles.monthChipTextSelected,
+                                    current &&
+                                      !selected &&
+                                      styles.monthChipTextCurrent,
+                                  ]}
+                                >
+                                  {MONTH_NAMES[month]}
+                                </Text>
+                                {selected && (
+                                  <Ionicons
+                                    name="checkmark-circle"
+                                    size={14}
+                                    color="#4A90E2"
+                                    style={styles.checkmarkIcon}
+                                  />
+                                )}
+                              </View>
+                            </TouchableOpacity>
+                          );
+                        }
+                      )}
+                    </View>
+                  </Animated.View>
+                </View>
+
                 {/* Disclaimer */}
                 <Text style={styles.disclaimerText}>
                   We only have data of upto last 2 years
@@ -249,23 +366,34 @@ const styles = StyleSheet.create({
   yearSection: {
     marginBottom: 24,
   },
-  yearDivider: {
-    height: 1,
-    backgroundColor: "rgba(255,255,255,0.1)",
-    marginVertical: 20,
-    marginHorizontal: Math.max(16, SCREEN_WIDTH * 0.04),
-  },
   yearHeader: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 20,
+    paddingHorizontal: 8,
+  },
+  yearNavButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
     justifyContent: "center",
-    marginBottom: 16,
+    backgroundColor: "rgba(74, 144, 226, 0.1)",
+  },
+  yearNavButtonDisabled: {
+    backgroundColor: "transparent",
   },
   yearText: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: "700",
     color: "#4A90E2",
     letterSpacing: 0.5,
+    minWidth: 60,
+    textAlign: "center",
+  },
+  monthGridContainer: {
+    overflow: "hidden",
   },
   disclaimerText: {
     fontSize: 11,

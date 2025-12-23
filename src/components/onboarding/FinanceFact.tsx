@@ -1,40 +1,114 @@
 import React, { useState, useEffect } from "react";
 import { View, Text, TouchableOpacity, StyleSheet, Image } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const FINANCE_FACTS = [
-  "💡 73% of Gen Z wish they started investing earlier",
-  "💡 The average person spends $1,497/month on subscriptions",
-  "💡 Building a $1M net worth starts with tracking your first $100",
-  "💡 Most millionaires check their finances weekly, not daily",
-  "💡 40% of Americans can't cover a $400 emergency expense",
-  "💡 Starting to invest at 25 vs 35 can mean $1M+ difference",
-  "💡 The average Gen Z has $29,000 in debt by age 25",
-  "💡 Small daily habits compound into massive wealth over time",
-  "💡 People who track spending save 23% more than those who don't",
-  "💡 Your first $100K is the hardest - after that, compounding accelerates",
-  "💡 Most people underestimate their spending by 20-30%",
-  "💡 Emergency funds prevent 90% of financial stress",
+  "73% of Gen Z wish they started investing earlier - that's crazy!",
+  "The average person spends $1,497/month on subscriptions. Wild! 💣💣",
+  "Building a $1M net worth starts with tracking your first $1000 - no cap! 💡",
+  "Most millionaires check their finances weekly, not daily. Mind blown! 💡",
+  "40% of Americans can't cover a $400 emergency expense - that's wild! 💡",
+  "Starting to invest at 25 vs 35 can mean $1M+ difference. Insane! 💡",
+  "The average Gen Z has $29,000 in debt by age 25 - yikes! $$$",
+  "Small daily habits compound into massive wealth over time. That's powerful! 💡",
+  "People who track spending save 23% more than those who don't - facts! 💡",
+  "Your first $100K is the hardest - after that, compounding accelerates. Let's go! 💡",
+  "Most people underestimate their spending by 20-30% - that's crazy! 💡",
+  "Emergency funds prevent 90% of financial stress. Game changer! 💡",
 ];
 
-export default function FinanceFact() {
+// Cooldown period: 2-3 days (randomized between 2 and 3 days)
+const MIN_COOLDOWN_DAYS = 2;
+const MAX_COOLDOWN_DAYS = 3;
+const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000;
+
+interface FinanceFactProps {
+  screenKey?: string; // Unique key for each screen (e.g., "onboarding", "goals")
+}
+
+export default function FinanceFact({
+  screenKey = "default",
+}: FinanceFactProps) {
   const [fact, setFact] = useState("");
-  const [isVisible, setIsVisible] = useState(true);
+  const [isVisible, setIsVisible] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const storageKey = `finance_fact_dismissed_${screenKey}`;
 
   useEffect(() => {
+    checkVisibility();
+  }, []);
+
+  const checkVisibility = async () => {
+    try {
+      setIsLoading(true);
+      const dismissedData = await AsyncStorage.getItem(storageKey);
+
+      if (!dismissedData) {
+        // Never dismissed, show it
+        showRandomFact();
+        return;
+      }
+
+      const { dismissedAt, cooldownDays } = JSON.parse(dismissedData);
+      const dismissedDate = new Date(dismissedAt);
+      const now = new Date();
+      const daysSinceDismissal =
+        (now.getTime() - dismissedDate.getTime()) / MILLISECONDS_PER_DAY;
+
+      // Check if cooldown period has passed
+      if (daysSinceDismissal >= cooldownDays) {
+        // Cooldown passed, show it again
+        showRandomFact();
+      } else {
+        // Still in cooldown, don't show
+        setIsVisible(false);
+      }
+    } catch (error) {
+      console.error("Error checking finance fact visibility:", error);
+      // On error, show the fact
+      showRandomFact();
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const showRandomFact = () => {
     // Pick a random fact
     const randomIndex = Math.floor(Math.random() * FINANCE_FACTS.length);
     setFact(FINANCE_FACTS[randomIndex]);
-  }, []);
+    setIsVisible(true);
+  };
 
-  if (!isVisible || !fact) return null;
+  const handleDismiss = async () => {
+    try {
+      // Generate random cooldown between 2-3 days
+      const cooldownDays =
+        MIN_COOLDOWN_DAYS +
+        Math.random() * (MAX_COOLDOWN_DAYS - MIN_COOLDOWN_DAYS);
+
+      const dismissedData = {
+        dismissedAt: new Date().toISOString(),
+        cooldownDays: cooldownDays,
+      };
+
+      await AsyncStorage.setItem(storageKey, JSON.stringify(dismissedData));
+      setIsVisible(false);
+    } catch (error) {
+      console.error("Error saving finance fact dismissal:", error);
+      setIsVisible(false);
+    }
+  };
+
+  if (isLoading || !isVisible || !fact) return null;
 
   return (
     <View style={styles.container}>
       <View style={styles.factCard}>
         <Image
-          source={require("../../../assets/images/mascot1.jpg")}
-          style={[styles.mascot, { transform: [{ scaleX: -1 }] }]}
+          source={require("../../../assets/images/midleftshot.png")}
+          style={styles.mascot}
           resizeMode="cover"
         />
         <View style={styles.factContent}>
@@ -42,7 +116,7 @@ export default function FinanceFact() {
         </View>
         <TouchableOpacity
           style={styles.dismissButton}
-          onPress={() => setIsVisible(false)}
+          onPress={handleDismiss}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
           <Ionicons name="close" size={16} color="rgba(255,255,255,0.6)" />
@@ -56,7 +130,7 @@ const styles = StyleSheet.create({
   container: {
     paddingHorizontal: 0,
     paddingBottom: 16,
-    marginTop: 40,
+    marginTop: 0, // Removed default margin, can be overridden by parent
   },
   factCard: {
     backgroundColor: "rgba(255, 255, 255, 0.06)",
