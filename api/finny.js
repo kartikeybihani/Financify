@@ -2888,7 +2888,7 @@ async function handleAsk(
         body: JSON.stringify({
           model: OPENROUTER_MODEL || SMALLER_MODEL,
           temperature: 0.25,
-          max_tokens: 5000,
+          max_tokens: 10000,
           stream: false,
           reasoning: { effort: "minimal", exclude: true }, // Disable reasoning output, only return actual response
           messages: [
@@ -2951,7 +2951,7 @@ async function handleAsk(
         prompt_tokens: usage.prompt_tokens,
         completion_tokens: usage.completion_tokens,
         reasoning_tokens: usage.reasoning_tokens,
-        max_tokens: 8000,
+        max_tokens: 12000,
       });
       logWarn("⚠️ [LLM] Model may be using reasoning tokens despite exclusion");
     }
@@ -6683,7 +6683,7 @@ Provide a detailed analysis including:
         body: JSON.stringify({
           model: OPENROUTER_MODEL,
           temperature: 0.3,
-          max_tokens: 4000, // Allow comprehensive analysis responses
+          max_tokens: 8000, // Allow comprehensive analysis responses
           messages: [
             {
               role: "system",
