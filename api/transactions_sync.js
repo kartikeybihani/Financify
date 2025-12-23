@@ -4,7 +4,7 @@ import { supabase } from "../lib/api/supabase.js";
 import {
   mapPlaidToAppCategory,
   isInternalTransfer,
-} from "./utils/plaidCategoryMapper.js";
+} from "../lib/plaidCategoryMapper.js";
 import { verifyItemOwnership } from "../lib/api/auth.js";
 import {
   checkRateLimit,
