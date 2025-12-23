@@ -1636,26 +1636,6 @@ export default async function handler(req, res) {
             ],
           };
 
-          // 📊 LOGGING: Log updated ticker confirmation UI state
-          console.log(`\n🎨 [UI_STATE] Updated ticker confirmation UI flags:`);
-          console.log(
-            `   - hideActions: ${
-              updateResponse.hideActions
-                ? "✅ HIDDEN"
-                : "❌ VISIBLE (will show buttons)"
-            }`
-          );
-          console.log(
-            `   - hideFeedback: ${
-              updateResponse.hideFeedback
-                ? "✅ HIDDEN (thumbs will NOT show)"
-                : "❌ VISIBLE"
-            }`
-          );
-          console.log(
-            `   - actions count: ${updateResponse.actions.length} (Yes, Change Ticker)`
-          );
-
           response = updateResponse;
           break;
         }
@@ -2132,26 +2112,6 @@ async function handleAsk(
           ],
         };
 
-        // 📊 LOGGING: Log confirmation message UI state
-        console.log(`\n🎨 [UI_STATE] Confirmation message UI flags:`);
-        console.log(
-          `   - hideActions: ${
-            confirmationResponse.hideActions
-              ? "✅ HIDDEN"
-              : "❌ VISIBLE (will show buttons)"
-          }`
-        );
-        console.log(
-          `   - hideFeedback: ${
-            confirmationResponse.hideFeedback
-              ? "✅ HIDDEN (thumbs will NOT show)"
-              : "❌ VISIBLE"
-          }`
-        );
-        console.log(
-          `   - actions count: ${confirmationResponse.actions.length} (Yes, Change Ticker)`
-        );
-
         return confirmationResponse;
       }
     }
@@ -2487,30 +2447,6 @@ async function handleAsk(
             actions: [], // Ensure no actions are present
             _comprehensiveAnalysis: isComprehensiveAnalysis, // Internal flag for debugging
           };
-
-          // 📊 LOGGING: Log button and feedback visibility for final stock response
-          console.log(`\n🎨 [UI_STATE] Final stock response UI flags:`);
-          console.log(
-            `   - hideActions: ${
-              response.hideActions
-                ? "✅ HIDDEN"
-                : "❌ VISIBLE (default: visible)"
-            }`
-          );
-          console.log(
-            `   - hideFeedback: ${
-              response.hideFeedback
-                ? "✅ HIDDEN"
-                : "❌ VISIBLE (default: visible)"
-            }`
-          );
-          console.log(`   - actions count: ${response.actions?.length || 0}`);
-          console.log(
-            `   - has stock_candidate: ${!!response.stock_candidate}`
-          );
-          console.log(
-            `   - Response length: ${response.message?.length || 0} chars`
-          );
 
           // Log with enhanced data
           setImmediate(() =>
@@ -6014,7 +5950,17 @@ async function generateConversationalStockResponse(
       stockData.metrics?.peBasicExclExtraTTM || stockData.metrics?.peBasicTTM,
     psRatio: stockData.metrics?.psTTM,
     recommendations: stockData.recommendations?.[0] || null,
-    news: stockData.news || [],
+    news: (stockData.news || []).map((n) => {
+      // Filter out API endpoint URLs - only use actual article URLs
+      // Finnhub news items should have 'url' field with actual article URL
+      // If url contains 'finnhub.io/api/news', it's an API endpoint, not an article URL
+      const articleUrl =
+        n.url && !n.url.includes("finnhub.io/api/news") ? n.url : null;
+      return {
+        ...n,
+        articleUrl: articleUrl, // Store the actual article URL separately
+      };
+    }),
     earnings: stockData.extra?.earnings || null,
     filings: stockData.extra?.filings || null,
     insider: stockData.extra?.insider || null,
@@ -6068,10 +6014,19 @@ ${
 }
 ${
   stockDataContext.news && stockDataContext.news.length > 0
-    ? `- Recent News (include URLs as clickable links):
+    ? `- Recent News (use actual article URLs, NOT API endpoint URLs):
 ${stockDataContext.news
   .slice(0, 5)
-  .map((n) => `  • ${n.headline}${n.url ? ` - ${n.url}` : ""}`)
+  .map((n) => {
+    // Use articleUrl if available (filtered to exclude API endpoints)
+    // Otherwise, if url exists and is not an API endpoint, use it
+    const articleUrl =
+      n.articleUrl ||
+      (n.url && !n.url.includes("finnhub.io/api/news") ? n.url : null);
+    return `  • ${n.headline}${
+      articleUrl ? ` - Article URL: ${articleUrl}` : " - URL not available"
+    }`;
+  })
   .join("\n")}`
     : ""
 }
@@ -6100,10 +6055,11 @@ Provide a comprehensive, structured stock analysis using bullet points for easy 
 • Overall sentiment summary (2 bullet point)
 
 **Recent Developments**
-• [News headline 1] - [URL as clickable link]
-• [News headline 2] - [URL as clickable link]
-• [News headline 3] - [URL as clickable link]
-(Include actual URLs from the news data above as clickable links)
+• [News headline 1] - [actual article URL as plain URL, not markdown]
+• [News headline 2] - [actual article URL as plain URL, not markdown]
+• [News headline 3] - [actual article URL as plain URL, not markdown]
+IMPORTANT: Use the actual article URLs provided above. Format as: "Headline - https://actual-url.com"
+Do NOT use markdown link format [text](url). Do NOT use Finnhub API endpoint URLs (finnhub.io/api/news).
 
 **Investment Considerations**
 • Opportunities (2-3 bullet points)
@@ -6119,7 +6075,9 @@ Provide a comprehensive, structured stock analysis using bullet points for easy 
 CRITICAL FORMATTING REQUIREMENTS:
 - Use bullet points (•) for ALL content, NOT paragraphs
 - Keep each bullet point concise (1-2 sentences max)
-- Include actual clickable URLs for news items (format: [text](url))
+- For news URLs: Use plain URLs (https://example.com), NOT markdown format [text](url)
+- Format news items as: "Headline - https://actual-article-url.com"
+- Do NOT use Finnhub API endpoint URLs (finnhub.io/api/news?id=...)
 - Use bold section headers (**Section Name**)
 - Be data-driven and specific
 - Keep total length under 2000 words but comprehensive`;
@@ -6160,7 +6118,7 @@ CRITICAL FORMATTING REQUIREMENTS:
             {
               role: "system",
               content:
-                "You are a financial analyst providing comprehensive stock analysis. ALWAYS format responses using bullet points (•) for easy reading. Include clickable links for news items using markdown format [text](url). Keep each bullet point concise (1-2 sentences max). Use bold section headers. Be specific, data-driven, and actionable.",
+                "You are a financial analyst providing comprehensive stock analysis. ALWAYS format responses using bullet points (•) for easy reading. For news URLs, use plain URLs (https://example.com) NOT markdown format. Format news items as: 'Headline - https://actual-url.com'. Keep each bullet point concise (1-2 sentences max). Use bold section headers. Be specific, data-driven, and actionable.",
             },
             { role: "user", content: analysisPrompt },
           ],
