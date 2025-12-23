@@ -566,6 +566,7 @@ function ChatScreenContent() {
         const candidate = message?.stockCandidate?.ticker || "";
         setStockTickerDraft(candidate);
         setShowStockTickerModal(true);
+        // Note: Buttons will be hidden when update_stock_ticker is submitted via handleActionButton
         return;
       }
 

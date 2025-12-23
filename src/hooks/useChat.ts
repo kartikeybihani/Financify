@@ -865,6 +865,34 @@ export const useChat = () => {
           ? { ticker: stockCandidatePayload }
           : stockCandidatePayload;
 
+      // For stock actions, hide buttons on the confirmation message
+      if (isStockAction) {
+        setChatMessages(prev => {
+          const updated = [...prev];
+          // Find the last finny message with action buttons (the confirmation message)
+          for (let i = updated.length - 1; i >= 0; i--) {
+            const msg = updated[i];
+            if (
+              msg.sender === "finny" &&
+              msg.actions &&
+              msg.actions.length > 0 &&
+              (msg.actions.some((a: any) => a.action === "confirm_stock") ||
+               msg.actions.some((a: any) => a.action === "change_stock"))
+            ) {
+              // Hide buttons on this confirmation message
+              updated[i] = {
+                ...updated[i],
+                hideActions: true,
+                actions: [], // Clear actions
+              };
+              logger.info(`🎯 [ACTION] Hid buttons on confirmation message: ${msg.id}`);
+              break;
+            }
+          }
+          return updated;
+        });
+      }
+
       // Create a new message with the response (don't update existing message)
       if (data.message) {
         const newMessage = {
@@ -874,7 +902,9 @@ export const useChat = () => {
           timestamp: Date.now(),
           type: data.actions && data.actions.length > 0 ? "action" as const : "text" as const,
           ...(data.actions && { actions: data.actions }),
-          ...(stockCandidate && { stockCandidate })
+          ...(stockCandidate && { stockCandidate }),
+          ...(data.hideActions !== undefined && { hideActions: data.hideActions }),
+          ...(data.hideFeedback !== undefined && { hideFeedback: data.hideFeedback }),
         };
         
         setChatMessages(prev => [...prev, newMessage]);

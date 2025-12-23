@@ -1359,7 +1359,8 @@ export default async function handler(req, res) {
           classification,
           conversationContext,
           timings, // Pass timings object to track web search and context packs
-          wantsStreaming // Pass streaming preference
+          wantsStreaming, // Pass streaming preference
+          wantsStreaming ? res : null // Pass response object for progress updates if streaming
         );
         break;
       }
@@ -1371,7 +1372,8 @@ export default async function handler(req, res) {
           classification,
           conversationContext,
           timings, // Pass timings object to track web search and context packs
-          wantsStreaming // Pass streaming preference
+          wantsStreaming, // Pass streaming preference
+          wantsStreaming ? res : null // Pass response object for progress updates if streaming
         );
         break;
       }
@@ -1505,7 +1507,8 @@ export default async function handler(req, res) {
               null,
               conversationContext,
               timings,
-              wantsStreaming
+              wantsStreaming,
+              wantsStreaming ? res : null // Pass response object for progress updates if streaming
             );
 
             // Hide action buttons and show feedback buttons after confirmation
@@ -1880,7 +1883,8 @@ async function handleAsk(
   classificationResult = null,
   conversationContext = null,
   requestTimings = null, // Optional: parent request timings object
-  wantsStreaming = false // Whether client wants streaming response
+  wantsStreaming = false, // Whether client wants streaming response
+  res = null // Response object for sending progress updates (optional)
 ) {
   logInfo("🔍 [FINNY] Starting ask handler for message:", message);
   const startTime = Date.now();
@@ -2238,6 +2242,16 @@ async function handleAsk(
           );
           logDebug("🔍 [STOCK] Deep query detected, using advanced analysis");
 
+          // Send initial progress message
+          sendStockProgress(res, "🔍 Analyzing stock data...", wantsStreaming);
+
+          // Show finance fact while planning
+          if (wantsStreaming && res) {
+            setTimeout(() => {
+              sendStockProgress(res, getRandomFinanceFact(), wantsStreaming);
+            }, 500);
+          }
+
           // If we have stockOverride (user confirmed ticker), skip planning and create plan directly
           // This avoids unnecessary API calls and prevents hangs
           if (stockOverride) {
@@ -2273,7 +2287,13 @@ async function handleAsk(
             logDebug("🔍 [STOCK] Stock plan result:", stockPlan);
           }
 
-          const exec = await executeStockPlan(stockPlan || {}, message);
+          sendStockProgress(res, "📊 Fetching market data...", wantsStreaming);
+          const exec = await executeStockPlan(
+            stockPlan || {},
+            message,
+            res,
+            wantsStreaming
+          );
           logDebug("🔍 [STOCK] Execute result:", exec);
 
           // 🔍 DIAGNOSTIC: Log why the check might fail
@@ -2426,6 +2446,18 @@ async function handleAsk(
           }
 
           // Generate conversational stock response with context packs
+          sendStockProgress(
+            res,
+            "🤖 Generating comprehensive analysis...",
+            wantsStreaming
+          );
+          // Show another finance fact while generating analysis
+          if (wantsStreaming && res) {
+            setTimeout(() => {
+              sendStockProgress(res, getRandomFinanceFact(), wantsStreaming);
+            }, 1000);
+          }
+
           const conversationalResponse =
             await generateConversationalStockResponse(
               stockData,
@@ -5595,6 +5627,37 @@ function sendStreamEvent(res, event, data) {
   res.write(`data: ${JSON.stringify(data)}\n\n`);
 }
 
+// Finance facts to show during stock analysis loading
+const FINANCE_FACTS = [
+  "💡 Did you know? The stock market has historically returned about 10% annually over the long term.",
+  "📊 Fun fact: The first stock exchange was established in Amsterdam in 1602 for the Dutch East India Company.",
+  "💰 Tip: Diversification is key - don't put all your eggs in one basket!",
+  "📈 Interesting: The S&P 500 has had positive returns in about 75% of all years since 1926.",
+  "🎯 Fact: Warren Buffett's favorite holding period is 'forever' - think long-term!",
+  "💼 Did you know? The average investor underperforms the market by about 2-3% annually due to emotional trading.",
+  "📉 Insight: Market corrections (10-20% drops) happen about once every 2 years on average.",
+  "🚀 Fun fact: The term 'bull market' comes from bulls attacking upward, while 'bear market' comes from bears swiping downward.",
+  "💎 Tip: Dollar-cost averaging can help reduce the impact of market volatility.",
+  "📊 Fact: The P/E ratio (Price-to-Earnings) helps investors understand if a stock is overvalued or undervalued.",
+  "🎓 Did you know? The first IPO (Initial Public Offering) was by the Dutch East India Company in 1602.",
+  "💡 Insight: Compound interest is often called the 'eighth wonder of the world' - time is your best friend in investing!",
+  "📈 Fact: The stock market is closed on weekends and major holidays - plan your trades accordingly.",
+  "💰 Tip: Emergency funds should cover 3-6 months of expenses before you start investing heavily.",
+  "🚀 Fun fact: The NASDAQ was the world's first electronic stock market when it launched in 1971.",
+];
+
+function getRandomFinanceFact() {
+  return FINANCE_FACTS[Math.floor(Math.random() * FINANCE_FACTS.length)];
+}
+
+// Helper to send progress update (works for both streaming and non-streaming)
+function sendStockProgress(res, message, wantsStreaming) {
+  if (wantsStreaming && res && !res.writableEnded) {
+    sendStreamEvent(res, "progress", { status: message });
+  }
+  console.log(`📊 [STOCK_PROGRESS] ${message}`);
+}
+
 // Helper function to stream text chunks
 async function streamTextChunks(res, text, chunkSize = 15) {
   if (!text || typeof text !== "string") return;
@@ -5826,7 +5889,12 @@ async function planStockRequest(message) {
   }
 }
 
-async function executeStockPlan(plan, message) {
+async function executeStockPlan(
+  plan,
+  message,
+  res = null,
+  wantsStreaming = false
+) {
   console.log("🔍 [EXECUTE_STOCK] Plan:", plan);
   const wants = plan?.wants || [];
   const preferredTicker = plan?.ticker_candidates?.[0] || null;
@@ -5844,6 +5912,11 @@ async function executeStockPlan(plan, message) {
   }
 
   // Base snapshot always
+  sendStockProgress(
+    res,
+    `📈 Fetching current price and market data for ${ticker}...`,
+    wantsStreaming
+  );
   console.log(`[FINNHUB] Fetching base snapshot for ticker: ${ticker}`);
   const base = await fetchStockSnapshot(ticker);
   if (base?.error) return base;
@@ -5856,6 +5929,7 @@ async function executeStockPlan(plan, message) {
 
   // Earnings
   if (wants.includes("earnings")) {
+    sendStockProgress(res, `📊 Analyzing earnings data...`, wantsStreaming);
     console.log(`[FINNHUB] Fetching earnings for ${ticker}`);
     extra.earnings = await fetchJson(
       `https://finnhub.io/api/v1/stock/earnings?symbol=${ticker}&token=${apiKey}`
@@ -5868,6 +5942,7 @@ async function executeStockPlan(plan, message) {
   }
   // Filings
   if (wants.includes("filings")) {
+    sendStockProgress(res, `📄 Gathering company filings...`, wantsStreaming);
     console.log(`[FINNHUB] Fetching filings for ${ticker}`);
     extra.filings = await fetchJson(
       `https://finnhub.io/api/v1/filings?symbol=${ticker}&token=${apiKey}`
@@ -5878,6 +5953,11 @@ async function executeStockPlan(plan, message) {
   }
   // Insider
   if (wants.includes("insider")) {
+    sendStockProgress(
+      res,
+      `👥 Checking insider transactions...`,
+      wantsStreaming
+    );
     console.log(`[FINNHUB] Fetching insider transactions for ${ticker}`);
     extra.insider = await fetchJson(
       `https://finnhub.io/api/v1/stock/insider-transactions?symbol=${ticker}&token=${apiKey}`
@@ -5988,25 +6068,61 @@ ${
 }
 ${
   stockDataContext.news && stockDataContext.news.length > 0
-    ? `- Recent News Headlines: ${stockDataContext.news
-        .slice(0, 3)
-        .map((n) => n.headline)
-        .join("; ")}`
+    ? `- Recent News (include URLs as clickable links):
+${stockDataContext.news
+  .slice(0, 5)
+  .map((n) => `  • ${n.headline}${n.url ? ` - ${n.url}` : ""}`)
+  .join("\n")}`
     : ""
 }
 
 User Query: ${userMessage}
 
-Provide a comprehensive, detailed analysis that includes:
-1. **Current Market Position**: Current price, recent performance, and market trends
-2. **Financial Metrics**: Detailed analysis of P/E, P/S ratios and what they indicate
-3. **Valuation Assessment**: Market cap, company size, and valuation context
-4. **Analyst Sentiment**: Breakdown of analyst recommendations and what they mean
-5. **Recent Developments**: Key news and events affecting the stock
-6. **Investment Considerations**: Balanced view of opportunities and risks
-7. **Industry Context**: How the company fits within its industry
+Provide a comprehensive, structured stock analysis using bullet points for easy reading. Format as follows:
 
-Be specific, data-driven, and provide actionable insights. Use the exact data provided above. Format the response in a clear, professional manner with appropriate sections and spacing.`;
+**Current Market Position**
+• Current price: $[price] ([change]%)
+• Day range: $[low] - $[high]
+• Brief performance note (1-2 sentences max)
+
+**Financial Metrics**
+• P/E Ratio: [value] - [brief interpretation]
+• P/S Ratio: [value] - [brief interpretation]
+• Other key metrics if available
+
+**Valuation Assessment**
+• Market Cap: $[value]
+• Company size classification (large/mid/small cap)
+• Valuation context (1-2 bullet points)
+
+**Analyst Sentiment**
+• [X] Strong Buy, [Y] Buy, [Z] Hold, [A] Sell, [B] Strong Sell
+• Overall sentiment summary (2 bullet point)
+
+**Recent Developments**
+• [News headline 1] - [URL as clickable link]
+• [News headline 2] - [URL as clickable link]
+• [News headline 3] - [URL as clickable link]
+(Include actual URLs from the news data above as clickable links)
+
+**Investment Considerations**
+• Opportunities (2-3 bullet points)
+• Risks (2-3 bullet points)
+
+**Industry Context**
+• Industry: [industry name]
+• Market position (1-2 bullet points)
+
+**Summary**
+• [2-3 sentence overall assessment]
+
+CRITICAL FORMATTING REQUIREMENTS:
+- Use bullet points (•) for ALL content, NOT paragraphs
+- Keep each bullet point concise (1-2 sentences max)
+- Include actual clickable URLs for news items (format: [text](url))
+- Use bold section headers (**Section Name**)
+- Be data-driven and specific
+- Keep total length under 2000 words but comprehensive`;
 
   try {
     // Check if API key is available
@@ -6044,7 +6160,7 @@ Be specific, data-driven, and provide actionable insights. Use the exact data pr
             {
               role: "system",
               content:
-                "You are a financial analyst providing comprehensive, detailed stock analysis. Always use the exact data provided and give thorough, actionable insights. Be specific and data-driven.",
+                "You are a financial analyst providing comprehensive stock analysis. ALWAYS format responses using bullet points (•) for easy reading. Include clickable links for news items using markdown format [text](url). Keep each bullet point concise (1-2 sentences max). Use bold section headers. Be specific, data-driven, and actionable.",
             },
             { role: "user", content: analysisPrompt },
           ],
