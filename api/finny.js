@@ -260,6 +260,60 @@ const CACHE_TTL = {
 };
 
 // Centralized mapping from "needs" to pack keys and persistent cache types
+/**
+ * CONTEXT PACKS CONFIGURATION
+ *
+ * Context packs are pre-built data structures that provide financial context to Finny.
+ * Each pack contains synthesized user data optimized for LLM consumption.
+ *
+ * PACK TYPES & USAGE:
+ *
+ * 1. "base" pack (summary_min)
+ *    - Contains: Net worth, liquid assets, total liabilities, account summaries, recent transactions (5), spend by category (30 days)
+ *    - Used when: User asks general questions, needs overview, or any query requiring basic financial context
+ *    - Always included for: Most queries as foundational context
+ *    - Cache type: summary_min
+ *
+ * 2. "invest" pack (invest_holdings)
+ *    - Contains: Investment account balances, holdings, portfolio breakdown
+ *    - Used when: User asks about investments, stocks, portfolio, retirement accounts
+ *    - Triggered by: Needs "invest_holdings" in classification
+ *    - Cache type: investments_all
+ *
+ * 3. "goals" pack (goals_overview)
+ *    - Contains: User's financial goals, progress, timelines, target amounts
+ *    - Used when: User asks about goals, planning, progress tracking
+ *    - Triggered by: Needs "goals_overview" in classification
+ *    - Cache type: goals_overview
+ *
+ * 4. "cashflow" pack (cashflow_monthly)
+ *    - Contains: Monthly income, expenses, cashflow trends (last 3 months)
+ *    - Used when: User asks about income, expenses, cashflow, budgeting
+ *    - Triggered by: Needs "cashflow_monthly" in classification
+ *    - Cache type: cashflow_monthly
+ *
+ * 5. "spend" pack (spend_total)
+ *    - Contains: Total spending for a period, spending trends, category breakdowns
+ *    - Used when: User asks about spending, "how much did I spend", period-based queries
+ *    - Triggered by: Needs "spend_total" + period slot in classification
+ *    - Cache type: spend_data (period-specific)
+ *
+ * 6. "categoryDetails" pack (category_details)
+ *    - Contains: Detailed transactions for a specific category within a period
+ *    - Used when: User asks about specific category spending (e.g., "how much on groceries")
+ *    - Triggered by: Needs "category_details" + category + period slots
+ *    - Cache type: category_transactions (category + period specific)
+ *
+ * NOTE: "txns_by_category" maps to "spend" pack but uses category_transactions cache.
+ *       It's merged into spend_total pack when both category and period are provided.
+ *
+ * PACK BUILDING FLOW:
+ * 1. Classification determines which "needs" are required
+ * 2. buildContextPacks() checks cache first (pre-built context)
+ * 3. If not cached, creates fetch operations via createOptimizedFetchOperations()
+ * 4. Operations execute in parallel, results processed and cached
+ * 5. Packs are synthesized and passed to prompt engine
+ */
 const NEED_CONFIG = {
   summary_min: {
     packKey: "base",
@@ -2157,28 +2211,14 @@ async function handleAsk(
 
     // 3.5) Check if this is a stock query after building context packs
     // Also check if we have stock_override (user confirmed ticker) - that's definitely a stock query!
-    logDebug(
-      "🔍 [STOCK_ROUTING] Checking if message looks like stock query:",
-      message
-    );
     const hasStockOverride = !!context?.stock_override?.ticker;
     const isStockQuery = looksLikeStockQuery(message) || hasStockOverride;
-    console.log(`\n🔍 [STOCK_ROUTING] Stock query detection:`);
-    console.log(`   - Message: "${message}"`);
-    console.log(
-      `   - looksLikeStockQuery: ${
-        looksLikeStockQuery(message) ? "✅ YES" : "❌ NO"
-      }`
-    );
-    console.log(
-      `   - hasStockOverride: ${
-        hasStockOverride ? `✅ YES (${context.stock_override.ticker})` : "❌ NO"
-      }`
-    );
-    console.log(
-      `   - Final isStockQuery: ${isStockQuery ? "✅ YES" : "❌ NO"}`
-    );
-    logDebug("🔍 [STOCK_ROUTING] Result:", isStockQuery);
+    logDebug("🔍 [STOCK_ROUTING] Stock query detection:", {
+      message,
+      looksLikeStockQuery: looksLikeStockQuery(message),
+      hasStockOverride,
+      isStockQuery,
+    });
 
     if (isStockQuery) {
       try {
@@ -2204,41 +2244,18 @@ async function handleAsk(
         let stockPlan = null;
         const stockOverride = context?.stock_override?.ticker || null;
 
-        // 📊 LOGGING: Show which path will be taken
-        console.log(`\n🔍 [STOCK_ROUTING] Determining analysis path:`);
-        console.log(`   - Message: "${message}"`);
-        console.log(
-          `   - Has stockOverride: ${
-            stockOverride ? `✅ YES (${stockOverride})` : "❌ NO"
-          }`
-        );
-        console.log(
-          `   - looksLikeStockDeepQuery: ${
-            looksLikeStockDeepQuery(message) ? "✅ YES" : "❌ NO"
-          }`
-        );
         // Deep query ALWAYS runs for stock queries (even with stockOverride)
         // stockOverride just provides the ticker, but we still want comprehensive analysis
         const willUseDeepQuery = looksLikeStockDeepQuery(message);
         const willUseOverride = !!stockOverride && !willUseDeepQuery;
-        const willUseSimple = !willUseDeepQuery && !willUseOverride;
-        console.log(
-          `   - Path decision: ${
-            willUseDeepQuery
-              ? stockOverride
-                ? "🔵 DEEP QUERY (with stockOverride ticker)"
-                : "🔵 DEEP QUERY"
-              : willUseOverride
-              ? "🟢 STOCK OVERRIDE (fast)"
-              : "🟡 SIMPLE QUERY"
-          }`
-        );
+        logDebug("🔍 [STOCK_ROUTING] Analysis path:", {
+          stockOverride,
+          willUseDeepQuery,
+          willUseOverride,
+        });
 
         // Deep analysis is default for all stock queries - ALWAYS run deep query for comprehensive analysis
         if (looksLikeStockDeepQuery(message)) {
-          console.log(
-            `\n🔵 [STOCK] DEEP QUERY PATH: Using comprehensive analysis`
-          );
           logDebug("🔍 [STOCK] Deep query detected, using advanced analysis");
 
           // Send initial progress message
@@ -2816,20 +2833,23 @@ async function handleAsk(
       ? `Context:\n${contextNote}\n\nUser: ${message}`
       : message;
 
-    // Log prompt summary (full prompt too verbose - use debug mode if needed)
+    // Log prompt summary
     const promptSize = Math.round(system.length / 100) / 10;
     const contextSize = Math.round(contextNote.length / 100) / 10;
     logInfo(
       `📝 [PROMPT] Ready (system: ${promptSize}k chars, context: ${contextSize}k chars)`
     );
-    logDebug("📝 [PROMPT] Full prompt:");
-    logDebug("=".repeat(80));
-    logDebug("SYSTEM PROMPT:");
-    logDebug(system);
-    logDebug("\n" + "=".repeat(80));
-    logDebug("USER MESSAGE:");
-    logDebug(userMessage);
-    logDebug("=".repeat(80));
+
+    // Log complete system prompt with clear dividers
+    console.log("\n" + "=".repeat(100));
+    console.log("📋 [PROMPT_ENGINE] COMPLETE SYSTEM PROMPT SENT TO LLM");
+    console.log("=".repeat(100));
+    console.log(system);
+    console.log("=".repeat(100));
+    console.log("📋 [PROMPT_ENGINE] USER MESSAGE");
+    console.log("=".repeat(100));
+    console.log(userMessage);
+    console.log("=".repeat(100) + "\n");
 
     // Memory extraction removed - migrating to Supermemory
     let memoryExtraction = [];
