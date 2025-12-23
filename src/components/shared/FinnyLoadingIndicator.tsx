@@ -1,16 +1,23 @@
 import React, { useEffect, useRef } from "react";
 import { View, Text, Animated, Easing, StyleSheet, Image } from "react-native";
+import Svg, { Circle } from "react-native-svg";
+
+const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
 interface FinnyLoadingIndicatorProps {
   message?: string;
   color?: string;
   imageSource?: any;
+  onComplete?: () => void;
+  duration?: number;
 }
 
 const FinnyLoadingIndicator: React.FC<FinnyLoadingIndicatorProps> = ({
   message = "Loading...",
   color = "#4A90E2",
   imageSource,
+  onComplete,
+  duration = 2000,
 }) => {
   const loadingDotAnimations = useRef([
     new Animated.Value(0.3),
@@ -19,6 +26,8 @@ const FinnyLoadingIndicator: React.FC<FinnyLoadingIndicatorProps> = ({
   ]).current;
   const loadingPulseAnim = useRef(new Animated.Value(1)).current;
   const loadingRingRotate = useRef(new Animated.Value(0)).current;
+  const onCompleteRef = useRef(onComplete);
+  const animationStartedRef = useRef(false);
 
   // Helper to convert hex to rgba
   const hexToRgba = (hex: string, alpha: number) => {
@@ -28,7 +37,21 @@ const FinnyLoadingIndicator: React.FC<FinnyLoadingIndicatorProps> = ({
     return `rgba(${r}, ${g}, ${b}, ${alpha})`;
   };
 
+  // Update onComplete ref when it changes
   useEffect(() => {
+    onCompleteRef.current = onComplete;
+  }, [onComplete]);
+
+  useEffect(() => {
+    // Prevent animation from restarting if already started
+    if (animationStartedRef.current) {
+      return;
+    }
+    animationStartedRef.current = true;
+
+    // Reset ring rotation to 0 before starting
+    loadingRingRotate.setValue(0);
+
     // Gentle pulse animation for the image
     const pulseAnimation = Animated.loop(
       Animated.sequence([
@@ -47,15 +70,20 @@ const FinnyLoadingIndicator: React.FC<FinnyLoadingIndicatorProps> = ({
       ])
     );
 
-    // Circular ring rotation animation
-    const ringRotation = Animated.loop(
-      Animated.timing(loadingRingRotate, {
-        toValue: 1,
-        duration: 2000,
-        easing: Easing.linear,
-        useNativeDriver: true,
-      })
-    );
+    // Circular ring rotation animation - single rotation from 0 to 100%
+    const ringRotation = Animated.timing(loadingRingRotate, {
+      toValue: 1,
+      duration: duration,
+      easing: Easing.linear,
+      useNativeDriver: true,
+    });
+    
+    // Call onComplete when ring rotation finishes
+    ringRotation.start((finished) => {
+      if (finished && onCompleteRef.current) {
+        onCompleteRef.current();
+      }
+    });
 
     // Dots animation
     const dotsAnimation = Animated.loop(
@@ -81,45 +109,60 @@ const FinnyLoadingIndicator: React.FC<FinnyLoadingIndicatorProps> = ({
     );
 
     pulseAnimation.start();
-    ringRotation.start();
     dotsAnimation.start();
 
     return () => {
       pulseAnimation.stop();
       ringRotation.stop();
       dotsAnimation.stop();
+      animationStartedRef.current = false;
     };
-  }, [loadingPulseAnim, loadingRingRotate, loadingDotAnimations]);
+  }, [duration]); // Only depend on duration to prevent re-running
 
-  const ringRotationDegrees = loadingRingRotate.interpolate({
+  // Calculate circle properties for SVG
+  const ringRadius = 107; // (220 - 6) / 2, accounting for 3px border width
+  const circumference = 2 * Math.PI * ringRadius;
+  
+  // Animate stroke-dashoffset from full circumference to 0
+  // This creates the effect of the arc growing from 0% to 100%
+  const strokeDashoffset = loadingRingRotate.interpolate({
     inputRange: [0, 1],
-    outputRange: ["0deg", "360deg"],
+    outputRange: [circumference, 0], // Start with full offset (invisible), end with 0 (full circle)
   });
 
   return (
     <View style={styles.container}>
       <View style={styles.imageWrapper}>
-        {/* Circular loading ring */}
-        <Animated.View
-          style={[
-            styles.loadingRing,
-            {
-              transform: [{ rotate: ringRotationDegrees }],
-              borderTopColor: color,
-              borderRightColor: hexToRgba(color, 0.5),
-            },
-          ]}
+        {/* SVG Circular Progress Ring */}
+        <Svg
+          width={220}
+          height={220}
+          style={styles.svgContainer}
         >
-          <Animated.View
-            style={[
-              styles.loadingRingInner,
-              {
-                borderBottomColor: hexToRgba(color, 0.3),
-                borderLeftColor: hexToRgba(color, 0.6),
-              },
-            ]}
+          {/* Background circle (full, semi-transparent) */}
+          <Circle
+            cx={110}
+            cy={110}
+            r={ringRadius}
+            stroke={hexToRgba(color, 0.2)}
+            strokeWidth={3}
+            fill="none"
           />
-        </Animated.View>
+          {/* Progress circle (grows from 6 o'clock clockwise) */}
+          <AnimatedCircle
+            cx={110}
+            cy={110}
+            r={ringRadius}
+            stroke={color}
+            strokeWidth={3}
+            fill="none"
+            strokeDasharray={circumference}
+            strokeDashoffset={strokeDashoffset}
+            strokeLinecap="round"
+            transform={`rotate(-90 110 110)`} // Rotate to start from 6 o'clock (bottom)
+            origin="110, 110"
+          />
+        </Svg>
         {/* Rounded image */}
         <Animated.View
           style={[
@@ -173,32 +216,16 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     position: "relative",
   },
-  loadingRing: {
+  svgContainer: {
     position: "absolute",
-    width: 220,
-    height: 220,
-    borderRadius: 110,
-    borderWidth: 3,
-    borderBottomColor: "transparent",
-    borderLeftColor: "transparent",
-  },
-  loadingRingInner: {
-    position: "absolute",
-    width: 200,
-    height: 200,
-    borderRadius: 100,
-    borderWidth: 2,
-    borderTopColor: "transparent",
-    borderRightColor: "transparent",
-    top: 8,
-    left: 8,
+    top: 0,
+    left: 0,
   },
   loadingImageContainer: {
     width: 180,
     height: 180,
     borderRadius: 90,
     overflow: "hidden",
-    backgroundColor: "rgba(255,255,255,0.05)",
     borderWidth: 3,
   },
   loadingImage: {

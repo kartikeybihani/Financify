@@ -61,6 +61,10 @@ export default function MemoriesScreen({ onBack }: MemoriesScreenProps = {}) {
     new Map<string, Animated.Value>()
   ).current;
 
+  // Track both data fetch and animation completion
+  const dataFetchedRef = React.useRef(false);
+  const animationCompletedRef = React.useRef(false);
+
   // Detailed memories screen animation state
   const [showDetailedMemories, setShowDetailedMemories] = useState(false);
   const [detailedMemoriesSlideAnimation] = useState(new Animated.Value(0));
@@ -68,9 +72,19 @@ export default function MemoriesScreen({ onBack }: MemoriesScreenProps = {}) {
   // Fetch memories data when component mounts
   useEffect(() => {
     if (session?.user?.id) {
+      // Reset flags when component mounts
+      dataFetchedRef.current = false;
+      animationCompletedRef.current = false;
       fetchMemoriesData();
     }
   }, [session]);
+
+  // Helper function to check if both are complete and hide loading
+  const checkAndHideLoading = () => {
+    if (dataFetchedRef.current && animationCompletedRef.current) {
+      setLoading(false);
+    }
+  };
 
   const fetchMemoriesData = async () => {
     try {
@@ -129,7 +143,8 @@ export default function MemoriesScreen({ onBack }: MemoriesScreenProps = {}) {
       console.error("Error fetching memories:", error);
       setMemorySummaries([]);
     } finally {
-      setLoading(false);
+      dataFetchedRef.current = true;
+      checkAndHideLoading();
     }
   };
 
@@ -246,6 +261,11 @@ export default function MemoriesScreen({ onBack }: MemoriesScreenProps = {}) {
             <FinnyLoadingIndicator
               message="Loading memories..."
               imageSource={require("../../../assets/images/thinking2.png")}
+              duration={2000}
+              onComplete={() => {
+                animationCompletedRef.current = true;
+                checkAndHideLoading();
+              }}
             />
           ) : !hasMemories ? (
             <View style={styles.emptyContainer}>

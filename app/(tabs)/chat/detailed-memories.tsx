@@ -65,12 +65,26 @@ export default function DetailedMemoriesScreen({
   const [deletingMemoryId, setDeletingMemoryId] = useState<string | null>(null);
   const [updatingMemoryId, setUpdatingMemoryId] = useState<string | null>(null);
 
+  // Track both data fetch and animation completion
+  const dataFetchedRef = React.useRef(false);
+  const animationCompletedRef = React.useRef(false);
+
   // Fetch profile memories when component mounts
   useEffect(() => {
     if (session?.user?.id) {
+      // Reset flags when component mounts
+      dataFetchedRef.current = false;
+      animationCompletedRef.current = false;
       fetchProfileMemories();
     }
   }, [session]);
+
+  // Helper function to check if both are complete and hide loading
+  const checkAndHideLoading = () => {
+    if (dataFetchedRef.current && animationCompletedRef.current) {
+      setLoadingProfileMemories(false);
+    }
+  };
 
   const fetchProfileMemories = async () => {
     try {
@@ -111,7 +125,8 @@ export default function DetailedMemoriesScreen({
       Alert.alert("Error", "Failed to load memories. Please try again.");
       setProfileMemories([]);
     } finally {
-      setLoadingProfileMemories(false);
+      dataFetchedRef.current = true;
+      checkAndHideLoading();
     }
   };
 
@@ -291,7 +306,14 @@ export default function DetailedMemoriesScreen({
         {/* Content */}
         <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
           {loadingProfileMemories ? (
-            <FinnyLoadingIndicator message="Loading detailed memories..." />
+            <FinnyLoadingIndicator
+              message="Loading detailed memories..."
+              duration={1500}
+              onComplete={() => {
+                animationCompletedRef.current = true;
+                checkAndHideLoading();
+              }}
+            />
           ) : profileMemories.length === 0 ? (
             <View style={styles.emptyContainer}>
               <Text style={styles.emptyDescription}>
