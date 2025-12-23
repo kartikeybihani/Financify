@@ -3670,13 +3670,38 @@ async function buildContextPacks(userId, needs, slots) {
 
     for (const need of needs) {
       const cacheType = NEED_CONFIG[need]?.cacheType || need;
-      const cachedData = await getCachedUserData(cacheType, userId);
+
+      // Build cache params based on need type and slots
+      let cacheParams = {};
+      if (need === "txns_by_category" || need === "category_details") {
+        // For category transactions, include category and period in cache key
+        if (slots?.category && slots?.period) {
+          cacheParams = {
+            category: slots.category,
+            period: slots.period,
+          };
+        }
+      } else if (need === "spend_total" && slots?.period) {
+        // For spend_total, include period in cache key
+        cacheParams = { period: slots.period };
+      } else if (need === "goals_overview") {
+        cacheParams = { limit: 10 };
+      } else if (need === "cashflow_monthly") {
+        cacheParams = { months: 3 };
+      }
+
+      const cachedData = await getCachedUserData(
+        cacheType,
+        userId,
+        cacheParams
+      );
       if (cachedData) {
         logInfo(`✅ [FINNY] Using pre-built context for: ${need}`);
         logDebug(`🔍 [FINNY] Pre-built data for ${need}:`, {
           hasData: !!cachedData,
           dataKeys: Object.keys(cachedData || {}),
           isCached: true,
+          cacheParams,
         });
         // Store data in the correct pack structure for context building
         const packKey = NEED_CONFIG[need]?.packKey || need;
@@ -4074,7 +4099,12 @@ function processFetchResults(results, operations, packs, gaps) {
             packs.categoryDetails = data;
           }
           if (operation.servesNeeds?.includes("txns_by_category")) {
+            // Merge into spend pack for totals, but also keep categoryDetails for analysis
             packs.spend = { ...packs.spend, ...data };
+            // Ensure categoryDetails is set for transaction analysis
+            if (!packs.categoryDetails) {
+              packs.categoryDetails = data;
+            }
           }
           break;
         default: {
