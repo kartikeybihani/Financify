@@ -1274,13 +1274,25 @@ export default async function handler(req, res) {
   }
 
   // Merge profile data with existing userProfile (from auth metadata)
+  // IMPORTANT: Profiles table is source of truth for age (user_metadata.age may be outdated)
   const enrichedProfile = {
     name: userProfile.name || userProfileData.name,
-    age: userProfile.age || userProfileData.age,
+    age: userProfileData.age || userProfile.age, // Prioritize profiles table over user_metadata
     occupation: userProfileData.occupation,
     finny_style: userProfileData.finny_style,
     intent_context: userProfileData.intent_context,
   };
+
+  // Log age source for debugging
+  if (
+    userProfile.age &&
+    userProfileData.age &&
+    userProfile.age !== userProfileData.age
+  ) {
+    logWarn(
+      `⚠️ [PROFILE] Age mismatch: user_metadata.age=${userProfile.age}, profiles.age=${userProfileData.age} (using profiles.age)`
+    );
+  }
 
   const safeContext = {
     ...(context || {}),
@@ -2720,10 +2732,67 @@ async function handleAsk(
     }
 
     // 4) Detect user state for context-aware prompting
+    // Log base pack contents for debugging
+    if (packs.base) {
+      logInfo(`📦 [BASE_PACK] Contents:`);
+      logInfo(`   - netWorth: $${(packs.base.netWorth || 0).toFixed(2)}`);
+      logInfo(
+        `   - liquidAssets: $${(packs.base.liquidAssets || 0).toFixed(2)}`
+      );
+      logInfo(
+        `   - totalLiabilities: $${(packs.base.totalLiabilities || 0).toFixed(
+          2
+        )}`
+      );
+      logInfo(
+        `   - investmentsTotal: $${(packs.base.investmentsTotal || 0).toFixed(
+          2
+        )}`
+      );
+      logInfo(
+        `   - accounts: ${
+          Array.isArray(packs.base.accounts) ? packs.base.accounts.length : 0
+        } accounts`
+      );
+      logInfo(
+        `   - recentTransactions: ${
+          Array.isArray(packs.base.recentTransactions)
+            ? packs.base.recentTransactions.length
+            : 0
+        } transactions`
+      );
+      logInfo(
+        `   - spendByCategory: ${
+          Array.isArray(packs.base.spendByCategory)
+            ? packs.base.spendByCategory.length
+            : 0
+        } categories`
+      );
+
+      if (
+        Array.isArray(packs.base.recentTransactions) &&
+        packs.base.recentTransactions.length > 0
+      ) {
+        logInfo(
+          `   - Transaction sample: ${packs.base.recentTransactions
+            .slice(0, 3)
+            .map(
+              (t) =>
+                `${t.merchant || t.name || "Unknown"}: $${(
+                  t.amount || 0
+                ).toFixed(2)}`
+            )
+            .join(" | ")}`
+        );
+      }
+    }
+
     const financialDataForState = {
       base: packs.base,
       cashflow: packs.cashflow,
       spend: packs.spend,
+      invest: packs.invest, // Investment holdings
+      goals: packs.goals, // Financial goals
       transactions: packs.base?.recentTransactions || [],
       accounts: packs.base?.accounts || packs.accounts || [], // Include accounts for credit utilization detection
     };
