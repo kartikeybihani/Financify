@@ -2739,9 +2739,18 @@ async function handleAsk(
       spend: packs.spend,
       invest: packs.invest, // Investment holdings
       goals: packs.goals, // Financial goals
+      categoryDetails: packs.categoryDetails, // Category transaction details for analysis
       transactions: packs.base?.recentTransactions || [],
       accounts: packs.base?.accounts || packs.accounts || [], // Include accounts for credit utilization detection
     };
+
+    logInfo(`🔍 [FINANCIAL_DATA] Building financialDataForState:`, {
+      hasBase: !!packs.base,
+      hasSpend: !!packs.spend,
+      hasCategoryDetails: !!packs.categoryDetails,
+      categoryDetailsTransactionCount:
+        packs.categoryDetails?.transactions?.length || 0,
+    });
     const userState = detectUserState(
       message,
       financialDataForState,
