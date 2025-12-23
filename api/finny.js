@@ -1963,7 +1963,7 @@ async function handleAsk(
     const slots = extractSlots(message);
     const needs = planNeeds(slots, message);
 
-    logDebug("🎯 [FINNY] Extracted slots:", slots);
+    logInfo("🎯 [SLOTS] Extracted slots:", JSON.stringify(slots, null, 2));
     logInfo("🎯 [FINNY] Planned needs:", needs);
 
     // 2.1) Check if web search is needed
@@ -3876,8 +3876,14 @@ async function createOptimizedFetchOperations(userId, needs, slots) {
   }
 
   // 3. Category transactions operation (OPTIMIZED: Combine category_details and txns_by_category)
+  logInfo(
+    `🔍 [CATEGORY_TXNS] Checking if operation needed - category: ${
+      slots?.category
+    }, period: ${slots?.period ? JSON.stringify(slots.period) : "undefined"}`
+  );
   if (slots?.category && slots?.period) {
     const cacheKey = `category_transactions_${slots.category}_${slots.period.start}_${slots.period.end}`;
+    logInfo(`🔍 [CATEGORY_TXNS] Checking cache with key: ${cacheKey}`);
     const cachedCategoryTxns = await getCachedUserData(
       "category_transactions",
       userId,
@@ -3886,9 +3892,15 @@ async function createOptimizedFetchOperations(userId, needs, slots) {
         period: slots.period,
       }
     );
+    logInfo(
+      `🔍 [CATEGORY_TXNS] Cache result: ${cachedCategoryTxns ? "HIT" : "MISS"}`
+    );
 
     // Check if this is a multi-month query (use get_spend_by_category_periods for trends)
     const isMultiMonthQuery = slots.period.months && slots.period.months > 1;
+    logInfo(
+      `🔍 [CATEGORY_TXNS] Is multi-month query: ${isMultiMonthQuery}, months: ${slots.period.months}`
+    );
 
     if (cachedCategoryTxns) {
       // Use cached data for both category_details and txns_by_category needs
@@ -3921,15 +3933,20 @@ async function createOptimizedFetchOperations(userId, needs, slots) {
       }
 
       // Always fetch detailed transactions for the period
+      const categoryTxnParams = {
+        p_user_id: userId,
+        p_category: slots.category,
+        p_start: slots.period.start,
+        p_end: slots.period.end,
+      };
+      logInfo(
+        `🔍 [CATEGORY_TXNS] Creating RPC call to get_transactions_by_category with params:`,
+        JSON.stringify(categoryTxnParams, null, 2)
+      );
       fetchers.push({
         name: "category_transactions",
         rpc: "get_transactions_by_category",
-        params: {
-          p_user_id: userId,
-          p_category: slots.category,
-          p_start: slots.period.start,
-          p_end: slots.period.end,
-        },
+        params: categoryTxnParams,
       });
 
       addOperation(cacheKey, {
@@ -4055,25 +4072,80 @@ async function executeFetchOperation(operation) {
 
   try {
     // Execute all fetchers for this operation in parallel
-    const fetcherPromises = operation.fetchers.map((fetcher) =>
-      withTimeout(supabase.rpc(fetcher.rpc, fetcher.params), 2000, null).catch(
-        (error) => {
-          console.error(`❌ [FINNY] ${fetcher.name} fetch failed:`, error);
-          return null;
-        }
-      )
+    logInfo(
+      `🔍 [RPC] Executing ${operation.fetchers.length} fetchers for operation: ${operation.key} (type: ${operation.type})`
     );
+    const fetcherPromises = operation.fetchers.map((fetcher) => {
+      logInfo(
+        `🔍 [RPC] Calling ${fetcher.rpc} with params:`,
+        JSON.stringify(fetcher.params, null, 2)
+      );
+      return withTimeout(supabase.rpc(fetcher.rpc, fetcher.params), 2000, null)
+        .then((result) => {
+          // Preserve fetcher metadata in result for processing
+          return { ...result, name: fetcher.name, rpc: fetcher.rpc };
+        })
+        .catch((error) => {
+          logError(
+            `❌ [RPC] ${fetcher.name} (${fetcher.rpc}) fetch failed:`,
+            error
+          );
+          logError(`❌ [RPC] Error details:`, {
+            message: error?.message,
+            code: error?.code,
+            details: error?.details,
+            hint: error?.hint,
+          });
+          return { name: fetcher.name, rpc: fetcher.rpc, data: null, error };
+        });
+    });
 
     const results = await Promise.all(fetcherPromises);
+    logInfo(
+      `🔍 [RPC] All fetchers completed. Results:`,
+      results.map((r, idx) => ({
+        fetcher: operation.fetchers[idx]?.name,
+        rpc: operation.fetchers[idx]?.rpc,
+        hasData: !!r?.data,
+        dataLength: Array.isArray(r?.data) ? r.data.length : r?.data ? 1 : 0,
+        error: r?.error || null,
+      }))
+    );
 
     // Process results based on operation type
+    logInfo(
+      `🔍 [PROCESS] Processing operation ${operation.key} (type: ${operation.type}) with ${results.length} results`
+    );
     const processedData = processOperationData(operation, results);
+    logInfo(
+      `🔍 [PROCESS] Processed data for ${operation.key}:`,
+      processedData
+        ? {
+            hasData: true,
+            keys: Object.keys(processedData),
+            dataPreview:
+              operation.type === "category_transactions"
+                ? {
+                    category: processedData.category,
+                    transactionCount: Array.isArray(processedData.transactions)
+                      ? processedData.transactions.length
+                      : 0,
+                    period: processedData.period,
+                  }
+                : "See full data",
+          }
+        : "NULL - No data processed"
+    );
 
     if (processedData) {
       // Cache the processed data
       await cacheOperationData(operation, processedData);
       return { success: true, data: processedData, cached: false };
     } else {
+      logWarn(
+        `⚠️ [PROCESS] Operation ${operation.key} returned no valid data. Results were:`,
+        results
+      );
       return { success: false, error: "No valid data returned" };
     }
   } catch (error) {
@@ -4095,8 +4167,14 @@ function processFetchResults(results, operations, packs, gaps) {
       switch (operation.type) {
         case "category_transactions":
           // This operation can serve both category_details and txns_by_category
+          logInfo(
+            `🔍 [PACKS] Setting categoryDetails pack with ${
+              data?.transactions?.length || 0
+            } transactions`
+          );
           if (operation.servesNeeds?.includes("category_details")) {
             packs.categoryDetails = data;
+            logInfo(`✅ [PACKS] categoryDetails set (serves category_details)`);
           }
           if (operation.servesNeeds?.includes("txns_by_category")) {
             // Merge into spend pack for totals, but also keep categoryDetails for analysis
@@ -4104,8 +4182,25 @@ function processFetchResults(results, operations, packs, gaps) {
             // Ensure categoryDetails is set for transaction analysis
             if (!packs.categoryDetails) {
               packs.categoryDetails = data;
+              logInfo(
+                `✅ [PACKS] categoryDetails set (serves txns_by_category)`
+              );
             }
           }
+          logInfo(`🔍 [PACKS] Final categoryDetails:`, {
+            hasData: !!packs.categoryDetails,
+            category: packs.categoryDetails?.category,
+            transactionCount: Array.isArray(packs.categoryDetails?.transactions)
+              ? packs.categoryDetails.transactions.length
+              : 0,
+            sampleTransactionNames: Array.isArray(
+              packs.categoryDetails?.transactions
+            )
+              ? packs.categoryDetails.transactions
+                  .slice(0, 3)
+                  .map((t) => t.merchant || t.name)
+              : [],
+          });
           break;
         default: {
           const packKey =
@@ -4215,6 +4310,16 @@ function processSpendData(operation, results) {
 
 // OPTIMIZED: Process category transactions data
 function processCategoryTransactionsData(operation, results) {
+  logInfo(
+    `🔍 [CATEGORY_TXNS_PROCESS] Processing category transactions for operation:`,
+    {
+      key: operation.key,
+      category: operation.category,
+      period: operation.period,
+      resultsCount: results.length,
+    }
+  );
+
   // Results can contain: [category_spend_by_periods, category_transactions] for multi-month queries
   // Or just: [category_transactions] for single period queries
   const txnRes =
@@ -4224,7 +4329,28 @@ function processCategoryTransactionsData(operation, results) {
     (r) => r?.name === "category_spend_by_periods"
   );
 
-  if (!txnRes?.data || txnRes.data.length === 0) return null;
+  logInfo(`🔍 [CATEGORY_TXNS_PROCESS] Found transaction result:`, {
+    found: !!txnRes,
+    hasData: !!txnRes?.data,
+    dataLength: Array.isArray(txnRes?.data)
+      ? txnRes.data.length
+      : txnRes?.data
+      ? 1
+      : 0,
+    dataType: txnRes?.data ? typeof txnRes.data : "undefined",
+    firstItem:
+      Array.isArray(txnRes?.data) && txnRes.data.length > 0
+        ? txnRes.data[0]
+        : null,
+  });
+
+  if (!txnRes?.data || txnRes.data.length === 0) {
+    logWarn(
+      `⚠️ [CATEGORY_TXNS_PROCESS] No transaction data found. txnRes:`,
+      txnRes
+    );
+    return null;
+  }
 
   const result = {
     category: operation.category,
@@ -4237,6 +4363,24 @@ function processCategoryTransactionsData(operation, results) {
     })),
     period: `${operation.period.start} to ${operation.period.end}`,
   };
+
+  logInfo(
+    `🔍 [CATEGORY_TXNS_PROCESS] Processed ${result.transactions.length} transactions:`,
+    {
+      category: result.category,
+      period: result.period,
+      transactionCount: result.transactions.length,
+      sampleTransactions: result.transactions.slice(0, 5).map((t) => ({
+        date: t.date,
+        merchant: t.merchant,
+        name: t.name,
+        amount: t.amount,
+      })),
+      allMerchants: [
+        ...new Set(result.transactions.map((t) => t.merchant)),
+      ].slice(0, 10),
+    }
+  );
 
   // If we have monthly breakdown data, filter it for this category and add it
   if (periodsRes?.data && Array.isArray(periodsRes.data)) {
