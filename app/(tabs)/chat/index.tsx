@@ -683,9 +683,7 @@ function ChatScreenContent() {
             </View>
             <View style={styles.headerContent}>
               <Text style={styles.headerTitle}>Finny</Text>
-              <Text style={styles.headerSubtitle}>
-                Your AI Financial Advisor
-              </Text>
+              <Text style={styles.headerSubtitle}>Your AI Money Coach</Text>
             </View>
           </View>
           <TouchableOpacity

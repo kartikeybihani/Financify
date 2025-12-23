@@ -6091,11 +6091,34 @@ async function generateConversationalStockResponse(
     psRatio: stockData.metrics?.psTTM,
     recommendations: stockData.recommendations?.[0] || null,
     news: (stockData.news || []).map((n) => {
-      // Filter out API endpoint URLs - only use actual article URLs
-      // Finnhub news items should have 'url' field with actual article URL
-      // If url contains 'finnhub.io/api/news', it's an API endpoint, not an article URL
-      const articleUrl =
-        n.url && !n.url.includes("finnhub.io/api/news") ? n.url : null;
+      // Finnhub company-news API returns 'url' field which is often a Finnhub API endpoint
+      // We need to check if it's an actual article URL or an API endpoint
+      // Some news items may have the actual article URL, others may only have API endpoints
+      let articleUrl = null;
+
+      // Check if url exists and is not a Finnhub API endpoint
+      if (n.url && typeof n.url === "string") {
+        // Finnhub API endpoints typically contain '/api/news' or are finnhub.io domains
+        if (
+          !n.url.includes("finnhub.io/api/news") &&
+          !n.url.includes("finnhub.io/api/v1") &&
+          (n.url.startsWith("http://") || n.url.startsWith("https://"))
+        ) {
+          articleUrl = n.url;
+        }
+      }
+
+      // Log for debugging if no URL found
+      if (!articleUrl && n.headline) {
+        console.log(
+          `[STOCK_ANALYSIS] News item "${n.headline.substring(
+            0,
+            50
+          )}..." has no valid article URL. Available fields:`,
+          Object.keys(n)
+        );
+      }
+
       return {
         ...n,
         articleUrl: articleUrl, // Store the actual article URL separately
@@ -6154,18 +6177,19 @@ ${
 }
 ${
   stockDataContext.news && stockDataContext.news.length > 0
-    ? `- Recent News (use actual article URLs, NOT API endpoint URLs):
+    ? `- Recent News (IMPORTANT: Use ONLY the article URLs provided below. If "URL not available", omit the URL entirely):
 ${stockDataContext.news
   .slice(0, 5)
-  .map((n) => {
-    // Use articleUrl if available (filtered to exclude API endpoints)
-    // Otherwise, if url exists and is not an API endpoint, use it
-    const articleUrl =
-      n.articleUrl ||
-      (n.url && !n.url.includes("finnhub.io/api/news") ? n.url : null);
-    return `  • ${n.headline}${
-      articleUrl ? ` - Article URL: ${articleUrl}` : " - URL not available"
-    }`;
+  .map((n, idx) => {
+    const articleUrl = n.articleUrl || null;
+    // Only include URL if we have a valid article URL
+    if (articleUrl) {
+      return `  ${idx + 1}. ${n.headline} - Article URL: ${articleUrl}`;
+    } else {
+      return `  ${idx + 1}. ${
+        n.headline
+      } - URL not available (do NOT include any URL for this item)`;
+    }
   })
   .join("\n")}`
     : ""
@@ -6195,11 +6219,17 @@ Provide a comprehensive, structured stock analysis using bullet points for easy 
 • Overall sentiment summary (2 bullet point)
 
 **Recent Developments**
-• [News headline 1] - [actual article URL as plain URL, not markdown]
-• [News headline 2] - [actual article URL as plain URL, not markdown]
-• [News headline 3] - [actual article URL as plain URL, not markdown]
-IMPORTANT: Use the actual article URLs provided above. Format as: "Headline - https://actual-url.com"
-Do NOT use markdown link format [text](url). Do NOT use Finnhub API endpoint URLs (finnhub.io/api/news).
+• [News headline 1] - [ONLY include URL if provided in news data above, otherwise omit URL]
+• [News headline 2] - [ONLY include URL if provided in news data above, otherwise omit URL]
+• [News headline 3] - [ONLY include URL if provided in news data above, otherwise omit URL]
+CRITICAL: 
+- Use ONLY the article URLs explicitly provided in the "Recent News" section above
+- If a news item shows "URL not available", include ONLY the headline without any URL
+- Format as: "Headline - https://actual-url.com" (only if URL was provided)
+- Do NOT use placeholder URLs like "example.com" or "https://example.com"
+- Do NOT use markdown link format [text](url)
+- Do NOT use Finnhub API endpoint URLs (finnhub.io/api/news)
+- Do NOT invent or guess URLs
 
 **Investment Considerations**
 • Opportunities (2-3 bullet points)
@@ -6215,8 +6245,10 @@ Do NOT use markdown link format [text](url). Do NOT use Finnhub API endpoint URL
 CRITICAL FORMATTING REQUIREMENTS:
 - Use bullet points (•) for ALL content, NOT paragraphs
 - Keep each bullet point concise (1-2 sentences max)
-- For news URLs: Use plain URLs (https://example.com), NOT markdown format [text](url)
-- Format news items as: "Headline - https://actual-article-url.com"
+- For news URLs: Use the ACTUAL article URLs provided in the news data above, formatted as plain URLs (e.g., https://actual-domain.com/article)
+- Format news items as: "Headline - [actual URL from news data]"
+- Do NOT use placeholder URLs like "example.com" or "https://example.com"
+- Do NOT use markdown link format [text](url)
 - Do NOT use Finnhub API endpoint URLs (finnhub.io/api/news?id=...)
 - Use bold section headers (**Section Name**)
 - Be data-driven and specific
@@ -6258,7 +6290,7 @@ CRITICAL FORMATTING REQUIREMENTS:
             {
               role: "system",
               content:
-                "You are a financial analyst providing comprehensive stock analysis. ALWAYS format responses using bullet points (•) for easy reading. For news URLs, use plain URLs (https://example.com) NOT markdown format. Format news items as: 'Headline - https://actual-url.com'. Keep each bullet point concise (1-2 sentences max). Use bold section headers. Be specific, data-driven, and actionable.",
+                "You are a financial analyst providing comprehensive stock analysis. ALWAYS format responses using bullet points (•) for easy reading. For news URLs, use the ACTUAL article URLs provided in the user's stock data, formatted as plain URLs (e.g., https://actual-domain.com/article). Format news items as: 'Headline - [actual URL from provided news data]'. Do NOT use placeholder URLs like 'example.com'. Do NOT use markdown link format [text](url). Keep each bullet point concise (1-2 sentences max). Use bold section headers. Be specific, data-driven, and actionable.",
             },
             { role: "user", content: analysisPrompt },
           ],
