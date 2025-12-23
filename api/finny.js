@@ -2732,60 +2732,6 @@ async function handleAsk(
     }
 
     // 4) Detect user state for context-aware prompting
-    // Log base pack contents for debugging
-    if (packs.base) {
-      logInfo(`📦 [BASE_PACK] Contents:`);
-      logInfo(`   - netWorth: $${(packs.base.netWorth || 0).toFixed(2)}`);
-      logInfo(
-        `   - liquidAssets: $${(packs.base.liquidAssets || 0).toFixed(2)}`
-      );
-      logInfo(
-        `   - totalLiabilities: $${(packs.base.totalLiabilities || 0).toFixed(
-          2
-        )}`
-      );
-      logInfo(
-        `   - investmentsTotal: $${(packs.base.investmentsTotal || 0).toFixed(
-          2
-        )}`
-      );
-      logInfo(
-        `   - accounts: ${
-          Array.isArray(packs.base.accounts) ? packs.base.accounts.length : 0
-        } accounts`
-      );
-      logInfo(
-        `   - recentTransactions: ${
-          Array.isArray(packs.base.recentTransactions)
-            ? packs.base.recentTransactions.length
-            : 0
-        } transactions`
-      );
-      logInfo(
-        `   - spendByCategory: ${
-          Array.isArray(packs.base.spendByCategory)
-            ? packs.base.spendByCategory.length
-            : 0
-        } categories`
-      );
-
-      if (
-        Array.isArray(packs.base.recentTransactions) &&
-        packs.base.recentTransactions.length > 0
-      ) {
-        logInfo(
-          `   - Transaction sample: ${packs.base.recentTransactions
-            .slice(0, 3)
-            .map(
-              (t) =>
-                `${t.merchant || t.name || "Unknown"}: $${(
-                  t.amount || 0
-                ).toFixed(2)}`
-            )
-            .join(" | ")}`
-        );
-      }
-    }
 
     const financialDataForState = {
       base: packs.base,
@@ -3633,9 +3579,37 @@ function extractSlots(message) {
 
   // Detect period
   let period;
+  let monthsCount = null; // Track multi-month queries for get_spend_by_category_periods
   const now = new Date();
 
-  if (lowerMessage.includes("last month")) {
+  // Multi-month patterns (e.g., "last 6 months", "past 3 months")
+  const multiMonthMatch = lowerMessage.match(
+    /(?:last|past|previous)\s+(\d+)\s+months?/
+  );
+  if (multiMonthMatch) {
+    monthsCount = parseInt(multiMonthMatch[1], 10);
+    const startDate = new Date(
+      now.getFullYear(),
+      now.getMonth() - monthsCount,
+      1
+    );
+    period = {
+      start: startDate.toISOString().split("T")[0],
+      end: now.toISOString().split("T")[0],
+      months: monthsCount, // Flag for using get_spend_by_category_periods
+    };
+  } else if (
+    lowerMessage.includes("last year") ||
+    lowerMessage.includes("past year")
+  ) {
+    monthsCount = 12;
+    const startDate = new Date(now.getFullYear() - 1, now.getMonth(), 1);
+    period = {
+      start: startDate.toISOString().split("T")[0],
+      end: now.toISOString().split("T")[0],
+      months: 12,
+    };
+  } else if (lowerMessage.includes("last month")) {
     const firstOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
     const lastOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0);
     period = {
@@ -3652,6 +3626,15 @@ function extractSlots(message) {
     const lastWeek = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
     period = {
       start: lastWeek.toISOString().split("T")[0],
+      end: now.toISOString().split("T")[0],
+    };
+  } else if (
+    lowerMessage.includes("last 30 days") ||
+    lowerMessage.includes("past 30 days")
+  ) {
+    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    period = {
+      start: thirtyDaysAgo.toISOString().split("T")[0],
       end: now.toISOString().split("T")[0],
     };
   }
@@ -3879,6 +3862,9 @@ async function createOptimizedFetchOperations(userId, needs, slots) {
       }
     );
 
+    // Check if this is a multi-month query (use get_spend_by_category_periods for trends)
+    const isMultiMonthQuery = slots.period.months && slots.period.months > 1;
+
     if (cachedCategoryTxns) {
       // Use cached data for both category_details and txns_by_category needs
       addOperation(cacheKey, {
@@ -3893,6 +3879,34 @@ async function createOptimizedFetchOperations(userId, needs, slots) {
         servesNeeds: ["category_details", "txns_by_category"], // This operation serves both needs
       });
     } else {
+      // For multi-month queries, use get_spend_by_category_periods for monthly breakdown
+      // For single period queries, use get_transactions_by_category for detailed transactions
+      const fetchers = [];
+
+      if (isMultiMonthQuery) {
+        // Add monthly breakdown for multi-month queries
+        fetchers.push({
+          name: "category_spend_by_periods",
+          rpc: "get_spend_by_category_periods",
+          params: {
+            p_user_id: userId,
+            p_months: slots.period.months,
+          },
+        });
+      }
+
+      // Always fetch detailed transactions for the period
+      fetchers.push({
+        name: "category_transactions",
+        rpc: "get_transactions_by_category",
+        params: {
+          p_user_id: userId,
+          p_category: slots.category,
+          p_start: slots.period.start,
+          p_end: slots.period.end,
+        },
+      });
+
       addOperation(cacheKey, {
         key: cacheKey,
         type: "category_transactions",
@@ -3902,18 +3916,7 @@ async function createOptimizedFetchOperations(userId, needs, slots) {
         cached: false,
         priority: 2,
         servesNeeds: ["category_details", "txns_by_category"],
-        fetchers: [
-          {
-            name: "category_transactions",
-            rpc: "get_transactions_by_category",
-            params: {
-              p_user_id: userId,
-              p_category: slots.category,
-              p_start: slots.period.start,
-              p_end: slots.period.end,
-            },
-          },
-        ],
+        fetchers,
       });
     }
   }
@@ -4182,10 +4185,18 @@ function processSpendData(operation, results) {
 
 // OPTIMIZED: Process category transactions data
 function processCategoryTransactionsData(operation, results) {
-  const [txnRes] = results;
+  // Results can contain: [category_spend_by_periods, category_transactions] for multi-month queries
+  // Or just: [category_transactions] for single period queries
+  const txnRes =
+    results.find((r) => r?.name === "category_transactions") ||
+    results[results.length - 1];
+  const periodsRes = results.find(
+    (r) => r?.name === "category_spend_by_periods"
+  );
+
   if (!txnRes?.data || txnRes.data.length === 0) return null;
 
-  return {
+  const result = {
     category: operation.category,
     transactions: txnRes.data.map((txn) => ({
       date: txn.date,
@@ -4196,6 +4207,27 @@ function processCategoryTransactionsData(operation, results) {
     })),
     period: `${operation.period.start} to ${operation.period.end}`,
   };
+
+  // If we have monthly breakdown data, filter it for this category and add it
+  if (periodsRes?.data && Array.isArray(periodsRes.data)) {
+    const categoryMonthlyData = periodsRes.data
+      .filter(
+        (item) =>
+          item.category &&
+          item.category.toLowerCase() === operation.category.toLowerCase()
+      )
+      .map((item) => ({
+        month: item.month,
+        total_spend: item.total_spend,
+        txn_count: item.txn_count,
+      }));
+
+    if (categoryMonthlyData.length > 0) {
+      result.monthlyBreakdown = categoryMonthlyData;
+    }
+  }
+
+  return result;
 }
 
 // OPTIMIZED: Process investment data
