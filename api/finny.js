@@ -2234,23 +2234,43 @@ async function handleAsk(
         // Deep analysis is default for all stock queries - ALWAYS run deep query for comprehensive analysis
         if (looksLikeStockDeepQuery(message)) {
           console.log(
-            `\n🔵 [STOCK] DEEP QUERY PATH: Using LLM planning for comprehensive analysis`
+            `\n🔵 [STOCK] DEEP QUERY PATH: Using comprehensive analysis`
           );
           logDebug("🔍 [STOCK] Deep query detected, using advanced analysis");
 
-          // Use stockOverride ticker if available, otherwise let planStockRequest determine ticker
-          stockPlan = await planStockRequest(message);
-          logDebug("🔍 [STOCK] Stock plan result:", stockPlan);
-
-          // Override ticker in plan if we have stockOverride (user confirmed ticker)
-          if (stockOverride && stockPlan) {
+          // If we have stockOverride (user confirmed ticker), skip planning and create plan directly
+          // This avoids unnecessary API calls and prevents hangs
+          if (stockOverride) {
+            console.log(
+              `🔵 [STOCK] Skipping planStockRequest - using stockOverride ticker: ${stockOverride}`
+            );
+            // Create a comprehensive plan with all available data types
             stockPlan = {
-              ...stockPlan,
               ticker_candidates: [stockOverride],
+              company_candidates: [],
+              wants: [
+                "price",
+                "market_cap",
+                "pe",
+                "ps",
+                "analyst_targets",
+                "news",
+                "earnings",
+                "filings",
+              ], // Comprehensive set of data to fetch
+              horizon: null,
+              needs_web: false,
             };
             console.log(
-              `🔵 [STOCK] Overriding plan ticker with stockOverride: ${stockOverride}`
+              `🔵 [STOCK] Created plan directly with ticker: ${stockOverride}`
             );
+          } else {
+            // Only call planStockRequest if we don't have a confirmed ticker
+            console.log(
+              `🔵 [STOCK] No stockOverride, calling planStockRequest to determine ticker`
+            );
+            stockPlan = await planStockRequest(message);
+            logDebug("🔍 [STOCK] Stock plan result:", stockPlan);
           }
 
           const exec = await executeStockPlan(stockPlan || {}, message);
