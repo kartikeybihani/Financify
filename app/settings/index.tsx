@@ -19,9 +19,10 @@ import { useRouter, useLocalSearchParams } from "expo-router";
 import { supabase } from "@/src/lib/supabase/supabase";
 import FeedbackModal from "@/src/components/modals/FeedbackModal";
 import ContactModal from "@/src/components/modals/ContactModal";
-import { handleDisconnect, getPrimaryItemId } from "@/src/utils/plaid/plaid";
+import { handleDisconnect, getPrimaryItemId, syncTransactions } from "@/src/utils/plaid/plaid";
 import logger from "@/src/utils/core/logger";
 import { TEXT_STYLES } from "@/src/components/shared/modal-constants";
+import { ActivityIndicator } from "react-native";
 
 export default function SettingsScreen() {
   const router = useRouter();
@@ -32,6 +33,7 @@ export default function SettingsScreen() {
   const [biometricsEnabled, setBiometricsEnabled] = useState(false);
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [showContactModal, setShowContactModal] = useState(false);
+  const [isSyncingTransactions, setIsSyncingTransactions] = useState(false);
 
   useEffect(() => {
     const fetchAndSetUserData = async () => {
@@ -163,6 +165,61 @@ export default function SettingsScreen() {
     }
   };
 
+  const handleSyncTransactions = async () => {
+    try {
+      setIsSyncingTransactions(true);
+      logger.info("[SettingsIndex] Starting transaction sync...");
+
+      // Get the primary item_id
+      const item_id = await getPrimaryItemId();
+      if (!item_id) {
+        Alert.alert(
+          "No Account Found",
+          "Please connect a bank account first to sync transactions."
+        );
+        setIsSyncingTransactions(false);
+        return;
+      }
+
+      // Get user ID
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user?.id) {
+        Alert.alert("Error", "Please log in to sync transactions.");
+        setIsSyncingTransactions(false);
+        return;
+      }
+
+      // Call sync API
+      const result = await syncTransactions(item_id);
+
+      logger.info("[SettingsIndex] Transaction sync complete:", result);
+
+      // Refresh financial data
+      DeviceEventEmitter.emit("financialDataRefreshed", {
+        accounts: [],
+        identity: null,
+        investments: null,
+        liabilities: null,
+        institution: null,
+      });
+
+      Alert.alert(
+        "Sync Complete",
+        `Synced ${result.added || 0} new transactions, updated ${result.modified || 0} transactions.`
+      );
+    } catch (error: any) {
+      logger.error("[SettingsIndex] Error syncing transactions:", error);
+      Alert.alert(
+        "Sync Failed",
+        error?.message || "Failed to sync transactions. Please try again."
+      );
+    } finally {
+      setIsSyncingTransactions(false);
+    }
+  };
+
   const renderSettingsItem = (
     icon: JSX.Element,
     title: string,
@@ -253,6 +310,17 @@ export default function SettingsScreen() {
                   params: { userName },
                 }),
               true
+            )}
+            {renderSettingsItem(
+              <Ionicons name="refresh-outline" size={24} color="#4A90E2" />,
+              "Sync Transactions",
+              handleSyncTransactions,
+              true,
+              isSyncingTransactions ? (
+                <ActivityIndicator size="small" color="#4A90E2" />
+              ) : (
+                <MaterialIcons name="chevron-right" size={24} color="#666" />
+              )
             )}
             {/* {renderSettingsItem(
               <Ionicons name="card-outline" size={24} color="#4A90E2" />,
