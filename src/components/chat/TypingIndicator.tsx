@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from "react";
-import { View, Text, Animated, StyleSheet, Image } from "react-native";
+import { View, Text, Animated, StyleSheet, Image, Easing } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 
 interface TypingIndicatorProps {
@@ -18,6 +18,8 @@ const TypingIndicator = ({ progressStatus }: TypingIndicatorProps) => {
   const skeletonAnim = useRef(new Animated.Value(0)).current;
   const skeletonAnim2 = useRef(new Animated.Value(0)).current;
   const skeletonAnim3 = useRef(new Animated.Value(0)).current;
+  const textSlideAnim = useRef(new Animated.Value(0)).current;
+  const prevProgressStatusRef = useRef<string>(progressStatus || "");
 
   useEffect(() => {
     // Entrance animation
@@ -110,6 +112,29 @@ const TypingIndicator = ({ progressStatus }: TypingIndicatorProps) => {
     };
   }, []);
 
+  // Animate progress status text sliding from bottom to top when it changes
+  useEffect(() => {
+    const currentStatus = progressStatus || "";
+    if (
+      currentStatus !== prevProgressStatusRef.current &&
+      currentStatus !== ""
+    ) {
+      // Reset animation to start from bottom
+      textSlideAnim.setValue(15);
+
+      // Animate to top
+      Animated.timing(textSlideAnim, {
+        toValue: 0,
+        duration: 250,
+        easing: Easing.out(Easing.ease),
+        useNativeDriver: true,
+      }).start();
+
+      // Update ref
+      prevProgressStatusRef.current = currentStatus;
+    }
+  }, [progressStatus]);
+
   return (
     <Animated.View
       style={{
@@ -159,9 +184,15 @@ const TypingIndicator = ({ progressStatus }: TypingIndicatorProps) => {
                 ]}
               />
             ))}
-            <Text style={styles.thinkingText}>
-              {progressStatus || "Thinking..."}
-            </Text>
+            <Animated.View
+              style={{
+                transform: [{ translateY: textSlideAnim }],
+              }}
+            >
+              <Text style={styles.thinkingText}>
+                {progressStatus || "Thinking..."}
+              </Text>
+            </Animated.View>
           </View>
         </View>
       </LinearGradient>

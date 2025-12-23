@@ -11,11 +11,17 @@ export const useNotificationSetup = () => {
         // Setup notification listeners
         notificationService.setupListeners();
         
+        // Register push token
+        await notificationService.registerPushToken();
+        
         // Load and apply saved preferences
         const preferences = await notificationService.loadPreferences();
         if (preferences.enabled && preferences.frequency !== 'never') {
           await notificationService.scheduleNotifications(preferences);
         }
+        
+        // Sync preferences to database
+        await notificationService.syncPreferencesToDatabase();
         
         console.log('Notifications initialized with preferences:', preferences);
       } catch (error) {

@@ -299,6 +299,7 @@ export default function FinnyCheckinScreen({
 
       await notificationService.savePreferences(preferences);
       await notificationService.scheduleNotifications(preferences);
+      await notificationService.syncPreferencesToDatabase();
 
       logger.info(
         "[FinnyCheckin] Frequency and notifications updated:",

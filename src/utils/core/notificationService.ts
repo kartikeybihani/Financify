@@ -1,6 +1,8 @@
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Device from 'expo-device';
+import { supabase } from '@/src/lib/supabase/supabase';
 
 // Configure notification behavior
 Notifications.setNotificationHandler({
@@ -58,6 +60,9 @@ export class NotificationService {
           lightColor: '#4A90E2',
         });
       }
+
+      // Register push token after permissions granted
+      await this.registerPushToken();
 
       return true;
     } catch (error) {
@@ -296,6 +301,91 @@ export class NotificationService {
       await Notifications.cancelAllScheduledNotificationsAsync();
     } catch (error) {
       console.error('Error canceling notifications:', error);
+    }
+  }
+
+  /**
+   * Register Expo push token with backend
+   */
+  async registerPushToken(): Promise<void> {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user?.id) {
+        console.log('No authenticated user, skipping push token registration');
+        return;
+      }
+
+      // Get Expo push token
+      const tokenData = await Notifications.getExpoPushTokenAsync({
+        projectId: '1ec2fed7-76cd-4a3f-ab46-66a01f7ddb65', // From app.config.ts
+      });
+      const expoPushToken = tokenData.data;
+
+      // Generate or get device ID
+      const deviceIdKey = 'device_id';
+      let deviceId = await AsyncStorage.getItem(deviceIdKey);
+      if (!deviceId) {
+        // Generate a simple device identifier
+        const deviceInfo = `${Platform.OS}-${Device.modelName || 'unknown'}-${Device.osVersion || 'unknown'}`;
+        deviceId = deviceInfo;
+        await AsyncStorage.setItem(deviceIdKey, deviceId);
+      }
+
+      // Upsert push token in database
+      const { error } = await supabase
+        .from('user_push_tokens')
+        .upsert({
+          user_id: user.id,
+          expo_push_token: expoPushToken,
+          device_id: deviceId,
+          platform: Platform.OS as 'ios' | 'android',
+          is_active: true,
+        }, {
+          onConflict: 'user_id,device_id',
+        });
+
+      if (error) {
+        console.error('Error registering push token:', error);
+      } else {
+        console.log('Push token registered successfully');
+      }
+    } catch (error) {
+      console.error('Error registering push token:', error);
+    }
+  }
+
+  /**
+   * Sync notification preferences to database
+   */
+  async syncPreferencesToDatabase(): Promise<void> {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user?.id) {
+        console.log('No authenticated user, skipping preferences sync');
+        return;
+      }
+
+      const localPreferences = await this.loadPreferences();
+
+      // Upsert preferences in database
+      const { error } = await supabase
+        .from('notification_preferences')
+        .upsert({
+          user_id: user.id,
+          proactive_enabled: localPreferences.enabled,
+          checkin_frequency: localPreferences.frequency,
+          max_notifications_per_day: 5, // Default
+        }, {
+          onConflict: 'user_id',
+        });
+
+      if (error) {
+        console.error('Error syncing preferences to database:', error);
+      } else {
+        console.log('Preferences synced to database successfully');
+      }
+    } catch (error) {
+      console.error('Error syncing preferences to database:', error);
     }
   }
 }
