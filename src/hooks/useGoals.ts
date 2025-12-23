@@ -9,6 +9,7 @@ import { supabase } from "@/src/lib/supabase/supabase";
 import logger from "@/src/utils/core/logger";
 import { CACHE_CONFIG } from "@/src/shared/constants/cacheConfig";
 import { getAuthenticatedUser } from "@/src/utils/auth/auth";
+import { authenticatedFetch } from "@/src/utils/auth/authToken";
 
 const GOALS_CACHE_KEY = CACHE_CONFIG.KEYS.GOALS;
 const GOALS_CACHE_TIMESTAMP_KEY = CACHE_CONFIG.KEYS.GOALS_TIMESTAMP;
@@ -210,6 +211,35 @@ export function useGoals(pushChat: (sender: "user" | "finny", message: string) =
       }
 
       logger.info("✅ [GOALS] Goal saved successfully:", data);
+
+      // Store goal creation memory in Supermemory (non-blocking)
+      try {
+        const BASE_URL =
+          process.env.EXPO_PUBLIC_APP_BASE_URL ||
+          "https://financify-rose.vercel.app";
+        await authenticatedFetch(`${BASE_URL}/api/memory`, {
+          method: "POST",
+          body: JSON.stringify({
+            type: "goal_creation",
+            goalData: {
+              id: data.id,
+              label: data.label,
+              target_amount: data.target_amount,
+              current_amount: data.current_amount,
+              target_date: data.target_date,
+              category: data.category,
+              note: data.note,
+            },
+            createdVia: "goals_screen",
+          }),
+        }).catch((error) => {
+          logger.error("❌ [GOAL MEMORY] Failed to store goal memory:", error);
+          // Don't throw - memory storage failures shouldn't break goal creation
+        });
+      } catch (error) {
+        logger.error("❌ [GOAL MEMORY] Error storing goal memory:", error);
+        // Don't throw - memory storage failures shouldn't break goal creation
+      }
 
       // Clear cache first to ensure fresh data, then refresh from server
       await clearGoalsCache();

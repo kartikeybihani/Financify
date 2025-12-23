@@ -9,6 +9,7 @@ import {
   deleteSupermemoryMemory,
   updateSupermemoryMemory,
   storeOnboardingMemory,
+  storeGoalCreationMemory,
   storeMessageFeedback,
   loadUserProfile,
   getCachedSupermemoryDocuments,
@@ -386,11 +387,50 @@ export default async function handler(req, res) {
 
         console.log(`✅ [MEMORY_API] POST success - stored message feedback`);
         return res.status(200).json({ success: true, result });
+      } else if (type === "goal_creation") {
+        // Store goal creation memory
+        const { goalData, createdVia } = req.body;
+        console.log(
+          `🔍 [MEMORY_API] POST - goal_creation, goalId: ${goalData?.id}, createdVia: ${createdVia}`
+        );
+
+        if (!goalData || !goalData.id) {
+          console.log(`⚠️ [MEMORY_API] POST - missing required fields`);
+          return res.status(400).json({
+            error: "Missing required fields: goalData with id",
+          });
+        }
+
+        const result = await storeGoalCreationMemory(
+          serverUserId,
+          goalData,
+          createdVia || "goals_screen",
+          {}
+        );
+
+        if (!result) {
+          console.log(
+            `⚠️ [MEMORY_API] POST - failed to store goal creation memory`
+          );
+          return res.status(500).json({
+            error: "Failed to store goal creation memory",
+          });
+        }
+
+        // Invalidate cache after storing new memory
+        invalidateListCache(serverUserId);
+
+        console.log(`✅ [MEMORY_API] POST success - stored goal creation memory`);
+        return res.status(200).json({ success: true, result });
       } else {
         console.log(`⚠️ [MEMORY_API] POST - unsupported type: ${type}`);
         return res.status(400).json({
           error: "Unsupported type",
-          supportedTypes: ["onboarding_profile", "message_feedback"],
+          supportedTypes: [
+            "onboarding_profile",
+            "message_feedback",
+            "goal_creation",
+          ],
         });
       }
     } catch (error) {

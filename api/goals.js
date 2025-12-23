@@ -1329,6 +1329,38 @@ async function createGoalFromSlots(
       };
     }
 
+    // Store goal creation memory in Supermemory (non-blocking)
+    if (data && userId) {
+      setImmediate(async () => {
+        try {
+          const { storeGoalCreationMemory } = await import(
+            "../lib/memoryUtils.js"
+          );
+          await storeGoalCreationMemory(
+            userId,
+            {
+              id: data.id,
+              label: data.label,
+              target_amount: data.target_amount,
+              current_amount: data.current_amount,
+              target_date: data.target_date,
+              category: data.category,
+              note: data.note,
+            },
+            "chat",
+            {
+              chat_id: context?.chat_id,
+              analysis: analysis,
+              goal_flow_stage: "completed",
+            }
+          );
+        } catch (error) {
+          console.error("❌ [GOAL MEMORY] Failed to store goal memory:", error);
+          // Don't throw - memory storage failures shouldn't break goal creation
+        }
+      });
+    }
+
     const niceAmt = `$${Number(goalRow.target_amount).toLocaleString()}`;
     const response = `🎉 ${analysis.encouragement} Your "${goalRow.label}" goal is all set for ${niceAmt} by ${goalRow.target_date}!\n\n${analysis.advice}`;
 
