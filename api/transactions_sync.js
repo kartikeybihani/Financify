@@ -394,19 +394,18 @@ export default async function handler(req, res) {
     );
 
     // 8) Detect notification patterns (fire and forget - don't block response)
-    if (added.length > 0) {
-      (async () => {
-        try {
-          const { detectNotificationPatterns } = await import(
-            "../lib/notificationPatternDetection.js"
-          );
-          await detectNotificationPatterns(userId, added);
-        } catch (error) {
-          console.error("[TRANSACTIONS_SYNC] Pattern detection error:", error);
-          // Non-critical, don't throw
-        }
-      })();
-    }
+    // Always run pattern detection, even if no new transactions - analyzes last 60 days
+    (async () => {
+      try {
+        const { detectNotificationPatterns } = await import(
+          "../lib/notificationPatternDetection.js"
+        );
+        await detectNotificationPatterns(userId, added);
+      } catch (error) {
+        console.error("[TRANSACTIONS_SYNC] Pattern detection error:", error);
+        // Non-critical, don't throw
+      }
+    })();
 
     // 9) Return transaction sync summary
     return res.status(200).json({
