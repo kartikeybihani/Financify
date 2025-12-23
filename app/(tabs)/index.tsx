@@ -492,9 +492,19 @@ export default function HomeScreen() {
   const findClosestGoal = (goals: Goal[]) => {
     if (!goals.length) return null;
 
+    // Filter out completed goals (100% done)
+    const activeGoals = goals.filter((goal) => {
+      const isCompleted =
+        goal.status === "completed" ||
+        (goal.target_amount > 0 && goal.current_amount >= goal.target_amount);
+      return !isCompleted;
+    });
+
+    if (!activeGoals.length) return null;
+
     const now = new Date();
 
-    return goals.reduce((closest, goal) => {
+    return activeGoals.reduce((closest, goal) => {
       const goalDate = new Date(goal.target_date);
       const closestDate = closest ? new Date(closest.target_date) : null;
 
@@ -639,7 +649,13 @@ export default function HomeScreen() {
 
           {/* Goals Progress */}
           <GoalsSection
-            goals={goals}
+            goals={goals.filter((goal) => {
+              const isCompleted =
+                goal.status === "completed" ||
+                (goal.target_amount > 0 &&
+                  goal.current_amount >= goal.target_amount);
+              return !isCompleted;
+            })}
             closestGoal={closestGoal}
             formatCurrency={formatCurrency}
           />

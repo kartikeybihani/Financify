@@ -10,8 +10,9 @@ import {
 import PersonalityBadge from "@/src/components/insights/PersonalityBadge";
 import SpendingBreakdown from "@/src/components/insights/SpendingBreakdown";
 import BudgetView from "@/src/components/insights/BudgetView";
-import MonthSelector, { MonthOption } from "./MonthSelector";
+import { MonthOption } from "./MonthSelector";
 import AddCategoryModal from "./AddCategoryModal";
+import MonthPickerModal from "@/src/components/modals/MonthPickerModal";
 import { analyzeSpendingPersonality } from "@/src/utils/analytics/personalityAnalysis";
 import { useBudget } from "@/src/hooks/useBudget";
 
@@ -58,6 +59,7 @@ export default function SpendingSection({
 }: Props) {
   const [isBudgetMode, setIsBudgetMode] = useState(false);
   const [addCategoryModalVisible, setAddCategoryModalVisible] = useState(false);
+  const [monthPickerVisible, setMonthPickerVisible] = useState(false);
   const fadeAnim = useRef(new Animated.Value(1)).current;
   const slideAnim = useRef(new Animated.Value(0)).current;
 
@@ -162,6 +164,43 @@ export default function SpendingSection({
     onBudgetModeChange?.(isBudgetMode);
   }, [isBudgetMode, onBudgetModeChange]);
 
+  // Get current month/year or use defaults
+  const currentMonth =
+    selectedMonth !== undefined ? selectedMonth : new Date().getMonth();
+  const currentYear =
+    selectedYear !== undefined ? selectedYear : new Date().getFullYear();
+
+  // Format period display
+  const formatPeriodDisplay = () => {
+    if (selectedMonth === undefined || selectedYear === undefined) {
+      return "This Month";
+    }
+    const monthNames = [
+      "January",
+      "February",
+      "March",
+      "April",
+      "May",
+      "June",
+      "July",
+      "August",
+      "September",
+      "October",
+      "November",
+      "December",
+    ];
+    const now = new Date();
+    const isCurrentMonth =
+      selectedMonth === now.getMonth() && selectedYear === now.getFullYear();
+    return isCurrentMonth
+      ? "This Month"
+      : `${monthNames[selectedMonth]} ${selectedYear}`;
+  };
+
+  const handleMonthSelect = (month: number, year: number) => {
+    onMonthSelect?.(month, year);
+  };
+
   return (
     <View style={styles.container}>
       <View style={styles.titleRow}>
@@ -180,20 +219,6 @@ export default function SpendingSection({
           </TouchableOpacity>
         </View>
       </View>
-
-      {!isBudgetMode &&
-        availableMonths &&
-        availableMonths.length > 0 &&
-        selectedMonth !== undefined &&
-        selectedYear !== undefined &&
-        onMonthSelect && (
-          <MonthSelector
-            availableMonths={availableMonths}
-            selectedMonth={selectedMonth}
-            selectedYear={selectedYear}
-            onMonthSelect={onMonthSelect}
-          />
-        )}
 
       {!isBudgetMode && (
         <PersonalityBadge personality={personality} showDetails={true} />
@@ -233,33 +258,8 @@ export default function SpendingSection({
             categoryBreakdown={categoryBreakdown}
             onCategoryPress={onCategoryPress}
             formatCategoryName={formatCategoryName}
-            period={
-              selectedMonth !== undefined && selectedYear !== undefined
-                ? (() => {
-                    const monthNames = [
-                      "January",
-                      "February",
-                      "March",
-                      "April",
-                      "May",
-                      "June",
-                      "July",
-                      "August",
-                      "September",
-                      "October",
-                      "November",
-                      "December",
-                    ];
-                    const now = new Date();
-                    const isCurrentMonth =
-                      selectedMonth === now.getMonth() &&
-                      selectedYear === now.getFullYear();
-                    return isCurrentMonth
-                      ? "This Month"
-                      : `${monthNames[selectedMonth]} ${selectedYear}`;
-                  })()
-                : "This Month"
-            }
+            period={formatPeriodDisplay()}
+            onPeriodPress={() => setMonthPickerVisible(true)}
           />
         )}
       </Animated.View>
@@ -276,6 +276,17 @@ export default function SpendingSection({
           setAddCategoryModalVisible(false);
         }}
       />
+
+      {/* Month Picker Modal */}
+      {onMonthSelect && (
+        <MonthPickerModal
+          visible={monthPickerVisible}
+          onClose={() => setMonthPickerVisible(false)}
+          selectedMonth={currentMonth}
+          selectedYear={currentYear}
+          onMonthSelect={handleMonthSelect}
+        />
+      )}
     </View>
   );
 }

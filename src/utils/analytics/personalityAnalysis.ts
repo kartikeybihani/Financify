@@ -127,8 +127,8 @@ const PERSONALITY_ARCHETYPES = {
     archetype: 'The Splurger',
     badge: 'Treat Yourself',
     description: 'Life\'s too short to not enjoy it',
-    traits: ['YOLO energy', 'Treats themselves because they deserve it'],
-    color: '#FF3B30',
+    traits: ['Treats themselves because they deserve it'],
+    color: '#FF8A65', // Calmer coral/orange instead of bright red
     emoji: '💸',
     keywords: ['high_spending']
   },

@@ -11,7 +11,6 @@ import {
   Text,
   ScrollView,
   TouchableOpacity,
-  Modal,
   DeviceEventEmitter,
   RefreshControl,
   Animated,
@@ -22,11 +21,10 @@ import * as Haptics from "expo-haptics";
 import TopChips from "@/src/components/insights/components/TopChips";
 import RecurringSection from "@/src/components/insights/components/RecurringSection";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { styles } from "@/src/styles/insightsStyles";
 import {
   headerRefreshStyles,
-  updateModalStyles,
   transactionInfoStyles,
   loadMoreStyles,
   sectionContentStyles,
@@ -48,6 +46,7 @@ import CategorySelectionModal from "@/src/components/modals/CategorySelectionMod
 import CashDepositInstitutionModal from "@/src/components/modals/CashDepositInstitutionModal";
 import CreditCardInstitutionModal from "@/src/components/modals/CreditCardInstitutionModal";
 import InstitutionSelectionModal from "@/src/components/modals/InstitutionSelectionModal";
+import UpdateModeNotificationModal from "@/src/components/modals/UpdateModeNotificationModal";
 import { addNewBankAccount } from "@/src/utils/plaid/plaid";
 import { supabase } from "@/src/lib/supabase/supabase";
 import InvestmentsScreen from "@/app/investments";
@@ -74,7 +73,6 @@ import {
   getSnaptradeConnectionsFromDB,
   syncSnaptradeInvestments,
 } from "@/src/utils/integrations/snaptrade";
-import { forceFullResync } from "@/src/utils/categories/categoryFix";
 import logger from "@/src/utils/core/logger";
 import { useCategories } from "@/src/hooks/useCategories";
 import { OptimisticUpdateManager } from "@/src/shared/utils/optimisticUpdates";
@@ -227,7 +225,7 @@ export default function InsightsScreen() {
   } | null>(null);
   const [recurringLoading, setRecurringLoading] = useState(false);
   const [refreshStatus, setRefreshStatus] = useState<{
-    type: "cloud" | "manual" | "category_fix" | null;
+    type: "cloud" | null;
     message: string;
   }>({ type: null, message: "" });
   const [syncStatus, setSyncStatus] = useState<{
@@ -872,7 +870,10 @@ export default function InsightsScreen() {
           return;
         }
 
-        const hasCache = await hasValidTransactionsCache();
+        const currentUserId = userId || (await getUserId());
+        const hasCache = currentUserId
+          ? await hasValidTransactionsCache(currentUserId)
+          : false;
         // Only update state if this effect hasn't been cancelled
         if (!isCancelled) {
           setMightHaveTransactions(hasCache);
@@ -901,6 +902,8 @@ export default function InsightsScreen() {
     filteredTransactions.length,
     searchQuery,
     isSearching,
+    userId,
+    getUserId,
   ]);
 
   // Gate data loads by active section and trigger smart preloading
@@ -2168,156 +2171,6 @@ export default function InsightsScreen() {
     });
   };
 
-  // 🔄 MANUAL REFRESH: Sync existing data from Supabase cursors
-  const handleManualRefresh = async () => {
-    if (isSyncing) return;
-
-    setIsSyncing(true);
-    setRefreshStatus({ type: "manual", message: "Syncing existing data..." });
-
-    try {
-      logger.info("🔄 MANUAL REFRESH: Syncing from stored cursors...");
-
-      const userId = await getUserId();
-      if (!userId) {
-        logger.error("❌ No authenticated user in refresh");
-        setRefreshStatus({ type: "manual", message: "Authentication error" });
-        return;
-      }
-
-      // Clear cache before syncing
-      clearCache();
-      await clearRecurringCache();
-      await clearInvestmentCache();
-      await clearTransactionsCache();
-      await clearSpendingCache();
-
-      setRefreshStatus({
-        type: "manual",
-        message: "Syncing transactions from Plaid...",
-      });
-      logger.info("🔄 MANUAL REFRESH: Calling syncAllUserTransactions()...");
-      const syncResult = await syncAllUserTransactions();
-      logger.info(
-        "📦 MANUAL REFRESH syncAllUserTransactions result:",
-        syncResult
-      );
-
-      setRefreshStatus({ type: "manual", message: "Updating interface..." });
-      // Reload data after sync (UI reads from Supabase)
-      await fetchFreshData();
-      await loadFilteredTransactions(filterOptions, true);
-      await loadRecurringTransactions();
-      await loadInvestmentData();
-
-      setRefreshStatus({ type: "manual", message: "Sync completed!" });
-      logger.info(
-        "✅ MANUAL REFRESH COMPLETE: Data synced from cursors → UI updated"
-      );
-
-      // Clear success message
-      setTimeout(() => {
-        setRefreshStatus({ type: null, message: "" });
-      }, 3000);
-    } catch (error) {
-      logger.error("❌ Manual refresh failed:", error);
-      setRefreshStatus({ type: "manual", message: "Sync failed" });
-
-      setTimeout(() => {
-        setRefreshStatus({ type: null, message: "" });
-      }, 5000);
-    } finally {
-      setIsSyncing(false);
-    }
-  };
-
-  // 🔧 CATEGORY FIX: Full resync to fix category issues
-  const handleFullResync = async () => {
-    if (isSyncing) return;
-
-    setIsSyncing(true);
-    setRefreshStatus({
-      type: "category_fix",
-      message: "Fixing transaction categories...",
-    });
-
-    try {
-      logger.info("🔧 CATEGORY FIX: Starting full resync...");
-
-      const userId = await getUserId();
-      if (!userId) {
-        logger.error("❌ No authenticated user in full resync");
-        setRefreshStatus({
-          type: "category_fix",
-          message: "Authentication error",
-        });
-        return;
-      }
-
-      // Force full resync by resetting cursors
-      setRefreshStatus({
-        type: "category_fix",
-        message: "Resetting sync cursors...",
-      });
-      const success = await forceFullResync(userId);
-
-      if (!success) {
-        logger.error("❌ Failed to reset cursors for full resync");
-        setRefreshStatus({
-          type: "category_fix",
-          message: "Failed to reset cursors",
-        });
-        return;
-      }
-
-      // Clear cache before syncing
-      clearCache();
-      await clearRecurringCache();
-      await clearInvestmentCache();
-      await clearTransactionsCache();
-      await clearSpendingCache();
-
-      setRefreshStatus({
-        type: "category_fix",
-        message: "Re-syncing all transactions...",
-      });
-      // Now sync with reset cursors (will get ALL transactions fresh)
-      await syncAllUserTransactions();
-
-      setRefreshStatus({
-        type: "category_fix",
-        message: "Updating interface...",
-      });
-      // Reload data (UI reads from Supabase)
-      await fetchFreshData();
-      await loadFilteredTransactions(filterOptions, true);
-      await loadRecurringTransactions();
-      await loadInvestmentData();
-
-      setRefreshStatus({ type: "category_fix", message: "Categories fixed!" });
-      logger.info(
-        "✅ CATEGORY FIX COMPLETE: All transactions re-synced → UI updated"
-      );
-
-      // Clear success message
-      setTimeout(() => {
-        setRefreshStatus({ type: null, message: "" });
-      }, 3000);
-    } catch (error) {
-      logger.error("❌ Full resync failed:", error);
-      setRefreshStatus({
-        type: "category_fix",
-        message: "Category fix failed",
-      });
-
-      setTimeout(() => {
-        setRefreshStatus({ type: null, message: "" });
-      }, 5000);
-    } finally {
-      setIsSyncing(false);
-    }
-  };
-
   // 🌟 CLOUD REFRESH: The primary data refresh flow (Plaid → Supabase → UI)
   const handleRefreshLatestData = async () => {
     if (isSyncing) return;
@@ -2476,38 +2329,8 @@ export default function InsightsScreen() {
             onPress={handleRefreshLatestData}
             disabled={isSyncing}
           >
-            <Ionicons
-              name={isSyncing ? "hourglass-outline" : "cloud-download-outline"}
-              size={18}
-              color="#4A90E2"
-            />
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[
-              headerRefreshStyles.iconButton,
-              isSyncing && headerRefreshStyles.iconButtonDisabled,
-            ]}
-            onPress={handleFullResync}
-            disabled={isSyncing}
-          >
-            <Ionicons
-              name={isSyncing ? "hourglass-outline" : "sync-outline"}
-              size={18}
-              color="#4A90E2"
-            />
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[
-              headerRefreshStyles.iconButton,
-              isSyncing && headerRefreshStyles.iconButtonDisabled,
-            ]}
-            onPress={handleManualRefresh}
-            disabled={isSyncing}
-          >
-            <Ionicons
-              name={isSyncing ? "hourglass-outline" : "refresh-outline"}
+            <MaterialIcons
+              name={isSyncing ? "hourglass-empty" : "sync"}
               size={18}
               color="#4A90E2"
             />
@@ -2605,18 +2428,7 @@ export default function InsightsScreen() {
             <>
               {/* Refresh Status Indicator */}
               {refreshStatus.type && (
-                <RefreshStatus
-                  message={refreshStatus.message}
-                  type={
-                    refreshStatus.type === "cloud"
-                      ? "loading"
-                      : refreshStatus.type === "manual"
-                      ? "info"
-                      : refreshStatus.type === "category_fix"
-                      ? "loading"
-                      : "info"
-                  }
-                />
+                <RefreshStatus message={refreshStatus.message} type="loading" />
               )}
 
               {/* Re-auth banners */}
@@ -2929,65 +2741,15 @@ export default function InsightsScreen() {
         )}
 
       {/* Update Mode Notification Modal */}
-      <Modal
-        visible={showUpdateModal}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => setShowUpdateModal(false)}
-      >
-        <View style={updateModalStyles.overlay}>
-          <View style={updateModalStyles.container}>
-            <View style={updateModalStyles.iconContainer}>
-              <Ionicons
-                key={updateModalInfo?.type || "default"}
-                name={
-                  updateModalInfo?.type === "new_accounts"
-                    ? "add-circle-outline"
-                    : "warning-outline"
-                }
-                size={32}
-                color={
-                  updateModalInfo?.type === "new_accounts"
-                    ? "#4CAF50"
-                    : "#FF9500"
-                }
-              />
-            </View>
-
-            <Text style={updateModalStyles.title}>
-              {updateModalInfo?.type === "new_accounts"
-                ? "New Accounts Available"
-                : "Authentication Required"}
-            </Text>
-
-            <Text style={updateModalStyles.message}>
-              {updateModalInfo?.message}
-            </Text>
-
-            <View style={updateModalStyles.buttonContainer}>
-              <TouchableOpacity
-                style={[
-                  updateModalStyles.button,
-                  updateModalStyles.cancelButton,
-                ]}
-                onPress={() => setShowUpdateModal(false)}
-              >
-                <Text style={updateModalStyles.cancelButtonText}>Later</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[
-                  updateModalStyles.button,
-                  updateModalStyles.updateButton,
-                ]}
-                onPress={handleUpdateMode}
-              >
-                <Text style={updateModalStyles.updateButtonText}>Update</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
+      {updateModalInfo && (
+        <UpdateModeNotificationModal
+          visible={showUpdateModal}
+          onClose={() => setShowUpdateModal(false)}
+          onUpdate={handleUpdateMode}
+          type={updateModalInfo.type}
+          message={updateModalInfo.message}
+        />
+      )}
     </SafeAreaView>
   );
 }

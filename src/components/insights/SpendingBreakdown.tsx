@@ -20,6 +20,7 @@ interface SpendingBreakdownProps {
   onCategoryPress: (category: string, data: CategoryData) => void;
   formatCategoryName: (category: string) => string;
   period?: string; // Optional period label (e.g., "This Month", "December 2024")
+  onPeriodPress?: () => void; // Callback when period chip is pressed
 }
 
 const SpendingBreakdown: React.FC<SpendingBreakdownProps> = ({
@@ -27,6 +28,7 @@ const SpendingBreakdown: React.FC<SpendingBreakdownProps> = ({
   onCategoryPress,
   formatCategoryName,
   period = "This Month",
+  onPeriodPress,
 }) => {
   const totalSpent = categoryBreakdown.reduce(
     (sum, [_, data]) => sum + data.amount,
@@ -70,18 +72,56 @@ const SpendingBreakdown: React.FC<SpendingBreakdownProps> = ({
   };
 
   const getSpendingMood = (total: number) => {
-    if (total < 500) return { mood: "Mindful", emoji: "🧘", color: "#4ECDC4" };
+    if (total < 500)
+      return {
+        mood: "Mindful",
+        emoji: "🧘",
+        color: "#4ECDC4",
+        gradient: [
+          "rgba(78, 205, 196, 0.08)",
+          "rgba(78, 205, 196, 0.04)",
+        ] as const,
+        borderColor: "rgba(78, 205, 196, 0.15)",
+      };
     if (total < 1000)
-      return { mood: "Balanced", emoji: "⚖️", color: "#96CEB4" };
-    if (total < 2000) return { mood: "Active", emoji: "🚀", color: "#FF9500" };
-    return { mood: "Luxurious", emoji: "💎", color: "#FF6B6B" };
+      return {
+        mood: "Balanced",
+        emoji: "⚖️",
+        color: "#96CEB4",
+        gradient: [
+          "rgba(150, 206, 180, 0.08)",
+          "rgba(150, 206, 180, 0.04)",
+        ] as const,
+        borderColor: "rgba(150, 206, 180, 0.15)",
+      };
+    if (total < 2000)
+      return {
+        mood: "Active",
+        emoji: "🚀",
+        color: "#FF9500",
+        gradient: [
+          "rgba(255, 149, 0, 0.08)",
+          "rgba(255, 149, 0, 0.04)",
+        ] as const,
+        borderColor: "rgba(255, 149, 0, 0.15)",
+      };
+    return {
+      mood: "Luxurious",
+      emoji: "💎",
+      color: "#FF6B6B",
+      gradient: [
+        "rgba(255, 107, 107, 0.08)",
+        "rgba(255, 107, 107, 0.04)",
+      ] as const,
+      borderColor: "rgba(255, 107, 107, 0.15)",
+    };
   };
 
   const spendingMood = getSpendingMood(totalSpent);
 
   return (
     <View style={styles.container}>
-      {/* Spending Summary Card */}
+      {/* Spending Summary Card - Glassy Style */}
       <View style={styles.summaryCard}>
         <View style={styles.summaryHeader}>
           <View style={styles.moodContainer}>
@@ -98,7 +138,28 @@ const SpendingBreakdown: React.FC<SpendingBreakdownProps> = ({
             <Text style={styles.totalAmount}>
               ${totalSpent.toLocaleString()}
             </Text>
-            <Text style={styles.totalPeriod}>{period}</Text>
+            {onPeriodPress ? (
+              <TouchableOpacity
+                style={styles.periodChip}
+                onPress={onPeriodPress}
+                activeOpacity={0.7}
+              >
+                <Ionicons
+                  name="calendar-outline"
+                  size={14}
+                  color="#4A90E2"
+                  style={styles.periodIcon}
+                />
+                <Text style={styles.periodChipText}>{period}</Text>
+                <Ionicons
+                  name="chevron-down"
+                  size={14}
+                  color="rgba(74, 144, 226, 0.7)"
+                />
+              </TouchableOpacity>
+            ) : (
+              <Text style={styles.totalPeriod}>{period}</Text>
+            )}
           </View>
         </View>
       </View>
@@ -220,12 +281,21 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   summaryCard: {
-    backgroundColor: "#1f1f1f",
+    backgroundColor: "rgba(31, 31, 31, 0.6)",
     borderRadius: 16,
     padding: 16,
     marginBottom: 20,
     borderWidth: 1,
     borderColor: "rgba(74, 144, 226, 0.1)",
+    // Glassy effect
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
   },
   summaryHeader: {
     flexDirection: "row",
@@ -265,6 +335,27 @@ const styles = StyleSheet.create({
   totalPeriod: {
     fontSize: 12,
     color: "#4A90E2",
+  },
+  periodChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(74, 144, 226, 0.15)",
+    borderRadius: 16,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    marginTop: 6,
+    borderWidth: 1,
+    borderColor: "rgba(74, 144, 226, 0.3)",
+    gap: 6,
+  },
+  periodIcon: {
+    marginRight: 2,
+  },
+  periodChipText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#4A90E2",
+    letterSpacing: 0.2,
   },
   moneyFlowSection: {
     marginBottom: 32,

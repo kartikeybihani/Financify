@@ -1,5 +1,5 @@
 import React from "react";
-import { View, Text, TouchableOpacity, Animated } from "react-native";
+import { View, Text, TouchableOpacity, Animated, Platform } from "react-native";
 import { styles } from "@/src/styles/goalsStyles";
 import { GoalItemProps } from "@/src/types/goalsTypes";
 import {
@@ -9,6 +9,9 @@ import {
   formatGoalProgress,
   getProgressColor,
 } from "@/src/utils/categories/goalCategories";
+import { GlassView } from "expo-glass-effect";
+import { LinearGradient } from "expo-linear-gradient";
+import { Ionicons } from "@expo/vector-icons";
 
 const GoalItem: React.FC<GoalItemProps> = ({
   item,
@@ -34,6 +37,19 @@ const GoalItem: React.FC<GoalItemProps> = ({
     }
   };
 
+  const progressPercentage = calculateProgressPercentage(
+    item.current_amount,
+    item.target_amount
+  );
+  const isAchieved = progressPercentage >= 100;
+
+  const isIOS = Platform.OS === "ios";
+  const iosVersion = isIOS
+    ? parseInt(String(Platform.Version).split(".")[0] || "0", 10)
+    : 0;
+  const shouldUseLiquidGlass = isIOS && iosVersion >= 18;
+  const ChipContainer = shouldUseLiquidGlass ? GlassView : View;
+
   return (
     <TouchableOpacity
       key={item.id}
@@ -45,12 +61,39 @@ const GoalItem: React.FC<GoalItemProps> = ({
       <View style={styles.timelineLine} />
       <Animated.View style={[styles.timelineContent, animatedStyle]}>
         <View style={styles.timelineHeader}>
-          <Text style={styles.timelineYear}>
-            {new Date(item.target_date).toLocaleDateString("en-US", {
-              month: "long",
-              year: "numeric",
-            })}
-          </Text>
+          <View style={styles.timelineDateContainer}>
+            <Text style={styles.timelineYear}>
+              {new Date(item.target_date).toLocaleDateString("en-US", {
+                month: "long",
+                year: "numeric",
+              })}
+            </Text>
+            {isAchieved && (
+              shouldUseLiquidGlass ? (
+                <GlassView
+                  glassEffectStyle="regular"
+                  tintColor="rgba(16, 185, 129, 0.3)"
+                  style={styles.achievedChip}
+                >
+                  <Ionicons name="checkmark-circle" size={12} color="#fff" />
+                  <Text style={styles.achievedChipText}>Achieved</Text>
+                </GlassView>
+              ) : (
+                <View style={styles.achievedChip}>
+                  <LinearGradient
+                    colors={["rgba(16, 185, 129, 0.25)", "rgba(5, 150, 105, 0.3)"]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.achievedChipGradient}
+                  />
+                  <View style={styles.achievedChipContent}>
+                    <Ionicons name="checkmark-circle" size={12} color="#fff" />
+                    <Text style={styles.achievedChipText}>Achieved</Text>
+                  </View>
+                </View>
+              )
+            )}
+          </View>
           <View style={styles.timelineIconContainer}>
             <Text style={{ fontSize: 18 }}>
               {getCategoryEmoji(item.category)}
@@ -64,26 +107,14 @@ const GoalItem: React.FC<GoalItemProps> = ({
               style={[
                 styles.progressBarFill,
                 {
-                  width: `${calculateProgressPercentage(
-                    item.current_amount,
-                    item.target_amount
-                  )}%`,
-                  backgroundColor: getProgressColor(
-                    calculateProgressPercentage(
-                      item.current_amount,
-                      item.target_amount
-                    )
-                  ),
+                  width: `${progressPercentage}%`,
+                  backgroundColor: getProgressColor(progressPercentage),
                 },
               ]}
             />
           </View>
           <Text style={styles.progressText}>
-            {calculateProgressPercentage(
-              item.current_amount,
-              item.target_amount
-            )}
-            %
+            {progressPercentage}%
           </Text>
         </View>
         <Text style={styles.goalAmount}>

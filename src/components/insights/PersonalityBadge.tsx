@@ -1,5 +1,5 @@
 import React from "react";
-import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, Image } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { SpendingPersonality } from "@/src/utils/analytics/personalityAnalysis";
 
@@ -16,52 +16,88 @@ export default function PersonalityBadge({
 }: PersonalityBadgeProps) {
   const colors = {
     primary: personality.color,
-    secondary: `${personality.color}15`,
-    background: `${personality.color}15`,
+    secondary: `${personality.color}10`,
+    background: `${personality.color}08`,
     text: personality.color,
   };
 
   return (
     <TouchableOpacity
-      style={[styles.container, { backgroundColor: colors.background }]}
+      style={[
+        styles.container,
+        {
+          backgroundColor: colors.background,
+          borderColor: `${personality.color}15`,
+        },
+      ]}
       onPress={onPress}
-      activeOpacity={0.8}
+      activeOpacity={0.7}
     >
-      <View style={styles.header}>
-        <View
-          style={[styles.emojiContainer, { backgroundColor: colors.primary }]}
-        >
-          <Text style={styles.emoji}>{personality.emoji}</Text>
+      {/* Top Row: Mascot | Title & Subtitle | Percentage & Chevron */}
+      <View style={styles.topRow}>
+        {/* Mascot Image - Left Side */}
+        <View style={styles.mascotContainer}>
+          <Image
+            source={require("../../../assets/images/midleftshot.png")}
+            style={styles.mascotImage}
+            resizeMode="cover"
+          />
+          <View
+            style={[
+              styles.emojiBadge,
+              { backgroundColor: `${personality.color}20` },
+            ]}
+          >
+            <Text style={styles.emoji}>{personality.emoji}</Text>
+          </View>
         </View>
+
+        {/* Title & Subtitle - Middle */}
         <View style={styles.textContainer}>
           <Text style={[styles.archetype, { color: colors.primary }]}>
             {personality.archetype}
           </Text>
-          <Text style={styles.badge}>{personality.badge}</Text>
+          {showDetails && <Text style={styles.badge}>{personality.badge}</Text>}
         </View>
-        {showDetails && (
-          <Text style={[styles.confidence, { color: colors.primary }]}>
-            {personality.confidence}%
-          </Text>
-        )}
-        {onPress && (
-          <Ionicons
-            name="chevron-forward"
-            size={16}
-            color={colors.primary}
-            style={styles.chevron}
-          />
-        )}
+
+        {/* Percentage & Chevron - Right Side */}
+        <View style={styles.rightSection}>
+          {showDetails && (
+            <View
+              style={[
+                styles.confidenceBadge,
+                { backgroundColor: `${personality.color}15` },
+              ]}
+            >
+              <Text style={[styles.confidence, { color: colors.primary }]}>
+                {personality.confidence}%
+              </Text>
+            </View>
+          )}
+          {onPress && (
+            <Ionicons
+              name="chevron-forward"
+              size={14}
+              color="rgba(255, 255, 255, 0.3)"
+              style={styles.chevron}
+            />
+          )}
+        </View>
       </View>
 
-      <Text style={styles.description}>{personality.description}</Text>
-
+      {/* Traits Below - Full Width */}
       {showDetails && (
         <View style={styles.chipsContainer}>
-          {personality.traits.map((trait, index) => (
+          {personality.traits.slice(0, 1).map((trait, index) => (
             <View
               key={index}
-              style={[styles.chip, { backgroundColor: colors.secondary }]}
+              style={[
+                styles.chip,
+                {
+                  backgroundColor: colors.secondary,
+                  borderColor: `${personality.color}20`,
+                },
+              ]}
             >
               <Text style={[styles.chipText, { color: colors.primary }]}>
                 {trait}
@@ -78,66 +114,85 @@ const styles = StyleSheet.create({
   container: {
     borderRadius: 16,
     padding: 16,
-    marginVertical: 8,
+    marginVertical: 6,
     borderWidth: 1,
-    borderColor: "rgba(0,0,0,0.05)",
   },
-  header: {
+  topRow: {
     flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 8,
+    alignItems: "flex-start",
+    marginBottom: 12,
   },
-  emojiContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: "center",
-    alignItems: "center",
+  mascotContainer: {
+    position: "relative",
     marginRight: 12,
   },
+  mascotImage: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    // borderWidth: 2,
+    // borderColor: "rgba(255, 255, 255, 0.1)",
+  },
+  emojiBadge: {
+    position: "absolute",
+    bottom: -4,
+    right: -4,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 2,
+    borderColor: "#1f1f1f",
+  },
   emoji: {
-    fontSize: 20,
+    fontSize: 12,
   },
   textContainer: {
     flex: 1,
   },
   archetype: {
     fontSize: 16,
-    fontWeight: "600",
+    fontWeight: "700",
     marginBottom: 2,
   },
   badge: {
     fontSize: 12,
-    color: "#666",
+    color: "rgba(255, 255, 255, 0.6)",
     fontWeight: "500",
   },
-  chevron: {
-    marginLeft: 8,
-  },
-  confidence: {
-    fontSize: 12,
-    fontWeight: "600",
-    marginRight: 8,
-  },
-  description: {
-    fontSize: 14,
-    color: "#666",
-    lineHeight: 20,
-    marginBottom: 8,
+  rightSection: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
   },
   chipsContainer: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 8,
+    gap: 6,
+    marginTop: 0,
   },
   chip: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
     flexShrink: 0,
+    borderWidth: 1,
   },
   chipText: {
-    fontSize: 12,
+    fontSize: 10,
     fontWeight: "500",
+  },
+  confidenceBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 10,
+  },
+  confidence: {
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  chevron: {
+    // No margin needed, gap handles spacing
   },
 });

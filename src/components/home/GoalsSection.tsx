@@ -19,7 +19,8 @@ export const GoalsSection: React.FC<GoalsSectionProps> = React.memo(
   ({ goals, closestGoal, formatCurrency }) => {
     const router = useRouter();
 
-    if (goals.length === 0) {
+    // Show empty state if no active goals or no closest goal
+    if (goals.length === 0 || !closestGoal) {
       return (
         <View style={styles.goalsSection}>
           <View style={styles.emptyGoalsContainer}>
