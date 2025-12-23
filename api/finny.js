@@ -2030,6 +2030,45 @@ async function handleAsk(
     logInfo("📦 [FINNY] Context packs built:", Object.keys(packs));
     logInfo("⚠️ [FINNY] Data gaps:", gaps);
 
+    // Log what user data is being fed to finny
+    if (packs.base) {
+      const baseData = packs.base;
+      const netWorth = baseData.netWorth || 0;
+      const liquidAssets = baseData.liquidAssets || 0;
+      const investmentsTotal = baseData.investmentsTotal || 0;
+      const totalLiabilities = baseData.totalLiabilities || 0;
+      const accountsCount = Array.isArray(baseData.accounts)
+        ? baseData.accounts.length
+        : 0;
+      const investmentAccounts = Array.isArray(baseData.accounts)
+        ? baseData.accounts.filter((acc) => acc.type === "investment").length
+        : 0;
+      logInfo(
+        `📊 [USER_DATA] Summary data: netWorth=$${netWorth.toFixed(
+          2
+        )}, liquidAssets=$${liquidAssets.toFixed(
+          2
+        )}, investmentsTotal=$${investmentsTotal.toFixed(
+          2
+        )}, liabilities=$${totalLiabilities.toFixed(
+          2
+        )}, accounts=${accountsCount} (${investmentAccounts} investment)`
+      );
+      if (Array.isArray(baseData.accounts) && baseData.accounts.length > 0) {
+        const accountSummary = baseData.accounts
+          .map(
+            (acc) =>
+              `${acc.name || acc.account_id}: $${(
+                acc.current_balance ||
+                acc.balance ||
+                0
+              ).toFixed(2)} (${acc.type}/${acc.subtype || "N/A"})`
+          )
+          .join(" | ");
+        logInfo(`📊 [USER_DATA] Accounts: ${accountSummary}`);
+      }
+    }
+
     // Check for stock candidate - prioritize classification result if available
     let stockCandidate = null;
     if (
@@ -2710,15 +2749,13 @@ async function handleAsk(
       if (feedbackContext) {
         const { preferences, deepInsights } = context.feedbackPatterns;
         // Single consolidated log with visual formatting
-        console.log(`\n📋 [ADAPTATION] Feedback Context Added:`);
+        const prefList =
+          preferences.length > 0
+            ? preferences.map((pref, idx) => `${idx + 1}. ${pref}`).join(" | ")
+            : "none";
         console.log(
-          `   └─ ${preferences.length} preferences, ${deepInsights.length} deep insights`
+          `\n📋 [ADAPTATION] Feedback Context Added: ${preferences.length} preferences, ${deepInsights.length} deep insights | ${prefList}`
         );
-        if (preferences.length > 0) {
-          preferences.forEach((pref, idx) => {
-            console.log(`      ${idx + 1}. ${pref}`);
-          });
-        }
       }
     }
 
@@ -4008,7 +4045,21 @@ function processSummaryData(results) {
   const [netWorthRes, recentRes, spendCatRes] = results;
 
   const net = netWorthRes?.data?.[0] || null;
-  if (!net) return null;
+  if (!net) {
+    console.log("⚠️ [SUMMARY_DATA] No net worth data in RPC response");
+    return null;
+  }
+
+  // Log raw net worth data for debugging
+  console.log("📊 [SUMMARY_DATA] Raw net worth from RPC:", {
+    net_worth: net.net_worth,
+    liquid_assets: net.liquid_assets,
+    investments_total: net.investments_total,
+    total_liabilities: net.total_liabilities,
+    bank_accounts_count: Array.isArray(net.bank_accounts)
+      ? net.bank_accounts.length
+      : 0,
+  });
 
   const recent = Array.isArray(recentRes?.data) ? recentRes.data : [];
   const spendCats = Array.isArray(spendCatRes?.data) ? spendCatRes.data : [];
@@ -6641,6 +6692,12 @@ async function getNetWorthData(userId) {
     }
 
     const netWorth = netWorthData[0]; // get_net_worth returns array with single object
+
+    // Log raw RPC response for debugging
+    console.log(
+      "📊 [NET_WORTH] Raw RPC response:",
+      JSON.stringify(netWorth, null, 2)
+    );
 
     // Process and format the data
     const processedData = {
