@@ -2785,7 +2785,7 @@ async function handleAsk(
     // Get memories for confidence evaluation
     const userMemory = context.memory || { memories: [], totalCount: 0 };
     const topMemories = userMemory.memories || [];
-    
+
     const decisionConfidence = evaluateDecisionConfidence({
       intent_type: classificationResult?.intent_type || null,
       intent: classificationResult?.intent || "ask_personalized",
@@ -2795,9 +2795,13 @@ async function handleAsk(
 
     console.log(`\n🎯 [DECISION_CONFIDENCE] Evaluation:`);
     console.log(`   └─ Confidence: ${decisionConfidence.confidence_score}`);
-    console.log(`   └─ Needs Clarification: ${decisionConfidence.needs_clarification}`);
+    console.log(
+      `   └─ Needs Clarification: ${decisionConfidence.needs_clarification}`
+    );
     if (decisionConfidence.clarification_question) {
-      console.log(`   └─ Question: ${decisionConfidence.clarification_question}`);
+      console.log(
+        `   └─ Question: ${decisionConfidence.clarification_question}`
+      );
     }
 
     // 5) Build context-aware prompt using new prompt engine
@@ -2830,7 +2834,7 @@ async function handleAsk(
     // PHASE 1: Branching logic - clarification vs full prompt
     let system;
     let responseType = "normal"; // Track response type for memory storage
-    
+
     if (decisionConfidence.needs_clarification === true) {
       // Build minimal clarification prompt
       responseType = "clarification";
@@ -2838,7 +2842,9 @@ async function handleAsk(
         decisionConfidence.clarification_question,
         finnyStyle || "conversational"
       );
-      console.log(`\n📋 [PROMPT] Using CLARIFICATION prompt (${system.length} chars)`);
+      console.log(
+        `\n📋 [PROMPT] Using CLARIFICATION prompt (${system.length} chars)`
+      );
     } else {
       // Build complete prompt using 6-layer architecture
       // Prompt engine now handles: web context, feedback patterns, memories, intent context, user prompt
@@ -2852,7 +2858,9 @@ async function handleAsk(
         webSummary, // Web context
         contextHeader // Context header
       );
-      console.log(`\n📋 [PROMPT] Using FULL 6-layer prompt (${system.length} chars)`);
+      console.log(
+        `\n📋 [PROMPT] Using FULL 6-layer prompt (${system.length} chars)`
+      );
     }
 
     // Build minimal user message context (query-specific data only, not raw dumps)
@@ -3193,7 +3201,9 @@ async function handleAsk(
         }
       });
     } else if (responseType === "clarification") {
-      console.log("⏭️ [MEMORY] Skipping memory storage for clarification response");
+      console.log(
+        "⏭️ [MEMORY] Skipping memory storage for clarification response"
+      );
     }
 
     // Update handler time in parent timings if provided
