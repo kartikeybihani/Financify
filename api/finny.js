@@ -34,6 +34,8 @@ import {
 import {
   detectUserState,
   buildContextAwarePrompt,
+  evaluateDecisionConfidence,
+  buildClarificationPrompt,
 } from "../lib/prompt_engine.js";
 import {
   checkRateLimit,
@@ -2779,6 +2781,25 @@ async function handleAsk(
       console.log(`   └─ Needs: [${userState.needs.join(", ")}]`);
     }
 
+    // 4.5) PHASE 1: Evaluate decision confidence (before prompt building)
+    // Get memories for confidence evaluation
+    const userMemory = context.memory || { memories: [], totalCount: 0 };
+    const topMemories = userMemory.memories || [];
+    
+    const decisionConfidence = evaluateDecisionConfidence({
+      intent_type: classificationResult?.intent_type || null,
+      intent: classificationResult?.intent || "ask_personalized",
+      basePack: packs.base || {},
+      memories: topMemories,
+    });
+
+    console.log(`\n🎯 [DECISION_CONFIDENCE] Evaluation:`);
+    console.log(`   └─ Confidence: ${decisionConfidence.confidence_score}`);
+    console.log(`   └─ Needs Clarification: ${decisionConfidence.needs_clarification}`);
+    if (decisionConfidence.clarification_question) {
+      console.log(`   └─ Question: ${decisionConfidence.clarification_question}`);
+    }
+
     // 5) Build context-aware prompt using new prompt engine
     // Pass finny_style directly to prompt engine (now handled early in prompt)
     const finnyStyle = context.profile?.finny_style || null;
@@ -2806,18 +2827,33 @@ async function handleAsk(
       feedbackContext,
     };
 
-    // Build complete prompt using 6-layer architecture
-    // Prompt engine now handles: web context, feedback patterns, memories, intent context, user prompt
-    const system = buildContextAwarePrompt(
-      message,
-      contextWithFeedback,
-      financialDataForState,
-      userState,
-      finnyStyle,
-      classificationResult, // Pass classification result for intent-first architecture
-      webSummary, // Web context
-      contextHeader // Context header
-    );
+    // PHASE 1: Branching logic - clarification vs full prompt
+    let system;
+    let responseType = "normal"; // Track response type for memory storage
+    
+    if (decisionConfidence.needs_clarification === true) {
+      // Build minimal clarification prompt
+      responseType = "clarification";
+      system = buildClarificationPrompt(
+        decisionConfidence.clarification_question,
+        finnyStyle || "conversational"
+      );
+      console.log(`\n📋 [PROMPT] Using CLARIFICATION prompt (${system.length} chars)`);
+    } else {
+      // Build complete prompt using 6-layer architecture
+      // Prompt engine now handles: web context, feedback patterns, memories, intent context, user prompt
+      system = buildContextAwarePrompt(
+        message,
+        contextWithFeedback,
+        financialDataForState,
+        userState,
+        finnyStyle,
+        classificationResult, // Pass classification result for intent-first architecture
+        webSummary, // Web context
+        contextHeader // Context header
+      );
+      console.log(`\n📋 [PROMPT] Using FULL 6-layer prompt (${system.length} chars)`);
+    }
 
     // Build minimal user message context (query-specific data only, not raw dumps)
     // Financial data is already synthesized in prompt engine Layer 2
@@ -3131,7 +3167,9 @@ async function handleAsk(
         ? response.message.map((m) => m.content || m).join("\n\n")
         : response.message || "");
 
-    if (userId && responseTextForStorage) {
+    // PHASE 1: Skip memory storage for clarification responses
+    // Don't store clarification turns - they're unresolved intent
+    if (userId && responseTextForStorage && responseType !== "clarification") {
       setImmediate(async () => {
         try {
           await storeConversationMemory(
@@ -3154,6 +3192,8 @@ async function handleAsk(
           // Non-fatal, don't break conversation flow
         }
       });
+    } else if (responseType === "clarification") {
+      console.log("⏭️ [MEMORY] Skipping memory storage for clarification response");
     }
 
     // Update handler time in parent timings if provided

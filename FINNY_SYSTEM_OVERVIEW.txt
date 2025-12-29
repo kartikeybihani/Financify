@@ -1,0 +1,652 @@
+================================================================================
+FINNY SYSTEM OVERVIEW: HOW FINNY WORKS END-TO-END
+================================================================================
+
+This document provides a high-level overview of how Finny processes user messages
+from input to response, covering all major components: Classification, Data Fetching,
+Supermemory, Prompt Engine, and Response Generation.
+
+================================================================================
+SYSTEM FLOW OVERVIEW
+================================================================================
+
+1. USER SENDS MESSAGE
+   ↓
+2. CLASSIFICATION LAYER (Intent & Emotional State Detection)
+   ↓
+3. DATA FETCHING (Context Packs Based on Classification)
+   ↓
+4. MEMORY RETRIEVAL (Supermemory Semantic Search)
+   ↓
+5. PROMPT BUILDING (6-Layer Architecture)
+   ↓
+6. RESPONSE GENERATION (LLM with Context-Aware Prompt)
+   ↓
+7. MEMORY STORAGE (Store Conversation in Supermemory)
+
+
+================================================================================
+1. CLASSIFICATION LAYER
+================================================================================
+
+PURPOSE:
+--------
+The classification layer analyzes user messages BEFORE any prompt building to
+determine intent, emotional state, and data requirements. This drives all
+subsequent processing.
+
+COMPONENTS:
+-----------
+- handleClassify() function in api/finny.js
+- LLM-based classification (uses smaller, faster model)
+- In-memory cache (1 hour TTL) for identical messages
+- JSON output format with strict validation
+
+PROCESS:
+--------
+1. Check cache for identical message (normalized key)
+2. If cached and valid, return cached result
+3. If not cached, call LLM with classification prompt
+4. Parse JSON response (strict validation)
+5. Cache result for future queries
+6. Return classification object
+
+CLASSIFICATION OUTPUT:
+----------------------
+{
+  intent: "ask_personalized" | "goal_conversation" | "stock_query" | "off_topic",
+  intent_type: "exploratory" | "actionable" | "emotional_support" | "crisis" | "planning",
+  emotional_state: "neutral" | "anxious" | "panicked" | "ashamed" | "overwhelmed" | "fomo",
+  needs_web: boolean,        // Requires current web information
+  needs_user_data: boolean,  // Requires user's financial data
+  ticker: string | null,      // Stock ticker if stock_query
+  entities: string[],        // Extracted entities
+  confidence: number          // 0.0-1.0 confidence score
+}
+
+KEY FEATURES:
+-------------
+- Intent-first: Determines what user wants before inferring state
+- Emotional detection: Identifies emotional signals without false positives
+- Resource flags: Determines what data/web info is needed
+- Caching: Avoids redundant LLM calls for identical messages
+- Timeout protection: 8-second timeout with fallback
+
+CRITICAL RULES:
+---------------
+- Affordability queries → ask_personalized (not goal_conversation)
+- Stock queries require SPECIFIC ticker/company (general → ask_personalized)
+- Investment advice → needs_web:false (uses training data)
+- Credit card queries → needs_web:true (current offers/rates)
+- Emotional state only detected with CLEAR signals (avoid false positives)
+
+
+================================================================================
+2. DATA FETCHING (CONTEXT PACKS)
+================================================================================
+
+PURPOSE:
+--------
+Fetch and structure user's financial data based on classification needs.
+Data is organized into "context packs" - pre-built structures optimized for
+LLM consumption.
+
+COMPONENTS:
+-----------
+- buildContextPacks() function in api/finny.js
+- NEED_CONFIG mapping (needs → pack keys → cache types)
+- Persistent cache (Supabase context_cache table)
+- Parallel fetch operations for performance
+
+CONTEXT PACK TYPES:
+-------------------
+1. base (summary_min)
+   - Net worth, liquid assets, liabilities
+   - Account summaries
+   - Recent transactions (5)
+   - Spending by category (30 days)
+   - Always included for most queries
+
+2. invest (invest_holdings)
+   - Investment account balances
+   - Holdings breakdown
+   - Portfolio composition
+   - Triggered by: invest_holdings need
+
+3. goals (goals_overview)
+   - Financial goals list
+   - Progress tracking
+   - Target amounts and timelines
+   - Triggered by: goals_overview need
+
+4. cashflow (cashflow_monthly)
+   - Monthly income/expenses
+   - Cashflow trends (last 3 months)
+   - Triggered by: cashflow_monthly need
+
+5. spend (spend_total)
+   - Total spending for period
+   - Spending trends
+   - Category breakdowns
+   - Triggered by: spend_total + period slot
+
+6. categoryDetails (category_details)
+   - Detailed transactions for specific category
+   - Monthly breakdowns
+   - Pattern analysis data
+   - Triggered by: category_details + category + period slots
+
+PROCESS:
+--------
+1. Classification determines which "needs" are required
+2. Map needs to pack keys via NEED_CONFIG
+3. Check persistent cache for each pack (50-minute TTL)
+4. For uncached packs, create fetch operations
+5. Execute operations in parallel
+6. Process and structure results into packs
+7. Cache packs for future queries
+8. Return packs object + gaps + context header
+
+CACHING STRATEGY:
+-----------------
+- Persistent cache: Supabase context_cache table
+- TTL: 50 minutes for most packs
+- Cache keys: user_id + data_type + params
+- Prebuild optimization: Common packs pre-built on user visit
+
+DATA SOURCES:
+-------------
+- Supabase database (accounts, transactions, goals, etc.)
+- Plaid API (account balances, transactions)
+- Snaptrade API (investment holdings)
+- Custom RPC functions (financial summaries)
+
+
+================================================================================
+3. MEMORY RETRIEVAL (SUPERMEMORY)
+================================================================================
+
+PURPOSE:
+--------
+Retrieve relevant memories from previous conversations using semantic search.
+Memories provide context about user preferences, past discussions, and patterns.
+
+COMPONENTS:
+-----------
+- loadUserMemory() in lib/memoryUtils.js
+- Supermemory API v4/search endpoint
+- Semantic search with relevance scoring
+- Memory prioritization in prompt engine
+
+PROCESS:
+--------
+1. User sends message (used as search query)
+2. Check in-memory cache for query (query-dependent, so limited caching)
+3. Call Supermemory search API with:
+   - Query: user's message
+   - Container tag: user_{userId} (isolated per user)
+   - Limit: 10 memories
+   - Threshold: 0.4 similarity
+4. Transform results to internal format
+5. Return top memories with relevance scores
+
+MEMORY FORMAT:
+--------------
+{
+  memories: [
+    {
+      content: "Memory text content",
+      similarity: 0.85,        // Relevance score from semantic search
+      context_type: "goal_conversation" | "ask_personalized" | etc,
+      updatedAt: "ISO timestamp",
+      ...metadata
+    }
+  ],
+  totalCount: number
+}
+
+MEMORY PRIORITIZATION:
+----------------------
+In prompt engine, memories are further prioritized:
+1. Semantic similarity score (50% weight)
+2. Recency boost (20% weight - more recent = higher)
+3. Type match boost (20% weight - matches intent type)
+4. Actionability boost (10% weight - contains actionable info)
+5. Top 5 selected and synthesized (truncated to 200 chars)
+
+STORAGE:
+--------
+After response generation, conversations are stored in Supermemory:
+- storeConversationMemory() function
+- Rich content: user message + Finny response
+- Metadata: financial tags, emotional state, context type
+- Container tag isolation: user_{userId}
+
+
+================================================================================
+4. PROMPT BUILDING (6-LAYER ARCHITECTURE)
+================================================================================
+
+PURPOSE:
+--------
+Build a context-aware system prompt using the 6-layer intent-first architecture.
+The prompt guides the LLM to generate personalized, appropriate responses.
+
+COMPONENTS:
+-----------
+- buildContextAwarePrompt() in lib/prompt_engine.js
+- PROMPT_MODULES object (6 layer templates)
+- Data synthesis functions
+- Strategy selection logic
+
+LAYER 1: CORE IDENTITY
+----------------------
+- Finny's mission and values
+- Hard constraints (never shame, never suggest competitors)
+- Available app features
+- Always included first, never changes
+
+LAYER 2: CURRENT SITUATION
+---------------------------
+- User's explicit intent (from classification)
+- Emotional state (from classification + detection)
+- Synthesized financial data (from context packs)
+- Intent-state conflict resolution
+- Optional web context (if needs_web:true)
+
+LAYER 3: RESPONSE STRATEGY
+---------------------------
+- Primary strategy from intent (highest priority)
+- Supporting strategies from state/context
+- Hard constraints if crisis mode
+- Strategy implementations added after this layer
+
+LAYER 4: PERSONALIZATION
+-------------------------
+- User profile (name, age, occupation)
+- Financial perspective from onboarding
+- Top 3-5 relevant memories (from Supermemory)
+- Feedback context if available
+
+LAYER 5: COMMUNICATION STYLE
+-----------------------------
+- Witty: Humor, clever analogies, playful
+- Direct: Straight to point, professional
+- Conversational: Warm, approachable (default)
+- User preference drives selection
+
+LAYER 6: RESPONSE GUIDELINES
+-----------------------------
+- Dynamic response length rules
+- Formatting and spacing guidelines
+- Content rules (direct answers, layman terms)
+- Data interpretation rules
+- Calculation guidelines
+- Quality criteria
+
+DECISION CONFIDENCE EVALUATION (PHASE 1):
+------------------------------------------
+Before building the prompt, Finny evaluates decision confidence to determine
+if clarification is needed. This prevents premature advice and reduces verbosity.
+
+COMPONENTS:
+-----------
+- evaluateDecisionConfidence() in lib/prompt_engine.js
+- buildClarificationPrompt() in lib/prompt_engine.js
+- Branching logic in handleAsk() function
+
+PROCESS:
+--------
+1. After classification and userState detection
+2. Evaluate decision confidence using:
+   - Intent type (actionable, crisis, exploratory, planning)
+   - Base pack data availability (net worth, liquidity, accounts)
+   - Memory relevance (top memories with similarity scores)
+   - Intent-specific rules
+3. Output: { confidence_score, needs_clarification, clarification_question }
+4. Branch based on needs_clarification:
+   - If true → Build minimal clarification prompt (60-80 words)
+   - If false → Build full 6-layer prompt
+
+CLARIFICATION PROMPT:
+---------------------
+When clarification is needed, Finny uses a minimal prompt (not the full brain):
+- Core identity (shortened)
+- One sentence of context
+- The clarification question
+- Hard rules: No goals, budgets, steps, math, emojis
+- Max 60-80 words
+- Style-aware (witty/direct/conversational)
+
+MEMORY STORAGE SKIP:
+--------------------
+Clarification responses are NOT stored in Supermemory to avoid poisoning
+future context with unresolved intent. Only full responses are stored.
+
+PROCESS (Full Flow):
+--------------------
+1. Extract intent from classification result
+2. Synthesize financial data (format for LLM)
+3. Detect user emotional state (uses classification)
+4. Resolve intent-state conflicts
+5. Evaluate decision confidence (NEW - PHASE 1)
+6. Branch: Clarification prompt OR full 6-layer prompt
+7. Select and prioritize strategies (if full prompt)
+8. Prioritize memories (score and select top 5) (if full prompt)
+9. Build prompt (clarification OR full 6-layer)
+10. Add strategy implementations after Layer 3 (if full prompt)
+
+KEY FUNCTIONS:
+--------------
+- synthesizeFinancialData(): Formats raw data into structured context
+- prioritizeMemories(): Scores and selects top memories
+- detectUserState(): Detects emotional state with confidence
+- resolveIntentStateConflict(): Resolves conflicts
+- selectStrategies(): Prioritizes response strategies
+- evaluateDecisionConfidence(): Evaluates if clarification needed (NEW)
+- buildClarificationPrompt(): Builds minimal clarification prompt (NEW)
+
+
+================================================================================
+5. RESPONSE GENERATION
+================================================================================
+
+PURPOSE:
+--------
+Generate the final response using LLM with the context-aware prompt.
+
+COMPONENTS:
+-----------
+- handleAsk() function in api/finny.js
+- LLM API call (OpenAI/OpenRouter)
+- Streaming support (optional)
+- Response validation
+
+PROCESS:
+--------
+1. Receive message + classification + context
+2. Build context packs (if needed)
+3. Load memories from Supermemory
+4. Evaluate decision confidence (PHASE 1)
+5. Build prompt:
+   - Clarification prompt (if needs_clarification = true)
+   - OR full 6-layer prompt (if needs_clarification = false)
+6. Call LLM with:
+   - System message: Built prompt (clarification or full)
+   - User message: Original user message
+7. Stream response (if requested) or return complete
+8. Validate response quality
+9. Store in memory (skip if clarification response)
+10. Return response + metadata
+
+RESPONSE VALIDATION:
+--------------------
+- Intent fulfillment check
+- Length validation
+- Quality criteria check
+- Style preference match
+
+RESPONSE FORMAT:
+----------------
+{
+  response: "Finny's response text",
+  intent: "ask_personalized",
+  classification: { ... },
+  timings: {
+    classification_ms: number,
+    memory_loading_ms: number,
+    context_packs_ms: number,
+    web_search_ms: number,
+    prompt_building_ms: number,
+    llm_ms: number
+  },
+  metadata: { ... }
+}
+
+
+================================================================================
+6. MEMORY STORAGE (SUPERMEMORY)
+================================================================================
+
+PURPOSE:
+--------
+Store conversation in Supermemory for future context retrieval.
+
+COMPONENTS:
+-----------
+- storeConversationMemory() in lib/memoryUtils.js
+- Supermemory API addMemory endpoint
+- Rich content building
+- Metadata extraction
+
+PROCESS:
+--------
+1. After response generated
+2. Build rich memory content:
+   - User message
+   - Finny response
+   - User name (if available)
+3. Extract metadata:
+   - Financial tags
+   - Emotional state
+   - Context type
+   - Financial relevance
+4. Store in Supermemory with:
+   - Container tag: user_{userId}
+   - Content: Rich conversation text
+   - Metadata: Extracted tags and types
+5. Future queries can retrieve via semantic search
+
+STORAGE SKIP CONDITIONS:
+------------------------
+- prebuild_context actions (no user message)
+- Empty user messages
+- Explicit skip flags
+- Clarification responses (PHASE 1 - prevents unresolved intent poisoning)
+
+
+================================================================================
+DATA FLOW DIAGRAM
+================================================================================
+
+User Message
+    ↓
+[CLASSIFICATION]
+    ├─→ Intent: ask_personalized
+    ├─→ Intent Type: exploratory
+    ├─→ Emotional State: neutral
+    ├─→ Needs: needs_user_data=true, needs_web=false
+    └─→ Cached (1 hour TTL)
+    ↓
+[CONTEXT PACKS]
+    ├─→ Check cache (50 min TTL)
+    ├─→ Fetch: base pack (summary_min)
+    ├─→ Structure: Net worth, accounts, transactions, spending
+    └─→ Cache result
+    ↓
+[SUPERMEMORY]
+    ├─→ Semantic search: user message as query
+    ├─→ Results: Top 10 memories (similarity > 0.4)
+    ├─→ Prioritize: Score by relevance, recency, type match
+    └─→ Select: Top 5 synthesized memories
+    ↓
+[DECISION CONFIDENCE EVALUATION] (PHASE 1)
+    ├─→ Evaluate: intent_type + basePack + memories
+    ├─→ Output: confidence_score, needs_clarification, clarification_question
+    └─→ Branch decision
+    ↓
+[PROMPT ENGINE] (Branch)
+    ├─→ IF needs_clarification = true:
+    │   └─→ Build minimal clarification prompt (60-80 words)
+    │
+    └─→ IF needs_clarification = false:
+        ├─→ Layer 1: Core Identity
+        ├─→ Layer 2: Current Situation (intent + data + state)
+        ├─→ Layer 3: Response Strategy
+        ├─→ Layer 4: Personalization (memories + profile)
+        ├─→ Layer 5: Communication Style
+        └─→ Layer 6: Response Guidelines
+    ↓
+[LLM GENERATION]
+    ├─→ System: Built prompt
+    ├─→ User: Original message
+    ├─→ Generate: Response
+    └─→ Validate: Quality checks
+    ↓
+[SUPERMEMORY STORAGE]
+    ├─→ Check: response_type === 'clarification'?
+    ├─→ IF clarification: Skip storage (prevent unresolved intent poisoning)
+    └─→ IF normal response:
+        ├─→ Build: Rich conversation content
+        ├─→ Extract: Metadata (tags, emotional state)
+        └─→ Store: In Supermemory (user_{userId} container)
+    ↓
+Response to User
+
+
+================================================================================
+KEY ARCHITECTURAL DECISIONS
+================================================================================
+
+1. INTENT-FIRST DESIGN
+   - User intent ALWAYS takes precedence over inferred state
+   - Classification determines primary intent before prompt building
+   - Emotional state influences tone but never blocks intent
+
+2. CONTEXT SYNTHESIS
+   - Data is formatted for LLM consumption, not raw dumps
+   - Structured sections with clear labels
+   - Only relevant data included (token-efficient)
+
+3. CONFIDENCE-BASED CONSTRAINTS
+   - Soft constraints based on confidence scores
+   - High confidence crisis → hard constraints
+   - Medium confidence → awareness mode
+   - Low confidence → no constraints
+
+4. SEMANTIC MEMORY SEARCH
+   - Uses Supermemory for relevance ranking
+   - Query-dependent (message as search query)
+   - Top 5 memories prioritized and synthesized
+
+5. CACHING STRATEGY
+   - Classification: In-memory (1 hour)
+   - Context packs: Persistent (50 minutes)
+   - Memories: Limited caching (query-dependent)
+
+6. DECISION CONFIDENCE EVALUATION (PHASE 1)
+   - Evaluates if clarification needed before prompt building
+   - Uses heuristics: intent type, data availability, memory relevance
+   - Branches to clarification prompt or full prompt
+   - Prevents premature advice and reduces verbosity
+
+7. PARALLEL PROCESSING
+   - Context packs fetched in parallel
+   - Memory loading + profile loading in parallel
+   - Web search (if needed) in parallel with data fetching
+
+8. GRACEFUL DEGRADATION
+   - Missing data: Explicitly stated, never fabricated
+   - Classification timeout: Fallback to keyword detection
+   - Memory errors: Continue without memories
+   - Cache misses: Fetch fresh data
+
+
+================================================================================
+PERFORMANCE OPTIMIZATIONS
+================================================================================
+
+1. CLASSIFICATION CACHING
+   - Identical messages return cached classification
+   - Normalized cache keys (removes variations)
+   - 1-hour TTL reduces LLM calls
+
+2. CONTEXT PACK CACHING
+   - Persistent cache in Supabase
+   - 50-minute TTL balances freshness vs performance
+   - Prebuild common packs on user visit
+
+3. PARALLEL FETCHING
+   - Context packs fetched in parallel
+   - Memory + profile loaded in parallel
+   - Web search (if needed) in parallel
+
+4. SEMANTIC SEARCH EFFICIENCY
+   - Query-dependent (only searches when needed)
+   - Threshold filtering (0.4 similarity)
+   - Limit 10 results (top 5 used)
+
+5. PROMPT EFFICIENCY
+   - Only relevant context included
+   - Synthesized data (not raw dumps)
+   - Token-efficient formatting
+
+6. CLARIFICATION PROMPTS (PHASE 1)
+   - Minimal prompts (60-80 words) when clarification needed
+   - Avoids full 6-layer prompt overhead
+   - Reduces token usage for simple clarification questions
+
+
+================================================================================
+ERROR HANDLING & FALLBACKS
+================================================================================
+
+CLASSIFICATION ERRORS:
+- Timeout (8s): Fallback to keyword detection
+- Invalid JSON: Retry with stricter parsing
+- Cache corruption: Clear cache, retry
+
+DATA FETCHING ERRORS:
+- Missing packs: Continue with available data
+- Cache errors: Fetch fresh data
+- API failures: Graceful degradation
+
+MEMORY ERRORS:
+- Supermemory API failure: Continue without memories
+- Empty results: Use empty memory array
+- Invalid format: Skip memory integration
+
+PROMPT BUILDING ERRORS:
+- Missing classification: Use defaults
+- Missing data: Explicitly state unavailable
+- Invalid state: Fallback to neutral
+
+RESPONSE GENERATION ERRORS:
+- LLM timeout: Return error message
+- Invalid response: Retry with adjusted prompt
+- Quality check failure: Log for review
+
+
+================================================================================
+MONITORING & LOGGING
+================================================================================
+
+TIMING METRICS:
+- classification_ms: Classification LLM call time
+- memory_loading_ms: Supermemory search time
+- context_packs_ms: Data fetching time
+- web_search_ms: Web search time (if needed)
+- prompt_building_ms: Prompt assembly time
+- llm_ms: Response generation time
+
+LOG POINTS:
+- Classification start/result
+- Cache hits/misses
+- Context pack building
+- Memory retrieval
+- Prompt building
+- Response generation
+- Memory storage
+
+DEBUG INFORMATION:
+- Classification result details
+- Selected context packs
+- Memory count and relevance
+- Strategy selection
+- Conflict resolution
+- Response quality checks
+
+
+================================================================================
+END OF SYSTEM OVERVIEW
+================================================================================
