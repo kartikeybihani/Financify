@@ -120,10 +120,6 @@ const SMALLER_MODEL = "meta-llama/llama-3.3-70b-instruct:free";
 // Session summarization model (LLM) via OpenRouter
 const SUMMARY_MODEL = "deepseek/deepseek-r1-0528-qwen3-8b:free";
 
-// Classification cache - in-memory cache for classification results
-const classificationCache = new Map();
-const CLASSIFICATION_CACHE_TTL = 60 * 60 * 1000; // 1 hour in milliseconds
-
 // Memory cache - in-memory cache for memory search results (to avoid duplicate loads)
 const memoryCache = new Map();
 const MEMORY_CACHE_TTL = 5 * 60 * 1000; // 5 minutes - memories can change, but same query within 5min should reuse
@@ -364,106 +360,6 @@ const CACHE_STRATEGY = {
 };
 
 // Generate a cache key for classification
-function generateClassificationCacheKey(message) {
-  // Normalize the message for better cache hits
-  const normalized = message
-    .toLowerCase()
-    .trim()
-    // Remove common variations
-    .replace(/\b(i|me|my|mine)\b/g, "USER")
-    .replace(/\b(last month|this month|december|january|etc)\b/g, "PERIOD")
-    .replace(/\$\d+/g, "AMOUNT")
-    .replace(/\d+/g, "NUMBER");
-
-  return normalized;
-}
-
-// Clear all heuristic cache entries - check ALL possible heuristic indicators
-function clearHeuristicCacheEntries() {
-  let cleared = 0;
-  const keysToDelete = [];
-
-  // First pass: collect keys to delete
-  for (const [key, value] of classificationCache.entries()) {
-    const result = value?.result;
-    if (result && result.hasOwnProperty("heuristic")) {
-      const isHeuristic =
-        result.heuristic === true ||
-        result.heuristic === "true" ||
-        result.heuristic === 1 ||
-        result.heuristic === "1";
-      if (isHeuristic) {
-        keysToDelete.push(key);
-        cleared++;
-      }
-    }
-  }
-
-  // Second pass: delete collected keys
-  for (const key of keysToDelete) {
-    classificationCache.delete(key);
-  }
-
-  // Cache cleared silently
-  return cleared;
-}
-
-// Get cached classification result
-function getCachedClassification(message) {
-  const key = generateClassificationCacheKey(message);
-  const cached = classificationCache.get(key);
-
-  if (cached && Date.now() < cached.expires_at) {
-    console.log(
-      `✅ [CACHE] Classification cache HIT for: "${message.substring(
-        0,
-        50
-      )}..."`
-    );
-    return cached.result;
-  }
-
-  if (cached) {
-    console.log(
-      `⏰ [CACHE] Classification cache EXPIRED for: "${message.substring(
-        0,
-        50
-      )}..."`
-    );
-    classificationCache.delete(key);
-  }
-
-  return null;
-}
-
-// Set cached classification result
-function setCachedClassification(message, result) {
-  const key = generateClassificationCacheKey(message);
-  const expires_at = Date.now() + CLASSIFICATION_CACHE_TTL;
-
-  classificationCache.set(key, {
-    result,
-    expires_at,
-    cached_at: Date.now(),
-  });
-
-  logDebug(
-    `💾 [CACHE] Classification cached for: "${message.substring(
-      0,
-      50
-    )}..." (expires in 1 hour)`
-  );
-
-  // Clean up expired entries periodically (every 100 cache writes)
-  if (classificationCache.size % 100 === 0) {
-    const now = Date.now();
-    for (const [key, value] of classificationCache.entries()) {
-      if (now >= value.expires_at) {
-        classificationCache.delete(key);
-      }
-    }
-  }
-}
 
 // Generate a cache key for memory search (user-specific)
 function generateMemoryCacheKey(userId, query) {
@@ -1389,12 +1285,7 @@ export default async function handler(req, res) {
             JSON.stringify(response, null, 2)
           );
 
-          // Clear cache for this specific message to force fresh classification
-          const key = generateClassificationCacheKey(message);
-          classificationCache.delete(key);
-          // Cleared cache for message, forcing fresh LLM call
-
-          // Call handleClassify again - it will now bypass cache and call LLM
+          // Call handleClassify again - it will now call LLM
           response = await handleClassify(
             message,
             safeContext,
@@ -1972,18 +1863,11 @@ async function handleAsk(
     let webResults = [];
     let webSummary = "";
 
-    // Use passed classification result, or retrieve from cache, or fallback to keyword detection
+    // Use passed classification result, or fallback to keyword detection
     if (!classificationResult) {
-      // Try to retrieve from cache
-      const cachedClassification = getCachedClassification(message);
-      if (cachedClassification) {
-        logDebug("✅ [FINNY] Retrieved classification from cache");
-        classificationResult = cachedClassification;
-      } else {
-        logDebug(
-          "⚠️ [FINNY] No classification result passed and not in cache, using keyword fallback"
-        );
-      }
+      logDebug(
+        "⚠️ [FINNY] No classification result passed, using keyword fallback"
+      );
     }
 
     // Use classification.needs_web as primary, with keyword detection as fallback
@@ -2782,19 +2666,22 @@ async function handleAsk(
     }
 
     // 4.5) PHASE 1: Evaluate decision confidence (before prompt building)
-    // Get memories for confidence evaluation
-    const userMemory = context.memory || { memories: [], totalCount: 0 };
-    const topMemories = userMemory.memories || [];
-
+    // Classification now provides decision_risk, info_sufficiency, and clarify_question
     const decisionConfidence = evaluateDecisionConfidence({
-      intent_type: classificationResult?.intent_type || null,
-      intent: classificationResult?.intent || "ask_personalized",
-      basePack: packs.base || {},
-      memories: topMemories,
+      decision_risk: classificationResult?.decision_risk || "low",
+      info_sufficiency: classificationResult?.info_sufficiency || "sufficient",
+      clarify_question: classificationResult?.clarify_question || null,
     });
 
     console.log(`\n🎯 [DECISION_CONFIDENCE] Evaluation:`);
-    console.log(`   └─ Confidence: ${decisionConfidence.confidence_score}`);
+    console.log(
+      `   └─ Decision Risk: ${classificationResult?.decision_risk || "low"}`
+    );
+    console.log(
+      `   └─ Info Sufficiency: ${
+        classificationResult?.info_sufficiency || "sufficient"
+      }`
+    );
     console.log(
       `   └─ Needs Clarification: ${decisionConfidence.needs_clarification}`
     );
@@ -5068,9 +4955,6 @@ async function handleClassify(message, context, conversationContext = null) {
   );
   const startTime = Date.now();
 
-  // ALWAYS clear heuristic cache entries - don't trust old cache
-  const clearedCount = clearHeuristicCacheEntries();
-
   const { text, user } = { text: message, user: context };
   if (!text || typeof text !== "string") {
     console.log("❌ [FINNY] Missing or invalid text parameter");
@@ -5086,90 +4970,6 @@ async function handleClassify(message, context, conversationContext = null) {
       confidence: 0.1,
       fallback: true,
     };
-  }
-
-  // Check cache AFTER clearing heuristic entries
-  const cacheKey = generateClassificationCacheKey(text);
-  let cachedResult = getCachedClassification(text);
-
-  // CRITICAL: Never return heuristic results - check and delete immediately
-  if (cachedResult) {
-    // Check for ANY heuristic indicator
-    const hasHeuristicFlag =
-      cachedResult.hasOwnProperty("heuristic") &&
-      (cachedResult.heuristic === true ||
-        cachedResult.heuristic === "true" ||
-        cachedResult.heuristic === 1 ||
-        cachedResult.heuristic === "1");
-
-    if (hasHeuristicFlag) {
-      const key = generateClassificationCacheKey(text);
-      classificationCache.delete(key);
-      // CRITICAL: Set to null to prevent ANY return
-      cachedResult = null;
-    }
-
-    // Only proceed with cached result if it's NOT heuristic and is valid
-    if (
-      cachedResult &&
-      cachedResult.intent &&
-      typeof cachedResult.intent === "string" &&
-      cachedResult.needs_web !== undefined &&
-      cachedResult.needs_user_data !== undefined
-    ) {
-      // Final safety check: Never return heuristic results
-      const stillHeuristic =
-        cachedResult.heuristic === true ||
-        cachedResult.heuristic === "true" ||
-        cachedResult.heuristic === 1;
-      if (stillHeuristic) {
-        const key = generateClassificationCacheKey(text);
-        classificationCache.delete(key);
-        cachedResult = null; // Force to null to skip return
-      } else {
-        // Ensure new fields exist (backward compatibility with old cache entries)
-        if (!cachedResult.intent_type && cachedResult.intent !== "off_topic") {
-          cachedResult.intent_type = null;
-        }
-        if (!cachedResult.emotional_state) {
-          cachedResult.emotional_state = "neutral";
-        }
-        if (!Array.isArray(cachedResult.entities)) {
-          cachedResult.entities = [];
-        }
-        if (cachedResult.ticker === undefined) {
-          cachedResult.ticker = null;
-        }
-        if (
-          cachedResult.intent === "stock_query" &&
-          cachedResult.ticker &&
-          cachedResult.entities.length === 0
-        ) {
-          cachedResult.entities = [cachedResult.ticker];
-        }
-        // ABSOLUTE FINAL CHECK: Never return heuristic results
-        if (
-          cachedResult.hasOwnProperty("heuristic") &&
-          (cachedResult.heuristic === true ||
-            cachedResult.heuristic === "true" ||
-            cachedResult.heuristic === 1)
-        ) {
-          console.log(
-            "🚨 [FINNY] CRITICAL ERROR: About to return heuristic result! Blocking return."
-          );
-          const key = generateClassificationCacheKey(text);
-          classificationCache.delete(key);
-          cachedResult = null;
-          // Fall through to LLM
-        } else {
-          return cachedResult;
-        }
-      }
-    } else if (cachedResult) {
-      // Clear the malformed cached entry
-      const key = generateClassificationCacheKey(text);
-      classificationCache.delete(key);
-    }
   }
 
   // No rigid heuristics - all classification is handled by LLM
@@ -5231,6 +5031,54 @@ async function handleClassify(message, context, conversationContext = null) {
             "- needs_user_data=true: Answer requires user's actual data (spend, net worth, accounts, goals, personal recommendations, affordability checks)",
             "- needs_web=true: Answer requires current/2024-2025 info (limits, rates, brackets, market/news, card offers, current regulations)",
             "",
+            "=== DECISION RISK ASSESSMENT ===",
+            "Assess the financial risk and reversibility of the user's decision/question:",
+            "",
+            "HIGH RISK: Hard to reverse or can blow up life quickly",
+            "- Quitting job, going freelance, starting business",
+            "- Buying property, taking mortgage, second house",
+            "- Large recurring commitments (car loan, expensive rent)",
+            "- Debt consolidation, bankruptcy, withdrawing retirement funds",
+            "",
+            "MEDIUM RISK: Moderate impact, some reversibility",
+            "- Travel spending, moderate purchases",
+            "- Refinancing discussions without concrete numbers",
+            "- Budget adjustments, spending optimizations",
+            "",
+            "LOW RISK: Low impact, easily reversible",
+            "- Tips, explanations, small optimizations",
+            "- General questions, educational queries",
+            "- Small purchases, routine financial questions",
+            "",
+            "=== INFO SUFFICIENCY ASSESSMENT ===",
+            "Determine if you have minimum variables needed to answer responsibly:",
+            "",
+            "SUFFICIENT: Have minimum required info",
+            "- Quit job/freelance: Need at least one of: monthly expenses OR income predictability OR timeline",
+            "- Car affordability: Need at least one of: target price OR target monthly payment OR income OR monthly surplus",
+            "- House purchase: Need at least one of: purpose (live/rent/appreciation) OR down payment source OR income stability",
+            "- General advice: Need basic financial data (accounts, net worth, or spending)",
+            "",
+            "PARTIAL: Have some info but missing key pieces",
+            "- Have financial data but missing intent/timeline",
+            "- Have numbers but missing context",
+            "",
+            "INSUFFICIENT: Missing critical variables",
+            "- No financial data AND no context about situation",
+            "- High-risk decision with no timeline, no income info, no purpose",
+            "",
+            "=== CLARIFICATION QUESTION GENERATION ===",
+            "If info_sufficiency is insufficient, generate exactly ONE multiple-choice style question:",
+            "- No 'why' questions",
+            "- No two questions",
+            "- No long preamble",
+            "- Focus on unlocking the next step",
+            "",
+            "Examples:",
+            "- Quit job: 'Is your freelance income likely to be steady within 1-2 months, or uncertain for a while?'",
+            "- Second house: 'Is this home for living in, renting out, or long-term appreciation?'",
+            "- Car purchase: 'What's your target monthly payment, or do you have a specific car price in mind?'",
+            "",
             "=== CRITICAL CLASSIFICATION RULES ===",
             "",
             "1. Affordability queries are ALWAYS ask_personalized (not goal_conversation):",
@@ -5291,70 +5139,76 @@ async function handleClassify(message, context, conversationContext = null) {
             "=== EXAMPLES ===",
             "",
             'Query: "What is the Roth IRA limit for 2025?"',
-            'Response: {"intent":"ask_personalized","intent_type":"exploratory","emotional_state":"neutral","needs_web":true,"needs_user_data":false,"confidence":0.95}',
+            'Response: {"intent":"ask_personalized","intent_type":"exploratory","emotional_state":"neutral","needs_web":true,"needs_user_data":false,"confidence":0.95,"decision_risk":"low","info_sufficiency":"sufficient","clarify_question":null}',
             "",
             'Query: "How much did I spend last month?"',
-            'Response: {"intent":"ask_personalized","intent_type":"exploratory","emotional_state":"neutral","needs_web":false,"needs_user_data":true,"confidence":0.95}',
+            'Response: {"intent":"ask_personalized","intent_type":"exploratory","emotional_state":"neutral","needs_web":false,"needs_user_data":true,"confidence":0.95,"decision_risk":"low","info_sufficiency":"sufficient","clarify_question":null}',
             "",
             'Query: "Tell me about investing!"',
-            'Response: {"intent":"ask_personalized","intent_type":"exploratory","emotional_state":"neutral","needs_web":false,"needs_user_data":true,"confidence":0.9}',
+            'Response: {"intent":"ask_personalized","intent_type":"exploratory","emotional_state":"neutral","needs_web":false,"needs_user_data":true,"confidence":0.9,"decision_risk":"low","info_sufficiency":"sufficient","clarify_question":null}',
             "",
             'Query: "Can I afford to go Italy trip?"',
-            'Response: {"intent":"ask_personalized","intent_type":"actionable","emotional_state":"neutral","needs_web":false,"needs_user_data":true,"confidence":0.95}',
+            'Response: {"intent":"ask_personalized","intent_type":"actionable","emotional_state":"neutral","needs_web":false,"needs_user_data":true,"confidence":0.95,"decision_risk":"low","info_sufficiency":"sufficient","clarify_question":null}',
             "",
             'Query: "I\'m worried about my debt"',
-            'Response: {"intent":"ask_personalized","intent_type":"emotional_support","emotional_state":"anxious","needs_web":false,"needs_user_data":true,"confidence":0.9}',
+            'Response: {"intent":"ask_personalized","intent_type":"emotional_support","emotional_state":"anxious","needs_web":false,"needs_user_data":true,"confidence":0.9,"decision_risk":"low","info_sufficiency":"sufficient","clarify_question":null}',
             "",
             'Query: "I can\'t pay my rent this month"',
-            'Response: {"intent":"ask_personalized","intent_type":"crisis","emotional_state":"panicked","needs_web":false,"needs_user_data":true,"confidence":0.95}',
+            'Response: {"intent":"ask_personalized","intent_type":"crisis","emotional_state":"panicked","needs_web":false,"needs_user_data":true,"confidence":0.95,"decision_risk":"medium","info_sufficiency":"sufficient","clarify_question":null}',
+            "",
+            'Query: "Should I quit my job and go freelance?"',
+            'Response: {"intent":"ask_personalized","intent_type":"actionable","emotional_state":"neutral","needs_web":false,"needs_user_data":true,"confidence":0.9,"decision_risk":"high","info_sufficiency":"insufficient","clarify_question":"Is your freelance income likely to be steady within 1-2 months, or uncertain for a while?"}',
+            "",
+            'Query: "I want to buy a second house as an investment"',
+            'Response: {"intent":"ask_personalized","intent_type":"actionable","emotional_state":"neutral","needs_web":false,"needs_user_data":true,"confidence":0.9,"decision_risk":"high","info_sufficiency":"insufficient","clarify_question":"Is this home for living in, renting out, or long-term appreciation?"}',
             "",
             'Query: "I want to save $5000 for a house"',
-            'Response: {"intent":"goal_conversation","intent_type":"actionable","emotional_state":"neutral","needs_web":false,"needs_user_data":true,"confidence":0.95}',
+            'Response: {"intent":"goal_conversation","intent_type":"actionable","emotional_state":"neutral","needs_web":false,"needs_user_data":true,"confidence":0.95,"decision_risk":"low","info_sufficiency":"sufficient","clarify_question":null}',
             "",
             'Query: "What\'s the weather?"',
-            'Response: {"intent":"off_topic","intent_type":null,"emotional_state":"neutral","needs_web":false,"needs_user_data":false,"confidence":0.95}',
+            'Response: {"intent":"off_topic","intent_type":null,"emotional_state":"neutral","needs_web":false,"needs_user_data":false,"confidence":0.95,"decision_risk":"low","info_sufficiency":"sufficient","clarify_question":null}',
             "",
             'Query: "I feel stupid for spending so much on that"',
-            'Response: {"intent":"ask_personalized","intent_type":"emotional_support","emotional_state":"ashamed","needs_web":false,"needs_user_data":true,"confidence":0.9}',
+            'Response: {"intent":"ask_personalized","intent_type":"emotional_support","emotional_state":"ashamed","needs_web":false,"needs_user_data":true,"confidence":0.9,"decision_risk":"low","info_sufficiency":"sufficient","clarify_question":null}',
             "",
             'Query: "What about Apple stock?"',
-            'Response: {"intent":"stock_query","intent_type":"exploratory","emotional_state":"neutral","needs_web":false,"needs_user_data":false,"ticker":"AAPL","entities":["AAPL"],"confidence":0.95}',
+            'Response: {"intent":"stock_query","intent_type":"exploratory","emotional_state":"neutral","needs_web":false,"needs_user_data":false,"ticker":"AAPL","entities":["AAPL"],"confidence":0.95,"decision_risk":"low","info_sufficiency":"sufficient","clarify_question":null}',
             "",
             'Query: "Tell me about TSLA"',
-            'Response: {"intent":"stock_query","intent_type":"exploratory","emotional_state":"neutral","needs_web":false,"needs_user_data":false,"ticker":"TSLA","entities":["TSLA"],"confidence":0.98}',
+            'Response: {"intent":"stock_query","intent_type":"exploratory","emotional_state":"neutral","needs_web":false,"needs_user_data":false,"ticker":"TSLA","entities":["TSLA"],"confidence":0.98,"decision_risk":"low","info_sufficiency":"sufficient","clarify_question":null}',
             "",
             'Query: "Should I buy Tesla?"',
-            'Response: {"intent":"stock_query","intent_type":"actionable","emotional_state":"neutral","needs_web":false,"needs_user_data":true,"ticker":"TSLA","entities":["TSLA"],"confidence":0.9}',
+            'Response: {"intent":"stock_query","intent_type":"actionable","emotional_state":"neutral","needs_web":false,"needs_user_data":true,"ticker":"TSLA","entities":["TSLA"],"confidence":0.9,"decision_risk":"medium","info_sufficiency":"sufficient","clarify_question":null}',
             "",
             'Query: "What\'s Apple doing?"',
-            'Response: {"intent":"stock_query","intent_type":"exploratory","emotional_state":"neutral","needs_web":false,"needs_user_data":false,"ticker":"AAPL","entities":["AAPL"],"confidence":0.75}',
+            'Response: {"intent":"stock_query","intent_type":"exploratory","emotional_state":"neutral","needs_web":false,"needs_user_data":false,"ticker":"AAPL","entities":["AAPL"],"confidence":0.75,"decision_risk":"low","info_sufficiency":"sufficient","clarify_question":null}',
             "",
             'Query: "Tell me about the stock market"',
-            'Response: {"intent":"ask_personalized","intent_type":"exploratory","emotional_state":"neutral","needs_web":true,"needs_user_data":false,"ticker":null,"entities":[],"confidence":0.9}',
+            'Response: {"intent":"ask_personalized","intent_type":"exploratory","emotional_state":"neutral","needs_web":true,"needs_user_data":false,"ticker":null,"entities":[],"confidence":0.9,"decision_risk":"low","info_sufficiency":"sufficient","clarify_question":null}',
             "",
             'Query: "What stocks should I buy?"',
-            'Response: {"intent":"ask_personalized","intent_type":"actionable","emotional_state":"neutral","needs_web":false,"needs_user_data":true,"ticker":null,"entities":[],"confidence":0.9}',
+            'Response: {"intent":"ask_personalized","intent_type":"actionable","emotional_state":"neutral","needs_web":false,"needs_user_data":true,"ticker":null,"entities":[],"confidence":0.9,"decision_risk":"medium","info_sufficiency":"partial","clarify_question":null}',
             "",
             'Query: "do an analysis on micron tech stock"',
-            'Response: {"intent":"stock_query","intent_type":"exploratory","emotional_state":"neutral","needs_web":false,"needs_user_data":false,"ticker":"MU","entities":["MU"],"confidence":0.9}',
+            'Response: {"intent":"stock_query","intent_type":"exploratory","emotional_state":"neutral","needs_web":false,"needs_user_data":false,"ticker":"MU","entities":["MU"],"confidence":0.9,"decision_risk":"low","info_sufficiency":"sufficient","clarify_question":null}',
             "",
             'Query: "Analyze Intel Corporation for me"',
-            'Response: {"intent":"stock_query","intent_type":"exploratory","emotional_state":"neutral","needs_web":false,"needs_user_data":false,"ticker":"INTC","entities":["INTC"],"confidence":0.9}',
+            'Response: {"intent":"stock_query","intent_type":"exploratory","emotional_state":"neutral","needs_web":false,"needs_user_data":false,"ticker":"INTC","entities":["INTC"],"confidence":0.9,"decision_risk":"low","info_sufficiency":"sufficient","clarify_question":null}',
             "",
             'Query: "Do a analysis on micron stock"',
-            'Response: {"intent":"stock_query","intent_type":"exploratory","emotional_state":"neutral","needs_web":false,"needs_user_data":false,"ticker":"MU","entities":["MU"],"confidence":0.9}',
+            'Response: {"intent":"stock_query","intent_type":"exploratory","emotional_state":"neutral","needs_web":false,"needs_user_data":false,"ticker":"MU","entities":["MU"],"confidence":0.9,"decision_risk":"low","info_sufficiency":"sufficient","clarify_question":null}',
             "",
             'Query: "Tell me about Qualcomm"',
-            'Response: {"intent":"stock_query","intent_type":"exploratory","emotional_state":"neutral","needs_web":false,"needs_user_data":false,"ticker":"QCOM","entities":["QCOM"],"confidence":0.9}',
+            'Response: {"intent":"stock_query","intent_type":"exploratory","emotional_state":"neutral","needs_web":false,"needs_user_data":false,"ticker":"QCOM","entities":["QCOM"],"confidence":0.9,"decision_risk":"low","info_sufficiency":"sufficient","clarify_question":null}',
             "",
             'Query: "What about Broadcom stock?"',
-            'Response: {"intent":"stock_query","intent_type":"exploratory","emotional_state":"neutral","needs_web":false,"needs_user_data":false,"ticker":"AVGO","entities":["AVGO"],"confidence":0.9}',
+            'Response: {"intent":"stock_query","intent_type":"exploratory","emotional_state":"neutral","needs_web":false,"needs_user_data":false,"ticker":"AVGO","entities":["AVGO"],"confidence":0.9,"decision_risk":"low","info_sufficiency":"sufficient","clarify_question":null}',
             "",
             "=== OUTPUT FORMAT ===",
             "CRITICAL: You MUST return ONLY valid JSON. No markdown, no code fences, no extra text, no comments.",
             "The JSON must be parseable by JSON.parse(). Follow this EXACT structure:",
             "",
-            '{"intent":"ask_personalized","intent_type":"exploratory","emotional_state":"neutral","needs_web":false,"needs_user_data":true,"state":null,"entities":[],"ticker":null,"confidence":0.95}',
+            '{"intent":"ask_personalized","intent_type":"exploratory","emotional_state":"neutral","needs_web":false,"needs_user_data":true,"state":null,"entities":[],"ticker":null,"confidence":0.95,"decision_risk":"low","info_sufficiency":"sufficient","clarify_question":null}',
             "",
             "Valid JSON format rules:",
             "- Use double quotes for all strings",
@@ -5374,6 +5228,9 @@ async function handleClassify(message, context, conversationContext = null) {
             "- entities: REQUIRED array (empty array [] if none, or ticker symbols if stock_query)",
             "- ticker: string or null (ticker symbol like 'AAPL', 'TSLA', or null if not stock_query or ambiguous)",
             "- confidence: REQUIRED number (0.0-1.0)",
+            "- decision_risk: REQUIRED string (low|medium|high)",
+            "- info_sufficiency: REQUIRED string (sufficient|partial|insufficient)",
+            "- clarify_question: string or null (clarification question if info_sufficiency is insufficient, null otherwise)",
             "",
             "TICKER EXTRACTION RULES:",
             "- For stock_query intent, extract ticker symbol from message",
@@ -5507,6 +5364,9 @@ async function handleClassify(message, context, conversationContext = null) {
         entities: [],
         ticker: null,
         confidence: 0.8,
+        decision_risk: "low",
+        info_sufficiency: "sufficient",
+        clarify_question: null,
         fallback: true,
       };
     }
@@ -5522,6 +5382,30 @@ async function handleClassify(message, context, conversationContext = null) {
       out.entities.length === 0
     ) {
       out.entities = [out.ticker];
+    }
+    // Validate new decision gate fields
+    if (
+      !out.decision_risk ||
+      !["low", "medium", "high"].includes(out.decision_risk)
+    ) {
+      console.log("⚠️ [FINNY] Invalid decision_risk, defaulting to low");
+      out.decision_risk = "low";
+    }
+    if (
+      !out.info_sufficiency ||
+      !["sufficient", "partial", "insufficient"].includes(out.info_sufficiency)
+    ) {
+      console.log(
+        "⚠️ [FINNY] Invalid info_sufficiency, defaulting to sufficient"
+      );
+      out.info_sufficiency = "sufficient";
+    }
+    if (
+      out.clarify_question !== null &&
+      typeof out.clarify_question !== "string"
+    ) {
+      console.log("⚠️ [FINNY] Invalid clarify_question, defaulting to null");
+      out.clarify_question = null;
     }
 
     // Log the classification
@@ -5539,27 +5423,8 @@ async function handleClassify(message, context, conversationContext = null) {
       classification_result: out,
     };
 
-    // CRITICAL: Never cache heuristic results - ensure out doesn't have heuristic flag
-    if (out.hasOwnProperty("heuristic")) {
-      console.log(
-        "⚠️ [FINNY] Removing heuristic flag from LLM result before caching"
-      );
-      delete out.heuristic;
-    }
-
-    // Cache the result for future use
-    setCachedClassification(text, out);
-
     // Log conversation asynchronously to reduce latency
     setImmediate(() => logConversation(conversationData));
-
-    // Final safety check before returning
-    if (out.hasOwnProperty("heuristic") && out.heuristic) {
-      console.log(
-        "🚨 [FINNY] CRITICAL: LLM returned heuristic result! Removing flag."
-      );
-      delete out.heuristic;
-    }
 
     return out;
   } catch (e) {

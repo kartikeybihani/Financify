@@ -1046,7 +1046,23 @@ export const useChat = () => {
       });
 
       let classifyData = classifyRes ? await classifyRes.json() : { intent: "goal" };
-      
+
+      // Log classification results with new decision gate fields
+      if (classifyRes && classifyData) {
+        logger.info("🎯 [CLASSIFICATION] Result:", {
+          intent: classifyData.intent,
+          intent_type: classifyData.intent_type || null,
+          emotional_state: classifyData.emotional_state || "neutral",
+          decision_risk: classifyData.decision_risk || "low",
+          info_sufficiency: classifyData.info_sufficiency || "sufficient",
+          clarify_question: classifyData.clarify_question || null,
+          needs_web: classifyData.needs_web || false,
+          needs_user_data: classifyData.needs_user_data || false,
+          confidence: classifyData.confidence || 0.0,
+          ticker: classifyData.ticker || null,
+        });
+      }
+
       // Check if API returned "Please log in" - indicates stale/invalid token
       if (classifyRes && classifyData.message && 
           (classifyData.message.toLowerCase().includes("please log in") || 
