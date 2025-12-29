@@ -14,7 +14,7 @@ import { detectStockCandidate } from "../lib/stocks.js";
 // Configuration
 const OPENROUTER_API_KEY =
   process.env.OPENROUTER_GROK_KEY ||
-  "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";
+  "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";
 const OPENROUTER_MODEL = "meta-llama/llama-3.3-70b-instruct:free";
 const SMALLER_MODEL = "meta-llama/llama-3.3-70b-instruct:free";
 
@@ -140,16 +140,33 @@ async function handleClassify(message, context, conversationContext = null) {
             "- High-risk decision with no timeline, no income info, no purpose",
             "",
             "=== CLARIFICATION QUESTION GENERATION ===",
-            "If info_sufficiency is insufficient, generate exactly ONE multiple-choice style question:",
+            "CRITICAL: Finny already has access to user's financial data (income, net worth, emergency fund, accounts, spending, etc.). DO NOT ask about financial data.",
+            "",
+            "Only ask about INTENT, PURPOSE, TIMELINE, or EXECUTION PLAN:",
+            "- Intent: Why are they making this decision?",
+            "- Purpose: What will this be used for? (investment vs personal use)",
+            "- Timeline: When are they planning to execute?",
+            "- Plan: How do they plan to execute this?",
+            "",
+            "Rules:",
+            "- Generate exactly ONE multiple-choice style question",
             "- No 'why' questions",
             "- No two questions",
             "- No long preamble",
             "- Focus on unlocking the next step",
             "",
-            "Examples:",
-            "- Quit job: 'Is your freelance income likely to be steady within 1-2 months, or uncertain for a while?'",
-            "- Second house: 'Is this home for living in, renting out, or long-term appreciation?'",
-            "- Car purchase: 'What's your target monthly payment, or do you have a specific car price in mind?'",
+            "Examples (GOOD - ask about intent/purpose/timeline):",
+            "- Quit job: 'What's your plan for generating freelance income - do you have clients lined up, or will you be building from scratch?'",
+            "- Second house: 'Are you buying this for investment (renting out), personal use, or long-term appreciation?'",
+            "- Car purchase: 'What's your primary use case - daily commute, weekend trips, or something else?'",
+            "- Relocate: 'What's your timeline - are you planning to move immediately, or in a few months?'",
+            "",
+            "DO NOT ask (Finny already knows this):",
+            "- 'Do you have an emergency fund?' (Finny knows this)",
+            "- 'What's your income?' (Finny knows this)",
+            "- 'What's your net worth?' (Finny knows this)",
+            "- 'How much do you have saved?' (Finny knows this)",
+            "- 'What are your monthly expenses?' (Finny knows this)",
             "",
             "=== CRITICAL CLASSIFICATION RULES ===",
             "",
