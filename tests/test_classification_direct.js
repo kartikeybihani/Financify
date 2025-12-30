@@ -38,7 +38,7 @@ async function handleClassify(message, context, conversationContext = null) {
       confidence: 0.1,
       decision_risk: "low",
       info_sufficiency: "sufficient",
-      clarify_question: null,
+      clarification_type: null,
       fallback: true,
     };
   }
@@ -139,34 +139,30 @@ async function handleClassify(message, context, conversationContext = null) {
             "- No financial data AND no context about situation",
             "- High-risk decision with no timeline, no income info, no purpose",
             "",
-            "=== CLARIFICATION QUESTION GENERATION ===",
-            "CRITICAL: Finny already has access to user's financial data (income, net worth, emergency fund, accounts, spending, etc.). DO NOT ask about financial data.",
+            "=== CLARIFICATION TYPE DETECTION ===",
+            "If clarification is needed (high risk + insufficient info), output a clarification_type, NOT a full question.",
+            "The actual question will be generated later with financial context.",
             "",
-            "Only ask about INTENT, PURPOSE, TIMELINE, or EXECUTION PLAN:",
-            "- Intent: Why are they making this decision?",
-            "- Purpose: What will this be used for? (investment vs personal use)",
-            "- Timeline: When are they planning to execute?",
-            "- Plan: How do they plan to execute this?",
+            "Output clarification_type as a string identifier indicating WHAT needs clarification:",
+            "- income_replacement: Missing plan for replacing income (quit job, freelance, etc.)",
+            "- goal_timeline: Missing timeline for goal or decision",
+            "- intent_motivation: Missing reason/motivation for decision",
+            "- purpose_use: Missing purpose or use case (investment vs personal, etc.)",
+            "- execution_plan: Missing how they plan to execute",
+            "- target_amount: Missing specific amount or target",
+            "- location_context: Missing location or relocation details",
             "",
             "Rules:",
-            "- Generate exactly ONE multiple-choice style question",
-            "- No 'why' questions",
-            "- No two questions",
-            "- No long preamble",
-            "- Focus on unlocking the next step",
+            "- Only output clarification_type if info_sufficiency is 'insufficient' AND decision_risk is 'high'",
+            "- Output null if no clarification needed",
+            "- Do NOT generate the actual question text here",
             "",
-            "Examples (GOOD - ask about intent/purpose/timeline):",
-            "- Quit job: 'What's your plan for generating freelance income - do you have clients lined up, or will you be building from scratch?'",
-            "- Second house: 'Are you buying this for investment (renting out), personal use, or long-term appreciation?'",
-            "- Car purchase: 'What's your primary use case - daily commute, weekend trips, or something else?'",
-            "- Relocate: 'What's your timeline - are you planning to move immediately, or in a few months?'",
-            "",
-            "DO NOT ask (Finny already knows this):",
-            "- 'Do you have an emergency fund?' (Finny knows this)",
-            "- 'What's your income?' (Finny knows this)",
-            "- 'What's your net worth?' (Finny knows this)",
-            "- 'How much do you have saved?' (Finny knows this)",
-            "- 'What are your monthly expenses?' (Finny knows this)",
+            "Examples:",
+            "- Quit job/freelance → clarification_type: 'income_replacement'",
+            "- Second house → clarification_type: 'purpose_use'",
+            "- Car purchase → clarification_type: 'purpose_use'",
+            "- Relocate → clarification_type: 'goal_timeline' or 'location_context'",
+            "- Business start → clarification_type: 'execution_plan'",
             "",
             "=== CRITICAL CLASSIFICATION RULES ===",
             "",
@@ -291,7 +287,7 @@ async function handleClassify(message, context, conversationContext = null) {
             "CRITICAL: You MUST return ONLY valid JSON. No markdown, no code fences, no extra text, no comments.",
             "The JSON must be parseable by JSON.parse(). Follow this EXACT structure:",
             "",
-            '{"intent":"ask_personalized","intent_type":"exploratory","emotional_state":"neutral","needs_web":false,"needs_user_data":true,"state":null,"entities":[],"ticker":null,"confidence":0.95,"decision_risk":"low","info_sufficiency":"sufficient","clarify_question":null}',
+            '{"intent":"ask_personalized","intent_type":"exploratory","emotional_state":"neutral","needs_web":false,"needs_user_data":true,"state":null,"entities":[],"ticker":null,"confidence":0.95,"decision_risk":"low","info_sufficiency":"sufficient","clarification_type":null}',
             "",
             "Valid JSON format rules:",
             "- Use double quotes for all strings",
@@ -313,7 +309,7 @@ async function handleClassify(message, context, conversationContext = null) {
             "- confidence: REQUIRED number (0.0-1.0)",
             "- decision_risk: REQUIRED string (low|medium|high)",
             "- info_sufficiency: REQUIRED string (sufficient|partial|insufficient)",
-            "- clarify_question: string or null (clarification question if info_sufficiency is insufficient, null otherwise)",
+            "- clarification_type: string or null (type of clarification needed if info_sufficiency is insufficient, null otherwise)",
             "",
             "TICKER EXTRACTION RULES:",
             "- For stock_query intent, extract ticker symbol from message",
@@ -490,11 +486,22 @@ async function handleClassify(message, context, conversationContext = null) {
       out.info_sufficiency = "sufficient";
     }
     if (
-      out.clarify_question !== null &&
-      typeof out.clarify_question !== "string"
+      out.clarification_type !== null &&
+      out.clarification_type !== undefined &&
+      typeof out.clarification_type !== "string"
     ) {
-      console.log("⚠️ [TEST] Invalid clarify_question, defaulting to null");
-      out.clarify_question = null;
+      console.log("⚠️ [TEST] Invalid clarification_type, defaulting to null");
+      out.clarification_type = null;
+    }
+    // Handle legacy clarify_question field if present (for backward compatibility)
+    if (
+      out.clarify_question !== undefined &&
+      out.clarification_type === undefined
+    ) {
+      console.log(
+        "⚠️ [TEST] Legacy clarify_question field detected, ignoring (needs clarification_type)"
+      );
+      out.clarification_type = null;
     }
 
     return out;
@@ -523,7 +530,7 @@ async function handleClassify(message, context, conversationContext = null) {
       confidence: 0.1,
       decision_risk: "low",
       info_sufficiency: "sufficient",
-      clarify_question: null,
+      clarification_type: null,
       fallback: true,
       timeout_fallback: e?.message?.includes("timeout") || false,
     };
@@ -555,8 +562,34 @@ async function testSingleMessage(message) {
     console.log(
       `  Info Sufficiency: ${classification.info_sufficiency || "sufficient"}`
     );
-    if (classification.clarify_question) {
-      console.log(`  Clarify Question: ${classification.clarify_question}`);
+    if (classification.clarification_type) {
+      console.log(`  Clarification Type: ${classification.clarification_type}`);
+
+      // Generate the actual clarifying question using mock financial data
+      // This simulates what happens in production after financial context is loaded
+      const mockFinancialData = {
+        base: {
+          liquidAssets: 25000, // $25k in liquid assets
+          netWorth: 50000,
+          totalLiabilities: 10000,
+          monthlyExpenses: 3000, // $3k/month expenses = ~8.3 months runway
+          accounts: [],
+          recentTransactions: [],
+        },
+      };
+
+      const clarifyingQuestion = buildClarificationQuestion({
+        clarification_type: classification.clarification_type,
+        financialData: mockFinancialData,
+        userMessage: message,
+        userProfile: null,
+        emotional_state: classification.emotional_state || "neutral",
+        style: "conversational", // Default for testing, can be made configurable
+      });
+
+      if (clarifyingQuestion) {
+        console.log(`  💬 Clarifying Question: ${clarifyingQuestion}`);
+      }
     }
     console.log(`  needs_web: ${classification.needs_web}`);
     console.log(`  needs_user_data: ${classification.needs_user_data}`);
@@ -818,7 +851,8 @@ if (isMainModule) {
     userMessage &&
     userMessage !== "hardball" &&
     userMessage !== "stock" &&
-    userMessage !== "curveball"
+    userMessage !== "curveball" &&
+    userMessage !== "clarify"
   ) {
     // User provided a query string
     console.log("🚀 Testing Single Statement");
@@ -843,6 +877,17 @@ if (isMainModule) {
       })
       .catch((error) => {
         console.error("❌ Hardball tests failed:", error);
+        process.exit(1);
+      });
+  } else if (userMessage === "clarify" || testType === "clarify") {
+    console.log("🧪 Running clarification question tests...");
+    testClarificationQuestions()
+      .then(() => {
+        console.log("\n✅ Clarification tests completed");
+        process.exit(0);
+      })
+      .catch((error) => {
+        console.error("❌ Clarification tests failed:", error);
         process.exit(1);
       });
   } else if (userMessage === "stock" || testType === "stock") {
@@ -870,7 +915,400 @@ if (isMainModule) {
   }
 }
 
-export { testSingleMessage, handleClassify, runStockQueryTests };
+// Test clarification questions
+async function testClarificationQuestions() {
+  const shouldClarify = [
+    {
+      q: "Should I quit my job and go freelance?",
+      expected: {
+        decision_risk: "high",
+        info_sufficiency: "insufficient",
+        needs_clarification: true,
+      },
+      note: "High-risk decision, missing freelance income plan",
+    },
+    {
+      q: "I'm thinking of buying a 3rd house in NYC, can I do it?",
+      expected: {
+        decision_risk: "high",
+        info_sufficiency: "insufficient",
+        needs_clarification: true,
+      },
+      note: "High-risk decision, missing purpose (investment vs personal)",
+    },
+    {
+      q: "Can I quit my job to start a business?",
+      expected: {
+        decision_risk: "high",
+        info_sufficiency: "insufficient",
+        needs_clarification: true,
+      },
+      note: "High-risk decision, missing business plan/timeline",
+    },
+    {
+      q: "Should I relocate to another city without a job lined up?",
+      expected: {
+        decision_risk: "high",
+        info_sufficiency: "insufficient",
+        needs_clarification: true,
+      },
+      note: "High-risk decision, missing timeline/plan",
+    },
+    {
+      q: "I want to buy a second property as an investment",
+      expected: {
+        decision_risk: "high",
+        info_sufficiency: "insufficient",
+        needs_clarification: true,
+      },
+      note: "High-risk decision, missing purpose details",
+    },
+    {
+      q: "Can I afford to quit my job right now?",
+      expected: {
+        decision_risk: "high",
+        info_sufficiency: "insufficient",
+        needs_clarification: true,
+      },
+      note: "High-risk decision, missing income replacement plan",
+    },
+    {
+      q: "Should I go freelance full-time?",
+      expected: {
+        decision_risk: "high",
+        info_sufficiency: "insufficient",
+        needs_clarification: true,
+      },
+      note: "High-risk decision, missing client pipeline info",
+    },
+    {
+      q: "I'm considering buying another house",
+      expected: {
+        decision_risk: "high",
+        info_sufficiency: "insufficient",
+        needs_clarification: true,
+      },
+      note: "High-risk decision, missing purpose and financing plan",
+    },
+    {
+      q: "Can I leave my job to travel for a year?",
+      expected: {
+        decision_risk: "high",
+        info_sufficiency: "insufficient",
+        needs_clarification: true,
+      },
+      note: "High-risk decision, missing timeline and return plan",
+    },
+    {
+      q: "Should I start my own company?",
+      expected: {
+        decision_risk: "high",
+        info_sufficiency: "insufficient",
+        needs_clarification: true,
+      },
+      note: "High-risk decision, missing business model/timeline",
+    },
+  ];
+
+  const shouldNotClarify = [
+    {
+      q: "How much did I spend last month?",
+      expected: {
+        decision_risk: "low",
+        info_sufficiency: "sufficient",
+        needs_clarification: false,
+      },
+      note: "Low-risk query, Finny has spending data",
+    },
+    {
+      q: "What's my net worth?",
+      expected: {
+        decision_risk: "low",
+        info_sufficiency: "sufficient",
+        needs_clarification: false,
+      },
+      note: "Low-risk query, Finny has net worth data",
+    },
+    {
+      q: "Can I afford a $500 trip to Italy?",
+      expected: {
+        decision_risk: "low",
+        info_sufficiency: "sufficient",
+        needs_clarification: false,
+      },
+      note: "Low-risk query, Finny can calculate affordability",
+    },
+    {
+      q: "Tell me about investing",
+      expected: {
+        decision_risk: "low",
+        info_sufficiency: "sufficient",
+        needs_clarification: false,
+      },
+      note: "Low-risk educational query",
+    },
+    {
+      q: "How much should I save for retirement?",
+      expected: {
+        decision_risk: "low",
+        info_sufficiency: "sufficient",
+        needs_clarification: false,
+      },
+      note: "Low-risk planning query, Finny has financial data",
+    },
+    {
+      q: "What's a good emergency fund amount for me?",
+      expected: {
+        decision_risk: "low",
+        info_sufficiency: "sufficient",
+        needs_clarification: false,
+      },
+      note: "Low-risk advice query, Finny has expense data",
+    },
+    {
+      q: "Should I pay off my credit card debt?",
+      expected: {
+        decision_risk: "medium",
+        info_sufficiency: "sufficient",
+        needs_clarification: false,
+      },
+      note: "Medium-risk query, Finny has debt data",
+    },
+    {
+      q: "How can I save more money?",
+      expected: {
+        decision_risk: "low",
+        info_sufficiency: "sufficient",
+        needs_clarification: false,
+      },
+      note: "Low-risk optimization query",
+    },
+    {
+      q: "What about Apple stock?",
+      expected: {
+        decision_risk: "low",
+        info_sufficiency: "sufficient",
+        needs_clarification: false,
+      },
+      note: "Low-risk stock query, specific ticker provided",
+    },
+    {
+      q: "I want to save $5000 for a house",
+      expected: {
+        decision_risk: "low",
+        info_sufficiency: "sufficient",
+        needs_clarification: false,
+      },
+      note: "Low-risk goal creation, all info provided",
+    },
+  ];
+
+  console.log("\n" + "=".repeat(80));
+  console.log("🧪 CLARIFICATION QUESTION TESTS");
+  console.log("=".repeat(80));
+
+  let clarifyPass = 0;
+  let clarifyTotal = shouldClarify.length;
+  let noClarifyPass = 0;
+  let noClarifyTotal = shouldNotClarify.length;
+
+  // Test questions that SHOULD trigger clarification
+  console.log("\n📋 TESTING QUESTIONS THAT SHOULD TRIGGER CLARIFICATION:");
+  console.log("-".repeat(80));
+  for (let i = 0; i < shouldClarify.length; i++) {
+    const test = shouldClarify[i];
+    console.log(`\n${i + 1}. "${test.q}"`);
+    console.log(
+      `   Expected: decision_risk=${test.expected.decision_risk}, info_sufficiency=${test.expected.info_sufficiency}, needs_clarification=${test.expected.needs_clarification}`
+    );
+    console.log(`   Note: ${test.note}`);
+
+    try {
+      const { classification } = await testSingleMessage(test.q);
+
+      const decisionRisk = classification?.decision_risk || "low";
+      const infoSufficiency = classification?.info_sufficiency || "sufficient";
+      const clarificationType = classification?.clarification_type;
+
+      // Evaluate decision confidence
+      const decisionConfidence = evaluateDecisionConfidence({
+        decision_risk: decisionRisk,
+        info_sufficiency: infoSufficiency,
+        clarification_type: clarificationType,
+      });
+
+      const needsClarification = decisionConfidence.needs_clarification;
+
+      const riskMatch =
+        decisionRisk === test.expected.decision_risk ||
+        (test.expected.decision_risk === "high" && decisionRisk === "high");
+      const sufficiencyMatch =
+        infoSufficiency === test.expected.info_sufficiency ||
+        (test.expected.info_sufficiency === "insufficient" &&
+          infoSufficiency !== "sufficient");
+      const clarificationMatch =
+        needsClarification === test.expected.needs_clarification;
+
+      const isCorrect = riskMatch && sufficiencyMatch && clarificationMatch;
+
+      if (isCorrect) {
+        clarifyPass++;
+        console.log(`   ✅ PASS`);
+        console.log(
+          `      Decision Risk: ${decisionRisk} (expected: ${test.expected.decision_risk})`
+        );
+        console.log(
+          `      Info Sufficiency: ${infoSufficiency} (expected: ${test.expected.info_sufficiency})`
+        );
+        console.log(
+          `      Needs Clarification: ${needsClarification} (expected: ${test.expected.needs_clarification})`
+        );
+        if (clarificationType) {
+          console.log(`      Clarification Type: ${clarificationType}`);
+        }
+      } else {
+        console.log(`   ❌ FAIL`);
+        if (!riskMatch) {
+          console.log(
+            `      Decision Risk mismatch: got ${decisionRisk}, expected ${test.expected.decision_risk}`
+          );
+        }
+        if (!sufficiencyMatch) {
+          console.log(
+            `      Info Sufficiency mismatch: got ${infoSufficiency}, expected ${test.expected.info_sufficiency}`
+          );
+        }
+        if (!clarificationMatch) {
+          console.log(
+            `      Needs Clarification mismatch: got ${needsClarification}, expected ${test.expected.needs_clarification}`
+          );
+        }
+        console.log(
+          `      Full classification:`,
+          JSON.stringify(classification, null, 2)
+        );
+      }
+    } catch (error) {
+      console.log(`   ❌ ERROR: ${error.message}`);
+    }
+  }
+
+  // Test questions that SHOULD NOT trigger clarification
+  console.log(
+    "\n\n📋 TESTING QUESTIONS THAT SHOULD NOT TRIGGER CLARIFICATION:"
+  );
+  console.log("-".repeat(80));
+  for (let i = 0; i < shouldNotClarify.length; i++) {
+    const test = shouldNotClarify[i];
+    console.log(`\n${i + 1}. "${test.q}"`);
+    console.log(
+      `   Expected: decision_risk=${test.expected.decision_risk}, info_sufficiency=${test.expected.info_sufficiency}, needs_clarification=${test.expected.needs_clarification}`
+    );
+    console.log(`   Note: ${test.note}`);
+
+    try {
+      const { classification } = await testSingleMessage(test.q);
+
+      const decisionRisk = classification?.decision_risk || "low";
+      const infoSufficiency = classification?.info_sufficiency || "sufficient";
+      const clarificationType = classification?.clarification_type;
+
+      // Evaluate decision confidence
+      const decisionConfidence = evaluateDecisionConfidence({
+        decision_risk: decisionRisk,
+        info_sufficiency: infoSufficiency,
+        clarification_type: clarificationType,
+      });
+
+      const needsClarification = decisionConfidence.needs_clarification;
+
+      const riskMatch =
+        decisionRisk === test.expected.decision_risk ||
+        (test.expected.decision_risk === "low" &&
+          ["low", "medium"].includes(decisionRisk));
+      const sufficiencyMatch =
+        infoSufficiency === test.expected.info_sufficiency ||
+        (test.expected.info_sufficiency === "sufficient" &&
+          infoSufficiency === "sufficient");
+      const clarificationMatch =
+        needsClarification === test.expected.needs_clarification;
+
+      const isCorrect = riskMatch && sufficiencyMatch && clarificationMatch;
+
+      if (isCorrect) {
+        noClarifyPass++;
+        console.log(`   ✅ PASS`);
+        console.log(
+          `      Decision Risk: ${decisionRisk} (expected: ${test.expected.decision_risk})`
+        );
+        console.log(
+          `      Info Sufficiency: ${infoSufficiency} (expected: ${test.expected.info_sufficiency})`
+        );
+        console.log(
+          `      Needs Clarification: ${needsClarification} (expected: ${test.expected.needs_clarification})`
+        );
+      } else {
+        console.log(`   ❌ FAIL`);
+        if (!riskMatch) {
+          console.log(
+            `      Decision Risk mismatch: got ${decisionRisk}, expected ${test.expected.decision_risk}`
+          );
+        }
+        if (!sufficiencyMatch) {
+          console.log(
+            `      Info Sufficiency mismatch: got ${infoSufficiency}, expected ${test.expected.info_sufficiency}`
+          );
+        }
+        if (!clarificationMatch) {
+          console.log(
+            `      Needs Clarification mismatch: got ${needsClarification}, expected ${test.expected.needs_clarification}`
+          );
+        }
+        console.log(
+          `      Full classification:`,
+          JSON.stringify(classification, null, 2)
+        );
+      }
+    } catch (error) {
+      console.log(`   ❌ ERROR: ${error.message}`);
+    }
+  }
+
+  console.log("\n" + "=".repeat(80));
+  console.log(`📊 TEST SUMMARY`);
+  console.log("=".repeat(80));
+  console.log(`Should Clarify: ${clarifyPass}/${clarifyTotal} passed`);
+  console.log(`Should NOT Clarify: ${noClarifyPass}/${noClarifyTotal} passed`);
+  console.log(
+    `Overall: ${clarifyPass + noClarifyPass}/${
+      clarifyTotal + noClarifyTotal
+    } passed`
+  );
+  console.log("=".repeat(80));
+
+  if (clarifyPass === clarifyTotal && noClarifyPass === noClarifyTotal) {
+    console.log("🎉 All clarification tests passed!");
+  } else {
+    console.log(
+      `⚠️  ${
+        clarifyTotal + noClarifyTotal - (clarifyPass + noClarifyPass)
+      } test(s) failed`
+    );
+  }
+}
+
+// Import evaluateDecisionConfidence and buildClarificationQuestion for testing
+import {
+  evaluateDecisionConfidence,
+  buildClarificationQuestion,
+} from "../lib/prompt_engine.js";
+
+export {
+  testSingleMessage,
+  handleClassify,
+  runStockQueryTests,
+  testClarificationQuestions,
+};
 
 // Curveball hard tests
 async function runCurveballTests() {

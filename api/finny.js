@@ -36,6 +36,7 @@ import {
   buildContextAwarePrompt,
   evaluateDecisionConfidence,
   buildClarificationPrompt,
+  buildClarificationQuestion,
 } from "../lib/prompt_engine.js";
 import {
   checkRateLimit,
@@ -2666,11 +2667,12 @@ async function handleAsk(
     }
 
     // 4.5) PHASE 1: Evaluate decision confidence (before prompt building)
-    // Classification now provides decision_risk, info_sufficiency, and clarify_question
+    // Classification now provides decision_risk, info_sufficiency, and clarification_type
+    // Note: We'll build the actual question AFTER financial context is loaded
     const decisionConfidence = evaluateDecisionConfidence({
       decision_risk: classificationResult?.decision_risk || "low",
       info_sufficiency: classificationResult?.info_sufficiency || "sufficient",
-      clarify_question: classificationResult?.clarify_question || null,
+      clarification_type: classificationResult?.clarification_type || null,
     });
 
     console.log(`\n🎯 [DECISION_CONFIDENCE] Evaluation:`);
@@ -2685,15 +2687,15 @@ async function handleAsk(
     console.log(
       `   └─ Needs Clarification: ${decisionConfidence.needs_clarification}`
     );
-    if (decisionConfidence.clarification_question) {
+    if (decisionConfidence.clarification_type) {
       console.log(
-        `   └─ Question: ${decisionConfidence.clarification_question}`
+        `   └─ Clarification Type: ${decisionConfidence.clarification_type}`
       );
     }
 
     // 5) Build context-aware prompt using new prompt engine
     // Pass finny_style directly to prompt engine (now handled early in prompt)
-    const finnyStyle = context.profile?.finny_style || null;
+    const finnyStyle = context.profile?.finny_style || "conversational";
 
     // Build feedback context if available (for prompt engine)
     let feedbackContext = null;
@@ -2719,14 +2721,36 @@ async function handleAsk(
     };
 
     // PHASE 1: Branching logic - clarification vs full prompt
+    // STEP 2: Build clarification question AFTER financial context is loaded
+    let clarificationQuestion = null;
+    if (
+      decisionConfidence.needs_clarification === true &&
+      decisionConfidence.clarification_type
+    ) {
+      clarificationQuestion = buildClarificationQuestion({
+        clarification_type: decisionConfidence.clarification_type,
+        financialData: financialDataForState,
+        userMessage: message,
+        userProfile: context.profile || null,
+        emotional_state: classificationResult?.emotional_state || "neutral",
+        style: finnyStyle || "conversational",
+      });
+      console.log(
+        `\n💬 [CLARIFICATION] Built context-aware question: ${clarificationQuestion}`
+      );
+    }
+
     let system;
     let responseType = "normal"; // Track response type for memory storage
 
-    if (decisionConfidence.needs_clarification === true) {
-      // Build minimal clarification prompt
+    if (
+      decisionConfidence.needs_clarification === true &&
+      clarificationQuestion
+    ) {
+      // Build minimal clarification prompt with context-aware question
       responseType = "clarification";
       system = buildClarificationPrompt(
-        decisionConfidence.clarification_question,
+        clarificationQuestion,
         finnyStyle || "conversational"
       );
       console.log(
@@ -5067,34 +5091,30 @@ async function handleClassify(message, context, conversationContext = null) {
             "- No financial data AND no context about situation",
             "- High-risk decision with no timeline, no income info, no purpose",
             "",
-            "=== CLARIFICATION QUESTION GENERATION ===",
-            "CRITICAL: Finny already has access to user's financial data (income, net worth, emergency fund, accounts, spending, etc.). DO NOT ask about financial data.",
+            "=== CLARIFICATION TYPE DETECTION ===",
+            "If clarification is needed (high risk + insufficient info), output a clarification_type, NOT a full question.",
+            "The actual question will be generated later with financial context.",
             "",
-            "Only ask about INTENT, PURPOSE, TIMELINE, or EXECUTION PLAN:",
-            "- Intent: Why are they making this decision?",
-            "- Purpose: What will this be used for? (investment vs personal use)",
-            "- Timeline: When are they planning to execute?",
-            "- Plan: How do they plan to execute this?",
+            "Output clarification_type as a string identifier indicating WHAT needs clarification:",
+            "- income_replacement: Missing plan for replacing income (quit job, freelance, etc.)",
+            "- goal_timeline: Missing timeline for goal or decision",
+            "- intent_motivation: Missing reason/motivation for decision",
+            "- purpose_use: Missing purpose or use case (investment vs personal, etc.)",
+            "- execution_plan: Missing how they plan to execute",
+            "- target_amount: Missing specific amount or target",
+            "- location_context: Missing location or relocation details",
             "",
             "Rules:",
-            "- Generate exactly ONE multiple-choice style question",
-            "- No 'why' questions",
-            "- No two questions",
-            "- No long preamble",
-            "- Focus on unlocking the next step",
+            "- Only output clarification_type if info_sufficiency is 'insufficient' AND decision_risk is 'high'",
+            "- Output null if no clarification needed",
+            "- Do NOT generate the actual question text here",
             "",
-            "Examples (GOOD - ask about intent/purpose/timeline):",
-            "- Quit job: 'What's your plan for generating freelance income - do you have clients lined up, or will you be building from scratch?'",
-            "- Second house: 'Are you buying this for investment (renting out), personal use, or long-term appreciation?'",
-            "- Car purchase: 'What's your primary use case - daily commute, weekend trips, or something else?'",
-            "- Relocate: 'What's your timeline - are you planning to move immediately, or in a few months?'",
-            "",
-            "DO NOT ask (Finny already knows this):",
-            "- 'Do you have an emergency fund?' (Finny knows this)",
-            "- 'What's your income?' (Finny knows this)",
-            "- 'What's your net worth?' (Finny knows this)",
-            "- 'How much do you have saved?' (Finny knows this)",
-            "- 'What are your monthly expenses?' (Finny knows this)",
+            "Examples:",
+            "- Quit job/freelance → clarification_type: 'income_replacement'",
+            "- Second house → clarification_type: 'purpose_use'",
+            "- Car purchase → clarification_type: 'purpose_use'",
+            "- Relocate → clarification_type: 'goal_timeline' or 'location_context'",
+            "- Business start → clarification_type: 'execution_plan'",
             "",
             "=== CRITICAL CLASSIFICATION RULES ===",
             "",
@@ -5174,10 +5194,10 @@ async function handleClassify(message, context, conversationContext = null) {
             'Response: {"intent":"ask_personalized","intent_type":"crisis","emotional_state":"panicked","needs_web":false,"needs_user_data":true,"confidence":0.95,"decision_risk":"medium","info_sufficiency":"sufficient","clarify_question":null}',
             "",
             'Query: "Should I quit my job and go freelance?"',
-            'Response: {"intent":"ask_personalized","intent_type":"actionable","emotional_state":"neutral","needs_web":false,"needs_user_data":true,"confidence":0.9,"decision_risk":"high","info_sufficiency":"insufficient","clarify_question":"What\'s your plan for generating freelance income - do you have clients lined up, or will you be building from scratch?"}',
+            'Response: {"intent":"ask_personalized","intent_type":"actionable","emotional_state":"neutral","needs_web":false,"needs_user_data":true,"confidence":0.9,"decision_risk":"high","info_sufficiency":"insufficient","clarification_type":"income_replacement"}',
             "",
             'Query: "I want to buy a second house as an investment"',
-            'Response: {"intent":"ask_personalized","intent_type":"actionable","emotional_state":"neutral","needs_web":false,"needs_user_data":true,"confidence":0.9,"decision_risk":"high","info_sufficiency":"insufficient","clarify_question":"Are you buying this for investment (renting out), personal use, or long-term appreciation?"}',
+            'Response: {"intent":"ask_personalized","intent_type":"actionable","emotional_state":"neutral","needs_web":false,"needs_user_data":true,"confidence":0.9,"decision_risk":"high","info_sufficiency":"insufficient","clarification_type":"purpose_use"}',
             "",
             'Query: "I want to save $5000 for a house"',
             'Response: {"intent":"goal_conversation","intent_type":"actionable","emotional_state":"neutral","needs_web":false,"needs_user_data":true,"confidence":0.95,"decision_risk":"low","info_sufficiency":"sufficient","clarify_question":null}',
@@ -5225,7 +5245,7 @@ async function handleClassify(message, context, conversationContext = null) {
             "CRITICAL: You MUST return ONLY valid JSON. No markdown, no code fences, no extra text, no comments.",
             "The JSON must be parseable by JSON.parse(). Follow this EXACT structure:",
             "",
-            '{"intent":"ask_personalized","intent_type":"exploratory","emotional_state":"neutral","needs_web":false,"needs_user_data":true,"state":null,"entities":[],"ticker":null,"confidence":0.95,"decision_risk":"low","info_sufficiency":"sufficient","clarify_question":null}',
+            '{"intent":"ask_personalized","intent_type":"exploratory","emotional_state":"neutral","needs_web":false,"needs_user_data":true,"state":null,"entities":[],"ticker":null,"confidence":0.95,"decision_risk":"low","info_sufficiency":"sufficient","clarification_type":null}',
             "",
             "Valid JSON format rules:",
             "- Use double quotes for all strings",
@@ -5247,7 +5267,7 @@ async function handleClassify(message, context, conversationContext = null) {
             "- confidence: REQUIRED number (0.0-1.0)",
             "- decision_risk: REQUIRED string (low|medium|high)",
             "- info_sufficiency: REQUIRED string (sufficient|partial|insufficient)",
-            "- clarify_question: string or null (clarification question if info_sufficiency is insufficient, null otherwise)",
+            "- clarification_type: string or null (type of clarification needed if info_sufficiency is insufficient, null otherwise)",
             "",
             "TICKER EXTRACTION RULES:",
             "- For stock_query intent, extract ticker symbol from message",
@@ -5418,11 +5438,23 @@ async function handleClassify(message, context, conversationContext = null) {
       out.info_sufficiency = "sufficient";
     }
     if (
-      out.clarify_question !== null &&
-      typeof out.clarify_question !== "string"
+      out.clarification_type !== null &&
+      out.clarification_type !== undefined &&
+      typeof out.clarification_type !== "string"
     ) {
-      console.log("⚠️ [FINNY] Invalid clarify_question, defaulting to null");
-      out.clarify_question = null;
+      console.log("⚠️ [FINNY] Invalid clarification_type, defaulting to null");
+      out.clarification_type = null;
+    }
+    // Handle legacy clarify_question field if present (for backward compatibility)
+    if (
+      out.clarify_question !== undefined &&
+      out.clarification_type === undefined
+    ) {
+      // If old field exists but new one doesn't, we can't use it (needs to be rebuilt with context)
+      console.log(
+        "⚠️ [FINNY] Legacy clarify_question field detected, ignoring (needs clarification_type)"
+      );
+      out.clarification_type = null;
     }
 
     // Log the classification
