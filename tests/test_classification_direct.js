@@ -578,7 +578,7 @@ async function testSingleMessage(message) {
         },
       };
 
-      const clarifyingQuestion = buildClarificationQuestion({
+      const clarifyingQuestion = await buildClarificationQuestion({
         clarification_type: classification.clarification_type,
         financialData: mockFinancialData,
         userMessage: message,

@@ -2727,7 +2727,7 @@ async function handleAsk(
       decisionConfidence.needs_clarification === true &&
       decisionConfidence.clarification_type
     ) {
-      clarificationQuestion = buildClarificationQuestion({
+      clarificationQuestion = await buildClarificationQuestion({
         clarification_type: decisionConfidence.clarification_type,
         financialData: financialDataForState,
         userMessage: message,
