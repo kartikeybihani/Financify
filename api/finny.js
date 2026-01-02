@@ -117,6 +117,8 @@ const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL;
 
 // Memory extraction model - small, fast, free
 const SMALLER_MODEL = "meta-llama/llama-3.3-70b-instruct:free";
+// Standard/premium fallback model for reliability on failures/timeouts
+const STANDARD_MODEL = "meta-llama/llama-3.1-8b-instruct"; // can be overridden in tests or env-driven callers
 
 // Session summarization model (LLM) via OpenRouter
 const SUMMARY_MODEL = "deepseek/deepseek-r1-0528-qwen3-8b:free";
@@ -1104,7 +1106,8 @@ export default async function handler(req, res) {
   let sessionState = getSessionState(finalUserId);
 
   // Load user profile, memory, and feedback patterns only when needed
-  // OPTIMIZED: Only load for "ask" action (not needed for classify or prebuild_context)
+  // UPDATED: Load memory + base pack for "classify" action (for clarifying questions with context)
+  // Full data loading for "ask" action
   let userMemory = { memories: [], totalCount: 0 };
   let userProfileData = {
     name: null,
@@ -1118,10 +1121,11 @@ export default async function handler(req, res) {
     patterns: {},
     deepInsights: [],
   };
+  let baseFinancialPack = null; // For clarifying questions
 
-  // Only load memory and profile data for "ask" action
-  if (action === "ask") {
-    // Load memory (only for ask handler)
+  // Load memory and profile data for "ask" and "classify" actions
+  if (action === "ask" || action === "classify") {
+    // Load memory for both ask and classify
     const memoryLoadingStartTime = Date.now();
     if (message) {
       // Check cache first
@@ -1149,27 +1153,50 @@ export default async function handler(req, res) {
     }
     timings.memory_loading_ms = Date.now() - memoryLoadingStartTime;
 
-    // Load profile and feedback patterns in parallel (only for ask handler)
+    // Load profile for both ask and classify
     const profileLoadingStartTime = Date.now();
-    const [profileData, feedback] = await Promise.all([
-      loadUserProfile(finalUserId),
-      retrieveFeedbackPatterns(finalUserId, null), // Will extract topic from message later if needed
-    ]);
-    userProfileData = profileData;
-    feedbackPatterns = feedback;
-    timings.profile_loading_ms = Date.now() - profileLoadingStartTime;
-  } else {
-    // For classify and prebuild_context: Skip memory and feedback patterns
-    // Only load minimal profile if needed (but classification doesn't need user data)
-    if (action === "classify") {
-      // Classification doesn't need user data - skip profile loading
-      timings.memory_loading_ms = 0;
-      timings.profile_loading_ms = 0;
+    if (action === "ask") {
+      // Full loading for ask action (profile + feedback patterns)
+      const [profileData, feedback] = await Promise.all([
+        loadUserProfile(finalUserId),
+        retrieveFeedbackPatterns(finalUserId, null),
+      ]);
+      userProfileData = profileData;
+      feedbackPatterns = feedback;
     } else {
-      // prebuild_context: Skip everything
-      timings.memory_loading_ms = 0;
-      timings.profile_loading_ms = 0;
+      // For classify: Only load profile (no feedback patterns needed)
+      userProfileData = await loadUserProfile(finalUserId);
     }
+    timings.profile_loading_ms = Date.now() - profileLoadingStartTime;
+
+    // Load base financial pack for classify action (for clarifying questions)
+    if (action === "classify") {
+      const basePackStartTime = Date.now();
+      try {
+        const contextResult = await buildContextPacks(
+          finalUserId,
+          ["summary_min"],
+          {}
+        );
+        if (contextResult && contextResult.packs && contextResult.packs.base) {
+          baseFinancialPack = contextResult.packs.base;
+          logDebug(
+            `✅ [CLASSIFY] Loaded base financial pack for clarifying questions`
+          );
+        } else {
+          logWarn(
+            `⚠️ [CLASSIFY] Failed to load base pack - clarifying questions may lack financial context`
+          );
+        }
+      } catch (error) {
+        logError(`❌ [CLASSIFY] Error loading base pack:`, error);
+      }
+      timings.context_packs_ms = Date.now() - basePackStartTime;
+    }
+  } else {
+    // prebuild_context: Skip everything
+    timings.memory_loading_ms = 0;
+    timings.profile_loading_ms = 0;
   }
 
   // Merge profile data with existing userProfile (from auth metadata)
@@ -1207,6 +1234,8 @@ export default async function handler(req, res) {
     memory: userMemory,
     // NEW: Add feedback patterns for adaptation
     feedbackPatterns: feedbackPatterns,
+    // NEW: Add base financial pack for clarifying questions
+    baseFinancialPack: baseFinancialPack,
   };
 
   // === PROFILE CACHE INVALIDATION ===
@@ -5316,29 +5345,54 @@ async function handleClassify(message, context, conversationContext = null) {
     };
 
     const apiCallStart = Date.now();
-    let r = await callOpenRouter(requestBody);
+    let r;
+    let usedFallbackModel = false;
+
+    // First attempt: free/smaller model
+    try {
+      r = await callOpenRouter(requestBody);
+    } catch (err) {
+      // Network/timeout - retry with standard model
+      console.log("🔄 [FINNY] Free model failed (network/timeout), retrying with standard model");
+      usedFallbackModel = true;
+      const fallbackBody = { ...requestBody, model: STANDARD_MODEL };
+      r = await callOpenRouter(fallbackBody);
+    }
+
     const apiCallTime = Date.now() - apiCallStart;
 
+    // If got a response but it's not OK, decide whether to fallback or adjust
     if (!r.ok) {
       const errText = await r.text();
-      if (
-        errText.includes("response_format") &&
-        errText.includes("not supported")
-      ) {
-        logWarn(
-          "⚠️ [FINNY] response_format not supported by model, retrying without it"
-        );
-        const fallbackBody = { ...requestBody };
-        delete fallbackBody.response_format;
+      const isRateLimit = errText.includes("429") || errText.toLowerCase().includes("rate limit");
+      const isServerErr = /\b5\d\d\b/.test(String(r.status));
+
+      // If rate limited or server error and we haven't tried the standard model yet, retry with it
+      if (!usedFallbackModel && (isRateLimit || isServerErr)) {
+        console.log("🔄 [FINNY] Free model returned", r.status, "- retrying with standard model");
+        const fallbackBody = { ...requestBody, model: STANDARD_MODEL };
         r = await callOpenRouter(fallbackBody);
-        if (!r.ok) {
-          const fallbackText = await r.text();
-          throw new Error(`OpenRouter error ${r.status}: ${fallbackText}`);
+        usedFallbackModel = true;
+      }
+
+      // If still not OK, handle response_format not supported by retrying without it
+      if (!r.ok) {
+        const retryText = await r.text();
+        if (retryText.includes("response_format") && retryText.includes("not supported")) {
+          logWarn("⚠️ [FINNY] response_format not supported by model, retrying without it");
+          const noFormatBody = { ...requestBody, model: usedFallbackModel ? STANDARD_MODEL : requestBody.model };
+          delete noFormatBody.response_format;
+          r = await callOpenRouter(noFormatBody);
+          if (!r.ok) {
+            const finalText = await r.text();
+            throw new Error(`OpenRouter error ${r.status}: ${finalText}`);
+          }
+        } else {
+          throw new Error(`OpenRouter error ${r.status}: ${retryText}`);
         }
-      } else {
-        throw new Error(`OpenRouter error ${r.status}: ${errText}`);
       }
     }
+
     const data = await r.json();
     const content = data.choices?.[0]?.message?.content;
     if (!content) {
@@ -5470,6 +5524,33 @@ async function handleClassify(message, context, conversationContext = null) {
         "⚠️ [FINNY] Legacy clarify_question field detected, ignoring (needs clarification_type)"
       );
       out.clarification_type = null;
+    }
+
+    // === CLARIFYING QUESTION GENERATION ===
+    // If clarification is needed, generate contextualized question with real user data
+    if (out.clarification_type && out.decision_risk === "high" && out.info_sufficiency === "insufficient") {
+      console.log(`🤔 [FINNY] Clarification needed: ${out.clarification_type}`);
+      
+      try {
+        const clarifyingQuestion = await buildClarificationQuestion({
+          clarification_type: out.clarification_type,
+          financialData: context?.baseFinancialPack ? { base: context.baseFinancialPack } : null,
+          userMessage: message,
+          userProfile: context?.profile || null,
+          emotional_state: out.emotional_state || "neutral",
+          style: context?.profile?.finny_style || "conversational",
+          memory: context?.memory || null,
+        });
+        
+        if (clarifyingQuestion) {
+          out.clarifying_question = clarifyingQuestion;
+          console.log(`💬 [FINNY] Generated clarifying question: ${clarifyingQuestion.substring(0, 100)}...`);
+        } else {
+          console.warn(`⚠️ [FINNY] Failed to generate clarifying question for type: ${out.clarification_type}`);
+        }
+      } catch (error) {
+        console.error(`❌ [FINNY] Error generating clarifying question:`, error);
+      }
     }
 
     // Log the classification

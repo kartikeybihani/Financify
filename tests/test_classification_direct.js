@@ -8,12 +8,23 @@
  *   node tests/test_classification_direct.js stock
  */
 
+// Import required modules for real data loading
+import { supabase } from "../lib/api/supabase.js";
+import {
+  loadUserMemory,
+  loadUserProfile,
+} from "../lib/memoryUtils.js";
+import { buildClarificationQuestion } from "../lib/prompt_engine.js";
+
 // Configuration
 const OPENROUTER_API_KEY =
   process.env.OPENROUTER_GROK_KEY ||
   "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";
 const SMALLER_MODEL = "meta-llama/llama-3.2-3b-instruct:free";
 const STANDARD_MODEL = "meta-llama/llama-3.1-8b-instruct"; // or your preferred paid default
+
+// User ID for testing - MUST be provided
+const TEST_USER_ID = "f948c4ab-dc68-41d5-89bf-1935653cca37";
 
 async function callOpenRouter({ model, requestBody, timeoutMs = 8000 }) {
   const timeoutPromise = new Promise((_, reject) =>
@@ -312,6 +323,98 @@ const CLASSIFICATION_SYSTEM_PROMPT = [
   "- Return ONLY the JSON object, nothing else",
 ].join("\n");
 
+// Helper function to load base financial pack (like in finny.js)
+async function buildContextPacks(userId, needs, slots) {
+  console.log(`📦 [TEST] Building context packs for user ${userId}, needs:`, needs);
+  
+  try {
+    // Load base financial summary
+    if (needs.includes("summary_min")) {
+      // Join accounts with user_items to filter by user_id
+      const { data: accounts, error: accountsError } = await supabase
+        .from("accounts")
+        .select(`
+          *,
+          user_items!inner(user_id)
+        `)
+        .eq("user_items.user_id", userId);
+
+      if (accountsError) {
+        console.error("❌ [TEST] Error loading accounts:", accountsError);
+        return { packs: {} };
+      }
+
+      // Calculate financial summary
+      let liquidAssets = 0;
+      let totalLiabilities = 0;
+      let netWorth = 0;
+
+      for (const account of accounts || []) {
+        // Use current_balance field from schema
+        const balance = parseFloat(account.current_balance) || 0;
+        netWorth += balance;
+
+        if (account.subtype === "checking" || account.subtype === "savings") {
+          liquidAssets += balance;
+        }
+
+        if (account.type === "credit" || account.type === "loan") {
+          totalLiabilities += Math.abs(balance);
+        }
+      }
+
+      // Load recent transactions for spending context
+      const { data: transactions, error: txError } = await supabase
+        .from("transactions")
+        .select("*")
+        .eq("user_id", userId)
+        .order("date", { ascending: false })
+        .limit(30);
+
+      if (txError) {
+        console.error("❌ [TEST] Error loading transactions:", txError);
+      }
+
+      // Calculate monthly expenses from last 30 days
+      let monthlyExpenses = 0;
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+      for (const tx of transactions || []) {
+        if (tx.amount < 0 && new Date(tx.date) >= thirtyDaysAgo) {
+          monthlyExpenses += Math.abs(tx.amount);
+        }
+      }
+
+      const basePack = {
+        liquidAssets,
+        netWorth,
+        totalLiabilities,
+        monthlyExpenses,
+        accounts: accounts || [],
+        recentTransactions: (transactions || []).slice(0, 5),
+      };
+
+      console.log(`✅ [TEST] Base pack loaded:`, {
+        liquidAssets: `$${liquidAssets.toFixed(2)}`,
+        netWorth: `$${netWorth.toFixed(2)}`,
+        monthlyExpenses: `$${monthlyExpenses.toFixed(2)}`,
+      });
+
+      return {
+        packs: {
+          base: basePack,
+        },
+      };
+    }
+
+    return { packs: {} };
+  } catch (error) {
+    console.error("❌ [TEST] Error building context packs:", error);
+    return { packs: {} };
+  }
+}
+
 // Production classification function from finny.js
 async function handleClassify(message, context, conversationContext = null) {
   console.log("🔍 [TEST] Starting classification for message:", message);
@@ -514,6 +617,33 @@ async function handleClassify(message, context, conversationContext = null) {
 
     console.log("🔍 [TEST] Validated classification result:", out);
 
+    // === CLARIFYING QUESTION GENERATION WITH REAL USER DATA ===
+    // If clarification is needed, generate contextualized question with real user data
+    if (out.clarification_type && out.decision_risk === "high" && out.info_sufficiency === "insufficient") {
+      console.log(`🤔 [TEST] Clarification needed: ${out.clarification_type}`);
+      
+      try {
+        const clarifyingQuestion = await buildClarificationQuestion({
+          clarification_type: out.clarification_type,
+          financialData: context?.baseFinancialPack ? { base: context.baseFinancialPack } : null,
+          userMessage: message,
+          userProfile: context?.profile || null,
+          emotional_state: out.emotional_state || "neutral",
+          style: context?.profile?.finny_style || "conversational",
+          memory: context?.memory || null,
+        });
+        
+        if (clarifyingQuestion) {
+          out.clarifying_question = clarifyingQuestion;
+          console.log(`💬 [TEST] Generated clarifying question: ${clarifyingQuestion.substring(0, 100)}...`);
+        } else {
+          console.warn(`⚠️ [TEST] Failed to generate clarifying question for type: ${out.clarification_type}`);
+        }
+      } catch (error) {
+        console.error(`❌ [TEST] Error generating clarifying question:`, error);
+      }
+    }
+
     return out;
   } catch (e) {
     console.error("❌ [TEST] Classification error:", e?.message);
@@ -548,17 +678,52 @@ async function handleClassify(message, context, conversationContext = null) {
   }
 }
 
-// Test function
+// Test function with real user data loading
 async function testSingleMessage(message) {
   try {
     console.log(`\n🧪 Testing: "${message}"`);
 
+    // Validate user ID is provided
+    if (!TEST_USER_ID) {
+      throw new Error("❌ TEST_USER_ID is required. Cannot run test without user ID.");
+    }
+
+    console.log(`👤 Using test user ID: ${TEST_USER_ID}`);
+
     const startTime = Date.now();
 
-    // Call the classification function directly
-    const classification = await handleClassify(message, {
-      user_id: "f948c4ab-dc68-41d5-89bf-1935653cca37",
-    });
+    // === LOAD REAL USER DATA (matching finny.js approach) ===
+    console.log("📦 Loading user data...");
+    
+    // Load memory
+    const memoryStartTime = Date.now();
+    const userMemory = await loadUserMemory(TEST_USER_ID, message);
+    const memoryTime = Date.now() - memoryStartTime;
+    console.log(`✅ Memory loaded in ${memoryTime}ms - ${userMemory.totalCount || 0} memories found`);
+
+    // Load profile
+    const profileStartTime = Date.now();
+    const userProfile = await loadUserProfile(TEST_USER_ID);
+    const profileTime = Date.now() - profileStartTime;
+    console.log(`✅ Profile loaded in ${profileTime}ms`);
+
+    // Load base financial pack
+    const basePackStartTime = Date.now();
+    const contextResult = await buildContextPacks(TEST_USER_ID, ["summary_min"], {});
+    const baseFinancialPack = contextResult?.packs?.base || null;
+    const basePackTime = Date.now() - basePackStartTime;
+    console.log(`✅ Base pack loaded in ${basePackTime}ms`);
+
+    // Build context object (matching finny.js structure)
+    const context = {
+      user_id: TEST_USER_ID,
+      profile: userProfile,
+      memory: userMemory,
+      baseFinancialPack: baseFinancialPack,
+    };
+
+    // Call the classification function with real context
+    const classification = await handleClassify(message, context);
     const responseTime = Date.now() - startTime;
 
     console.log("📊 Classification Results:");
@@ -575,32 +740,9 @@ async function testSingleMessage(message) {
     );
     if (classification.clarification_type) {
       console.log(`  Clarification Type: ${classification.clarification_type}`);
-
-      // Generate the actual clarifying question using mock financial data
-      // This simulates what happens in production after financial context is loaded
-      const mockFinancialData = {
-        base: {
-          liquidAssets: 25000, // $25k in liquid assets
-          netWorth: 50000,
-          totalLiabilities: 10000,
-          monthlyExpenses: 3000, // $3k/month expenses = ~8.3 months runway
-          accounts: [],
-          recentTransactions: [],
-        },
-      };
-
-      const clarifyingQuestion = await buildClarificationQuestion({
-        clarification_type: classification.clarification_type,
-        financialData: mockFinancialData,
-        userMessage: message,
-        userProfile: null,
-        emotional_state: classification.emotional_state || "neutral",
-        style: "conversational", // Default for testing, can be made configurable
-      });
-
-      if (clarifyingQuestion) {
-        console.log(`  💬 Clarifying Question: ${clarifyingQuestion}`);
-      }
+    }
+    if (classification.clarifying_question) {
+      console.log(`  💬 Clarifying Question: ${classification.clarifying_question}`);
     }
     console.log(`  needs_web: ${classification.needs_web}`);
     console.log(`  needs_user_data: ${classification.needs_user_data}`);
@@ -1308,10 +1450,9 @@ async function testClarificationQuestions() {
   }
 }
 
-// Import evaluateDecisionConfidence and buildClarificationQuestion for testing
+// Import evaluateDecisionConfidence for testing
 import {
   evaluateDecisionConfidence,
-  buildClarificationQuestion,
 } from "../lib/prompt_engine.js";
 
 export {
