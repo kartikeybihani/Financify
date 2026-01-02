@@ -9,6 +9,9 @@ import {
   ScrollView,
   TextInput,
   Dimensions,
+  KeyboardAvoidingView,
+  Platform,
+  Keyboard,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -219,6 +222,7 @@ const AddCategoryModal: React.FC<AddCategoryModalProps> = ({
 
   const handleClose = () => {
     if (!loading) {
+      Keyboard.dismiss();
       onClose();
     }
   };
@@ -231,171 +235,182 @@ const AddCategoryModal: React.FC<AddCategoryModalProps> = ({
       onRequestClose={handleClose}
       statusBarTranslucent={true}
     >
-      <TouchableWithoutFeedback onPress={handleClose}>
-        <View style={styles.overlay}>
-          <TouchableWithoutFeedback onPress={(e) => e.stopPropagation()}>
-            <LinearGradient colors={FAB_GRADIENT_COLORS} style={styles.content}>
-              <View style={styles.header}>
-                <View style={styles.headerTextContainer}>
-                  <Text style={styles.headerTitle}>Add New Category</Text>
-                </View>
-              </View>
-
-              <ScrollView
-                showsVerticalScrollIndicator={false}
-                contentContainerStyle={[
-                  styles.scrollContent,
-                  {
-                    paddingBottom:
-                      Math.max(20, SCREEN_HEIGHT * 0.025) +
-                      Math.max(insets.bottom, 20),
-                  },
-                ]}
-                keyboardShouldPersistTaps="handled"
-                keyboardDismissMode="interactive"
-                bounces={false}
-              >
-                {/* Category Name Section */}
-                <View style={styles.nameSection}>
-                  <Text style={styles.sectionLabel}>CATEGORY NAME</Text>
-                  <View style={styles.topRow}>
-                    <TouchableOpacity
-                      style={[
-                        styles.iconBox,
-                        isIconSelected({
-                          type: "emoji",
-                          value: selectedIcon,
-                        }) ||
-                        CURATED_ICONS.some(
-                          (icon) => icon.value === selectedIcon
-                        )
-                          ? styles.iconBoxSelected
-                          : null,
-                      ]}
-                      activeOpacity={0.7}
-                      accessibilityLabel="Selected icon"
-                      accessibilityRole="button"
-                    >
-                      {renderSelectedIcon()}
-                    </TouchableOpacity>
-                    <TextInput
-                      style={styles.categoryInput}
-                      value={categoryName}
-                      onChangeText={setCategoryName}
-                      placeholder="Enter category name"
-                      placeholderTextColor="rgba(255,255,255,0.4)"
-                      autoFocus
-                      autoCapitalize="words"
-                      returnKeyType="done"
-                      onSubmitEditing={handleSave}
-                      accessibilityLabel="Category name input"
-                    />
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        style={styles.keyboardAvoid}
+        keyboardVerticalOffset={0}
+      >
+        <TouchableWithoutFeedback onPress={handleClose}>
+          <View style={styles.overlay}>
+            <TouchableWithoutFeedback>
+              <View style={styles.content}>
+                <LinearGradient colors={FAB_GRADIENT_COLORS} style={styles.contentGradient}>
+                  <View style={styles.header}>
+                    <View style={styles.headerTextContainer}>
+                      <Text style={styles.headerTitle}>Add New Category</Text>
+                    </View>
                   </View>
-                </View>
 
-                {/* Icon Selection Section */}
-                <View style={styles.iconSection}>
-                  <Text style={styles.sectionLabel}>CHOOSE ICON</Text>
                   <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    style={styles.iconScroll}
-                    contentContainerStyle={styles.iconScrollContent}
+                    showsVerticalScrollIndicator={false}
+                    contentContainerStyle={[
+                      styles.scrollContent,
+                      {
+                        paddingBottom:
+                          Math.max(20, SCREEN_HEIGHT * 0.025) +
+                          Math.max(insets.bottom, 20),
+                      },
+                    ]}
+                    keyboardShouldPersistTaps="handled"
+                    keyboardDismissMode="interactive"
                     bounces={false}
                   >
-                    {CURATED_ICONS.map((icon, index) => (
+                  {/* Category Name Section */}
+                  <View style={styles.nameSection}>
+                    <Text style={styles.sectionLabel}>CATEGORY NAME</Text>
+                    <View style={styles.topRow}>
                       <TouchableOpacity
-                        key={`${icon.type}-${icon.value}-${index}`}
                         style={[
-                          styles.iconOption,
-                          isIconSelected(icon) && styles.iconOptionSelected,
+                          styles.iconBox,
+                          isIconSelected({
+                            type: "emoji",
+                            value: selectedIcon,
+                          }) ||
+                          CURATED_ICONS.some(
+                            (icon) => icon.value === selectedIcon
+                          )
+                            ? styles.iconBoxSelected
+                            : null,
                         ]}
-                        onPress={() => setSelectedIcon(icon.value)}
                         activeOpacity={0.7}
-                        accessibilityLabel={`Select ${icon.name} icon`}
+                        accessibilityLabel="Selected icon"
                         accessibilityRole="button"
-                        accessibilityState={{
-                          selected: isIconSelected(icon),
-                        }}
                       >
-                        {renderIcon(icon, true)}
+                        {renderSelectedIcon()}
                       </TouchableOpacity>
-                    ))}
-                  </ScrollView>
+                      <TextInput
+                        style={styles.categoryInput}
+                        value={categoryName}
+                        onChangeText={setCategoryName}
+                        placeholder="Enter category name"
+                        placeholderTextColor="rgba(255,255,255,0.4)"
+                        autoFocus
+                        autoCapitalize="words"
+                        returnKeyType="done"
+                        onSubmitEditing={handleSave}
+                        accessibilityLabel="Category name input"
+                      />
+                    </View>
+                  </View>
+
+                  {/* Icon Selection Section */}
+                  <View style={styles.iconSection}>
+                    <Text style={styles.sectionLabel}>CHOOSE ICON</Text>
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      style={styles.iconScroll}
+                      contentContainerStyle={styles.iconScrollContent}
+                      bounces={false}
+                    >
+                      {CURATED_ICONS.map((icon, index) => (
+                        <TouchableOpacity
+                          key={`${icon.type}-${icon.value}-${index}`}
+                          style={[
+                            styles.iconOption,
+                            isIconSelected(icon) && styles.iconOptionSelected,
+                          ]}
+                          onPress={() => setSelectedIcon(icon.value)}
+                          activeOpacity={0.7}
+                          accessibilityLabel={`Select ${icon.name} icon`}
+                          accessibilityRole="button"
+                          accessibilityState={{
+                            selected: isIconSelected(icon),
+                          }}
+                        >
+                          {renderIcon(icon, true)}
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                  </View>
+                </ScrollView>
+
+                {/* Bottom action buttons */}
+                <View style={styles.bottomButtonRow}>
+                  <TouchableOpacity
+                    style={[
+                      styles.bottomButtonContainer,
+                      styles.bottomCancelButtonContainer,
+                    ]}
+                    onPress={handleClose}
+                    disabled={loading}
+                    activeOpacity={0.7}
+                    accessibilityLabel="Cancel"
+                    accessibilityRole="button"
+                  >
+                    <LinearGradient
+                      colors={[
+                        "rgba(142, 142, 147, 0.15)",
+                        "rgba(142, 142, 147, 0.05)",
+                      ]}
+                      style={styles.bottomCancelButton}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                    >
+                      <Ionicons name="close-circle" size={16} color="#fff" />
+                      <Text style={[styles.bottomButtonText, { color: "#fff" }]}>
+                        Cancel
+                      </Text>
+                    </LinearGradient>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.bottomButtonContainer,
+                      styles.bottomSaveButtonContainer,
+                      (!categoryName.trim() || loading) && styles.buttonDisabled,
+                    ]}
+                    onPress={handleSave}
+                    disabled={!categoryName.trim() || loading}
+                    activeOpacity={0.7}
+                    accessibilityLabel={
+                      loading ? "Adding category" : "Add category"
+                    }
+                    accessibilityRole="button"
+                    accessibilityState={{
+                      disabled: !categoryName.trim() || loading,
+                    }}
+                  >
+                    <LinearGradient
+                      colors={[
+                        "rgba(74, 144, 226, 0.15)",
+                        "rgba(74, 145, 226, 0.41)",
+                      ]}
+                      style={styles.bottomSaveButton}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                    >
+                      <Ionicons name="checkmark-circle" size={16} color="#fff" />
+                      <Text style={[styles.bottomButtonText, { color: "#fff" }]}>
+                        {loading ? "Adding..." : "Add Category"}
+                      </Text>
+                    </LinearGradient>
+                  </TouchableOpacity>
                 </View>
-              </ScrollView>
-
-              {/* Bottom action buttons */}
-              <View style={styles.bottomButtonRow}>
-                <TouchableOpacity
-                  style={[
-                    styles.bottomButtonContainer,
-                    styles.bottomCancelButtonContainer,
-                  ]}
-                  onPress={handleClose}
-                  disabled={loading}
-                  activeOpacity={0.7}
-                  accessibilityLabel="Cancel"
-                  accessibilityRole="button"
-                >
-                  <LinearGradient
-                    colors={[
-                      "rgba(142, 142, 147, 0.15)",
-                      "rgba(142, 142, 147, 0.05)",
-                    ]}
-                    style={styles.bottomCancelButton}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                  >
-                    <Ionicons name="close-circle" size={16} color="#fff" />
-                    <Text style={[styles.bottomButtonText, { color: "#fff" }]}>
-                      Cancel
-                    </Text>
-                  </LinearGradient>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[
-                    styles.bottomButtonContainer,
-                    styles.bottomSaveButtonContainer,
-                    (!categoryName.trim() || loading) && styles.buttonDisabled,
-                  ]}
-                  onPress={handleSave}
-                  disabled={!categoryName.trim() || loading}
-                  activeOpacity={0.7}
-                  accessibilityLabel={
-                    loading ? "Adding category" : "Add category"
-                  }
-                  accessibilityRole="button"
-                  accessibilityState={{
-                    disabled: !categoryName.trim() || loading,
-                  }}
-                >
-                  <LinearGradient
-                    colors={[
-                      "rgba(74, 144, 226, 0.15)",
-                      "rgba(74, 145, 226, 0.41)",
-                    ]}
-                    style={styles.bottomSaveButton}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                  >
-                    <Ionicons name="checkmark-circle" size={16} color="#fff" />
-                    <Text style={[styles.bottomButtonText, { color: "#fff" }]}>
-                      {loading ? "Adding..." : "Add Category"}
-                    </Text>
-                  </LinearGradient>
-                </TouchableOpacity>
+              </LinearGradient>
               </View>
-            </LinearGradient>
-          </TouchableWithoutFeedback>
-        </View>
-      </TouchableWithoutFeedback>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </KeyboardAvoidingView>
     </Modal>
   );
 };
 
 const styles = StyleSheet.create({
+  keyboardAvoid: {
+    flex: 1,
+  },
   overlay: {
     flex: 1,
     backgroundColor: "rgba(0, 0, 0, 0.75)",
@@ -407,6 +422,12 @@ const styles = StyleSheet.create({
     minHeight: SCREEN_HEIGHT * 0.5,
     maxHeight: SCREEN_HEIGHT * 0.85,
     width: SCREEN_WIDTH,
+    overflow: "hidden",
+  },
+  contentGradient: {
+    flex: 1,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
   },
   header: {
     flexDirection: "row",

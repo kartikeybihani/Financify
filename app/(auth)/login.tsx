@@ -130,7 +130,7 @@ export default function LoginScreen() {
       }
       // Auth listener will trigger navigation via context
       // The loading indicator in the button shows feedback during auth
-      router.push("(tabs)/chat" as any);
+      router.push("(tabs)/index" as any);
     }
   };
 

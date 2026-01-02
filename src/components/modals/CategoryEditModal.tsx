@@ -11,6 +11,8 @@ import {
   StyleSheet,
   TouchableOpacity,
   ScrollView,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -67,6 +69,7 @@ const CategoryEditModal: React.FC<Props> = ({
   const slideAnim = useRef(new Animated.Value(screenHeight)).current;
   const [rendered, setRendered] = useState(visible);
   const [currentCategory, setCurrentCategory] = useState(category);
+  const inputRef = useRef<TextInput>(null);
 
   useEffect(() => {
     if (visible && category) {
@@ -80,7 +83,12 @@ const CategoryEditModal: React.FC<Props> = ({
         duration: 240,
         easing: Easing.out(Easing.quad),
         useNativeDriver: true,
-      }).start();
+      }).start(() => {
+        // Focus the amount input when the modal opens
+        setTimeout(() => {
+          inputRef.current?.focus();
+        }, 10);
+      });
     } else if (rendered) {
       Animated.timing(slideAnim, {
         toValue: screenHeight,
@@ -144,7 +152,12 @@ const CategoryEditModal: React.FC<Props> = ({
       <TouchableWithoutFeedback onPress={onClose}>
         <View style={styles.overlay}>
           <TouchableWithoutFeedback onPress={(e) => e.stopPropagation()}>
-            <Animated.View
+            <KeyboardAvoidingView
+              behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+              keyboardVerticalOffset={Platform.OS === 'ios' ? 12 : 0}
+              style={{ width: '100%' }}
+            >
+              <Animated.View
               style={[
                 styles.container,
                 {
@@ -158,6 +171,7 @@ const CategoryEditModal: React.FC<Props> = ({
                 style={styles.scrollContent}
                 contentContainerStyle={styles.scrollContentContainer}
                 showsVerticalScrollIndicator={true}
+                keyboardShouldPersistTaps="handled"
               >
                 <View style={styles.header}>
                   <View style={styles.headerContent}>
@@ -182,12 +196,14 @@ const CategoryEditModal: React.FC<Props> = ({
                       <View style={styles.inputRow}>
                         <Text style={styles.prefix}>$</Text>
                         <TextInput
+                          ref={inputRef}
                           style={styles.input}
                           keyboardType="decimal-pad"
                           value={amount}
                           onChangeText={setAmount}
                           placeholder="0"
                           placeholderTextColor="rgba(255,255,255,0.4)"
+                          // Let UI buttons handle actions; no keyboard Done
                         />
                       </View>
                       <View style={styles.actions}>
@@ -407,6 +423,7 @@ const CategoryEditModal: React.FC<Props> = ({
                 )}
               </ScrollView>
             </Animated.View>
+            </KeyboardAvoidingView>
           </TouchableWithoutFeedback>
         </View>
       </TouchableWithoutFeedback>

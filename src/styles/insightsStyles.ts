@@ -720,7 +720,7 @@ export const sectionContentStyles = StyleSheet.create({
 export const fabStyles = StyleSheet.create({
   container: {
     position: "absolute",
-    bottom: 90,
+    bottom: 110,
     right: 34,
     zIndex: 1000,
   },

@@ -5000,13 +5000,26 @@ async function handleClassify(message, context, conversationContext = null) {
   // This ensures flexible detection of stocks, goals, and all other intents
 
   try {
-    // Create a timeout promise that rejects after 8 seconds (increased for stability)
-    const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(
-        () => reject(new Error("Classification timeout after 8 seconds")),
-        8000
-      );
-    });
+    const callOpenRouter = (body) => {
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(
+          () => reject(new Error("Classification timeout after 8 seconds")),
+          8000
+        );
+      });
+
+      return Promise.race([
+        fetch("https://openrouter.ai/api/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${process.env.OPENROUTER_GROK_KEY}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(body),
+        }),
+        timeoutPromise,
+      ]);
+    };
 
     const requestBody = {
       model: SMALLER_MODEL, // Use reliable model for classification (JSON mode)
@@ -5302,27 +5315,29 @@ async function handleClassify(message, context, conversationContext = null) {
       },
     };
 
-    // Create the fetch promise
-    const fetchPromise = fetch(
-      "https://openrouter.ai/api/v1/chat/completions",
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${process.env.OPENROUTER_GROK_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(requestBody),
-      }
-    );
-
     const apiCallStart = Date.now();
-    // Race between fetch and timeout
-    const r = await Promise.race([fetchPromise, timeoutPromise]);
+    let r = await callOpenRouter(requestBody);
     const apiCallTime = Date.now() - apiCallStart;
 
     if (!r.ok) {
       const errText = await r.text();
-      throw new Error(`OpenRouter error ${r.status}: ${errText}`);
+      if (
+        errText.includes("response_format") &&
+        errText.includes("not supported")
+      ) {
+        logWarn(
+          "⚠️ [FINNY] response_format not supported by model, retrying without it"
+        );
+        const fallbackBody = { ...requestBody };
+        delete fallbackBody.response_format;
+        r = await callOpenRouter(fallbackBody);
+        if (!r.ok) {
+          const fallbackText = await r.text();
+          throw new Error(`OpenRouter error ${r.status}: ${fallbackText}`);
+        }
+      } else {
+        throw new Error(`OpenRouter error ${r.status}: ${errText}`);
+      }
     }
     const data = await r.json();
     const content = data.choices?.[0]?.message?.content;
