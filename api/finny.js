@@ -1,5 +1,6 @@
 // api/finny.js
 import { supabase } from "../lib/api/supabase.js";
+import { decideClarificationAction, generateClarifyingQuestion as genClarQ } from "../lib/chat_orchestration.js";
 import fetch from "node-fetch";
 import crypto from "crypto";
 import { handleGoalConversation } from "./goals.js";
@@ -5091,9 +5092,7 @@ async function handleClassifyOrchestrated({ message, context, conversationContex
   timings.classification_ms = (timings.classification_ms || 0) + (Date.now() - classifyStart);
 
   // Decide whether to clarify or proceed
-  // Orchestration helpers (ESM)
-import { decideClarificationAction, generateClarifyingQuestion as genClarQ } from '../lib/chat_orchestration.js';
-const decision = decideClarificationAction(classification);
+  const decision = decideClarificationAction(classification);
   if (decision.action === 'clarify') {
     // Build minimal user context summary (base pack)
     const userContextSummary = context?.userContextSummaryBasePack || await buildUserContextSummaryBasePack(userId, context);
