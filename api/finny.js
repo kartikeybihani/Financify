@@ -5097,7 +5097,7 @@ async function handleClassifyOrchestrated({ message, context, conversationContex
     // Build minimal user context summary (base pack)
     const userContextSummary = context?.userContextSummaryBasePack || await buildUserContextSummaryBasePack(userId, context);
     const memoryRefs = await getRelevantMemoryRefs(userId, message, context);
-    const question = (typeof genClarQ === 'function' ? genClarQ : (c,m,u,mems) => `To guide you best, I need a bit more info: ${c?.clarification_note || 'one key detail'}. Could you share that?`)(classification, message, userContextSummary, memoryRefs);
+    const question = genClarQ(classification, message, userContextSummary, memoryRefs);
 
     const conversation_id = generateRequestId();
     const state = {
