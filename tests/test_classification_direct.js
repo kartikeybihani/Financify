@@ -520,7 +520,6 @@ async function handleClassify(message, context, conversationContext = null) {
       clarification_needed: false,
       clarification_reasons: [],
       clarification_note: null,
-      requested_context: [],
       clarification_type: null,
       fallback: true,
     };
@@ -767,7 +766,6 @@ async function handleClassify(message, context, conversationContext = null) {
       clarification_needed: false,
       clarification_reasons: [],
       clarification_note: null,
-      requested_context: [],
       clarification_type: null,
       fallback: true,
       timeout_fallback: e?.message?.includes("timeout") || false,

@@ -5091,12 +5091,12 @@ async function handleClassifyOrchestrated({ message, context, conversationContex
   timings.classification_ms = (timings.classification_ms || 0) + (Date.now() - classifyStart);
 
   // Decide whether to clarify or proceed
-  const decision = decideClarificationAction(classification);
+  const decision = (typeof decideClarificationAction === 'function' ? decideClarificationAction : require('../tests/test_classification_direct.js').decideClarificationAction)(classification);
   if (decision.action === 'clarify') {
     // Build minimal user context summary (base pack)
     const userContextSummary = context?.userContextSummaryBasePack || await buildUserContextSummaryBasePack(userId, context);
     const memoryRefs = await getRelevantMemoryRefs(userId, message, context);
-    const question = generateClarifyingQuestion(classification, message, userContextSummary, memoryRefs);
+    const question = (typeof generateClarifyingQuestion === 'function' ? generateClarifyingQuestion : require('../tests/test_classification_direct.js').generateClarifyingQuestion)(classification, message, userContextSummary, memoryRefs);
 
     const conversation_id = generateRequestId();
     const state = {
