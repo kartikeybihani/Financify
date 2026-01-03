@@ -110,15 +110,12 @@ function redactPII(text) {
 
 // Centralized OpenRouter model selection. Override via OPENROUTER_MODEL env.
 // Default to a widely available Grok model to avoid invalid ID errors.
-const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL;
+const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL; // openai/gpt-oss-20b:free
 
 // Memory extraction model - small, fast, free
-const SMALLER_MODEL = "meta-llama/llama-3.3-70b-instruct:free";
+const SMALLER_MODEL = "meta-llama/llama-3.2-3b-instruct:free";
 // Standard non-free model to fallback to when the free model fails
 const STANDARD_MODEL = "meta-llama/llama-3.2-3b-instruct";
-
-// Session summarization model (LLM) via OpenRouter
-const SUMMARY_MODEL = "deepseek/deepseek-r1-0528-qwen3-8b:free";
 
 // Classification cache - in-memory cache for classification results
 const classificationCache = new Map();
@@ -2565,7 +2562,7 @@ async function handleAsk(
                     cache_hit: false,
                   },
                 ],
-                model: "gpt-4o-mini",
+                model: OPENROUTER_MODEL || STANDARD_MODEL,
                 cache_hits: {},
                 tokens: null,
                 result: "success",
@@ -2890,7 +2887,7 @@ async function handleAsk(
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: OPENROUTER_MODEL || SMALLER_MODEL,
+          model: OPENROUTER_MODEL || STANDARD_MODEL,
           temperature: 0.25,
           max_tokens: 10000,
           stream: false,
@@ -5325,14 +5322,17 @@ async function handleClassify(message, context, conversationContext = null) {
         response_format: { type: "json_object" },
       };
 
-      const fetchPromise = fetch("https://openrouter.ai/api/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${getOpenRouterKey()}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(requestBody),
-      });
+      const fetchPromise = fetch(
+        "https://openrouter.ai/api/v1/chat/completions",
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${getOpenRouterKey()}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(requestBody),
+        }
+      );
 
       const apiCallStart = Date.now();
       const r = await Promise.race([fetchPromise, timeoutPromise]);
@@ -5622,7 +5622,7 @@ async function handleOffTopic(message, context, conversationContext = null) {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            model: SMALLER_MODEL,
+            model: SMALLER_MODEL || STANDARD_MODEL,
             temperature: 0.7,
             max_tokens: 300,
             messages: [
@@ -5757,7 +5757,7 @@ async function handleOffTopic(message, context, conversationContext = null) {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: SMALLER_MODEL,
+          model: SMALLER_MODEL || STANDARD_MODEL,
           temperature: 0.9, // Higher temperature for more wit
           max_tokens: 400, // Shorter responses
           messages: [
@@ -6064,7 +6064,7 @@ async function planStockRequest(message) {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: OPENROUTER_MODEL || "meta-llama/llama-3.3-8b-instruct:free",
+          model: OPENROUTER_MODEL || STANDARD_MODEL,
           temperature: 0.1,
           messages: [
             {
@@ -6476,8 +6476,7 @@ CRITICAL FORMATTING REQUIREMENTS:
       return baseSummary;
     }
 
-    // Use Llama 3.3 70B for comprehensive stock analysis
-    const STOCK_ANALYSIS_MODEL = "meta-llama/llama-3.3-70b-instruct:free";
+    const STOCK_ANALYSIS_MODEL = STANDARD_MODEL;
 
     console.log(
       `🔍 [STOCK_ANALYSIS] Calling LLM API with model: ${STOCK_ANALYSIS_MODEL}`
