@@ -9,7 +9,9 @@
  */
 
 // Configuration
-const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || "";
+const OPENROUTER_API_KEY =
+  process.env.OPENROUTER_API_KEY ||
+  "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";
 const OPENROUTER_MODEL = "meta-llama/llama-3.2-3b-instruct:free";
 const STANDARD_MODEL = "meta-llama/llama-3.2-3b-instruct";
 
@@ -296,7 +298,7 @@ async function handleClassify(message, context, conversationContext = null) {
       data = await callLLM(STANDARD_MODEL);
     }
 
-    console.log("🔍 [TEST] Classification data:", data);
+    // console.log("🔍 [TEST] Classification data:", data);
     const content = data.choices?.[0]?.message?.content;
     if (!content) {
       console.log("❌ [TEST] No content in response");
