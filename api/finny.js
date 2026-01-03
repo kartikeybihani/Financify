@@ -5091,12 +5091,14 @@ async function handleClassifyOrchestrated({ message, context, conversationContex
   timings.classification_ms = (timings.classification_ms || 0) + (Date.now() - classifyStart);
 
   // Decide whether to clarify or proceed
-  const decision = (typeof decideClarificationAction === 'function' ? decideClarificationAction : require('../tests/test_classification_direct.js').decideClarificationAction)(classification);
+  // Orchestration helpers (ESM)
+import { decideClarificationAction, generateClarifyingQuestion as genClarQ } from '../lib/chat_orchestration.js';
+const decision = decideClarificationAction(classification);
   if (decision.action === 'clarify') {
     // Build minimal user context summary (base pack)
     const userContextSummary = context?.userContextSummaryBasePack || await buildUserContextSummaryBasePack(userId, context);
     const memoryRefs = await getRelevantMemoryRefs(userId, message, context);
-    const question = (typeof generateClarifyingQuestion === 'function' ? generateClarifyingQuestion : require('../tests/test_classification_direct.js').generateClarifyingQuestion)(classification, message, userContextSummary, memoryRefs);
+    const question = (typeof genClarQ === 'function' ? genClarQ : (c,m,u,mems) => `To guide you best, I need a bit more info: ${c?.clarification_note || 'one key detail'}. Could you share that?`)(classification, message, userContextSummary, memoryRefs);
 
     const conversation_id = generateRequestId();
     const state = {
