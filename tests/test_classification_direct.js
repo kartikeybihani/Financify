@@ -1,11 +1,15 @@
 /**
- * Direct Classification Test with Improved Prompting
+ * Direct Classification Test with Improved Prompting (Schema v1.1)
  * Tests the classification function directly with enhanced web search detection
+ * Now includes orchestration layer (classify -> decide -> clarify or proceed)
  *
  * Usage:
  *   node tests/test_classification_direct.js "your query here"
+ *   node tests/test_classification_direct.js "your query here" --orchestrate
+ *   node tests/test_classification_direct.js "your query here" --orchestrate --trace
  *   node tests/test_classification_direct.js hardball
  *   node tests/test_classification_direct.js stock
+ *   node tests/test_classification_direct.js clarify
  */
 
 // Import required modules for clarification
@@ -120,30 +124,32 @@ const CLASSIFICATION_SYSTEM_PROMPT = [
   "- No financial data AND no context about situation",
   "- High-risk decision with no timeline, no income info, no purpose",
   "",
-  "=== CLARIFICATION TYPE DETECTION ===",
-  "If clarification is needed (high risk + insufficient info), output a clarification_type, NOT a full question.",
-  "The actual question will be generated later with financial context.",
+  "=== CLARIFICATION DETECTION (Schema v1.1) ===",
+  "If clarification is needed (high risk + insufficient info), output clarification metadata.",
+  "The actual question will be generated in a separate layer.",
   "",
-  "Output clarification_type as a string identifier indicating WHAT needs clarification:",
-  "- income_replacement: Missing plan for replacing income (quit job, freelance, etc.)",
-  "- goal_timeline: Missing timeline for goal or decision",
-  "- intent_motivation: Missing reason/motivation for decision",
-  "- purpose_use: Missing purpose or use case (investment vs personal, etc.)",
-  "- execution_plan: Missing how they plan to execute",
-  "- target_amount: Missing specific amount or target",
-  "- location_context: Missing location or relocation details",
+  "Output these fields:",
+  "- clarification_needed: boolean (true if decision_risk='high' AND info_sufficiency='insufficient')",
+  "- clarification_reasons: array of short strings describing what's missing (free-form, extensible)",
+  "  Examples: ['timeline_missing', 'income_plan_unclear', 'purpose_not_stated', 'budget_unknown', 'risk_tolerance_unclear']",
+  "- clarification_note: short sentence explaining what info is needed",
+  "- requested_context: (removed)",
+  "",
+  "Legacy field (optional for backward compat):",
+  "- clarification_type: string or null (single categorization like 'income_replacement', 'goal_timeline', etc.)",
   "",
   "Rules:",
-  "- Only output clarification_type if info_sufficiency is 'insufficient' AND decision_risk is 'high'",
-  "- Output null if no clarification needed",
+  "- Set clarification_needed=true ONLY if decision_risk='high' AND info_sufficiency='insufficient'",
+  "- Use free-form clarification_reasons (not limited to fixed enum)",
+  "- Include clarification_note to explain what's missing in plain language",
   "- Do NOT generate the actual question text here",
   "",
   "Examples:",
-  "- Quit job/freelance → clarification_type: 'income_replacement'",
-  "- Second house → clarification_type: 'purpose_use'",
-  "- Car purchase → clarification_type: 'purpose_use'",
-  "- Relocate → clarification_type: 'goal_timeline' or 'location_context'",
-  "- Business start → clarification_type: 'execution_plan'",
+  "- Quit job/freelance → clarification_reasons: ['income_replacement_plan', 'timeline_missing'], clarification_note: 'Need income plan and timeline'",
+  "- Second house → clarification_reasons: ['purpose_unclear', 'financing_plan_missing'], clarification_note: 'Need purpose (live/invest) and financing approach'",
+  "- Car purchase → clarification_reasons: ['budget_unknown', 'purpose_unclear'], clarification_note: 'Need budget range and usage purpose'",
+  "- Relocate → clarification_reasons: ['timeline_missing', 'location_context'], clarification_note: 'Need timeline and destination details'",
+  "- Business start → clarification_reasons: ['execution_plan_missing', 'funding_source_unclear'], clarification_note: 'Need business plan and funding source'",
   "",
   "=== CRITICAL CLASSIFICATION RULES ===",
   "",
@@ -169,32 +175,22 @@ const CLASSIFICATION_SYSTEM_PROMPT = [
   "5. Credit card queries ALWAYS need web search:",
   "   - 'What credit card should I get?' → ask_personalized, needs_web:true, needs_user_data:true",
   "",
-  "6. Stock queries REQUIRE a SPECIFIC ticker/company - general queries are ask_personalized:",
-  "   - 'What about Apple stock?' → stock_query, needs_web:false, needs_user_data:false, ticker:'AAPL' (SPECIFIC company)",
-  "   - 'Tell me about AAPL' → stock_query, needs_web:false, needs_user_data:false, ticker:'AAPL' (SPECIFIC ticker)",
-  "   - 'Should I buy Tesla?' → stock_query, needs_web:false, needs_user_data:true, ticker:'TSLA' (SPECIFIC company)",
-  "   - 'What's the market cap of Microsoft?' → stock_query, needs_web:false, needs_user_data:false, ticker:'MSFT' (SPECIFIC company)",
-  "   - 'How is NVIDIA doing?' → stock_query, needs_web:false, needs_user_data:false, ticker:'NVDA' (SPECIFIC company)",
-  "   - 'Do an analysis on Micron Tech stock' → stock_query, needs_web:false, needs_user_data:false, ticker:'MU' (SPECIFIC company - detect ANY company name, not just hard-coded ones)",
-  "   - 'Analyze Intel Corporation' → stock_query, needs_web:false, needs_user_data:false, ticker:'INTC' (SPECIFIC company)",
-  "   - 'What stocks should I buy?' → ask_personalized, needs_user_data:true (GENERAL - no specific ticker)",
-  "   - 'What stocks are good?' → ask_personalized, needs_user_data:true (GENERAL - no specific ticker)",
-  "   - 'Tell me about the stock market' → ask_personalized, needs_web:true (GENERAL - no specific ticker)",
+  "6. Stock queries REQUIRE EXPLICIT stock/investment context:",
+  "   - MUST include keywords: 'stock', 'ticker', 'shares', 'invest in [company]', OR explicit ticker symbol (AAPL, TSLA)",
+  "   - 'What about Apple stock?' → stock_query (has 'stock')",
+  "   - 'Tell me about AAPL' → stock_query (ticker symbol)",
+  "   - 'Should I invest in Tesla?' → stock_query (has 'invest in [company]')",
+  "   - 'What about Apple?' → ask_personalized (NO stock context, ambiguous)",
+  "   - 'Tell me about Microsoft' → ask_personalized (NO stock context, could be general info)",
+  "   - 'What stocks should I buy?' → ask_personalized (GENERAL - no specific ticker)",
   "",
-  "7. TICKER DETECTION RULES (CRITICAL - Use your knowledge, not hardcoded lists):",
-  "   - ONLY classify as stock_query if a SPECIFIC ticker symbol OR company name is mentioned",
-  "   - Extract ticker symbols (1-5 uppercase letters): AAPL, TSLA, MSFT, GOOGL, MU, QCOM, AVGO, etc.",
-  "   - CRITICAL: Detect ANY company name mentioned in the query using your training knowledge",
-  "   - DO NOT rely on hardcoded lists - you know thousands of companies and their tickers",
-  "   - Examples: Apple→AAPL, Tesla→TSLA, Microsoft→MSFT, Google→GOOGL, Amazon→AMZN, Meta→META, NVIDIA→NVDA, Micron→MU, Intel→INTC, Qualcomm→QCOM, Broadcom→AVGO, AMD→AMD, etc.",
-  "   - If ANY company name is mentioned (Micron, Qualcomm, Broadcom, Palantir, Snowflake, etc.), classify as stock_query",
-  "   - Extract the ticker symbol using your knowledge - you know the ticker for most public companies",
-  "   - If a company name is mentioned but you're unsure of the ticker, still classify as stock_query and set ticker to the company name (the system will resolve it)",
-  "   - If multiple tickers detected, include all in entities array",
-  "   - If ticker is ambiguous (e.g., 'Apple' without context), set confidence < 0.8",
-  "   - If NO specific ticker/company mentioned, use ask_personalized (NOT stock_query)",
-  "   - IMPORTANT: 'Do an analysis on Micron stock' → stock_query with ticker:'MU' (you know Micron's ticker is MU)",
-  "   - IMPORTANT: 'Tell me about Qualcomm' → stock_query with ticker:'QCOM' (you know Qualcomm's ticker is QCOM)",
+  "7. TICKER DETECTION RULES (STRICT - Avoid false positives):",
+  "   - ONLY classify as stock_query if BOTH conditions met:",
+  "     a) Explicit stock context keywords (stock, ticker, shares, invest in [company]), OR",
+  "     b) Explicit ticker symbol in all caps (AAPL, TSLA, MSFT)",
+  "   - CRITICAL: Finance acronyms are NOT tickers: APR, APY, HSA, IRA, 401k, CD, ARM, FSA, etc.",
+  "   - Company name alone (Apple, Tesla, Microsoft) WITHOUT stock keywords → ask_personalized",
+  "   - If ambiguous or unclear context → default to ask_personalized (safer)",
   "",
   "8. Spending, budget, and financial tips/queries ALWAYS need user data:",
   "   - 'Give me a spending tip' → intent:ask_personalized, needs_web:false, needs_user_data:true",
@@ -284,7 +280,7 @@ const CLASSIFICATION_SYSTEM_PROMPT = [
   "- No extra whitespace or line breaks inside JSON",
   "- All fields must be present",
   "",
-  "Field requirements:",
+  "Field requirements (Schema v1.1):",
   "- intent: REQUIRED string (ask_personalized|goal_conversation|stock_query|off_topic)",
   "- intent_type: string or null (exploratory|actionable|emotional_support|crisis|planning|null)",
   "- emotional_state: REQUIRED string (neutral|anxious|panicked|ashamed|overwhelmed|fomo)",
@@ -296,7 +292,11 @@ const CLASSIFICATION_SYSTEM_PROMPT = [
   "- confidence: REQUIRED number (0.0-1.0)",
   "- decision_risk: REQUIRED string (low|medium|high)",
   "- info_sufficiency: REQUIRED string (sufficient|partial|insufficient)",
-  "- clarification_type: string or null (type of clarification needed if info_sufficiency is insufficient, null otherwise)",
+  "- clarification_needed: REQUIRED boolean (true if decision_risk='high' AND info_sufficiency='insufficient')",
+  "- clarification_reasons: REQUIRED array of strings (what's missing, empty [] if no clarification needed)",
+  "- clarification_note: string or null (short explanation of what's needed)",
+  "- requested_context: (removed)",
+  "- clarification_type: string or null (legacy field for backward compat, optional)",
   "",
   "TICKER EXTRACTION RULES:",
   "- For stock_query intent, extract ticker symbol from message",
@@ -328,6 +328,155 @@ function getMockFinancialData() {
   };
 }
 
+// ========== ORCHESTRATOR: Decide whether to clarify or proceed ==========
+/**
+ * Decides whether to ask clarification or proceed to answering
+ * @param {object} classification - The classification result (schema v1.1)
+ * @returns {object} - { action: 'clarify' | 'proceed', rationale: string }
+ */
+function decideClarificationAction(classification) {
+  const { 
+    clarification_needed, 
+    decision_risk, 
+    info_sufficiency,
+    confidence,
+    clarification_reasons = []
+  } = classification;
+
+  // Simple orchestration logic
+  if (clarification_needed === true) {
+    return {
+      action: 'clarify',
+      rationale: `High-risk decision (${decision_risk}) with insufficient info (${info_sufficiency}). Reasons: ${clarification_reasons.join(', ') || 'unspecified'}`
+    };
+  }
+
+  // Optional: Also clarify if confidence is very low (below 0.5)
+  if (confidence < 0.5) {
+    return {
+      action: 'clarify',
+      rationale: `Low confidence (${confidence}) in classification, need more context`
+    };
+  }
+
+  return {
+    action: 'proceed',
+    rationale: `Sufficient info to proceed (risk: ${decision_risk}, sufficiency: ${info_sufficiency}, confidence: ${confidence})`
+  };
+}
+
+// ========== SIMPLE QUESTION GENERATOR (Template-based) ==========
+/**
+ * Generates a clarifying question based on classification output
+ * Uses simple templates for common patterns
+ * @param {object} classification - The classification result
+ * @param {string} userMessage - Original user query
+ * @returns {string} - The clarifying question
+ */
+function generateClarifyingQuestion(classification, userMessage) {
+  const { 
+    clarification_reasons = [], 
+    clarification_note,
+    requested_context = [],
+    clarification_type // legacy support
+  } = classification;
+
+  // If we have clarification_note, use it to build a natural question
+  if (clarification_note) {
+    return `To give you the best advice, I need a bit more info: ${clarification_note}. Could you share that?`;
+  }
+
+  // Template-based approach using clarification_reasons
+  if (clarification_reasons.length > 0) {
+    const reason = clarification_reasons[0]; // Pick first reason for simplicity
+    
+    // Common templates
+    if (reason.includes('timeline') || reason.includes('when')) {
+      return "What's your timeline for this? Are you thinking short-term (months) or longer-term (years)?";
+    }
+    
+    if (reason.includes('income') || reason.includes('replacement')) {
+      return "Do you have a plan for replacing your income? For example, savings runway, side income, or client pipeline?";
+    }
+    
+    if (reason.includes('purpose') || reason.includes('use')) {
+      return "What's the main purpose? For example, is this for personal use, investment, or something else?";
+    }
+    
+    if (reason.includes('budget') || reason.includes('amount') || reason.includes('target')) {
+      return "What's your budget or target amount you're thinking about?";
+    }
+    
+    if (reason.includes('execution') || reason.includes('plan')) {
+      return "How are you planning to execute this? What's your approach or strategy?";
+    }
+    
+    if (reason.includes('location') || reason.includes('where')) {
+      return "Where are you planning this? Location can impact the financial picture significantly.";
+    }
+    
+    if (reason.includes('risk_tolerance')) {
+      return "How comfortable are you with risk? Are you more conservative or willing to take bigger risks?";
+    }
+    
+    // Generic fallback
+    return `To give you better advice, could you tell me more about: ${clarification_reasons.join(', ')}?`;
+  }
+
+  // Legacy clarification_type fallback
+  if (clarification_type) {
+    const templates = {
+      income_replacement: "Do you have a plan for replacing your income? For example, savings runway, side income, or client pipeline?",
+      goal_timeline: "What's your timeline for this? Are you thinking short-term (months) or longer-term (years)?",
+      intent_motivation: "What's motivating this decision? Understanding your 'why' helps me give better advice.",
+      purpose_use: "What's the main purpose? For example, is this for personal use, investment, or something else?",
+      execution_plan: "How are you planning to execute this? What's your approach or strategy?",
+      target_amount: "What's your target amount or budget range?",
+      location_context: "Where are you planning this? Location can impact the financial picture significantly."
+    };
+    
+    return templates[clarification_type] || "Could you provide a bit more context about your situation?";
+  }
+
+  // Final fallback
+  return "Could you provide a bit more context so I can give you the best advice?";
+}
+
+// ========== TRACE LOGGER ==========
+/**
+ * Simple trace logger for debugging flow
+ */
+class TraceLogger {
+  constructor() {
+    this.trace_id = `trace_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    this.steps = [];
+    this.start_time = Date.now();
+  }
+
+  addStep(step_name, data = {}) {
+    this.steps.push({
+      step: step_name,
+      timestamp: Date.now(),
+      duration_ms: Date.now() - this.start_time,
+      ...data
+    });
+  }
+
+  print() {
+    console.log(`\n🔍 TRACE ID: ${this.trace_id}`);
+    console.log(`⏱️  Total Duration: ${Date.now() - this.start_time}ms\n`);
+    
+    this.steps.forEach((step, idx) => {
+      console.log(`${idx + 1}. ${step.step} (${step.duration_ms}ms from start)`);
+      Object.keys(step).forEach(key => {
+        if (!['step', 'timestamp', 'duration_ms'].includes(key)) {
+          console.log(`   ${key}: ${JSON.stringify(step[key])}`);
+        }
+      });
+    });
+  }
+}
+
 // Production classification function from finny.js
 async function handleClassify(message, context, conversationContext = null) {
   console.log("🔍 [TEST] Starting classification for message:", message);
@@ -347,6 +496,10 @@ async function handleClassify(message, context, conversationContext = null) {
       confidence: 0.1,
       decision_risk: "low",
       info_sufficiency: "sufficient",
+      clarification_needed: false,
+      clarification_reasons: [],
+      clarification_note: null,
+      requested_context: [],
       clarification_type: null,
       fallback: true,
     };
@@ -475,6 +628,10 @@ async function handleClassify(message, context, conversationContext = null) {
         confidence: 0.8,
         decision_risk: "low",
         info_sufficiency: "sufficient",
+        clarification_needed: false,
+        clarification_reasons: [],
+        clarification_note: null,
+        requested_context: [],
         clarification_type: null,
         fallback: true,
       };
@@ -506,6 +663,37 @@ async function handleClassify(message, context, conversationContext = null) {
       );
       out.info_sufficiency = "sufficient";
     }
+    // Schema v1.1 validation and normalization
+    // Derive clarification_needed if missing
+    if (out.clarification_needed === undefined) {
+      out.clarification_needed = 
+        out.decision_risk === "high" && out.info_sufficiency === "insufficient";
+      console.log(`⚠️ [TEST] Derived clarification_needed: ${out.clarification_needed}`);
+    }
+    
+    // Validate clarification_reasons array
+    if (!Array.isArray(out.clarification_reasons)) {
+      console.log("⚠️ [TEST] Missing clarification_reasons, defaulting to []");
+      out.clarification_reasons = [];
+    }
+    
+    // Validate clarification_note
+    if (out.clarification_note !== null && out.clarification_note !== undefined && typeof out.clarification_note !== "string") {
+      console.log("⚠️ [TEST] Invalid clarification_note, defaulting to null");
+      out.clarification_note = null;
+    }
+    
+    // requested_context removed
+    // Remove requested_context if present
+    if (out.hasOwnProperty('requested_context')) {
+      delete out.requested_context;
+    }
+    // Backward compat: ignore if model returns it
+      console.log("⚠️ [TEST] Missing requested_context, defaulting to []");
+      out.requested_context = [];
+    }
+    
+    // Legacy clarification_type support
     if (
       out.clarification_type !== null &&
       out.clarification_type !== undefined &&
@@ -554,6 +742,10 @@ async function handleClassify(message, context, conversationContext = null) {
       confidence: 0.1,
       decision_risk: "low",
       info_sufficiency: "sufficient",
+      clarification_needed: false,
+      clarification_reasons: [],
+      clarification_note: null,
+      requested_context: [],
       clarification_type: null,
       fallback: true,
       timeout_fallback: e?.message?.includes("timeout") || false,
@@ -567,10 +759,101 @@ async function handleClassify(message, context, conversationContext = null) {
   }
 }
 
+// ========== ORCHESTRATED FLOW: Classify -> Decide -> (Clarify or Proceed) ==========
+/**
+ * Runs the full orchestrated flow with optional tracing
+ * @param {string} message - User query
+ * @param {boolean} enableTrace - Whether to print trace logs
+ * @returns {object} - { classification, decision, clarifyingQuestion?, trace? }
+ */
+async function testOrchestrated(message, enableTrace = false) {
+  const trace = enableTrace ? new TraceLogger() : null;
+  
+  if (trace) trace.addStep('start', { message });
+  
+  console.log(`\n🎯 ORCHESTRATED FLOW: "${message}"`);
+  console.log("=".repeat(80));
+  
+  // Step 1: Classification
+  console.log("\n📋 Step 1: Classification");
+  const startClassify = Date.now();
+  const classification = await handleClassify(message, null);
+  const classifyDuration = Date.now() - startClassify;
+  
+  if (trace) trace.addStep('classification', { 
+    intent: classification.intent,
+    decision_risk: classification.decision_risk,
+    info_sufficiency: classification.info_sufficiency,
+    clarification_needed: classification.clarification_needed,
+    duration_ms: classifyDuration
+  });
+  
+  console.log(`  ✅ Intent: ${classification.intent}`);
+  console.log(`  ✅ Risk: ${classification.decision_risk}, Sufficiency: ${classification.info_sufficiency}`);
+  console.log(`  ✅ Clarification needed: ${classification.clarification_needed}`);
+  if (classification.clarification_reasons?.length > 0) {
+    console.log(`  ✅ Reasons: ${classification.clarification_reasons.join(', ')}`);
+  }
+  console.log(`  ⏱️  Duration: ${classifyDuration}ms`);
+  
+  // Step 2: Orchestration Decision
+  console.log("\n🤔 Step 2: Orchestration Decision");
+  const decision = decideClarificationAction(classification);
+  
+  if (trace) trace.addStep('orchestration', { 
+    action: decision.action,
+    rationale: decision.rationale
+  });
+  
+  console.log(`  ✅ Action: ${decision.action.toUpperCase()}`);
+  console.log(`  ✅ Rationale: ${decision.rationale}`);
+  
+  let clarifyingQuestion = null;
+  
+  if (decision.action === 'clarify') {
+    // Step 3: Generate Clarifying Question
+    console.log("\n💬 Step 3: Generate Clarifying Question");
+    const startQuestion = Date.now();
+    clarifyingQuestion = generateClarifyingQuestion(classification, message);
+    const questionDuration = Date.now() - startQuestion;
+    
+    if (trace) trace.addStep('question_generation', { 
+      question: clarifyingQuestion,
+      duration_ms: questionDuration
+    });
+    
+    console.log(`  💬 Question: "${clarifyingQuestion}"`);
+    console.log(`  ⏱️  Duration: ${questionDuration}ms`);
+    console.log("\n🛑 Flow stops here. Waiting for user reply...");
+  } else {
+    // Step 3: Proceed to answering (placeholder)
+    console.log("\n✅ Step 3: Proceed to Answering");
+    console.log("  ℹ️  [Placeholder] Would fetch user data and generate answer here");
+    
+    if (trace) trace.addStep('proceed_to_answer', { 
+      note: "Placeholder - real answering would happen in full flow"
+    });
+  }
+  
+  // Print trace if enabled
+  if (trace) {
+    trace.print();
+  }
+  
+  console.log("\n" + "=".repeat(80));
+  
+  return {
+    classification,
+    decision,
+    clarifyingQuestion,
+    trace: trace ? trace.steps : null
+  };
+}
+
 // Test function without user data loading (classification layer only)
 async function testSingleMessage(message) {
   try {
-    console.log(`\n🧪 Testing: "${message}"`);
+    // console.log(`\n🧪 Testing: "${message}"`); // disabled to allow import without side-effects
 
     const startTime = Date.now();
 
@@ -603,7 +886,7 @@ async function testSingleMessage(message) {
       }
     }
 
-    console.log("\n📊 Classification Results:");
+    // console.log("\n📊 Classification Results:"); // disabled to allow import without side-effects
     console.log(`  Intent: ${classification.intent}`);
     if (classification.intent_type) {
       console.log(`  Intent Type: ${classification.intent_type}`);
@@ -874,73 +1157,100 @@ const isMainModule =
   process.argv[1]?.endsWith("test_classification_direct.js");
 
 if (isMainModule) {
-  const userMessage = process.argv[2];
-  const testType = process.argv[3];
+  const args = process.argv.slice(2);
+  
+  // Parse flags
+  const hasOrchestrate = args.includes('--orchestrate');
+  const hasTrace = args.includes('--trace');
+  
+  // Remove flags to get the actual message/command
+  const cleanArgs = args.filter(arg => !arg.startsWith('--'));
+  const userMessage = cleanArgs[0];
+  const testType = cleanArgs[1];
 
-  if (
+  // If --orchestrate flag is present, run orchestrated flow
+  if (hasOrchestrate && userMessage && 
+      userMessage !== "hardball" && 
+      userMessage !== "stock" && 
+      userMessage !== "curveball" && 
+      userMessage !== "clarify") {
+    console.log("🎯 Running Orchestrated Flow");
+    console.log(`Testing: "${userMessage}"`);
+    console.log("=".repeat(50));
+
+    testOrchestrated(userMessage, hasTrace)
+      .then(() => {
+        console.log("\n✅ Orchestrated test completed");
+        // process.exit(0); // disabled to allow import without side-effects
+      })
+      .catch((error) => {
+        console.error("❌ Orchestrated test failed:", error);
+        // process.exit(1); // disabled to allow import without side-effects
+      });
+  } else if (
     userMessage &&
     userMessage !== "hardball" &&
     userMessage !== "stock" &&
     userMessage !== "curveball" &&
     userMessage !== "clarify"
   ) {
-    // User provided a query string
-    console.log("🚀 Testing Single Statement");
+    // User provided a query string (classic mode)
+    // console.log("🚀 Testing Single Statement (Classification Only)"); // disabled to allow import without side-effects
     console.log(`Testing: "${userMessage}"`);
     console.log("=".repeat(50));
 
     testSingleMessage(userMessage)
       .then(() => {
         console.log("\n✅ Test completed");
-        process.exit(0);
+        // process.exit(0); // disabled to allow import without side-effects
       })
       .catch((error) => {
         console.error("❌ Test failed:", error);
-        process.exit(1);
+        // process.exit(1); // disabled to allow import without side-effects
       });
   } else if (userMessage === "hardball" || testType === "hardball") {
     console.log("🔥 Running hardball tests...");
     runHardballTests()
       .then(() => {
         console.log("\n✅ Hardball tests completed");
-        process.exit(0);
+        // process.exit(0); // disabled to allow import without side-effects
       })
       .catch((error) => {
         console.error("❌ Hardball tests failed:", error);
-        process.exit(1);
+        // process.exit(1); // disabled to allow import without side-effects
       });
   } else if (userMessage === "clarify" || testType === "clarify") {
     console.log("🧪 Running clarification question tests...");
     testClarificationQuestions()
       .then(() => {
         console.log("\n✅ Clarification tests completed");
-        process.exit(0);
+        // process.exit(0); // disabled to allow import without side-effects
       })
       .catch((error) => {
         console.error("❌ Clarification tests failed:", error);
-        process.exit(1);
+        // process.exit(1); // disabled to allow import without side-effects
       });
   } else if (userMessage === "stock" || testType === "stock") {
     console.log("📈 Running stock query tests...");
     runStockQueryTests()
       .then(() => {
         console.log("\n✅ Stock query tests completed");
-        process.exit(0);
+        // process.exit(0); // disabled to allow import without side-effects
       })
       .catch((error) => {
         console.error("❌ Stock query tests failed:", error);
-        process.exit(1);
+        // process.exit(1); // disabled to allow import without side-effects
       });
   } else {
     console.log("Running curveball tests...");
     runCurveballTests()
       .then(() => {
         console.log("\n✅ Curveball tests completed");
-        process.exit(0);
+        // process.exit(0); // disabled to allow import without side-effects
       })
       .catch((error) => {
         console.error("❌ Curveball tests failed:", error);
-        process.exit(1);
+        // process.exit(1); // disabled to allow import without side-effects
       });
   }
 }
@@ -1337,6 +1647,10 @@ export {
   handleClassify,
   runStockQueryTests,
   testClarificationQuestions,
+  testOrchestrated,
+  decideClarificationAction,
+  generateClarifyingQuestion,
+  TraceLogger,
 };
 
 // Curveball hard tests

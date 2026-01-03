@@ -326,6 +326,7 @@ interface ChatMessageProps {
     text: string;
     id: string;
     type?: "text" | "action";
+    clarify?: boolean;
     actions?: Array<{
       label: string;
       action: string;

@@ -60,6 +60,7 @@ export const useChat = () => {
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [isNewSession, setIsNewSession] = useState(true);
   const [chatId, setChatId] = useState<string>(() => `chat_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`);
+  const [pendingConversationId, setPendingConversationId] = useState<string | null>(null);
   const appStateRef = useRef(AppState.currentState);
   const shouldPersistRef = useRef(false);
 
@@ -1041,6 +1042,7 @@ export const useChat = () => {
           action: "classify",
           message: messageText,
           chat_id: chatId,
+          ...(pendingConversationId ? { conversation_id: pendingConversationId } : {}),
           context: {}
         }),
       });
@@ -1049,6 +1051,41 @@ export const useChat = () => {
 
       // Log classification results with new decision gate fields
       if (classifyRes && classifyData) {
+        // Orchestrated proceed: backend already produced final answer
+        if (classifyData.action === 'proceed' && classifyData.answer && typeof classifyData.answer === 'object') {
+          const content = typeof classifyData.answer.content === 'string' ? classifyData.answer.content : null;
+          if (content && content.trim()) {
+            pushChat({
+              id: `finny-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+              sender: 'finny',
+              text: content.trim(),
+              timestamp: Date.now(),
+              type: 'text',
+            } as any);
+            setPendingConversationId(null);
+            setIsTyping(false);
+            setProgressStatus("");
+            return;
+          }
+        }
+        // Handle clarify action from orchestrated flow
+        if (classifyData.action === 'clarify' && classifyData.pending_clarification && classifyData.conversation_id) {
+          setPendingConversationId(classifyData.conversation_id);
+          // Show the clarifying question as a Finny message
+          if (typeof classifyData.message === 'string' && classifyData.message.trim()) {
+            pushChat({
+              id: `finny-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+              sender: 'finny',
+              text: classifyData.message.trim(),
+              timestamp: Date.now(),
+              type: 'text',
+              clarify: true,
+            } as any);
+            setIsTyping(false);
+            setProgressStatus("");
+            return; // Wait for user to reply; next send will include conversation_id
+          }
+        }
         logger.info("🎯 [CLASSIFICATION] Result:", {
           intent: classifyData.intent,
           intent_type: classifyData.intent_type || null,
@@ -1064,6 +1101,7 @@ export const useChat = () => {
       }
 
       // Check if API returned "Please log in" - indicates stale/invalid token
+      // Back-compat and auth handling
       if (classifyRes && classifyData.message && 
           (classifyData.message.toLowerCase().includes("please log in") || 
            classifyData.message.toLowerCase().includes("log in"))) {

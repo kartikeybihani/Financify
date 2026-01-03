@@ -1,0 +1,75 @@
+Finny Classification → Clarify → Answer: Minimal, Practical Roadmap
+
+Constraints
+- Keep it minimal: no overengineering, no mocks.
+- Use current free model + standard fallback only.
+- If clarification is needed, pause and wait for user reply (no auto-proceed).
+- Build in tests first (using current model calls), then integrate into api/finny.js.
+
+Stage A — Upgrade the test harness (tests/test_classification_direct.js)
+1) Schema v1.1 (lightweight, extensible but simple)
+   - intent: ask_personalized | goal_conversation | stock_query | off_topic
+   - decision_risk: low | medium | high
+   - info_sufficiency: sufficient | insufficient
+   - clarification_needed: boolean (true if risk=high OR sufficiency=insufficient)
+   - clarification_reasons: array of short strings (free-form, not rigid)
+   - clarification_note: short sentence explaining what’s missing
+   - requested_context: array of short keys (e.g., "timeline", "target_amount", "ticker_confirm")
+   - needs_user_data, needs_web: booleans (retain)
+   - entities/tickers: as today
+   - confidence: 0–1 (optional)
+   - safety_flags: array (optional)
+   Minimal validator: accept superset fields, coerce/derive clarification_needed when missing.
+
+2) Clarification decision (tiny orchestrator)
+   - If clarification_needed true → ask clarification question and stop.
+   - Else → proceed to answering in the same run.
+   - Keep thresholds simple: don’t tune — just rely on model outputs.
+
+3) Clarifying question generator (simple)
+   - Input: user query + classification.
+   - Strategy: template-first; if reasons are present, ask one concise question that will unblock answering.
+   - Keep it single-question, specific, and actionable.
+   - No extra user data exposure here (only minimal hints if obviously safe, e.g., “we have checking+credit linked”).
+
+4) CLI additions
+   - `--orchestrate`: run classify → decide → (clarify? or answer?)
+   - `--trace`: print compact steps, timing, and model used.
+
+Stage B — Minimal end-to-end test file (no mocks)
+- New file: tests/test_flow_minimal.js
+- Scenarios (manual invocation):
+  1) Query that should clarify → prints the clarifying question and exits.
+  2) Query that should proceed → prints final answer.
+- Uses the same free model + fallback; timeouts kept short; results printed to console.
+
+Stage C — Integrate into api/finny.js (small diff)
+1) Add a single entry point that:
+   - Calls classification.
+   - Runs the same tiny orchestrator.
+   - If clarify: return a message asking the user for more info (and store a state token/thread id if needed by existing infra).
+   - If proceed: generate answer and return.
+
+2) Keep everything synchronous and minimal
+   - Same model and fallback policy as tests.
+   - No new infra; re-use existing helpers.
+
+3) Guardrails (lightweight)
+   - Redact PII in logs where obvious (emails, phone, account ids if surfaced).
+   - Include trace_id and durations for observability.
+
+Rollout plan
+- Step 1: Update tests/test_classification_direct.js with schema v1.1, orchestrator, question generator, and CLI flags.
+- Step 2: Add tests/test_flow_minimal.js with two scenarios.
+- Step 3: Port the same logic into api/finny.js behind a simple feature flag (e.g., FINNY_CLASSIFY_FLOW=true).
+- Step 4: Manual QA in dev environment; adjust prompt hints only if necessary.
+
+Success criteria
+- For queries requiring more context, system returns exactly one clarifying question and waits for user reply.
+- For straightforward queries, system produces a helpful answer without unnecessary clarification.
+- No crashes on parse errors; graceful fallback and clear console output.
+
+Notes
+- Keep prompts short and strict on JSON for classification.
+- Prefer deterministic templates for clarifying questions to reduce variance.
+- Defer advanced planning/synthesis until we see real usage patterns.

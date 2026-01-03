@@ -960,7 +960,7 @@ export default async function handler(req, res) {
   // Check if client wants streaming response
   const wantsStreaming = req.body.stream === true;
 
-  const { action, message, context, classification, ...otherParams } = req.body;
+  const { action, message, context, classification, conversation_id: conversationId, ...otherParams } = req.body;
   logInfo("📝 [FINNY] Action:", action);
   // Avoid logging full message/context to reduce PII exposure
   logInfo("📊 [FINNY] Context provided:", context ? "Yes" : "No");
@@ -1040,7 +1040,7 @@ export default async function handler(req, res) {
     });
   }
 
-  if (wantsStreaming) {
+  if (wantsStreaming && process.env.FINNY_CLASSIFY_FLOW !== "true") {
     // Set SSE headers for streaming after confirming rate limit allowance
     res.writeHead(200, {
       "Content-Type": "text/event-stream",
@@ -1122,6 +1122,7 @@ export default async function handler(req, res) {
     deepInsights: [],
   };
   let baseFinancialPack = null; // For clarifying questions
+  let userContextSummaryBasePack = null; // Minimal summarized context for clarify
 
   // Load memory and profile data for "ask" and "classify" actions
   if (action === "ask" || action === "classify") {
@@ -1179,7 +1180,11 @@ export default async function handler(req, res) {
           {}
         );
         if (contextResult && contextResult.packs && contextResult.packs.base) {
+          // Keep full base for other handlers
+          const base = contextResult.packs.base;
           baseFinancialPack = contextResult.packs.base;
+          // Build minimal user context summary (safe estimates only)
+          userContextSummaryBasePack = buildUserContextSummaryFromBase(base);
           logDebug(
             `✅ [CLASSIFY] Loaded base financial pack for clarifying questions`
           );
@@ -1291,6 +1296,19 @@ export default async function handler(req, res) {
 
     switch (finalAction) {
       case "classify": {
+        if (process.env.FINNY_CLASSIFY_FLOW === "true") {
+          response = await handleClassifyOrchestrated({
+            message,
+            context: safeContext,
+            conversationContext,
+            conversationId,
+            userId: finalUserId,
+            timings,
+            wantsStreaming,
+            res,
+          });
+          break;
+        }
         const classifyStartTime = Date.now();
         response = await handleClassify(
           message,
@@ -4998,6 +5016,229 @@ async function handlePrebuildContext(userId) {
         "Context pre-building failed, will fallback to on-demand building",
       error: error.message,
     };
+  }
+}
+
+async function handleClassifyOrchestrated({ message, context, conversationContext = null, conversationId = null, userId = null, timings = {}, wantsStreaming = false, res = null }) {
+  const startTime = Date.now();
+  // If this is a follow-up turn with a conversationId, resume
+  if (conversationId) {
+    try {
+      const stateRow = await supabase
+        .from('chat_conversation_state')
+        .select('conversation_id, state, status, expires_at')
+        .eq('conversation_id', conversationId)
+        .single();
+
+      if (stateRow && stateRow.data && stateRow.data.status === 'pending' && (!stateRow.data.expires_at || new Date(stateRow.data.expires_at) > new Date())) {
+        const state = stateRow.data.state || {};
+        const initialMessage = state.initial_message || '';
+        // Proceed to answering using both messages. For now, route to ask handler with combined context.
+        const combinedMessage = `${initialMessage}\n\nFollow-up: ${message}`;
+        const askStart = Date.now();
+        const answer = await handleAsk(
+          combinedMessage,
+          context,
+          'ask_personalized',
+          state.classification || null,
+          conversationContext,
+          timings,
+          wantsStreaming,
+          wantsStreaming ? res : null
+        );
+        timings.llm_ms = (timings.llm_ms || 0) + (Date.now() - askStart);
+        // Mark state resolved
+        await supabase
+          .from('chat_conversation_state')
+          .update({ status: 'resolved', last_updated: new Date().toISOString() })
+          .eq('conversation_id', conversationId);
+        return {
+          trace_id: generateRequestId(),
+          action: 'proceed',
+          answer,
+          classification: {
+            ...(state.classification || {}),
+            clarification_needed: false,
+          },
+          durations: {
+            classification_ms: timings.classification_ms || 0,
+            answer_ms: Date.now() - askStart,
+            total_ms: Date.now() - startTime,
+          },
+          flags: {
+            model_fallback: false,
+            timeout_fallback: false,
+          },
+        };
+      }
+    } catch (e) {
+      console.error('⚠️ [CLASSIFY_FLOW] Failed to resume conversation:', e?.message);
+      // Fall through to fresh classification
+    }
+  }
+
+  // First turn: classify and possibly return a clarifying question
+  const classifyStart = Date.now();
+  const classification = await handleClassify(message, context, conversationContext);
+  // Attach base pack-derived summary if present
+  if (context && context.baseFinancialPack && !context.userContextSummaryBasePack) {
+    try {
+      context.userContextSummaryBasePack = buildUserContextSummaryFromBase(context.baseFinancialPack);
+    } catch (e) {
+      console.log('⚠️ [CLASSIFY_FLOW] Failed to derive userContextSummaryBasePack:', e?.message);
+    }
+  }
+  timings.classification_ms = (timings.classification_ms || 0) + (Date.now() - classifyStart);
+
+  // Decide whether to clarify or proceed
+  const decision = decideClarificationAction(classification);
+  if (decision.action === 'clarify') {
+    // Build minimal user context summary (base pack)
+    const userContextSummary = context?.userContextSummaryBasePack || await buildUserContextSummaryBasePack(userId, context);
+    const memoryRefs = await getRelevantMemoryRefs(userId, message, context);
+    const question = generateClarifyingQuestion(classification, message, userContextSummary, memoryRefs);
+
+    const conversation_id = generateRequestId();
+    const state = {
+      initial_message: message,
+      classification: {
+        intent: classification.intent,
+        decision_risk: classification.decision_risk,
+        info_sufficiency: classification.info_sufficiency,
+        clarification_needed: true,
+        clarification_reasons: classification.clarification_reasons || [],
+        clarification_note: classification.clarification_note || null,
+        needs_user_data: !!classification.needs_user_data,
+        needs_web: !!classification.needs_web,
+        confidence: classification.confidence || null,
+      },
+      user_context_summary: userContextSummary,
+      memory_refs: memoryRefs,
+    };
+
+    // Persist clarification state
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+    try {
+      await supabase.from('chat_conversation_state').insert({
+        conversation_id,
+        state,
+        asked_at: new Date().toISOString(),
+        expires_at: expiresAt,
+        status: 'pending',
+        last_updated: new Date().toISOString(),
+        user_id: userId || null,
+      });
+    } catch (e) {
+      console.error('❌ [CLASSIFY_FLOW] Failed to persist conversation state:', e?.message);
+    }
+
+    return {
+      trace_id: generateRequestId(),
+      action: 'clarify',
+      message: question,
+      conversation_id,
+      pending_clarification: true,
+      classification: state.classification,
+      durations: {
+        classification_ms: timings.classification_ms || 0,
+        question_ms: 0,
+        total_ms: Date.now() - startTime,
+      },
+      flags: {
+        model_fallback: !!classification.model_fallback,
+        timeout_fallback: !!classification.timeout_fallback,
+      },
+    };
+  }
+
+  // Proceed immediately using existing ask/stock routing
+  const askStart = Date.now();
+  const intentForAsk = classification?.intent === 'stock_query' ? 'stock_query' : 'ask_personalized';
+  const answer = await handleAsk(
+    message,
+    context,
+    intentForAsk,
+    classification,
+    conversationContext,
+    timings,
+    wantsStreaming,
+    wantsStreaming ? res : null
+  );
+  timings.llm_ms = (timings.llm_ms || 0) + (Date.now() - askStart);
+
+  return {
+    trace_id: generateRequestId(),
+    action: 'proceed',
+    answer,
+    classification: {
+      intent: classification.intent,
+      decision_risk: classification.decision_risk,
+      info_sufficiency: classification.info_sufficiency,
+      clarification_needed: false,
+      needs_user_data: !!classification.needs_user_data,
+      needs_web: !!classification.needs_web,
+      confidence: classification.confidence || null,
+    },
+    durations: {
+      classification_ms: timings.classification_ms || 0,
+      answer_ms: Date.now() - askStart,
+      total_ms: Date.now() - startTime,
+    },
+    flags: {
+      model_fallback: !!classification.model_fallback,
+      timeout_fallback: !!classification.timeout_fallback,
+    },
+  };
+}
+
+// Build minimal user context summary from a base financial pack
+function buildUserContextSummaryFromBase(base) {
+  if (!base || typeof base !== 'object') return null;
+  const accounts_summary = {
+    checking_count: base.accounts?.checking?.count || 0,
+    savings_count: base.accounts?.savings?.count || 0,
+    credit_count: base.accounts?.credit?.count || 0,
+    investment_count: base.accounts?.investment?.count || 0,
+  };
+  const assets_summary = {
+    cash_total_est: base.assets?.cash_total_est ?? null,
+    investments_total_est: base.assets?.investments_total_est ?? null,
+  };
+  const liabilities_summary = {
+    cc_balance_est: base.liabilities?.cc_balance_est ?? null,
+    loans_balance_est: base.liabilities?.loans_balance_est ?? null,
+  };
+  const cashflow = {
+    monthly_income_est: base.cashflow?.monthly_income_est ?? null,
+    monthly_expenses_est: base.cashflow?.monthly_expenses_est ?? null,
+    runway_months_est: base.cashflow?.runway_months_est ?? null,
+  };
+  const profile = {
+    state: base.profile?.state || null,
+    age_range: base.profile?.age_range || null,
+  };
+  return { profile, accounts_summary, assets_summary, liabilities_summary, cashflow };
+}
+
+async function buildUserContextSummaryBasePack(userId, context) {
+  try {
+    if (context?.userContextSummaryBasePack) return context.userContextSummaryBasePack;
+    if (context?.baseFinancialPack) {
+      return buildUserContextSummaryFromBase(context.baseFinancialPack);
+    }
+  } catch (e) {
+    console.log('⚠️ [CLASSIFY_FLOW] buildUserContextSummaryBasePack failed:', e?.message);
+  }
+  return null;
+}
+
+async function getRelevantMemoryRefs(userId, message, context) {
+  try {
+    const mems = context?.memory?.memories || [];
+    // Return up to 3 safe IDs/tags if available
+    return mems.slice(0, 3).map((m) => m.id || m.tag || m.key).filter(Boolean);
+  } catch (e) {
+    return [];
   }
 }
 
