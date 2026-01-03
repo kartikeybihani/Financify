@@ -114,6 +114,8 @@ const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL;
 
 // Memory extraction model - small, fast, free
 const SMALLER_MODEL = "meta-llama/llama-3.3-70b-instruct:free";
+// Standard non-free model to fallback to when the free model fails
+const STANDARD_MODEL = "meta-llama/llama-3.2-3b-instruct";
 
 // Session summarization model (LLM) via OpenRouter
 const SUMMARY_MODEL = "deepseek/deepseek-r1-0528-qwen3-8b:free";
@@ -5134,253 +5136,185 @@ async function handleClassify(message, context, conversationContext = null) {
       );
     });
 
-    const requestBody = {
-      model: SMALLER_MODEL, // Use reliable model for classification (JSON mode)
-      temperature: 0.1,
-      max_tokens: 350, // Allow slightly longer responses for stability
-      top_p: 0.9, // Add top_p for better stability
-      messages: [
-        {
-          role: "system",
-          content: [
-            "You are Finny's intelligent classification system. Analyze user messages to understand their intent, emotional state, and what resources they need.",
-            "",
-            "=== PRIMARY INTENT CLASSIFICATION ===",
-            "Classify into exactly ONE primary intent:",
-            "- ask_personalized: Questions about user's finances (spending, accounts, goals, investments, affordability, advice)",
-            "- goal_conversation: Creating NEW goals or setting savings targets (explicit goal creation statements)",
-            "- stock_query: Questions about specific stocks, tickers, or companies (e.g., 'What about Apple?', 'Tell me about AAPL', 'Should I buy Tesla stock?')",
-            "- off_topic: Non-financial topics (weather, cooking, entertainment, general chat, etc)",
-            "",
-            "=== INTENT TYPE (What user wants to accomplish) ===",
-            "Detect the underlying intent type (can combine with primary intent):",
-            "- exploratory: Learning, understanding concepts ('tell me about investing', 'explain Roth IRA', 'what is a 401k')",
-            "- actionable: Specific steps or how-to ('how do I save', 'what should I do', 'help me budget')",
-            "- emotional_support: Seeking reassurance, validation ('I'm worried about money', 'am I doing okay?')",
-            "- crisis: Immediate urgent help needed ('can't pay rent', 'overdraft', 'need money now')",
-            "- planning: Long-term strategy ('retirement planning', 'investment strategy', 'financial plan')",
-            "",
-            "=== EMOTIONAL STATE DETECTION ===",
-            "Detect emotional state from language and context (be nuanced, avoid false positives):",
-            "- neutral: No strong emotional signals detected",
-            "- anxious: Worry, stress, uncertainty ('worried', 'stressed', 'anxious', 'nervous', 'afraid')",
-            "- panicked: Urgent crisis language ('can't pay', 'overdraft', 'declined', 'bounced', 'emergency', 'need money now')",
-            "- ashamed: Shame, guilt, embarrassment ('ashamed', 'embarrassed', 'feel stupid', 'should have', 'failure')",
-            "- overwhelmed: Too much to handle ('overwhelmed', 'too much', 'can't handle', 'drowning', 'don't know where to start')",
-            "- fomo: Fear of missing out ('saw on tiktok', 'everyone's doing', 'fomo', 'impulse', 'couldn't resist')",
-            "",
-            "CRITICAL EMOTIONAL DETECTION RULES:",
-            "- Only detect emotional state if there are CLEAR signals. Don't infer emotions from neutral questions.",
-            "- 'Tell me about investing' → neutral (informational query, no emotional distress)",
-            "- 'I'm worried about my debt' → anxious (explicit worry)",
-            "- 'Can I afford Italy trip?' → neutral (affordability question, not emotional)",
-            "- 'I can't pay my rent this month' → panicked (crisis language)",
-            "- 'I feel stupid for spending so much' → ashamed (self-blame language)",
-            "",
-            "=== FLAG RULES (can combine) ===",
-            "- needs_user_data=true: Answer requires user's actual data (spend, net worth, accounts, goals, personal recommendations, affordability checks)",
-            "- needs_web=true: Answer requires current/2024-2025 info (limits, rates, brackets, market/news, card offers, current regulations)",
-            "",
-            "=== CRITICAL CLASSIFICATION RULES ===",
-            "",
-            "1. Affordability queries are ALWAYS ask_personalized (not goal_conversation):",
-            "   - 'Can I afford X?' → ask_personalized, needs_user_data:true, intent_type:actionable",
-            "   - 'Can I afford to go Italy trip?' → ask_personalized, needs_user_data:true, intent_type:actionable",
-            "   - 'Can I go afford a $1500 trip?' → ask_personalized, needs_user_data:true, intent_type:actionable",
-            "",
-            "2. Investment advice queries NEVER need web search:",
-            "   - 'Tell me about investing' → ask_personalized, needs_web:false, needs_user_data:true, intent_type:exploratory",
-            "   - 'Investment advice' → ask_personalized, needs_web:false, needs_user_data:true, intent_type:actionable",
-            "   - 'What should I invest in?' → ask_personalized, needs_web:false, needs_user_data:true, intent_type:actionable",
-            "",
-            "3. Goal queries NEVER need web search:",
-            "   - 'Show my goals' → ask_personalized, needs_web:false, needs_user_data:true (inquiry, not creation)",
-            "   - 'I want to save $5000 for a house' → goal_conversation, needs_web:false, needs_user_data:true (creation)",
-            "",
-            "4. Advice-seeking queries are ask_personalized (not goal_conversation):",
-            "   - 'What's a good emergency amount for me?' → ask_personalized, needs_user_data:true, intent_type:actionable",
-            "   - 'Should I buy X?' → ask_personalized, needs_user_data:true, intent_type:actionable",
-            "   - 'Is it worth it to buy X?' → ask_personalized, needs_user_data:true, intent_type:actionable",
-            "",
-            "5. Credit card queries ALWAYS need web search:",
-            "   - 'What credit card should I get?' → ask_personalized, needs_web:true, needs_user_data:true",
-            "",
-            "6. Stock queries REQUIRE a SPECIFIC ticker/company - general queries are ask_personalized:",
-            "   - 'What about Apple stock?' → stock_query, needs_web:false, needs_user_data:false, ticker:'AAPL' (SPECIFIC company)",
-            "   - 'Tell me about AAPL' → stock_query, needs_web:false, needs_user_data:false, ticker:'AAPL' (SPECIFIC ticker)",
-            "   - 'Should I buy Tesla?' → stock_query, needs_web:false, needs_user_data:true, ticker:'TSLA' (SPECIFIC company)",
-            "   - 'What's the market cap of Microsoft?' → stock_query, needs_web:false, needs_user_data:false, ticker:'MSFT' (SPECIFIC company)",
-            "   - 'How is NVIDIA doing?' → stock_query, needs_web:false, needs_user_data:false, ticker:'NVDA' (SPECIFIC company)",
-            "   - 'Do an analysis on Micron Tech stock' → stock_query, needs_web:false, needs_user_data:false, ticker:'MU' (SPECIFIC company - detect ANY company name, not just hard-coded ones)",
-            "   - 'Analyze Intel Corporation' → stock_query, needs_web:false, needs_user_data:false, ticker:'INTC' (SPECIFIC company)",
-            "   - 'What stocks should I buy?' → ask_personalized, needs_user_data:true (GENERAL - no specific ticker)",
-            "   - 'What stocks are good?' → ask_personalized, needs_user_data:true (GENERAL - no specific ticker)",
-            "   - 'Tell me about the stock market' → ask_personalized, needs_web:true (GENERAL - no specific ticker)",
-            "",
-            "7. TICKER DETECTION RULES (CRITICAL - Use your knowledge, not hardcoded lists):",
-            "   - ONLY classify as stock_query if a SPECIFIC ticker symbol OR company name is mentioned",
-            "   - Extract ticker symbols (1-5 uppercase letters): AAPL, TSLA, MSFT, GOOGL, MU, QCOM, AVGO, etc.",
-            "   - CRITICAL: Detect ANY company name mentioned in the query using your training knowledge",
-            "   - DO NOT rely on hardcoded lists - you know thousands of companies and their tickers",
-            "   - Examples: Apple→AAPL, Tesla→TSLA, Microsoft→MSFT, Google→GOOGL, Amazon→AMZN, Meta→META, NVIDIA→NVDA, Micron→MU, Intel→INTC, Qualcomm→QCOM, Broadcom→AVGO, AMD→AMD, etc.",
-            "   - If ANY company name is mentioned (Micron, Qualcomm, Broadcom, Palantir, Snowflake, etc.), classify as stock_query",
-            "   - Extract the ticker symbol using your knowledge - you know the ticker for most public companies",
-            "   - If a company name is mentioned but you're unsure of the ticker, still classify as stock_query and set ticker to the company name (the system will resolve it)",
-            "   - If multiple tickers detected, include all in entities array",
-            "   - If ticker is ambiguous (e.g., 'Apple' without context), set confidence < 0.8",
-            "   - If NO specific ticker/company mentioned, use ask_personalized (NOT stock_query)",
-            "   - IMPORTANT: 'Do an analysis on Micron stock' → stock_query with ticker:'MU' (you know Micron's ticker is MU)",
-            "   - IMPORTANT: 'Tell me about Qualcomm' → stock_query with ticker:'QCOM' (you know Qualcomm's ticker is QCOM)",
-            "",
-            "8. Spending, budget, and financial tips/queries ALWAYS need user data:",
-            "   - 'Give me a spending tip' → intent:ask_personalized, needs_web:false, needs_user_data:true",
-            "   - 'Spending tips' → intent:ask_personalized, needs_web:false, needs_user_data:true",
-            "   - 'Budget advice' → intent:ask_personalized, needs_web:false, needs_user_data:true",
-            "   - 'How can I save money?' → intent:ask_personalized, needs_web:false, needs_user_data:true",
-            "",
-            "=== EXAMPLES ===",
-            "",
-            'Query: "What is the Roth IRA limit for 2025?"',
-            'Response: {"intent":"ask_personalized","intent_type":"exploratory","emotional_state":"neutral","needs_web":true,"needs_user_data":false,"confidence":0.95}',
-            "",
-            'Query: "How much did I spend last month?"',
-            'Response: {"intent":"ask_personalized","intent_type":"exploratory","emotional_state":"neutral","needs_web":false,"needs_user_data":true,"confidence":0.95}',
-            "",
-            'Query: "Tell me about investing!"',
-            'Response: {"intent":"ask_personalized","intent_type":"exploratory","emotional_state":"neutral","needs_web":false,"needs_user_data":true,"confidence":0.9}',
-            "",
-            'Query: "Can I afford to go Italy trip?"',
-            'Response: {"intent":"ask_personalized","intent_type":"actionable","emotional_state":"neutral","needs_web":false,"needs_user_data":true,"confidence":0.95}',
-            "",
-            'Query: "I\'m worried about my debt"',
-            'Response: {"intent":"ask_personalized","intent_type":"emotional_support","emotional_state":"anxious","needs_web":false,"needs_user_data":true,"confidence":0.9}',
-            "",
-            'Query: "I can\'t pay my rent this month"',
-            'Response: {"intent":"ask_personalized","intent_type":"crisis","emotional_state":"panicked","needs_web":false,"needs_user_data":true,"confidence":0.95}',
-            "",
-            'Query: "I want to save $5000 for a house"',
-            'Response: {"intent":"goal_conversation","intent_type":"actionable","emotional_state":"neutral","needs_web":false,"needs_user_data":true,"confidence":0.95}',
-            "",
-            'Query: "What\'s the weather?"',
-            'Response: {"intent":"off_topic","intent_type":null,"emotional_state":"neutral","needs_web":false,"needs_user_data":false,"confidence":0.95}',
-            "",
-            'Query: "I feel stupid for spending so much on that"',
-            'Response: {"intent":"ask_personalized","intent_type":"emotional_support","emotional_state":"ashamed","needs_web":false,"needs_user_data":true,"confidence":0.9}',
-            "",
-            'Query: "What about Apple stock?"',
-            'Response: {"intent":"stock_query","intent_type":"exploratory","emotional_state":"neutral","needs_web":false,"needs_user_data":false,"ticker":"AAPL","entities":["AAPL"],"confidence":0.95}',
-            "",
-            'Query: "Tell me about TSLA"',
-            'Response: {"intent":"stock_query","intent_type":"exploratory","emotional_state":"neutral","needs_web":false,"needs_user_data":false,"ticker":"TSLA","entities":["TSLA"],"confidence":0.98}',
-            "",
-            'Query: "Should I buy Tesla?"',
-            'Response: {"intent":"stock_query","intent_type":"actionable","emotional_state":"neutral","needs_web":false,"needs_user_data":true,"ticker":"TSLA","entities":["TSLA"],"confidence":0.9}',
-            "",
-            'Query: "What\'s Apple doing?"',
-            'Response: {"intent":"stock_query","intent_type":"exploratory","emotional_state":"neutral","needs_web":false,"needs_user_data":false,"ticker":"AAPL","entities":["AAPL"],"confidence":0.75}',
-            "",
-            'Query: "Tell me about the stock market"',
-            'Response: {"intent":"ask_personalized","intent_type":"exploratory","emotional_state":"neutral","needs_web":true,"needs_user_data":false,"ticker":null,"entities":[],"confidence":0.9}',
-            "",
-            'Query: "What stocks should I buy?"',
-            'Response: {"intent":"ask_personalized","intent_type":"actionable","emotional_state":"neutral","needs_web":false,"needs_user_data":true,"ticker":null,"entities":[],"confidence":0.9}',
-            "",
-            'Query: "do an analysis on micron tech stock"',
-            'Response: {"intent":"stock_query","intent_type":"exploratory","emotional_state":"neutral","needs_web":false,"needs_user_data":false,"ticker":"MU","entities":["MU"],"confidence":0.9}',
-            "",
-            'Query: "Analyze Intel Corporation for me"',
-            'Response: {"intent":"stock_query","intent_type":"exploratory","emotional_state":"neutral","needs_web":false,"needs_user_data":false,"ticker":"INTC","entities":["INTC"],"confidence":0.9}',
-            "",
-            'Query: "Do a analysis on micron stock"',
-            'Response: {"intent":"stock_query","intent_type":"exploratory","emotional_state":"neutral","needs_web":false,"needs_user_data":false,"ticker":"MU","entities":["MU"],"confidence":0.9}',
-            "",
-            'Query: "Tell me about Qualcomm"',
-            'Response: {"intent":"stock_query","intent_type":"exploratory","emotional_state":"neutral","needs_web":false,"needs_user_data":false,"ticker":"QCOM","entities":["QCOM"],"confidence":0.9}',
-            "",
-            'Query: "What about Broadcom stock?"',
-            'Response: {"intent":"stock_query","intent_type":"exploratory","emotional_state":"neutral","needs_web":false,"needs_user_data":false,"ticker":"AVGO","entities":["AVGO"],"confidence":0.9}',
-            "",
-            "=== OUTPUT FORMAT ===",
-            "CRITICAL: You MUST return ONLY valid JSON. No markdown, no code fences, no extra text, no comments.",
-            "The JSON must be parseable by JSON.parse(). Follow this EXACT structure:",
-            "",
-            '{"intent":"ask_personalized","intent_type":"exploratory","emotional_state":"neutral","needs_web":false,"needs_user_data":true,"state":null,"entities":[],"ticker":null,"confidence":0.95}',
-            "",
-            "Valid JSON format rules:",
-            "- Use double quotes for all strings",
-            "- Use lowercase true/false (not True/False)",
-            "- Use null (not NULL or None)",
-            "- No trailing commas",
-            "- No extra whitespace or line breaks inside JSON",
-            "- All fields must be present",
-            "",
-            "Field requirements:",
-            "- intent: REQUIRED string (ask_personalized|goal_conversation|stock_query|off_topic)",
-            "- intent_type: string or null (exploratory|actionable|emotional_support|crisis|planning|null)",
-            "- emotional_state: REQUIRED string (neutral|anxious|panicked|ashamed|overwhelmed|fomo)",
-            "- needs_web: REQUIRED boolean (true|false)",
-            "- needs_user_data: REQUIRED boolean (true|false)",
-            "- state: string or null (state code like AZ, CA, or null)",
-            "- entities: REQUIRED array (empty array [] if none, or ticker symbols if stock_query)",
-            "- ticker: string or null (ticker symbol like 'AAPL', 'TSLA', or null if not stock_query or ambiguous)",
-            "- confidence: REQUIRED number (0.0-1.0)",
-            "",
-            "TICKER EXTRACTION RULES:",
-            "- For stock_query intent, extract ticker symbol from message",
-            "- If ticker is clear (e.g., 'AAPL', 'TSLA'), set ticker field and confidence >= 0.9",
-            "- If company name maps to ticker (e.g., 'Apple'→'AAPL'), set ticker and confidence >= 0.8",
-            "- If ticker is ambiguous or unclear, set ticker:null and confidence < 0.8",
-            "- Always include ticker in entities array if detected",
-            "",
-            "CRITICAL: Meta/system questions about AI capabilities are ALWAYS off_topic:",
-            "- 'Can you learn from our conversations?' → off_topic",
-            "- 'Do you remember our previous chat?' → off_topic",
-            "- 'Are you an AI?' → off_topic",
-            "- 'How do you work?' → off_topic",
-            "",
-            "IMPORTANT:",
-            "- Be precise with emotional_state: only detect if CLEAR signals exist, default to 'neutral'",
-            "- intent_type can be null for off_topic queries",
-            "- confidence should reflect how certain you are (0.9+ for clear cases, 0.7-0.9 for ambiguous)",
-            "- Return ONLY the JSON object, nothing else",
-          ].join("\n"),
-        },
-        {
-          role: "user",
-          content: JSON.stringify({
-            text,
-            user_hint_state: user?.state || null,
-          }),
-        },
-      ],
-      response_format: {
-        type: "json_object",
-      },
-    };
+    function getOpenRouterKey() {
+      return process.env.OPENROUTER_GROK_KEY || process.env.OPENROUTER_API_KEY;
+    }
 
-    // Create the fetch promise
-    const fetchPromise = fetch(
-      "https://openrouter.ai/api/v1/chat/completions",
-      {
+    async function callLLM(model) {
+      const requestBody = {
+        model,
+        temperature: 0.1,
+        max_tokens: 350,
+        top_p: 0.9,
+        messages: [
+          {
+            role: "system",
+            content: [
+              "You are Finny's intelligent classification system. Analyze user messages to understand their intent, emotional state, and what resources they need.",
+              "",
+              "=== PRIMARY INTENT CLASSIFICATION ===",
+              "Classify into exactly ONE primary intent:",
+              "- ask_personalized: Questions about user's finances (spending, accounts, goals, investments, affordability, advice)",
+              "- goal_conversation: Creating NEW goals or setting savings targets (explicit goal creation statements)",
+              "- stock_query: Questions about specific stocks, tickers, or companies (e.g., 'What about Apple?', 'Tell me about AAPL', 'Should I buy Tesla stock?')",
+              "- off_topic: Non-financial topics (weather, cooking, entertainment, general chat, etc)",
+              "",
+              "=== INTENT TYPE (What user wants to accomplish) ===",
+              "Detect the underlying intent type (can combine with primary intent):",
+              "- exploratory: Learning, understanding concepts ('tell me about investing', 'explain Roth IRA', 'what is a 401k')",
+              "- actionable: Specific steps or how-to ('how do I save', 'what should I do', 'help me budget')",
+              "- emotional_support: Seeking reassurance, validation ('I'm worried about money', 'am I doing okay?')",
+              "- crisis: Immediate urgent help needed ('can't pay rent', 'overdraft', 'need money now')",
+              "- planning: Long-term strategy ('retirement planning', 'investment strategy', 'financial plan')",
+              "",
+              "=== EMOTIONAL STATE DETECTION ===",
+              "Detect emotional state from language and context (be nuanced, avoid false positives):",
+              "- neutral: No strong emotional signals detected",
+              "- anxious: Worry, stress, uncertainty ('worried', 'stressed', 'anxious', 'nervous', 'afraid')",
+              "- panicked: Urgent crisis language ('can't pay', 'overdraft', 'declined', 'bounced', 'emergency', 'need money now')",
+              "- ashamed: Shame, guilt, embarrassment ('ashamed', 'embarrassed', 'feel stupid', 'should have', 'failure')",
+              "- overwhelmed: Too much to handle ('overwhelmed', 'too much', 'can't handle', 'drowning', 'don't know where to start')",
+              "- fomo: Fear of missing out ('saw on tiktok', 'everyone's doing', 'fomo', 'impulse', 'couldn't resist')",
+              "",
+              "CRITICAL EMOTIONAL DETECTION RULES:",
+              "- Only detect emotional state if there are CLEAR signals. Don't infer emotions from neutral questions.",
+              "- 'Tell me about investing' → neutral (informational query, no emotional distress)",
+              "- 'I'm worried about my debt' → anxious (explicit worry)",
+              "- 'Can I afford Italy trip?' → neutral (affordability question, not emotional)",
+              "- 'I can't pay my rent this month' → panicked (crisis language)",
+              "- 'I feel stupid for spending so much' → ashamed (self-blame language)",
+              "",
+              "=== FLAG RULES (can combine) ===",
+              "- needs_user_data=true: Answer requires user's actual data (spend, net worth, accounts, goals, personal recommendations, affordability checks)",
+              "- needs_web=true: Answer requires current/2024-2025 info (limits, rates, brackets, market/news, card offers, current regulations)",
+              "",
+              "=== CRITICAL CLASSIFICATION RULES ===",
+              "1. Affordability queries are ALWAYS ask_personalized (not goal_conversation):",
+              "   - 'Can I afford X?' → ask_personalized, needs_user_data:true, intent_type:actionable",
+              "   - 'Can I afford to go Italy trip?' → ask_personalized, needs_user_data:true, intent_type:actionable",
+              "   - 'Can I go afford a $1500 trip?' → ask_personalized, needs_user_data:true, intent_type:actionable",
+              "",
+              "2. Investment advice queries NEVER need web search:",
+              "   - 'Tell me about investing' → ask_personalized, needs_web:false, needs_user_data:true, intent_type:exploratory",
+              "   - 'Investment advice' → ask_personalized, needs_web:false, needs_user_data:true, intent_type:actionable",
+              "   - 'What should I invest in?' → ask_personalized, needs_web:false, needs_user_data:true, intent_type:actionable",
+              "",
+              "3. Goal queries NEVER need web search:",
+              "   - 'Show my goals' → ask_personalized, needs_web:false, needs_user_data:true (inquiry, not creation)",
+              "   - 'I want to save $5000 for a house' → goal_conversation, needs_web:false, needs_user_data:true (creation)",
+              "",
+              "4. Advice-seeking queries are ask_personalized (not goal_conversation):",
+              "   - 'What's a good emergency amount for me?' → ask_personalized, needs_user_data:true, intent_type:actionable",
+              "   - 'Should I buy X?' → ask_personalized, needs_user_data:true, intent_type:actionable",
+              "   - 'Is it worth it to buy X?' → ask_personalized, needs_user_data:true, intent_type:actionable",
+              "",
+              "5. Credit card queries ALWAYS need web search:",
+              "   - 'What credit card should I get?' → ask_personalized, needs_web:true, needs_user_data:true",
+              "",
+              "6. Stock queries REQUIRE a SPECIFIC ticker/company - general queries are ask_personalized:",
+              "   - 'What about Apple stock?' → stock_query, needs_web:false, needs_user_data:false, ticker:'AAPL' (SPECIFIC company)",
+              "   - 'Tell me about AAPL' → stock_query, needs_web:false, needs_user_data:false, ticker:'AAPL' (SPECIFIC ticker)",
+              "   - 'Should I buy Tesla?' → stock_query, needs_web:false, needs_user_data:true, ticker:'TSLA' (SPECIFIC company)",
+              "   - 'Tell me about the stock market' → ask_personalized, needs_web:true (GENERAL - no specific ticker)",
+              "",
+              "7. TICKER DETECTION RULES:",
+              "   - ONLY classify as stock_query if a SPECIFIC ticker symbol OR company name is mentioned",
+              "   - Extract ticker symbols (1-5 uppercase letters): AAPL, TSLA, MSFT, GOOGL, etc.",
+              "   - Map company names to tickers: Apple→AAPL, Tesla→TSLA, Microsoft→MSFT, Google→GOOGL, Amazon→AMZN, Meta→META, NVIDIA→NVDA",
+              "   - If multiple tickers detected, include all in entities array",
+              "   - If ticker is ambiguous (e.g., 'Apple' without context), set confidence < 0.8",
+              "   - If NO specific ticker/company mentioned, use ask_personalized (NOT stock_query)",
+              "",
+              "=== OUTPUT FORMAT ===",
+              "CRITICAL: You MUST return ONLY valid JSON. No markdown, no code fences, no extra text, no comments.",
+              "The JSON must be parseable by JSON.parse(). Follow this EXACT structure:",
+              "",
+              '{"intent":"ask_personalized","intent_type":"exploratory","emotional_state":"neutral","needs_web":false,"needs_user_data":true,"state":null,"entities":[],"ticker":null,"confidence":0.95}',
+              "",
+              "Valid JSON format rules:",
+              "- Use double quotes for all strings",
+              "- Use lowercase true/false (not True/False)",
+              "- Use null (not NULL or None)",
+              "- No trailing commas",
+              "- No extra whitespace or line breaks inside JSON",
+              "- All fields must be present",
+              "",
+              "Field requirements:",
+              "- intent: REQUIRED string (ask_personalized|goal_conversation|stock_query|off_topic)",
+              "- intent_type: string or null (exploratory|actionable|emotional_support|crisis|planning|null)",
+              "- emotional_state: REQUIRED string (neutral|anxious|panicked|ashamed|overwhelmed|fomo)",
+              "- needs_web: REQUIRED boolean (true|false)",
+              "- needs_user_data: REQUIRED boolean (true|false)",
+              "- state: string or null (state code like AZ, CA, or null)",
+              "- entities: REQUIRED array (empty array [] if none, or ticker symbols if stock_query)",
+              "- ticker: string or null (ticker symbol like 'AAPL', 'TSLA', or null if not stock_query or ambiguous)",
+              "- confidence: REQUIRED number (0.0-1.0)",
+              "",
+              "TICKER EXTRACTION RULES:",
+              "- For stock_query intent, extract ticker symbol from message",
+              "- If ticker is clear (e.g., 'AAPL', 'TSLA'), set ticker field and confidence >= 0.9",
+              "- If company name maps to ticker (e.g., 'Apple'→'AAPL'), set ticker and confidence >= 0.8",
+              "- If ticker is ambiguous or unclear, set ticker:null and confidence < 0.8",
+              "- Always include ticker in entities array if detected",
+              "",
+              "CRITICAL: Meta/system questions about AI capabilities are ALWAYS off_topic:",
+              "- 'Can you learn from our conversations?' → off_topic",
+              "- 'Do you remember our previous chat?' → off_topic",
+              "- 'Are you an AI?' → off_topic",
+              "- 'How do you work?' → off_topic",
+              "",
+              "IMPORTANT:",
+              "- Be precise with emotional_state: only detect if CLEAR signals exist, default to 'neutral'",
+              "- intent_type can be null for off_topic queries",
+              "- confidence should reflect how certain you are (0.9+ for clear cases, 0.7-0.9 for ambiguous)",
+              "- Return ONLY the JSON object, nothing else",
+            ].join("\n"),
+          },
+          {
+            role: "user",
+            content: JSON.stringify({
+              text,
+              user_hint_state: user?.state || null,
+            }),
+          },
+        ],
+        response_format: { type: "json_object" },
+      };
+
+      const fetchPromise = fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${process.env.OPENROUTER_GROK_KEY}`,
+          Authorization: `Bearer ${getOpenRouterKey()}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify(requestBody),
+      });
+
+      const apiCallStart = Date.now();
+      const r = await Promise.race([fetchPromise, timeoutPromise]);
+      const apiCallTime = Date.now() - apiCallStart;
+
+      if (!r.ok) {
+        const errText = await r.text();
+        throw new Error(`OpenRouter error ${r.status}: ${errText}`);
       }
-    );
-
-    const apiCallStart = Date.now();
-    // Race between fetch and timeout
-    const r = await Promise.race([fetchPromise, timeoutPromise]);
-    const apiCallTime = Date.now() - apiCallStart;
-
-    if (!r.ok) {
-      const errText = await r.text();
-      throw new Error(`OpenRouter error ${r.status}: ${errText}`);
+      return r.json();
     }
-    const data = await r.json();
+
+    // Try free/specified model first; on failure retry with STANDARD_MODEL
+    let data;
+    try {
+      const primaryModel = OPENROUTER_MODEL || SMALLER_MODEL;
+      console.log("🔍 [FINNY] Classification using model:", primaryModel);
+      data = await callLLM(primaryModel);
+    } catch (err1) {
+      console.log(
+        "⚠️ [FINNY] Primary model failed, retrying with STANDARD_MODEL:",
+        err1?.message
+      );
+      data = await callLLM(STANDARD_MODEL);
+    }
+
     const content = data.choices?.[0]?.message?.content;
     if (!content) {
       console.log("❌ [FINNY] No content in response");
@@ -5518,7 +5452,7 @@ async function handleClassify(message, context, conversationContext = null) {
     // Handle timeout specifically
     if (e?.message?.includes("timeout")) {
       console.log(
-        "⏰ [FINNY] Classification timed out after 4 seconds, using fallback"
+        "⏰ [FINNY] Classification timed out after 8 seconds, using fallback"
       );
     }
 
