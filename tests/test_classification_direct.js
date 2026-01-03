@@ -335,33 +335,35 @@ function getMockFinancialData() {
  * @returns {object} - { action: 'clarify' | 'proceed', rationale: string }
  */
 function decideClarificationAction(classification) {
-  const { 
-    clarification_needed, 
-    decision_risk, 
+  const {
+    clarification_needed,
+    decision_risk,
     info_sufficiency,
     confidence,
-    clarification_reasons = []
+    clarification_reasons = [],
   } = classification;
 
   // Simple orchestration logic
   if (clarification_needed === true) {
     return {
-      action: 'clarify',
-      rationale: `High-risk decision (${decision_risk}) with insufficient info (${info_sufficiency}). Reasons: ${clarification_reasons.join(', ') || 'unspecified'}`
+      action: "clarify",
+      rationale: `High-risk decision (${decision_risk}) with insufficient info (${info_sufficiency}). Reasons: ${
+        clarification_reasons.join(", ") || "unspecified"
+      }`,
     };
   }
 
   // Optional: Also clarify if confidence is very low (below 0.5)
   if (confidence < 0.5) {
     return {
-      action: 'clarify',
-      rationale: `Low confidence (${confidence}) in classification, need more context`
+      action: "clarify",
+      rationale: `Low confidence (${confidence}) in classification, need more context`,
     };
   }
 
   return {
-    action: 'proceed',
-    rationale: `Sufficient info to proceed (risk: ${decision_risk}, sufficiency: ${info_sufficiency}, confidence: ${confidence})`
+    action: "proceed",
+    rationale: `Sufficient info to proceed (risk: ${decision_risk}, sufficiency: ${info_sufficiency}, confidence: ${confidence})`,
   };
 }
 
@@ -374,11 +376,11 @@ function decideClarificationAction(classification) {
  * @returns {string} - The clarifying question
  */
 function generateClarifyingQuestion(classification, userMessage) {
-  const { 
-    clarification_reasons = [], 
+  const {
+    clarification_reasons = [],
     clarification_note,
-    requested_context = [],
-    clarification_type // legacy support
+    // requested_context removed
+    clarification_type, // legacy support
   } = classification;
 
   // If we have clarification_note, use it to build a natural question
@@ -389,53 +391,68 @@ function generateClarifyingQuestion(classification, userMessage) {
   // Template-based approach using clarification_reasons
   if (clarification_reasons.length > 0) {
     const reason = clarification_reasons[0]; // Pick first reason for simplicity
-    
+
     // Common templates
-    if (reason.includes('timeline') || reason.includes('when')) {
+    if (reason.includes("timeline") || reason.includes("when")) {
       return "What's your timeline for this? Are you thinking short-term (months) or longer-term (years)?";
     }
-    
-    if (reason.includes('income') || reason.includes('replacement')) {
+
+    if (reason.includes("income") || reason.includes("replacement")) {
       return "Do you have a plan for replacing your income? For example, savings runway, side income, or client pipeline?";
     }
-    
-    if (reason.includes('purpose') || reason.includes('use')) {
+
+    if (reason.includes("purpose") || reason.includes("use")) {
       return "What's the main purpose? For example, is this for personal use, investment, or something else?";
     }
-    
-    if (reason.includes('budget') || reason.includes('amount') || reason.includes('target')) {
+
+    if (
+      reason.includes("budget") ||
+      reason.includes("amount") ||
+      reason.includes("target")
+    ) {
       return "What's your budget or target amount you're thinking about?";
     }
-    
-    if (reason.includes('execution') || reason.includes('plan')) {
+
+    if (reason.includes("execution") || reason.includes("plan")) {
       return "How are you planning to execute this? What's your approach or strategy?";
     }
-    
-    if (reason.includes('location') || reason.includes('where')) {
+
+    if (reason.includes("location") || reason.includes("where")) {
       return "Where are you planning this? Location can impact the financial picture significantly.";
     }
-    
-    if (reason.includes('risk_tolerance')) {
+
+    if (reason.includes("risk_tolerance")) {
       return "How comfortable are you with risk? Are you more conservative or willing to take bigger risks?";
     }
-    
+
     // Generic fallback
-    return `To give you better advice, could you tell me more about: ${clarification_reasons.join(', ')}?`;
+    return `To give you better advice, could you tell me more about: ${clarification_reasons.join(
+      ", "
+    )}?`;
   }
 
   // Legacy clarification_type fallback
   if (clarification_type) {
     const templates = {
-      income_replacement: "Do you have a plan for replacing your income? For example, savings runway, side income, or client pipeline?",
-      goal_timeline: "What's your timeline for this? Are you thinking short-term (months) or longer-term (years)?",
-      intent_motivation: "What's motivating this decision? Understanding your 'why' helps me give better advice.",
-      purpose_use: "What's the main purpose? For example, is this for personal use, investment, or something else?",
-      execution_plan: "How are you planning to execute this? What's your approach or strategy?",
+      income_replacement:
+        "Do you have a plan for replacing your income? For example, savings runway, side income, or client pipeline?",
+      goal_timeline:
+        "What's your timeline for this? Are you thinking short-term (months) or longer-term (years)?",
+      intent_motivation:
+        "What's motivating this decision? Understanding your 'why' helps me give better advice.",
+      purpose_use:
+        "What's the main purpose? For example, is this for personal use, investment, or something else?",
+      execution_plan:
+        "How are you planning to execute this? What's your approach or strategy?",
       target_amount: "What's your target amount or budget range?",
-      location_context: "Where are you planning this? Location can impact the financial picture significantly."
+      location_context:
+        "Where are you planning this? Location can impact the financial picture significantly.",
     };
-    
-    return templates[clarification_type] || "Could you provide a bit more context about your situation?";
+
+    return (
+      templates[clarification_type] ||
+      "Could you provide a bit more context about your situation?"
+    );
   }
 
   // Final fallback
@@ -448,7 +465,9 @@ function generateClarifyingQuestion(classification, userMessage) {
  */
 class TraceLogger {
   constructor() {
-    this.trace_id = `trace_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    this.trace_id = `trace_${Date.now()}_${Math.random()
+      .toString(36)
+      .substr(2, 9)}`;
     this.steps = [];
     this.start_time = Date.now();
   }
@@ -458,18 +477,20 @@ class TraceLogger {
       step: step_name,
       timestamp: Date.now(),
       duration_ms: Date.now() - this.start_time,
-      ...data
+      ...data,
     });
   }
 
   print() {
     console.log(`\n🔍 TRACE ID: ${this.trace_id}`);
     console.log(`⏱️  Total Duration: ${Date.now() - this.start_time}ms\n`);
-    
+
     this.steps.forEach((step, idx) => {
-      console.log(`${idx + 1}. ${step.step} (${step.duration_ms}ms from start)`);
-      Object.keys(step).forEach(key => {
-        if (!['step', 'timestamp', 'duration_ms'].includes(key)) {
+      console.log(
+        `${idx + 1}. ${step.step} (${step.duration_ms}ms from start)`
+      );
+      Object.keys(step).forEach((key) => {
+        if (!["step", "timestamp", "duration_ms"].includes(key)) {
           console.log(`   ${key}: ${JSON.stringify(step[key])}`);
         }
       });
@@ -631,7 +652,6 @@ async function handleClassify(message, context, conversationContext = null) {
         clarification_needed: false,
         clarification_reasons: [],
         clarification_note: null,
-        requested_context: [],
         clarification_type: null,
         fallback: true,
       };
@@ -666,33 +686,35 @@ async function handleClassify(message, context, conversationContext = null) {
     // Schema v1.1 validation and normalization
     // Derive clarification_needed if missing
     if (out.clarification_needed === undefined) {
-      out.clarification_needed = 
+      out.clarification_needed =
         out.decision_risk === "high" && out.info_sufficiency === "insufficient";
-      console.log(`⚠️ [TEST] Derived clarification_needed: ${out.clarification_needed}`);
+      console.log(
+        `⚠️ [TEST] Derived clarification_needed: ${out.clarification_needed}`
+      );
     }
-    
+
     // Validate clarification_reasons array
     if (!Array.isArray(out.clarification_reasons)) {
       console.log("⚠️ [TEST] Missing clarification_reasons, defaulting to []");
       out.clarification_reasons = [];
     }
-    
+
     // Validate clarification_note
-    if (out.clarification_note !== null && out.clarification_note !== undefined && typeof out.clarification_note !== "string") {
+    if (
+      out.clarification_note !== null &&
+      out.clarification_note !== undefined &&
+      typeof out.clarification_note !== "string"
+    ) {
       console.log("⚠️ [TEST] Invalid clarification_note, defaulting to null");
       out.clarification_note = null;
     }
-    
+
     // requested_context removed
     // Remove requested_context if present
-    if (out.hasOwnProperty('requested_context')) {
+    if (out.hasOwnProperty("requested_context")) {
       delete out.requested_context;
     }
-    // Backward compat: ignore if model returns it
-      console.log("⚠️ [TEST] Missing requested_context, defaulting to []");
-      out.requested_context = [];
-    }
-    
+
     // Legacy clarification_type support
     if (
       out.clarification_type !== null &&
@@ -768,85 +790,97 @@ async function handleClassify(message, context, conversationContext = null) {
  */
 async function testOrchestrated(message, enableTrace = false) {
   const trace = enableTrace ? new TraceLogger() : null;
-  
-  if (trace) trace.addStep('start', { message });
-  
+
+  if (trace) trace.addStep("start", { message });
+
   console.log(`\n🎯 ORCHESTRATED FLOW: "${message}"`);
   console.log("=".repeat(80));
-  
+
   // Step 1: Classification
   console.log("\n📋 Step 1: Classification");
   const startClassify = Date.now();
   const classification = await handleClassify(message, null);
   const classifyDuration = Date.now() - startClassify;
-  
-  if (trace) trace.addStep('classification', { 
-    intent: classification.intent,
-    decision_risk: classification.decision_risk,
-    info_sufficiency: classification.info_sufficiency,
-    clarification_needed: classification.clarification_needed,
-    duration_ms: classifyDuration
-  });
-  
+
+  if (trace)
+    trace.addStep("classification", {
+      intent: classification.intent,
+      decision_risk: classification.decision_risk,
+      info_sufficiency: classification.info_sufficiency,
+      clarification_needed: classification.clarification_needed,
+      duration_ms: classifyDuration,
+    });
+
   console.log(`  ✅ Intent: ${classification.intent}`);
-  console.log(`  ✅ Risk: ${classification.decision_risk}, Sufficiency: ${classification.info_sufficiency}`);
-  console.log(`  ✅ Clarification needed: ${classification.clarification_needed}`);
+  console.log(
+    `  ✅ Risk: ${classification.decision_risk}, Sufficiency: ${classification.info_sufficiency}`
+  );
+  console.log(
+    `  ✅ Clarification needed: ${classification.clarification_needed}`
+  );
   if (classification.clarification_reasons?.length > 0) {
-    console.log(`  ✅ Reasons: ${classification.clarification_reasons.join(', ')}`);
+    console.log(
+      `  ✅ Reasons: ${classification.clarification_reasons.join(", ")}`
+    );
   }
   console.log(`  ⏱️  Duration: ${classifyDuration}ms`);
-  
+
   // Step 2: Orchestration Decision
   console.log("\n🤔 Step 2: Orchestration Decision");
   const decision = decideClarificationAction(classification);
-  
-  if (trace) trace.addStep('orchestration', { 
-    action: decision.action,
-    rationale: decision.rationale
-  });
-  
+
+  if (trace)
+    trace.addStep("orchestration", {
+      action: decision.action,
+      rationale: decision.rationale,
+    });
+
   console.log(`  ✅ Action: ${decision.action.toUpperCase()}`);
   console.log(`  ✅ Rationale: ${decision.rationale}`);
-  
+
   let clarifyingQuestion = null;
-  
-  if (decision.action === 'clarify') {
+
+  if (decision.action === "clarify") {
     // Step 3: Generate Clarifying Question
     console.log("\n💬 Step 3: Generate Clarifying Question");
     const startQuestion = Date.now();
     clarifyingQuestion = generateClarifyingQuestion(classification, message);
     const questionDuration = Date.now() - startQuestion;
-    
-    if (trace) trace.addStep('question_generation', { 
-      question: clarifyingQuestion,
-      duration_ms: questionDuration
-    });
-    
+
+    if (trace)
+      trace.addStep("question_generation", {
+        question: clarifyingQuestion,
+        duration_ms: questionDuration,
+      });
+
     console.log(`  💬 Question: "${clarifyingQuestion}"`);
     console.log(`  ⏱️  Duration: ${questionDuration}ms`);
     console.log("\n🛑 Flow stops here. Waiting for user reply...");
   } else {
     // Step 3: Proceed to answering (placeholder)
     console.log("\n✅ Step 3: Proceed to Answering");
-    console.log("  ℹ️  [Placeholder] Would fetch user data and generate answer here");
-    
-    if (trace) trace.addStep('proceed_to_answer', { 
-      note: "Placeholder - real answering would happen in full flow"
-    });
+    console.log(
+      "  ℹ️  [Placeholder] Would fetch user data and generate answer here"
+    );
+
+    if (trace)
+      trace.addStep("proceed_to_answer", {
+        note: "Placeholder - real answering would happen in full flow",
+      });
   }
-  
+
   // Print trace if enabled
   if (trace) {
     trace.print();
   }
-  
+
   console.log("\n" + "=".repeat(80));
-  
+
   return {
     classification,
     decision,
     clarifyingQuestion,
-    trace: trace ? trace.steps : null
+    trace: trace ? trace.steps : null,
   };
 }
 
@@ -864,9 +898,15 @@ async function testSingleMessage(message) {
 
     // === OPTIONAL: Generate clarifying question for display (separate from classification layer) ===
     let clarifyingQuestion = null;
-    if (classification.clarification_type && classification.decision_risk === "high" && classification.info_sufficiency === "insufficient") {
-      console.log(`\n🤔 [TEST] Clarification needed, generating question for display...`);
-      
+    if (
+      classification.clarification_type &&
+      classification.decision_risk === "high" &&
+      classification.info_sufficiency === "insufficient"
+    ) {
+      console.log(
+        `\n🤔 [TEST] Clarification needed, generating question for display...`
+      );
+
       try {
         clarifyingQuestion = await buildClarificationQuestion({
           clarification_type: classification.clarification_type,
@@ -877,12 +917,15 @@ async function testSingleMessage(message) {
           style: "conversational",
           memory: null,
         });
-        
+
         if (clarifyingQuestion) {
           console.log(`✅ [TEST] Clarifying question generated successfully`);
         }
       } catch (error) {
-        console.error(`❌ [TEST] Error generating clarifying question:`, error.message);
+        console.error(
+          `❌ [TEST] Error generating clarifying question:`,
+          error.message
+        );
       }
     }
 
@@ -901,7 +944,9 @@ async function testSingleMessage(message) {
     if (classification.clarification_type) {
       console.log(`  Clarification Type: ${classification.clarification_type}`);
       if (clarifyingQuestion) {
-        console.log(`  💬 Clarifying Question (from separate layer): ${clarifyingQuestion}`);
+        console.log(
+          `  💬 Clarifying Question (from separate layer): ${clarifyingQuestion}`
+        );
       }
     }
     console.log(`  needs_web: ${classification.needs_web}`);
@@ -1158,22 +1203,25 @@ const isMainModule =
 
 if (isMainModule) {
   const args = process.argv.slice(2);
-  
+
   // Parse flags
-  const hasOrchestrate = args.includes('--orchestrate');
-  const hasTrace = args.includes('--trace');
-  
+  const hasOrchestrate = args.includes("--orchestrate");
+  const hasTrace = args.includes("--trace");
+
   // Remove flags to get the actual message/command
-  const cleanArgs = args.filter(arg => !arg.startsWith('--'));
+  const cleanArgs = args.filter((arg) => !arg.startsWith("--"));
   const userMessage = cleanArgs[0];
   const testType = cleanArgs[1];
 
   // If --orchestrate flag is present, run orchestrated flow
-  if (hasOrchestrate && userMessage && 
-      userMessage !== "hardball" && 
-      userMessage !== "stock" && 
-      userMessage !== "curveball" && 
-      userMessage !== "clarify") {
+  if (
+    hasOrchestrate &&
+    userMessage &&
+    userMessage !== "hardball" &&
+    userMessage !== "stock" &&
+    userMessage !== "curveball" &&
+    userMessage !== "clarify"
+  ) {
     console.log("🎯 Running Orchestrated Flow");
     console.log(`Testing: "${userMessage}"`);
     console.log("=".repeat(50));
@@ -1638,9 +1686,7 @@ async function testClarificationQuestions() {
 }
 
 // Import evaluateDecisionConfidence for testing
-import {
-  evaluateDecisionConfidence,
-} from "../lib/prompt_engine.js";
+import { evaluateDecisionConfidence } from "../lib/prompt_engine.js";
 
 export {
   testSingleMessage,
