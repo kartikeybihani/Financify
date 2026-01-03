@@ -3207,7 +3207,10 @@ function normalizeResponseEnvelope(response) {
   ) {
     normalized.hideFeedback = answer.hideFeedback;
   }
-  if (normalized.hideActions === undefined && answer.hideActions !== undefined) {
+  if (
+    normalized.hideActions === undefined &&
+    answer.hideActions !== undefined
+  ) {
     normalized.hideActions = answer.hideActions;
   }
   if (normalized.stock_candidate == null && answer.stock_candidate != null) {
@@ -3382,9 +3385,6 @@ function splitLongResponse(text) {
   );
   return [{ type: "text", content: text }];
 }
-
-// === GEN Z LANGUAGE ENHANCEMENT ===
-// This function is now removed - Gen Z language is handled via prompt engineering
 
 // === ENHANCED WEB SEARCH DETECTION ===
 // Enhanced web search detection patterns
@@ -5834,43 +5834,6 @@ async function handleOffTopic(message, context, conversationContext = null) {
   }
 }
 
-function generateFinancialRedirectionSuggestions(category, userProfile) {
-  const suggestions = {
-    weather: [
-      "budgeting for seasonal expenses",
-      "planning for weather-related financial impacts",
-      "emergency fund for weather emergencies",
-    ],
-    greeting: [
-      "your financial goals",
-      "budgeting strategies",
-      "investment planning",
-    ],
-    lifestyle: [
-      "budgeting for hobbies",
-      "financial planning for lifestyle goals",
-      "saving strategies for entertainment",
-    ],
-    technical: [
-      "financial app features",
-      "budgeting tools",
-      "investment tracking",
-    ],
-    philosophical: [
-      "financial independence goals",
-      "long-term financial planning",
-      "building wealth over time",
-    ],
-    general: [
-      "your financial situation",
-      "budgeting and saving",
-      "investment opportunities",
-    ],
-  };
-
-  return suggestions[category] || suggestions.general;
-}
-
 // =====================
 // GOALS: Slot-filling
 // =====================
@@ -6565,8 +6528,7 @@ async function generateFallbackStockAnalysis(
 ) {
   console.log(`🔄 [FALLBACK] Generating fallback analysis for ${ticker}`);
 
-  // Extract ticker from message if not provided
-  const extractedTicker = ticker || extractTickerFromMessage(userMessage);
+  const extractedTicker = ticker;
   if (!extractedTicker) {
     return "I'd be happy to help with stock analysis, but I need a specific ticker symbol. Could you provide the stock symbol you'd like me to analyze?";
   }
@@ -6613,15 +6575,6 @@ async function generateFallbackStockAnalysis(
 
   // Final fallback using training data
   return generateTrainingDataStockAnalysis(extractedTicker, userMessage);
-}
-
-function extractTickerFromMessage(message) {
-  // Look for common ticker patterns
-  const tickerMatch = message.match(/\b[A-Z]{1,5}\b/g);
-  if (tickerMatch) {
-    return tickerMatch.find((t) => t !== "USD" && t !== "ETF" && t !== "API");
-  }
-  return null;
 }
 
 async function generateStockAnalysisFromWebData(
@@ -6976,7 +6929,6 @@ async function forceRefreshUserData(userId) {
 }
 
 // === NET WORTH DATA FUNCTIONS ===
-
 // Helper function to format currency for net worth display
 function formatNetWorthCurrency(amount) {
   if (amount >= 1000000) {
@@ -7067,22 +7019,10 @@ async function getNetWorthData(userId) {
   }
 }
 
-// Memory management functions moved to api/memory.js
-
-// KEY_SYNONYMS moved to src/constants/keySynonyms.ts
-
-// Named exports for testing
 export {
-  // quickExtract removed - migrating to Supermemory
-  // shouldRunMemoryExtraction removed - migrating to Supermemory
-  // validateMemoriesWithSmallModel removed - migrating to Supermemory
-  // selectRelevantMemories removed - Supermemory handles relevance ranking
   loadUserMemory,
-  // saveMemoryCandidates removed - migrating to Supermemory
   generateFallbackStockAnalysis,
-  extractTickerFromMessage,
   generateTrainingDataStockAnalysis,
-  // generateMemorySummary removed - migrating to Supermemory
   getNetWorthData,
   formatNetWorthCurrency,
 };
