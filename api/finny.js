@@ -1764,6 +1764,8 @@ export default async function handler(req, res) {
       logDebug(`   Context Packs: ${formatTime(timings.context_packs_ms)}s`);
     }
 
+    response = normalizeResponseEnvelope(response);
+
     // Handle streaming vs regular response
     if (wantsStreaming) {
       console.log("🔄 [STREAMING] Starting streaming response");
@@ -3177,6 +3179,48 @@ async function handleAsk(
       type: "assistant",
     };
   }
+}
+
+// Normalize response envelopes that wrap the actual message under `answer`
+function normalizeResponseEnvelope(response) {
+  if (!response || typeof response !== "object") return response;
+  const answer = response.answer;
+  if (!answer || typeof answer !== "object") return response;
+
+  const normalized = { ...response };
+
+  if (normalized.message == null && answer.message != null) {
+    normalized.message = answer.message;
+  }
+  if (normalized.text == null && answer.text != null) {
+    normalized.text = answer.text;
+  }
+  if (normalized.type == null && answer.type != null) {
+    normalized.type = answer.type;
+  }
+  if (normalized.isSplit == null && answer.isSplit != null) {
+    normalized.isSplit = answer.isSplit;
+  }
+  if (normalized.actions == null && answer.actions != null) {
+    normalized.actions = answer.actions;
+  }
+  if (
+    normalized.hideFeedback === undefined &&
+    answer.hideFeedback !== undefined
+  ) {
+    normalized.hideFeedback = answer.hideFeedback;
+  }
+  if (normalized.hideActions === undefined && answer.hideActions !== undefined) {
+    normalized.hideActions = answer.hideActions;
+  }
+  if (normalized.stock_candidate == null && answer.stock_candidate != null) {
+    normalized.stock_candidate = answer.stock_candidate;
+  }
+  if (normalized.stockCandidate == null && answer.stockCandidate != null) {
+    normalized.stockCandidate = answer.stockCandidate;
+  }
+
+  return normalized;
 }
 
 // === RESPONSE FORMATTING ===

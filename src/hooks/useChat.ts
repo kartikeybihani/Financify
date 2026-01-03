@@ -519,16 +519,30 @@ export const useChat = () => {
 
               // Handle complete event (final response with actions)
               if (currentEvent === 'complete') {
-                // Get final message - prefer data.message, fallback to accumulatedText
+                const answer = data?.answer || {};
+                const actions = data.actions || answer.actions;
+                const hasActions =
+                  Array.isArray(actions) && actions.length > 0;
+                // Get final message - prefer data.message, then answer.message, fallback to accumulatedText
                 const finalMessage = (data.message && typeof data.message === 'string') 
                   ? data.message 
+                  : (answer.message && typeof answer.message === 'string')
+                  ? answer.message
                   : (accumulatedText && typeof accumulatedText === 'string' ? accumulatedText : '');
-                const stockCandidatePayload = data.stock_candidate || data.stockCandidate;
+                const stockCandidatePayload =
+                  data.stock_candidate ||
+                  data.stockCandidate ||
+                  answer.stock_candidate ||
+                  answer.stockCandidate;
                 const stockCandidate =
                   stockCandidatePayload && typeof stockCandidatePayload === 'string'
                     ? { ticker: stockCandidatePayload }
                     : stockCandidatePayload;
-                const resolvedType = data.actions ? "action" : data.type;
+                const resolvedType = hasActions ? "action" : (data.type || answer.type);
+                const resolvedHideFeedback =
+                  data.hideFeedback !== undefined ? data.hideFeedback : answer.hideFeedback;
+                const resolvedHideActions =
+                  data.hideActions !== undefined ? data.hideActions : answer.hideActions;
                 
                 // Only set if we have a valid string
                 if (finalMessage && typeof finalMessage === 'string') {
@@ -554,20 +568,28 @@ export const useChat = () => {
                 // Finalize the streaming message
                 if (finalMessage && typeof finalMessage === 'string' && finalMessage.trim()) {
                   setChatMessages(prev => {
-                      const updated = [...prev];
+                    const updated = [...prev];
                     const messageIndex = updated.findIndex(msg => msg.id === messageId);
+                    const baseMessage: ChatMessage = {
+                      id: messageId,
+                      sender: "finny" as const,
+                      text: finalMessage,
+                      timestamp: messageIndex >= 0 ? updated[messageIndex].timestamp : Date.now(),
+                      type: (resolvedType || "text") as "text" | "action",
+                      isStreaming: false,
+                      ...(hasActions && { actions }),
+                      ...(stockCandidate && { stockCandidate }),
+                      ...(resolvedHideFeedback !== undefined && { hideFeedback: resolvedHideFeedback }),
+                      ...(resolvedHideActions !== undefined && { hideActions: resolvedHideActions }),
+                    };
                     
                     if (messageIndex >= 0) {
                       updated[messageIndex] = {
                         ...updated[messageIndex],
-                        text: finalMessage,
-                        isStreaming: false,
-                        ...(data.actions && { actions: data.actions }),
-                        ...(resolvedType && { type: resolvedType }),
-                        ...(stockCandidate && { stockCandidate }),
-                        ...(data.hideFeedback !== undefined && { hideFeedback: data.hideFeedback }),
-                        ...(data.hideActions !== undefined && { hideActions: data.hideActions }),
+                        ...baseMessage,
                       };
+                    } else {
+                      updated.push(baseMessage);
                     }
                     
                     return updated;
@@ -620,17 +642,31 @@ export const useChat = () => {
                     return [...prev, newMessage];
                   }
                 });
-              } else if (data.message) {
+              } else if (data.message || data?.answer?.message) {
+                const answer = data?.answer || {};
+                const actions = data.actions || answer.actions;
+                const hasActions =
+                  Array.isArray(actions) && actions.length > 0;
                 // Final complete response - handle both text and actions
                 const finalMessage = (data.message && typeof data.message === 'string')
                   ? data.message
+                  : (answer.message && typeof answer.message === 'string')
+                  ? answer.message
                   : (accumulatedText && typeof accumulatedText === 'string' ? accumulatedText : '');
-                const stockCandidatePayload = data.stock_candidate || data.stockCandidate;
+                const stockCandidatePayload =
+                  data.stock_candidate ||
+                  data.stockCandidate ||
+                  answer.stock_candidate ||
+                  answer.stockCandidate;
                 const stockCandidate =
                   stockCandidatePayload && typeof stockCandidatePayload === 'string'
                     ? { ticker: stockCandidatePayload }
                     : stockCandidatePayload;
-                const resolvedType = data.actions ? "action" : data.type;
+                const resolvedType = hasActions ? "action" : (data.type || answer.type);
+                const resolvedHideFeedback =
+                  data.hideFeedback !== undefined ? data.hideFeedback : answer.hideFeedback;
+                const resolvedHideActions =
+                  data.hideActions !== undefined ? data.hideActions : answer.hideActions;
                 
                 // Only set if we have a valid string
                 if (finalMessage && typeof finalMessage === 'string') {
@@ -658,27 +694,35 @@ export const useChat = () => {
                   setChatMessages(prev => {
                     const updated = [...prev];
                     const messageIndex = updated.findIndex(msg => msg.id === messageId);
+                    const baseMessage: ChatMessage = {
+                      id: messageId,
+                      sender: "finny" as const,
+                      text: finalMessage,
+                      timestamp: messageIndex >= 0 ? updated[messageIndex].timestamp : Date.now(),
+                      type: (resolvedType || "text") as "text" | "action",
+                      isStreaming: false,
+                      ...(hasActions && { actions }),
+                      ...(stockCandidate && { stockCandidate }),
+                      ...(resolvedHideFeedback !== undefined && { hideFeedback: resolvedHideFeedback }),
+                      ...(resolvedHideActions !== undefined && { hideActions: resolvedHideActions }),
+                    };
                     
                     if (messageIndex >= 0) {
                       updated[messageIndex] = {
                         ...updated[messageIndex],
-                        text: finalMessage,
-                        isStreaming: false,
-                        ...(data.actions && { actions: data.actions }),
-                        ...(resolvedType && { type: resolvedType }),
-                        ...(stockCandidate && { stockCandidate }),
-                        ...(data.hideFeedback !== undefined && { hideFeedback: data.hideFeedback }),
-                        ...(data.hideActions !== undefined && { hideActions: data.hideActions }),
+                        ...baseMessage,
                       };
+                    } else {
+                      updated.push(baseMessage);
                     }
                     
                     // Add actions to the last message if present
-                    if (data.actions && updated.length > 0) {
+                    if (hasActions && updated.length > 0) {
                       const lastMsg = updated[updated.length - 1];
                       if (lastMsg.sender === 'finny' && !lastMsg.actions) {
                         updated[updated.length - 1] = {
                           ...lastMsg,
-                          actions: data.actions,
+                          actions,
                           type: "action" as const,
                           ...(stockCandidate && { stockCandidate })
                         };
@@ -1271,24 +1315,51 @@ export const useChat = () => {
         }
       }
 
-      const hasActions = data.actions && Array.isArray(data.actions) && data.actions.length > 0;
-      const stockCandidatePayload = data.stock_candidate || data.stockCandidate;
+      const answerPayload = data?.answer || {};
+      const resolvedMessage =
+        data.message ?? answerPayload.message ?? data.text ?? answerPayload.text;
+      const resolvedType = data.type || answerPayload.type;
+      const resolvedActions = data.actions || answerPayload.actions;
+      const hasActions =
+        Array.isArray(resolvedActions) && resolvedActions.length > 0;
+      const stockCandidatePayload =
+        data.stock_candidate ||
+        data.stockCandidate ||
+        answerPayload.stock_candidate ||
+        answerPayload.stockCandidate;
       const stockCandidate =
         stockCandidatePayload && typeof stockCandidatePayload === "string"
           ? { ticker: stockCandidatePayload }
           : stockCandidatePayload;
+      const resolvedHideFeedback =
+        data.hideFeedback !== undefined
+          ? data.hideFeedback
+          : answerPayload.hideFeedback;
+      const resolvedHideActions =
+        data.hideActions !== undefined
+          ? data.hideActions
+          : answerPayload.hideActions;
+      const resolvedIsSplit =
+        data.isSplit !== undefined ? data.isSplit : answerPayload.isSplit;
+      const resolvedMessagePayload = data.message ?? answerPayload.message;
 
       if (hasActions) {
         const actionMessage: ChatMessage = {
           id: `finny-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
           sender: "finny",
-          text: data.message || "Here are the next steps.",
+          text:
+            (typeof resolvedMessage === "string" && resolvedMessage) ||
+            "Here are the next steps.",
           timestamp: Date.now(),
           type: "action",
-          actions: data.actions,
+          actions: resolvedActions,
           ...(stockCandidate && { stockCandidate }),
-          ...(data.hideFeedback !== undefined && { hideFeedback: data.hideFeedback }),
-          ...(data.hideActions !== undefined && { hideActions: data.hideActions }),
+          ...(resolvedHideFeedback !== undefined && {
+            hideFeedback: resolvedHideFeedback,
+          }),
+          ...(resolvedHideActions !== undefined && {
+            hideActions: resolvedHideActions,
+          }),
         };
 
         // Add typing delay for action messages
@@ -1301,21 +1372,24 @@ export const useChat = () => {
       }
 
       if (data.intent === "goal_conversation") {
-        message = data.message || "Let's set a goal.";
+        message = resolvedMessage || "Let's set a goal.";
       } else if (
         (data.intent === "ask_personalized" ||
           data.intent === "stock_query" ||
-          data.type === "assistant") &&
-        data.message
+          resolvedType === "assistant") &&
+        resolvedMessage
       ) {
         // Generic assistant/ask responses (must come AFTER goal_conversation check)
-        message = data.message;
+        message = resolvedMessage;
       } else if (data.intent === "off_topic" && data.text) {
         // Handle off-topic queries with redirection
         message = data.text;
       } else {
         // Default message handling
-        message = data.message || data.text || "Sorry, I wasn't able to generate advice just now.";
+        message =
+          resolvedMessage ||
+          data.text ||
+          "Sorry, I wasn't able to generate advice just now.";
       }
       
       // logger.info("messages", message);
@@ -1330,8 +1404,8 @@ export const useChat = () => {
       
       // Note: Finny's response will be logged in pushChat() when it's added to chat
       // Handle split messages for better UX
-      if (data.isSplit && Array.isArray(data.message)) {
-        await handleSplitMessages(data.message);
+      if (resolvedIsSplit && Array.isArray(resolvedMessagePayload)) {
+        await handleSplitMessages(resolvedMessagePayload);
       } else {
         // Create message object with UI flags from backend
         // Ensure message is always a string
@@ -1343,8 +1417,8 @@ export const useChat = () => {
           timestamp: Date.now(),
           type: "text",
           ...(stockCandidate && { stockCandidate }),
-          ...(data.hideFeedback !== undefined && { hideFeedback: data.hideFeedback }),
-          ...(data.hideActions !== undefined && { hideActions: data.hideActions }),
+          ...(resolvedHideFeedback !== undefined && { hideFeedback: resolvedHideFeedback }),
+          ...(resolvedHideActions !== undefined && { hideActions: resolvedHideActions }),
         };
         
         // Add typing delay for finny messages
