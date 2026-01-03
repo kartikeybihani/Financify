@@ -5272,24 +5272,17 @@ async function handleClassify(message, context, conversationContext = null) {
 
   try {
     const callOpenRouter = (body) => {
-      const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(
-          () => reject(new Error("Classification timeout after 8 seconds")),
-          8000
-        );
-      });
-
-      return Promise.race([
-        fetch("https://openrouter.ai/api/v1/chat/completions", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${process.env.OPENROUTER_GROK_KEY}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(body),
-        }),
-        timeoutPromise,
-      ]);
+      const controller = new AbortController();
+      const id = setTimeout(() => controller.abort(), 8000);
+      return fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${process.env.OPENROUTER_GROK_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ ...body }),
+        signal: controller.signal,
+      }).finally(() => clearTimeout(id));
     };
 
     const requestBody = {
@@ -5703,6 +5696,7 @@ async function handleClassify(message, context, conversationContext = null) {
 
       // Default fallback for malformed JSON - no rigid heuristics
       out = {
+        // Normalized fallback classification (clarify-friendly)
         intent: "ask_personalized",
         intent_type: null,
         emotional_state: "neutral",
@@ -5713,8 +5707,12 @@ async function handleClassify(message, context, conversationContext = null) {
         ticker: null,
         confidence: 0.8,
         decision_risk: "low",
-        info_sufficiency: "sufficient",
+        info_sufficiency: "insufficient",
+        clarification_needed: true,
+        clarification_reasons: ["timeline_missing", "income_replacement_plan"],
+        clarification_note: "timeline and income replacement plan",
         clarify_question: null,
+        model_fallback: true,
         fallback: true,
       };
     }
