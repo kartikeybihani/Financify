@@ -25,6 +25,9 @@ npm-debug.*
 yarn-debug.*
 yarn-error.*
 
+# Code (Codex CLI) artifacts
+.code/
+
 # macOS
 .DS_Store
 *.pem

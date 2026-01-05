@@ -487,13 +487,78 @@ export const useChat = () => {
       let finalResponseMessage: string | null = null;
       const messageId = `finny-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
       let currentEvent = '';
+      const STREAM_TIMEOUT_MS = 30000;
+      let timeoutId: ReturnType<typeof setTimeout> | null = null;
+      let didAppendAny = false;
+      let didAppendFinal = false;
+      let settled = false;
+
+      const fallbackMessage = "Sorry — I hit a snag while responding. Please try again.";
+
+      const safeResolve = (value: string | null) => {
+        if (settled) return;
+        settled = true;
+        resolve(value);
+      };
+
+      const safeReject = (error: Error) => {
+        if (settled) return;
+        settled = true;
+        reject(error);
+      };
+
+      const finalizeTyping = () => {
+        setProgressStatus("");
+        setIsTyping(false);
+      };
+
+      const resetStreamTimeout = () => {
+        if (timeoutId) clearTimeout(timeoutId);
+        timeoutId = setTimeout(() => {
+          if (settled) return;
+          console.warn("⚠️ [STREAMING] Timeout reached, aborting XHR");
+          try {
+            xhr.abort();
+          } catch {
+            // no-op
+          }
+
+          const fallback = fallbackMessage;
+          finalResponseMessage = fallback;
+          setChatMessages(prev => {
+            const updated = [...prev];
+            const messageIndex = updated.findIndex(msg => msg.id === messageId);
+            const baseMessage: ChatMessage = {
+              id: messageId,
+              sender: "finny" as const,
+              text: fallback,
+              timestamp: messageIndex >= 0 ? updated[messageIndex].timestamp : Date.now(),
+              type: "text" as const,
+              isStreaming: false,
+            };
+            if (messageIndex >= 0) {
+              updated[messageIndex] = { ...updated[messageIndex], ...baseMessage };
+            } else {
+              updated.push(baseMessage);
+            }
+            return updated;
+          });
+          didAppendAny = true;
+          didAppendFinal = true;
+          shouldPersistRef.current = true;
+          finalizeTyping();
+          safeResolve(fallback);
+        }, STREAM_TIMEOUT_MS);
+      };
 
       xhr.open('POST', url, true);
       xhr.setRequestHeader('Content-Type', 'application/json');
       xhr.setRequestHeader('Authorization', `Bearer ${freshToken}`);
+      resetStreamTimeout();
 
       // This is the magic - onprogress gets called as data arrives!
       xhr.onprogress = () => {
+        resetStreamTimeout();
         const newData = xhr.responseText.substring(receivedLength);
         receivedLength = xhr.responseText.length;
         buffer += newData;
@@ -505,13 +570,13 @@ export const useChat = () => {
         for (const line of lines) {
           if (line.trim() === '') continue;
 
-          if (line.startsWith('event: ')) {
-            currentEvent = line.slice(7).trim();
+          if (line.startsWith('event:')) {
+            currentEvent = line.slice(6).trim();
             continue;
           }
 
-          if (line.startsWith('data: ')) {
-            const dataString = line.slice(6).trim();
+          if (line.startsWith('data:')) {
+            const dataString = line.slice(5).trim();
             if (dataString === '') continue;
 
             try {
@@ -556,7 +621,14 @@ export const useChat = () => {
                   logger.warn(`[CHAT] ⚠️ API returned "Please log in" - invalidating cache`);
                   invalidateTokenCache();
                   // Reject the promise to trigger retry in calling code
-                  reject(new Error('Authentication required - please retry with fresh token'));
+                  if (timeoutId) clearTimeout(timeoutId);
+                  finalizeTyping();
+                  try {
+                    xhr.abort();
+                  } catch {
+                    // no-op
+                  }
+                  safeReject(new Error('Authentication required - please retry with fresh token'));
                   return;
                 }
                 
@@ -596,6 +668,8 @@ export const useChat = () => {
                   });
                   
                   shouldPersistRef.current = true;
+                  didAppendAny = true;
+                  didAppendFinal = true;
                 }
                 return;
               }
@@ -607,7 +681,14 @@ export const useChat = () => {
                 logger.warn(`[CHAT] ⚠️ Detected "Please log in" in stream - invalidating cache`);
                 invalidateTokenCache();
                 // Reject the promise to trigger retry in calling code
-                reject(new Error('Authentication required - please retry with fresh token'));
+                if (timeoutId) clearTimeout(timeoutId);
+                finalizeTyping();
+                try {
+                  xhr.abort();
+                } catch {
+                  // no-op
+                }
+                safeReject(new Error('Authentication required - please retry with fresh token'));
                 return;
               }
 
@@ -642,6 +723,7 @@ export const useChat = () => {
                     return [...prev, newMessage];
                   }
                 });
+                didAppendAny = true;
               } else if (data.message || data?.answer?.message) {
                 const answer = data?.answer || {};
                 const actions = data.actions || answer.actions;
@@ -677,12 +759,19 @@ export const useChat = () => {
                 if (finalMessage && typeof finalMessage === 'string' && 
                     (finalMessage.toLowerCase().includes("please log in") || 
                      finalMessage.toLowerCase().includes("log in"))) {
-                  logger.warn(`[CHAT] ⚠️ API returned "Please log in" - invalidating cache`);
-                  invalidateTokenCache();
-                  // Reject the promise to trigger retry in calling code
-                  reject(new Error('Authentication required - please retry with fresh token'));
-                  return;
+                logger.warn(`[CHAT] ⚠️ API returned "Please log in" - invalidating cache`);
+                invalidateTokenCache();
+                // Reject the promise to trigger retry in calling code
+                if (timeoutId) clearTimeout(timeoutId);
+                finalizeTyping();
+                try {
+                  xhr.abort();
+                } catch {
+                  // no-op
                 }
+                safeReject(new Error('Authentication required - please retry with fresh token'));
+                return;
+              }
                 
                 // Update accumulated text with final message if different
                 if (finalMessage && typeof finalMessage === 'string' && finalMessage !== accumulatedText) {
@@ -733,6 +822,8 @@ export const useChat = () => {
                   });
                   
                   shouldPersistRef.current = true;
+                  didAppendAny = true;
+                  didAppendFinal = true;
                 }
               }
             } catch (parseError) {
@@ -744,8 +835,13 @@ export const useChat = () => {
 
       xhr.onloadend = () => {
         // Process any remaining data
-        setProgressStatus("");
-        setIsTyping(false);
+        if (timeoutId) clearTimeout(timeoutId);
+        if (settled) {
+          // Avoid emitting extra fallback messages on error/retry paths.
+          finalizeTyping();
+          return;
+        }
+        finalizeTyping();
         
         // Ensure we always have a final response message
         // Priority: finalResponseMessage (from complete event) > accumulatedText (from text chunks)
@@ -753,19 +849,47 @@ export const useChat = () => {
           if (accumulatedText && typeof accumulatedText === 'string' && accumulatedText.trim()) {
             finalResponseMessage = accumulatedText;
           } else {
-            // If we still don't have a message, try to get it from the chat state
-            // This is a fallback in case the message was set but not captured
-            finalResponseMessage = null; // Will be handled by caller
+            if (!didAppendFinal) {
+              const fallback = fallbackMessage;
+              setChatMessages(prev => {
+                const updated = [...prev];
+                const messageIndex = updated.findIndex(msg => msg.id === messageId);
+                const baseMessage: ChatMessage = {
+                  id: messageId,
+                  sender: "finny" as const,
+                  text: fallback,
+                  timestamp: messageIndex >= 0 ? updated[messageIndex].timestamp : Date.now(),
+                  type: "text" as const,
+                  isStreaming: false,
+                };
+                if (messageIndex >= 0) {
+                  updated[messageIndex] = { ...updated[messageIndex], ...baseMessage };
+                } else {
+                  updated.push(baseMessage);
+                }
+                return updated;
+              });
+              shouldPersistRef.current = true;
+              didAppendAny = true;
+              didAppendFinal = true;
+              finalResponseMessage = fallback;
+            } else {
+              // If we still don't have a message, try to get it from the chat state
+              // This is a fallback in case the message was set but not captured
+              finalResponseMessage = null; // Will be handled by caller
+            }
           }
         }
         
         // Always resolve with a string or null (never undefined)
-        resolve(finalResponseMessage || null);
+        safeResolve(finalResponseMessage || null);
       };
 
       xhr.onerror = () => {
         console.error("❌ [STREAMING] XHR error");
-        reject(new Error('Streaming request failed'));
+        if (timeoutId) clearTimeout(timeoutId);
+        finalizeTyping();
+        safeReject(new Error('Streaming request failed'));
       };
 
       xhr.send(JSON.stringify(requestBody));
@@ -1089,7 +1213,15 @@ export const useChat = () => {
         }),
       });
 
-      let classifyData = classifyRes ? await classifyRes.json() : { intent: "goal" };
+      let classifyData = classifyRes ? await classifyRes.json() : { intent: "ask_personalized" };
+
+      if (!classifyData || typeof classifyData.intent !== 'string') {
+        classifyData = {
+          intent: "ask_personalized",
+          needs_web: false,
+          needs_user_data: true,
+        } as any;
+      }
       
       // Check if API returned "Please log in" - indicates stale/invalid token
       if (classifyRes && classifyData.message && 
@@ -1432,6 +1564,10 @@ export const useChat = () => {
       logger.error(`[CHAT] ❌ Error after ${totalDuration}ms:`, error);
       setProgressStatus(""); // Clear progress status
       pushChat("finny", "Something went wrong. Try again later.");
+    } finally {
+      // Always clear UI state even if we returned early or crashed.
+      setProgressStatus("");
+      setIsTyping(false);
     }
   };
 

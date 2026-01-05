@@ -1,0 +1,216 @@
+Finny Fixes
+
+Goal: Prevent the worst-case scenario where a user sends a message and receives no visible reply in the UI. This document lists the highest-risk failure points, their impact, concrete mitigations, and the related files/locations to inspect and change.
+
+
+1) Streaming response never delivers a final message (SSE stalls or ends without "complete")
+- Risk/Impact:
+  - Highest impact. If the SSE stream never emits a final "complete" event, the UI can stay in a thinking state with no reply.
+- Symptoms:
+  - Message sent, typing dots show for a while, then nothing appears, or keeps typing forever.
+- Root Causes:
+  - Server doesn’t send a final SSE event ("complete").
+  - Stream silently stalls (no tokens, no error, no end).
+  - SSE formatting issues prevent client parsing.
+- Mitigations (Backend):
+  - Always send a final SSE event (event: complete) even on errors, with a safe fallback message and hideActions: true.
+  - Ensure every return path calls res.end().
+  - Add a stream watchdog timeout (e.g., 25–30s) that forces a final "complete" with an apology and suggestions if no data emitted.
+  - Emit periodic SSE heartbeats (e.g., event: ping) to prove liveness.
+  - Ensure correct SSE formatting: "event: <type>\n", "data: <json>\n\n" and flush buffers after each write.
+- Mitigations (Frontend):
+  - Add a client-side streaming timeout in handleStreamingResponseXHR. If no onprogress or no "complete" within N seconds, abort the XHR and push a fallback message.
+  - Ensure setIsTyping(false) and setProgressStatus("") run in finally.
+- Related Files:
+  - api/finny.js (streaming ask handler; SSE write/format/end paths)
+  - src/hooks/useChat.ts (handleStreamingResponseXHR, handleFinnyResponse; typing state handling)
+  - src/contexts/ChatContext.tsx (if pushChat/state updates are centralized)
+
+
+2) Main LLM call hang/failure without fallback (model/proxy down)
+- Risk/Impact:
+  - Very high. If the main model fails or times out, no tokens are produced—leading to no reply.
+- Mitigations (Backend):
+  - Implement a multi-tier fallback chain with timeouts for the main generation call:
+    - Primary: OPENROUTER_MODEL (if configured) OR a default free model.
+    - Secondary: STANDARD_MODEL (e.g., meta-llama/llama-3.2-3b-instruct).
+    - Optional Tertiary: A different provider/model (e.g., mistral, qwen) to diversify availability.
+  - Use withTimeout (12–20s) per attempt; on timeout/non-200, switch to next model.
+  - If all fail, emit a final SSE "complete" with a generic apology. Never return empty.
+- Related Files:
+  - api/finny.js (ask handler; openrouter/openai/snap-in provider calls; withTimeout utility)
+
+
+3) Classification fails or returns unusable intent
+- Risk/Impact:
+  - High. If intent is invalid/null, routing may not select a handler, resulting in no reply.
+- Mitigations (Backend):
+  - If classification fails/invalid → default to intent: "ask_personalized" with minimal context packs.
+  - Apply the same model fallback logic as for the main generation call.
+- Mitigations (Frontend):
+  - After classifyRes.json(), if classifyData.intent is falsy, set a local default intent ("ask_personalized") and proceed.
+- Related Files:
+  - api/finny.js (classification branch, routing to handlers)
+  - src/hooks/useChat.ts (post-classify handling and payload assembly)
+
+
+4) SSE formatting or newline/buffer issues
+- Risk/Impact:
+  - High. Slight formatting mistakes stop the client parser from emitting events.
+- Mitigations (Backend):
+  - Enforce exact SSE format: lines start with "event:" and "data:", then a blank line. Flush after write.
+  - Send a small early token chunk or acknowledgment to start rendering quickly.
+- Related Files:
+  - api/finny.js (all SSE write sites)
+
+
+5) Authentication token edge-cases
+- Risk/Impact:
+  - Medium-High. If auth fails and server sends no body (or not JSON/SSE), client may show nothing.
+- Mitigations (Backend):
+  - For 401/403 during streaming, emit SSE event: complete with message: "Please log in to continue." and end.
+  - For non-streaming, consistently return { message: "Please log in..." } JSON.
+- Mitigations (Frontend):
+  - Detect those messages and push a prompt to log in (already present in most paths, ensure consistency).
+- Related Files:
+  - api/finny.js (auth checks around classify/ask routes)
+  - src/hooks/useChat.ts (error handling and login prompt injection)
+
+
+6) Goal flow routing with pending actions or handler errors
+- Risk/Impact:
+  - Medium. If handleGoalConversation throws or returns no message and streaming is on, nothing reaches the client.
+- Mitigations (Backend):
+  - Ensure handleGoalConversation always returns a message or actions.
+  - Surround with try/catch; on error, send SSE complete with a fallback message.
+- Related Files:
+  - api/finny.js (goal/intents router, handleGoalConversation implementation)
+
+
+7) Web search (braveSearch) or stock resolution stalls
+- Risk/Impact:
+  - Medium. External fetches can block the completion if awaited without timeouts.
+- Mitigations (Backend):
+  - Wrap braveSearch, fetchJson for tools/plugins, resolveTickerForQuery, etc., with withTimeout.
+  - If they time out/fail, proceed without enrichments rather than blocking the reply.
+- Related Files:
+  - lib/websearch/brave.js (search call)
+  - api/finny.js (context pack building; related async utilities)
+  - src/lib/stocks or lib/stocks.js (ticker resolution, if used)
+
+
+8) Rate limiting or cache/database delays
+- Risk/Impact:
+  - Medium. Caching/logging should never block the user’s reply.
+- Mitigations (Backend):
+  - Ensure DB/cache writes (Supabase logs, context caching) use withTimeout and failures are non-fatal.
+  - Skip writes if slow; never await them on the hot path before sending the user reply.
+- Related Files:
+  - api/finny.js (logConversation, context cache read/write)
+  - src/lib/supabase/supabase.ts (client setup)
+
+
+9) UI “isTyping” not reset on all exit paths
+- Risk/Impact:
+  - Medium. If isTyping remains true and no message is pushed, the UI looks stuck.
+- Mitigations (Frontend):
+  - Add finally blocks to reset isTyping/progress for both success and failure paths.
+  - As a belt-and-suspenders, after stream completion, if no Finny message was appended (track with a local messageId), push a generic fallback.
+- Related Files:
+  - src/hooks/useChat.ts (setIsTyping, setProgressStatus, pushChat)
+
+
+Implementation Notes and Checklists
+
+A) Main LLM fallback chain utility (Backend)
+- Steps:
+  1) Create a helper: callWithFallback(models[], callFn, timeoutMs) that tries each model in order with withTimeout.
+  2) Use in both classification and main generation paths.
+  3) If the final attempt fails, return a clear error object so the caller emits an SSE complete fallback.
+- Files/Areas:
+  - api/finny.js (util near withTimeout; classify and ask handlers use it)
+- Model order suggestion:
+  - [ process.env.OPENROUTER_MODEL || SMALLER_MODEL, STANDARD_MODEL, TERTIARY_MODEL ]
+
+B) Streaming watchdog + heartbeats (Backend)
+- Steps:
+  1) When starting a stream, set lastEmit = Date.now(). Start interval every 5–10s to write event: ping (optional) and check if Date.now() - lastEmit > STREAM_TIMEOUT.
+  2) If exceeded, write event: complete with fallback message and end the response.
+  3) Update lastEmit whenever you write a token or an event.
+- Files/Areas:
+  - api/finny.js (SSE streaming implementation)
+
+C) SSE correctness (Backend)
+- Steps:
+  1) Ensure each event has: "event: <name>\n" + "data: <json>\n\n".
+  2) Use res.flushHeaders() if available; disable compression on the route; set headers: "Content-Type: text/event-stream", "Cache-Control: no-cache", "Connection: keep-alive".
+  3) Call res.end() on all exit paths.
+- Files/Areas:
+  - api/finny.js (streaming routes)
+
+D) Client-side streaming timeout and safety fallback (Frontend)
+- Steps:
+  1) In handleStreamingResponseXHR, set a timeout (e.g., 25–30s). If no onprogress and no complete event by then, abort and push a fallback message.
+  2) Track whether at least one Finny message was appended for this request; if not by the time stream ends, push a generic apology.
+  3) Ensure setIsTyping(false) and setProgressStatus("") in finally.
+- Files/Areas:
+  - src/hooks/useChat.ts
+
+E) Classification default + fallback (Both)
+- Steps:
+  1) On backend classify failure/invalid: default to intent: "ask_personalized".
+  2) On frontend, if classifyData.intent is falsy after json parse, set local default and proceed.
+  3) Apply model fallback chain to classification as well.
+- Files/Areas:
+  - api/finny.js (classification path)
+  - src/hooks/useChat.ts (post-classify handling)
+
+F) Non-blocking enrichments and external tools (Backend)
+- Steps:
+  1) Wrap enrichments (web search, stock lookup, context packs) with withTimeout.
+  2) If they fail/timeout, log and continue; do not block the main reply.
+- Files/Areas:
+  - api/finny.js (context build, tools calls)
+  - lib/websearch/brave.js
+
+G) Auth failure consistency (Both)
+- Steps:
+  1) On 401/403 within streaming, emit SSE complete with a “Please log in…” message.
+  2) For non-streaming classify/ask, always return a body with message to display.
+  3) Frontend: detect and prompt login consistently.
+- Files/Areas:
+  - api/finny.js
+  - src/hooks/useChat.ts
+
+
+Testing Playbook
+- Unit/Integration:
+  - Simulate main LLM timeout; verify fallback model is tried and reply appears.
+  - Simulate total failure; verify SSE complete fallback message delivered and UI shows it.
+  - Simulate classification failure; verify defaults to ask_personalized and still replies.
+  - Simulate SSE stall; verify client-side timeout pushes fallback.
+  - Simulate auth 401 in streaming; verify client gets an explicit login message.
+  - Simulate web search timeout; verify reply without enrichment still appears.
+- Manual:
+  - Airplane mode/Network throttle mid-stream; verify watchdog + client fallback.
+  - Rate limit provider; verify model fallback chain is used.
+
+
+Suggested Model Constants (if not already present)
+- SMALLER_MODEL: meta-llama/llama-3.2-3b-instruct:free
+- STANDARD_MODEL: meta-llama/llama-3.2-3b-instruct
+- TERTIARY_MODEL: mistralai/mistral-small-latest or qwen/qwen2.5-7b-instruct (adjust to your providers)
+
+
+Quick Implementation Order (recommended)
+1) Backend: Main LLM fallback chain + classification fallback default.
+2) Backend: SSE complete on all error paths + watchdog + heartbeat.
+3) Frontend: Client streaming timeout + safety fallback + isTyping finally.
+4) Backend: Wrap enrichments with withTimeout and do-not-block policy.
+5) Auth consistency on streaming and non-streaming paths.
+
+
+Notes
+- Never let caching/logging block the user’s reply; treat as best-effort.
+- Prefer sending a short, safe, helpful reply over perfect context when upstream services are slow/unavailable.
+- Log granular timings for classify, enrichments, model call, and streaming start to spot regressions.

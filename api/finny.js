@@ -71,14 +71,76 @@ function generateRequestId() {
   }
 }
 
-async function withTimeout(promise, ms, onTimeoutValue = null) {
+async function withTimeout(promise, ms, onTimeoutValue = null, onTimeout = null) {
   let timeoutId;
   const timeoutPromise = new Promise((resolve) => {
-    timeoutId = setTimeout(() => resolve(onTimeoutValue), ms);
+    timeoutId = setTimeout(() => {
+      if (typeof onTimeout === "function") {
+        try {
+          onTimeout();
+        } catch {
+          // Ignore timeout handler errors.
+        }
+      }
+      resolve(onTimeoutValue);
+    }, ms);
   });
-  const result = await Promise.race([promise, timeoutPromise]);
-  clearTimeout(timeoutId);
-  return result;
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+function responseHasVisibleContent(response) {
+  if (!response || typeof response !== "object") return false;
+  if (Array.isArray(response.message) && response.message.length > 0) return true;
+  if (typeof response.message === "string" && response.message.trim()) return true;
+  if (typeof response.text === "string" && response.text.trim()) return true;
+  if (Array.isArray(response.actions) && response.actions.length > 0) return true;
+  return false;
+}
+
+async function callWithFallback(models, callFn, timeoutMs, label = "LLM") {
+  let lastErr = null;
+  const tried = [];
+
+  for (const model of models) {
+    if (!model) continue;
+    tried.push(model);
+    try {
+      const controller = new AbortController();
+      const callPromise = Promise.resolve()
+        .then(() => callFn(model, { signal: controller.signal }))
+        .catch((err) => {
+          if (controller.signal.aborted || err?.name === "AbortError") {
+            return { __aborted: true };
+          }
+          throw err;
+        });
+      const result = await withTimeout(
+        callPromise,
+        timeoutMs,
+        { __timeout: true },
+        () => controller.abort()
+      );
+      if (result && (result.__timeout || result.__aborted)) {
+        throw new Error(`${label} timeout after ${timeoutMs}ms`);
+      }
+      return { result, model };
+    } catch (err) {
+      lastErr = err;
+      logWarn(`⚠️ [FINNY] ${label} failed for model ${model}:`, err?.message);
+    }
+  }
+
+  const error = lastErr || new Error(`${label} failed for all models`);
+  error.modelsTried = tried;
+  throw error;
+}
+
+function getOpenRouterKey() {
+  return process.env.OPENROUTER_GROK_KEY || process.env.OPENROUTER_API_KEY;
 }
 
 function redactPII(text) {
@@ -108,14 +170,18 @@ function redactPII(text) {
   );
 }
 
-// Centralized OpenRouter model selection. Override via OPENROUTER_MODEL env.
+// Centralized OpenRouter model selection. Prefer paid model if provided.
 // Default to a widely available Grok model to avoid invalid ID errors.
+const OPENROUTER_PAID_MODEL = process.env.OPENROUTER_PAID_MODEL;
 const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL; // openai/gpt-oss-20b:free
+const PRIMARY_OPENROUTER_MODEL = OPENROUTER_PAID_MODEL || OPENROUTER_MODEL;
 
 // Memory extraction model - small, fast, free
 const SMALLER_MODEL = "meta-llama/llama-3.2-3b-instruct:free";
 // Standard non-free model to fallback to when the free model fails
 const STANDARD_MODEL = "meta-llama/llama-3.2-3b-instruct";
+// Tertiary model for resilience
+const TERTIARY_MODEL = "mistralai/mistral-small-latest";
 
 // Classification cache - in-memory cache for classification results
 const classificationCache = new Map();
@@ -135,13 +201,20 @@ async function getPersistentCache(dataType, userId, params = {}) {
     logDebug(`🔍 [PERSISTENT_CACHE] Looking for ${dataType} with key: ${key}`);
 
     // Use .limit(1) to handle potential duplicates and get the most recent one
-    const { data, error } = await supabase
+    const queryPromise = supabase
       .from("context_cache")
       .select("*")
       .eq("cache_key", key)
       .eq("user_id", userId)
       .order("created_at", { ascending: false }) // Get most recent entry first
       .limit(1);
+
+    const queryResult = await withTimeout(queryPromise, 2500, null);
+    if (!queryResult) {
+      logWarn(`⏰ [PERSISTENT_CACHE] Timeout reading ${dataType} (${key})`);
+      return null;
+    }
+    const { data, error } = queryResult;
 
     if (error) {
       logError(
@@ -169,7 +242,11 @@ async function getPersistentCache(dataType, userId, params = {}) {
     if (now > cacheEntry.expires_at) {
       logDebug(`⏰ [PERSISTENT_CACHE] Cache EXPIRED for ${dataType} (${key})`);
       // Clean up ALL expired entries for this key
-      await cleanupDuplicateCacheEntries(key, userId);
+      setImmediate(() => {
+        cleanupDuplicateCacheEntries(key, userId).catch((error) => {
+          logError("❌ [PERSISTENT_CACHE] Cleanup failed:", error);
+        });
+      });
       return null;
     }
 
@@ -208,15 +285,16 @@ async function setPersistentCache(dataType, userId, data, params = {}) {
       ).toISOString()}, TTL: ${ttl}ms`
     );
 
-    // First, delete any existing entries with the same cache_key and user_id
-    await supabase
+    // First, delete any existing entries with the same cache_key and user_id (best-effort)
+    const deletePromise = supabase
       .from("context_cache")
       .delete()
       .eq("cache_key", key)
       .eq("user_id", userId);
+    await withTimeout(deletePromise, 2500, null);
 
     // Then insert the new entry
-    const { error } = await supabase.from("context_cache").insert({
+    const insertPromise = supabase.from("context_cache").insert({
       cache_key: key,
       user_id: userId,
       data_type: dataType,
@@ -225,7 +303,12 @@ async function setPersistentCache(dataType, userId, data, params = {}) {
       created_at: new Date().toISOString(),
     });
 
-    if (error) {
+    const insertResult = await withTimeout(insertPromise, 2500, null);
+    const error = insertResult?.error;
+
+    if (insertResult === null) {
+      logWarn(`⏰ [PERSISTENT_CACHE] Timeout setting cache for ${dataType} (${key})`);
+    } else if (error) {
       logError(
         `❌ [PERSISTENT_CACHE] Error setting cache for ${dataType}:`,
         error
@@ -610,7 +693,14 @@ async function setCachedUserData(dataType, userId, data, params = {}) {
   });
 
   // Store in persistent cache for cross-instance sharing
-  await setPersistentCache(dataType, userId, data, params);
+  setImmediate(() => {
+    setPersistentCache(dataType, userId, data, params).catch((error) => {
+      logError(
+        `❌ [PERSISTENT_CACHE] Background set failed for ${dataType} (${key}):`,
+        error
+      );
+    });
+  });
 
   const ttlMinutes = Math.round(ttl / (60 * 1000));
   logDebug(
@@ -620,7 +710,11 @@ async function setCachedUserData(dataType, userId, data, params = {}) {
   // Trigger cleanup if cache is getting large
   if (dataCache.size > CACHE_STRATEGY.in_memory.max_size) {
     logDebug(`🧹 [CACHE] Cache size exceeded limit, triggering cleanup`);
-    await cleanupInMemoryCache();
+    setImmediate(() => {
+      cleanupInMemoryCache().catch((error) => {
+        logError("❌ [CACHE] In-memory cleanup failed:", error);
+      });
+    });
   }
 }
 
@@ -1074,9 +1168,12 @@ export default async function handler(req, res) {
   let userProfile = { name: null, age: null };
   const requestId = generateRequestId();
   const authStartTime = Date.now();
+  let hadAuthHeader = false;
   try {
     const authHeader =
       req.headers["authorization"] || req.headers["Authorization"];
+    hadAuthHeader =
+      typeof authHeader === "string" && authHeader.startsWith("Bearer ");
     const token =
       typeof authHeader === "string" && authHeader.startsWith("Bearer ")
         ? authHeader.slice("Bearer ".length)
@@ -1114,6 +1211,36 @@ export default async function handler(req, res) {
   const finalUserId = serverUserId || context?.user_id;
   const chatId = req.body.chat_id || context?.chat_id; // Get chat_id from request
 
+  if (
+    (hadAuthHeader && !serverUserId) ||
+    (!hadAuthHeader && !finalUserId && action !== "classify")
+  ) {
+    const authMessage = "Please log in to continue.";
+    if (wantsStreaming) {
+      res.writeHead(200, {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+        "X-Accel-Buffering": "no",
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Headers": "Cache-Control",
+      });
+      if (typeof res.flushHeaders === "function") {
+        res.flushHeaders();
+      }
+      sendStreamEvent(
+        res,
+        "complete",
+        buildStreamFallbackResponse(authMessage)
+      );
+      res.end();
+      return;
+    }
+
+    res.status(401).json({ message: authMessage });
+    return;
+  }
+
   const finnyRateConfig =
     action === "classify"
       ? { limit: 90, windowMs: 60 * 1000 }
@@ -1144,9 +1271,13 @@ export default async function handler(req, res) {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache",
       Connection: "keep-alive",
+      "X-Accel-Buffering": "no",
       "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Headers": "Cache-Control",
     });
+    if (typeof res.flushHeaders === "function") {
+      res.flushHeaders();
+    }
   }
 
   // Load conversation context from Supabase (if chat_id provided)
@@ -1523,11 +1654,34 @@ export default async function handler(req, res) {
           if (safeContext?.session?.goal_flow) {
             safeContext.goal_flow = safeContext.session.goal_flow;
           }
-          response = await handleGoalConversation(
-            message,
-            safeContext,
-            conversationContext
-          );
+          try {
+            response = await handleGoalConversation(
+              message,
+              safeContext,
+              conversationContext
+            );
+          } catch (goalError) {
+            logError("❌ [GOAL] Goal conversation failed:", goalError);
+            response = {
+              message:
+                "Sorry — I hit an issue while updating your goal. Please try again.",
+              type: "assistant",
+              intent: "goal_conversation",
+              hideActions: true,
+              goal_flow: { active: false },
+            };
+          }
+        }
+
+        if (!responseHasVisibleContent(response)) {
+          response = {
+            message:
+              "Sorry — I didn't get a full reply for your goal. Please try again.",
+            type: "assistant",
+            intent: "goal_conversation",
+            hideActions: true,
+            goal_flow: { active: false },
+          };
         }
 
         // Persist any goal_flow updates returned by the handler
@@ -1767,56 +1921,94 @@ export default async function handler(req, res) {
     if (wantsStreaming) {
       console.log("🔄 [STREAMING] Starting streaming response");
 
-      // Send progress events first
-      sendStreamEvent(res, "progress", {
-        status: "Processing your request...",
+      const streamWatchdog = startStreamWatchdog(res, {
+        timeoutMs: 30000,
+        pingMs: 8000,
       });
+      let streamCompleted = false;
 
-      // Extract the text to stream from the response
-      // For streaming, response.message is always a string (no backend splitting)
-      let textToStream = null;
-      if (typeof response.message === "string") {
-        textToStream = response.message;
-      } else if (typeof response.text === "string") {
-        textToStream = response.text;
-      } else {
-        // Fallback: handle array (shouldn't happen for streaming, but just in case)
-        textToStream = Array.isArray(response.message)
-          ? response.message.map((m) => m.content || m).join("\n\n")
-          : String(response.message || "");
+      try {
+        // Send progress events first
+        sendStreamEvent(res, "progress", {
+          status: "Processing your request...",
+        });
+
+        // Extract the text to stream from the response
+        // For streaming, response.message is always a string (no backend splitting)
+        let textToStream = null;
+        if (typeof response.message === "string") {
+          textToStream = response.message;
+        } else if (typeof response.text === "string") {
+          textToStream = response.text;
+        } else {
+          // Fallback: handle array (shouldn't happen for streaming, but just in case)
+          textToStream = Array.isArray(response.message)
+            ? response.message.map((m) => m.content || m).join("\n\n")
+            : String(response.message || "");
+        }
+
+        if (textToStream) {
+          const streamingStartTime = Date.now();
+          const timeToFirstChunk = streamingStartTime - requestStartTime;
+          console.log(
+            `🔄 [STREAMING] Starting stream (${(timeToFirstChunk / 1000).toFixed(
+              3
+            )}s to first chunk)`
+          );
+          console.log(
+            "🔄 [STREAMING] Streaming text:",
+            textToStream.substring(0, 100) + "..."
+          );
+          sendStreamEvent(res, "progress", { status: "Generating response..." });
+          await streamTextChunks(res, textToStream);
+        } else {
+          console.log(
+            "⚠️ [STREAMING] No text to stream in response:",
+            Object.keys(response)
+          );
+        }
+
+        // Send final complete response
+        sendStreamEvent(res, "complete", response);
+        streamCompleted = true;
+        res.end();
+        console.log("✅ [STREAMING] Streaming completed");
+      } catch (streamError) {
+        logError("❌ [STREAMING] Stream error:", streamError);
+        if (!res.writableEnded) {
+          sendStreamEvent(
+            res,
+            "complete",
+            buildStreamFallbackResponse(
+              "Sorry — something went wrong while streaming. Please try again."
+            )
+          );
+          res.end();
+        }
+      } finally {
+        if (streamWatchdog) clearInterval(streamWatchdog);
+        if (!streamCompleted && !res.writableEnded) {
+          sendStreamEvent(res, "complete", buildStreamFallbackResponse());
+          res.end();
+        }
       }
-
-      if (textToStream) {
-        const streamingStartTime = Date.now();
-        const timeToFirstChunk = streamingStartTime - requestStartTime;
-        console.log(
-          `🔄 [STREAMING] Starting stream (${(timeToFirstChunk / 1000).toFixed(
-            3
-          )}s to first chunk)`
-        );
-        console.log(
-          "🔄 [STREAMING] Streaming text:",
-          textToStream.substring(0, 100) + "..."
-        );
-        sendStreamEvent(res, "progress", { status: "Generating response..." });
-        await streamTextChunks(res, textToStream);
-      } else {
-        console.log(
-          "⚠️ [STREAMING] No text to stream in response:",
-          Object.keys(response)
-        );
-      }
-
-      // Send final complete response
-      sendStreamEvent(res, "complete", response);
-      res.end();
-      console.log("✅ [STREAMING] Streaming completed");
     } else {
       res.status(200).json(response);
     }
     console.log("🔍 [FINNY] Response:", response);
   } catch (error) {
     console.error("❌ [FINNY] Error:", error);
+    if (wantsStreaming && res && !res.writableEnded) {
+      sendStreamEvent(
+        res,
+        "complete",
+        buildStreamFallbackResponse(
+          "Sorry — something went wrong. Please try again."
+        )
+      );
+      res.end();
+      return;
+    }
     res.status(500).json({ error: error.message });
   }
 }
@@ -2562,7 +2754,7 @@ async function handleAsk(
                     cache_hit: false,
                   },
                 ],
-                model: OPENROUTER_MODEL || STANDARD_MODEL,
+                model: PRIMARY_OPENROUTER_MODEL || STANDARD_MODEL,
                 cache_hits: {},
                 tokens: null,
                 result: "success",
@@ -2598,17 +2790,28 @@ async function handleAsk(
           );
           console.log("🔍 [STOCK CONTEXT] Context metadata:", contextMetadata);
 
-          // Save conversation context synchronously
+          // Save conversation context (best-effort, non-blocking)
           if (context?.chat_id) {
-            console.log("🔍 [STOCK CONTEXT] Saving context synchronously");
-            await updateConversationContext(
-              context.user_id,
-              context.chat_id,
-              message,
-              response.message,
-              contextMetadata
-            );
-            console.log("✅ [STOCK CONTEXT] Context saved successfully");
+            setImmediate(async () => {
+              try {
+                const result = await withTimeout(
+                  updateConversationContext(
+                    context.user_id,
+                    context.chat_id,
+                    message,
+                    response.message,
+                    contextMetadata
+                  ),
+                  2000,
+                  null
+                );
+                if (result === null) {
+                  logWarn("⏰ [STOCK CONTEXT] Context save timed out");
+                }
+              } catch (error) {
+                logError("❌ [STOCK CONTEXT] Context save failed:", error);
+              }
+            });
           }
 
           // Store conversation memory in Supermemory (async, non-blocking)
@@ -2878,16 +3081,17 @@ async function handleAsk(
 
     // Memory extraction removed - migrating to Supermemory
     let memoryExtraction = [];
-    const [resp] = await Promise.all([
-      // Main response (existing LLM)
-      fetch("https://openrouter.ai/api/v1/chat/completions", {
+
+    async function callMainLLM(model, options = {}) {
+      const resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${process.env.OPENROUTER_GROK_KEY}`,
+          Authorization: `Bearer ${getOpenRouterKey()}`,
           "Content-Type": "application/json",
         },
+        signal: options.signal,
         body: JSON.stringify({
-          model: OPENROUTER_MODEL || STANDARD_MODEL,
+          model,
           temperature: 0.25,
           max_tokens: 10000,
           stream: false,
@@ -2900,8 +3104,42 @@ async function handleAsk(
             },
           ],
         }),
-      }),
-    ]);
+      });
+
+      if (!resp.ok) {
+        const errorText = await resp.text();
+        throw new Error(`OpenRouter error ${resp.status}: ${errorText}`);
+      }
+      return resp;
+    }
+
+    const llmModels = [
+      PRIMARY_OPENROUTER_MODEL || STANDARD_MODEL,
+      STANDARD_MODEL,
+      TERTIARY_MODEL,
+    ];
+
+    let resp;
+    let usedModel = PRIMARY_OPENROUTER_MODEL || STANDARD_MODEL;
+    try {
+      const llmResult = await callWithFallback(
+        llmModels,
+        callMainLLM,
+        20000,
+        "LLM"
+      );
+      resp = llmResult.result;
+      usedModel = llmResult.model;
+    } catch (llmError) {
+      logError("❌ [FINNY] All LLM attempts failed:", llmError?.message);
+      return {
+        message: cleanResponseFormatting(
+          "Sorry — I'm having trouble reaching the model right now. Please try again."
+        ),
+        type: "assistant",
+        hideActions: true,
+      };
+    }
 
     // Memory extraction removed - migrating to Supermemory for memory management
     memoryExtraction = [];
@@ -3086,7 +3324,7 @@ async function handleAsk(
           web_search: timings.web_ms,
         },
         tools_used: toolsUsed,
-        model: OPENROUTER_MODEL,
+        model: usedModel,
         cache_hits: {},
         tokens: null,
         result: gaps.length > 0 ? "degraded" : "success",
@@ -3112,15 +3350,28 @@ async function handleAsk(
       logInfo(`🎯 [TOPIC] Detected: ${topicDetection.topic}`);
     }
 
-    // Update conversation context SYNCHRONOUSLY to ensure it's saved before response
+    // Update conversation context (best-effort, non-blocking)
     if (context?.chat_id) {
-      await updateConversationContext(
-        context.user_id,
-        context.chat_id,
-        message,
-        response.message, // Use updated message with goal offer
-        contextMetadata
-      );
+      setImmediate(async () => {
+        try {
+          const result = await withTimeout(
+            updateConversationContext(
+              context.user_id,
+              context.chat_id,
+              message,
+              response.message, // Use updated message with goal offer
+              contextMetadata
+            ),
+            2000,
+            null
+          );
+          if (result === null) {
+            logWarn("⏰ [CONTEXT] Conversation context update timed out");
+          }
+        } catch (error) {
+          logError("❌ [CONTEXT] Conversation context update failed:", error);
+        }
+      });
     }
 
     // Store conversation memory in Supermemory (async, non-blocking)
@@ -5169,19 +5420,7 @@ async function handleClassify(message, context, conversationContext = null) {
   // This ensures flexible detection of stocks, goals, and all other intents
 
   try {
-    // Create a timeout promise that rejects after 8 seconds (increased for stability)
-    const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(
-        () => reject(new Error("Classification timeout after 8 seconds")),
-        8000
-      );
-    });
-
-    function getOpenRouterKey() {
-      return process.env.OPENROUTER_GROK_KEY || process.env.OPENROUTER_API_KEY;
-    }
-
-    async function callLLM(model) {
+    async function callLLM(model, options = {}) {
       const requestBody = {
         model,
         temperature: 0.1,
@@ -5330,14 +5569,12 @@ async function handleClassify(message, context, conversationContext = null) {
             Authorization: `Bearer ${getOpenRouterKey()}`,
             "Content-Type": "application/json",
           },
+          signal: options.signal,
           body: JSON.stringify(requestBody),
         }
       );
 
-      const apiCallStart = Date.now();
-      const r = await Promise.race([fetchPromise, timeoutPromise]);
-      const apiCallTime = Date.now() - apiCallStart;
-
+      const r = await fetchPromise;
       if (!r.ok) {
         const errText = await r.text();
         throw new Error(`OpenRouter error ${r.status}: ${errText}`);
@@ -5345,19 +5582,18 @@ async function handleClassify(message, context, conversationContext = null) {
       return r.json();
     }
 
-    // Try free/specified model first; on failure retry with STANDARD_MODEL
-    let data;
-    try {
-      const primaryModel = OPENROUTER_MODEL || SMALLER_MODEL;
-      console.log("🔍 [FINNY] Classification using model:", primaryModel);
-      data = await callLLM(primaryModel);
-    } catch (err1) {
-      console.log(
-        "⚠️ [FINNY] Primary model failed, retrying with STANDARD_MODEL:",
-        err1?.message
-      );
-      data = await callLLM(STANDARD_MODEL);
-    }
+    const classificationModels = [
+      PRIMARY_OPENROUTER_MODEL || SMALLER_MODEL,
+      STANDARD_MODEL,
+      TERTIARY_MODEL,
+    ];
+    const { result: data, model: usedModel } = await callWithFallback(
+      classificationModels,
+      callLLM,
+      12000,
+      "Classification"
+    );
+    console.log("🔍 [FINNY] Classification using model:", usedModel);
 
     const content = data.choices?.[0]?.message?.content;
     if (!content) {
@@ -5871,9 +6107,60 @@ function delay(ms) {
 
 // Helper function to send streaming events
 function sendStreamEvent(res, event, data) {
-  if (res.writableEnded) return;
+  if (!res || res.writableEnded) return;
+  if (event !== "ping") {
+    res.__finny_last_emit = Date.now();
+  }
   res.write(`event: ${event}\n`);
   res.write(`data: ${JSON.stringify(data)}\n\n`);
+  if (typeof res.flush === "function") {
+    res.flush();
+  }
+}
+
+function buildStreamFallbackResponse(message) {
+  return {
+    message: cleanResponseFormatting(
+      message ||
+        "Sorry — something stalled on my side. Please try again in a moment."
+    ),
+    type: "assistant",
+    hideActions: true,
+    hideFeedback: true,
+    actions: [],
+  };
+}
+
+function startStreamWatchdog(res, { timeoutMs = 30000, pingMs = 8000 } = {}) {
+  const startedAt = Date.now();
+  res.__finny_last_emit = startedAt;
+
+  const intervalId = setInterval(() => {
+    if (!res || res.writableEnded) {
+      clearInterval(intervalId);
+      return;
+    }
+
+    const lastEmit = res.__finny_last_emit || startedAt;
+    const now = Date.now();
+    if (now - lastEmit >= timeoutMs) {
+      logWarn("⚠️ [STREAMING] Watchdog timeout; forcing complete");
+      sendStreamEvent(
+        res,
+        "complete",
+        buildStreamFallbackResponse(
+          "Sorry — the response took too long. Please try again."
+        )
+      );
+      res.end();
+      clearInterval(intervalId);
+      return;
+    }
+
+    sendStreamEvent(res, "ping", { ts: now });
+  }, pingMs);
+
+  return intervalId;
 }
 
 // Finance facts to show during stock analysis loading
@@ -5965,9 +6252,11 @@ async function limitedBraveSearch(query) {
     let lastErr = null;
     for (let attempt = 0; attempt <= RATE_LIMITS.maxRetries; attempt++) {
       try {
-        const p = braveSearch(query);
-        const timed = withTimeout(p, RATE_LIMITS.timeout, null);
-        const res = await timed;
+        const controller = new AbortController();
+        const p = braveSearch(query, { signal: controller.signal });
+        const res = await withTimeout(p, RATE_LIMITS.timeout, null, () =>
+          controller.abort()
+        );
         if (res === null) throw new Error("braveSearch timeout");
         return res;
       } catch (e) {
@@ -6004,7 +6293,7 @@ function looksLikeStockDeepQuery(message) {
 
 async function planStockRequest(message) {
   try {
-    console.log("🔍 [STOCK_PLANNER] Using model:", OPENROUTER_MODEL);
+    console.log("🔍 [STOCK_PLANNER] Using model:", PRIMARY_OPENROUTER_MODEL);
     console.log(
       "🔍 [STOCK_PLANNER] API key present:",
       !!process.env.OPENROUTER_GROK_KEY
@@ -6027,7 +6316,7 @@ async function planStockRequest(message) {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: OPENROUTER_MODEL || STANDARD_MODEL,
+          model: PRIMARY_OPENROUTER_MODEL || STANDARD_MODEL,
           temperature: 0.1,
           messages: [
             {
@@ -6611,7 +6900,7 @@ Provide a detailed analysis including:
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: OPENROUTER_MODEL,
+          model: PRIMARY_OPENROUTER_MODEL,
           temperature: 0.3,
           max_tokens: 8000, // Allow comprehensive analysis responses
           messages: [
