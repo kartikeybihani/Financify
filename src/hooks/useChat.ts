@@ -623,12 +623,12 @@ export const useChat = () => {
                   // Reject the promise to trigger retry in calling code
                   if (timeoutId) clearTimeout(timeoutId);
                   finalizeTyping();
+                  safeReject(new Error('Authentication required - please retry with fresh token'));
                   try {
                     xhr.abort();
                   } catch {
                     // no-op
                   }
-                  safeReject(new Error('Authentication required - please retry with fresh token'));
                   return;
                 }
                 
@@ -683,12 +683,12 @@ export const useChat = () => {
                 // Reject the promise to trigger retry in calling code
                 if (timeoutId) clearTimeout(timeoutId);
                 finalizeTyping();
+                safeReject(new Error('Authentication required - please retry with fresh token'));
                 try {
                   xhr.abort();
                 } catch {
                   // no-op
                 }
-                safeReject(new Error('Authentication required - please retry with fresh token'));
                 return;
               }
 
@@ -764,12 +764,12 @@ export const useChat = () => {
                 // Reject the promise to trigger retry in calling code
                 if (timeoutId) clearTimeout(timeoutId);
                 finalizeTyping();
+                safeReject(new Error('Authentication required - please retry with fresh token'));
                 try {
                   xhr.abort();
                 } catch {
                   // no-op
                 }
-                safeReject(new Error('Authentication required - please retry with fresh token'));
                 return;
               }
                 
