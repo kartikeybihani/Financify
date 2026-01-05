@@ -71,7 +71,12 @@ function generateRequestId() {
   }
 }
 
-async function withTimeout(promise, ms, onTimeoutValue = null, onTimeout = null) {
+async function withTimeout(
+  promise,
+  ms,
+  onTimeoutValue = null,
+  onTimeout = null
+) {
   let timeoutId;
   const timeoutPromise = new Promise((resolve) => {
     timeoutId = setTimeout(() => {
@@ -94,10 +99,13 @@ async function withTimeout(promise, ms, onTimeoutValue = null, onTimeout = null)
 
 function responseHasVisibleContent(response) {
   if (!response || typeof response !== "object") return false;
-  if (Array.isArray(response.message) && response.message.length > 0) return true;
-  if (typeof response.message === "string" && response.message.trim()) return true;
+  if (Array.isArray(response.message) && response.message.length > 0)
+    return true;
+  if (typeof response.message === "string" && response.message.trim())
+    return true;
   if (typeof response.text === "string" && response.text.trim()) return true;
-  if (Array.isArray(response.actions) && response.actions.length > 0) return true;
+  if (Array.isArray(response.actions) && response.actions.length > 0)
+    return true;
   return false;
 }
 
@@ -307,7 +315,9 @@ async function setPersistentCache(dataType, userId, data, params = {}) {
     const error = insertResult?.error;
 
     if (insertResult === null) {
-      logWarn(`⏰ [PERSISTENT_CACHE] Timeout setting cache for ${dataType} (${key})`);
+      logWarn(
+        `⏰ [PERSISTENT_CACHE] Timeout setting cache for ${dataType} (${key})`
+      );
     } else if (error) {
       logError(
         `❌ [PERSISTENT_CACHE] Error setting cache for ${dataType}:`,
@@ -1951,15 +1961,17 @@ export default async function handler(req, res) {
           const streamingStartTime = Date.now();
           const timeToFirstChunk = streamingStartTime - requestStartTime;
           console.log(
-            `🔄 [STREAMING] Starting stream (${(timeToFirstChunk / 1000).toFixed(
-              3
-            )}s to first chunk)`
+            `🔄 [STREAMING] Starting stream (${(
+              timeToFirstChunk / 1000
+            ).toFixed(3)}s to first chunk)`
           );
           console.log(
             "🔄 [STREAMING] Streaming text:",
             textToStream.substring(0, 100) + "..."
           );
-          sendStreamEvent(res, "progress", { status: "Generating response..." });
+          sendStreamEvent(res, "progress", {
+            status: "Generating response...",
+          });
           await streamTextChunks(res, textToStream);
         } else {
           console.log(
@@ -3083,28 +3095,31 @@ async function handleAsk(
     let memoryExtraction = [];
 
     async function callMainLLM(model, options = {}) {
-      const resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${getOpenRouterKey()}`,
-          "Content-Type": "application/json",
-        },
-        signal: options.signal,
-        body: JSON.stringify({
-          model,
-          temperature: 0.25,
-          max_tokens: 10000,
-          stream: false,
-          reasoning: { effort: "minimal", exclude: true }, // Disable reasoning output, only return actual response
-          messages: [
-            { role: "system", content: system },
-            {
-              role: "user",
-              content: userMessage,
-            },
-          ],
-        }),
-      });
+      const resp = await fetch(
+        "https://openrouter.ai/api/v1/chat/completions",
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${getOpenRouterKey()}`,
+            "Content-Type": "application/json",
+          },
+          signal: options.signal,
+          body: JSON.stringify({
+            model,
+            temperature: 0.25,
+            max_tokens: 10000,
+            stream: false,
+            reasoning: { effort: "minimal", exclude: true }, // Disable reasoning output, only return actual response
+            messages: [
+              { role: "system", content: system },
+              {
+                role: "user",
+                content: userMessage,
+              },
+            ],
+          }),
+        }
+      );
 
       if (!resp.ok) {
         const errorText = await resp.text();
@@ -7265,10 +7280,10 @@ async function getNetWorthData(userId) {
     const netWorth = netWorthData[0]; // get_net_worth returns array with single object
 
     // Log raw RPC response for debugging
-    console.log(
-      "📊 [NET_WORTH] Raw RPC response:",
-      JSON.stringify(netWorth, null, 2)
-    );
+    // console.log(
+    //   "📊 [NET_WORTH] Raw RPC response:",
+    //   JSON.stringify(netWorth, null, 2)
+    // );
 
     // Process and format the data
     const processedData = {
