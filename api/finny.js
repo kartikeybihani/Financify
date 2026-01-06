@@ -109,6 +109,220 @@ function responseHasVisibleContent(response) {
   return false;
 }
 
+function detectRefusalToAnswer(text) {
+  if (!text || typeof text !== "string") return false;
+  return /\b(just tell me|no questions|don't ask|dont ask|stop asking|whatever just answer|idk just answer)\b/i.test(
+    text
+  );
+}
+
+function detectAmbiguousIntent(text) {
+  if (!text || typeof text !== "string") return false;
+  const lower = text.toLowerCase();
+
+  // A lightweight trigger for “coach should clarify goal first”.
+  // Not a topic map; just catches common ambiguous decision phrasing.
+  const patterns = [
+    /\bshould i\b/, // "Should I buy..."
+    /\bis it worth it\b/,
+    /\bworth it\b/,
+    /\bhelp me decide\b/,
+    /\bwhat should i do\b/,
+    /\bwhat do i do\b/,
+    /\bdo you think i should\b/,
+    /\bhow do i decide\b/,
+  ];
+
+  if (patterns.some((p) => p.test(lower))) return true;
+
+  // Single-word “yes/no” prompts can be ambiguous in medium/high risk contexts.
+  if (lower.trim() === "help") return true;
+
+  return false;
+}
+
+function deterministicChance(seed, probability = 0.5) {
+  try {
+    const p = typeof probability === "number" ? probability : 0.5;
+    const clamped = Math.max(0, Math.min(1, p));
+    const hash = crypto
+      .createHash("sha256")
+      .update(String(seed || ""))
+      .digest("hex");
+    const first8 = parseInt(hash.slice(0, 8), 16);
+    const bucket = first8 % 100;
+    return bucket < Math.round(clamped * 100);
+  } catch {
+    return Math.random() < probability;
+  }
+}
+
+function buildClarificationMessage(message, classificationResult) {
+  const missing = Array.isArray(classificationResult?.missing_fields)
+    ? classificationResult.missing_fields
+    : [];
+
+  const decisionRisk = classificationResult?.decision_risk || "unknown";
+
+  const questionBank = {
+    purchase_price: "What’s the price (or monthly payment) and when are you trying to do this?",
+    timeline: "What’s the timeline (this month vs 6–12 months vs later)?",
+    location: "Where are you located (state/country)?",
+    income_takehome: "What’s your monthly take-home pay?",
+    income_gross: "What’s your gross annual income?",
+    fixed_expenses: "What are your fixed monthly bills (rent/mortgage, utilities, minimum debt payments)?",
+    current_savings: "How much cash do you have available (checking/savings) for this?",
+    debt_balances: "Any debts (credit cards, loans)? Rough balances + APRs?",
+    credit_score: "Rough credit score range (e.g., 650–700)?",
+    down_payment: "How much can you put down (and do you want to keep an emergency fund)?",
+    risk_tolerance: "How do you feel about risk: low / medium / high?",
+    investing_horizon: "When would you need this money back (time horizon)?",
+    goal_amount: "What’s the target amount you’re aiming for?",
+    goal_date: "By what date do you want to hit that?",
+    move_countries: "Which country are you moving from/to, and when?",
+    employer_match: "Do you get an employer match (401k/etc.)?",
+  };
+
+  const questions = [];
+  for (const key of missing) {
+    const q = questionBank[key];
+    if (q) questions.push(q);
+    if (questions.length >= 3) break;
+  }
+
+  if (questions.length === 0) {
+    questions.push(
+      "Before I give advice: what’s your income, fixed bills, and current cash savings (rough numbers are fine)?"
+    );
+  }
+
+  const riskLine =
+    decisionRisk === "high"
+      ? "This is a high-stakes decision, so I don’t want to guess."
+      : "Quick questions so I don’t make stuff up.";
+
+  return `${riskLine}\n\n${questions
+    .slice(0, 3)
+    .map((q, i) => `${i + 1}) ${q}`)
+    .join("\n")}\n\nIf you don’t know exact numbers, give rough ranges.`;
+}
+
+function hasEnoughInternalDataToProceed(packs, decisionRisk = "unknown") {
+  if (!packs || typeof packs !== "object") return false;
+
+  // Base pack is the minimum requirement to say anything grounded.
+  const hasBase = !!packs.base && typeof packs.base === "object";
+  if (!hasBase) return false;
+
+  // High-stakes decisions should be grounded in BOTH balance sheet basics and actual spending.
+  // Otherwise we risk giving advice that sounds confident but isn’t supported by data.
+  const hasAccounts =
+    Array.isArray(packs.base?.accounts) && packs.base.accounts.length > 0;
+  const hasBalanceSheetNumbers = [
+    packs.base?.netWorth,
+    packs.base?.liquidAssets,
+    packs.base?.investmentsTotal,
+    packs.base?.totalLiabilities,
+  ].some((v) => typeof v === "number" && Number.isFinite(v));
+
+  // For many “can I afford X?” questions, we can proceed if we have NON-EMPTY
+  // cashflow or spend context; otherwise we likely need user inputs.
+  const cashflowArray = Array.isArray(packs.cashflow?.cashflow)
+    ? packs.cashflow.cashflow
+    : Array.isArray(packs.cashflow)
+    ? packs.cashflow
+    : [];
+  const hasCashflow =
+    cashflowArray.length > 0 &&
+    cashflowArray.some(
+      (cf) =>
+        typeof cf?.income === "number" ||
+        typeof cf?.expense === "number" ||
+        typeof cf?.net === "number"
+    );
+
+  const hasSpend =
+    typeof packs.spend?.count === "number" && packs.spend.count > 0;
+
+  // As a last resort, if we have meaningful transaction history we can still
+  // offer a cautious best-effort estimate.
+  const hasTxns =
+    Array.isArray(packs.base?.recentTransactions) &&
+    packs.base.recentTransactions.length >= 5;
+
+  if (decisionRisk === "high") {
+    return (hasAccounts || hasBalanceSheetNumbers) && hasSpend;
+  }
+
+  return hasCashflow || hasSpend || hasTxns;
+}
+
+const NON_INFERABLE_MISSING_FIELDS = new Set([
+  // Requires user to specify the decision details
+  "purchase_price",
+  "down_payment",
+  "timeline",
+  "location",
+  "credit_score",
+  "risk_tolerance",
+  "investing_horizon",
+  "goal_amount",
+  "goal_date",
+  "move_countries",
+]);
+
+const FINANCIAL_BASELINE_MISSING_FIELDS = new Set([
+  // These are often required for affordability/plan questions unless we have equivalent internal data.
+  "income_takehome",
+  "fixed_expenses",
+  "current_savings",
+  "debt_balances",
+]);
+
+function isMissingFieldSatisfiedByPacks(field, packs) {
+  if (!packs || !packs.base) return false;
+
+  const cashflowArray = Array.isArray(packs.cashflow?.cashflow)
+    ? packs.cashflow.cashflow
+    : Array.isArray(packs.cashflow)
+    ? packs.cashflow
+    : [];
+
+  switch (field) {
+    case "current_savings":
+      return (
+        typeof packs.base?.liquidAssets === "number" &&
+        Number.isFinite(packs.base.liquidAssets)
+      );
+    case "debt_balances": {
+      if (
+        typeof packs.base?.totalLiabilities === "number" &&
+        Number.isFinite(packs.base.totalLiabilities)
+      ) {
+        return true;
+      }
+      const accounts = Array.isArray(packs.base?.accounts) ? packs.base.accounts : [];
+      return accounts.some((acc) => {
+        const type = String(acc?.type || "").toLowerCase();
+        const subtype = String(acc?.subtype || "").toLowerCase();
+        const balance = acc?.balances?.current ?? acc?.current_balance ?? acc?.balance;
+        return (
+          typeof balance === "number" &&
+          (type === "credit" || type === "loan" || subtype.includes("credit"))
+        );
+      });
+    }
+    case "income_takehome":
+      // Only consider this “known” if cashflow has actual income numbers.
+      return cashflowArray.some((cf) => typeof cf?.income === "number" && cf.income > 0);
+    case "fixed_expenses":
+      // We generally can't infer fixed bills reliably from current packs.
+      return false;
+    default:
+      return false;
+  }
+}
+
 async function callWithFallback(models, callFn, timeoutMs, label = "LLM") {
   let lastErr = null;
   const tried = [];
@@ -2189,6 +2403,27 @@ async function handleAsk(
       }
     }
 
+    // Backward-compatible defaults for new classification fields
+    if (classificationResult && classificationResult.needs_clarification === undefined) {
+      classificationResult.needs_clarification = false;
+    }
+    if (classificationResult && !Array.isArray(classificationResult.missing_fields)) {
+      classificationResult.missing_fields = [];
+    }
+    if (classificationResult && !classificationResult.info_sufficiency) {
+      classificationResult.info_sufficiency = "unknown";
+    }
+    if (classificationResult && !classificationResult.decision_risk) {
+      classificationResult.decision_risk = "unknown";
+    }
+
+    const userRefused = detectRefusalToAnswer(message);
+    const ambiguousIntent = detectAmbiguousIntent(message);
+    const shouldConsiderClarifying =
+      classificationResult?.needs_clarification &&
+      !userRefused &&
+      classificationResult?.intent !== "stock_query";
+
     // Use classification.needs_web as primary, with keyword detection as fallback
     const needsWeb =
       classificationResult?.needs_web || detectWebSearchNeeded(message, slots);
@@ -2300,6 +2535,55 @@ async function handleAsk(
 
     logInfo("📦 [FINNY] Context packs built:", Object.keys(packs));
     logInfo("⚠️ [FINNY] Data gaps:", gaps);
+
+    // Ambiguous-intent clarification: for medium/high (or unknown sufficiency), ask ONE question first
+    // even if we have internal data. This avoids giving the "wrong" advice for the wrong goal.
+    const decisionRisk = classificationResult?.decision_risk || "unknown";
+    const infoSufficiency = classificationResult?.info_sufficiency || "unknown";
+    const shouldClarifyAmbiguity =
+      ambiguousIntent &&
+      !userRefused &&
+      classificationResult?.intent !== "stock_query" &&
+      (decisionRisk === "high" ||
+        decisionRisk === "medium" ||
+        infoSufficiency === "unknown");
+
+    // Clarify-first guardrail (data-aware): only ask questions if we truly lack enough
+    // internal data to answer safely.
+    if (shouldConsiderClarifying) {
+      const missingFields = Array.isArray(classificationResult?.missing_fields)
+        ? classificationResult.missing_fields
+        : [];
+      const remainingMissing = missingFields.filter(
+        (f) => !isMissingFieldSatisfiedByPacks(f, packs)
+      );
+      const requiredClarificationMissing = remainingMissing.filter(
+        (f) =>
+          NON_INFERABLE_MISSING_FIELDS.has(f) ||
+          FINANCIAL_BASELINE_MISSING_FIELDS.has(f)
+      );
+      const missingBase = !packs.base || gaps.includes("summary_min");
+      const lacksSignal = !hasEnoughInternalDataToProceed(
+        packs,
+        classificationResult?.decision_risk || "unknown"
+      );
+
+      if (
+        requiredClarificationMissing.length > 0 ||
+        missingBase ||
+        lacksSignal
+      ) {
+        const clarificationMessage = buildClarificationMessage(
+          message,
+          classificationResult
+        );
+        return {
+          message: cleanResponseFormatting(clarificationMessage),
+          type: "assistant",
+          intent: classificationResult?.intent || "ask_personalized",
+        };
+      }
+    }
 
     // Log what user data is being fed to finny
     if (packs.base) {
@@ -3024,6 +3308,42 @@ async function handleAsk(
 
     // Build complete prompt using 6-layer architecture
     // Prompt engine now handles: web context, feedback patterns, memories, intent context, user prompt
+    const shouldOfferCoachFollowUp =
+      !userRefused &&
+      (decisionRisk === "high" ||
+        decisionRisk === "medium" ||
+        infoSufficiency === "unknown") &&
+      deterministicChance(
+        `${userId}:${context?.chat_id || ""}:${message}`,
+        0.5
+      );
+
+    const coachingRuntimeFlags = [
+      `COACHING_FLAGS:`,
+      `- ambiguous_intent_detected: ${ambiguousIntent}`,
+      `- clarify_one_question_only: ${shouldClarifyAmbiguity}`,
+      `- offer_single_followup_question: ${shouldOfferCoachFollowUp}`,
+      `- user_refused_to_answer: ${userRefused}`,
+      `- decision_risk: ${decisionRisk}`,
+      `- info_sufficiency: ${infoSufficiency}`,
+    ].join("\n");
+
+    const classificationHeader = classificationResult
+      ? `CLASSIFICATION:\n- needs_clarification: ${
+          classificationResult.needs_clarification
+        }\n- info_sufficiency: ${
+          classificationResult.info_sufficiency
+        }\n- decision_risk: ${
+          classificationResult.decision_risk
+        }\n- missing_fields: ${JSON.stringify(
+          classificationResult.missing_fields || []
+        )}`
+      : null;
+
+    const runtimeHeader = [contextHeader, classificationHeader, coachingRuntimeFlags]
+      .filter(Boolean)
+      .join("\n\n");
+
     const system = buildContextAwarePrompt(
       message,
       contextWithFeedback,
@@ -3032,7 +3352,7 @@ async function handleAsk(
       finnyStyle,
       classificationResult, // Pass classification result for intent-first architecture
       webSummary, // Web context
-      contextHeader // Context header
+      runtimeHeader // Context header (+ classification)
     );
 
     // Build minimal user message context (query-specific data only, not raw dumps)
@@ -5339,6 +5659,10 @@ async function handleClassify(message, context, conversationContext = null) {
       emotional_state: "neutral",
       needs_web: false,
       needs_user_data: true,
+      needs_clarification: false,
+      info_sufficiency: "unknown",
+      missing_fields: [],
+      decision_risk: "unknown",
       state: null,
       entities: [],
       ticker: null,
@@ -5392,6 +5716,18 @@ async function handleClassify(message, context, conversationContext = null) {
         }
         if (!cachedResult.emotional_state) {
           cachedResult.emotional_state = "neutral";
+        }
+        if (cachedResult.needs_clarification === undefined) {
+          cachedResult.needs_clarification = false;
+        }
+        if (!cachedResult.info_sufficiency) {
+          cachedResult.info_sufficiency = "unknown";
+        }
+        if (!Array.isArray(cachedResult.missing_fields)) {
+          cachedResult.missing_fields = [];
+        }
+        if (!cachedResult.decision_risk) {
+          cachedResult.decision_risk = "unknown";
         }
         if (!Array.isArray(cachedResult.entities)) {
           cachedResult.entities = [];
@@ -5482,6 +5818,24 @@ async function handleClassify(message, context, conversationContext = null) {
               "=== FLAG RULES (can combine) ===",
               "- needs_user_data=true: Answer requires user's actual data (spend, net worth, accounts, goals, personal recommendations, affordability checks)",
               "- needs_web=true: Answer requires current/2024-2025 info (limits, rates, brackets, market/news, card offers, current regulations)",
+              "- needs_clarification=true: The user is asking for advice/plan but key inputs are missing or intent is ambiguous (Ask handler will ask 1–3 questions before advising)",
+              "",
+              "=== INFO SUFFICIENCY & RISK (Reliable routing) ===",
+              "Set these fields so the Ask handler can safely clarify instead of guessing:",
+              "- info_sufficiency: 'sufficient'|'missing'|'unknown'",
+              "- missing_fields: array of strings from this set:",
+              "  [income_takehome,income_gross,fixed_expenses,current_savings,debt_balances,credit_score,purchase_price,down_payment,timeline,location,risk_tolerance,investing_horizon,goal_amount,goal_date,move_countries,employer_match]",
+              "- decision_risk: 'low'|'medium'|'high'",
+              "",
+              "Decision risk guidance (examples):",
+              "- high: moving countries, marriage/kids planning, buying a house, taking on large debt, changing investment allocation materially",
+              "- medium: optimizing budget, small/medium purchase decisions, choosing between two reasonable options",
+              "- low: definitions/explanations, small factual questions",
+              "",
+              "If the user asks a high-risk question and details are missing, set needs_clarification=true and include missing_fields like timeline, income_takehome, fixed_expenses, current_savings, debt_balances, location (as applicable).",
+              "",
+              "Ambiguity rule:",
+              "- If the user asks an ambiguous decision question (e.g., 'should I', 'is it worth it', 'help me decide') and it's medium/high stakes, set needs_clarification=true even if missing_fields is empty (Ask handler may ask 1 sharp question to confirm goal).",
               "",
               "=== CRITICAL CLASSIFICATION RULES ===",
               "1. Affordability queries are ALWAYS ask_personalized (not goal_conversation):",
@@ -5524,7 +5878,7 @@ async function handleClassify(message, context, conversationContext = null) {
               "CRITICAL: You MUST return ONLY valid JSON. No markdown, no code fences, no extra text, no comments.",
               "The JSON must be parseable by JSON.parse(). Follow this EXACT structure:",
               "",
-              '{"intent":"ask_personalized","intent_type":"exploratory","emotional_state":"neutral","needs_web":false,"needs_user_data":true,"state":null,"entities":[],"ticker":null,"confidence":0.95}',
+              '{"intent":"ask_personalized","intent_type":"exploratory","emotional_state":"neutral","needs_web":false,"needs_user_data":true,"needs_clarification":false,"info_sufficiency":"sufficient","missing_fields":[],"decision_risk":"low","state":null,"entities":[],"ticker":null,"confidence":0.95}',
               "",
               "Valid JSON format rules:",
               "- Use double quotes for all strings",
@@ -5540,6 +5894,10 @@ async function handleClassify(message, context, conversationContext = null) {
               "- emotional_state: REQUIRED string (neutral|anxious|panicked|ashamed|overwhelmed|fomo)",
               "- needs_web: REQUIRED boolean (true|false)",
               "- needs_user_data: REQUIRED boolean (true|false)",
+              "- needs_clarification: REQUIRED boolean (true|false)",
+              "- info_sufficiency: REQUIRED string ('sufficient'|'missing'|'unknown')",
+              "- missing_fields: REQUIRED array (empty array [] if none)",
+              "- decision_risk: REQUIRED string ('low'|'medium'|'high')",
               "- state: string or null (state code like AZ, CA, or null)",
               "- entities: REQUIRED array (empty array [] if none, or ticker symbols if stock_query)",
               "- ticker: string or null (ticker symbol like 'AAPL', 'TSLA', or null if not stock_query or ambiguous)",
@@ -5562,6 +5920,7 @@ async function handleClassify(message, context, conversationContext = null) {
               "- Be precise with emotional_state: only detect if CLEAR signals exist, default to 'neutral'",
               "- intent_type can be null for off_topic queries",
               "- confidence should reflect how certain you are (0.9+ for clear cases, 0.7-0.9 for ambiguous)",
+              "- If needs_clarification=true, set info_sufficiency to 'missing' or 'unknown' and include missing_fields",
               "- Return ONLY the JSON object, nothing else",
             ].join("\n"),
           },
@@ -5668,6 +6027,12 @@ async function handleClassify(message, context, conversationContext = null) {
         );
         out.emotional_state = "neutral";
       }
+
+      // Defaults for clarification/risk routing fields
+      if (out.needs_clarification === undefined) out.needs_clarification = false;
+      if (!out.info_sufficiency) out.info_sufficiency = "unknown";
+      if (!Array.isArray(out.missing_fields)) out.missing_fields = [];
+      if (!out.decision_risk) out.decision_risk = "unknown";
     } catch (parseError) {
       console.log(
         "❌ [FINNY] JSON parse/validation error, using fallback classification"
@@ -5682,6 +6047,10 @@ async function handleClassify(message, context, conversationContext = null) {
         emotional_state: "neutral",
         needs_web: false,
         needs_user_data: true,
+        needs_clarification: false,
+        info_sufficiency: "unknown",
+        missing_fields: [],
+        decision_risk: "unknown",
         state: null,
         entities: [],
         ticker: null,
@@ -5695,6 +6064,10 @@ async function handleClassify(message, context, conversationContext = null) {
     if (!out.state || typeof out.state !== "string") out.state = null;
     if (!Array.isArray(out.entities)) out.entities = [];
     if (out.ticker === undefined) out.ticker = null;
+    if (out.needs_clarification === undefined) out.needs_clarification = false;
+    if (!out.info_sufficiency) out.info_sufficiency = "unknown";
+    if (!Array.isArray(out.missing_fields)) out.missing_fields = [];
+    if (!out.decision_risk) out.decision_risk = "unknown";
     if (
       out.intent === "stock_query" &&
       out.ticker &&
@@ -5760,6 +6133,10 @@ async function handleClassify(message, context, conversationContext = null) {
       emotional_state: "neutral",
       needs_web: false,
       needs_user_data: true,
+      needs_clarification: false,
+      info_sufficiency: "unknown",
+      missing_fields: [],
+      decision_risk: "unknown",
       state: null,
       entities: [],
       ticker: null,

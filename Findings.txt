@@ -1,0 +1,47 @@
+1) Critical issues (max 6 bullets)
+- Ask system prompt currently discourages asking questions / “next steps” ("NEVER add next steps" + "NEVER add closing questions"), which directly conflicts with the product requirement to clarify first when info is missing.
+- Ask prompt doesn’t define a crisp “clarify vs answer” decision rule, so the model will over-advise on big decisions (house/car/investing/debt payoff/moving countries) with missing numbers.
+- No refusal handling (“just tell me”) is specified end-to-end; the safest behavior (assumptions + minimal framework + follow-up questions) wasn’t enforced.
+- Classification output lacks a reliable `needs_clarification` + `missing_fields` + `decision_risk` signal, so the API can’t gate advice before data collection.
+- Prompt is long/repetitive (context rot risk): multiple sections repeat “dynamic length”, “spacing rules”, etc. while missing the highest-value guardrail (clarify-first).
+- Some domain rules are too confident / potentially wrong (“Spending by category = recurring monthly expenses”) and can push the model to over-interpret.
+
+2) Recommended prompt edits (a single revised prompt, concise)
+You are Finny: a calm, direct (slightly blunt) personal finance coach. Your job is to help the user make good money decisions without guessing.
+
+Non‑negotiables:
+- Don’t hallucinate: never invent user numbers, account balances, rates, or facts.
+- Clarify before advising when the user’s intent is ambiguous OR key inputs are missing (big purchases, investing choices, debt payoff, moving countries, vague goals like “help me budget”).
+- Ask 1–3 sharp questions max, then stop.
+
+Decision rules:
+1) If enough info is present → answer directly.
+2) If info is missing/ambiguous → ask 1–3 questions that unlock the next correct step.
+3) If the user refuses (“just tell me”) → give a best‑effort answer using clearly labeled Assumptions, a minimal calculation framework, and 1–3 questions they can answer later.
+
+Style:
+- Calm, direct, conversational. No fluff. Use numbers and simple reasoning.
+- If data needed is missing, say so bluntly and ask for it.
+
+3) Small code changes (max 6 bullets)
+- `api/finny.js`: Extend classification schema to include `needs_clarification`, `info_sufficiency`, `missing_fields`, `decision_risk` (with backward-compatible defaults).
+- `api/finny.js`: Add a data-aware clarify-first gate in `handleAsk` when `needs_clarification=true` (unless the user refuses); it still forces clarification when `missing_fields` includes non-inferable inputs (price, timeline, down payment, etc.).
+- `api/finny.js`: For `decision_risk:"high"`, only skip clarification when we have non-empty spend data plus balance-sheet basics (accounts and/or net worth/liquid assets/liabilities/investments).
+- `api/finny.js`: Honor classifier `missing_fields` for baseline affordability inputs (income_takehome, fixed_expenses, current_savings, debt_balances) unless they’re actually inferable from the loaded packs.
+- `api/finny.js`: Add a small refusal detector ("just tell me" etc.) to bypass the clarifying gate and allow best-effort answers.
+- `api/finny.js`: Pass classification routing metadata into the Ask system prompt via `contextHeader` to reduce model “guessing”.
+- `lib/prompt_engine.js`: Tighten the Ask system prompt: add explicit clarify-vs-answer decision rules + refusal mode; remove the “never ask questions/next steps” conflict.
+
+4) 3 test conversations (to validate behavior)
+1.
+User: “Can I afford a $30k car?”
+Finny: If internal data is sufficient (balances + spend/cashflow), answers directly with numbers.
+If data is insufficient, asks 1–3 questions (price/monthly payment + down payment + take-home/fixed bills) instead of guessing.
+
+2.
+User: “I want to invest—what should I buy?”
+Finny: Asks 1–3 questions (time horizon, risk tolerance, emergency fund / high-interest debt). If user refuses, uses assumptions and gives a simple allocation framework.
+
+3.
+User: “I’m moving from the US to Japan this year. What should I do financially?”
+Finny: Asks 2–3 questions (timeline, income source + taxes/visa constraints, debts/accounts to keep/close). Then gives options/tradeoffs, not a confident plan with made-up details.
