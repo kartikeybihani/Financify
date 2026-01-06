@@ -165,16 +165,20 @@ function buildClarificationMessage(message, classificationResult) {
   const decisionRisk = classificationResult?.decision_risk || "unknown";
 
   const questionBank = {
-    purchase_price: "What’s the price (or monthly payment) and when are you trying to do this?",
+    purchase_price:
+      "What’s the price (or monthly payment) and when are you trying to do this?",
     timeline: "What’s the timeline (this month vs 6–12 months vs later)?",
     location: "Where are you located (state/country)?",
     income_takehome: "What’s your monthly take-home pay?",
     income_gross: "What’s your gross annual income?",
-    fixed_expenses: "What are your fixed monthly bills (rent/mortgage, utilities, minimum debt payments)?",
-    current_savings: "How much cash do you have available (checking/savings) for this?",
+    fixed_expenses:
+      "What are your fixed monthly bills (rent/mortgage, utilities, minimum debt payments)?",
+    current_savings:
+      "How much cash do you have available (checking/savings) for this?",
     debt_balances: "Any debts (credit cards, loans)? Rough balances + APRs?",
     credit_score: "Rough credit score range (e.g., 650–700)?",
-    down_payment: "How much can you put down (and do you want to keep an emergency fund)?",
+    down_payment:
+      "How much can you put down (and do you want to keep an emergency fund)?",
     risk_tolerance: "How do you feel about risk: low / medium / high?",
     investing_horizon: "When would you need this money back (time horizon)?",
     goal_amount: "What’s the target amount you’re aiming for?",
@@ -301,11 +305,14 @@ function isMissingFieldSatisfiedByPacks(field, packs) {
       ) {
         return true;
       }
-      const accounts = Array.isArray(packs.base?.accounts) ? packs.base.accounts : [];
+      const accounts = Array.isArray(packs.base?.accounts)
+        ? packs.base.accounts
+        : [];
       return accounts.some((acc) => {
         const type = String(acc?.type || "").toLowerCase();
         const subtype = String(acc?.subtype || "").toLowerCase();
-        const balance = acc?.balances?.current ?? acc?.current_balance ?? acc?.balance;
+        const balance =
+          acc?.balances?.current ?? acc?.current_balance ?? acc?.balance;
         return (
           typeof balance === "number" &&
           (type === "credit" || type === "loan" || subtype.includes("credit"))
@@ -314,7 +321,9 @@ function isMissingFieldSatisfiedByPacks(field, packs) {
     }
     case "income_takehome":
       // Only consider this “known” if cashflow has actual income numbers.
-      return cashflowArray.some((cf) => typeof cf?.income === "number" && cf.income > 0);
+      return cashflowArray.some(
+        (cf) => typeof cf?.income === "number" && cf.income > 0
+      );
     case "fixed_expenses":
       // We generally can't infer fixed bills reliably from current packs.
       return false;
@@ -403,7 +412,7 @@ const SMALLER_MODEL = "meta-llama/llama-3.2-3b-instruct:free";
 // Standard non-free model to fallback to when the free model fails
 const STANDARD_MODEL = "meta-llama/llama-3.2-3b-instruct";
 // Tertiary model for resilience
-const TERTIARY_MODEL = "mistralai/mistral-small-latest";
+const TERTIARY_MODEL = "mistralai/mistral-small-3.1-24b-instruct";
 
 // Classification cache - in-memory cache for classification results
 const classificationCache = new Map();
@@ -2404,10 +2413,16 @@ async function handleAsk(
     }
 
     // Backward-compatible defaults for new classification fields
-    if (classificationResult && classificationResult.needs_clarification === undefined) {
+    if (
+      classificationResult &&
+      classificationResult.needs_clarification === undefined
+    ) {
       classificationResult.needs_clarification = false;
     }
-    if (classificationResult && !Array.isArray(classificationResult.missing_fields)) {
+    if (
+      classificationResult &&
+      !Array.isArray(classificationResult.missing_fields)
+    ) {
       classificationResult.missing_fields = [];
     }
     if (classificationResult && !classificationResult.info_sufficiency) {
@@ -3345,7 +3360,11 @@ async function handleAsk(
         )}`
       : null;
 
-    const runtimeHeader = [contextHeader, classificationHeader, coachingRuntimeFlags]
+    const runtimeHeader = [
+      contextHeader,
+      classificationHeader,
+      coachingRuntimeFlags,
+    ]
       .filter(Boolean)
       .join("\n\n");
 
@@ -5980,11 +5999,7 @@ async function handleClassify(message, context, conversationContext = null) {
       return r.json();
     }
 
-    const classificationModels = [
-      PRIMARY_OPENROUTER_MODEL || SMALLER_MODEL,
-      STANDARD_MODEL,
-      TERTIARY_MODEL,
-    ];
+    const classificationModels = [STANDARD_MODEL, SMALLER_MODEL];
     const { result: data, model: usedModel } = await callWithFallback(
       classificationModels,
       callLLM,
@@ -6053,7 +6068,8 @@ async function handleClassify(message, context, conversationContext = null) {
       }
 
       // Defaults for clarification/risk routing fields
-      if (out.needs_clarification === undefined) out.needs_clarification = false;
+      if (out.needs_clarification === undefined)
+        out.needs_clarification = false;
       if (!out.info_sufficiency) out.info_sufficiency = "unknown";
       if (!Array.isArray(out.missing_fields)) out.missing_fields = [];
       if (!out.decision_risk) out.decision_risk = "unknown";
@@ -6122,15 +6138,22 @@ async function handleClassify(message, context, conversationContext = null) {
     ).slice(0, 5);
 
     // Confidence clamp
-    if (typeof out.confidence !== "number" || !Number.isFinite(out.confidence)) {
+    if (
+      typeof out.confidence !== "number" ||
+      !Number.isFinite(out.confidence)
+    ) {
       out.confidence = 0.7;
     }
     out.confidence = Math.max(0, Math.min(1, out.confidence));
 
     // Enforce strict goal_conversation semantics: only when user explicitly requests goal creation.
-    if (out.intent === "goal_conversation" && !goalConversationTrigger.test(text)) {
+    if (
+      out.intent === "goal_conversation" &&
+      !goalConversationTrigger.test(text)
+    ) {
       out.intent = "ask_personalized";
-      if (out.intent_type === "goal_conversation") out.intent_type = "actionable";
+      if (out.intent_type === "goal_conversation")
+        out.intent_type = "actionable";
     }
 
     console.log("🔍 [FINNY] Validated classification result:", out);
