@@ -6340,7 +6340,9 @@ async function handleOffTopic(message, context, conversationContext = null) {
     let userMemory = { memories: [], totalCount: 0 };
     if (userId) {
       try {
+        console.log("🧠 [OFF_TOPIC] Loading user memories for user:", userId);
         userMemory = await loadUserMemory(userId, messageText);
+        console.log("🧠 [OFF_TOPIC] User memories:", userMemory);
       } catch (error) {
         console.log(
           "⚠️ [OFF_TOPIC] Could not load user memories:",
