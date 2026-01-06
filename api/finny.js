@@ -6398,7 +6398,9 @@ async function handleOffTopic(message, context, conversationContext = null) {
       `Message: ${messageText}`,
       `Mode hint: ${isVenting ? "venting" : "general_off_topic"}`,
       userProfile?.name ? `User name: ${userProfile.name}` : null,
-      userProfileForFinny ? `User profile: ${userProfileForFinny}` : null,
+      userProfileForFinny
+        ? `User profile: ${userProfileForFinny.dynamic}`
+        : null,
       userProfile?.finny_style
         ? `Finny style: ${userProfile.finny_style}`
         : null,
