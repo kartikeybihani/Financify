@@ -6249,6 +6249,9 @@ async function handleOffTopic(message, context, conversationContext = null) {
   console.log("🚫 [FINNY] Handling off-topic query:", message);
   const startTime = Date.now();
 
+  const messageText =
+    typeof message === "string" ? message : String(message || "");
+
   // 🔍 CONVERSATION CONTEXT AWARENESS
   // If we have conversation context, this might not actually be off-topic
   if (conversationContext?.active_topic || conversationContext?.last_entity) {
@@ -6264,7 +6267,7 @@ async function handleOffTopic(message, context, conversationContext = null) {
       "🔍 [OFF_TOPIC] Redirecting to ask_personalized to maintain conversation flow"
     );
     return await handleAsk(
-      message,
+      messageText,
       context,
       "ask_personalized",
       null,
@@ -6272,8 +6275,8 @@ async function handleOffTopic(message, context, conversationContext = null) {
     );
   }
 
-  // Simple venting detection (keep separate from general off-topic)
-  const lower = message.toLowerCase();
+  // Simple venting detection (same handler/prompt, but we tag the mode)
+  const lower = messageText.toLowerCase();
   const ventingPatterns = [
     /\b(stressed|overwhelmed|tired|exhausted|frustrated|annoyed|upset|sad|depressed|anxious|worried)\b/i,
     /\b(having a hard time|going through|struggling|difficult|tough|rough)\b/i,
@@ -6286,14 +6289,15 @@ async function handleOffTopic(message, context, conversationContext = null) {
     );
   const isVenting = hasVenting && !hasFinancialContext;
 
-  const category = context?.category || "general";
+  const category = isVenting ? "venting" : context?.category || "general";
   const userProfile = context?.profile || {};
+  const userId = context?.user_id;
 
-  // Fetch net worth data for context
+  // Fetch net worth data for lightweight context
   let netWorthData = null;
-  if (context?.user_id) {
+  if (userId) {
     try {
-      netWorthData = await getNetWorthData(context.user_id);
+      netWorthData = await getNetWorthData(userId);
       if (netWorthData) {
         console.log("📊 [OFF_TOPIC] Net worth data loaded for context");
       }
@@ -6305,175 +6309,83 @@ async function handleOffTopic(message, context, conversationContext = null) {
     }
   }
 
-  // LIFE VENTING: Calm engagement but finance-related
-  if (isVenting) {
-    const ventingPrompt = [
-      "You are Finny, a warm, empathetic financial coach who cares about people's well-being.",
-      "",
-      "CRITICAL RULES:",
-      "1. Acknowledge their feelings with empathy and calmness",
-      "2. Show genuine care and understanding",
-      "3. ALWAYS connect their venting to financial topics naturally",
-      "4. Never dismiss their feelings, but gently guide toward finance",
-      "5. Be supportive and understanding, not preachy",
-      "",
-      "RESPONSE STRUCTURE:",
-      "- Acknowledge their feelings (1-2 sentences)",
-      "- Show empathy and understanding",
-      "- Connect to finance naturally (e.g., 'Financial stress can make everything harder. Let's talk about...')",
-      "- Offer specific financial help related to their situation",
-      "",
-      "EXAMPLES:",
-      "",
-      'User: "I\'m so stressed about work"',
-      'Response: "I hear you - work stress is real, and it can definitely impact your financial well-being too. Sometimes financial planning can actually reduce stress by giving you more control. Want to talk about building an emergency fund so work stress doesn\'t hit your finances, or budgeting to give yourself more breathing room?"',
-      "",
-      'User: "Having a tough time with my relationship"',
-      "Response: \"I'm sorry you're going through that. Relationships can be tough, and they often have financial implications too. Whether it's managing shared expenses, planning for the future, or just making sure you're financially independent - I'm here to help. What financial aspect would be most helpful to discuss?\"",
-      "",
-      "REMEMBER:",
-      "- Be empathetic and calm",
-      "- Never dismiss their feelings",
-      "- Always connect to finance",
-      "- Offer specific, actionable financial help",
-    ].join("\n");
-
-    try {
-      const response = await fetch(
-        "https://openrouter.ai/api/v1/chat/completions",
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${process.env.OPENROUTER_GROK_KEY}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            model: SMALLER_MODEL || STANDARD_MODEL,
-            temperature: 0.7,
-            max_tokens: 300,
-            messages: [
-              {
-                role: "system",
-                content: ventingPrompt,
-              },
-              {
-                role: "user",
-                content: `${message}${
-                  userProfile.name
-                    ? `\n\n(Note: The user's name is ${userProfile.name})`
-                    : ""
-                }${
-                  netWorthData
-                    ? `\n\n(Financial context: Net worth ${netWorthData.formatted.net_worth}, ${netWorthData.formatted.liquid_assets} cash, ${netWorthData.formatted.investments_total} invested, ${netWorthData.formatted.total_liabilities} debt)`
-                    : ""
-                }`,
-              },
-            ],
-          }),
-        }
-      );
-
-      const data = await response.json();
-      const content =
-        data.choices?.[0]?.message?.content ||
-        "I'm here to help with your finances. What financial questions can I answer?";
-
-      // Store conversation memory
-      const userId = context?.user_id;
-      if (userId && content) {
-        setImmediate(async () => {
-          try {
-            await storeConversationMemory(userId, message, content, {
-              intent: "off_topic",
-              chat_id: context?.chat_id,
-              category: "venting",
-              userName: context?.profile?.name || null,
-            });
-          } catch (error) {
-            console.error(
-              "❌ [FINNY] Failed to store venting conversation memory:",
-              error
-            );
-          }
-        });
-      }
-
-      // Log the interaction
-      setImmediate(() =>
-        logConversation({
-          user_message: redactPII(message),
-          finny_response: redactPII(content),
-          timestamp: new Date().toISOString(),
-          user_id: context?.user_id || "unknown",
-          intent: "off_topic",
-          entities: [],
-          confidence: 1.0,
-          response_time_ms: Date.now() - startTime,
-          sources_used: [],
-          cached: false,
-          category: "venting",
-        })
-      );
-
-      return {
-        text: cleanResponseFormatting(content),
-        type: "assistant",
-        intent: "off_topic",
-        category: "venting",
-      };
-    } catch (error) {
-      console.error("❌ [FINNY] Venting handler error:", error);
-      return {
-        text: "I'm here to help with your finances. Financial planning can sometimes help reduce stress. What financial questions do you have?",
-        type: "assistant",
-        intent: "off_topic",
-        category: "venting",
-        fallback: true,
-      };
-    }
-  }
-
-  // GENERAL & HARD OFF-TOPIC: Single strict prompt that NEVER answers off-topic questions
   const systemPrompt = [
-    "You are Finny, a witty financial coach. Your ONLY job is to redirect users to finance topics.",
+    "You are Finny, a financial coach.",
     "",
-    "CRITICAL RULES - ABSOLUTELY NON-NEGOTIABLE:",
-    "1. NEVER answer the user's off-topic question. NOT EVEN A LITTLE BIT.",
-    "2. NEVER provide information about the topic they asked about (religion, languages, physics, cooking, weather, movies, games, sports, etc.).",
-    "3. NEVER engage with inappropriate/sexual content. Redirect immediately.",
-    "4. You MUST redirect to finance in a witty, clever, and engaging way.",
-    "5. Be playful and humorous, but make it clear you're a finance coach.",
-    "6. Use wit and charm to make the redirect feel natural, not robotic.",
+    "CRITICAL RULES:",
+    "1) This is an off-topic request for a finance coach. Do NOT answer the off-topic question directly.",
+    "2) Do NOT provide factual info about the off-topic domain (religion, languages, physics, cooking, weather, movies, games, sports, etc.).",
+    "3) Do NOT engage with sexual/inappropriate content. Redirect immediately.",
+    "4) Always steer the conversation toward money/finance in a natural way but very subtly.",
     "",
-    "RESPONSE STRUCTURE:",
-    "- Acknowledge you heard them (briefly, 1 sentence max)",
-    "- Make a witty comment connecting their topic to finance (be creative!)",
-    "- Redirect to a specific financial question or topic",
-    "- Keep it short (2-3 sentences total)",
+    "IF THE USER IS VENTING / EMOTIONAL:",
+    "- Acknowledge feelings with empathy (1-2 sentences).",
+    "- Then connect it to finance (stress relief via budget, emergency fund, debt plan).",
+    "- Ask ONE specific finance question to move forward.",
+    "- Keep it supportive; AVOID medical/legal advice.",
     "",
-    "EXAMPLES:",
+    "IF THE USER IS GENERAL OFF-TOPIC (NOT VENTING):",
+    "- Acknowledge briefly (1 sentence).",
+    "- Redirect to a concrete finance topic.",
+    "- Ask ONE specific finance question.",
+    "- Keep it short (2-4 sentences).",
     "",
-    'User: "Tell me about Japanese culture"',
-    "Response: \"Hmm, I'm more of a finance sensei than a culture expert! 🥷 But hey, if you're planning a trip to Japan, we should definitely talk about budgeting for travel, currency exchange, or saving up for that dream vacation. What's your financial goal right now?\"",
-    "",
-    'User: "What\'s the weather like?"',
-    "Response: \"I'm terrible at weather forecasts, but I'm great at forecasting your financial future! ☀️ Want to talk about building an emergency fund for those rainy days, or planning your budget?\"",
-    "",
-    "User: [inappropriate/sexual content]",
-    'Response: "Whoa there! 😅 I\'m strictly a finance coach - no other services here! But I can help you budget for... well, anything else you might need. What financial questions do you have?"',
-    "",
-    'User: "What movie should I watch?"',
-    "Response: \"I'm more of a financial thriller kind of coach! 📊 But hey, if you're spending money on streaming services, we should talk about budgeting for entertainment or cutting subscription costs. What's your biggest financial question right now?\"",
-    "",
-    "REMEMBER:",
-    "- Be witty and charming, not preachy",
-    "- NEVER answer their question",
-    "- ALWAYS redirect to finance",
-    "- Keep it brief and engaging",
-    "",
+    "MEMORIES & USER CONTEXT:",
+    "- You may use provided memories and lightweight financial context to personalize your redirect.",
+    "- Do not mention 'memories' or that you saw private context.",
   ].join("\n");
 
   try {
+    // Load relevant memories for this message (always)
+    let userMemory = { memories: [], totalCount: 0 };
+    if (userId) {
+      try {
+        userMemory = await loadUserMemory(userId, messageText);
+      } catch (error) {
+        console.log(
+          "⚠️ [OFF_TOPIC] Could not load user memories:",
+          error?.message
+        );
+        userMemory = { memories: [], totalCount: 0 };
+      }
+    }
+
+    const memorySnippets = Array.isArray(userMemory?.memories)
+      ? userMemory.memories
+          .slice(0, 5)
+          .map((m, idx) => {
+            const raw = String(m?.content || "");
+            const cleaned = redactPII(raw).replace(/\s+/g, " ").trim();
+            const clipped =
+              cleaned.length > 240 ? `${cleaned.slice(0, 240)}…` : cleaned;
+            const score =
+              typeof m?.similarity === "number" && Number.isFinite(m.similarity)
+                ? m.similarity
+                : null;
+            return `- ${idx + 1})${
+              score !== null ? ` (${score.toFixed(2)})` : ""
+            } ${clipped}`;
+          })
+          .filter(Boolean)
+      : [];
+
+    const userContextParts = [
+      `Message: ${messageText}`,
+      `Mode hint: ${isVenting ? "venting" : "general_off_topic"}`,
+      userProfile?.name ? `User name: ${userProfile.name}` : null,
+      userProfile?.finny_style
+        ? `Finny style: ${userProfile.finny_style}`
+        : null,
+      netWorthData
+        ? `Financial context: Net worth ${netWorthData.formatted.net_worth}, ${netWorthData.formatted.liquid_assets} cash, ${netWorthData.formatted.investments_total} invested, ${netWorthData.formatted.total_liabilities} debt`
+        : null,
+      memorySnippets.length > 0
+        ? `Relevant memories (use subtly, do not mention them):\n${memorySnippets.join(
+            "\n"
+          )}`
+        : "Relevant memories: none",
+    ].filter(Boolean);
+
     const response = await fetch(
       "https://openrouter.ai/api/v1/chat/completions",
       {
@@ -6484,8 +6396,8 @@ async function handleOffTopic(message, context, conversationContext = null) {
         },
         body: JSON.stringify({
           model: SMALLER_MODEL || STANDARD_MODEL,
-          temperature: 0.9, // Higher temperature for more wit
-          max_tokens: 400, // Shorter responses
+          temperature: 0.85,
+          max_tokens: 350,
           messages: [
             {
               role: "system",
@@ -6493,7 +6405,7 @@ async function handleOffTopic(message, context, conversationContext = null) {
             },
             {
               role: "user",
-              content: message,
+              content: userContextParts.join("\n\n"),
             },
           ],
         }),
@@ -6503,18 +6415,17 @@ async function handleOffTopic(message, context, conversationContext = null) {
     const data = await response.json();
     const content =
       data.choices?.[0]?.message?.content ||
-      "I'm all about finance! What money questions can I help you with? 💰";
+      "I'm all about finance. What money questions can I help you with?";
 
     // Store conversation memory
-    const userId = context?.user_id;
     if (userId && content) {
       setImmediate(async () => {
         try {
-          await storeConversationMemory(userId, message, content, {
+          await storeConversationMemory(userId, messageText, content, {
             intent: "off_topic",
             chat_id: context?.chat_id,
             category: category,
-            userName: context?.profile?.name || null,
+            userName: userProfile?.name || null,
           });
         } catch (error) {
           console.error(
@@ -6528,10 +6439,10 @@ async function handleOffTopic(message, context, conversationContext = null) {
     // Log the interaction
     setImmediate(() =>
       logConversation({
-        user_message: redactPII(message),
+        user_message: redactPII(messageText),
         finny_response: redactPII(content),
         timestamp: new Date().toISOString(),
-        user_id: context?.user_id || "unknown",
+        user_id: userId || "unknown",
         intent: "off_topic",
         entities: [],
         confidence: 1.0,
@@ -6551,7 +6462,7 @@ async function handleOffTopic(message, context, conversationContext = null) {
   } catch (error) {
     console.error("❌ [FINNY] Off-topic handler error:", error);
     return {
-      text: "I'm strictly a finance coach! 💰 What financial questions can I help you with?",
+      text: "I'm strictly a finance coach. What financial questions can I help you with?",
       type: "assistant",
       intent: "off_topic",
       category: category,
