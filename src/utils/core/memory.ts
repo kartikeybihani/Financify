@@ -34,7 +34,7 @@ export async function queryUserMemory(
     ],
     tools: {
       ...supermemoryTools("sm_qCVxTPU3rydaSushnrMase_FntVFeCDBNjZgZbIiFdpByXYFthaMEgNfFFeUjZNkbYgmzwCKxNmJxemIyChZGWI", {
-        containerTags: [`user_kartik_life`],
+        containerTags: [`user_${config.userId}`],
       }),
     },
   });
