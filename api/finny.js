@@ -25,6 +25,7 @@ import {
   buildFeedbackContext,
   setPrebuildContextActive,
   clearPrebuildContextActive,
+  fetchSupermemoryProfile,
   // saveMemoryCandidates removed - migrating to Supermemory
   // generateMemorySummary removed - migrating to Supermemory
   // validateMemoriesWithSmallModel removed - migrating to Supermemory
@@ -6357,10 +6358,12 @@ async function handleOffTopic(message, context, conversationContext = null) {
   try {
     // Load relevant memories for this message (always)
     let userMemory = { memories: [], totalCount: 0 };
+    let userProfileForFinny = null;
     if (userId) {
       try {
         console.log("🧠 [OFF_TOPIC] Loading user memories for user:", userId);
         userMemory = await loadUserMemory(userId, messageText);
+        userProfileForFinny = await fetchSupermemoryProfile(userId);
         console.log("🧠 [OFF_TOPIC] User memories:", userMemory);
       } catch (error) {
         console.log(
@@ -6390,10 +6393,12 @@ async function handleOffTopic(message, context, conversationContext = null) {
           .filter(Boolean)
       : [];
 
+    console.log("🧠 [OFF_TOPIC] User profile for Finny:", userProfileForFinny);
     const userContextParts = [
       `Message: ${messageText}`,
       `Mode hint: ${isVenting ? "venting" : "general_off_topic"}`,
       userProfile?.name ? `User name: ${userProfile.name}` : null,
+      userProfileForFinny ? `User profile: ${userProfileForFinny}` : null,
       userProfile?.finny_style
         ? `Finny style: ${userProfile.finny_style}`
         : null,
