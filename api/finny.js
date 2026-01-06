@@ -2573,10 +2573,15 @@ async function handleAsk(
         missingBase ||
         lacksSignal
       ) {
-        const clarificationMessage = buildClarificationMessage(
-          message,
-          classificationResult
-        );
+        const clarificationMessage = buildClarificationMessage(message, {
+          ...classificationResult,
+          // Ask only for what we actually still need.
+          missing_fields: requiredClarificationMissing,
+          info_sufficiency:
+            classificationResult?.info_sufficiency === "sufficient"
+              ? "missing"
+              : classificationResult?.info_sufficiency,
+        });
         return {
           message: cleanResponseFormatting(clarificationMessage),
           type: "assistant",
@@ -5790,6 +5795,10 @@ async function handleClassify(message, context, conversationContext = null) {
               "- stock_query: Questions about specific stocks, tickers, or companies (e.g., 'What about Apple?', 'Tell me about AAPL', 'Should I buy Tesla stock?')",
               "- off_topic: Non-financial topics (weather, cooking, entertainment, general chat, etc)",
               "",
+              "GOAL_CONVERSATION STRICTNESS (important):",
+              "- Use goal_conversation ONLY when the user explicitly wants to create/set/add a goal in the app (they say 'create a goal', 'set a goal', 'add a goal', or clearly refer to the Goals feature).",
+              "- If the user mentions a life goal (house, car, travel, kids) but is asking for feasibility/advice/planning, that is ask_personalized (NOT goal_conversation).",
+              "",
               "=== INTENT TYPE (What user wants to accomplish) ===",
               "Detect the underlying intent type (can combine with primary intent):",
               "- exploratory: Learning, understanding concepts ('tell me about investing', 'explain Roth IRA', 'what is a 401k')",
@@ -5826,6 +5835,7 @@ async function handleClassify(message, context, conversationContext = null) {
               "- missing_fields: array of strings from this set:",
               "  [income_takehome,income_gross,fixed_expenses,current_savings,debt_balances,credit_score,purchase_price,down_payment,timeline,location,risk_tolerance,investing_horizon,goal_amount,goal_date,move_countries,employer_match]",
               "- decision_risk: 'low'|'medium'|'high'",
+              "- missing_fields must be UNIQUE and short: choose at most 5, no duplicates",
               "",
               "Decision risk guidance (examples):",
               "- high: moving countries, marriage/kids planning, buying a house, taking on large debt, changing investment allocation materially",
@@ -5836,6 +5846,20 @@ async function handleClassify(message, context, conversationContext = null) {
               "",
               "Ambiguity rule:",
               "- If the user asks an ambiguous decision question (e.g., 'should I', 'is it worth it', 'help me decide') and it's medium/high stakes, set needs_clarification=true even if missing_fields is empty (Ask handler may ask 1 sharp question to confirm goal).",
+              "",
+              "High-stakes planning rule (non-rigid, apply broadly):",
+              "- If the user is describing a major plan/decision (big purchase, multiple big goals, multi-country plan, life decision) and asks for guidance/feasibility without key numbers, set decision_risk='high', needs_clarification=true, info_sufficiency='missing'.",
+              "- In those cases, include the most relevant missing_fields (pick 3–5): timeline, purchase_price, down_payment, income_takehome, fixed_expenses, current_savings, debt_balances, location.",
+              "- Set intent_type='actionable' for feasibility/planning questions, even if the user didn't explicitly say 'how'.",
+              "- Do NOT set needs_web=true just because it's a big decision. needs_web is only for current rates/brackets/regulations/news or explicitly asked country-specific rules.",
+              "",
+              "Info sufficiency rule:",
+              "- Default to info_sufficiency='missing' for advice/feasibility questions unless the user supplied the key inputs in their message.",
+              "- Do not label info_sufficiency='sufficient' when missing_fields is empty but the user gave no numbers.",
+              "",
+              "Examples (follow these patterns):",
+              "- 'I want to buy houses in Italy and Japan' -> intent_type:'actionable', decision_risk:'high', needs_web:false, needs_clarification:true, info_sufficiency:'missing', missing_fields includes 3–5 of: timeline, purchase_price, down_payment, income_takehome, fixed_expenses, current_savings, debt_balances, location",
+              "- 'Should I save $5000 for a house?' -> ask_personalized (advice), NOT goal_conversation; intent_type:'actionable'",
               "",
               "=== CRITICAL CLASSIFICATION RULES ===",
               "1. Affordability queries are ALWAYS ask_personalized (not goal_conversation):",
@@ -6058,6 +6082,57 @@ async function handleClassify(message, context, conversationContext = null) {
         fallback: true,
       };
     }
+    // Strict trigger: only treat as goal_conversation when user explicitly wants to create/set/add a goal.
+    // Avoid matching casual phrases like "my goal is...".
+    const goalConversationTrigger =
+      /\b(create|set|add|start|make)\s+(a\s+)?goal\b|\bnew\s+goal\b|\bgoal\s+(called|named)\b/i;
+
+    // Normalize/defend new routing fields (LLMs sometimes ignore constraints)
+    const allowedInfo = new Set(["sufficient", "missing", "unknown"]);
+    const allowedRisk = new Set(["low", "medium", "high", "unknown"]);
+    const allowedMissingFields = new Set([
+      "income_takehome",
+      "income_gross",
+      "fixed_expenses",
+      "current_savings",
+      "debt_balances",
+      "credit_score",
+      "purchase_price",
+      "down_payment",
+      "timeline",
+      "location",
+      "risk_tolerance",
+      "investing_horizon",
+      "goal_amount",
+      "goal_date",
+      "move_countries",
+      "employer_match",
+    ]);
+
+    out.needs_clarification = !!out.needs_clarification;
+    out.info_sufficiency = allowedInfo.has(out.info_sufficiency)
+      ? out.info_sufficiency
+      : "unknown";
+    out.decision_risk = allowedRisk.has(out.decision_risk)
+      ? out.decision_risk
+      : "unknown";
+    if (!Array.isArray(out.missing_fields)) out.missing_fields = [];
+    out.missing_fields = Array.from(
+      new Set(out.missing_fields.filter((f) => allowedMissingFields.has(f)))
+    ).slice(0, 5);
+
+    // Confidence clamp
+    if (typeof out.confidence !== "number" || !Number.isFinite(out.confidence)) {
+      out.confidence = 0.7;
+    }
+    out.confidence = Math.max(0, Math.min(1, out.confidence));
+
+    // Enforce strict goal_conversation semantics: only when user explicitly requests goal creation.
+    if (out.intent === "goal_conversation" && !goalConversationTrigger.test(text)) {
+      out.intent = "ask_personalized";
+      if (out.intent_type === "goal_conversation") out.intent_type = "actionable";
+    }
+
     console.log("🔍 [FINNY] Validated classification result:", out);
 
     // Defensive post-process so your app never crashes

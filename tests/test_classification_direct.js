@@ -54,6 +54,10 @@ async function handleClassify(message, context, conversationContext = null) {
       emotional_state: "neutral",
       needs_web: false,
       needs_user_data: true,
+      needs_clarification: false,
+      info_sufficiency: "unknown",
+      missing_fields: [],
+      decision_risk: "unknown",
       state: null,
       entities: [],
       ticker: null,
@@ -78,6 +82,18 @@ async function handleClassify(message, context, conversationContext = null) {
       }
       if (!cachedResult.emotional_state) {
         cachedResult.emotional_state = "neutral";
+      }
+      if (cachedResult.needs_clarification === undefined) {
+        cachedResult.needs_clarification = false;
+      }
+      if (!cachedResult.info_sufficiency) {
+        cachedResult.info_sufficiency = "unknown";
+      }
+      if (!Array.isArray(cachedResult.missing_fields)) {
+        cachedResult.missing_fields = [];
+      }
+      if (!cachedResult.decision_risk) {
+        cachedResult.decision_risk = "unknown";
       }
       if (!Array.isArray(cachedResult.entities)) {
         cachedResult.entities = [];
@@ -116,6 +132,10 @@ async function handleClassify(message, context, conversationContext = null) {
   // Matches production code
 
   try {
+    // Strict trigger: only treat as goal_conversation when user explicitly wants to create/set/add a goal.
+    // Avoid matching casual phrases like "my goal is...".
+    const goalConversationTrigger =
+      /\b(create|set|add|start|make)\s+(a\s+)?goal\b|\bnew\s+goal\b|\bgoal\s+(called|named)\b/i;
     async function callLLM(model) {
       // Create a timeout promise that rejects after 8 seconds (increased for stability)
       const timeoutPromise = new Promise((_, reject) => {
@@ -137,8 +157,8 @@ async function handleClassify(message, context, conversationContext = null) {
           body: JSON.stringify({
             model,
             temperature: 0.1,
-            max_tokens: 500,
-            top_p: 0.2,
+            max_tokens: 350,
+            top_p: 0.9,
             messages: [
               {
                 role: "system",
@@ -151,6 +171,10 @@ async function handleClassify(message, context, conversationContext = null) {
                   "- goal_conversation: Creating NEW goals or setting savings targets (explicit goal creation statements)",
                   "- stock_query: Questions about specific stocks, tickers, or companies (e.g., 'What about Apple?', 'Tell me about AAPL', 'Should I buy Tesla stock?')",
                   "- off_topic: Non-financial topics (weather, cooking, entertainment, general chat, etc)",
+                  "",
+                  "GOAL_CONVERSATION STRICTNESS (important):",
+                  "- Use goal_conversation ONLY when the user explicitly wants to create/set/add a goal in the app (they say 'create a goal', 'set a goal', 'add a goal', or clearly refer to the Goals feature).",
+                  "- If the user mentions a life goal (house, car, travel, kids) but is asking for feasibility/advice/planning, that is ask_personalized (NOT goal_conversation).",
                   "",
                   "=== INTENT TYPE (What user wants to accomplish) ===",
                   "Detect the underlying intent type (can combine with primary intent):",
@@ -180,6 +204,39 @@ async function handleClassify(message, context, conversationContext = null) {
                   "=== FLAG RULES (can combine) ===",
                   "- needs_user_data=true: Answer requires user's actual data (spend, net worth, accounts, goals, personal recommendations, affordability checks)",
                   "- needs_web=true: Answer requires current/2024-2025 info (limits, rates, brackets, market/news, card offers, current regulations)",
+                  "- needs_clarification=true: The user is asking for advice/plan but key inputs are missing or intent is ambiguous (Ask handler will ask 1–3 questions before advising)",
+                  "",
+                  "=== INFO SUFFICIENCY & RISK (Reliable routing) ===",
+                  "Set these fields so the Ask handler can safely clarify instead of guessing:",
+                  "- info_sufficiency: 'sufficient'|'missing'|'unknown'",
+                  "- missing_fields: array of strings from this set:",
+                  "  [income_takehome,income_gross,fixed_expenses,current_savings,debt_balances,credit_score,purchase_price,down_payment,timeline,location,risk_tolerance,investing_horizon,goal_amount,goal_date,move_countries,employer_match]",
+                  "- decision_risk: 'low'|'medium'|'high'",
+                  "- missing_fields must be UNIQUE and short: choose at most 5, no duplicates",
+                  "",
+                  "Decision risk guidance (examples):",
+                  "- high: moving countries, marriage/kids planning, buying a house, taking on large debt, changing investment allocation materially",
+                  "- medium: optimizing budget, small/medium purchase decisions, choosing between two reasonable options",
+                  "- low: definitions/explanations, small factual questions",
+                  "",
+                  "If the user asks a high-risk question and details are missing, set needs_clarification=true and include missing_fields like timeline, income_takehome, fixed_expenses, current_savings, debt_balances, location (as applicable).",
+                  "",
+                  "Ambiguity rule:",
+                  "- If the user asks an ambiguous decision question (e.g., 'should I', 'is it worth it', 'help me decide') and it's medium/high stakes, set needs_clarification=true even if missing_fields is empty (Ask handler may ask 1 sharp question to confirm goal).",
+                  "",
+                  "High-stakes planning rule (non-rigid, apply broadly):",
+                  "- If the user is describing a major plan/decision (big purchase, multiple big goals, multi-country plan, life decision) and asks for guidance/feasibility without key numbers, set decision_risk='high', needs_clarification=true, info_sufficiency='missing'.",
+                  "- In those cases, include the most relevant missing_fields (pick 3–5): timeline, purchase_price, down_payment, income_takehome, fixed_expenses, current_savings, debt_balances, location.",
+                  "- Set intent_type='actionable' for feasibility/planning questions, even if the user didn't explicitly say 'how'.",
+                  "- Do NOT set needs_web=true just because it's a big decision. needs_web is only for current rates/brackets/regulations/news or explicitly asked country-specific rules.",
+                  "",
+                  "Info sufficiency rule:",
+                  "- Default to info_sufficiency='missing' for advice/feasibility questions unless the user supplied the key inputs in their message.",
+                  "- Do not label info_sufficiency='sufficient' when missing_fields is empty but the user gave no numbers.",
+                  "",
+                  "Examples (follow these patterns):",
+                  "- 'I want to buy houses in Italy and Japan' -> intent_type:'actionable', decision_risk:'high', needs_web:false, needs_clarification:true, info_sufficiency:'missing', missing_fields includes 3–5 of: timeline, purchase_price, down_payment, income_takehome, fixed_expenses, current_savings, debt_balances, location",
+                  "- 'Should I save $5000 for a house?' -> ask_personalized (advice), NOT goal_conversation; intent_type:'actionable'",
                   "",
                   "=== CRITICAL CLASSIFICATION RULES ===",
                   "1. Affordability queries are ALWAYS ask_personalized (not goal_conversation):",
@@ -222,7 +279,7 @@ async function handleClassify(message, context, conversationContext = null) {
                   "CRITICAL: You MUST return ONLY valid JSON. No markdown, no code fences, no extra text, no comments.",
                   "The JSON must be parseable by JSON.parse(). Follow this EXACT structure:",
                   "",
-                  '{"intent":"ask_personalized","intent_type":"exploratory","emotional_state":"neutral","needs_web":false,"needs_user_data":true,"state":null,"entities":[],"ticker":null,"confidence":0.95}',
+                  '{"intent":"ask_personalized","intent_type":"exploratory","emotional_state":"neutral","needs_web":false,"needs_user_data":true,"needs_clarification":false,"info_sufficiency":"sufficient","missing_fields":[],"decision_risk":"low","state":null,"entities":[],"ticker":null,"confidence":0.95}',
                   "",
                   "Valid JSON format rules:",
                   "- Use double quotes for all strings",
@@ -238,6 +295,10 @@ async function handleClassify(message, context, conversationContext = null) {
                   "- emotional_state: REQUIRED string (neutral|anxious|panicked|ashamed|overwhelmed|fomo)",
                   "- needs_web: REQUIRED boolean (true|false)",
                   "- needs_user_data: REQUIRED boolean (true|false)",
+                  "- needs_clarification: REQUIRED boolean (true|false)",
+                  "- info_sufficiency: REQUIRED string ('sufficient'|'missing'|'unknown')",
+                  "- missing_fields: REQUIRED array (empty array [] if none)",
+                  "- decision_risk: REQUIRED string ('low'|'medium'|'high')",
                   "- state: string or null (state code like AZ, CA, or null)",
                   "- entities: REQUIRED array (empty array [] if none, or ticker symbols if stock_query)",
                   "- ticker: string or null (ticker symbol like 'AAPL', 'TSLA', or null if not stock_query or ambiguous)",
@@ -260,6 +321,7 @@ async function handleClassify(message, context, conversationContext = null) {
                   "- Be precise with emotional_state: only detect if CLEAR signals exist, default to 'neutral'",
                   "- intent_type can be null for off_topic queries",
                   "- confidence should reflect how certain you are (0.9+ for clear cases, 0.7-0.9 for ambiguous)",
+                  "- If needs_clarification=true, set info_sufficiency to 'missing' or 'unknown' and include missing_fields",
                   "- Return ONLY the JSON object, nothing else",
                 ].join("\n"),
               },
@@ -355,6 +417,13 @@ async function handleClassify(message, context, conversationContext = null) {
         out.emotional_state = "neutral";
       }
 
+      // Defaults for clarification/risk routing fields
+      if (out.needs_clarification === undefined)
+        out.needs_clarification = false;
+      if (!out.info_sufficiency) out.info_sufficiency = "unknown";
+      if (!Array.isArray(out.missing_fields)) out.missing_fields = [];
+      if (!out.decision_risk) out.decision_risk = "unknown";
+
       // Validate ticker field (required for stock_query, optional for others)
       if (out.intent === "stock_query" && !out.ticker) {
         console.log(
@@ -379,6 +448,10 @@ async function handleClassify(message, context, conversationContext = null) {
         emotional_state: "neutral",
         needs_web: false,
         needs_user_data: true,
+        needs_clarification: false,
+        info_sufficiency: "unknown",
+        missing_fields: [],
+        decision_risk: "unknown",
         state: null,
         entities: [],
         ticker: null,
@@ -386,12 +459,70 @@ async function handleClassify(message, context, conversationContext = null) {
         fallback: true,
       };
     }
+    // Normalize/defend new routing fields (LLMs sometimes ignore constraints)
+
+    // Normalize/defend new routing fields (LLMs sometimes ignore constraints)
+    const allowedInfo = new Set(["sufficient", "missing", "unknown"]);
+    const allowedRisk = new Set(["low", "medium", "high", "unknown"]);
+    const allowedMissingFields = new Set([
+      "income_takehome",
+      "income_gross",
+      "fixed_expenses",
+      "current_savings",
+      "debt_balances",
+      "credit_score",
+      "purchase_price",
+      "down_payment",
+      "timeline",
+      "location",
+      "risk_tolerance",
+      "investing_horizon",
+      "goal_amount",
+      "goal_date",
+      "move_countries",
+      "employer_match",
+    ]);
+
+    out.needs_clarification = !!out.needs_clarification;
+    out.info_sufficiency = allowedInfo.has(out.info_sufficiency)
+      ? out.info_sufficiency
+      : "unknown";
+    out.decision_risk = allowedRisk.has(out.decision_risk)
+      ? out.decision_risk
+      : "unknown";
+    if (!Array.isArray(out.missing_fields)) out.missing_fields = [];
+    out.missing_fields = Array.from(
+      new Set(out.missing_fields.filter((f) => allowedMissingFields.has(f)))
+    ).slice(0, 5);
+
+    if (
+      typeof out.confidence !== "number" ||
+      !Number.isFinite(out.confidence)
+    ) {
+      out.confidence = 0.7;
+    }
+    out.confidence = Math.max(0, Math.min(1, out.confidence));
+
+    // Enforce strict goal_conversation semantics: only when user explicitly requests goal creation.
+    if (
+      out.intent === "goal_conversation" &&
+      !goalConversationTrigger.test(text)
+    ) {
+      out.intent = "ask_personalized";
+      if (out.intent_type === "goal_conversation")
+        out.intent_type = "actionable";
+    }
+
     console.log("🔍 [TEST] Validated classification result:", out);
 
     // Defensive post-process so your app never crashes
     if (!out.state || typeof out.state !== "string") out.state = null;
     if (!Array.isArray(out.entities)) out.entities = [];
     if (out.ticker === undefined) out.ticker = null;
+    if (out.needs_clarification === undefined) out.needs_clarification = false;
+    if (!out.info_sufficiency) out.info_sufficiency = "unknown";
+    if (!Array.isArray(out.missing_fields)) out.missing_fields = [];
+    if (!out.decision_risk) out.decision_risk = "unknown";
 
     // Cache the result for future use
     setCachedClassification(text, out);
@@ -416,6 +547,10 @@ async function handleClassify(message, context, conversationContext = null) {
       emotional_state: "neutral",
       needs_web: false,
       needs_user_data: true,
+      needs_clarification: false,
+      info_sufficiency: "unknown",
+      missing_fields: [],
+      decision_risk: "unknown",
       state: null,
       entities: [],
       ticker: null,
@@ -449,6 +584,18 @@ async function testSingleMessage(message) {
     }
     console.log(`  needs_web: ${classification.needs_web}`);
     console.log(`  needs_user_data: ${classification.needs_user_data}`);
+    console.log(`  needs_clarification: ${classification.needs_clarification}`);
+    if (classification.info_sufficiency) {
+      console.log(`  info_sufficiency: ${classification.info_sufficiency}`);
+    }
+    if (classification.decision_risk) {
+      console.log(`  decision_risk: ${classification.decision_risk}`);
+    }
+    if (classification.missing_fields && classification.missing_fields.length) {
+      console.log(
+        `  missing_fields: ${JSON.stringify(classification.missing_fields)}`
+      );
+    }
     console.log(`  confidence: ${classification.confidence}`);
     console.log(`  response_time: ${responseTime}ms`);
 
@@ -599,6 +746,16 @@ async function runHardballTests() {
       note: "Should be ask_personalized (affordability check), NOT goal_conversation",
     },
     {
+      q: "Should I move to Japan this year?",
+      expected: "ask_personalized",
+      note: "High-stakes ambiguous decision. Should be ask_personalized and typically needs_clarification + decision_risk:high",
+    },
+    {
+      q: "Is it worth it to have kids?",
+      expected: "ask_personalized",
+      note: "High-stakes ambiguous decision. Should be ask_personalized and typically needs_clarification + decision_risk:high",
+    },
+    {
       q: "I want to create a goal for my emergency fund",
       expected: "goal_conversation",
       note: "Should be goal_conversation (explicit goal creation)",
@@ -612,6 +769,11 @@ async function runHardballTests() {
       q: "Is it worth it to buy a $2000 laptop?",
       expected: "ask_personalized",
       note: "Should be ask_personalized (value assessment), NOT goal_conversation",
+    },
+    {
+      q: "I want to buy houses in italy and japan",
+      expected: "ask_personalized",
+      note: "Major multi-country plan; expect needs_clarification:true, decision_risk:high, info_sufficiency:missing (soft checks)",
     },
     {
       q: "Should I save $5000 for a house?",
@@ -667,11 +829,46 @@ async function runHardballTests() {
       if (isCorrect) {
         pass++;
         console.log(`   ✅ PASS - Got ${actual} (as expected)`);
+
+        // Soft checks (non-fatal): new routing signals for ambiguous/high-stakes decisions
+        const lower = t.q.toLowerCase();
+        const isBigLifeDecision =
+          lower.includes("move") ||
+          lower.includes("moving") ||
+          lower.includes("kids") ||
+          lower.includes("have kids") ||
+          lower.includes("married") ||
+          lower.includes("marriage");
+        if (isBigLifeDecision) {
+          if (classification?.decision_risk !== "high") {
+            console.log(
+              `   ⚠️  Note: expected decision_risk ~ high, got ${classification?.decision_risk}`
+            );
+          }
+          if (classification?.needs_clarification !== true) {
+            console.log(
+              `   ⚠️  Note: expected needs_clarification ~ true, got ${classification?.needs_clarification}`
+            );
+          }
+        }
       } else {
         console.log(`   ❌ FAIL - Got ${actual}, expected ${t.expected}`);
         console.log(`   Confidence: ${classification?.confidence}`);
         console.log(`   Needs web: ${classification?.needs_web}`);
         console.log(`   Needs user data: ${classification?.needs_user_data}`);
+        console.log(
+          `   needs_clarification: ${classification?.needs_clarification}`
+        );
+        console.log(
+          `   decision_risk: ${classification?.decision_risk} | info_sufficiency: ${classification?.info_sufficiency}`
+        );
+        if (classification?.missing_fields?.length) {
+          console.log(
+            `   missing_fields: ${JSON.stringify(
+              classification.missing_fields
+            )}`
+          );
+        }
         if (classification?.reason) {
           console.log(`   Reason: ${classification.reason}`);
         }
