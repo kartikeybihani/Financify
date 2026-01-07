@@ -23,6 +23,7 @@ import { useRouter } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import logger from "@/src/utils/core/logger";
 import * as WebBrowser from "expo-web-browser";
+import * as Linking from "expo-linking";
 import IconButton from "@/src/components/shared/IconButton";
 const { width } = Dimensions.get("window");
 
@@ -261,18 +262,32 @@ export default function SignupScreen() {
 
     setIsVerifying(true);
     try {
+      // First, refresh the session to get latest user data
       const {
-        data: { session },
-        error,
-      } = await supabase.auth.getSession();
+        data: { user: currentUser },
+        error: userError,
+      } = await supabase.auth.getUser();
 
-      if (error) {
-        logger.error("Error checking session: ", error);
+      if (userError) {
+        logger.error("Error getting user: ", userError);
         setIsVerifying(false);
         return;
       }
 
-      if (session?.user) {
+      // Check if user exists and email is confirmed
+      if (currentUser && currentUser.email_confirmed_at) {
+        // Email is verified! Get session and proceed
+        const {
+          data: { session },
+          error: sessionError,
+        } = await supabase.auth.getSession();
+
+        if (sessionError || !session) {
+          logger.error("Error getting session: ", sessionError);
+          setIsVerifying(false);
+          return;
+        }
+
         // User is verified! Create profile and proceed
         logger.info("✅ Email verified, creating profile...");
 
@@ -326,6 +341,8 @@ export default function SignupScreen() {
           setIsVerifying(false);
         }
       } else {
+        // User not verified yet, but keep checking
+        logger.info("Email not yet verified, will check again...");
         setIsVerifying(false);
       }
     } catch (error) {
@@ -360,6 +377,38 @@ export default function SignupScreen() {
     }, 5000); // 5 second delay
   };
 
+  // Listen for deep links
+  useEffect(() => {
+    // Check if app was opened via deep link
+    const checkInitialURL = async () => {
+      const initialUrl = await Linking.getInitialURL();
+      if (initialUrl && pendingVerificationEmail) {
+        logger.info("App opened via deep link:", initialUrl);
+        // Small delay to ensure Supabase has processed the verification
+        setTimeout(() => {
+          checkVerificationStatus();
+        }, 1000);
+      }
+    };
+
+    checkInitialURL();
+
+    // Listen for deep links while app is running
+    const subscription = Linking.addEventListener("url", (event) => {
+      logger.info("Deep link received:", event.url);
+      if (pendingVerificationEmail) {
+        // Small delay to ensure Supabase has processed the verification
+        setTimeout(() => {
+          checkVerificationStatus();
+        }, 1000);
+      }
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [pendingVerificationEmail]);
+
   // Listen for app state changes (foreground/background)
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (nextAppState) => {
@@ -369,7 +418,10 @@ export default function SignupScreen() {
         pendingVerificationEmail
       ) {
         // App came to foreground, check verification and show overlay
-        checkVerificationStatus();
+        // Delay to ensure Supabase has synced
+        setTimeout(() => {
+          checkVerificationStatus();
+        }, 500);
         showOverlayWithDelay();
       }
       appStateRef.current = nextAppState;
@@ -385,9 +437,20 @@ export default function SignupScreen() {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (event === "SIGNED_IN" && session?.user && pendingVerificationEmail) {
-        logger.info("✅ Auth state changed: User signed in, verifying...");
-        await checkVerificationStatus();
+      logger.info("Auth state changed:", event, session?.user?.email);
+      
+      if (
+        (event === "SIGNED_IN" || event === "TOKEN_REFRESHED" || event === "USER_UPDATED") &&
+        session?.user &&
+        pendingVerificationEmail
+      ) {
+        // Check if email is confirmed
+        if (session.user.email_confirmed_at) {
+          logger.info("✅ Email confirmed via auth state change");
+          await checkVerificationStatus();
+        } else {
+          logger.info("Email not yet confirmed, waiting...");
+        }
       }
     });
 
@@ -411,11 +474,20 @@ export default function SignupScreen() {
   // Auto-check verification when overlay is shown
   useEffect(() => {
     if (showVerificationOverlay && pendingVerificationEmail) {
+<<<<<<< HEAD
       checkVerificationStatus();
       // Poll every 3 seconds while overlay is visible
       const pollInterval = setInterval(() => {
         checkVerificationStatus();
       }, 3000);
+=======
+      // Initial check
+      checkVerificationStatus();
+      // Poll every 2 seconds while overlay is visible (more frequent)
+      const pollInterval = setInterval(() => {
+        checkVerificationStatus();
+      }, 2000);
+>>>>>>> 75a8731 (Update signup flow and email verification process)
 
       return () => clearInterval(pollInterval);
     }
