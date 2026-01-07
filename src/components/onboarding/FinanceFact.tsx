@@ -34,55 +34,56 @@ export default function FinanceFact({
   const [isVisible, setIsVisible] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
-  const storageKey = `finance_fact_dismissed_${screenKey}`;
-
   useEffect(() => {
+    const storageKey = `finance_fact_dismissed_${screenKey}`;
+    
+    const showRandomFact = () => {
+      // Pick a random fact
+      const randomIndex = Math.floor(Math.random() * FINANCE_FACTS.length);
+      setFact(FINANCE_FACTS[randomIndex]);
+      setIsVisible(true);
+    };
+    
+    const checkVisibility = async () => {
+      try {
+        setIsLoading(true);
+        const dismissedData = await AsyncStorage.getItem(storageKey);
+
+        if (!dismissedData) {
+          // Never dismissed, show it
+          showRandomFact();
+          return;
+        }
+
+        const { dismissedAt, cooldownDays } = JSON.parse(dismissedData);
+        const dismissedDate = new Date(dismissedAt);
+        const now = new Date();
+        const daysSinceDismissal =
+          (now.getTime() - dismissedDate.getTime()) / MILLISECONDS_PER_DAY;
+
+        // Check if cooldown period has passed
+        if (daysSinceDismissal >= cooldownDays) {
+          // Cooldown passed, show it again
+          showRandomFact();
+        } else {
+          // Still in cooldown, don't show
+          setIsVisible(false);
+        }
+      } catch (error) {
+        console.error("Error checking finance fact visibility:", error);
+        // On error, show the fact
+        showRandomFact();
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
     checkVisibility();
-  }, []);
-
-  const checkVisibility = async () => {
-    try {
-      setIsLoading(true);
-      const dismissedData = await AsyncStorage.getItem(storageKey);
-
-      if (!dismissedData) {
-        // Never dismissed, show it
-        showRandomFact();
-        return;
-      }
-
-      const { dismissedAt, cooldownDays } = JSON.parse(dismissedData);
-      const dismissedDate = new Date(dismissedAt);
-      const now = new Date();
-      const daysSinceDismissal =
-        (now.getTime() - dismissedDate.getTime()) / MILLISECONDS_PER_DAY;
-
-      // Check if cooldown period has passed
-      if (daysSinceDismissal >= cooldownDays) {
-        // Cooldown passed, show it again
-        showRandomFact();
-      } else {
-        // Still in cooldown, don't show
-        setIsVisible(false);
-      }
-    } catch (error) {
-      console.error("Error checking finance fact visibility:", error);
-      // On error, show the fact
-      showRandomFact();
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const showRandomFact = () => {
-    // Pick a random fact
-    const randomIndex = Math.floor(Math.random() * FINANCE_FACTS.length);
-    setFact(FINANCE_FACTS[randomIndex]);
-    setIsVisible(true);
-  };
+  }, [screenKey]);
 
   const handleDismiss = async () => {
     try {
+      const storageKey = `finance_fact_dismissed_${screenKey}`;
       // Generate random cooldown between 2-3 days
       const cooldownDays =
         MIN_COOLDOWN_DAYS +

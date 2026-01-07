@@ -3,6 +3,7 @@ import {
   View,
   Text,
   TouchableOpacity,
+  TouchableWithoutFeedback,
   StyleSheet,
   Platform,
   TextInput,
@@ -11,6 +12,7 @@ import {
   Modal,
   Keyboard,
   Image,
+  Dimensions,
 } from "react-native";
 import { Picker } from "@react-native-picker/picker";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -195,7 +197,7 @@ export default function AboutYouScreen() {
           </View>
 
           <View style={styles.rowContainer}>
-            <View style={styles.halfWidthContainer}>
+            <View style={styles.ageContainer}>
               <Text style={styles.labelSmall}>Age</Text>
               <TouchableOpacity
                 style={styles.inputWrapSmall}
@@ -213,7 +215,7 @@ export default function AboutYouScreen() {
               </TouchableOpacity>
             </View>
 
-            <View style={styles.halfWidthContainer}>
+            <View style={styles.locationContainer}>
               <Text style={styles.labelSmall}>Location</Text>
               <View style={styles.inputWrapSmall}>
                 <TextInput
@@ -232,7 +234,9 @@ export default function AboutYouScreen() {
             </View>
           </View>
 
-          <Text style={styles.label}>What do you do?</Text>
+          <Text style={[styles.label, styles.occupationLabel]}>
+            What do you do?
+          </Text>
           <View style={styles.occupationInputWrap}>
             <TextInput
               value={occupation}
@@ -259,7 +263,9 @@ Examples:
             This helps Finny give you more personalized advice
           </Text>
 
-          <Text style={styles.label}>How did you hear about us?</Text>
+          <Text style={[styles.label, styles.referralLabel]}>
+            How did you hear about us?
+          </Text>
           <TouchableOpacity
             style={styles.inputWrap}
             onPress={() => setShowReferralModal(true)}
@@ -300,49 +306,60 @@ Examples:
         animationType="slide"
         onRequestClose={() => setShowAgeModal(false)}
       >
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={() => setShowAgeModal(false)}
-        >
-          <TouchableOpacity
-            style={styles.modalContent}
-            activeOpacity={1}
-            onPress={(e) => e.stopPropagation()}
-          >
-            <View style={styles.modalHeader}>
-              <TouchableOpacity
-                onPress={() => setShowAgeModal(false)}
-                style={styles.cancelButton}
-              >
-                <Text style={styles.cancelText}>Cancel</Text>
-              </TouchableOpacity>
-              <Text style={styles.modalTitle}>Select Age</Text>
-              <TouchableOpacity
-                onPress={() => setShowAgeModal(false)}
-                style={styles.doneButton}
-              >
-                <Text style={styles.doneText}>Done</Text>
-              </TouchableOpacity>
-            </View>
-
-            <Picker
-              selectedValue={age}
-              onValueChange={(itemValue) => setAge(itemValue)}
-              style={styles.picker}
-              itemStyle={styles.pickerItem}
-            >
-              {ageOptions.map((ageOption) => (
-                <Picker.Item
-                  key={ageOption}
-                  label={`${ageOption} years old`}
-                  value={ageOption}
-                  color="#fff"
-                />
-              ))}
-            </Picker>
-          </TouchableOpacity>
-        </TouchableOpacity>
+        <TouchableWithoutFeedback onPress={() => setShowAgeModal(false)}>
+          <View style={styles.agePickerOverlay}>
+            <TouchableWithoutFeedback onPress={(e) => e.stopPropagation()}>
+              <View style={styles.agePickerModal}>
+                <View style={styles.agePickerHeader}>
+                  <TouchableOpacity onPress={() => setShowAgeModal(false)}>
+                    <LinearGradient
+                      colors={[
+                        "rgba(255, 255, 255, 0.12)",
+                        "rgba(255, 255, 255, 0.03)",
+                      ]}
+                      style={styles.agePickerButton}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                    >
+                      <Text style={styles.agePickerCancel}>Cancel</Text>
+                    </LinearGradient>
+                  </TouchableOpacity>
+                  <Text style={styles.agePickerTitle}>Select Age</Text>
+                  <TouchableOpacity onPress={() => setShowAgeModal(false)}>
+                    <LinearGradient
+                      colors={[
+                        "rgba(74, 144, 226, 0.8)",
+                        "rgba(74, 144, 226, 0.6)",
+                      ]}
+                      style={styles.agePickerButton}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                    >
+                      <Text style={styles.agePickerDone}>Done</Text>
+                    </LinearGradient>
+                  </TouchableOpacity>
+                </View>
+                <View style={styles.agePickerContent}>
+                  <Picker
+                    selectedValue={age}
+                    onValueChange={(itemValue) => setAge(itemValue)}
+                    style={styles.agePickerSpinner}
+                    itemStyle={styles.pickerItem}
+                  >
+                    {ageOptions.map((ageOption) => (
+                      <Picker.Item
+                        key={ageOption}
+                        label={`${ageOption} years old`}
+                        value={ageOption}
+                        color="#fff"
+                      />
+                    ))}
+                  </Picker>
+                </View>
+              </View>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
       </Modal>
 
       {/* Referral Source Modal */}
@@ -352,74 +369,85 @@ Examples:
         animationType="slide"
         onRequestClose={() => setShowReferralModal(false)}
       >
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={() => setShowReferralModal(false)}
-        >
-          <View style={styles.referralModalContent}>
-            <View style={styles.referralOptionsContainer}>
-              {REFERRAL_OPTIONS.map((option) => {
-                const isSelected = referralSource === option.id;
-                return (
-                  <TouchableOpacity
-                    key={option.id}
-                    style={[
-                      styles.referralOption,
-                      isSelected && styles.referralOptionSelected,
-                    ]}
-                    onPress={() => {
-                      setReferralSource(option.id);
-                      setShowReferralModal(false);
-                    }}
-                    activeOpacity={0.7}
+        <TouchableWithoutFeedback onPress={() => setShowReferralModal(false)}>
+          <View style={styles.referralModalOverlay}>
+            <TouchableWithoutFeedback onPress={(e) => e.stopPropagation()}>
+              <View style={styles.referralModalWrapper}>
+                <LinearGradient
+                  colors={["rgba(31, 31, 31, 0.98)", "rgba(18, 18, 18, 0.99)"]}
+                  style={styles.referralModalContent}
+                >
+                  <ScrollView
+                    style={styles.referralScrollView}
+                    contentContainerStyle={styles.referralOptionsContainer}
+                    showsVerticalScrollIndicator={false}
+                    bounces={true}
+                    keyboardShouldPersistTaps="handled"
                   >
-                    <View
-                      style={[
-                        styles.referralIconContainer,
-                        { backgroundColor: `${option.color}20` },
-                      ]}
-                    >
-                      {option.useIcon ? (
-                        <Ionicons
-                          name={option.icon as any}
-                          size={22}
-                          color={option.color}
-                        />
-                      ) : (
-                        <Text
+                    {REFERRAL_OPTIONS.map((option) => {
+                      const isSelected = referralSource === option.id;
+                      return (
+                        <TouchableOpacity
+                          key={option.id}
                           style={[
-                            styles.appStoreLetter,
-                            { color: option.color },
+                            styles.referralOption,
+                            isSelected && styles.referralOptionSelected,
                           ]}
+                          onPress={() => {
+                            setReferralSource(option.id);
+                            setShowReferralModal(false);
+                          }}
+                          activeOpacity={0.7}
                         >
-                          {option.icon}
-                        </Text>
-                      )}
-                    </View>
-                    <Text
-                      style={[
-                        styles.referralOptionText,
-                        isSelected && styles.referralOptionTextSelected,
-                      ]}
-                    >
-                      {option.label}
-                    </Text>
-                    {isSelected && (
-                      <View style={styles.checkmarkContainer}>
-                        <Ionicons
-                          name="checkmark-circle"
-                          size={22}
-                          color="#4A90E2"
-                        />
-                      </View>
-                    )}
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
+                          <View
+                            style={[
+                              styles.referralIconContainer,
+                              { backgroundColor: `${option.color}20` },
+                            ]}
+                          >
+                            {option.useIcon ? (
+                              <Ionicons
+                                name={option.icon as any}
+                                size={22}
+                                color={option.color}
+                              />
+                            ) : (
+                              <Text
+                                style={[
+                                  styles.appStoreLetter,
+                                  { color: option.color },
+                                ]}
+                              >
+                                {option.icon}
+                              </Text>
+                            )}
+                          </View>
+                          <Text
+                            style={[
+                              styles.referralOptionText,
+                              isSelected && styles.referralOptionTextSelected,
+                            ]}
+                          >
+                            {option.label}
+                          </Text>
+                          {isSelected && (
+                            <View style={styles.checkmarkContainer}>
+                              <Ionicons
+                                name="checkmark-circle"
+                                size={22}
+                                color="#4A90E2"
+                              />
+                            </View>
+                          )}
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </ScrollView>
+                </LinearGradient>
+              </View>
+            </TouchableWithoutFeedback>
           </View>
-        </TouchableOpacity>
+        </TouchableWithoutFeedback>
       </Modal>
     </LinearGradient>
   );
@@ -431,7 +459,7 @@ const styles = StyleSheet.create({
   content: {
     flexGrow: 1,
     paddingHorizontal: 24,
-    paddingTop: Platform.OS === "ios" ? 70 : 50,
+    paddingTop: Platform.OS === "ios" ? 40 : 30,
     paddingBottom: 10,
   },
   progress: { fontSize: 12, color: "rgba(255,255,255,0.6)", marginBottom: 8 },
@@ -446,7 +474,7 @@ const styles = StyleSheet.create({
     height: 80,
     resizeMode: "contain",
   },
-  title: { fontSize: 28, color: "#fff", fontWeight: "700", flex: 1 },
+  title: { fontSize: 24, color: "#fff", fontWeight: "700", flex: 1 },
   label: {
     color: "#fff",
     fontSize: 15,
@@ -455,13 +483,25 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     letterSpacing: 0.3,
   },
+  occupationLabel: {
+    marginTop: 38,
+  },
+  referralLabel: {
+    marginTop: 28,
+  },
   rowContainer: {
     flexDirection: "row",
-    gap: 12,
+    gap: 16,
     marginTop: 4,
   },
   halfWidthContainer: {
     flex: 1,
+  },
+  ageContainer: {
+    flex: 0.3,
+  },
+  locationContainer: {
+    flex: 0.7,
   },
   labelSmall: {
     color: "#fff",
@@ -613,25 +653,118 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 18,
   },
-  referralModalContent: {
+  // Age picker modal styles (matching date picker from AddGoalModal)
+  agePickerOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    justifyContent: "flex-end",
+  },
+  agePickerModal: {
     backgroundColor: "#1A1A2E",
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
-    paddingBottom: Platform.OS === "ios" ? 40 : 20,
+    paddingBottom: 20,
+    minHeight: 280,
+  },
+  agePickerHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255,255,255,0.1)",
+    backgroundColor: "#1A1A2E",
+  },
+  agePickerContent: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 20,
+  },
+  agePickerTitle: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#fff",
+  },
+  agePickerButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.2)",
+  },
+  agePickerCancel: {
+    fontSize: 16,
+    color: "#fff",
+    fontWeight: "500",
+  },
+  agePickerDone: {
+    fontSize: 16,
+    color: "#fff",
+    fontWeight: "600",
+  },
+  agePickerSpinner: {
+    width: "100%",
+    height: 180,
+    backgroundColor: "transparent",
+  },
+  referralModalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.75)",
+    justifyContent: "flex-end",
+  },
+  referralModalWrapper: {
+    maxHeight: Dimensions.get("window").height * 0.9,
+    minHeight: Dimensions.get("window").height * 0.65,
+    width: "100%",
+  },
+  referralModalContent: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
     paddingTop: 24,
-    maxHeight: "80%",
+    flex: 1,
+  },
+  referralModalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 20,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255,255,255,0.1)",
+    marginBottom: 16,
+  },
+  referralModalTitle: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#fff",
+    flex: 1,
+  },
+  referralModalCloseButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  referralScrollView: {
+    flex: 1,
   },
   referralOptionsContainer: {
     flexDirection: "row",
     flexWrap: "wrap",
-    paddingHorizontal: 16,
+    paddingHorizontal: 20,
+    paddingBottom: Platform.OS === "ios" ? 50 : 40,
+    paddingTop: 20,
     justifyContent: "space-between",
   },
   referralOption: {
     width: "48%",
     backgroundColor: "rgba(255, 255, 255, 0.05)",
-    borderRadius: 12,
-    padding: 14,
+    borderRadius: 16,
+    padding: 16,
     marginBottom: 12,
     borderWidth: 1.5,
     borderColor: "rgba(255, 255, 255, 0.1)",
@@ -639,7 +772,7 @@ const styles = StyleSheet.create({
     position: "relative",
   },
   referralOptionSelected: {
-    borderColor: "#4A90E2",
+    borderColor: "rgba(74, 144, 226, 0.5)",
     backgroundColor: "rgba(74, 144, 226, 0.15)",
   },
   referralIconContainer: {

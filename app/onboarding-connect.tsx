@@ -302,11 +302,10 @@ export default function AccountConnectionScreen() {
           >
             <View style={styles.header}>
               <Text style={styles.title}>Connect at least 1 account</Text>
-              <Text style={styles.subtitle}>Real advice needs real data</Text>
+              <Text style={styles.subtitle}>Real growth needs real data</Text>
               <Text style={styles.description}>
-                This helps us analyze your spending patterns, track your goals,
-                and give you personalized insights to help you build and manage
-                wealth smarter.
+                Get personalized insights from your spending to track goals and
+                build wealth.
               </Text>
             </View>
 
