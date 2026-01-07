@@ -78,7 +78,7 @@ export default function PersonalInfoScreen() {
       const { data, error } = await supabase.auth.updateUser(
         { email },
         {
-          emailRedirectTo: "https://financify.ing/auth-redirect.html",
+          emailRedirectTo: "https://usefinny.com/auth-redirect.html",
         }
       );
       if (error) throw error;

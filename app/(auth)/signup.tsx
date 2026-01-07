@@ -1,5 +1,5 @@
 import * as React from "react";
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -12,6 +12,8 @@ import {
   ActivityIndicator,
   ScrollView,
   Dimensions,
+  AppState,
+  Animated,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -34,6 +36,22 @@ export default function SignupScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [formError, setFormError] = useState("");
+
+  // Verification overlay state
+  const [showVerificationOverlay, setShowVerificationOverlay] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0);
+  const [verificationError, setVerificationError] = useState("");
+  const [pendingVerificationEmail, setPendingVerificationEmail] = useState<
+    string | null
+  >(null);
+  const [isVerifying, setIsVerifying] = useState(false);
+
+  // Refs for timers and animations
+  const resendTimerRef = useRef<number | null>(null);
+  const overlayTimerRef = useRef<number | null>(null);
+  const appStateRef = useRef(AppState.currentState);
+  const overlayOpacity = useRef(new Animated.Value(0)).current;
+  const overlayTranslateY = useRef(new Animated.Value(-20)).current;
 
   const handleBack = () => {
     router.back();
@@ -74,11 +92,14 @@ export default function SignupScreen() {
     if (!validateForm()) return;
 
     setLoading(true);
+    setVerificationError("");
 
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
-      options: {},
+      options: {
+        emailRedirectTo: "https://usefinny.com/auth-redirect.html",
+      },
     });
 
     logger.info("Signup data: ", data);
@@ -101,10 +122,24 @@ export default function SignupScreen() {
 
     // Check if email confirmation is required
     if (!data.user || !data.session) {
+      // Store the email that needs verification
+      setPendingVerificationEmail(email);
+      // Start resend cooldown timer
+      setResendCooldown(90);
+      startResendTimer();
+
       Alert.alert(
         "Check your email",
-        "We've sent you a confirmation email. Please check your inbox and click the confirmation link to complete your signup.",
-        [{ text: "OK" }]
+        "We've sent you a confirmation email. Please check your inbox or spam folder and click the confirmation link to finish your signup.",
+        [
+          {
+            text: "OK",
+            onPress: () => {
+              // Show overlay after 5 seconds if user stays on screen
+              showOverlayWithDelay();
+            },
+          },
+        ]
       );
       return;
     }
@@ -139,7 +174,9 @@ export default function SignupScreen() {
 
         // Seed default categories for new user
         try {
-          const { seedDefaultCategories } = await import("@/src/utils/categories/seedDefaultCategories");
+          const { seedDefaultCategories } = await import(
+            "@/src/utils/categories/seedDefaultCategories"
+          );
           await seedDefaultCategories(data.user.id);
         } catch (seedError) {
           logger.error("Error seeding default categories:", seedError);
@@ -156,6 +193,233 @@ export default function SignupScreen() {
 
     router.replace("/onboarding-profile" as any);
   };
+
+  // Resend verification email
+  const handleResendVerification = async () => {
+    if (resendCooldown > 0 || !pendingVerificationEmail) return;
+
+    setVerificationError("");
+    setLoading(true);
+
+    try {
+      const { error } = await supabase.auth.resend({
+        type: "signup",
+        email: pendingVerificationEmail,
+        options: {
+          emailRedirectTo: "https://usefinny.com/auth-redirect.html",
+        },
+      });
+
+      if (error) {
+        setVerificationError(
+          error.message ||
+            "Failed to resend verification email. Please try again."
+        );
+        logger.error("Resend verification error: ", error);
+      } else {
+        setVerificationError("");
+        setResendCooldown(90);
+        startResendTimer();
+        Alert.alert(
+          "Email Sent",
+          "Verification email has been resent. Please check your inbox."
+        );
+      }
+    } catch (err: any) {
+      setVerificationError(
+        err.message || "An unexpected error occurred. Please try again."
+      );
+      logger.error("Resend verification exception: ", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Start resend cooldown timer
+  const startResendTimer = () => {
+    if (resendTimerRef.current) {
+      clearInterval(resendTimerRef.current);
+    }
+
+    resendTimerRef.current = setInterval(() => {
+      setResendCooldown((prev) => {
+        if (prev <= 1) {
+          if (resendTimerRef.current) {
+            clearInterval(resendTimerRef.current);
+            resendTimerRef.current = null;
+          }
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  };
+
+  // Check verification status
+  const checkVerificationStatus = async () => {
+    if (!pendingVerificationEmail) return;
+
+    setIsVerifying(true);
+    try {
+      const {
+        data: { session },
+        error,
+      } = await supabase.auth.getSession();
+
+      if (error) {
+        logger.error("Error checking session: ", error);
+        setIsVerifying(false);
+        return;
+      }
+
+      if (session?.user) {
+        // User is verified! Create profile and proceed
+        logger.info("✅ Email verified, creating profile...");
+
+        try {
+          const { error: profileError } = await supabase
+            .from("profiles")
+            .upsert(
+              {
+                id: session.user.id,
+                onboarding_completed: false,
+                onboarding_step: 0,
+                first_name: firstName.trim(),
+                last_name: lastName.trim(),
+              },
+              { onConflict: "id" }
+            );
+
+          if (profileError) {
+            logger.error("Error creating profile: ", profileError);
+            setVerificationError(
+              "Account verified but failed to set up profile. Please try logging in."
+            );
+            setIsVerifying(false);
+            return;
+          }
+
+          logger.info("✅ Profile created successfully");
+
+          // Seed default categories
+          try {
+            const { seedDefaultCategories } = await import(
+              "@/src/utils/categories/seedDefaultCategories"
+            );
+            await seedDefaultCategories(session.user.id);
+          } catch (seedError) {
+            logger.error("Error seeding default categories:", seedError);
+          }
+
+          // Clear verification state
+          setShowVerificationOverlay(false);
+          setPendingVerificationEmail(null);
+          setIsVerifying(false);
+
+          // Navigate to onboarding
+          router.replace("/onboarding-profile" as any);
+        } catch (profileError) {
+          logger.error("Error creating profile: ", profileError);
+          setVerificationError(
+            "Account verified but failed to set up profile. Please try logging in."
+          );
+          setIsVerifying(false);
+        }
+      } else {
+        setIsVerifying(false);
+      }
+    } catch (error) {
+      logger.error("Error checking verification: ", error);
+      setIsVerifying(false);
+    }
+  };
+
+  // Show verification overlay after delay
+  const showOverlayWithDelay = () => {
+    if (overlayTimerRef.current) {
+      clearTimeout(overlayTimerRef.current);
+    }
+
+    overlayTimerRef.current = setTimeout(() => {
+      if (pendingVerificationEmail && !showVerificationOverlay) {
+        setShowVerificationOverlay(true);
+        // Animate overlay in
+        Animated.parallel([
+          Animated.timing(overlayOpacity, {
+            toValue: 1,
+            duration: 300,
+            useNativeDriver: true,
+          }),
+          Animated.timing(overlayTranslateY, {
+            toValue: 0,
+            duration: 300,
+            useNativeDriver: true,
+          }),
+        ]).start();
+      }
+    }, 5000); // 5 second delay
+  };
+
+  // Listen for app state changes (foreground/background)
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (nextAppState) => {
+      if (
+        appStateRef.current.match(/inactive|background/) &&
+        nextAppState === "active" &&
+        pendingVerificationEmail
+      ) {
+        // App came to foreground, check verification and show overlay
+        checkVerificationStatus();
+        showOverlayWithDelay();
+      }
+      appStateRef.current = nextAppState;
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [pendingVerificationEmail]);
+
+  // Listen for auth state changes
+  useEffect(() => {
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === "SIGNED_IN" && session?.user && pendingVerificationEmail) {
+        logger.info("✅ Auth state changed: User signed in, verifying...");
+        await checkVerificationStatus();
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [pendingVerificationEmail, firstName, lastName]);
+
+  // Cleanup timers on unmount
+  useEffect(() => {
+    return () => {
+      if (resendTimerRef.current) {
+        clearInterval(resendTimerRef.current);
+      }
+      if (overlayTimerRef.current) {
+        clearTimeout(overlayTimerRef.current);
+      }
+    };
+  }, []);
+
+  // Auto-check verification when overlay is shown
+  useEffect(() => {
+    if (showVerificationOverlay && pendingVerificationEmail) {
+      checkVerificationStatus();
+      // Poll every 3 seconds while overlay is visible
+      const pollInterval = setInterval(() => {
+        checkVerificationStatus();
+      }, 3000);
+
+      return () => clearInterval(pollInterval);
+    }
+  }, [showVerificationOverlay, pendingVerificationEmail]);
 
   const handlePrivacyPolicy = async () => {
     const url =
@@ -340,6 +604,90 @@ export default function SignupScreen() {
             </TouchableOpacity>
           </View>
         </ScrollView>
+
+        {/* Verification Overlay */}
+        {showVerificationOverlay && (
+          <Animated.View
+            style={[
+              styles.verificationOverlay,
+              {
+                opacity: overlayOpacity,
+                transform: [{ translateY: overlayTranslateY }],
+              },
+            ]}
+          >
+            <View style={styles.verificationCard}>
+              <View style={styles.verificationHeader}>
+                <View style={styles.verificationIconContainer}>
+                  <Ionicons name="mail-outline" size={24} color="#4A90E2" />
+                </View>
+                <Text style={styles.verificationTitle}>Verify Your Email</Text>
+                <TouchableOpacity
+                  style={styles.closeButton}
+                  onPress={() => {
+                    Animated.parallel([
+                      Animated.timing(overlayOpacity, {
+                        toValue: 0,
+                        duration: 200,
+                        useNativeDriver: true,
+                      }),
+                      Animated.timing(overlayTranslateY, {
+                        toValue: -20,
+                        duration: 200,
+                        useNativeDriver: true,
+                      }),
+                    ]).start(() => {
+                      setShowVerificationOverlay(false);
+                    });
+                  }}
+                >
+                  <Ionicons name="close" size={20} color="#999" />
+                </TouchableOpacity>
+              </View>
+
+              <Text style={styles.verificationMessage}>
+                We've sent a verification link to{"\n"}
+                <Text style={styles.verificationEmail}>
+                  {pendingVerificationEmail}
+                </Text>
+              </Text>
+
+              {isVerifying && (
+                <View style={styles.verifyingContainer}>
+                  <ActivityIndicator size="small" color="#4A90E2" />
+                  <Text style={styles.verifyingText}>
+                    Checking verification...
+                  </Text>
+                </View>
+              )}
+
+              {verificationError ? (
+                <View style={styles.errorContainer}>
+                  <Ionicons name="alert-circle" size={16} color="#ff4444" />
+                  <Text style={styles.errorText}>{verificationError}</Text>
+                </View>
+              ) : null}
+
+              <View style={styles.resendContainer}>
+                <TouchableOpacity
+                  style={[
+                    styles.resendButton,
+                    (resendCooldown > 0 || loading) &&
+                      styles.resendButtonDisabled,
+                  ]}
+                  onPress={handleResendVerification}
+                  disabled={resendCooldown > 0 || loading}
+                >
+                  <Text style={styles.resendButtonText}>
+                    {resendCooldown > 0
+                      ? `Resend in ${resendCooldown}s`
+                      : "Resend Email"}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </Animated.View>
+        )}
       </LinearGradient>
     </KeyboardAvoidingView>
   );
@@ -486,5 +834,117 @@ const styles = StyleSheet.create({
   privacyLink: {
     color: "#007AFF",
     textDecorationLine: "underline",
+  },
+  verificationOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "rgba(0, 0, 0, 0.6)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 24,
+    zIndex: 1000,
+  },
+  verificationCard: {
+    backgroundColor: "rgba(18, 26, 50, 0.98)",
+    borderRadius: 16,
+    padding: 24,
+    width: "100%",
+    maxWidth: 400,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.1)",
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 8,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+  verificationHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  verificationIconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "rgba(74, 144, 226, 0.2)",
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 12,
+  },
+  verificationTitle: {
+    flex: 1,
+    fontSize: 20,
+    fontWeight: "600",
+    color: "#fff",
+  },
+  closeButton: {
+    width: 32,
+    height: 32,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  verificationMessage: {
+    fontSize: 14,
+    color: "rgba(255, 255, 255, 0.8)",
+    lineHeight: 20,
+    marginBottom: 16,
+    textAlign: "center",
+  },
+  verificationEmail: {
+    color: "#4A90E2",
+    fontWeight: "500",
+  },
+  verifyingContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 16,
+    gap: 8,
+  },
+  verifyingText: {
+    fontSize: 14,
+    color: "rgba(255, 255, 255, 0.7)",
+  },
+  errorContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(255, 68, 68, 0.15)",
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 16,
+    gap: 8,
+  },
+  errorText: {
+    flex: 1,
+    fontSize: 13,
+    color: "#ff6b6b",
+    lineHeight: 18,
+  },
+  resendContainer: {
+    marginTop: 8,
+  },
+  resendButton: {
+    backgroundColor: "rgba(74, 144, 226, 0.15)",
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "rgba(74, 144, 226, 0.3)",
+    alignItems: "center",
+  },
+  resendButtonDisabled: {
+    opacity: 0.5,
+  },
+  resendButtonText: {
+    color: "#4A90E2",
+    fontSize: 14,
+    fontWeight: "600",
   },
 });

@@ -9,7 +9,7 @@
     <key>CFBundleDevelopmentRegion</key>
     <string>$(DEVELOPMENT_LANGUAGE)</string>
     <key>CFBundleDisplayName</key>
-    <string>Financify</string>
+    <string>Finny</string>
     <key>CFBundleExecutable</key>
     <string>$(EXECUTABLE_NAME)</string>
     <key>CFBundleIdentifier</key>
@@ -30,6 +30,7 @@
         <key>CFBundleURLSchemes</key>
         <array>
           <string>financify</string>
+          <string>finny</string>
           <string>com.kartikey08.financify</string>
         </array>
       </dict>
