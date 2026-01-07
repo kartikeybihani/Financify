@@ -36,14 +36,14 @@ export default function FinanceFact({
 
   useEffect(() => {
     const storageKey = `finance_fact_dismissed_${screenKey}`;
-    
+
     const showRandomFact = () => {
       // Pick a random fact
       const randomIndex = Math.floor(Math.random() * FINANCE_FACTS.length);
       setFact(FINANCE_FACTS[randomIndex]);
       setIsVisible(true);
     };
-    
+
     const checkVisibility = async () => {
       try {
         setIsLoading(true);
