@@ -96,6 +96,17 @@ CREATE TABLE public.category_rules (
   transaction_name text,
   CONSTRAINT category_rules_pkey PRIMARY KEY (id)
 );
+CREATE TABLE public.chat_conversation_state (
+  conversation_id text NOT NULL,
+  state jsonb NOT NULL,
+  asked_at timestamp with time zone NOT NULL DEFAULT now(),
+  expires_at timestamp with time zone,
+  status text NOT NULL DEFAULT 'pending'::text,
+  last_updated timestamp with time zone NOT NULL DEFAULT now(),
+  user_id uuid,
+  CONSTRAINT chat_conversation_state_pkey PRIMARY KEY (conversation_id),
+  CONSTRAINT chat_conversation_state_user_fk FOREIGN KEY (user_id) REFERENCES auth.users(id)
+);
 CREATE TABLE public.chat_sessions (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL,
@@ -279,6 +290,33 @@ CREATE TABLE public.memory_summary (
   CONSTRAINT memory_summary_pkey PRIMARY KEY (id),
   CONSTRAINT memory_summary_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
 );
+CREATE TABLE public.notification_preferences (
+  user_id uuid NOT NULL,
+  proactive_enabled boolean NOT NULL DEFAULT true,
+  checkin_frequency text NOT NULL DEFAULT 'daily'::text CHECK (checkin_frequency = ANY (ARRAY['daily'::text, '3times'::text, 'weekly'::text, 'never'::text])),
+  max_notifications_per_day integer NOT NULL DEFAULT 5 CHECK (max_notifications_per_day >= 1 AND max_notifications_per_day <= 20),
+  quiet_hours_start time without time zone,
+  quiet_hours_end time without time zone,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT notification_preferences_pkey PRIMARY KEY (user_id),
+  CONSTRAINT notification_preferences_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
+);
+CREATE TABLE public.notification_triggers (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL,
+  trigger_type text NOT NULL CHECK (trigger_type = ANY (ARRAY['paycheck'::text, 'money_received'::text, 'spending_spike'::text, 'spending_drought'::text, 'weekly_summary'::text, 'goal_milestone'::text, 'custom'::text])),
+  trigger_metadata jsonb DEFAULT '{}'::jsonb,
+  detected_at timestamp with time zone NOT NULL DEFAULT now(),
+  sent_at timestamp with time zone,
+  status text NOT NULL DEFAULT 'pending'::text CHECK (status = ANY (ARRAY['pending'::text, 'sent'::text, 'skipped'::text, 'expired'::text])),
+  priority integer NOT NULL DEFAULT 5 CHECK (priority >= 1 AND priority <= 10),
+  cooldown_until timestamp with time zone,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT notification_triggers_pkey PRIMARY KEY (id),
+  CONSTRAINT notification_triggers_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
+);
 CREATE TABLE public.plaid_link_events (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL,
@@ -453,6 +491,18 @@ CREATE TABLE public.user_items (
   sync_status text DEFAULT 'pending'::text,
   CONSTRAINT user_items_pkey PRIMARY KEY (id),
   CONSTRAINT user_items_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
+);
+CREATE TABLE public.user_push_tokens (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL,
+  expo_push_token text NOT NULL,
+  device_id text,
+  platform text CHECK (platform = ANY (ARRAY['ios'::text, 'android'::text])),
+  is_active boolean NOT NULL DEFAULT true,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT user_push_tokens_pkey PRIMARY KEY (id),
+  CONSTRAINT user_push_tokens_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
 );
 CREATE TABLE public.web_scrape_cache (
   id uuid NOT NULL DEFAULT gen_random_uuid(),

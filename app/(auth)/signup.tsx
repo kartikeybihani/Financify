@@ -54,6 +54,15 @@ export default function SignupScreen() {
   const overlayOpacity = useRef(new Animated.Value(0)).current;
   const overlayTranslateY = useRef(new Animated.Value(-20)).current;
 
+  // Refs to capture signup data at signup time (Bug 1 fix)
+  const signupFirstNameRef = useRef<string>("");
+  const signupLastNameRef = useRef<string>("");
+  const signupPasswordRef = useRef<string>("");
+
+  // Refs to track setTimeout calls for cleanup (Bug 2 fix)
+  const deepLinkTimeoutRef = useRef<number | null>(null);
+  const appStateTimeoutRef = useRef<number | null>(null);
+
   const handleBack = () => {
     router.back();
   };
@@ -125,6 +134,10 @@ export default function SignupScreen() {
     if (!data.user || !data.session) {
       // Store the email that needs verification
       setPendingVerificationEmail(email);
+      // Capture signup data at signup time (Bug 1 fix)
+      signupFirstNameRef.current = firstName.trim();
+      signupLastNameRef.current = lastName.trim();
+      signupPasswordRef.current = password;
       // Start resend cooldown timer
       setResendCooldown(90);
       startResendTimer();
@@ -136,8 +149,23 @@ export default function SignupScreen() {
           {
             text: "OK",
             onPress: () => {
-              // Show overlay after 5 seconds if user stays on screen
-              showOverlayWithDelay();
+              // Show overlay immediately
+              setShowVerificationOverlay(true);
+              // Animate overlay in
+              Animated.parallel([
+                Animated.timing(overlayOpacity, {
+                  toValue: 1,
+                  duration: 300,
+                  useNativeDriver: true,
+                }),
+                Animated.timing(overlayTranslateY, {
+                  toValue: 0,
+                  duration: 300,
+                  useNativeDriver: true,
+                }),
+              ]).start();
+              // Don't check immediately - wait for user to verify via email
+              // The polling and event listeners will handle verification checks
             },
           },
         ]
@@ -262,91 +290,152 @@ export default function SignupScreen() {
 
     setIsVerifying(true);
     try {
-      // First, refresh the session to get latest user data
+      // First, try to get the current session
       const {
-        data: { user: currentUser },
-        error: userError,
-      } = await supabase.auth.getUser();
+        data: { session },
+        error: sessionError,
+      } = await supabase.auth.getSession();
 
-      if (userError) {
-        logger.error("Error getting user: ", userError);
+      // If we have a session, check if email is confirmed
+      if (session?.user) {
+        if (session.user.email_confirmed_at) {
+          // User is verified! Proceed with profile creation
+          await proceedWithVerification(session);
+          return;
+        } else {
+          // Session exists but email not confirmed yet
+          logger.info("Email not yet confirmed, waiting...");
+          setIsVerifying(false);
+          return;
+        }
+      }
+
+      // No session - try to sign in with stored credentials
+      // This will work if email is verified (Supabase allows sign-in after email confirmation)
+      logger.info(
+        "No session found, attempting to sign in with stored credentials..."
+      );
+
+      // Use stored password from signup time - must use captured value only
+      // Do NOT fallback to current password state as it may have been modified
+      const storedPassword = signupPasswordRef.current;
+      if (!email || !storedPassword) {
+        logger.error(
+          "Email or captured password not available for sign in. This should not happen if signup completed successfully."
+        );
+        setVerificationError(
+          "Unable to verify account. Please try signing in manually or resend the verification email."
+        );
         setIsVerifying(false);
         return;
       }
 
-      // Check if user exists and email is confirmed
-      if (currentUser && currentUser.email_confirmed_at) {
-        // Email is verified! Get session and proceed
-        const {
-          data: { session },
-          error: sessionError,
-        } = await supabase.auth.getSession();
+      const { data: signInData, error: signInError } =
+        await supabase.auth.signInWithPassword({
+          email: email,
+          password: storedPassword,
+        });
 
-        if (sessionError || !session) {
-          logger.error("Error getting session: ", sessionError);
-          setIsVerifying(false);
-          return;
+      if (signInError) {
+        // If sign in fails, user might not be verified yet or wrong credentials
+        if (
+          signInError.message.includes("Email not confirmed") ||
+          signInError.message.includes("email_not_confirmed")
+        ) {
+          logger.info("Email not yet confirmed, waiting...");
+        } else if (signInError.message.includes("Invalid login credentials")) {
+          logger.info("Invalid credentials - email may not be verified yet...");
+        } else {
+          logger.error("Sign in error:", signInError);
         }
-
-        // User is verified! Create profile and proceed
-        logger.info("✅ Email verified, creating profile...");
-
-        try {
-          const { error: profileError } = await supabase
-            .from("profiles")
-            .upsert(
-              {
-                id: session.user.id,
-                onboarding_completed: false,
-                onboarding_step: 0,
-                first_name: firstName.trim(),
-                last_name: lastName.trim(),
-              },
-              { onConflict: "id" }
-            );
-
-          if (profileError) {
-            logger.error("Error creating profile: ", profileError);
-            setVerificationError(
-              "Account verified but failed to set up profile. Please try logging in."
-            );
-            setIsVerifying(false);
-            return;
-          }
-
-          logger.info("✅ Profile created successfully");
-
-          // Seed default categories
-          try {
-            const { seedDefaultCategories } = await import(
-              "@/src/utils/categories/seedDefaultCategories"
-            );
-            await seedDefaultCategories(session.user.id);
-          } catch (seedError) {
-            logger.error("Error seeding default categories:", seedError);
-          }
-
-          // Clear verification state
-          setShowVerificationOverlay(false);
-          setPendingVerificationEmail(null);
-          setIsVerifying(false);
-
-          // Navigate to onboarding
-          router.replace("/onboarding-profile" as any);
-        } catch (profileError) {
-          logger.error("Error creating profile: ", profileError);
-          setVerificationError(
-            "Account verified but failed to set up profile. Please try logging in."
-          );
-          setIsVerifying(false);
-        }
-      } else {
-        // User not verified yet, but keep checking
-        logger.info("Email not yet verified, will check again...");
         setIsVerifying(false);
+        return;
       }
-    } catch (error) {
-      logger.error("Error checking verification: ", error);
+
+      // Sign in successful! Check if email is confirmed
+      if (signInData?.user?.email_confirmed_at && signInData?.session) {
+        logger.info("✅ Successfully signed in and email is verified!");
+        await proceedWithVerification(signInData.session);
+        return;
+      } else if (signInData?.session) {
+        // Signed in but email not confirmed yet
+        logger.info("Signed in but email not yet confirmed, waiting...");
+        setIsVerifying(false);
+        return;
+      } else {
+        logger.info("Sign in succeeded but no session, waiting...");
+        setIsVerifying(false);
+        return;
+      }
+    } catch (error: any) {
+      // Handle any other errors gracefully
+      if (
+        error?.message?.includes("session") ||
+        error?.message?.includes("Auth")
+      ) {
+        logger.info(
+          "No session available yet. This is normal before verification."
+        );
+      } else {
+        logger.error("Error checking verification: ", error);
+      }
+      setIsVerifying(false);
+    }
+  };
+
+  // Helper function to proceed after verification
+  const proceedWithVerification = async (session: any) => {
+    try {
+      logger.info("✅ Email verified, creating profile...");
+
+      // Use captured names from signup time, not current state (Bug 1 fix)
+      const capturedFirstName = signupFirstNameRef.current || firstName.trim();
+      const capturedLastName = signupLastNameRef.current || lastName.trim();
+
+      const { error: profileError } = await supabase.from("profiles").upsert(
+        {
+          id: session.user.id,
+          onboarding_completed: false,
+          onboarding_step: 0,
+          first_name: capturedFirstName,
+          last_name: capturedLastName,
+        },
+        { onConflict: "id" }
+      );
+
+      if (profileError) {
+        logger.error("Error creating profile: ", profileError);
+        setVerificationError(
+          "Account verified but failed to set up profile. Please try logging in."
+        );
+        setIsVerifying(false);
+        return;
+      }
+
+      logger.info("✅ Profile created successfully");
+
+      // Seed default categories
+      try {
+        const { seedDefaultCategories } = await import(
+          "@/src/utils/categories/seedDefaultCategories"
+        );
+        await seedDefaultCategories(session.user.id);
+      } catch (seedError) {
+        logger.error("Error seeding default categories:", seedError);
+      }
+
+      // Clear verification state
+      setShowVerificationOverlay(false);
+      setPendingVerificationEmail(null);
+      setIsVerifying(false);
+
+      // Navigate to onboarding
+      router.replace("/onboarding-profile" as any);
+    } catch (profileError) {
+      logger.error("Error creating profile: ", profileError);
+      setVerificationError(
+        "Account verified but failed to set up profile. Please try logging in."
+      );
       setIsVerifying(false);
     }
   };
@@ -385,9 +474,14 @@ export default function SignupScreen() {
       if (initialUrl && pendingVerificationEmail) {
         logger.info("App opened via deep link:", initialUrl);
         // Small delay to ensure Supabase has processed the verification
-        setTimeout(() => {
+        // Store timeout for cleanup (Bug 2 fix)
+        if (deepLinkTimeoutRef.current) {
+          clearTimeout(deepLinkTimeoutRef.current);
+        }
+        deepLinkTimeoutRef.current = setTimeout(() => {
           checkVerificationStatus();
-        }, 1000);
+          deepLinkTimeoutRef.current = null;
+        }, 1000) as unknown as number;
       }
     };
 
@@ -398,14 +492,24 @@ export default function SignupScreen() {
       logger.info("Deep link received:", event.url);
       if (pendingVerificationEmail) {
         // Small delay to ensure Supabase has processed the verification
-        setTimeout(() => {
+        // Store timeout for cleanup (Bug 2 fix)
+        if (deepLinkTimeoutRef.current) {
+          clearTimeout(deepLinkTimeoutRef.current);
+        }
+        deepLinkTimeoutRef.current = setTimeout(() => {
           checkVerificationStatus();
-        }, 1000);
+          deepLinkTimeoutRef.current = null;
+        }, 1000) as unknown as number;
       }
     });
 
     return () => {
       subscription.remove();
+      // Cleanup timeout (Bug 2 fix)
+      if (deepLinkTimeoutRef.current) {
+        clearTimeout(deepLinkTimeoutRef.current);
+        deepLinkTimeoutRef.current = null;
+      }
     };
   }, [pendingVerificationEmail]);
 
@@ -419,9 +523,14 @@ export default function SignupScreen() {
       ) {
         // App came to foreground, check verification and show overlay
         // Delay to ensure Supabase has synced
-        setTimeout(() => {
+        // Store timeout for cleanup (Bug 2 fix)
+        if (appStateTimeoutRef.current) {
+          clearTimeout(appStateTimeoutRef.current);
+        }
+        appStateTimeoutRef.current = setTimeout(() => {
           checkVerificationStatus();
-        }, 500);
+          appStateTimeoutRef.current = null;
+        }, 500) as unknown as number;
         showOverlayWithDelay();
       }
       appStateRef.current = nextAppState;
@@ -429,6 +538,11 @@ export default function SignupScreen() {
 
     return () => {
       subscription.remove();
+      // Cleanup timeout (Bug 2 fix)
+      if (appStateTimeoutRef.current) {
+        clearTimeout(appStateTimeoutRef.current);
+        appStateTimeoutRef.current = null;
+      }
     };
   }, [pendingVerificationEmail]);
 
@@ -438,9 +552,11 @@ export default function SignupScreen() {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, session) => {
       logger.info("Auth state changed:", event, session?.user?.email);
-      
+
       if (
-        (event === "SIGNED_IN" || event === "TOKEN_REFRESHED" || event === "USER_UPDATED") &&
+        (event === "SIGNED_IN" ||
+          event === "TOKEN_REFRESHED" ||
+          event === "USER_UPDATED") &&
         session?.user &&
         pendingVerificationEmail
       ) {
@@ -457,7 +573,7 @@ export default function SignupScreen() {
     return () => {
       subscription.unsubscribe();
     };
-  }, [pendingVerificationEmail, firstName, lastName]);
+  }, [pendingVerificationEmail]); // Removed firstName, lastName from deps (Bug 1 fix)
 
   // Cleanup timers on unmount
   useEffect(() => {
@@ -468,26 +584,25 @@ export default function SignupScreen() {
       if (overlayTimerRef.current) {
         clearTimeout(overlayTimerRef.current);
       }
+      // Cleanup all setTimeout calls (Bug 2 fix)
+      if (deepLinkTimeoutRef.current) {
+        clearTimeout(deepLinkTimeoutRef.current);
+      }
+      if (appStateTimeoutRef.current) {
+        clearTimeout(appStateTimeoutRef.current);
+      }
     };
   }, []);
 
   // Auto-check verification when overlay is shown
   useEffect(() => {
     if (showVerificationOverlay && pendingVerificationEmail) {
-<<<<<<< HEAD
-      checkVerificationStatus();
-      // Poll every 3 seconds while overlay is visible
-      const pollInterval = setInterval(() => {
-        checkVerificationStatus();
-      }, 3000);
-=======
       // Initial check
       checkVerificationStatus();
-      // Poll every 2 seconds while overlay is visible (more frequent)
+      // Poll every 5 seconds while overlay is visible
       const pollInterval = setInterval(() => {
         checkVerificationStatus();
-      }, 2000);
->>>>>>> 75a8731 (Update signup flow and email verification process)
+      }, 5000);
 
       return () => clearInterval(pollInterval);
     }
@@ -694,8 +809,9 @@ export default function SignupScreen() {
                   <Ionicons name="mail-outline" size={24} color="#4A90E2" />
                 </View>
                 <Text style={styles.verificationTitle}>Verify Your Email</Text>
-                <TouchableOpacity
-                  style={styles.closeButton}
+                <IconButton
+                  icon="close"
+                  size={20}
                   onPress={() => {
                     Animated.parallel([
                       Animated.timing(overlayOpacity, {
@@ -712,9 +828,7 @@ export default function SignupScreen() {
                       setShowVerificationOverlay(false);
                     });
                   }}
-                >
-                  <Ionicons name="close" size={20} color="#999" />
-                </TouchableOpacity>
+                />
               </View>
 
               <Text style={styles.verificationMessage}>
@@ -739,6 +853,33 @@ export default function SignupScreen() {
                   <Text style={styles.errorText}>{verificationError}</Text>
                 </View>
               ) : null}
+
+              <View style={styles.buttonContainer}>
+                <TouchableOpacity
+                  style={[
+                    styles.verifyButton,
+                    (isVerifying || loading) && styles.verifyButtonDisabled,
+                  ]}
+                  onPress={() => {
+                    checkVerificationStatus();
+                  }}
+                  disabled={isVerifying || loading}
+                >
+                  {isVerifying ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <>
+                      <Ionicons
+                        name="checkmark-circle"
+                        size={18}
+                        color="#fff"
+                        style={{ marginRight: 8 }}
+                      />
+                      <Text style={styles.verifyButtonText}>Verify Me</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </View>
 
               <View style={styles.resendContainer}>
                 <TouchableOpacity
@@ -913,16 +1054,16 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: "rgba(0, 0, 0, 0.6)",
+    backgroundColor: "rgba(0, 0, 0, 0.85)",
     justifyContent: "center",
     alignItems: "center",
     padding: 24,
     zIndex: 1000,
   },
   verificationCard: {
-    backgroundColor: "rgba(18, 26, 50, 0.98)",
-    borderRadius: 16,
-    padding: 24,
+    backgroundColor: "#0F0F0F",
+    borderRadius: 28,
+    padding: 32,
     width: "100%",
     maxWidth: 400,
     borderWidth: 1,
@@ -932,14 +1073,15 @@ const styles = StyleSheet.create({
       width: 0,
       height: 8,
     },
-    shadowOpacity: 0.3,
-    shadowRadius: 16,
-    elevation: 8,
+    shadowOpacity: 0.25,
+    shadowRadius: 24,
+    elevation: 12,
   },
   verificationHeader: {
     flexDirection: "row",
+    justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 16,
+    marginBottom: 20,
   },
   verificationIconContainer: {
     width: 40,
@@ -952,26 +1094,20 @@ const styles = StyleSheet.create({
   },
   verificationTitle: {
     flex: 1,
-    fontSize: 20,
+    fontSize: 24,
     fontWeight: "600",
     color: "#fff",
   },
-  closeButton: {
-    width: 32,
-    height: 32,
-    justifyContent: "center",
-    alignItems: "center",
-  },
   verificationMessage: {
-    fontSize: 14,
-    color: "rgba(255, 255, 255, 0.8)",
-    lineHeight: 20,
-    marginBottom: 16,
+    fontSize: 16,
+    color: "rgba(255, 255, 255, 0.9)",
+    lineHeight: 22,
+    marginBottom: 20,
     textAlign: "center",
   },
   verificationEmail: {
     color: "#4A90E2",
-    fontWeight: "500",
+    fontWeight: "600",
   },
   verifyingContainer: {
     flexDirection: "row",
@@ -999,17 +1135,56 @@ const styles = StyleSheet.create({
     color: "#ff6b6b",
     lineHeight: 18,
   },
+  buttonContainer: {
+    marginTop: 8,
+    marginBottom: 12,
+  },
+  verifyButton: {
+    backgroundColor: "rgba(74, 144, 226, 0.9)",
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.2)",
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+  },
+  verifyButtonDisabled: {
+    opacity: 0.6,
+  },
+  verifyButtonText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "600",
+  },
   resendContainer: {
     marginTop: 8,
   },
   resendButton: {
-    backgroundColor: "rgba(74, 144, 226, 0.15)",
+    backgroundColor: "rgba(255, 255, 255, 0.05)",
     paddingVertical: 12,
     paddingHorizontal: 20,
-    borderRadius: 8,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: "rgba(74, 144, 226, 0.3)",
+    borderColor: "rgba(255, 255, 255, 0.1)",
     alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 2,
   },
   resendButtonDisabled: {
     opacity: 0.5,
@@ -1018,5 +1193,8 @@ const styles = StyleSheet.create({
     color: "#4A90E2",
     fontSize: 14,
     fontWeight: "600",
+  },
+  closeButton: {
+    // Removed - using IconButton component instead
   },
 });

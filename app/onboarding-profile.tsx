@@ -72,13 +72,6 @@ const REFERRAL_OPTIONS = [
     color: "#FF4500",
     useIcon: true,
   },
-  {
-    id: "founder",
-    label: "Founder",
-    icon: "person",
-    color: "#FFB020",
-    useIcon: true,
-  },
 ];
 
 export default function AboutYouScreen() {
@@ -87,6 +80,7 @@ export default function AboutYouScreen() {
   }, []);
   const router = useRouter();
   const [age, setAge] = useState<string>("");
+  const [location, setLocation] = useState<string>("");
   const [occupation, setOccupation] = useState<string>("");
   const [referralSource, setReferralSource] = useState<string>("");
   const [saving, setSaving] = useState(false);
@@ -95,6 +89,7 @@ export default function AboutYouScreen() {
 
   const canContinue =
     age.trim().length > 0 &&
+    location.trim().length > 0 &&
     occupation.trim().length > 0 &&
     referralSource.trim().length > 0;
 
@@ -108,6 +103,7 @@ export default function AboutYouScreen() {
       const parsedAge = age ? Number(age) : undefined;
       const profileData = {
         age: parsedAge,
+        location: location.trim(),
         occupation: occupation.trim(),
         referral: referralSource,
       };
@@ -116,6 +112,7 @@ export default function AboutYouScreen() {
         "🧭 AboutYouScreen: Saving profile data and navigating to intent screen",
         {
           age: parsedAge,
+          location: profileData.location,
           occupation: profileData.occupation,
           referral: referralSource,
         }
@@ -138,6 +135,7 @@ export default function AboutYouScreen() {
             .update({
               onboarding_step: 1,
               age: profileData.age,
+              location: profileData.location,
               occupation: profileData.occupation,
               referral: profileData.referral,
             })
@@ -196,21 +194,43 @@ export default function AboutYouScreen() {
             <Text style={styles.title}>Let's get to know you.</Text>
           </View>
 
-          <Text style={styles.label}>Age</Text>
-          <TouchableOpacity
-            style={styles.inputWrap}
-            onPress={() => setShowAgeModal(true)}
-            activeOpacity={0.7}
-          >
-            <Text style={[styles.input, !age && styles.placeholder]}>
-              {age ? `${age} years old` : "Select your age"}
-            </Text>
-            <Ionicons
-              name="chevron-down"
-              size={20}
-              color="rgba(255,255,255,0.5)"
-            />
-          </TouchableOpacity>
+          <View style={styles.rowContainer}>
+            <View style={styles.halfWidthContainer}>
+              <Text style={styles.labelSmall}>Age</Text>
+              <TouchableOpacity
+                style={styles.inputWrapSmall}
+                onPress={() => setShowAgeModal(true)}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.inputSmall, !age && styles.placeholder]}>
+                  {age ? age : "Age"}
+                </Text>
+                <Ionicons
+                  name="chevron-down"
+                  size={18}
+                  color="rgba(255,255,255,0.5)"
+                />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.halfWidthContainer}>
+              <Text style={styles.labelSmall}>Location</Text>
+              <View style={styles.inputWrapSmall}>
+                <TextInput
+                  value={location}
+                  onChangeText={(text) =>
+                    setLocation(text.charAt(0).toUpperCase() + text.slice(1))
+                  }
+                  placeholder="City, State"
+                  placeholderTextColor="rgba(255,255,255,0.5)"
+                  style={styles.inputSmall}
+                  autoCapitalize="words"
+                  returnKeyType="done"
+                  onSubmitEditing={() => Keyboard.dismiss()}
+                />
+              </View>
+            </View>
+          </View>
 
           <Text style={styles.label}>What do you do?</Text>
           <View style={styles.occupationInputWrap}>
@@ -219,12 +239,12 @@ export default function AboutYouScreen() {
               onChangeText={(text) =>
                 setOccupation(text.charAt(0).toUpperCase() + text.slice(1))
               }
-              placeholder="Tell us about yourself: your profession, whether you're a student, and your location    
+              placeholder="Tell us about yourself: your profession and whether you're a student    
 Examples:
-• Nurse in Seattle
+• Nurse
 • Software Engineer at Google
-• Student at MIT in Boston
-• Freelance Designer in NYC"
+• Student at MIT
+• Freelance Designer"
               placeholderTextColor="rgba(255,255,255,0.2)"
               style={styles.occupationInput}
               autoCapitalize="sentences"
@@ -434,6 +454,43 @@ const styles = StyleSheet.create({
     marginTop: 20,
     marginBottom: 8,
     letterSpacing: 0.3,
+  },
+  rowContainer: {
+    flexDirection: "row",
+    gap: 12,
+    marginTop: 4,
+  },
+  halfWidthContainer: {
+    flex: 1,
+  },
+  labelSmall: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "600",
+    marginBottom: 8,
+    letterSpacing: 0.3,
+  },
+  inputWrapSmall: {
+    backgroundColor: "rgba(255,255,255,0.05)",
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: "rgba(255,255,255,0.15)",
+    paddingHorizontal: 14,
+    paddingVertical: Platform.OS === "ios" ? 14 : 11,
+    shadowColor: "#000",
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  inputSmall: {
+    color: "#fff",
+    fontSize: 15,
+    fontWeight: "500",
+    flex: 1,
   },
   inputWrap: {
     backgroundColor: "rgba(255,255,255,0.05)",

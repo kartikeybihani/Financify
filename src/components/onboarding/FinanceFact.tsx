@@ -130,7 +130,7 @@ const styles = StyleSheet.create({
   container: {
     paddingHorizontal: 0,
     paddingBottom: 16,
-    marginTop: 0, // Removed default margin, can be overridden by parent
+    marginTop: 32, // Spacing from options above
   },
   factCard: {
     backgroundColor: "rgba(255, 255, 255, 0.06)",

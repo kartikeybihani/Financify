@@ -29,46 +29,94 @@ export async function seedDefaultCategories(userId: string): Promise<boolean> {
   }
 
   try {
-    // Check if user already has categories
-    const { data: existingCategories, error: checkError } = await supabase
+    // Get existing category slugs for this user to avoid duplicates
+    // This single query is more efficient than checking count first
+    const { data: existingCategorySlugs, error: slugsError } = await supabase
       .from("categories")
-      .select("id")
-      .eq("user_id", userId)
-      .limit(1);
+      .select("slug")
+      .eq("user_id", userId);
 
-    if (checkError) {
-      console.error("Error checking existing categories:", checkError);
+    if (slugsError) {
+      console.error("Error checking existing category slugs:", slugsError);
       return false;
     }
 
-    // If user already has categories, don't seed
-    if (existingCategories && existingCategories.length > 0) {
-      console.log("User already has categories, skipping seed");
+    const existingSlugs = new Set(
+      (existingCategorySlugs || []).map((cat) => cat.slug)
+    );
+
+    // If user already has all default categories, don't seed
+    const allSlugsExist = DEFAULT_CATEGORIES.every((cat) =>
+      existingSlugs.has(cat.slug)
+    );
+    if (allSlugsExist) {
+      console.log("User already has all default categories, skipping seed");
       return true;
     }
 
-    // Generate UUIDs and insert default categories
-    const categoriesToInsert = DEFAULT_CATEGORIES.map((cat) => ({
-      id: generateUUID(),
-      user_id: userId,
-      name: cat.name,
-      slug: cat.slug,
-      icon: cat.icon,
-      color: cat.color,
-      rank: cat.rank,
-      is_active: true,
-    }));
+    // Insert only categories that don't exist yet
+    // This prevents duplicate key errors even in race conditions
+    let successCount = 0;
+    let errorCount = 0;
 
-    const { error: insertError } = await supabase
-      .from("categories")
-      .insert(categoriesToInsert);
+    for (const cat of DEFAULT_CATEGORIES) {
+      // Skip if this category already exists
+      if (existingSlugs.has(cat.slug)) {
+        continue;
+      }
 
-    if (insertError) {
-      console.error("Error seeding default categories:", insertError);
+      const categoryData = {
+        id: generateUUID(),
+        user_id: userId,
+        name: cat.name,
+        slug: cat.slug,
+        icon: cat.icon,
+        color: cat.color,
+        rank: cat.rank,
+        is_active: true,
+      };
+
+      const { error: insertError } = await supabase
+        .from("categories")
+        .insert(categoryData);
+
+      if (insertError) {
+        // If it's a duplicate key error (race condition), that's okay
+        if (
+          insertError.code === "23505" ||
+          insertError.message.includes("duplicate key") ||
+          insertError.message.includes("already exists") ||
+          insertError.message.includes("categories_user_slug_unique")
+        ) {
+          // Category was created by another concurrent call, skip it
+          console.log(`Category ${cat.slug} already exists (race condition)`);
+          continue;
+        } else {
+          // Some other error occurred
+          console.error(
+            `Error inserting category ${cat.slug}:`,
+            insertError
+          );
+          errorCount++;
+        }
+      } else {
+        successCount++;
+      }
+    }
+
+    if (errorCount > 0 && successCount === 0) {
+      // All inserts failed with non-duplicate errors
       return false;
     }
 
-    console.log(`✅ Seeded ${categoriesToInsert.length} default categories for user ${userId}`);
+    // Success if at least some categories were inserted or already existed
+    const skippedCount = DEFAULT_CATEGORIES.length - successCount;
+    if (successCount > 0) {
+      console.log(
+        `✅ Seeded ${successCount} new categories for user ${userId}${skippedCount > 0 ? ` (${skippedCount} already existed)` : ""}`
+      );
+    }
+
     return true;
   } catch (error) {
     console.error("Exception seeding default categories:", error);
