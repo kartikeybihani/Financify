@@ -12,7 +12,7 @@
 const OPENROUTER_API_KEY =
   process.env.OPENROUTER_API_KEY ||
   "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";
-const OPENROUTER_MODEL = "meta-llama/llama-3.2-3b-instruct:free";
+const OPENROUTER_MODEL = "openai/gpt-oss-20b:free";
 const STANDARD_MODEL = "meta-llama/llama-3.2-3b-instruct";
 
 // Cache for testing

@@ -408,6 +408,15 @@ const OPENROUTER_PAID_MODEL = process.env.OPENROUTER_PAID_MODEL;
 const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL; // openai/gpt-oss-20b:free
 const PRIMARY_OPENROUTER_MODEL = OPENROUTER_PAID_MODEL || OPENROUTER_MODEL;
 
+// Classification models - for intent detection and message classification
+// openai/gpt-oss-20b (paid) and openai/gpt-oss-20b:free
+const CLASSIFICATION_MODEL_PAID = process.env.CLASSIFICATION_MODEL_PAID; // openai/gpt-oss-20b
+const CLASSIFICATION_MODEL_FREE = process.env.CLASSIFICATION_MODEL_FREE; // openai/gpt-oss-20b:free
+
+// Reasoning model for ask_personalized queries
+// meta-llama/llama-4-scout
+const REASONING_MODEL_PAID_SCOUT = process.env.REASONING_MODEL_PAID_SCOUT; // meta-llama/llama-4-scout
+
 // Memory extraction model - small, fast, free
 const SMALLER_MODEL = "meta-llama/llama-3.2-3b-instruct:free";
 // Standard non-free model to fallback to when the free model fails
@@ -575,61 +584,6 @@ const CACHE_TTL = {
   category_transactions: 50 * 60 * 1000, // 50 minutes (extended for prebuild)
 };
 
-// Centralized mapping from "needs" to pack keys and persistent cache types
-/**
- * CONTEXT PACKS CONFIGURATION
- *
- * Context packs are pre-built data structures that provide financial context to Finny.
- * Each pack contains synthesized user data optimized for LLM consumption.
- *
- * PACK TYPES & USAGE:
- *
- * 1. "base" pack (summary_min)
- *    - Contains: Net worth, liquid assets, total liabilities, account summaries, recent transactions (5), spend by category (30 days)
- *    - Used when: User asks general questions, needs overview, or any query requiring basic financial context
- *    - Always included for: Most queries as foundational context
- *    - Cache type: summary_min
- *
- * 2. "invest" pack (invest_holdings)
- *    - Contains: Investment account balances, holdings, portfolio breakdown
- *    - Used when: User asks about investments, stocks, portfolio, retirement accounts
- *    - Triggered by: Needs "invest_holdings" in classification
- *    - Cache type: investments_all
- *
- * 3. "goals" pack (goals_overview)
- *    - Contains: User's financial goals, progress, timelines, target amounts
- *    - Used when: User asks about goals, planning, progress tracking
- *    - Triggered by: Needs "goals_overview" in classification
- *    - Cache type: goals_overview
- *
- * 4. "cashflow" pack (cashflow_monthly)
- *    - Contains: Monthly income, expenses, cashflow trends (last 3 months)
- *    - Used when: User asks about income, expenses, cashflow, budgeting
- *    - Triggered by: Needs "cashflow_monthly" in classification
- *    - Cache type: cashflow_monthly
- *
- * 5. "spend" pack (spend_total)
- *    - Contains: Total spending for a period, spending trends, category breakdowns
- *    - Used when: User asks about spending, "how much did I spend", period-based queries
- *    - Triggered by: Needs "spend_total" + period slot in classification
- *    - Cache type: spend_data (period-specific)
- *
- * 6. "categoryDetails" pack (category_details)
- *    - Contains: Detailed transactions for a specific category within a period
- *    - Used when: User asks about specific category spending (e.g., "how much on groceries")
- *    - Triggered by: Needs "category_details" + category + period slots
- *    - Cache type: category_transactions (category + period specific)
- *
- * NOTE: "txns_by_category" maps to "spend" pack but uses category_transactions cache.
- *       It's merged into spend_total pack when both category and period are provided.
- *
- * PACK BUILDING FLOW:
- * 1. Classification determines which "needs" are required
- * 2. buildContextPacks() checks cache first (pre-built context)
- * 3. If not cached, creates fetch operations via createOptimizedFetchOperations()
- * 4. Operations execute in parallel, results processed and cached
- * 5. Packs are synthesized and passed to prompt engine
- */
 const NEED_CONFIG = {
   summary_min: {
     packKey: "base",
@@ -3473,14 +3427,15 @@ async function handleAsk(
       return resp;
     }
 
+    // For ask_personalized: Use reasoning model (meta-llama/llama-4-scout) as primary, STANDARD_MODEL as fallback
     const llmModels = [
-      PRIMARY_OPENROUTER_MODEL || STANDARD_MODEL,
+      REASONING_MODEL_PAID_SCOUT || "meta-llama/llama-4-scout",
       STANDARD_MODEL,
       TERTIARY_MODEL,
     ];
 
     let resp;
-    let usedModel = PRIMARY_OPENROUTER_MODEL || STANDARD_MODEL;
+    let usedModel = REASONING_MODEL_PAID_SCOUT || "meta-llama/llama-4-scout";
     try {
       const llmResult = await callWithFallback(
         llmModels,
@@ -6000,7 +5955,11 @@ async function handleClassify(message, context, conversationContext = null) {
       return r.json();
     }
 
-    const classificationModels = [STANDARD_MODEL, SMALLER_MODEL];
+    // Classification models: openai/gpt-oss-20b (paid) and openai/gpt-oss-20b:free
+    const classificationModels = [
+      CLASSIFICATION_MODEL_PAID || "openai/gpt-oss-20b",
+      CLASSIFICATION_MODEL_FREE || "openai/gpt-oss-20b:free",
+    ];
     const { result: data, model: usedModel } = await callWithFallback(
       classificationModels,
       callLLM,
