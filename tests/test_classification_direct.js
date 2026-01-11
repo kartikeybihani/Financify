@@ -158,7 +158,7 @@ async function handleClassify(message, context, conversationContext = null) {
           body: JSON.stringify({
             model,
             temperature: 0.05,
-            max_tokens: 350,
+            max_tokens: 1000,
             top_p: 0.8,
             messages: [
               {
