@@ -5754,9 +5754,9 @@ async function handleClassify(message, context, conversationContext = null) {
     async function callLLM(model, options = {}) {
       const requestBody = {
         model,
-        temperature: 0.1,
+        temperature: 0.05,
         max_tokens: 350,
-        top_p: 0.9,
+        top_p: 0.8,
         messages: [
           {
             role: "system",
@@ -5812,10 +5812,10 @@ async function handleClassify(message, context, conversationContext = null) {
               "- decision_risk: 'low'|'medium'|'high'",
               "- missing_fields must be UNIQUE and short: choose at most 5, no duplicates",
               "",
-              "Decision risk guidance (examples):",
-              "- high: moving countries, marriage/kids planning, buying a house, taking on large debt, changing investment allocation materially",
-              "- medium: optimizing budget, small/medium purchase decisions, choosing between two reasonable options",
-              "- low: definitions/explanations, small factual questions",
+              "Decision risk guidance (examples, context-dependent):",
+              "- high: decisions that commit a large portion of the user's resources, create long-term obligations, or require missing planning data",
+              "- medium: decisions with meaningful tradeoffs but reversible or limited downside",
+              "- low: definitions, explanations, or small factual questions",
               "",
               "If the user asks a high-risk question and details are missing, set needs_clarification=true and include missing_fields like timeline, income_takehome, fixed_expenses, current_savings, debt_balances, location (as applicable).",
               "",
@@ -5831,6 +5831,9 @@ async function handleClassify(message, context, conversationContext = null) {
               "Info sufficiency rule:",
               "- Default to info_sufficiency='missing' for advice/feasibility questions unless the user supplied the key inputs in their message.",
               "- Do not label info_sufficiency='sufficient' when missing_fields is empty but the user gave no numbers.",
+              "",
+              "Consistency rule:",
+              "- If info_sufficiency is 'missing', needs_clarification MUST be true.",
               "",
               "Examples (follow these patterns):",
               "- 'I want to buy houses in Italy and Japan' -> intent_type:'actionable', decision_risk:'high', needs_web:false, needs_clarification:true, info_sufficiency:'missing', missing_fields includes 3–5 of: timeline, purchase_price, down_payment, income_takehome, fixed_expenses, current_savings, debt_balances, location",

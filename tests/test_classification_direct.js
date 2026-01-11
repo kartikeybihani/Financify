@@ -8,11 +8,15 @@
  *   node tests/test_classification_direct.js stock
  */
 
-// Configuration
+// Configuration - matches production in api/finny.js
 const OPENROUTER_API_KEY =
+  process.env.OPENROUTER_GROK_KEY ||
   process.env.OPENROUTER_API_KEY ||
   "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";
-const OPENROUTER_MODEL = "openai/gpt-oss-20b:free";
+const CLASSIFICATION_MODEL_PAID =
+  process.env.CLASSIFICATION_MODEL_PAID || "openai/gpt-oss-20b";
+const CLASSIFICATION_MODEL_FREE =
+  process.env.CLASSIFICATION_MODEL_FREE || "openai/gpt-oss-20b:free";
 const STANDARD_MODEL = "meta-llama/llama-3.2-3b-instruct";
 
 // Cache for testing
@@ -132,16 +136,12 @@ async function handleClassify(message, context, conversationContext = null) {
   // Matches production code
 
   try {
-    // Strict trigger: only treat as goal_conversation when user explicitly wants to create/set/add a goal.
-    // Avoid matching casual phrases like "my goal is...".
-    const goalConversationTrigger =
-      /\b(create|set|add|start|make)\s+(a\s+)?goal\b|\bnew\s+goal\b|\bgoal\s+(called|named)\b/i;
     async function callLLM(model) {
-      // Create a timeout promise that rejects after 8 seconds (increased for stability)
+      // Create a timeout promise that rejects after 12 seconds (matches production)
       const timeoutPromise = new Promise((_, reject) => {
         setTimeout(
-          () => reject(new Error("Classification timeout after 8 seconds")),
-          8000
+          () => reject(new Error("Classification timeout after 12 seconds")),
+          12000
         );
       });
 
@@ -156,9 +156,9 @@ async function handleClassify(message, context, conversationContext = null) {
           },
           body: JSON.stringify({
             model,
-            temperature: 0.1,
+            temperature: 0.05,
             max_tokens: 350,
-            top_p: 0.9,
+            top_p: 0.8,
             messages: [
               {
                 role: "system",
@@ -214,10 +214,10 @@ async function handleClassify(message, context, conversationContext = null) {
                   "- decision_risk: 'low'|'medium'|'high'",
                   "- missing_fields must be UNIQUE and short: choose at most 5, no duplicates",
                   "",
-                  "Decision risk guidance (examples):",
-                  "- high: moving countries, marriage/kids planning, buying a house, taking on large debt, changing investment allocation materially",
-                  "- medium: optimizing budget, small/medium purchase decisions, choosing between two reasonable options",
-                  "- low: definitions/explanations, small factual questions",
+                  "Decision risk guidance (examples, context-dependent):",
+                  "- high: decisions that commit a large portion of the user's resources, create long-term obligations, or require missing planning data",
+                  "- medium: decisions with meaningful tradeoffs but reversible or limited downside",
+                  "- low: definitions, explanations, or small factual questions",
                   "",
                   "If the user asks a high-risk question and details are missing, set needs_clarification=true and include missing_fields like timeline, income_takehome, fixed_expenses, current_savings, debt_balances, location (as applicable).",
                   "",
@@ -233,6 +233,9 @@ async function handleClassify(message, context, conversationContext = null) {
                   "Info sufficiency rule:",
                   "- Default to info_sufficiency='missing' for advice/feasibility questions unless the user supplied the key inputs in their message.",
                   "- Do not label info_sufficiency='sufficient' when missing_fields is empty but the user gave no numbers.",
+                  "",
+                  "Consistency rule:",
+                  "- If info_sufficiency is 'missing', needs_clarification MUST be true.",
                   "",
                   "Examples (follow these patterns):",
                   "- 'I want to buy houses in Italy and Japan' -> intent_type:'actionable', decision_risk:'high', needs_web:false, needs_clarification:true, info_sufficiency:'missing', missing_fields includes 3–5 of: timeline, purchase_price, down_payment, income_takehome, fixed_expenses, current_savings, debt_balances, location",
@@ -348,17 +351,33 @@ async function handleClassify(message, context, conversationContext = null) {
       return r.json();
     }
 
-    // Try free model first; on failure retry with STANDARD_MODEL
+    // Try models in order: free classification model first, then paid (test order - reversed from production)
+    const classificationModels = [
+      CLASSIFICATION_MODEL_FREE,
+      CLASSIFICATION_MODEL_PAID,
+    ];
     let data;
-    try {
-      data = await callLLM(OPENROUTER_MODEL);
-    } catch (err1) {
-      console.log(
-        "⚠️ [TEST] Free model failed, retrying with STANDARD_MODEL:",
-        err1?.message
-      );
-      data = await callLLM(STANDARD_MODEL);
+    let usedModel = null;
+    let lastError = null;
+
+    for (const model of classificationModels) {
+      if (!model) continue;
+      try {
+        data = await callLLM(model);
+        usedModel = model;
+        break;
+      } catch (err) {
+        lastError = err;
+        console.log(`⚠️ [TEST] Model ${model} failed:`, err?.message);
+        // Continue to next model
+      }
     }
+
+    if (!data) {
+      throw lastError || new Error("All classification models failed");
+    }
+
+    console.log(`🔍 [TEST] Classification using model: ${usedModel}`);
 
     // console.log("🔍 [TEST] Classification data:", data);
     const content = data.choices?.[0]?.message?.content;
@@ -423,17 +442,6 @@ async function handleClassify(message, context, conversationContext = null) {
       if (!out.info_sufficiency) out.info_sufficiency = "unknown";
       if (!Array.isArray(out.missing_fields)) out.missing_fields = [];
       if (!out.decision_risk) out.decision_risk = "unknown";
-
-      // Validate ticker field (required for stock_query, optional for others)
-      if (out.intent === "stock_query" && !out.ticker) {
-        console.log(
-          "⚠️ [TEST] stock_query intent but no ticker detected, setting to null"
-        );
-        out.ticker = null;
-      }
-      if (out.ticker === undefined) {
-        out.ticker = null;
-      }
     } catch (parseError) {
       console.log(
         "❌ [TEST] JSON parse/validation error, using fallback classification"
@@ -459,7 +467,10 @@ async function handleClassify(message, context, conversationContext = null) {
         fallback: true,
       };
     }
-    // Normalize/defend new routing fields (LLMs sometimes ignore constraints)
+    // Strict trigger: only treat as goal_conversation when user explicitly wants to create/set/add a goal.
+    // Avoid matching casual phrases like "my goal is...".
+    const goalConversationTrigger =
+      /\b(create|set|add|start|make)\s+(a\s+)?goal\b|\bnew\s+goal\b|\bgoal\s+(called|named)\b/i;
 
     // Normalize/defend new routing fields (LLMs sometimes ignore constraints)
     const allowedInfo = new Set(["sufficient", "missing", "unknown"]);
@@ -519,6 +530,13 @@ async function handleClassify(message, context, conversationContext = null) {
     if (!out.state || typeof out.state !== "string") out.state = null;
     if (!Array.isArray(out.entities)) out.entities = [];
     if (out.ticker === undefined) out.ticker = null;
+    if (
+      out.intent === "stock_query" &&
+      out.ticker &&
+      out.entities.length === 0
+    ) {
+      out.entities = [out.ticker];
+    }
     if (out.needs_clarification === undefined) out.needs_clarification = false;
     if (!out.info_sufficiency) out.info_sufficiency = "unknown";
     if (!Array.isArray(out.missing_fields)) out.missing_fields = [];
@@ -534,7 +552,7 @@ async function handleClassify(message, context, conversationContext = null) {
     // Handle timeout specifically
     if (e?.message?.includes("timeout")) {
       console.log(
-        "⏰ [TEST] Classification timed out after 8 seconds, using fallback"
+        "⏰ [TEST] Classification timed out after 12 seconds, using fallback"
       );
     }
 
