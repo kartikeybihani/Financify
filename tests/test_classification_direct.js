@@ -6,6 +6,7 @@
  *   node tests/test_classification_direct.js "your query here"
  *   node tests/test_classification_direct.js hardball
  *   node tests/test_classification_direct.js stock
+ *   node tests/test_classification_direct.js test1
  */
 
 // Configuration - matches production in api/finny.js
@@ -907,6 +908,47 @@ async function runHardballTests() {
   }
 }
 
+// Test1 - User-provided questions
+async function runTest1() {
+  const questions = [
+    "Can I afford a $1,500 trip?",
+    "I want to buy houses in Italy and Japan",
+    "What do you know about me?",
+    "I feel stupid about my spending",
+    "Tell me about investing",
+  ];
+
+  console.log("\n" + "=".repeat(80));
+  console.log("🧪 TEST1 - Classification Tests");
+  console.log("=".repeat(80));
+
+  for (let i = 0; i < questions.length; i++) {
+    const question = questions[i];
+    console.log(`\n${i + 1}. "${question}"`);
+    console.log("-".repeat(80));
+
+    try {
+      const classification = await handleClassify(question, {
+        user_id: "f948c4ab-dc68-41d5-89bf-1935653cca37",
+      });
+
+      // Only log the 4 requested fields
+      console.log(`  intent_type: ${classification.intent_type}`);
+      console.log(`  emotional_state: ${classification.emotional_state}`);
+      console.log(
+        `  needs_clarification: ${classification.needs_clarification}`
+      );
+      console.log(`  decision_risk: ${classification.decision_risk}`);
+    } catch (error) {
+      console.log(`   ❌ ERROR: ${error.message}`);
+    }
+  }
+
+  console.log("\n" + "=".repeat(80));
+  console.log("✅ TEST1 completed");
+  console.log("=".repeat(80));
+}
+
 // Run if called directly with node
 // Check if this is the main module (works for both CommonJS and ES modules)
 const isMainModule =
@@ -922,7 +964,8 @@ if (isMainModule) {
     userMessage &&
     userMessage !== "hardball" &&
     userMessage !== "stock" &&
-    userMessage !== "curveball"
+    userMessage !== "curveball" &&
+    userMessage !== "test1"
   ) {
     // User provided a query string
     console.log("🚀 Testing Single Statement");
@@ -960,6 +1003,17 @@ if (isMainModule) {
         console.error("❌ Stock query tests failed:", error);
         process.exit(1);
       });
+  } else if (userMessage === "test1" || testType === "test1") {
+    console.log("🧪 Running test1...");
+    runTest1()
+      .then(() => {
+        console.log("\n✅ Test1 completed");
+        process.exit(0);
+      })
+      .catch((error) => {
+        console.error("❌ Test1 failed:", error);
+        process.exit(1);
+      });
   } else {
     console.log("Running curveball tests...");
     runCurveballTests()
@@ -974,7 +1028,7 @@ if (isMainModule) {
   }
 }
 
-export { testSingleMessage, handleClassify, runStockQueryTests };
+export { testSingleMessage, handleClassify, runStockQueryTests, runTest1 };
 
 // Curveball hard tests
 async function runCurveballTests() {
