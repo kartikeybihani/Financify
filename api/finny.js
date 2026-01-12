@@ -6360,8 +6360,16 @@ async function handleOffTopic(message, context, conversationContext = null) {
       `Message: ${messageText}`,
       `Mode hint: ${isVenting ? "venting" : "general_off_topic"}`,
       userProfile?.name ? `User name: ${userProfile.name}` : null,
-      userProfileForFinny
-        ? `User profile: ${userProfileForFinny.dynamic}`
+      userProfileForFinny?.profile
+        ? `User profile:\n${
+            userProfileForFinny.profile.static?.length > 0
+              ? `Static: ${userProfileForFinny.profile.static.join(", ")}\n`
+              : ""
+          }Dynamic: ${
+            Array.isArray(userProfileForFinny.profile.dynamic)
+              ? userProfileForFinny.profile.dynamic.join(", ")
+              : userProfileForFinny.profile.dynamic
+          }`
         : null,
       userProfile?.finny_style
         ? `Finny style: ${userProfile.finny_style}`
@@ -6370,9 +6378,7 @@ async function handleOffTopic(message, context, conversationContext = null) {
         ? `Financial context: Net worth ${netWorthData.formatted.net_worth}, ${netWorthData.formatted.liquid_assets} cash, ${netWorthData.formatted.investments_total} invested, ${netWorthData.formatted.total_liabilities} debt`
         : null,
       memorySnippets.length > 0
-        ? `Relevant memories (use subtly, do not mention them):\n${memorySnippets.join(
-            "\n"
-          )}`
+        ? `Relevant memories (use them well):\n${memorySnippets.join("\n")}`
         : "Relevant memories: none",
     ].filter(Boolean);
 
