@@ -7707,4 +7707,5 @@ export {
   formatNetWorthCurrency,
   handleAsk,
   handleClassify,
+  handleOffTopic,
 };

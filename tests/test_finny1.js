@@ -15,7 +15,7 @@
 // Load environment variables BEFORE importing finny.js (which initializes Supabase)
 import "dotenv/config";
 
-import { handleClassify, handleAsk } from "../api/finny.js";
+import { handleClassify, handleAsk, handleOffTopic } from "../api/finny.js";
 
 // Test user context
 const TEST_USER_CONTEXT = {
@@ -50,27 +50,39 @@ async function testFullPipeline(message) {
       );
     }
 
-    // Step 2: Ask Handler
-    console.log("\n💬 Step 2: Ask Handler");
+    // Step 2: Handler (Ask Handler or Off-Topic Handler)
+    console.log("\n💬 Step 2: Handler");
     console.log("-".repeat(80));
 
-    // Determine intent for handleAsk
-    const askIntent =
-      classification.intent === "stock_query"
-        ? "stock_query"
-        : "ask_personalized";
+    let response;
 
-    // Call handleAsk with classification result
-    const response = await handleAsk(
-      message,
-      TEST_USER_CONTEXT,
-      askIntent,
-      classification, // Pass classification result
-      null, // conversationContext
-      null, // requestTimings
-      false, // wantsStreaming
-      null // res
-    );
+    // Route to appropriate handler based on intent
+    if (classification.intent === "off_topic") {
+      // Handle off-topic queries
+      response = await handleOffTopic(
+        message,
+        TEST_USER_CONTEXT,
+        null // conversationContext
+      );
+    } else {
+      // Determine intent for handleAsk
+      const askIntent =
+        classification.intent === "stock_query"
+          ? "stock_query"
+          : "ask_personalized";
+
+      // Call handleAsk with classification result
+      response = await handleAsk(
+        message,
+        TEST_USER_CONTEXT,
+        askIntent,
+        classification, // Pass classification result
+        null, // conversationContext
+        null, // requestTimings
+        false, // wantsStreaming
+        null // res
+      );
+    }
 
     // Determine if clarification was triggered
     // Clarification is triggered if handleAsk returns early with a clarification message
@@ -103,18 +115,10 @@ async function testFullPipeline(message) {
     if (Array.isArray(response.message)) {
       response.message.forEach((m, i) => {
         const content = m.content || m;
-        console.log(
-          `    [${i + 1}] ${content.substring(0, 200)}${
-            content.length > 200 ? "..." : ""
-          }`
-        );
+        console.log(`    [${i + 1}] ${content}`);
       });
     } else {
-      console.log(
-        `    ${responseMessage.substring(0, 500)}${
-          responseMessage.length > 500 ? "..." : ""
-        }`
-      );
+      console.log(`    ${responseMessage}`);
     }
     console.log(`\n  Response time: ${Date.now() - startTime}ms`);
 
