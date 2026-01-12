@@ -12,6 +12,9 @@
  *   node tests/test_finny1.js test1
  */
 
+// Load environment variables BEFORE importing finny.js (which initializes Supabase)
+import "dotenv/config";
+
 import { handleClassify, handleAsk } from "../api/finny.js";
 
 // Test user context
