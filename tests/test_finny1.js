@@ -113,9 +113,13 @@ async function testFullPipeline(message) {
     console.log(`  clarification_triggered: ${clarificationTriggered}`);
     console.log(`\n  Response message:`);
     if (Array.isArray(response.message)) {
+      // Response was split into multiple chunks by splitLongResponse() in handleAsk
+      console.log(
+        `  (Split into ${response.message.length} chunks by backend)`
+      );
       response.message.forEach((m, i) => {
         const content = m.content || m;
-        console.log(`    [${i + 1}] ${content}`);
+        console.log(`\n    [Chunk ${i + 1}] ${content}`);
       });
     } else {
       console.log(`    ${responseMessage}`);
