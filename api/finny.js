@@ -7705,4 +7705,6 @@ export {
   generateTrainingDataStockAnalysis,
   getNetWorthData,
   formatNetWorthCurrency,
+  handleAsk,
+  handleClassify,
 };
