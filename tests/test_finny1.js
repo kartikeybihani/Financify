@@ -15,6 +15,10 @@
 // Load environment variables BEFORE importing finny.js (which initializes Supabase)
 import "dotenv/config";
 
+// Override classification models for testing - use llama-3.2-3b-instruct
+process.env.CLASSIFICATION_MODEL_PAID = "meta-llama/llama-3.2-3b-instruct";
+process.env.CLASSIFICATION_MODEL_FREE = "meta-llama/llama-3.2-3b-instruct:free";
+
 import { handleClassify, handleAsk, handleOffTopic } from "../api/finny.js";
 
 // Test user context

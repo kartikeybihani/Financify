@@ -6376,6 +6376,19 @@ async function handleOffTopic(message, context, conversationContext = null) {
         : "Relevant memories: none",
     ].filter(Boolean);
 
+    const userMessage = userContextParts.join("\n\n");
+
+    // Log complete prompt with clear dividers (similar to handleAsk)
+    console.log("\n" + "=".repeat(100));
+    console.log("📋 [OFF_TOPIC] COMPLETE SYSTEM PROMPT SENT TO LLM");
+    console.log("=".repeat(100));
+    console.log(systemPrompt);
+    console.log("=".repeat(100));
+    console.log("📋 [OFF_TOPIC] USER MESSAGE");
+    console.log("=".repeat(100));
+    console.log(userMessage);
+    console.log("=".repeat(100) + "\n");
+
     const response = await fetch(
       "https://openrouter.ai/api/v1/chat/completions",
       {
