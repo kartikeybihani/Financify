@@ -87,9 +87,10 @@ async function testFullPipeline(message) {
     // Determine if clarification was triggered
     // Clarification is triggered if handleAsk returns early with a clarification message
     // We can detect this by checking if the response message contains clarification patterns
+    // Note: handleOffTopic returns 'text' field, handleAsk returns 'message' field
     const responseMessage = Array.isArray(response.message)
       ? response.message.map((m) => m.content || m).join("\n")
-      : response.message || "";
+      : response.message || response.text || "";
 
     const clarificationTriggered =
       classification.needs_clarification &&
@@ -112,6 +113,7 @@ async function testFullPipeline(message) {
     );
     console.log(`  clarification_triggered: ${clarificationTriggered}`);
     console.log(`\n  Response message:`);
+    // handleOffTopic returns 'text', handleAsk returns 'message' (may be array if split)
     if (Array.isArray(response.message)) {
       // Response was split into multiple chunks by splitLongResponse() in handleAsk
       console.log(
@@ -121,7 +123,11 @@ async function testFullPipeline(message) {
         const content = m.content || m;
         console.log(`\n    [Chunk ${i + 1}] ${content}`);
       });
+    } else if (response.text) {
+      // handleOffTopic returns 'text' field
+      console.log(`    ${response.text}`);
     } else {
+      // handleAsk returns 'message' field (string)
       console.log(`    ${responseMessage}`);
     }
     console.log(`\n  Response time: ${Date.now() - startTime}ms`);
