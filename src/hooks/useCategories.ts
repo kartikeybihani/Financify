@@ -29,7 +29,16 @@ export function useCategories(userId?: string) {
 
       // Require userId - all categories are now user-specific
       if (!userId) {
-        console.warn('useCategories - userId required');
+        // Enhanced warning with call stack for debugging
+        // This helps identify which component is calling useCategories without userId
+        if (__DEV__) {
+          console.warn('useCategories - userId required (this is normal during initial render if userId loads asynchronously)');
+          // Uncomment the line below to see the full call stack when debugging:
+          console.trace('useCategories called without userId from:');
+        } else {
+          // In production, still log but without trace to avoid performance issues
+          console.warn('useCategories - userId required');
+        }
         setCategories([]);
         setLoading(false);
         return;

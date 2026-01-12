@@ -10,8 +10,11 @@ import {
   Platform,
   KeyboardAvoidingView,
   ScrollView,
+  TouchableWithoutFeedback,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import IconButton from "@/src/components/shared/IconButton";
 
 interface EditOccupationModalProps {
@@ -32,6 +35,7 @@ export default function EditOccupationModal({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [newOccupation, setNewOccupation] = useState("");
+  const insets = useSafeAreaInsets();
 
   // Refs for auto-focus
   const occupationRef = useRef<TextInput>(null);
@@ -81,77 +85,108 @@ export default function EditOccupationModal({
   };
 
   return (
-    <Modal visible={visible} transparent animationType="slide">
-      <KeyboardAvoidingView
-        style={styles.overlay}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
-        enabled
-      >
-        <View style={styles.sheet}>
-          <ScrollView
-            contentContainerStyle={styles.scrollContent}
-            keyboardShouldPersistTaps="handled"
-            showsVerticalScrollIndicator={false}
-          >
-            <IconButton
-              icon="close"
-              onPress={handleCancel}
-              size={22}
-              style={styles.closeIcon}
-              activeOpacity={loading ? 1 : 0.7}
-            />
-            <Text style={styles.title}>Edit Occupation</Text>
-            <Text style={styles.subtitle}>
-              Tell us a little about yourself and what do you profession{"\n"}
-              Helps finny get to know you better!
-            </Text>
-            <TextInput
-              ref={occupationRef}
-              value={newOccupation}
-              onChangeText={setNewOccupation}
-              style={[styles.input, { minHeight: 50, maxHeight: 120 }]}
-              placeholder="Enter your occupation"
-              placeholderTextColor="#B4B4B4"
-              autoCapitalize="words"
-              editable={!loading}
-              returnKeyType="done"
-              onSubmitEditing={handleSave}
-              multiline
-              textAlignVertical="top"
-              maxLength={300}
-            />
-            <Text style={styles.characterCount}>
-              {newOccupation.length}/300 characters
-            </Text>
-            {error ? <Text style={styles.error}>{error}</Text> : null}
-            <View style={styles.buttonRow}>
-              <TouchableOpacity
-                style={[styles.button, styles.cancelButton]}
-                onPress={handleCancel}
-                disabled={loading}
+    <Modal
+      visible={visible}
+      transparent
+      animationType="slide"
+      onRequestClose={handleCancel}
+    >
+      <TouchableWithoutFeedback onPress={handleCancel}>
+        <KeyboardAvoidingView
+          style={styles.overlay}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          keyboardVerticalOffset={
+            Platform.OS === "ios" ? Math.max(0, insets.top) + 12 : 20
+          }
+          enabled
+        >
+          <TouchableWithoutFeedback onPress={(e) => e.stopPropagation()}>
+            <LinearGradient
+              colors={["rgba(31, 31, 31, 0.98)", "rgba(18, 18, 18, 0.99)"]}
+              style={styles.sheet}
+            >
+              <ScrollView
+                contentContainerStyle={styles.scrollContent}
+                keyboardShouldPersistTaps="handled"
+                showsVerticalScrollIndicator={false}
               >
-                <Text style={styles.cancelButtonText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[
-                  styles.button,
-                  styles.saveButton,
-                  loading && { opacity: 0.7 },
-                ]}
-                onPress={handleSave}
-                disabled={loading}
-              >
-                {loading ? (
-                  <ActivityIndicator color="#000" />
-                ) : (
-                  <Text style={styles.saveButtonText}>Update</Text>
-                )}
-              </TouchableOpacity>
-            </View>
-          </ScrollView>
-        </View>
-      </KeyboardAvoidingView>
+                <IconButton
+                  icon="close"
+                  onPress={handleCancel}
+                  size={22}
+                  style={styles.closeIcon}
+                  activeOpacity={loading ? 1 : 0.7}
+                />
+                <Text style={styles.title}>Edit Occupation</Text>
+                <Text style={styles.subtitle}>
+                  Tell us a little about yourself and what do you profession
+                  {"\n"}
+                  Helps finny get to know you better!
+                </Text>
+                <TextInput
+                  ref={occupationRef}
+                  value={newOccupation}
+                  onChangeText={setNewOccupation}
+                  style={[styles.input, { minHeight: 50, maxHeight: 120 }]}
+                  placeholder="Enter your occupation"
+                  placeholderTextColor="#B4B4B4"
+                  autoCapitalize="words"
+                  editable={!loading}
+                  returnKeyType="done"
+                  onSubmitEditing={handleSave}
+                  multiline
+                  textAlignVertical="top"
+                  maxLength={300}
+                />
+                <Text style={styles.characterCount}>
+                  {newOccupation.length}/300 characters
+                </Text>
+                {error ? <Text style={styles.error}>{error}</Text> : null}
+                <View style={styles.buttonRow}>
+                  <TouchableOpacity
+                    style={styles.button}
+                    onPress={handleCancel}
+                    disabled={loading}
+                  >
+                    <LinearGradient
+                      colors={[
+                        "rgba(255, 255, 255, 0.12)",
+                        "rgba(255, 255, 255, 0.03)",
+                      ]}
+                      style={styles.glassButton}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                    >
+                      <Text style={styles.cancelButtonText}>Cancel</Text>
+                    </LinearGradient>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.button, loading && { opacity: 0.7 }]}
+                    onPress={handleSave}
+                    disabled={loading}
+                  >
+                    <LinearGradient
+                      colors={[
+                        "rgba(74, 144, 226, 0.8)",
+                        "rgba(74, 144, 226, 0.6)",
+                      ]}
+                      style={styles.glassButton}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                    >
+                      {loading ? (
+                        <ActivityIndicator color="#fff" />
+                      ) : (
+                        <Text style={styles.saveButtonText}>Update</Text>
+                      )}
+                    </LinearGradient>
+                  </TouchableOpacity>
+                </View>
+              </ScrollView>
+            </LinearGradient>
+          </TouchableWithoutFeedback>
+        </KeyboardAvoidingView>
+      </TouchableWithoutFeedback>
     </Modal>
   );
 }
@@ -159,7 +194,7 @@ export default function EditOccupationModal({
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: "rgba(10,16,30,0.85)",
+    backgroundColor: "rgba(0, 0, 0, 0.75)",
     justifyContent: "flex-end",
     alignItems: "center",
   },
@@ -167,11 +202,8 @@ const styles = StyleSheet.create({
     width: "100%",
     maxWidth: 500,
     maxHeight: "90%",
-    backgroundColor: "rgba(24, 28, 36, 0.95)",
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.1)",
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: -8 },
     shadowOpacity: 0.25,
@@ -207,7 +239,7 @@ const styles = StyleSheet.create({
   },
   input: {
     width: "100%",
-    backgroundColor: "rgba(35, 40, 58, 0.8)",
+    backgroundColor: "rgba(255,255,255,0.08)",
     borderRadius: 12,
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.1)",
@@ -246,46 +278,25 @@ const styles = StyleSheet.create({
   },
   button: {
     flex: 1,
-    borderRadius: 16,
-    paddingVertical: 16,
+    borderRadius: 12,
+    overflow: "hidden",
+  },
+  glassButton: {
     alignItems: "center",
-  },
-  cancelButton: {
-    backgroundColor: "rgba(35, 40, 58, 0.8)",
+    justifyContent: "center",
+    padding: 14,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.1)",
-    marginRight: 8,
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 1,
-    },
-    shadowOpacity: 0.2,
-    shadowRadius: 2,
-    elevation: 2,
-  },
-  saveButton: {
-    backgroundColor: "rgba(255, 255, 255, 0.9)",
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.2)",
-    marginLeft: 8,
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 1,
-    },
-    shadowOpacity: 0.2,
-    shadowRadius: 2,
-    elevation: 2,
+    borderColor: "rgba(255,255,255,0.2)",
   },
   cancelButtonText: {
-    color: "#B4B4B4",
+    color: "#fff",
     fontWeight: "600",
     fontSize: 16,
   },
   saveButtonText: {
-    color: "#000",
-    fontWeight: "700",
+    color: "#fff",
+    fontWeight: "600",
     fontSize: 16,
   },
 });

@@ -11,6 +11,7 @@ import {
   StyleSheet,
   TouchableOpacity,
   ScrollView,
+  Alert,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -124,6 +125,30 @@ const CategoryEditModal: React.FC<Props> = ({
     if (!category.categoryId || !onRemoveGrouping) return;
     await onRemoveGrouping(category.categoryId);
     onClose();
+  };
+
+  const handleDelete = () => {
+    if (!onDeletePress) return;
+
+    const categoryName = category?.category || "this category";
+
+    Alert.alert(
+      "Delete Category",
+      `Are you sure you want to delete "${categoryName}"? This action cannot be undone.`,
+      [
+        {
+          text: "Cancel",
+          style: "cancel",
+        },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => {
+            onDeletePress();
+          },
+        },
+      ]
+    );
   };
 
   const filteredGroupOptions = groupOptions.filter((c) => {
@@ -372,37 +397,39 @@ const CategoryEditModal: React.FC<Props> = ({
                 {onDeletePress && mode === "edit" && (
                   <>
                     <View style={styles.divider} />
-                    <TouchableWithoutFeedback onPress={onDeletePress}>
-                      <View style={[styles.actionRow, styles.destructiveRow]}>
-                        <View
-                          style={[
-                            styles.actionIconBox,
-                            styles.destructiveIconBox,
-                          ]}
-                        >
-                          <Ionicons
-                            name="trash-outline"
-                            size={18}
-                            color="#FF6B6B"
-                          />
-                        </View>
-                        <View style={styles.actionTextBox}>
-                          <Text
-                            style={[styles.actionTitle, styles.destructiveText]}
-                          >
-                            Delete category
-                          </Text>
-                          <Text style={styles.actionSubtitle}>
-                            Hide this category from your budget
-                          </Text>
-                        </View>
+                    <TouchableOpacity
+                      onPress={handleDelete}
+                      activeOpacity={0.85}
+                      style={[styles.actionRow, styles.destructiveRow]}
+                    >
+                      <View
+                        style={[
+                          styles.actionIconBox,
+                          styles.destructiveIconBox,
+                        ]}
+                      >
                         <Ionicons
-                          name="chevron-forward"
+                          name="trash-outline"
                           size={18}
-                          color="rgba(255,255,255,0.5)"
+                          color="#FF6B6B"
                         />
                       </View>
-                    </TouchableWithoutFeedback>
+                      <View style={styles.actionTextBox}>
+                        <Text
+                          style={[styles.actionTitle, styles.destructiveText]}
+                        >
+                          Delete category
+                        </Text>
+                        <Text style={styles.actionSubtitle}>
+                          Hide this category from your budget
+                        </Text>
+                      </View>
+                      <Ionicons
+                        name="chevron-forward"
+                        size={18}
+                        color="rgba(255,255,255,0.5)"
+                      />
+                    </TouchableOpacity>
                   </>
                 )}
               </ScrollView>

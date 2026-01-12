@@ -261,7 +261,7 @@ export default function MemoriesScreen({ onBack }: MemoriesScreenProps = {}) {
             <FinnyLoadingIndicator
               message="Loading memories..."
               imageSource={require("../../../assets/images/thinking2.png")}
-              duration={2000}
+              duration={1500}
               onComplete={() => {
                 animationCompletedRef.current = true;
                 checkAndHideLoading();

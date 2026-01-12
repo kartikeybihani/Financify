@@ -1,13 +1,8 @@
 import React from "react";
-import {
-  View,
-  Text,
-  ScrollView,
-  Platform,
-  Dimensions,
-} from "react-native";
+import { View, Text, ScrollView, Platform, Dimensions } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Ionicons } from "@expo/vector-icons";
 import ChatScreenHeader from "@/src/components/shared/ChatScreenHeader";
 
 interface HowFinnyWorksScreenProps {
@@ -170,9 +165,9 @@ export default function HowFinnyWorksScreen({
           {/* Introduction */}
           <View style={styles.section}>
             <Text style={styles.paragraph}>
-              Finny is your AI-powered financial advisor that helps you
-              understand your money, make better financial decisions, and
-              achieve your goals. Here's how it works:
+              Finny is your AI-powered money coach that helps you understand
+              your money, make better financial decisions, and achieve your
+              goals. Here's how it works:
             </Text>
           </View>
 
@@ -220,7 +215,7 @@ export default function HowFinnyWorksScreen({
                 <View style={styles.stepContent}>
                   <Text style={styles.stepText}>
                     <Text style={{ fontWeight: "600" }}>
-                      Personalized Insights:
+                      Personalized Guidance:
                     </Text>{" "}
                     Get tailored recommendations based on your financial
                     behavior and goals
@@ -249,9 +244,17 @@ export default function HowFinnyWorksScreen({
 
           {/* Data Processing */}
           <View style={styles.dataFlowBox}>
-            <Text style={styles.dataFlowTitle}>
-              🔄 Data Processing & Privacy
-            </Text>
+            <View style={{ flexDirection: "row", alignItems: "center" }}>
+              <Ionicons
+                name="lock-closed"
+                size={18}
+                color="#22C55E"
+                style={{ marginRight: 8 }}
+              />
+              <Text style={styles.dataFlowTitle}>
+                Data Processing & Privacy
+              </Text>
+            </View>
             <Text style={styles.dataFlowText}>
               Your financial data is encrypted and processed securely. Finny
               uses advanced AI to understand your spending habits, but your
@@ -269,7 +272,7 @@ export default function HowFinnyWorksScreen({
             <Text style={styles.paragraph}>
               To get the most out of Finny, the more information you provide
               about your financial situation, life, and goals, the better Finny
-              can assist you with personalized insights and recommendations.
+              can assist you with personalized guidance and recommendations.
             </Text>
             <Text style={styles.paragraph}>
               Don't hesitate to ask questions - Finny is designed to make

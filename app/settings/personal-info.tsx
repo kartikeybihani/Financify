@@ -82,20 +82,7 @@ export default function PersonalInfoScreen() {
         }
       );
       if (error) throw error;
-
-      // Show success message with instructions
-      Alert.alert(
-        "Email Change Requested",
-        "We've sent confirmation links to your new email address. Please click the confirmation link from Supabase Auth.",
-        [
-          {
-            text: "OK",
-            onPress: () => {
-              setShowEmailModal(false);
-            },
-          },
-        ]
-      );
+      // Success is handled in the modal with verification flow
     } catch (error: any) {
       throw error;
     }
@@ -261,6 +248,59 @@ export default function PersonalInfoScreen() {
           setNewEmail("");
         }}
         onSave={handleSaveEmail}
+        onVerified={async (email) => {
+          // Refresh user data after verification
+          try {
+            // Force session refresh to get latest data
+            await supabase.auth.refreshSession();
+
+            // Small delay to ensure refresh completes
+            await new Promise((resolve) => setTimeout(resolve, 500));
+
+            const {
+              data: { user },
+            } = await supabase.auth.getUser();
+            if (user) {
+              setUserData(user);
+              await AsyncStorage.setItem("userData", JSON.stringify(user));
+              logger.info(
+                "[PersonalInfo] User data refreshed after email verification"
+              );
+            }
+
+            // Invalidate profile cache on server
+            try {
+              const {
+                data: { session },
+              } = await supabase.auth.getSession();
+              if (session?.access_token) {
+                await fetch("/api/finny", {
+                  method: "POST",
+                  headers: {
+                    Authorization: `Bearer ${session.access_token}`,
+                    "Content-Type": "application/json",
+                  },
+                  body: JSON.stringify({
+                    action: "invalidate_profile_cache",
+                  }),
+                });
+                logger.info(
+                  "[PersonalInfo] Profile cache invalidated after email verification"
+                );
+              }
+            } catch (cacheError) {
+              logger.warn(
+                "[PersonalInfo] Failed to invalidate cache:",
+                cacheError
+              );
+            }
+          } catch (error) {
+            logger.error(
+              "Error refreshing user data after verification:",
+              error
+            );
+          }
+        }}
       />
 
       {/* Occupation Edit Modal */}
