@@ -469,6 +469,231 @@ export const useChat = () => {
   // Toggle for verbose streaming debug logs
   const STREAM_DEBUG = false;
 
+  type FinnySplitCandidate = {
+    index: number;
+    length: number;
+    kind: "strong" | "weak";
+  };
+
+  const MIN_SPLIT_PART_CHARS = 80;
+  const LONG_MESSAGE_THRESHOLD_CHARS = 500;
+  const TARGET_PART_CHARS = 400;
+
+  const previewWords = (text: string, maxWords: number = 8) => {
+    const normalized = String(text || "")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (!normalized) return "";
+    const words = normalized.split(" ").slice(0, maxWords).join(" ");
+    return words;
+  };
+
+  const isLikelySentenceBoundary = (left: string) => {
+    const trimmed = left.trimEnd();
+    if (!trimmed) return false;
+    return /[.!?:\)\]\"”']$/.test(trimmed);
+  };
+
+  const isInsideFencedCodeBlock = (text: string, breakpointIndex: number) => {
+    const before = text.slice(0, Math.max(0, breakpointIndex));
+    const fences = before.match(/```/g);
+    const count = fences ? fences.length : 0;
+    return count % 2 === 1;
+  };
+
+  const isListLine = (line: string) => {
+    const t = line.trimStart();
+    return /^(-\s+|\*\s+|•\s+|\d+\.\s+)/.test(t);
+  };
+
+  const isBreakpointInListContext = (text: string, breakpointIndex: number) => {
+    const start = Math.max(0, breakpointIndex - 200);
+    const end = Math.min(text.length, breakpointIndex + 200);
+    const windowText = text.slice(start, end);
+    const lines = windowText.split("\n");
+
+    // Find the line that contains the breakpoint within the window.
+    const beforeInWindow = text.slice(start, breakpointIndex);
+    const lineIndex = beforeInWindow.split("\n").length - 1;
+
+    const prevLine = lines[Math.max(0, lineIndex - 1)] || "";
+    const currLine = lines[Math.max(0, lineIndex)] || "";
+    const nextLine = lines[Math.min(lines.length - 1, lineIndex + 1)] || "";
+
+    // If we're near list lines, assume it's a list block and avoid splitting.
+    return isListLine(prevLine) || isListLine(currLine) || isListLine(nextLine);
+  };
+
+  const findSplitCandidates = (text: string, allowWeak: boolean): FinnySplitCandidate[] => {
+    const candidates: FinnySplitCandidate[] = [];
+
+    // Strong breaks: 2+ blank lines
+    for (const match of text.matchAll(/(\n\s*\n){2,}/g)) {
+      if (match.index == null) continue;
+      candidates.push({
+        index: match.index,
+        length: match[0].length,
+        kind: "strong",
+      });
+    }
+
+    if (!allowWeak) return candidates;
+
+    // Weak breaks: single blank line. Avoid double-counting strong breaks.
+    for (const match of text.matchAll(/\n\s*\n/g)) {
+      if (match.index == null) continue;
+      const overlappingStrong = candidates.some(
+        (c) => match.index! >= c.index && match.index! < c.index + c.length
+      );
+      if (!overlappingStrong) {
+        candidates.push({
+          index: match.index,
+          length: match[0].length,
+          kind: "weak",
+        });
+      }
+    }
+
+    candidates.sort((a, b) => a.index - b.index);
+    return candidates;
+  };
+
+  const splitAtCandidate = (text: string, c: FinnySplitCandidate) => {
+    const left = text.slice(0, c.index).trim();
+    const right = text.slice(c.index + c.length).trim();
+    return { left, right };
+  };
+
+  const isSafeSplit = (text: string, c: FinnySplitCandidate): { ok: boolean; reason?: string } => {
+    if (isInsideFencedCodeBlock(text, c.index)) return { ok: false, reason: "code-block" };
+    if (isBreakpointInListContext(text, c.index)) return { ok: false, reason: "list-context" };
+
+    const { left, right } = splitAtCandidate(text, c);
+    if (left.length < MIN_SPLIT_PART_CHARS || right.length < MIN_SPLIT_PART_CHARS) {
+      return { ok: false, reason: "too-short" };
+    }
+    if (!isLikelySentenceBoundary(left)) return { ok: false, reason: "mid-sentence" };
+    return { ok: true };
+  };
+
+  /**
+   * Split a single Finny response into up to 3 bubbles.
+   *
+   * - Always allow strong breaks (2+ blank lines).
+   * - Allow weak breaks (single blank line) only for long messages.
+   * - Never split in list/code contexts, never mid-sentence, never short halves.
+   */
+  const splitFinnyMessage = (text: string): string[] => {
+    if (typeof text !== "string") return [String(text || "")];
+    const normalized = text.replace(/\r\n/g, "\n");
+    const allowWeak = normalized.length > LONG_MESSAGE_THRESHOLD_CHARS;
+    const candidates = findSplitCandidates(normalized, allowWeak);
+    const safeCandidates = candidates.filter((c) => isSafeSplit(normalized, c).ok);
+    if (safeCandidates.length === 0) {
+      if (candidates.length > 0 && allowWeak) {
+        const firstCandidate = candidates[0];
+        const verdict = isSafeSplit(normalized, firstCandidate);
+        logger.info(
+          `[CHAT] split:reject reason=${verdict.reason || "unknown"} kind=${firstCandidate.kind} len=${normalized.length} preview="${previewWords(normalized)}"`
+        );
+      }
+      return [normalized.trim()];
+    }
+
+    const pickBest = (
+      startIndex: number,
+      endIndex: number,
+      targetLen: number
+    ): FinnySplitCandidate | null => {
+      let best: FinnySplitCandidate | null = null;
+      let bestScore = Number.POSITIVE_INFINITY;
+      for (const c of safeCandidates) {
+        if (c.index <= startIndex) continue;
+        if (c.index >= endIndex) continue;
+        const len = c.index - startIndex;
+        const score = Math.abs(len - targetLen);
+        // Prefer earlier splits only when scores are equal.
+        if (score < bestScore || (score === bestScore && best && c.index < best.index)) {
+          best = c;
+          bestScore = score;
+        }
+      }
+      return best;
+    };
+
+    // First split: aim for ~TARGET_PART_CHARS.
+    const first = pickBest(0, normalized.length, TARGET_PART_CHARS);
+    if (!first) return [normalized.trim()];
+    const { left: p1, right: rest1 } = splitAtCandidate(normalized, first);
+    if (!p1 || !rest1) return [normalized.trim()];
+
+    // Second split (optional): only if the remaining part is still long.
+    const parts: string[] = [p1];
+    if (rest1.length <= LONG_MESSAGE_THRESHOLD_CHARS) {
+      parts.push(rest1);
+      logger.info(
+        `[CHAT] split:ok parts=2 kind=${first.kind} len=${normalized.length} p1="${previewWords(p1)}" p2="${previewWords(rest1)}"`
+      );
+      return parts;
+    }
+
+    // Recompute candidates on the remaining text for correctness.
+    const restCandidates = findSplitCandidates(rest1, rest1.length > LONG_MESSAGE_THRESHOLD_CHARS);
+    const safeRestCandidates = restCandidates.filter((c) => isSafeSplit(rest1, c));
+    if (safeRestCandidates.length === 0) {
+      parts.push(rest1);
+      logger.info(
+        `[CHAT] split:ok parts=2 kind=${first.kind} len=${normalized.length} p1="${previewWords(p1)}" p2="${previewWords(rest1)}"`
+      );
+      return parts;
+    }
+
+    // Pick split within rest aiming for ~TARGET_PART_CHARS.
+    let best2: FinnySplitCandidate | null = null;
+    let bestScore2 = Number.POSITIVE_INFINITY;
+    for (const c of safeRestCandidates) {
+      const len = c.index;
+      const score = Math.abs(len - TARGET_PART_CHARS);
+      if (score < bestScore2) {
+        best2 = c;
+        bestScore2 = score;
+      }
+    }
+    if (!best2) {
+      parts.push(rest1);
+      logger.info(
+        `[CHAT] split:ok parts=2 kind=${first.kind} len=${normalized.length} p1="${previewWords(p1)}" p2="${previewWords(rest1)}"`
+      );
+      return parts;
+    }
+
+    const { left: p2, right: p3 } = splitAtCandidate(rest1, best2);
+    if (
+      !p2 ||
+      !p3 ||
+      p2.length < MIN_SPLIT_PART_CHARS ||
+      p3.length < MIN_SPLIT_PART_CHARS
+    ) {
+      parts.push(rest1);
+      logger.info(
+        `[CHAT] split:ok parts=2 kind=${first.kind} len=${normalized.length} p1="${previewWords(p1)}" p2="${previewWords(rest1)}"`
+      );
+      return parts;
+    }
+
+    parts.push(p2, p3);
+    logger.info(
+      `[CHAT] split:ok parts=3 kind=${first.kind}+${best2.kind} len=${normalized.length} p1="${previewWords(p1)}" p2="${previewWords(p2)}" p3="${previewWords(p3)}"`
+    );
+    return parts;
+  };
+
+  const insertAfterIndex = <T,>(arr: T[], index: number, items: T[]): T[] => {
+    if (items.length === 0) return arr;
+    if (index < 0 || index >= arr.length) return [...arr, ...items];
+    return [...arr.slice(0, index + 1), ...items, ...arr.slice(index + 1)];
+  };
+
   // Handle streaming response using XMLHttpRequest (works in React Native!)
   // Note: accessToken parameter is kept for backward compatibility but should be fresh
   // Returns the final response message for logging
@@ -639,14 +864,16 @@ export const useChat = () => {
                 
                 // Finalize the streaming message
                 if (finalMessage && typeof finalMessage === 'string' && finalMessage.trim()) {
+                  const splitParts = !hasActions ? splitFinnyMessage(finalMessage) : [finalMessage];
                   setChatMessages(prev => {
                     const updated = [...prev];
                     const messageIndex = updated.findIndex(msg => msg.id === messageId);
+                    const timestamp = messageIndex >= 0 ? (updated[messageIndex].timestamp || Date.now()) : Date.now();
                     const baseMessage: ChatMessage = {
                       id: messageId,
                       sender: "finny" as const,
-                      text: finalMessage,
-                      timestamp: messageIndex >= 0 ? updated[messageIndex].timestamp : Date.now(),
+                      text: (splitParts[0] || finalMessage).trim(),
+                      timestamp,
                       type: (resolvedType || "text") as "text" | "action",
                       isStreaming: false,
                       ...(hasActions && { actions }),
@@ -654,19 +881,46 @@ export const useChat = () => {
                       ...(resolvedHideFeedback !== undefined && { hideFeedback: resolvedHideFeedback }),
                       ...(resolvedHideActions !== undefined && { hideActions: resolvedHideActions }),
                     };
-                    
+
                     if (messageIndex >= 0) {
-                      updated[messageIndex] = {
-                        ...updated[messageIndex],
-                        ...baseMessage,
-                      };
+                      updated[messageIndex] = { ...updated[messageIndex], ...baseMessage };
                     } else {
                       updated.push(baseMessage);
                     }
-                    
+
+                    if (splitParts.length > 1) {
+                      const extra: ChatMessage[] = [];
+                      for (let i = 1; i < Math.min(splitParts.length, 3); i++) {
+                        const partText = (splitParts[i] || "").trim();
+                        if (!partText) continue;
+                        extra.push({
+                          id: `${messageId}::${i + 1}`,
+                          sender: "finny" as const,
+                          text: partText,
+                          timestamp: timestamp + i,
+                          type: (resolvedType || "text") as "text" | "action",
+                          isStreaming: false,
+                          ...(stockCandidate && { stockCandidate }),
+                          ...(resolvedHideFeedback !== undefined && { hideFeedback: resolvedHideFeedback }),
+                          ...(resolvedHideActions !== undefined && { hideActions: resolvedHideActions }),
+                        });
+                      }
+
+                      if (extra.length === 0) return updated;
+
+                      setTimeout(() => {
+                        setChatMessages((prevNow) => {
+                          const updatedNow = [...prevNow];
+                          const idxNow = updatedNow.findIndex((m) => m.id === messageId);
+                          const at = idxNow >= 0 ? idxNow : updatedNow.length - 1;
+                          return insertAfterIndex(updatedNow, at, extra);
+                        });
+                      }, 200);
+                    }
+
                     return updated;
                   });
-                  
+
                   shouldPersistRef.current = true;
                   didAppendAny = true;
                   didAppendFinal = true;
@@ -780,14 +1034,17 @@ export const useChat = () => {
                 
                 // Finalize the streaming message
                 if (finalMessage && typeof finalMessage === 'string' && finalMessage.trim()) {
+                  const splitParts = !hasActions ? splitFinnyMessage(finalMessage) : [finalMessage];
                   setChatMessages(prev => {
                     const updated = [...prev];
                     const messageIndex = updated.findIndex(msg => msg.id === messageId);
+                    const timestamp = messageIndex >= 0 ? (updated[messageIndex].timestamp || Date.now()) : Date.now();
+
                     const baseMessage: ChatMessage = {
                       id: messageId,
                       sender: "finny" as const,
-                      text: finalMessage,
-                      timestamp: messageIndex >= 0 ? updated[messageIndex].timestamp : Date.now(),
+                      text: (splitParts[0] || finalMessage).trim(),
+                      timestamp,
                       type: (resolvedType || "text") as "text" | "action",
                       isStreaming: false,
                       ...(hasActions && { actions }),
@@ -795,16 +1052,13 @@ export const useChat = () => {
                       ...(resolvedHideFeedback !== undefined && { hideFeedback: resolvedHideFeedback }),
                       ...(resolvedHideActions !== undefined && { hideActions: resolvedHideActions }),
                     };
-                    
+
                     if (messageIndex >= 0) {
-                      updated[messageIndex] = {
-                        ...updated[messageIndex],
-                        ...baseMessage,
-                      };
+                      updated[messageIndex] = { ...updated[messageIndex], ...baseMessage };
                     } else {
                       updated.push(baseMessage);
                     }
-                    
+
                     // Add actions to the last message if present
                     if (hasActions && updated.length > 0) {
                       const lastMsg = updated[updated.length - 1];
@@ -813,14 +1067,43 @@ export const useChat = () => {
                           ...lastMsg,
                           actions,
                           type: "action" as const,
-                          ...(stockCandidate && { stockCandidate })
+                          ...(stockCandidate && { stockCandidate }),
                         };
                       }
                     }
-                    
+
+                    if (splitParts.length > 1) {
+                      const extra: ChatMessage[] = [];
+                      for (let i = 1; i < Math.min(splitParts.length, 3); i++) {
+                        const partText = (splitParts[i] || "").trim();
+                        if (!partText) continue;
+                        extra.push({
+                          id: `${messageId}::${i + 1}`,
+                          sender: "finny" as const,
+                          text: partText,
+                          timestamp: timestamp + i,
+                          type: (resolvedType || "text") as "text" | "action",
+                          isStreaming: false,
+                          ...(stockCandidate && { stockCandidate }),
+                          ...(resolvedHideFeedback !== undefined && { hideFeedback: resolvedHideFeedback }),
+                          ...(resolvedHideActions !== undefined && { hideActions: resolvedHideActions }),
+                        });
+                      }
+                      if (extra.length === 0) return updated;
+
+                      setTimeout(() => {
+                        setChatMessages((prevNow) => {
+                          const updatedNow = [...prevNow];
+                          const idxNow = updatedNow.findIndex((m) => m.id === messageId);
+                          const at = idxNow >= 0 ? idxNow : updatedNow.length - 1;
+                          return insertAfterIndex(updatedNow, at, extra);
+                        });
+                      }, 200);
+                    }
+
                     return updated;
                   });
-                  
+
                   shouldPersistRef.current = true;
                   didAppendAny = true;
                   didAppendFinal = true;
@@ -1199,8 +1482,17 @@ export const useChat = () => {
         }
       }
 
+      const warmMessages = [
+        "Brewing finance wisdom... ☕",
+        "Getting your story... 📖",
+        "Working my magic... 🪄",
+        "Crafting... 🎨",
+        "Whipping finance ... 👨‍🍳",
+        "Polishing financial gems...",
+      ];
+      const randomWarmMessage = warmMessages[Math.floor(Math.random() * warmMessages.length)];
       // Show initial progress
-      setProgressStatus("Brewing up some financial wisdom...");
+      setProgressStatus(randomWarmMessage);
 
       // 1) First classify the message to determine intent (skip if goal flow active)
       const classifyRes = goalFlow?.active ? null : await authenticatedFetch(`${BASE_URL}/api/finny`, {
@@ -1294,7 +1586,7 @@ export const useChat = () => {
       } else {
         // Fun but warm messages for other intents
         const warmMessages = [
-          "Brewing up some financial wisdom... ☕",
+          "Brewing finance wisdom... ☕",
           "Crunching numbers with love... 💕",
           "Getting your financial story ready... 📖",
           "Preparing something special for you... ✨",

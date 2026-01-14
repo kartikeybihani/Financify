@@ -440,10 +440,31 @@ function ChatScreenContent() {
     });
   }, []);
 
+  // When a single logical Finny response is rendered as multiple bubbles,
+  // we suffix ids like "<baseId>::2". Feedback/reporting should use baseId.
+  const normalizeFinnyFeedbackId = useCallback((messageId: string) => {
+    const idx = messageId.indexOf("::");
+    return idx >= 0 ? messageId.slice(0, idx) : messageId;
+  }, []);
+
+  const getGroupedFinnyContent = useCallback(
+    (messageId: string) => {
+      const baseId = normalizeFinnyFeedbackId(messageId);
+      const parts = chatMessages
+        .filter((m) => m.sender === "finny" && normalizeFinnyFeedbackId(m.id) === baseId)
+        .map((m) => m.text)
+        .filter((t) => typeof t === "string" && t.trim().length > 0);
+      return parts.join("\n\n");
+    },
+    [chatMessages, normalizeFinnyFeedbackId]
+  );
+
   // Handle thumb up
   const handleThumbUp = useCallback(
     async (messageId: string) => {
       console.log("👍 Thumb up for message:", messageId);
+
+      const feedbackId = normalizeFinnyFeedbackId(messageId);
 
       // Find the message to get its content and sender
       const message = chatMessages.find((msg) => msg.id === messageId);
@@ -452,17 +473,20 @@ function ChatScreenContent() {
         return;
       }
 
+      const groupedContent = getGroupedFinnyContent(messageId) || message.text;
+
       // Submit love_it feedback to database only
       try {
         const result = await submitLoveIt({
-          messageId,
-          messageContent: message.text,
+          messageId: feedbackId,
+          messageContent: groupedContent,
           messageSender: message.sender,
           chatSessionId: currentSessionId,
           messageMetadata: {
             messageType: message.type,
             hasActions: !!message.actions,
             hasGoalOffer: !!message.goalOffer,
+            isGrouped: feedbackId !== messageId,
           },
         });
 
@@ -475,7 +499,7 @@ function ChatScreenContent() {
         console.error("Error submitting thumbs up:", error);
       }
     },
-    [chatMessages, currentSessionId]
+    [chatMessages, currentSessionId, normalizeFinnyFeedbackId, getGroupedFinnyContent]
   );
 
   // Handle thumb down
@@ -490,6 +514,14 @@ function ChatScreenContent() {
     if (!reportedMessageId) return null;
     return chatMessages.find((msg) => msg.id === reportedMessageId) || null;
   }, [reportedMessageId, chatMessages]);
+
+  const reportedMessageFeedbackId = React.useMemo(() => {
+    return reportedMessageId ? normalizeFinnyFeedbackId(reportedMessageId) : undefined;
+  }, [reportedMessageId, normalizeFinnyFeedbackId]);
+
+  const reportedMessageGroupedContent = React.useMemo(() => {
+    return reportedMessageId ? getGroupedFinnyContent(reportedMessageId) : undefined;
+  }, [reportedMessageId, getGroupedFinnyContent]);
 
   // Memoized action handler to prevent recreation
   const handleMessageAction = useCallback(
@@ -839,8 +871,8 @@ function ChatScreenContent() {
             setShowReportModal(false);
             setReportedMessageId(null);
           }}
-          messageId={reportedMessageId || undefined}
-          messageContent={reportedMessage?.text}
+          messageId={reportedMessageFeedbackId}
+          messageContent={reportedMessageGroupedContent || reportedMessage?.text}
           messageSender={reportedMessage?.sender}
           chatSessionId={currentSessionId}
           messageMetadata={
@@ -849,6 +881,8 @@ function ChatScreenContent() {
                   messageType: reportedMessage.type,
                   hasActions: !!reportedMessage.actions,
                   hasGoalOffer: !!reportedMessage.goalOffer,
+                  isGrouped: !!reportedMessageId &&
+                    normalizeFinnyFeedbackId(reportedMessageId) !== reportedMessageId,
                 }
               : undefined
           }
