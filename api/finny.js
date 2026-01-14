@@ -15,8 +15,8 @@ import {
   getSessionState,
   setSessionState,
   mergeSessionState,
-  getConversationContext,
-  updateConversationContext,
+  getRecentConversationTurns,
+  appendConversationTurns,
   invalidateProfileCache,
   loadUserMemory,
   loadUserProfile,
@@ -1468,57 +1468,8 @@ export default async function handler(req, res) {
     }
   }
 
-  // Load conversation context from Supabase (if chat_id provided)
-  // Skip context loading for first message in chat session
-  let conversationContext = null;
-  let isFirstMessage = false;
-  const contextLoadingStartTime = Date.now();
-
-  if (chatId) {
-    // Check if this is the first message by looking for existing context
-    const existingContext = await getConversationContext(finalUserId, chatId);
-    if (
-      !existingContext ||
-      !existingContext.last_messages ||
-      existingContext.last_messages.length === 0
-    ) {
-      isFirstMessage = true;
-      logDebug(
-        "🔍 [CONTEXT DEBUG] First message in chat session - skipping context loading"
-      );
-
-      // Pre-populate cache for new chat sessions
-      logDebug("🚀 [CACHE] Pre-populating cache for new chat session...");
-      setImmediate(() => {
-        prePopulateUserCache(finalUserId).catch((error) => {
-          logError("❌ [CACHE] Pre-population failed:", error);
-        });
-      });
-    } else {
-      conversationContext = existingContext;
-      logDebug("🔍 [CONTEXT DEBUG] Continuing conversation - loading context");
-    }
-  }
-  timings.context_loading_ms = Date.now() - contextLoadingStartTime;
-
-  // 🔍 DEBUG: Log conversation context loading (debug only)
-  logDebug("🔍 [CONTEXT DEBUG] Loading conversation context:");
-  logDebug("  - Chat ID:", chatId);
-  logDebug("  - User ID:", finalUserId);
-  logDebug("  - Is first message:", isFirstMessage);
-  logDebug("  - Context loaded:", conversationContext ? "YES" : "NO");
-  if (conversationContext) {
-    logDebug("  - Active topic:", conversationContext.active_topic);
-    logDebug(
-      "  - Last entity:",
-      JSON.stringify(conversationContext.last_entity)
-    );
-    logDebug("  - Pending action:", conversationContext.pending_action);
-    logDebug(
-      "  - Last messages count:",
-      conversationContext.last_messages?.length || 0
-    );
-  }
+  // Conversation context removed.
+  timings.context_loading_ms = 0;
 
   let sessionState = getSessionState(finalUserId);
 
@@ -1619,9 +1570,6 @@ export default async function handler(req, res) {
     profile: enrichedProfile,
     // carry session short-term state into handlers
     session: sessionState,
-    // NEW: Add conversation context
-    conversationContext: conversationContext,
-    conversation_context: conversationContext, // Keep both for compatibility
     // NEW: Add memory reading
     memory: userMemory,
     // NEW: Add feedback patterns for adaptation
@@ -1640,6 +1588,8 @@ export default async function handler(req, res) {
 
   // === CHAT SESSION CHECK: Clear session state if new chat session ===
   const lastChatId = sessionState?.last_chat_id;
+  const shouldPrePopulateCache =
+    !!chatId && (!lastChatId || (typeof lastChatId === "string" && lastChatId !== chatId));
   if (lastChatId && chatId && lastChatId !== chatId) {
     console.log(
       `🆕 [SESSION] New chat detected (old: ${lastChatId}, new: ${chatId}) - clearing session state`
@@ -1655,6 +1605,18 @@ export default async function handler(req, res) {
     mergeSessionState(finalUserId, { last_chat_id: chatId });
   }
 
+  // Keep chat start-up optimization by pre-populating the cache ONCE per chat.
+  if (shouldPrePopulateCache) {
+    logDebug(
+      "🚀 [CACHE] Pre-populating cache for new chat session (conversation context disabled)"
+    );
+    setImmediate(() => {
+      prePopulateUserCache(finalUserId).catch((error) => {
+        logError("❌ [CACHE] Pre-population failed:", error);
+      });
+    });
+  }
+
   // === FLOW STATE CHECK: Bypass classification for active goal flows ===
   const activeGoalFlow = sessionState?.goal_flow;
   let finalAction = action; // Create mutable copy
@@ -1666,15 +1628,6 @@ export default async function handler(req, res) {
     finalAction = "goal_conversation";
   }
 
-  // === ROUTER OVERRIDE: Check pending actions BEFORE classification ===
-  if (action === "classify" && conversationContext?.pending_action) {
-    console.log(
-      `🎯 [ROUTER] Checking pending action: ${conversationContext.pending_action}`
-    );
-
-    const lower = (message || "").toLowerCase();
-  }
-
   try {
     let response;
     const handlerStartTime = Date.now();
@@ -1682,11 +1635,7 @@ export default async function handler(req, res) {
     switch (finalAction) {
       case "classify": {
         const classifyStartTime = Date.now();
-        response = await handleClassify(
-          message,
-          safeContext,
-          conversationContext
-        );
+        response = await handleClassify(message, safeContext);
         timings.classification_ms = Date.now() - classifyStartTime;
 
         // CRITICAL FINAL CHECK: Never return heuristic results
@@ -1711,11 +1660,7 @@ export default async function handler(req, res) {
           // Cleared cache for message, forcing fresh LLM call
 
           // Call handleClassify again - it will now bypass cache and call LLM
-          response = await handleClassify(
-            message,
-            safeContext,
-            conversationContext
-          );
+          response = await handleClassify(message, safeContext);
 
           // Final check on new response
           if (
@@ -1741,7 +1686,6 @@ export default async function handler(req, res) {
           safeContext,
           askIntent,
           classification,
-          conversationContext,
           timings, // Pass timings object to track web search and context packs
           wantsStreaming, // Pass streaming preference
           wantsStreaming ? res : null // Pass response object for progress updates if streaming
@@ -1754,7 +1698,6 @@ export default async function handler(req, res) {
           safeContext,
           "stock_query",
           classification,
-          conversationContext,
           timings, // Pass timings object to track web search and context packs
           wantsStreaming, // Pass streaming preference
           wantsStreaming ? res : null // Pass response object for progress updates if streaming
@@ -1762,11 +1705,7 @@ export default async function handler(req, res) {
         break;
       }
       case "off_topic": {
-        response = await handleOffTopic(
-          message,
-          safeContext,
-          conversationContext
-        );
+        response = await handleOffTopic(message, safeContext);
         break;
       }
       case "goal_conversation": {
@@ -1845,8 +1784,7 @@ export default async function handler(req, res) {
           try {
             response = await handleGoalConversation(
               message,
-              safeContext,
-              conversationContext
+              safeContext
             );
           } catch (goalError) {
             logError("❌ [GOAL] Goal conversation failed:", goalError);
@@ -1912,7 +1850,6 @@ export default async function handler(req, res) {
               stockContext,
               "ask_personalized",
               null,
-              conversationContext,
               timings,
               wantsStreaming,
               wantsStreaming ? res : null // Pass response object for progress updates if streaming
@@ -2226,22 +2163,6 @@ async function enhanceSearchQuery(message, context) {
       return message;
     }
 
-    // 🔍 CONVERSATION CONTEXT AWARENESS
-    // If we have an active conversation context with a specific stock,
-    // prioritize that over user's existing holdings
-    if (
-      context?.conversationContext?.active_topic === "investment_analysis" &&
-      context?.conversationContext?.last_entity?.symbol
-    ) {
-      const contextSymbol = context.conversationContext.last_entity.symbol;
-      console.log(
-        `🔍 [ENHANCE] Conversation context detected: ${contextSymbol}, prioritizing over user holdings`
-      );
-
-      // Return search query for the conversation context stock
-      return `${contextSymbol} latest news`;
-    }
-
     console.log(
       "🔍 [ENHANCE] Detected personal investment query, fetching user holdings..."
     );
@@ -2310,7 +2231,6 @@ async function handleAsk(
   context,
   intent = "ask_personalized",
   classificationResult = null,
-  conversationContext = null,
   requestTimings = null, // Optional: parent request timings object
   wantsStreaming = false, // Whether client wants streaming response
   res = null // Response object for sending progress updates (optional)
@@ -2330,6 +2250,17 @@ async function handleAsk(
   try {
     // 1) Get user_id from context
     const userId = context?.user_id;
+
+    const recordConversationTurns = (assistantText) => {
+      if (!userId || !context?.chat_id) return;
+      if (!assistantText) return;
+      try {
+        appendConversationTurns(userId, context.chat_id, message, assistantText);
+      } catch (e) {
+        // Non-fatal; never break the ask flow for history.
+        logDebug("⚠️ [HISTORY] Failed to record turns:", e?.message);
+      }
+    };
 
     if (!userId) {
       logWarn("❌ [FINNY] No user_id provided in context");
@@ -2930,11 +2861,7 @@ async function handleAsk(
               pending_action: null,
             };
 
-            // Update conversation context if available
-            if (conversationContext) {
-              Object.assign(conversationContext, manualContext);
-              console.log("🎯 [STOCK] Manual context set:", manualContext);
-            }
+            // Conversation context removed.
           }
 
           // Generate conversational stock response with context packs
@@ -3033,60 +2960,9 @@ async function handleAsk(
             })
           );
 
-          // 🔍 DEBUG: Save conversation context for stock queries
-          console.log("🔍 [STOCK CONTEXT] Saving context for stock query");
-
-          // Extract topic and entity for stock queries
-          console.log("🔍 [STOCK CONTEXT] Detecting topic for stock query");
-          const topicDetection = detectConversationTopic(
-            message,
-            context?.conversationContext // Use the context from the safe context object
-          );
-          const contextMetadata = {
-            active_topic: topicDetection?.topic || "investment_analysis",
-            last_entity: topicDetection?.entity || {
-              type: "investment",
-              symbol: stockData.ticker,
-            },
-            pending_action: topicDetection?.pending_action || null,
-          };
-
-          console.log(
-            "🔍 [STOCK CONTEXT] Topic detection result:",
-            topicDetection
-          );
-          console.log(
-            "🔍 [STOCK CONTEXT] Stock data ticker:",
-            stockData.ticker
-          );
-          console.log("🔍 [STOCK CONTEXT] Context metadata:", contextMetadata);
-
-          // Save conversation context (best-effort, non-blocking)
-          if (context?.chat_id) {
-            setImmediate(async () => {
-              try {
-                const result = await withTimeout(
-                  updateConversationContext(
-                    context.user_id,
-                    context.chat_id,
-                    message,
-                    response.message,
-                    contextMetadata
-                  ),
-                  2000,
-                  null
-                );
-                if (result === null) {
-                  logWarn("⏰ [STOCK CONTEXT] Context save timed out");
-                }
-              } catch (error) {
-                logError("❌ [STOCK CONTEXT] Context save failed:", error);
-              }
-            });
-          }
-
           // Store conversation memory in Supermemory (async, non-blocking)
           if (userId && conversationalResponse) {
+            recordConversationTurns(conversationalResponse);
             setImmediate(async () => {
               try {
                 await storeConversationMemory(
@@ -3097,8 +2973,6 @@ async function handleAsk(
                     intent: "ask_personalized",
                     userName: context?.profile?.name || null,
                     chat_id: context?.chat_id,
-                    topic: contextMetadata.active_topic,
-                    entity: contextMetadata.last_entity,
                     stock_ticker: stockData.ticker,
                   }
                 );
@@ -3165,7 +3039,6 @@ async function handleAsk(
                 user_profile: userProfile,
                 user_memory: userMemory ? "loaded" : "none",
                 investment_holdings: investmentHoldings ? "loaded" : "none",
-                conversation_context: conversationContext ? "loaded" : "none",
               },
               fallback_used: true,
             })
@@ -3173,6 +3046,7 @@ async function handleAsk(
 
           // Store conversation memory in Supermemory (async, non-blocking)
           if (userId && fallbackResponse) {
+            recordConversationTurns(fallbackResponse);
             setImmediate(async () => {
               try {
                 await storeConversationMemory(
@@ -3334,49 +3208,22 @@ async function handleAsk(
       runtimeHeader // Context header (+ classification)
     );
 
-    // Build minimal user message context (query-specific data only, not raw dumps)
-    // Financial data is already synthesized in prompt engine Layer 2
-    // Only include query-specific context that prompt engine can't synthesize
-    const contextLines = [];
-
-    // Add conversation context if available (for continuity)
-    if (conversationContext?.active_topic || conversationContext?.last_entity) {
-      if (conversationContext.active_topic) {
-        contextLines.push(`Active topic: ${conversationContext.active_topic}`);
-      }
-      if (
-        conversationContext.last_entity &&
-        Object.keys(conversationContext.last_entity).length > 0
-      ) {
-        contextLines.push(
-          `Last entity: ${JSON.stringify(conversationContext.last_entity)}`
-        );
-      }
-      if (conversationContext.pending_action) {
-        contextLines.push(
-          `Pending action: ${conversationContext.pending_action}`
-        );
-      }
-    }
-
-    // Only add query-specific data that's needed for this specific query
-    // The prompt engine already has synthesized financial data
-    // Only add here if user explicitly asks for specific data (e.g., "show me my accounts")
-    const contextNote = contextLines.length > 0 ? contextLines.join("\n") : "";
-
     // 5) Parallel processing: Main response + Memory extraction
     const llmT0 = Date.now();
 
-    // Build user message (minimal context - financial data is in system prompt)
-    const userMessage = contextNote
-      ? `Context:\n${contextNote}\n\nUser: ${message}`
-      : message;
+    // Build user message (financial data is already synthesized in the system prompt)
+    const userMessage = message;
+
+    // Short-term conversation continuity: include recent turns (no extra LLM calls)
+    const recentTurns = getRecentConversationTurns(userId, context?.chat_id, {
+      maxMessages: 8,
+      maxChars: 6000,
+    });
 
     // Log prompt summary
     const promptSize = Math.round(system.length / 100) / 10;
-    const contextSize = Math.round(contextNote.length / 100) / 10;
     logInfo(
-      `📝 [PROMPT] Ready (system: ${promptSize}k chars, context: ${contextSize}k chars)`
+      `📝 [PROMPT] Ready (system: ${promptSize}k chars)`
     );
 
     // Log complete system prompt with clear dividers
@@ -3411,6 +3258,7 @@ async function handleAsk(
             reasoning: { effort: "minimal", exclude: true }, // Disable reasoning output, only return actual response
             messages: [
               { role: "system", content: system },
+              ...recentTurns,
               {
                 role: "user",
                 content: userMessage,
@@ -3649,46 +3497,6 @@ async function handleAsk(
     // Log conversation asynchronously to avoid adding latency
     setImmediate(() => logConversation(conversationData));
 
-    // Detect conversation topic and extract relevant entities
-    const topicDetection = detectConversationTopic(
-      message,
-      context?.conversationContext // Use the context from the safe context object
-    );
-    const contextMetadata = {
-      active_topic: topicDetection.topic,
-      last_entity: topicDetection.entity,
-      pending_action: topicDetection.pending_action,
-    };
-
-    // Log topic detection for debugging (only if topic detected)
-    if (topicDetection.topic) {
-      logInfo(`🎯 [TOPIC] Detected: ${topicDetection.topic}`);
-    }
-
-    // Update conversation context (best-effort, non-blocking)
-    if (context?.chat_id) {
-      setImmediate(async () => {
-        try {
-          const result = await withTimeout(
-            updateConversationContext(
-              context.user_id,
-              context.chat_id,
-              message,
-              response.message, // Use updated message with goal offer
-              contextMetadata
-            ),
-            2000,
-            null
-          );
-          if (result === null) {
-            logWarn("⏰ [CONTEXT] Conversation context update timed out");
-          }
-        } catch (error) {
-          logError("❌ [CONTEXT] Conversation context update failed:", error);
-        }
-      });
-    }
-
     // Store conversation memory in Supermemory (async, non-blocking)
     // Use cleanedMessage (actual response text) instead of cleanText (raw LLM output)
     const responseTextForStorage =
@@ -3699,6 +3507,7 @@ async function handleAsk(
         : response.message || "");
 
     if (userId && responseTextForStorage) {
+      recordConversationTurns(responseTextForStorage);
       setImmediate(async () => {
         try {
           await storeConversationMemory(
@@ -3708,8 +3517,6 @@ async function handleAsk(
             {
               intent: intent,
               chat_id: context?.chat_id,
-              topic: topicDetection?.topic,
-              entity: topicDetection?.entity,
               userName: context?.profile?.name || null,
             }
           );
@@ -5120,251 +4927,6 @@ async function cacheOperationData(operation, data) {
   await setCachedUserData(cfg.cacheType, operation.userId, data, params);
 }
 
-function detectConversationTopic(message, conversationContext) {
-  const text = message.toLowerCase();
-
-  // 0. TOPIC CLEARING PATTERNS (Check FIRST - highest priority)
-  // Clear active topic if the new message is clearly about a different topic
-  const topicClearingPatterns = [
-    // General financial advice patterns
-    /\b(emergency fund|emergency savings|savings|budget|budgeting|expenses|spending|debt|loan|mortgage|retirement|401k|ira)\b/i,
-    /\b(how much should i|what should i|financial planning|money management)\b/i,
-    /\b(save|saving|spend|spending|invest|investing)\b.*\b(money|dollars|amount)\b/i,
-    // Account balance patterns
-    /\b(account balance|checking|savings account|credit card|debit card)\b/i,
-    // Goal setting patterns
-    /\b(goal|goals|target|save for|planning for)\b/i,
-  ];
-
-  const hasTopicClearingPattern = topicClearingPatterns.some((pattern) =>
-    pattern.test(text)
-  );
-
-  if (hasTopicClearingPattern && conversationContext?.active_topic) {
-    // Clear the active topic to start fresh
-    conversationContext.active_topic = null;
-    conversationContext.last_entity = null;
-  }
-
-  // 1. CONTINUATION PATTERNS (Check AFTER topic clearing)
-  if (conversationContext?.active_topic) {
-    // If we have an active topic, check for continuation patterns
-    const continuationPatterns = [
-      /\b(it|this|that|them)\b/i,
-      /\b(should i|can i|is it|how about)\b/i,
-      /\b(what about|tell me more|explain)\b/i,
-    ];
-
-    const hasContinuationPattern = continuationPatterns.some((pattern) =>
-      pattern.test(text)
-    );
-
-    if (hasContinuationPattern) {
-      return {
-        topic: conversationContext.active_topic,
-        entity: conversationContext.last_entity || {},
-        pending_action: conversationContext.pending_action,
-      };
-    }
-  }
-
-  // 1. INVESTMENT & STOCKS (Gen Z loves crypto and stocks)
-  if (
-    /\b(stock|stocks|invest|investment|portfolio|trading)\b/i.test(text) ||
-    /\b(apple|aapl|tesla|tsla|bitcoin|btc|ethereum|eth|crypto|cryptocurrency)\b/i.test(
-      text
-    ) ||
-    /\b(robinhood|webull|fidelity|vanguard|schwab)\b/i.test(text) ||
-    /\b(should i buy|is.*good|worth.*investing|add.*portfolio)\b/i.test(text)
-  ) {
-    // Enhanced stock symbol detection - look for ticker symbols (1-5 uppercase letters)
-    const tickerMatch = text.match(/\b([A-Z]{1,5})\b/);
-    const companyMatch = text.match(
-      /\b(apple|aapl|tesla|tsla|bitcoin|btc|ethereum|eth|microsoft|msft|google|googl|amazon|amzn|meta|fb|nvidia|nvda)\b/i
-    );
-    const stockMatch = tickerMatch || companyMatch;
-    const amountMatch = text.match(/\$?([0-9,]+)/);
-
-    console.log("🔍 [SYMBOL DEBUG] Symbol extraction:");
-    console.log("  - Ticker match:", tickerMatch);
-    console.log("  - Company match:", companyMatch);
-    console.log(
-      "  - Final symbol:",
-      stockMatch
-        ? tickerMatch
-          ? tickerMatch[1]
-          : companyMatch[1].toUpperCase()
-        : null
-    );
-
-    return {
-      topic: "investment_analysis",
-      entity: {
-        type: "investment",
-        symbol: stockMatch
-          ? tickerMatch
-            ? tickerMatch[1]
-            : companyMatch[1].toUpperCase()
-          : null,
-        amount: amountMatch
-          ? parseFloat(amountMatch[1].replace(/,/g, ""))
-          : null,
-        action: /\bshould i buy\b/i.test(text) ? "buy_consideration" : null,
-      },
-      pending_action: /\bshould i buy\b/i.test(text)
-        ? "investment_advice"
-        : null,
-    };
-  }
-
-  // 2. BUDGET & SPENDING (Gen Z tracks every dollar)
-  if (
-    /\b(budget|spending|expense|money|dollar|dollars)\b/i.test(text) ||
-    /\b(where.*money|how much.*spend|track.*expenses|cut.*costs)\b/i.test(
-      text
-    ) ||
-    /\b(afford|can i buy|should i buy|worth it)\b/i.test(text)
-  ) {
-    const amountMatch = text.match(/\$?([0-9,]+)/);
-    const itemMatch = text.match(
-      /\b(a|an|the)\s+(?:\$?[0-9,]+\s+)?([a-z0-9\s]+?)(?:\?|$|\s+for|\s+at)/i
-    );
-
-    return {
-      topic: "budget_planning",
-      entity: {
-        type: "purchase",
-        item: itemMatch ? itemMatch[2].trim() : null,
-        amount: amountMatch
-          ? parseFloat(amountMatch[1].replace(/,/g, ""))
-          : null,
-        category:
-          /\b(food|groceries|entertainment|subscription|rent|housing)\b/i.test(
-            text
-          )
-            ? text.match(
-                /\b(food|groceries|entertainment|subscription|rent|housing)\b/i
-              )[1]
-            : null,
-      },
-      pending_action: /\b(afford|can i buy)\b/i.test(text)
-        ? "affordability_check"
-        : null,
-    };
-  }
-
-  // 3. DEBT & CREDIT (Gen Z is debt-conscious)
-  if (
-    /\b(debt|credit|card|loan|pay.*off|balance|interest|apr)\b/i.test(text) ||
-    /\b(should i pay|pay.*down|debt.*free|credit.*score)\b/i.test(text)
-  ) {
-    const amountMatch = text.match(/\$?([0-9,]+)/);
-    const cardMatch = text.match(/\b(credit card|card|loan)\b/i);
-
-    return {
-      topic: "debt_management",
-      entity: {
-        type: "debt",
-        amount: amountMatch
-          ? parseFloat(amountMatch[1].replace(/,/g, ""))
-          : null,
-        debt_type: cardMatch ? cardMatch[1] : "general",
-        action: /\b(should i pay|pay.*down)\b/i.test(text)
-          ? "payment_advice"
-          : null,
-      },
-      pending_action: /\b(should i pay|pay.*down)\b/i.test(text)
-        ? "debt_advice"
-        : null,
-    };
-  }
-
-  // 4. SAVINGS & GOALS (Gen Z plans for the future)
-  if (
-    /\b(save|saving|goal|goals|target|emergency|fund|cushion)\b/i.test(text) ||
-    /\b(how much.*save|save.*for|goal.*amount|emergency.*fund)\b/i.test(text)
-  ) {
-    const amountMatch = text.match(/\$?([0-9,]+)/);
-    const goalMatch = text.match(
-      /\b(emergency|vacation|car|house|wedding|retirement)\b/i
-    );
-
-    return {
-      topic: "savings_planning",
-      entity: {
-        type: "savings_goal",
-        amount: amountMatch
-          ? parseFloat(amountMatch[1].replace(/,/g, ""))
-          : null,
-        goal_type: goalMatch ? goalMatch[1] : "general",
-        timeframe: /\b(month|year|months|years)\b/i.test(text)
-          ? text.match(/\b(\d+)\s*(month|year|months|years)\b/i)
-          : null,
-      },
-      pending_action: /\b(how much.*save|save.*for)\b/i.test(text)
-        ? "savings_advice"
-        : null,
-    };
-  }
-
-  // 5. INCOME & CAREER (Gen Z side hustles)
-  if (
-    /\b(salary|income|pay|paycheck|raise|bonus|side.*hustle|freelance)\b/i.test(
-      text
-    ) ||
-    /\b(how much.*make|negotiate|salary.*negotiation)\b/i.test(text)
-  ) {
-    const amountMatch = text.match(/\$?([0-9,]+)/);
-
-    return {
-      topic: "income_optimization",
-      entity: {
-        type: "income",
-        amount: amountMatch
-          ? parseFloat(amountMatch[1].replace(/,/g, ""))
-          : null,
-        source: /\b(salary|side.*hustle|freelance|bonus)\b/i.test(text)
-          ? text.match(/\b(salary|side.*hustle|freelance|bonus)\b/i)[1]
-          : "general",
-      },
-      pending_action: /\b(negotiate|how much.*make)\b/i.test(text)
-        ? "income_advice"
-        : null,
-    };
-  }
-
-  // 6. TAXES & DEDUCTIONS (Gen Z is tax-savvy)
-  if (
-    /\b(tax|taxes|deduction|refund|w2|1099|filing)\b/i.test(text) ||
-    /\b(how much.*tax|tax.*return|deductible)\b/i.test(text)
-  ) {
-    const amountMatch = text.match(/\$?([0-9,]+)/);
-
-    return {
-      topic: "tax_planning",
-      entity: {
-        type: "tax",
-        amount: amountMatch
-          ? parseFloat(amountMatch[1].replace(/,/g, ""))
-          : null,
-        tax_type: /\b(deduction|refund|w2|1099)\b/i.test(text)
-          ? text.match(/\b(deduction|refund|w2|1099)\b/i)[1]
-          : "general",
-      },
-      pending_action: /\b(how much.*tax|deductible)\b/i.test(text)
-        ? "tax_advice"
-        : null,
-    };
-  }
-
-  // Default: no specific topic detected
-  return {
-    topic: null,
-    entity: {},
-    pending_action: null,
-  };
-}
-
 async function handlePrebuildContext(userId) {
   logInfo("🚀 [PREBUILD] Starting context pre-building for user:", userId);
   const startTime = Date.now();
@@ -5620,7 +5182,7 @@ async function handlePrebuildContext(userId) {
   }
 }
 
-async function handleClassify(message, context, conversationContext = null) {
+async function handleClassify(message, context) {
   console.log(
     "🔍 [FINNY] Starting classification in handleClassify for message:",
     message
@@ -6208,35 +5770,12 @@ async function handleClassify(message, context, conversationContext = null) {
   }
 }
 
-async function handleOffTopic(message, context, conversationContext = null) {
+async function handleOffTopic(message, context) {
   console.log("🚫 [FINNY] Handling off-topic query:", message);
   const startTime = Date.now();
 
   const messageText =
     typeof message === "string" ? message : String(message || "");
-
-  // 🔍 CONVERSATION CONTEXT AWARENESS
-  // If we have conversation context, this might not actually be off-topic
-  if (conversationContext?.active_topic || conversationContext?.last_entity) {
-    console.log(
-      "🔍 [OFF_TOPIC] Conversation context detected, this might be a continuation:"
-    );
-    console.log("  - Active topic:", conversationContext.active_topic);
-    console.log("  - Last entity:", conversationContext.last_entity);
-
-    // If we have an active financial conversation, redirect to ask_personalized
-    // to maintain conversation flow
-    console.log(
-      "🔍 [OFF_TOPIC] Redirecting to ask_personalized to maintain conversation flow"
-    );
-    return await handleAsk(
-      messageText,
-      context,
-      "ask_personalized",
-      null,
-      conversationContext
-    );
-  }
 
   // Simple venting detection (same handler/prompt, but we tag the mode)
   const lower = messageText.toLowerCase();

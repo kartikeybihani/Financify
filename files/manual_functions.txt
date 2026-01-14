@@ -403,15 +403,6 @@ CLEANUP & MAINTENANCE FUNCTIONS
    - Purpose: Removes context_cache entries where expires_at < current time
    - Used in: Scheduled cleanup jobs
 
-45. cleanup_expired_conversation_context ⭐ ACTIVE
-   - Cleans up expired conversation context entries
-   - Parameters: none
-   - Returns: void
-   - Purpose: Removes conversation_context entries where expires_at < NOW()
-   - Used in: Scheduled cleanup jobs
-   - Notes:
-     * Uses SECURITY DEFINER for elevated permissions
-
 46. cleanup_orphaned_plaid_secrets ⭐ ACTIVE
    - Cleans up orphaned Plaid secrets from Vault that are no longer referenced
    - Parameters: none

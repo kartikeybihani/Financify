@@ -891,28 +891,12 @@ async function handleGoalCreation(extraction, context, message) {
   const priorFlow = context?.goal_flow || {};
   const priorSlots = priorFlow.slots || {};
 
-  // Get data from conversation context if available (e.g., from affordability check)
-  const conversationEntity = context?.conversation_context?.last_entity;
-  const conversationTopic = context?.conversation_context?.active_topic;
-
-  // Only use context if it's relevant to goal creation
-  // e.g., if we were discussing a specific item (Rolex, MacBook) for affordability
-  const isRelevantContext =
-    conversationTopic === "budget_planning" &&
-    conversationEntity?.type === "purchase" &&
-    conversationEntity?.value;
-
-  const contextLabel = isRelevantContext ? conversationEntity?.value : null;
-  const contextAmount = isRelevantContext ? conversationEntity?.amount : null;
-
   // Merge extracted data with prior slots and conversation context
   const slots = {
-    label:
-      priorSlots.label || extraction.extracted.label || contextLabel || null,
+    label: priorSlots.label || extraction.extracted.label || null,
     target_amount:
       priorSlots.target_amount ||
       extraction.extracted.target_amount ||
-      contextAmount ||
       null,
     target_date:
       priorSlots.target_date || extraction.extracted.target_date || null,
@@ -927,7 +911,6 @@ async function handleGoalCreation(extraction, context, message) {
   console.log(`🎯 [GOAL] Creating goal with slots:`, {
     label: slots.label,
     amount: slots.target_amount,
-    from_context: contextLabel || contextAmount ? true : false,
   });
 
   // Check what's missing
