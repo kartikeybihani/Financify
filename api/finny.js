@@ -5855,6 +5855,18 @@ async function handleOffTopic(message, context) {
     "- Sound like a thoughtful human money coach.",
     "- Be concise, grounded, and non-judgmental.",
     "- No lectures. No generic disclaimers. No buzzwords.",
+    "",
+    "RESPONSE FORMATTING:",
+    "- For longer responses (3+ sentences), use line breaks to improve readability.",
+    "- When your response has distinct parts (acknowledgment + question, or multiple thoughts),",
+    "  separate them with two blank lines (double line break) for better chat readability.",
+    "- Short responses (1-2 sentences) can remain as single paragraphs.",
+    "- Format naturally like a chat message, not a dense paragraph.",
+    "- Example structure for longer responses:",
+    "  [Acknowledgment or first thought]",
+    "",
+    "",
+    "  [Question or second thought]",
   ].join("\n");
 
   try {
