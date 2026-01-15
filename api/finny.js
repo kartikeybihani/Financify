@@ -158,181 +158,6 @@ function deterministicChance(seed, probability = 0.5) {
   }
 }
 
-function buildClarificationMessage(message, classificationResult) {
-  const missing = Array.isArray(classificationResult?.missing_fields)
-    ? classificationResult.missing_fields
-    : [];
-
-  const decisionRisk = classificationResult?.decision_risk || "unknown";
-
-  const questionBank = {
-    purchase_price:
-      "What’s the price (or monthly payment) and when are you trying to do this?",
-    timeline: "What’s the timeline (this month vs 6–12 months vs later)?",
-    location: "Where are you located (state/country)?",
-    income_takehome: "What’s your monthly take-home pay?",
-    income_gross: "What’s your gross annual income?",
-    fixed_expenses:
-      "What are your fixed monthly bills (rent/mortgage, utilities, minimum debt payments)?",
-    current_savings:
-      "How much cash do you have available (checking/savings) for this?",
-    debt_balances: "Any debts (credit cards, loans)? Rough balances + APRs?",
-    credit_score: "Rough credit score range (e.g., 650–700)?",
-    down_payment:
-      "How much can you put down (and do you want to keep an emergency fund)?",
-    risk_tolerance: "How do you feel about risk: low / medium / high?",
-    investing_horizon: "When would you need this money back (time horizon)?",
-    goal_amount: "What’s the target amount you’re aiming for?",
-    goal_date: "By what date do you want to hit that?",
-    move_countries: "Which country are you moving from/to, and when?",
-    employer_match: "Do you get an employer match (401k/etc.)?",
-  };
-
-  const questions = [];
-  for (const key of missing) {
-    const q = questionBank[key];
-    if (q) questions.push(q);
-    if (questions.length >= 3) break;
-  }
-
-  if (questions.length === 0) {
-    questions.push(
-      "Before I give advice: what’s your income, fixed bills, and current cash savings (rough numbers are fine)?"
-    );
-  }
-
-  const riskLine =
-    decisionRisk === "high"
-      ? "This is a high-stakes decision, so I don’t want to guess."
-      : "Quick questions so I don’t make stuff up.";
-
-  return `${riskLine}\n\n${questions
-    .slice(0, 3)
-    .map((q, i) => `${i + 1}) ${q}`)
-    .join("\n")}\n\nIf you don’t know exact numbers, give rough ranges.`;
-}
-
-function hasEnoughInternalDataToProceed(packs, decisionRisk = "unknown") {
-  if (!packs || typeof packs !== "object") return false;
-
-  // Base pack is the minimum requirement to say anything grounded.
-  const hasBase = !!packs.base && typeof packs.base === "object";
-  if (!hasBase) return false;
-
-  // High-stakes decisions should be grounded in BOTH balance sheet basics and actual spending.
-  // Otherwise we risk giving advice that sounds confident but isn’t supported by data.
-  const hasAccounts =
-    Array.isArray(packs.base?.accounts) && packs.base.accounts.length > 0;
-  const hasBalanceSheetNumbers = [
-    packs.base?.netWorth,
-    packs.base?.liquidAssets,
-    packs.base?.investmentsTotal,
-    packs.base?.totalLiabilities,
-  ].some((v) => typeof v === "number" && Number.isFinite(v));
-
-  // For many “can I afford X?” questions, we can proceed if we have NON-EMPTY
-  // cashflow or spend context; otherwise we likely need user inputs.
-  const cashflowArray = Array.isArray(packs.cashflow?.cashflow)
-    ? packs.cashflow.cashflow
-    : Array.isArray(packs.cashflow)
-    ? packs.cashflow
-    : [];
-  const hasCashflow =
-    cashflowArray.length > 0 &&
-    cashflowArray.some(
-      (cf) =>
-        typeof cf?.income === "number" ||
-        typeof cf?.expense === "number" ||
-        typeof cf?.net === "number"
-    );
-
-  const hasSpend =
-    typeof packs.spend?.count === "number" && packs.spend.count > 0;
-
-  // As a last resort, if we have meaningful transaction history we can still
-  // offer a cautious best-effort estimate.
-  const hasTxns =
-    Array.isArray(packs.base?.recentTransactions) &&
-    packs.base.recentTransactions.length >= 5;
-
-  if (decisionRisk === "high") {
-    return (hasAccounts || hasBalanceSheetNumbers) && hasSpend;
-  }
-
-  return hasCashflow || hasSpend || hasTxns;
-}
-
-const NON_INFERABLE_MISSING_FIELDS = new Set([
-  // Requires user to specify the decision details
-  "purchase_price",
-  "down_payment",
-  "timeline",
-  "location",
-  "credit_score",
-  "risk_tolerance",
-  "investing_horizon",
-  "goal_amount",
-  "goal_date",
-  "move_countries",
-]);
-
-const FINANCIAL_BASELINE_MISSING_FIELDS = new Set([
-  // These are often required for affordability/plan questions unless we have equivalent internal data.
-  "income_takehome",
-  "fixed_expenses",
-  "current_savings",
-  "debt_balances",
-]);
-
-function isMissingFieldSatisfiedByPacks(field, packs) {
-  if (!packs || !packs.base) return false;
-
-  const cashflowArray = Array.isArray(packs.cashflow?.cashflow)
-    ? packs.cashflow.cashflow
-    : Array.isArray(packs.cashflow)
-    ? packs.cashflow
-    : [];
-
-  switch (field) {
-    case "current_savings":
-      return (
-        typeof packs.base?.liquidAssets === "number" &&
-        Number.isFinite(packs.base.liquidAssets)
-      );
-    case "debt_balances": {
-      if (
-        typeof packs.base?.totalLiabilities === "number" &&
-        Number.isFinite(packs.base.totalLiabilities)
-      ) {
-        return true;
-      }
-      const accounts = Array.isArray(packs.base?.accounts)
-        ? packs.base.accounts
-        : [];
-      return accounts.some((acc) => {
-        const type = String(acc?.type || "").toLowerCase();
-        const subtype = String(acc?.subtype || "").toLowerCase();
-        const balance =
-          acc?.balances?.current ?? acc?.current_balance ?? acc?.balance;
-        return (
-          typeof balance === "number" &&
-          (type === "credit" || type === "loan" || subtype.includes("credit"))
-        );
-      });
-    }
-    case "income_takehome":
-      // Only consider this “known” if cashflow has actual income numbers.
-      return cashflowArray.some(
-        (cf) => typeof cf?.income === "number" && cf.income > 0
-      );
-    case "fixed_expenses":
-      // We generally can't infer fixed bills reliably from current packs.
-      return false;
-    default:
-      return false;
-  }
-}
-
 async function callWithFallback(models, callFn, timeoutMs, label = "LLM") {
   let lastErr = null;
   const tried = [];
@@ -2323,10 +2148,10 @@ async function handleAsk(
 
     const userRefused = detectRefusalToAnswer(message);
     const ambiguousIntent = detectAmbiguousIntent(message);
-    const shouldConsiderClarifying =
-      classificationResult?.needs_clarification &&
-      !userRefused &&
-      classificationResult?.intent !== "stock_query";
+
+    // Note: Clarification is now handled by the LLM based on prompt engine guidelines
+    // The classification info (needs_clarification, missing_fields) is passed to the LLM
+    // via the classificationHeader in the prompt, allowing it to make context-aware decisions
 
     // Use classification.needs_web as primary, with keyword detection as fallback
     const needsWeb =
@@ -2440,10 +2265,13 @@ async function handleAsk(
     logInfo("📦 [FINNY] Context packs built:", Object.keys(packs));
     logInfo("⚠️ [FINNY] Data gaps:", gaps);
 
-    // Ambiguous-intent clarification: for medium/high (or unknown sufficiency), ask ONE question first
-    // even if we have internal data. This avoids giving the "wrong" advice for the wrong goal.
+    // Decision risk and info sufficiency are used for runtime coaching flags
+    // passed to the LLM (not for early returns - LLM handles all clarifications)
     const decisionRisk = classificationResult?.decision_risk || "unknown";
     const infoSufficiency = classificationResult?.info_sufficiency || "unknown";
+
+    // Ambiguous-intent clarification flag: passed to LLM via runtime coaching flags
+    // The LLM will decide whether to ask clarification questions based on context
     const shouldClarifyAmbiguity =
       ambiguousIntent &&
       !userRefused &&
@@ -2451,48 +2279,6 @@ async function handleAsk(
       (decisionRisk === "high" ||
         decisionRisk === "medium" ||
         infoSufficiency === "unknown");
-
-    // Clarify-first guardrail (data-aware): only ask questions if we truly lack enough
-    // internal data to answer safely.
-    if (shouldConsiderClarifying) {
-      const missingFields = Array.isArray(classificationResult?.missing_fields)
-        ? classificationResult.missing_fields
-        : [];
-      const remainingMissing = missingFields.filter(
-        (f) => !isMissingFieldSatisfiedByPacks(f, packs)
-      );
-      const requiredClarificationMissing = remainingMissing.filter(
-        (f) =>
-          NON_INFERABLE_MISSING_FIELDS.has(f) ||
-          FINANCIAL_BASELINE_MISSING_FIELDS.has(f)
-      );
-      const missingBase = !packs.base || gaps.includes("summary_min");
-      const lacksSignal = !hasEnoughInternalDataToProceed(
-        packs,
-        classificationResult?.decision_risk || "unknown"
-      );
-
-      if (
-        requiredClarificationMissing.length > 0 ||
-        missingBase ||
-        lacksSignal
-      ) {
-        const clarificationMessage = buildClarificationMessage(message, {
-          ...classificationResult,
-          // Ask only for what we actually still need.
-          missing_fields: requiredClarificationMissing,
-          info_sufficiency:
-            classificationResult?.info_sufficiency === "sufficient"
-              ? "missing"
-              : classificationResult?.info_sufficiency,
-        });
-        return {
-          message: cleanResponseFormatting(clarificationMessage),
-          type: "assistant",
-          intent: classificationResult?.intent || "ask_personalized",
-        };
-      }
-    }
 
     // Log what user data is being fed to finny
     if (packs.base) {
@@ -3227,16 +3013,24 @@ async function handleAsk(
     const promptSize = Math.round(system.length / 100) / 10;
     logInfo(`📝 [PROMPT] Ready (system: ${promptSize}k chars)`);
 
-    // Log complete system prompt with clear dividers
-    console.log("\n" + "=".repeat(100));
-    console.log("📋 [PROMPT_ENGINE] COMPLETE SYSTEM PROMPT SENT TO LLM");
-    console.log("=".repeat(100));
-    console.log(system);
-    console.log("=".repeat(100));
-    console.log("📋 [PROMPT_ENGINE] USER MESSAGE");
-    console.log("=".repeat(100));
-    console.log(userMessage);
-    console.log("=".repeat(100) + "\n");
+    // Log complete system prompt with clear dividers (only for ask_personalized)
+    if (intent === "ask_personalized") {
+      console.log("\n" + "=".repeat(100));
+      console.log(
+        "📋 [PROMPT_ENGINE] COMPLETE SYSTEM PROMPT SENT TO LLM (ask_personalized)"
+      );
+      console.log("=".repeat(100));
+      console.log(system);
+      console.log("=".repeat(100));
+      console.log("📋 [PROMPT_ENGINE] USER MESSAGE");
+      console.log("=".repeat(100));
+      console.log(userMessage);
+      console.log("=".repeat(100));
+      console.log("📋 [PROMPT_ENGINE] RECENT TURNS");
+      console.log("=".repeat(100));
+      console.log(JSON.stringify(recentTurns, null, 2));
+      console.log("=".repeat(100) + "\n");
+    }
 
     // Memory extraction removed - migrating to Supermemory
     let memoryExtraction = [];
