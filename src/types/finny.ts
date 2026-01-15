@@ -25,6 +25,7 @@ export interface Goal {
   status: 'active' | 'paused' | 'completed';
   created_at: string;
   updated_at: string;
+  analysis?: string | null; // LLM-generated analysis of the goal
 }
 
 export interface ChatMessage {

@@ -20,14 +20,18 @@ export const GoalNotification: React.FC<GoalNotificationProps> = ({
   goalId,
   onClose,
   onUndo,
+  isModalOpen = false,
 }) => {
-  // Position notification higher when it's an update (modal is open)
+  // Position notification at top when modal is open and it's a create action
+  const isTopPosition = isModalOpen && action === "create";
   const notificationBottom = 100;
-  const translateY = new Animated.Value(notificationBottom); // Start from bottom
+  const notificationTop = 60; // Position from top when modal is open
+  const initialPosition = isTopPosition ? -notificationTop : notificationBottom;
+  const translateY = new Animated.Value(initialPosition);
   const opacity = new Animated.Value(0);
 
   useEffect(() => {
-    // Slide in from bottom - faster animation
+    // Slide in from bottom or top - faster animation
     Animated.parallel([
       Animated.timing(translateY, {
         toValue: 0,
@@ -45,7 +49,7 @@ export const GoalNotification: React.FC<GoalNotificationProps> = ({
     const timer = setTimeout(() => {
       Animated.parallel([
         Animated.timing(translateY, {
-          toValue: notificationBottom,
+          toValue: isTopPosition ? -notificationTop : notificationBottom,
           duration: 300,
           useNativeDriver: true,
         }),
@@ -58,7 +62,7 @@ export const GoalNotification: React.FC<GoalNotificationProps> = ({
     }, 3000);
 
     return () => clearTimeout(timer);
-  }, []);
+  }, [isTopPosition]);
 
   const handleUndo = () => {
     if (onUndo && goalId) {
@@ -79,8 +83,11 @@ export const GoalNotification: React.FC<GoalNotificationProps> = ({
     <Animated.View
       style={[
         styles.container,
+        isTopPosition ? styles.topContainer : styles.bottomContainer,
         {
-          bottom: notificationBottom,
+          [isTopPosition ? "top" : "bottom"]: isTopPosition
+            ? notificationTop
+            : notificationBottom,
           transform: [{ translateY }],
           opacity,
         },
@@ -108,7 +115,7 @@ export const GoalNotification: React.FC<GoalNotificationProps> = ({
                       ? "target"
                       : "check-circle"
                   }
-                  size={action === "delete" ? 24 : 20}
+                  size={action === "delete" ? 18 : 20}
                   color={
                     action === "delete"
                       ? "#FF3B30"
@@ -118,7 +125,14 @@ export const GoalNotification: React.FC<GoalNotificationProps> = ({
                   }
                   style={styles.icon}
                 />
-                <Text style={styles.message}>{message}</Text>
+                <Text
+                  style={[
+                    styles.message,
+                    isDeleteAction && styles.deleteMessage,
+                  ]}
+                >
+                  {message}
+                </Text>
               </View>
               <TouchableOpacity
                 style={styles.undoButton}
@@ -138,7 +152,7 @@ export const GoalNotification: React.FC<GoalNotificationProps> = ({
                     ? "target"
                     : "check-circle"
                 }
-                size={action === "delete" ? 24 : 20}
+                size={action === "delete" ? 18 : 20}
                 color={
                   action === "delete"
                     ? "#FF3B30"
@@ -148,7 +162,11 @@ export const GoalNotification: React.FC<GoalNotificationProps> = ({
                 }
                 style={styles.icon}
               />
-              <Text style={styles.message}>{message}</Text>
+              <Text
+                style={[styles.message, isDeleteAction && styles.deleteMessage]}
+              >
+                {message}
+              </Text>
             </View>
           )}
         </View>
@@ -164,6 +182,12 @@ const styles = StyleSheet.create({
     right: 0,
     zIndex: 1000,
     alignItems: "center",
+  },
+  topContainer: {
+    top: 60,
+  },
+  bottomContainer: {
+    bottom: 100,
   },
   blurContainer: {
     borderRadius: 50,
@@ -211,6 +235,9 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
     flex: 1,
+  },
+  deleteMessage: {
+    fontSize: 14,
   },
   undoButton: {
     backgroundColor: "rgba(255, 255, 255, 0.15)",

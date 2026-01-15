@@ -2,6 +2,11 @@
 import { supabase } from "../lib/api/supabase.js";
 import fetch from "node-fetch";
 import crypto from "crypto";
+import { buildGoalAnalysisPrompt } from "../lib/prompt_engine.js";
+import {
+  loadUserProfile,
+  fetchSupermemoryProfile,
+} from "../lib/memoryUtils.js";
 
 // Utilities
 function generateRequestId() {
@@ -44,7 +49,7 @@ function logConversation(logData) {
 
 // Memory extraction model - small, fast, free
 // Use env var if available, otherwise fallback to free model
-const MEMORY_EXTRACTION_MODEL = "meta-llama/llama-3.3-8b-instruct:free";
+const MODEL = "meta-llama/llama-3.3-8b-instruct:free";
 
 // =====================
 // GOAL CONSTANTS
@@ -577,7 +582,7 @@ RULES:
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: MEMORY_EXTRACTION_MODEL,
+          model: MODEL,
           temperature: 0.1,
           messages: [
             {
@@ -705,7 +710,7 @@ RULES:
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: MEMORY_EXTRACTION_MODEL,
+          model: MODEL,
           temperature: 0.3,
           messages: [
             {
@@ -895,9 +900,7 @@ async function handleGoalCreation(extraction, context, message) {
   const slots = {
     label: priorSlots.label || extraction.extracted.label || null,
     target_amount:
-      priorSlots.target_amount ||
-      extraction.extracted.target_amount ||
-      null,
+      priorSlots.target_amount || extraction.extracted.target_amount || null,
     target_date:
       priorSlots.target_date || extraction.extracted.target_date || null,
     category: priorSlots.category || extraction.extracted.category || null,
@@ -1646,6 +1649,438 @@ You're officially on your financial journey now. This is such a great step forwa
 }
 
 // =====================
+// GOAL ANALYSIS WITH LLM
+// =====================
+
+// LLM Model constants (same as finny.js)
+const REASONING_MODEL_PAID_SCOUT =
+  process.env.REASONING_MODEL_PAID_SCOUT || "meta-llama/llama-4-scout";
+const STANDARD_MODEL = "meta-llama/llama-3.2-3b-instruct";
+const TERTIARY_MODEL = "mistralai/mistral-small-3.1-24b-instruct";
+
+function getOpenRouterKey() {
+  return process.env.OPENROUTER_GROK_KEY || process.env.OPENROUTER_API_KEY;
+}
+
+async function callWithFallback(models, callFn, timeoutMs, label = "LLM") {
+  let lastErr = null;
+  const tried = [];
+
+  for (const model of models) {
+    if (!model) continue;
+    tried.push(model);
+    try {
+      const controller = new AbortController();
+      const callPromise = Promise.resolve()
+        .then(() => callFn(model, { signal: controller.signal }))
+        .catch((err) => {
+          if (controller.signal.aborted || err?.name === "AbortError") {
+            return { __aborted: true };
+          }
+          throw err;
+        });
+      const result = await withTimeout(
+        callPromise,
+        timeoutMs,
+        { __timeout: true },
+        () => controller.abort()
+      );
+      if (result && (result.__timeout || result.__aborted)) {
+        throw new Error(`${label} timeout after ${timeoutMs}ms`);
+      }
+      return { result, model };
+    } catch (err) {
+      lastErr = err;
+      console.warn(
+        `⚠️ [GOAL ANALYSIS] ${label} failed for model ${model}:`,
+        err?.message
+      );
+    }
+  }
+
+  const error = lastErr || new Error(`${label} failed for all models`);
+  error.modelsTried = tried;
+  throw error;
+}
+
+/**
+ * Analyzes a goal using LLM with comprehensive user context
+ * Fetches all data in parallel for optimal performance
+ */
+async function analyzeGoalWithLLM(goalData, userId) {
+  try {
+    console.log("🧠 [GOAL ANALYSIS] Starting analysis for goal:", goalData.id);
+
+    // Fetch all data in parallel
+    const currentDate = new Date();
+    const thirtyDaysAgo = new Date(currentDate);
+    thirtyDaysAgo.setDate(currentDate.getDate() - 30);
+    const oneMonthAgo = new Date(currentDate);
+    oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
+
+    const [
+      netWorthData,
+      invSnap,
+      recentTxns,
+      spendByCategory,
+      cashflow,
+      userProfile,
+      supermemoryProfile,
+      currentGoals,
+      budgetPeriod,
+    ] = await Promise.all([
+      // Financial data
+      supabase.rpc("get_net_worth", { p_user_id: userId }).catch((err) => {
+        console.error("❌ [GOAL ANALYSIS] Error fetching net worth:", err);
+        return { data: null, error: err };
+      }),
+      supabase
+        .rpc("get_investment_snapshot", { p_user_id: userId })
+        .catch((err) => {
+          console.error("❌ [GOAL ANALYSIS] Error fetching investments:", err);
+          return { data: null, error: err };
+        }),
+      supabase
+        .rpc("get_recent_transactions", {
+          p_user_id: userId,
+          p_limit: 200, // Get more transactions for better analysis
+        })
+        .catch((err) => {
+          console.error("❌ [GOAL ANALYSIS] Error fetching transactions:", err);
+          return { data: null, error: err };
+        }),
+      supabase
+        .rpc("get_spend_by_category", {
+          p_user_id: userId,
+          p_start: thirtyDaysAgo.toISOString().split("T")[0],
+          p_end: currentDate.toISOString().split("T")[0],
+        })
+        .catch((err) => {
+          console.error(
+            "❌ [GOAL ANALYSIS] Error fetching spend by category:",
+            err
+          );
+          return { data: null, error: err };
+        }),
+      supabase
+        .rpc("get_cashflow_monthly", { p_user_id: userId, p_months: 3 })
+        .catch((err) => {
+          console.error("❌ [GOAL ANALYSIS] Error fetching cashflow:", err);
+          return { data: null, error: err };
+        }),
+      // User profile
+      loadUserProfile(userId).catch((err) => {
+        console.error("❌ [GOAL ANALYSIS] Error fetching profile:", err);
+        return null;
+      }),
+      // Memories
+      fetchSupermemoryProfile(userId, {
+        query: `Goal: ${goalData.label}. Target: $${goalData.target_amount}. Category: ${goalData.category}`,
+        limit: 10,
+      }).catch((err) => {
+        console.error("❌ [GOAL ANALYSIS] Error fetching memories:", err);
+        return { memories: [] };
+      }),
+      // Current goals (excluding the one being analyzed)
+      supabase
+        .from("goals")
+        .select("*")
+        .eq("user_id", userId)
+        .eq("status", "active")
+        .neq("id", goalData.id)
+        .order("created_at", { ascending: false })
+        .catch((err) => {
+          console.error("❌ [GOAL ANALYSIS] Error fetching goals:", err);
+          return { data: [] };
+        }),
+      // Current budget
+      supabase
+        .from("budget_periods")
+        .select(
+          `
+          *,
+          budget_entries (
+            *
+          )
+        `
+        )
+        .eq("user_id", userId)
+        .eq("status", "active")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .single()
+        .catch((err) => {
+          console.error("❌ [GOAL ANALYSIS] Error fetching budget:", err);
+          return { data: null };
+        }),
+    ]);
+
+    // Process financial data
+    const netWorthRecord = netWorthData?.data?.[0];
+    const investmentRecord = invSnap?.data?.[0];
+    const transactions = recentTxns?.data || [];
+    const spending = spendByCategory?.data || [];
+    const cashflowData = cashflow?.data || [];
+    const profile = userProfile;
+    const memories = supermemoryProfile?.memories || [];
+    const goals = currentGoals?.data || [];
+    const budget = budgetPeriod?.data;
+
+    // Format budget data
+    let formattedBudget = null;
+    if (budget && budget.budget_entries) {
+      const totalBudget = budget.budget_entries.reduce(
+        (sum, entry) => sum + Number(entry.limit_amount || 0),
+        0
+      );
+      formattedBudget = {
+        currency_code: budget.currency_code || "USD",
+        total_budget: totalBudget,
+        period_start: budget.period_start,
+        period_end: budget.period_end,
+        status: budget.status,
+        categories: budget.budget_entries.map((entry) => ({
+          category: entry.label,
+          limit: entry.limit_amount,
+        })),
+      };
+    }
+
+    // Format financial data for prompt
+    const financialData = {
+      base: {
+        liquidAssets: Math.round(Number(netWorthRecord?.liquid_assets ?? 0)),
+        totalLiabilities: Math.round(
+          Number(netWorthRecord?.total_liabilities ?? 0)
+        ),
+        netWorth: Math.round(Number(netWorthRecord?.net_worth ?? 0)),
+        investmentsTotal: Math.round(
+          Number(netWorthRecord?.investments_total ?? 0)
+        ),
+        accounts: netWorthRecord?.bank_accounts || [],
+        recentTransactions: transactions.filter((txn) => {
+          const txnDate = new Date(txn.date || txn.inserted_at);
+          return txnDate >= oneMonthAgo;
+        }),
+        spendByCategory: spending,
+      },
+      cashflow: cashflowData,
+    };
+
+    // Build user context
+    const userContext = {
+      goal: goalData,
+      userProfile: profile || {},
+      memories: memories,
+      financialData: financialData,
+      currentGoals: goals,
+      currentBudget: formattedBudget,
+    };
+
+    // Build prompt
+    const prompt = buildGoalAnalysisPrompt(goalData, userContext);
+
+    console.log("📝 [GOAL ANALYSIS] Prompt built, length:", prompt.length);
+    console.log("📋 [GOAL ANALYSIS] COMPLETE PROMPT SENT TO LLM:");
+    console.log("=".repeat(80));
+    console.log(prompt);
+    console.log("=".repeat(80));
+
+    // Call LLM
+    const llmModels = [
+      REASONING_MODEL_PAID_SCOUT,
+      STANDARD_MODEL,
+      TERTIARY_MODEL,
+    ];
+
+    async function callLLM(model, options = {}) {
+      const response = await fetch(
+        "https://openrouter.ai/api/v1/chat/completions",
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${getOpenRouterKey()}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model,
+            messages: [
+              {
+                role: "user",
+                content: prompt,
+              },
+            ],
+            temperature: 0.3,
+            max_tokens: 2000,
+          }),
+          signal: options.signal,
+        }
+      );
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        let errorDetails;
+        try {
+          errorDetails = JSON.parse(errorText);
+        } catch {
+          errorDetails = errorText;
+        }
+        throw new Error(
+          `OpenRouter error ${response.status}: ${JSON.stringify(errorDetails)}`
+        );
+      }
+
+      const data = await response.json();
+      return data;
+    }
+
+    const llmResult = await callWithFallback(
+      llmModels,
+      callLLM,
+      30000, // 30 second timeout
+      "Goal Analysis LLM"
+    );
+
+    const content =
+      llmResult.result?.choices?.[0]?.message?.content?.trim() || "";
+
+    if (!content) {
+      throw new Error("LLM returned empty content");
+    }
+
+    console.log(
+      "✅ [GOAL ANALYSIS] Analysis generated, length:",
+      content.length
+    );
+
+    // Store analysis in database
+    const { error: updateError } = await supabase
+      .from("goals")
+      .update({ analysis: content })
+      .eq("id", goalData.id);
+
+    if (updateError) {
+      console.error("❌ [GOAL ANALYSIS] Error storing analysis:", updateError);
+      throw updateError;
+    }
+
+    console.log("✅ [GOAL ANALYSIS] Analysis stored successfully");
+
+    return content;
+  } catch (error) {
+    console.error("❌ [GOAL ANALYSIS] Analysis failed:", error);
+    throw error;
+  }
+}
+
+// =====================
+// API ROUTE HANDLER (Vercel)
+// =====================
+
+/**
+ * Vercel API Route Handler
+ * Handles POST /api/goals/analyze for goal analysis
+ */
+export default async function handler(req, res) {
+  // Handle CORS preflight
+  if (req.method === "OPTIONS") {
+    return res.status(200).json({});
+  }
+
+  // Check if this is an analyze request (via query param or body)
+  const isAnalyzeRequest =
+    req.query?.action === "analyze" ||
+    req.body?.action === "analyze" ||
+    (req.method === "POST" && req.body?.goalId && !req.body?.label); // Analyze request has goalId but no label
+
+  if (isAnalyzeRequest) {
+    // Handle goal analysis endpoint
+    if (req.method !== "POST") {
+      return res.status(405).json({ error: "Method not allowed" });
+    }
+
+    // Authenticate user
+    let userId = null;
+    const authHeader =
+      req.headers["authorization"] || req.headers["Authorization"];
+    const token =
+      typeof authHeader === "string" && authHeader.startsWith("Bearer ")
+        ? authHeader.slice("Bearer ".length)
+        : null;
+
+    if (token) {
+      const { data: authData, error: authError } = await supabase.auth.getUser(
+        token
+      );
+      if (!authError && authData?.user?.id) {
+        userId = authData.user.id;
+      }
+    }
+
+    if (!userId) {
+      console.log("⚠️ [GOAL_ANALYZE] Unauthorized - no userId");
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    try {
+      const { goalId } = req.body;
+
+      if (!goalId) {
+        return res.status(400).json({ error: "goalId is required" });
+      }
+
+      console.log(`🧠 [GOAL_ANALYZE] Starting analysis for goal: ${goalId}`);
+
+      // Fetch goal data
+      const { data: goal, error: goalError } = await supabase
+        .from("goals")
+        .select("*")
+        .eq("id", goalId)
+        .eq("user_id", userId)
+        .single();
+
+      if (goalError || !goal) {
+        console.error("❌ [GOAL_ANALYZE] Error fetching goal:", goalError);
+        return res.status(404).json({ error: "Goal not found" });
+      }
+
+      // Check if analysis already exists
+      if (goal.analysis) {
+        console.log("✅ [GOAL_ANALYZE] Analysis already exists");
+        return res.status(200).json({
+          success: true,
+          analysis: goal.analysis,
+          cached: true,
+        });
+      }
+
+      // Run analysis (this is async and will update the DB)
+      // We don't wait for it to complete - it runs in background
+      analyzeGoalWithLLM(goal, userId).catch((error) => {
+        console.error("❌ [GOAL_ANALYZE] Analysis failed:", error);
+        // Don't throw - analysis runs in background
+      });
+
+      // Return immediately - analysis will be stored when complete
+      return res.status(202).json({
+        success: true,
+        message: "Analysis started",
+        analysis: null,
+      });
+    } catch (error) {
+      console.error("❌ [GOAL_ANALYZE] Error:", error);
+      return res.status(500).json({
+        error: "Failed to start analysis",
+        details: error.message,
+      });
+    }
+  }
+
+  // If not analyze endpoint, return 404
+  return res.status(404).json({ error: "Not found" });
+}
+
+// =====================
 // EXPORTS
 // =====================
 
@@ -1669,6 +2104,9 @@ export {
   handleGoalManagement,
   createGoalFromSlots,
 
+  // Goal analysis
+  analyzeGoalWithLLM,
+
   // Constants
   GOAL_CATEGORY_KEYWORDS,
 
@@ -1678,5 +2116,5 @@ export {
   withTimeout,
   logConversation,
   supabase,
-  MEMORY_EXTRACTION_MODEL,
+  MODEL,
 };

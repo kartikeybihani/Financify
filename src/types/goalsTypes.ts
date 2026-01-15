@@ -61,6 +61,7 @@ export interface GoalNotificationProps {
   goalId?: string;
   onClose: () => void;
   onUndo?: (goalId: string) => void;
+  isModalOpen?: boolean;
 }
 
 export const types = {

@@ -171,7 +171,7 @@ export function useGoals(pushChat: (sender: "user" | "finny", message: string) =
     await refreshGoalsFromServer(false);
   };
 
-  const saveGoal = async (goalInput: GoalInput): Promise<void> => {
+  const saveGoal = async (goalInput: GoalInput): Promise<Goal | null> => {
     try {
       logger.info("🎯 [GOALS] Saving new goal:", goalInput);
       
@@ -180,7 +180,7 @@ export function useGoals(pushChat: (sender: "user" | "finny", message: string) =
       if (!authResult?.user?.id) {
         logger.error("❌ [GOALS] User not authenticated");
         if (pushChat) pushChat("finny", "You need to be logged in to save goals.");
-        return;
+        return null;
       }
       
       const user = authResult.user;
@@ -207,52 +207,87 @@ export function useGoals(pushChat: (sender: "user" | "finny", message: string) =
       if (error) {
         logger.error("❌ [GOALS] Error saving goal:", error);
         if (pushChat) pushChat("finny", "Couldn't save your goal. Try again later.");
-        return;
+        return null;
       }
 
       logger.info("✅ [GOALS] Goal saved successfully:", data);
 
+      // Return goal immediately for smooth UI
+      const goal = data as Goal;
+
       // Store goal creation memory in Supermemory (non-blocking)
-      try {
-        const BASE_URL =
-          process.env.EXPO_PUBLIC_APP_BASE_URL ||
-          "https://financify-rose.vercel.app";
-        await authenticatedFetch(`${BASE_URL}/api/memory`, {
-          method: "POST",
-          body: JSON.stringify({
-            type: "goal_creation",
-            goalData: {
-              id: data.id,
-              label: data.label,
-              target_amount: data.target_amount,
-              current_amount: data.current_amount,
-              target_date: data.target_date,
-              category: data.category,
-              note: data.note,
-            },
-            createdVia: "goals_screen",
-          }),
-        }).catch((error) => {
-          logger.error("❌ [GOAL MEMORY] Failed to store goal memory:", error);
-          // Don't throw - memory storage failures shouldn't break goal creation
-        });
-      } catch (error) {
-        logger.error("❌ [GOAL MEMORY] Error storing goal memory:", error);
-        // Don't throw - memory storage failures shouldn't break goal creation
-      }
+      setTimeout(async () => {
+        try {
+          const BASE_URL =
+            process.env.EXPO_PUBLIC_APP_BASE_URL ||
+            "https://financify-rose.vercel.app";
+          await authenticatedFetch(`${BASE_URL}/api/memory`, {
+            method: "POST",
+            body: JSON.stringify({
+              type: "goal_creation",
+              goalData: {
+                id: data.id,
+                label: data.label,
+                target_amount: data.target_amount,
+                current_amount: data.current_amount,
+                target_date: data.target_date,
+                category: data.category,
+                note: data.note,
+              },
+              createdVia: "goals_screen",
+            }),
+          }).catch((error) => {
+            logger.error("❌ [GOAL MEMORY] Failed to store goal memory:", error);
+          });
+        } catch (error) {
+          logger.error("❌ [GOAL MEMORY] Error storing goal memory:", error);
+        }
+      }, 0);
 
-      // Clear cache first to ensure fresh data, then refresh from server
-      await clearGoalsCache();
-      await refreshGoalsFromServer(false);
+      // Trigger goal analysis (non-blocking)
+      setTimeout(async () => {
+        try {
+          const BASE_URL =
+            process.env.EXPO_PUBLIC_APP_BASE_URL ||
+            "https://financify-rose.vercel.app";
+          await authenticatedFetch(`${BASE_URL}/api/goals?action=analyze`, {
+            method: "POST",
+            body: JSON.stringify({
+              goalId: data.id,
+              action: "analyze",
+            }),
+          }).catch((error) => {
+            logger.error("❌ [GOAL ANALYSIS] Failed to trigger analysis:", error);
+            // Don't show error to user - analysis is optional
+          });
+        } catch (error) {
+          logger.error("❌ [GOAL ANALYSIS] Error triggering analysis:", error);
+          // Don't show error to user - analysis is optional
+        }
+      }, 0);
 
-      // Emit event to notify other screens of new goal
-      DeviceEventEmitter.emit("goalsUpdated", { 
-        action: "created", 
-        goalId: data.id 
+      // Refresh in background without blocking the return
+      // Use requestIdleCallback or setTimeout to ensure it doesn't block UI
+      // but still happens quickly enough
+      Promise.resolve().then(async () => {
+        try {
+          await clearGoalsCache();
+          await refreshGoalsFromServer(false);
+          // Emit event to notify other screens of new goal
+          DeviceEventEmitter.emit("goalsUpdated", { 
+            action: "created", 
+            goalId: data.id 
+          });
+        } catch (error) {
+          logger.error("❌ [GOALS] Background refresh failed:", error);
+        }
       });
+
+      return goal;
     } catch (e) {
       logger.error("❌ [GOALS] Error saving goal:", e);
       if (pushChat) pushChat("finny", "Couldn't save your goal. Try again later.");
+      return null;
     }
   };
 
@@ -314,8 +349,8 @@ export function useGoals(pushChat: (sender: "user" | "finny", message: string) =
     }
   };
 
-  const addManualGoal = async (goalInput: GoalInput): Promise<void> => {
-    await saveGoal(goalInput);
+  const addManualGoal = async (goalInput: GoalInput): Promise<Goal | null> => {
+    return await saveGoal(goalInput);
   };
 
   const clearGoalsCache = async (): Promise<void> => {

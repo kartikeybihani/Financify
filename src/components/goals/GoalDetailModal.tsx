@@ -28,6 +28,9 @@ import {
   getCategoryOptions,
 } from "@/src/utils/categories/goalCategories";
 import CategoryPickerModal from "@/src/components/shared/CategoryPickerModal";
+import { getAuthenticatedUser } from "@/src/utils/auth/auth";
+import { supabase } from "@/src/lib/supabase/supabase";
+import { ActivityIndicator } from "react-native";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 
@@ -51,6 +54,11 @@ const GoalDetailModal = ({
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [progressSectionY, setProgressSectionY] = useState(0);
   const scrollViewRef = useRef<ScrollView | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysis, setAnalysis] = useState<string | null>(null);
+  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const pollingAttemptsRef = useRef(0);
+  const MAX_POLLING_ATTEMPTS = 30; // 30 attempts * 1.5s = 45 seconds max
 
   // Animation refs
   const noteAnimation = useRef(new Animated.Value(0)).current;
@@ -70,8 +78,104 @@ const GoalDetailModal = ({
       // Reset animations when goal changes
       noteAnimation.setValue(goal.note ? 1 : 0);
       noteHeightAnimation.setValue(goal.note ? 1 : 0);
+      
+      // Handle analysis state
+      if (goal.analysis) {
+        setAnalysis(goal.analysis);
+        setIsAnalyzing(false);
+      } else {
+        // Check if analysis is being generated (newly created goal)
+        // Start polling if goal was just created (no analysis and goal is recent)
+        const goalCreatedAt = new Date(goal.created_at);
+        const now = new Date();
+        const minutesSinceCreation = (now.getTime() - goalCreatedAt.getTime()) / (1000 * 60);
+        
+        // If goal was created in the last 2 minutes, start polling
+        if (minutesSinceCreation < 2) {
+          setIsAnalyzing(true);
+          startPollingForAnalysis();
+        } else {
+          setIsAnalyzing(false);
+        }
+      }
     }
+    
+    // Cleanup polling on unmount or goal change
+    return () => {
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+        pollingIntervalRef.current = null;
+      }
+      pollingAttemptsRef.current = 0;
+    };
   }, [goal]);
+
+  // Polling function to check for analysis
+  const startPollingForAnalysis = () => {
+    if (!goal?.id) return;
+    
+    // Clear any existing polling
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+    }
+    
+    pollingAttemptsRef.current = 0;
+    
+    const pollForAnalysis = async () => {
+      if (pollingAttemptsRef.current >= MAX_POLLING_ATTEMPTS) {
+        // Max attempts reached - stop polling and hide spinner
+        setIsAnalyzing(false);
+        if (pollingIntervalRef.current) {
+          clearInterval(pollingIntervalRef.current);
+          pollingIntervalRef.current = null;
+        }
+        return;
+      }
+      
+      pollingAttemptsRef.current++;
+      
+      try {
+        const authResult = await getAuthenticatedUser();
+        if (!authResult?.user?.id || !goal?.id) {
+          setIsAnalyzing(false);
+          return;
+        }
+        
+        // Fetch goal directly from Supabase to check if analysis exists
+        const { data: goalData, error } = await supabase
+          .from("goals")
+          .select("analysis")
+          .eq("id", goal.id)
+          .eq("user_id", authResult.user.id)
+          .single();
+        
+        if (!error && goalData?.analysis) {
+          // Analysis found - stop polling and update state
+          setAnalysis(goalData.analysis);
+          setIsAnalyzing(false);
+          if (pollingIntervalRef.current) {
+            clearInterval(pollingIntervalRef.current);
+            pollingIntervalRef.current = null;
+          }
+          
+          // Update goal in parent if onOptimisticUpdate is available
+          if (onOptimisticUpdate && goal) {
+            onOptimisticUpdate({
+              ...goal,
+              analysis: goalData.analysis,
+            });
+          }
+        }
+      } catch (error) {
+        logger.error("❌ [GOAL ANALYSIS] Polling error:", error);
+        // Continue polling on error (might be transient)
+      }
+    };
+    
+    // Start polling immediately, then every 1.5 seconds
+    pollForAnalysis();
+    pollingIntervalRef.current = setInterval(pollForAnalysis, 1500);
+  };
 
   // Animate note field when showNoteField changes
   useEffect(() => {
@@ -145,6 +249,13 @@ const GoalDetailModal = ({
     goal && localProgressAmount !== (goal.current_amount || 0);
 
   const handleClose = () => {
+    // Stop polling when modal closes
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+      pollingIntervalRef.current = null;
+    }
+    pollingAttemptsRef.current = 0;
+    
     // If in editing mode, first exit editing mode
     if (isEditing) {
       setIsEditing(false);
@@ -362,6 +473,33 @@ const GoalDetailModal = ({
                           </Text>
                         </View>
                       </View>
+
+                      {/* Loading chip for analysis */}
+                      {isAnalyzing && (
+                        <View style={styles.analysisLoadingChip}>
+                          <ActivityIndicator
+                            size="small"
+                            color="#4A90E2"
+                            style={styles.analysisLoadingSpinner}
+                          />
+                          <Text style={styles.analysisLoadingText}>
+                            Finny is thinking about goal...
+                          </Text>
+                        </View>
+                      )}
+
+                      {/* Analysis display */}
+                      {analysis && !isAnalyzing && (
+                        <View style={styles.analysisSection}>
+                          <ScrollView
+                            style={styles.analysisScrollView}
+                            showsVerticalScrollIndicator={true}
+                            nestedScrollEnabled={true}
+                          >
+                            <Text style={styles.analysisText}>{analysis}</Text>
+                          </ScrollView>
+                        </View>
+                      )}
 
                       {goal.note && (
                         <View style={styles.noteSection}>
@@ -934,7 +1072,7 @@ const styles = StyleSheet.create({
     flex: 0.83,
   },
   bottomDeleteButtonContainer: {
-    flex: 0.17,
+    flex: 0.14,
   },
   bottomCancelButtonContainer: {
     flex: 0.4,
@@ -1529,6 +1667,45 @@ const styles = StyleSheet.create({
     color: "#ccc",
     lineHeight: 20,
     marginTop: 4,
+  },
+  // Analysis loading chip styles
+  analysisLoadingChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(74, 144, 226, 0.15)",
+    borderRadius: 20,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    marginTop: 12,
+    alignSelf: "flex-start",
+    borderWidth: 1,
+    borderColor: "rgba(74, 144, 226, 0.3)",
+  },
+  analysisLoadingSpinner: {
+    marginRight: 8,
+  },
+  analysisLoadingText: {
+    fontSize: 13,
+    color: "#4A90E2",
+    fontWeight: "500",
+  },
+  // Analysis display styles
+  analysisSection: {
+    backgroundColor: "rgba(255,255,255,0.05)",
+    borderRadius: 12,
+    padding: 16,
+    marginTop: 12,
+    maxHeight: 300, // Limit height, make it scrollable
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.1)",
+  },
+  analysisScrollView: {
+    maxHeight: 300,
+  },
+  analysisText: {
+    fontSize: 14,
+    color: "#fff",
+    lineHeight: 22,
   },
 });
 

@@ -14,6 +14,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Keyboard,
+  ActivityIndicator,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
@@ -55,6 +56,7 @@ export default function AddGoalModal({
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
   const [isReady, setIsReady] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [isSaving, setIsSaving] = useState(false);
 
   const insets = useSafeAreaInsets();
 
@@ -88,6 +90,7 @@ export default function AddGoalModal({
       setSelectedCategory("other");
       setShowNoteField(false);
       setErrors({});
+      setIsSaving(false);
       // Reset note animations
       noteAnimation.setValue(0);
       noteHeightAnimation.setValue(0);
@@ -177,18 +180,26 @@ export default function AddGoalModal({
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSave = () => {
-    if (validateForm()) {
-      onSave({
-        label: goal.label.trim(),
-        note: goal.note?.trim(),
-        target_amount: goal.target_amount,
-        current_amount: goal.current_amount || 0,
-        target_date: selectedDate.toISOString().split("T")[0], // Convert to YYYY-MM-DD format
-        category: selectedCategory,
-      });
-
-      onClose();
+  const handleSave = async () => {
+    if (validateForm() && !isSaving) {
+      // Dismiss keyboard when saving starts
+      Keyboard.dismiss();
+      setIsSaving(true);
+      try {
+        await onSave({
+          label: goal.label.trim(),
+          note: goal.note?.trim(),
+          target_amount: goal.target_amount,
+          current_amount: goal.current_amount || 0,
+          target_date: selectedDate.toISOString().split("T")[0], // Convert to YYYY-MM-DD format
+          category: selectedCategory,
+        });
+        // Close modal only after save completes successfully
+        onClose();
+      } catch (error) {
+        // Error handling is done in parent component
+        setIsSaving(false);
+      }
     }
   };
 
@@ -199,10 +210,10 @@ export default function AddGoalModal({
       visible={visible}
       transparent
       animationType="none"
-      onRequestClose={onClose}
+      onRequestClose={isSaving ? undefined : onClose}
       statusBarTranslucent
     >
-      <TouchableWithoutFeedback onPress={onClose}>
+      <TouchableWithoutFeedback onPress={isSaving ? undefined : onClose}>
         <View style={styles.overlay}>
           <KeyboardAvoidingView
             behavior={Platform.OS === "ios" ? "padding" : "height"}
@@ -236,7 +247,12 @@ export default function AddGoalModal({
                     <View style={styles.headerTextContainer}>
                       <Text style={styles.headerTitle}>Set a new goal</Text>
                     </View>
-                    <IconButton onPress={onClose} icon="close" size={18} />
+                    <IconButton
+                      onPress={onClose}
+                      icon="close"
+                      size={18}
+                      disabled={isSaving}
+                    />
                   </View>
 
                   <ScrollView
@@ -268,6 +284,7 @@ export default function AddGoalModal({
                             setErrors((prev) => ({ ...prev, label: "" }));
                           }
                         }}
+                        editable={!isSaving}
                       />
                       {errors.label ? (
                         <Text style={styles.errorText}>{errors.label}</Text>
@@ -311,6 +328,7 @@ export default function AddGoalModal({
                             }
                           }}
                           keyboardType="numeric"
+                          editable={!isSaving}
                         />
                       </View>
                       {errors.target_amount ? (
@@ -330,8 +348,10 @@ export default function AddGoalModal({
                             styles.categoryButton,
                             styles.matchedHeightButton,
                             errors.category && styles.inputError,
+                            isSaving && styles.disabledButton,
                           ]}
                           onPress={() => setShowCategoryPicker(true)}
+                          disabled={isSaving}
                         >
                           <View style={styles.categoryContent}>
                             <Text style={styles.categoryButtonEmoji}>
@@ -386,6 +406,7 @@ export default function AddGoalModal({
                               setGoal((prev) => ({ ...prev, current_amount }));
                             }}
                             keyboardType="numeric"
+                            editable={!isSaving}
                           />
                         </View>
                       </View>
@@ -397,8 +418,10 @@ export default function AddGoalModal({
                         style={[
                           styles.dateButton,
                           errors.date && styles.inputError,
+                          isSaving && styles.disabledButton,
                         ]}
                         onPress={() => setShowDatePicker(true)}
+                        disabled={isSaving}
                       >
                         <Text style={styles.dateButtonText}>
                           {selectedDate.toLocaleDateString("en-US", {
@@ -420,6 +443,7 @@ export default function AddGoalModal({
                         style={styles.addNoteButton}
                         onPress={() => setShowNoteField(true)}
                         activeOpacity={0.7}
+                        disabled={isSaving}
                       >
                         <LinearGradient
                           colors={[
@@ -472,6 +496,7 @@ export default function AddGoalModal({
                                 setGoal((prev) => ({ ...prev, note: "" }));
                               }}
                               style={styles.removeNoteButton}
+                              disabled={isSaving}
                             >
                               <Ionicons
                                 name="close-circle"
@@ -517,6 +542,7 @@ export default function AddGoalModal({
                               maxLength={350}
                               returnKeyType="done"
                               blurOnSubmit={true}
+                              editable={!isSaving}
                             />
                             <Text style={styles.characterCount}>
                               {goal.note?.length || 0}/350 characters
@@ -531,38 +557,62 @@ export default function AddGoalModal({
                       </Animated.View>
                     )}
 
-                    <View style={styles.actionButtons}>
-                      <TouchableOpacity style={styles.button} onPress={onClose}>
-                        <LinearGradient
-                          colors={[
-                            "rgba(255, 255, 255, 0.12)",
-                            "rgba(255, 255, 255, 0.03)",
-                          ]}
-                          style={styles.glassButton}
-                          start={{ x: 0, y: 0 }}
-                          end={{ x: 1, y: 1 }}
-                        >
-                          <Text style={styles.buttonText}>Cancel</Text>
-                        </LinearGradient>
-                      </TouchableOpacity>
-
-                      <TouchableOpacity
-                        style={styles.button}
-                        onPress={handleSave}
-                      >
+                    {isSaving ? (
+                      <View style={styles.loadingContainer}>
                         <LinearGradient
                           colors={[
                             "rgba(74, 144, 226, 0.8)",
                             "rgba(74, 144, 226, 0.6)",
                           ]}
-                          style={styles.glassButton}
+                          style={styles.loadingButton}
                           start={{ x: 0, y: 0 }}
                           end={{ x: 1, y: 1 }}
                         >
-                          <Text style={styles.buttonText}>Set Goal</Text>
+                          <ActivityIndicator size="small" color="#fff" />
+                          <Text style={styles.loadingText}>
+                            Adding new goal
+                          </Text>
                         </LinearGradient>
-                      </TouchableOpacity>
-                    </View>
+                      </View>
+                    ) : (
+                      <View style={styles.actionButtons}>
+                        <TouchableOpacity
+                          style={styles.button}
+                          onPress={onClose}
+                          disabled={isSaving}
+                        >
+                          <LinearGradient
+                            colors={[
+                              "rgba(255, 255, 255, 0.12)",
+                              "rgba(255, 255, 255, 0.03)",
+                            ]}
+                            style={styles.glassButton}
+                            start={{ x: 0, y: 0 }}
+                            end={{ x: 1, y: 1 }}
+                          >
+                            <Text style={styles.buttonText}>Cancel</Text>
+                          </LinearGradient>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          style={styles.button}
+                          onPress={handleSave}
+                          disabled={isSaving}
+                        >
+                          <LinearGradient
+                            colors={[
+                              "rgba(74, 144, 226, 0.8)",
+                              "rgba(74, 144, 226, 0.6)",
+                            ]}
+                            style={styles.glassButton}
+                            start={{ x: 0, y: 0 }}
+                            end={{ x: 1, y: 1 }}
+                          >
+                            <Text style={styles.buttonText}>Set Goal</Text>
+                          </LinearGradient>
+                        </TouchableOpacity>
+                      </View>
+                    )}
                   </ScrollView>
 
                   {showDatePicker && (
@@ -1101,5 +1151,26 @@ const styles = StyleSheet.create({
     width: "100%",
     height: 180,
     backgroundColor: "transparent",
+  },
+  loadingContainer: {
+    marginTop: 12,
+  },
+  loadingButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.2)",
+    gap: 12,
+  },
+  loadingText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  disabledButton: {
+    opacity: 0.5,
   },
 });

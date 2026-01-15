@@ -32,15 +32,6 @@ import { useRouter } from "expo-router";
 import logger from "@/src/utils/core/logger";
 import { supabase } from "@/src/lib/supabase/supabase";
 
-// UUID generator for temporary IDs
-const generateId = () => {
-  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, function (c) {
-    const r = (Math.random() * 16) | 0;
-    const v = c == "x" ? r : (r & 0x3) | 0x8;
-    return v.toString(16);
-  });
-};
-
 const Goals: React.FC<GoalsProps> = ({
   deleteGoal,
   updateGoal,
@@ -64,6 +55,7 @@ const Goals: React.FC<GoalsProps> = ({
   const [selectedGoal, setSelectedGoal] = useState<Goal | null>(null);
   const [localGoalsData, setLocalGoalsData] = useState<Goal[]>(goalsData);
   const [deletedGoal, setDeletedGoal] = useState<Goal | null>(null); // Store for undo
+  const deleteTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null); // Store timeout for delayed deletion
 
   const { addManualGoal, refreshGoals } = useGoals(() => {});
 
@@ -139,118 +131,127 @@ const Goals: React.FC<GoalsProps> = ({
   });
 
   useEffect(() => {
-    setLocalGoalsData(goalsData);
+    // Sync goalsData prop to local state
+    // Merge strategy: keep optimistic updates that aren't in server data yet
+    setLocalGoalsData((prev) => {
+      // If server data is empty or we have no local data, just use server data
+      if (goalsData.length === 0 || prev.length === 0) {
+        return goalsData;
+      }
+
+      // Merge: start with server data, then add any local goals not yet on server
+      const serverGoalIds = new Set(goalsData.map((g) => g.id));
+      const localOnlyGoals = prev.filter((g) => !serverGoalIds.has(g.id));
+
+      // Combine server data with any local-only goals (optimistic updates)
+      return [...goalsData, ...localOnlyGoals];
+    });
   }, [goalsData]);
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (deleteTimeoutRef.current) {
+        clearTimeout(deleteTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const handleSaveGoal = async (goalInput: GoalInput) => {
     try {
-      // Optimistically add a local goal card for smooth UX
-      const tempId = generateId();
-      const optimisticGoal: Goal = {
-        id: tempId as any,
-        user_id: undefined as any,
-        label: goalInput.label,
-        description: null as any,
-        note: goalInput.note || undefined,
-        target_amount: goalInput.target_amount,
-        current_amount: goalInput.current_amount || 0,
-        target_date: goalInput.target_date,
-        category: goalInput.category,
-        status: "active" as any,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      };
-      setLocalGoalsData((prev) => [optimisticGoal, ...prev]);
+      // Save to server and get the created goal back
+      const createdGoal = await addManualGoal(goalInput);
 
-      // Show notification immediately for instant feedback
-      setState((prev: GoalsState) => ({
-        ...prev,
-        showAddGoalModal: false,
-        notification: {
-          visible: true,
-          message: "Yay! You created a new milestone!",
-          action: "create",
-        },
-      }));
+      if (createdGoal) {
+        // Optimistically add to local list immediately for instant UI update
+        setLocalGoalsData((prev) => {
+          // Check if goal already exists (from background refresh)
+          const exists = prev.some((g) => g.id === createdGoal.id);
+          if (exists) {
+            // Update existing goal
+            return prev.map((g) => (g.id === createdGoal.id ? createdGoal : g));
+          }
+          // Add new goal
+          return [createdGoal, ...prev];
+        });
 
-      // Trigger subtle celebration animation
-      Animated.sequence([
-        Animated.timing(mascotCelebrate, {
-          toValue: 1,
-          duration: 300,
-          easing: Easing.out(Easing.quad),
-          useNativeDriver: true,
-        }),
-        Animated.timing(mascotCelebrate, {
-          toValue: 0,
-          duration: 300,
-          easing: Easing.in(Easing.quad),
-          useNativeDriver: true,
-        }),
-      ]).start();
+        // Open the goal detail modal automatically with the real goal
+        // Small delay ensures AddGoalModal closes first, then detail modal opens smoothly
+        requestAnimationFrame(() => {
+          setSelectedGoal(createdGoal);
+        });
 
-      // Persist in background; server refresh will reconcile and replace temp
-      await addManualGoal(goalInput);
-      if (propRefreshGoals) {
-        await propRefreshGoals();
-      } else {
-        await refreshGoals();
+        // Refresh in background to ensure everything is in sync
+        // This will update goalsData prop which will sync to localGoalsData
+        if (propRefreshGoals) {
+          propRefreshGoals().catch((err) => {
+            logger.error("Background refresh failed:", err);
+          });
+        } else {
+          refreshGoals().catch((err) => {
+            logger.error("Background refresh failed:", err);
+          });
+        }
       }
     } catch (err) {
       logger.error("Manual goal save failed:", err);
-      // Revert optimistic update on error
-      setLocalGoalsData((prev) => prev.filter((g) => g.id !== tempId));
-      setState((prev: GoalsState) => ({
-        ...prev,
-        notification: {
-          visible: true,
-          message: "Failed to create goal",
-        },
-      }));
+      // Re-throw error so AddGoalModal can handle it
+      throw err;
     }
   };
 
   const handleDeleteGoal = async (goalToDelete: Goal) => {
-    try {
-      // Store deleted goal for potential undo
-      setDeletedGoal(goalToDelete);
+    // Store deleted goal for potential undo
+    setDeletedGoal(goalToDelete);
 
-      // Optimistic removal
-      setLocalGoalsData((prev) => prev.filter((g) => g.id !== goalToDelete.id));
-      await deleteGoal(goalToDelete.id);
-      // Sync with server to ensure consistency and cache update
-      if (propRefreshGoals) {
-        await propRefreshGoals();
-      } else {
-        await refreshGoals();
-      }
-      setState((prev: GoalsState) => ({
-        ...prev,
-        notification: {
-          visible: true,
-          message: "Goal deleted successfully",
-          action: "delete",
-          goalId: goalToDelete.id,
-        },
-      }));
-    } catch (error) {
-      logger.error("Error deleting goal:", error);
-      // Clear stored deleted goal on error
-      setDeletedGoal(null);
-      // Revert by refreshing full list
-      if (propRefreshGoals) {
-        await propRefreshGoals();
-      } else {
-        await refreshGoals();
-      }
-      setState((prev: GoalsState) => ({
-        ...prev,
-        notification: {
-          visible: true,
-          message: "Failed to delete goal",
-        },
-      }));
+    // Optimistic removal from UI
+    setLocalGoalsData((prev) => prev.filter((g) => g.id !== goalToDelete.id));
+
+    // Show notification immediately for instant feedback
+    setState((prev: GoalsState) => ({
+      ...prev,
+      notification: {
+        visible: true,
+        message: "Goal deleted successfully",
+        action: "delete",
+        goalId: goalToDelete.id,
+      },
+    }));
+
+    // Clear any existing timeout
+    if (deleteTimeoutRef.current) {
+      clearTimeout(deleteTimeoutRef.current);
     }
+
+    // Schedule deletion from server after notification auto-closes (3 seconds)
+    // This gives user time to undo
+    deleteTimeoutRef.current = setTimeout(async () => {
+      try {
+        await deleteGoal(goalToDelete.id);
+        // Sync with server to ensure consistency and cache update
+        if (propRefreshGoals) {
+          await propRefreshGoals();
+        } else {
+          await refreshGoals();
+        }
+        // Clear the stored deleted goal after successful deletion
+        setDeletedGoal(null);
+        deleteTimeoutRef.current = null;
+      } catch (error) {
+        logger.error("Error deleting goal from server:", error);
+        // On error, restore the goal in UI
+        setLocalGoalsData((prev) => [...prev, goalToDelete]);
+        setDeletedGoal(null);
+        deleteTimeoutRef.current = null;
+        setState((prev: GoalsState) => ({
+          ...prev,
+          notification: {
+            visible: true,
+            message: "Failed to delete goal",
+          },
+        }));
+      }
+    }, 3000); // Match notification auto-close duration
   };
 
   const handleOptimisticUpdate = (updatedGoal: Goal) => {
@@ -311,39 +312,18 @@ const Goals: React.FC<GoalsProps> = ({
   };
 
   const handleUndoDelete = async (goalId: string) => {
-    try {
-      if (deletedGoal) {
-        // Restore the goal to local data
-        setLocalGoalsData((prev) => [...prev, deletedGoal]);
+    // Clear the scheduled deletion timeout
+    if (deleteTimeoutRef.current) {
+      clearTimeout(deleteTimeoutRef.current);
+      deleteTimeoutRef.current = null;
+    }
 
-        // Re-create the goal in the database
-        await addManualGoal({
-          label: deletedGoal.label,
-          target_amount: deletedGoal.target_amount,
-          current_amount: deletedGoal.current_amount,
-          target_date: deletedGoal.target_date,
-          category: deletedGoal.category,
-          note: deletedGoal.note,
-        });
+    if (deletedGoal) {
+      // Restore the goal to local data (it was never deleted from server)
+      setLocalGoalsData((prev) => [...prev, deletedGoal]);
 
-        // Clear the stored deleted goal
-        setDeletedGoal(null);
-
-        // Refresh to ensure consistency
-        if (propRefreshGoals) {
-          await propRefreshGoals();
-        } else {
-          await refreshGoals();
-        }
-      }
-    } catch (error) {
-      logger.error("Error undoing goal deletion:", error);
-      // If undo fails, refresh to get current state
-      if (propRefreshGoals) {
-        await propRefreshGoals();
-      } else {
-        await refreshGoals();
-      }
+      // Clear the stored deleted goal
+      setDeletedGoal(null);
     }
   };
 
@@ -369,12 +349,15 @@ const Goals: React.FC<GoalsProps> = ({
           message={state.notification.message}
           action={state.notification.action}
           goalId={state.notification.goalId}
-          onClose={() =>
+          isModalOpen={selectedGoal !== null}
+          onClose={() => {
             setState((prev: GoalsState) => ({
               ...prev,
               notification: { visible: false, message: "" },
-            }))
-          }
+            }));
+            // If notification closes without undo, the timeout will still handle deletion
+            // No need to do anything here as deletion is already scheduled
+          }}
           onUndo={handleUndoDelete}
         />
       )}
@@ -504,7 +487,13 @@ const Goals: React.FC<GoalsProps> = ({
                 onPress={() => setSelectedGoal(item)}
               />
             ))}
-            <View style={{ paddingHorizontal: 16, paddingTop: 16, paddingBottom: 16 }}>
+            <View
+              style={{
+                paddingHorizontal: 16,
+                paddingTop: 16,
+                paddingBottom: 16,
+              }}
+            >
               <FinanceFact screenKey="goals" />
             </View>
           </>

@@ -13,7 +13,7 @@ export interface GoalInput {
 export interface AddGoalModalProps {
     visible: boolean;
     onClose: () => void;
-    onSave: (goal: GoalInput) => void;
+    onSave: (goal: GoalInput) => Promise<void>;
 }
 
 const types = {

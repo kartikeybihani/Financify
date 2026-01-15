@@ -186,6 +186,7 @@ CREATE TABLE public.goals (
   created_at timestamp with time zone DEFAULT now(),
   updated_at timestamp with time zone DEFAULT now(),
   manual_progress_total numeric NOT NULL DEFAULT 0,
+  analysis text,
   CONSTRAINT goals_pkey PRIMARY KEY (id),
   CONSTRAINT goals_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
 );
