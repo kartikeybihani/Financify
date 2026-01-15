@@ -32,12 +32,20 @@ async function testFullPipeline(message) {
     console.log(`\n🧪 Testing Full Pipeline: "${message}"`);
     console.log("=".repeat(80));
 
-    const startTime = Date.now();
+    // Start total timer - from message sent to reply received
+    const totalStartTime = Date.now();
+    const timings = {
+      classification: 0,
+      handler: 0,
+      total: 0,
+    };
 
     // Step 1: Classification
     console.log("\n📋 Step 1: Classification");
     console.log("-".repeat(80));
+    const classificationStartTime = Date.now();
     const classification = await handleClassify(message, TEST_USER_CONTEXT);
+    timings.classification = Date.now() - classificationStartTime;
 
     console.log("Classification Result:");
     console.log(`  intent: ${classification.intent}`);
@@ -59,6 +67,7 @@ async function testFullPipeline(message) {
     console.log("-".repeat(80));
 
     let response;
+    const handlerStartTime = Date.now();
 
     // Route to appropriate handler based on intent
     if (classification.intent === "off_topic") {
@@ -87,6 +96,9 @@ async function testFullPipeline(message) {
         null // res
       );
     }
+
+    timings.handler = Date.now() - handlerStartTime;
+    timings.total = Date.now() - totalStartTime;
 
     // Determine if clarification was triggered
     // Clarification is triggered if handleAsk returns early with a clarification message
@@ -134,7 +146,34 @@ async function testFullPipeline(message) {
       // handleAsk returns 'message' field (string)
       console.log(`    ${responseMessage}`);
     }
-    console.log(`\n  Response time: ${Date.now() - startTime}ms`);
+
+    // Timing information - from message sent to reply received
+    console.log("\n⏱️  Timing Information:");
+    console.log("=".repeat(80));
+    console.log(
+      `  ⏱️  Total Time (Message → Reply): ${timings.total}ms (${(
+        timings.total / 1000
+      ).toFixed(2)}s)`
+    );
+    console.log(
+      `  📋 Classification Time: ${timings.classification}ms (${(
+        timings.classification / 1000
+      ).toFixed(2)}s)`
+    );
+    console.log(
+      `  💬 Handler Time: ${timings.handler}ms (${(
+        timings.handler / 1000
+      ).toFixed(2)}s)`
+    );
+    console.log(
+      `  📊 Breakdown: ${(
+        (timings.classification / timings.total) *
+        100
+      ).toFixed(1)}% classification, ${(
+        (timings.handler / timings.total) *
+        100
+      ).toFixed(1)}% handler`
+    );
 
     return {
       classification,

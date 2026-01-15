@@ -1589,7 +1589,8 @@ export default async function handler(req, res) {
   // === CHAT SESSION CHECK: Clear session state if new chat session ===
   const lastChatId = sessionState?.last_chat_id;
   const shouldPrePopulateCache =
-    !!chatId && (!lastChatId || (typeof lastChatId === "string" && lastChatId !== chatId));
+    !!chatId &&
+    (!lastChatId || (typeof lastChatId === "string" && lastChatId !== chatId));
   if (lastChatId && chatId && lastChatId !== chatId) {
     console.log(
       `🆕 [SESSION] New chat detected (old: ${lastChatId}, new: ${chatId}) - clearing session state`
@@ -1782,10 +1783,7 @@ export default async function handler(req, res) {
             safeContext.goal_flow = safeContext.session.goal_flow;
           }
           try {
-            response = await handleGoalConversation(
-              message,
-              safeContext
-            );
+            response = await handleGoalConversation(message, safeContext);
           } catch (goalError) {
             logError("❌ [GOAL] Goal conversation failed:", goalError);
             response = {
@@ -2255,7 +2253,12 @@ async function handleAsk(
       if (!userId || !context?.chat_id) return;
       if (!assistantText) return;
       try {
-        appendConversationTurns(userId, context.chat_id, message, assistantText);
+        appendConversationTurns(
+          userId,
+          context.chat_id,
+          message,
+          assistantText
+        );
       } catch (e) {
         // Non-fatal; never break the ask flow for history.
         logDebug("⚠️ [HISTORY] Failed to record turns:", e?.message);
@@ -3222,9 +3225,7 @@ async function handleAsk(
 
     // Log prompt summary
     const promptSize = Math.round(system.length / 100) / 10;
-    logInfo(
-      `📝 [PROMPT] Ready (system: ${promptSize}k chars)`
-    );
+    logInfo(`📝 [PROMPT] Ready (system: ${promptSize}k chars)`);
 
     // Log complete system prompt with clear dividers
     console.log("\n" + "=".repeat(100));
@@ -5934,33 +5935,73 @@ async function handleOffTopic(message, context) {
     console.log(userMessage);
     console.log("=".repeat(100) + "\n");
 
-    const response = await fetch(
-      "https://openrouter.ai/api/v1/chat/completions",
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${process.env.OPENROUTER_GROK_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: SMALLER_MODEL || STANDARD_MODEL,
-          temperature: 0.85,
-          max_tokens: 350,
-          messages: [
-            {
-              role: "system",
-              content: systemPrompt,
-            },
-            {
-              role: "user",
-              content: userContextParts.join("\n\n"),
-            },
-          ],
-        }),
-      }
-    );
+    async function callMainLLM(model, options = {}) {
+      const resp = await fetch(
+        "https://openrouter.ai/api/v1/chat/completions",
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${getOpenRouterKey()}`,
+            "Content-Type": "application/json",
+          },
+          signal: options.signal,
+          body: JSON.stringify({
+            model,
+            temperature: 0.85,
+            max_tokens: 1500,
+            messages: [
+              {
+                role: "system",
+                content: systemPrompt,
+              },
+              {
+                role: "user",
+                content: userMessage,
+              },
+            ],
+          }),
+        }
+      );
 
-    const data = await response.json();
+      if (!resp.ok) {
+        const errorText = await resp.text();
+        throw new Error(`OpenRouter error ${resp.status}: ${errorText}`);
+      }
+      return resp;
+    }
+
+    // Use reasoning model (meta-llama/llama-4-scout) as primary, STANDARD_MODEL as fallback
+    const llmModels = [
+      REASONING_MODEL_PAID_SCOUT || "meta-llama/llama-4-scout",
+      STANDARD_MODEL,
+    ];
+
+    let resp;
+    let usedModel = REASONING_MODEL_PAID_SCOUT || "meta-llama/llama-4-scout";
+    try {
+      const llmResult = await callWithFallback(
+        llmModels,
+        callMainLLM,
+        20000,
+        "LLM"
+      );
+      resp = llmResult.result;
+      usedModel = llmResult.model;
+    } catch (llmError) {
+      console.error(
+        "❌ [FINNY] All LLM attempts failed for off-topic:",
+        llmError?.message
+      );
+      return {
+        text: "I'm strictly a finance coach. What financial questions can I help you with?",
+        type: "assistant",
+        intent: "off_topic",
+        category: category,
+        fallback: true,
+      };
+    }
+
+    const data = await resp.json();
     const content =
       data.choices?.[0]?.message?.content ||
       "I'm all about finance. What money questions can I help you with?";
