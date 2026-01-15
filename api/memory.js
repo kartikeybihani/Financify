@@ -93,109 +93,13 @@ export default async function handler(req, res) {
       const isProfileMemories = req.query.type === "profile";
 
       if (isProfileMemories) {
-        // Fetch profile memories with caching
-        // 1. Check cache first - return immediately if valid
-        // 2. Refresh in background if cache is invalid/empty
-
-        let cachedMemories = await getCachedSupermemoryDocuments(serverUserId);
-        const hasValidCache =
-          cachedMemories !== null && cachedMemories.length > 0;
-
-        // Return cached data immediately if available
-        if (hasValidCache) {
-          console.log(
-            `✅ [MEMORY_API] Returning ${cachedMemories.length} cached memories for user ${serverUserId}`
-          );
-
-          // Refresh in background (fire and forget - don't await)
-          (async () => {
-            const bgRefreshStartTime = Date.now();
-            const bgRefreshId = `bg-${Date.now()}-${Math.random()
-              .toString(36)
-              .substr(2, 9)}`;
-            try {
-              console.log(
-                `🔄 [MEMORY_API] Starting background refresh [${bgRefreshId}] for user ${serverUserId}`,
-                {
-                  cachedCount: cachedMemories.length,
-                  timestamp: new Date().toISOString(),
-                }
-              );
-
-              const fetchStartTime = Date.now();
-              const freshMemories = await fetchSupermemoryMemories(
-                serverUserId
-              );
-              const fetchDuration = Date.now() - fetchStartTime;
-
-              console.log(
-                `📥 [MEMORY_API] Background refresh fetched [${bgRefreshId}]`,
-                {
-                  userId: serverUserId,
-                  freshMemoriesCount: freshMemories?.length || 0,
-                  isArray: Array.isArray(freshMemories),
-                  fetchDurationMs: fetchDuration,
-                  timestamp: new Date().toISOString(),
-                }
-              );
-
-              if (Array.isArray(freshMemories) && freshMemories.length > 0) {
-                const cacheStartTime = Date.now();
-                await cacheSupermemoryDocuments(serverUserId, freshMemories);
-                const cacheDuration = Date.now() - cacheStartTime;
-                const totalDuration = Date.now() - bgRefreshStartTime;
-
-                console.log(
-                  `✅ [MEMORY_API] Background refresh completed [${bgRefreshId}] for user ${serverUserId}`,
-                  {
-                    cachedCount: cachedMemories.length,
-                    freshCount: freshMemories.length,
-                    cacheDurationMs: cacheDuration,
-                    totalDurationMs: totalDuration,
-                    timestamp: new Date().toISOString(),
-                  }
-                );
-              } else {
-                const totalDuration = Date.now() - bgRefreshStartTime;
-                console.warn(
-                  `⚠️ [MEMORY_API] Background refresh returned empty/invalid data [${bgRefreshId}]`,
-                  {
-                    userId: serverUserId,
-                    freshMemories,
-                    totalDurationMs: totalDuration,
-                    timestamp: new Date().toISOString(),
-                  }
-                );
-              }
-            } catch (error) {
-              const totalDuration = Date.now() - bgRefreshStartTime;
-              console.error(
-                `❌ [MEMORY_API] Background refresh failed [${bgRefreshId}]`,
-                {
-                  userId: serverUserId,
-                  errorMessage: error.message,
-                  errorName: error.name,
-                  errorStack: error.stack?.substring(0, 300),
-                  totalDurationMs: totalDuration,
-                  timestamp: new Date().toISOString(),
-                }
-              );
-            }
-          })();
-
-          return res.status(200).json({
-            results: cachedMemories,
-            memories: cachedMemories, // Keep for backward compatibility
-          });
-        }
-
-        // No valid cache - fetch fresh from API
+        // Always fetch fresh memories from API (no caching)
         const freshFetchStartTime = Date.now();
         const freshFetchId = `fresh-${Date.now()}-${Math.random()
           .toString(36)
           .substr(2, 9)}`;
         console.log(
-          `🔄 [MEMORY_API] No valid cache, fetching fresh memories [${freshFetchId}] for user ${serverUserId}`,
+          `🔄 [MEMORY_API] Fetching fresh memories [${freshFetchId}] for user ${serverUserId}`,
           {
             timestamp: new Date().toISOString(),
           }
@@ -211,22 +115,6 @@ export default async function handler(req, res) {
           fetchDurationMs: fetchDuration,
           timestamp: new Date().toISOString(),
         });
-
-        // Cache the fresh results
-        if (memoriesArray.length > 0) {
-          const cacheStartTime = Date.now();
-          await cacheSupermemoryDocuments(serverUserId, memoriesArray);
-          const cacheDuration = Date.now() - cacheStartTime;
-          console.log(
-            `💾 [MEMORY_API] Cached fresh memories [${freshFetchId}]`,
-            {
-              userId: serverUserId,
-              cachedCount: memoriesArray.length,
-              cacheDurationMs: cacheDuration,
-              timestamp: new Date().toISOString(),
-            }
-          );
-        }
 
         return res.status(200).json({
           results: memoriesArray,
@@ -276,27 +164,18 @@ export default async function handler(req, res) {
       });
     }
   } else if (method === "DELETE") {
-    // Delete a memory by ID
+    // Delete a memory by ID (v4 API uses memoryId)
     try {
-      const { memoryId, documentId } = req.query;
-      console.log(
-        `🔍 [MEMORY_API] DELETE request - memoryId: ${memoryId}, documentId: ${documentId}`
-      );
+      const { memoryId } = req.query;
+      console.log(`🔍 [MEMORY_API] DELETE request - memoryId: ${memoryId}`);
 
       if (!memoryId) {
         console.log(`⚠️ [MEMORY_API] DELETE - memoryId missing`);
         return res.status(400).json({ error: "memoryId is required" });
       }
 
-      // Use document ID (required), fallback to memory ID if document ID not available
-      const idToUse = documentId || memoryId;
-      if (!documentId) {
-        console.log(
-          `⚠️ [MEMORY_API] No document ID provided, using memory ID as fallback: ${memoryId}`
-        );
-      }
-
-      const result = await deleteSupermemoryMemory(idToUse);
+      // v4 API uses memoryId and requires userId for containerTag
+      const result = await deleteSupermemoryMemory(memoryId, serverUserId);
 
       // Invalidate cache after deletion
       invalidateListCache(serverUserId);
@@ -312,7 +191,6 @@ export default async function handler(req, res) {
         name: error?.name,
         stack: error?.stack,
         memoryId: req?.query?.memoryId,
-        documentId: req?.query?.documentId,
         method: req?.method,
         url: req?.url,
       });
@@ -322,11 +200,11 @@ export default async function handler(req, res) {
       });
     }
   } else if (method === "PUT") {
-    // Update a memory by ID
+    // Update a memory by ID (v4 API uses memoryId)
     try {
-      const { memoryId, documentId, content, metadata } = req.body;
+      const { memoryId, content, metadata } = req.body;
       console.log(
-        `🔍 [MEMORY_API] PUT request - memoryId: ${memoryId}, documentId: ${documentId}, content length: ${
+        `🔍 [MEMORY_API] PUT request - memoryId: ${memoryId}, content length: ${
           content?.length || 0
         }`
       );
@@ -340,18 +218,15 @@ export default async function handler(req, res) {
         return res.status(400).json({ error: "content is required" });
       }
 
-      // Use document ID (required), fallback to memory ID if document ID not available
-      const idToUse = documentId || memoryId;
-      if (!documentId) {
-        console.log(
-          `⚠️ [MEMORY_API] No document ID provided, using memory ID as fallback: ${memoryId}`
-        );
-      }
-
-      const result = await updateSupermemoryMemory(idToUse, {
-        content,
-        metadata: metadata || {},
-      });
+      // v4 API uses memoryId and requires userId for containerTag
+      const result = await updateSupermemoryMemory(
+        memoryId,
+        {
+          content,
+          metadata: metadata || {},
+        },
+        serverUserId
+      );
 
       // Invalidate cache after update
       invalidateListCache(serverUserId);
