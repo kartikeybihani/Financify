@@ -5445,16 +5445,98 @@ async function handleClassify(message, context) {
     }
 
     // Classification models: openai/gpt-oss-20b (paid) and openai/gpt-oss-20b:free
-    const classificationModels = [
-      CLASSIFICATION_MODEL_PAID || "openai/gpt-oss-20b",
-      CLASSIFICATION_MODEL_FREE || "openai/gpt-oss-20b:free",
-    ];
-    const { result: data, model: usedModel } = await callWithFallback(
-      classificationModels,
-      callLLM,
-      6000,
-      "Classification"
+    // Tactical approach: Try both in parallel with 3s timeout, accept first successful response
+    const paidModel = CLASSIFICATION_MODEL_PAID || "openai/gpt-oss-20b";
+    const freeModel = CLASSIFICATION_MODEL_FREE || "openai/gpt-oss-20b:free";
+    const timeoutMs = 3000; // 3 second timeout
+
+    // Try both models in parallel - use whichever responds first
+    const controllerPaid = new AbortController();
+    const controllerFree = new AbortController();
+
+    const paidPromise = Promise.resolve()
+      .then(() => callLLM(paidModel, { signal: controllerPaid.signal }))
+      .then((result) => ({ result, model: paidModel }))
+      .catch((err) => {
+        if (controllerPaid.signal.aborted || err?.name === "AbortError") {
+          return { __aborted: true };
+        }
+        throw err;
+      });
+
+    const freePromise = Promise.resolve()
+      .then(() => callLLM(freeModel, { signal: controllerFree.signal }))
+      .then((result) => ({ result, model: freeModel }))
+      .catch((err) => {
+        if (controllerFree.signal.aborted || err?.name === "AbortError") {
+          return { __aborted: true };
+        }
+        throw err;
+      });
+
+    const paidWithTimeout = withTimeout(
+      paidPromise,
+      timeoutMs,
+      { __timeout: true },
+      () => controllerPaid.abort()
     );
+
+    const freeWithTimeout = withTimeout(
+      freePromise,
+      timeoutMs,
+      { __timeout: true },
+      () => controllerFree.abort()
+    );
+
+    // Race both - use first successful response
+    const results = await Promise.allSettled([
+      paidWithTimeout,
+      freeWithTimeout,
+    ]);
+
+    // Check paid model result first (preferred)
+    if (
+      results[0].status === "fulfilled" &&
+      results[0].value &&
+      !results[0].value.__timeout &&
+      !results[0].value.__aborted &&
+      results[0].value.result
+    ) {
+      controllerFree.abort(); // Cancel free model request
+      data = results[0].value.result;
+      usedModel = results[0].value.model;
+    }
+    // Check free model result
+    else if (
+      results[1].status === "fulfilled" &&
+      results[1].value &&
+      !results[1].value.__timeout &&
+      !results[1].value.__aborted &&
+      results[1].value.result
+    ) {
+      controllerPaid.abort(); // Cancel paid model request
+      data = results[1].value.result;
+      usedModel = results[1].value.model;
+    }
+    // Both failed or timed out
+    else {
+      const paidError =
+        results[0].status === "rejected"
+          ? results[0].reason?.message
+          : results[0].value?.__timeout || results[0].value?.__aborted
+          ? "timeout"
+          : "no result";
+      const freeError =
+        results[1].status === "rejected"
+          ? results[1].reason?.message
+          : results[1].value?.__timeout || results[1].value?.__aborted
+          ? "timeout"
+          : "no result";
+      throw new Error(
+        `Classification timeout after ${timeoutMs}ms (paid: ${paidError}, free: ${freeError})`
+      );
+    }
+
     console.log("🔍 [FINNY] Classification using model:", usedModel);
 
     const content = data.choices?.[0]?.message?.content;
