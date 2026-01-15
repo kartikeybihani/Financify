@@ -5319,7 +5319,7 @@ async function handleClassify(message, context) {
     // Simple sequential approach: Try free model first, fallback to paid if it fails
     const paidModel = CLASSIFICATION_MODEL_PAID || "openai/gpt-oss-20b";
     const freeModel = CLASSIFICATION_MODEL_FREE || "openai/gpt-oss-20b:free";
-    const timeoutMs = 3000; // 3 second timeout
+    const timeoutMs = 6000; // 3 second timeout
 
     // Initialize variables to avoid undefined errors
     let data = null;
