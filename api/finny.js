@@ -5497,7 +5497,136 @@ async function handleClassify(message, context) {
             }),
           },
         ],
-        response_format: { type: "json_object" },
+        response_format: {
+          type: "json_schema",
+          json_schema: {
+            name: "classification_result",
+            strict: true,
+            schema: {
+              type: "object",
+              properties: {
+                intent: {
+                  type: "string",
+                  enum: [
+                    "ask_personalized",
+                    "goal_conversation",
+                    "stock_query",
+                    "off_topic",
+                  ],
+                  description: "Primary intent classification",
+                },
+                intent_type: {
+                  type: ["string", "null"],
+                  enum: [
+                    "exploratory",
+                    "actionable",
+                    "emotional_support",
+                    "crisis",
+                    "planning",
+                    null,
+                  ],
+                  description:
+                    "Underlying intent type (can be null for off_topic)",
+                },
+                emotional_state: {
+                  type: "string",
+                  enum: [
+                    "neutral",
+                    "anxious",
+                    "panicked",
+                    "ashamed",
+                    "overwhelmed",
+                    "fomo",
+                  ],
+                  description: "Detected emotional state",
+                },
+                needs_web: {
+                  type: "boolean",
+                  description: "Whether answer requires current/2024-2025 info",
+                },
+                needs_user_data: {
+                  type: "boolean",
+                  description: "Whether answer requires user's actual data",
+                },
+                needs_clarification: {
+                  type: "boolean",
+                  description:
+                    "Whether key inputs are missing or intent is ambiguous",
+                },
+                info_sufficiency: {
+                  type: "string",
+                  enum: ["sufficient", "missing", "unknown"],
+                  description: "Information sufficiency level",
+                },
+                missing_fields: {
+                  type: "array",
+                  items: {
+                    type: "string",
+                    enum: [
+                      "income_takehome",
+                      "income_gross",
+                      "fixed_expenses",
+                      "current_savings",
+                      "debt_balances",
+                      "credit_score",
+                      "purchase_price",
+                      "down_payment",
+                      "timeline",
+                      "location",
+                      "risk_tolerance",
+                      "investing_horizon",
+                      "goal_amount",
+                      "goal_date",
+                      "move_countries",
+                      "employer_match",
+                    ],
+                  },
+                  description: "Array of missing field names (max 5, unique)",
+                },
+                decision_risk: {
+                  type: "string",
+                  enum: ["low", "medium", "high"],
+                  description: "Risk level of the decision",
+                },
+                state: {
+                  type: ["string", "null"],
+                  description: "State code (e.g., AZ, CA) or null",
+                },
+                entities: {
+                  type: "array",
+                  items: {
+                    type: "string",
+                  },
+                  description:
+                    "Array of entities (ticker symbols for stock_query)",
+                },
+                ticker: {
+                  type: ["string", "null"],
+                  description: "Ticker symbol (e.g., 'AAPL', 'TSLA') or null",
+                },
+                confidence: {
+                  type: "number",
+                  minimum: 0.0,
+                  maximum: 1.0,
+                  description: "Confidence score (0.0-1.0)",
+                },
+              },
+              required: [
+                "intent",
+                "emotional_state",
+                "needs_web",
+                "needs_user_data",
+                "needs_clarification",
+                "info_sufficiency",
+                "missing_fields",
+                "decision_risk",
+                "entities",
+                "confidence",
+              ],
+              additionalProperties: false,
+            },
+          },
+        },
       };
 
       const fetchPromise = fetch(
