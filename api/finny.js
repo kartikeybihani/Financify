@@ -5984,6 +5984,7 @@ async function handleOffTopic(message, context) {
 
     // Use reasoning model (meta-llama/llama-4-scout) as primary, STANDARD_MODEL as fallback
     const llmModels = [
+      "meta-llama/llama-3.2-3b-instruct:free",
       REASONING_MODEL_PAID_SCOUT || "meta-llama/llama-4-scout",
       STANDARD_MODEL,
     ];
