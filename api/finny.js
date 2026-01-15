@@ -35,6 +35,7 @@ import {
 import {
   detectUserState,
   buildContextAwarePrompt,
+  getClassificationPrompt,
 } from "../lib/prompt_engine.js";
 import {
   checkRateLimit,
@@ -4048,10 +4049,6 @@ async function buildContextPacks(userId, needs, slots) {
     }
 
     // OPTIMIZED: Execute all operations in parallel with better error handling
-    logInfo(
-      `🚀 [FINNY] Executing ${fetchOperations.length} optimized fetch operations in parallel...`
-    );
-
     const results = await Promise.allSettled(
       fetchOperations.map((op) => executeFetchOperation(op))
     );
@@ -4801,7 +4798,6 @@ async function cacheOperationData(operation, data) {
 }
 
 async function handlePrebuildContext(userId) {
-  logInfo("🚀 [PREBUILD] Starting context pre-building for user:", userId);
   const startTime = Date.now();
 
   try {
@@ -4892,7 +4888,6 @@ async function handlePrebuildContext(userId) {
     }
 
     // Build other context packs in background (after base is ready)
-    logInfo("🔄 [PREBUILD] Starting background context building...");
 
     // Build investment context (only if not cached)
     if (!cachedContexts.invest_holdings) {
@@ -5030,7 +5025,6 @@ async function handlePrebuildContext(userId) {
 
     // OPTIMIZED: Pre-warm memory and profile data for faster first message response
     // This happens in background after financial context is built
-    logInfo("🔄 [PREBUILD] Pre-warming memory and profile data...");
     try {
       // Pre-warm memory and profile in parallel (fire and forget - don't block response)
       Promise.all([
@@ -5042,10 +5036,8 @@ async function handlePrebuildContext(userId) {
         // Note: We don't pre-warm query-specific memories since they depend on the actual message
         // But we can pre-warm a general memory search if needed in the future
       ])
-        .then(([profile]) => {
-          if (profile) {
-            logInfo("✅ [PREBUILD] Memory and profile pre-warmed successfully");
-          }
+        .then(() => {
+          // Pre-warming completed (silently - only log errors)
         })
         .catch((error) => {
           logWarn(
@@ -5228,171 +5220,7 @@ async function handleClassify(message, context) {
         messages: [
           {
             role: "system",
-            content: [
-              "You are Finny's intelligent classification system. Analyze user messages to understand their intent, emotional state, and what resources they need.",
-              "",
-              "=== PRIMARY INTENT CLASSIFICATION ===",
-              "Classify into exactly ONE primary intent:",
-              "- ask_personalized: Questions about user's finances (spending, accounts, goals, investments, affordability, advice)",
-              "- goal_conversation: Creating NEW goals or setting savings targets (explicit goal creation statements)",
-              "- stock_query: Questions about specific stocks, tickers, or companies (e.g., 'What about Apple?', 'Tell me about AAPL', 'Should I buy Tesla stock?')",
-              "- off_topic: Non-financial topics (weather, cooking, entertainment, general chat, etc)",
-              "",
-              "GOAL_CONVERSATION STRICTNESS (important):",
-              "- Use goal_conversation ONLY when the user explicitly wants to create/set/add a goal in the app (they say 'create a goal', 'set a goal', 'add a goal', or clearly refer to the Goals feature).",
-              "- If the user mentions a life goal (house, car, travel, kids) but is asking for feasibility/advice/planning, that is ask_personalized (NOT goal_conversation).",
-              "",
-              "=== INTENT TYPE (What user wants to accomplish) ===",
-              "Detect the underlying intent type (can combine with primary intent):",
-              "- exploratory: Learning, understanding concepts ('tell me about investing', 'explain Roth IRA', 'what is a 401k')",
-              "- actionable: Specific steps or how-to ('how do I save', 'what should I do', 'help me budget')",
-              "- emotional_support: Seeking reassurance, validation ('I'm worried about money', 'am I doing okay?')",
-              "- crisis: Immediate urgent help needed ('can't pay rent', 'overdraft', 'need money now')",
-              "- planning: Long-term strategy ('retirement planning', 'investment strategy', 'financial plan')",
-              "",
-              "=== EMOTIONAL STATE DETECTION ===",
-              "Detect emotional state from language and context (be nuanced, avoid false positives):",
-              "- neutral: No strong emotional signals detected",
-              "- anxious: Worry, stress, uncertainty ('worried', 'stressed', 'anxious', 'nervous', 'afraid')",
-              "- panicked: Urgent crisis language ('can't pay', 'overdraft', 'declined', 'bounced', 'emergency', 'need money now')",
-              "- ashamed: Shame, guilt, embarrassment ('ashamed', 'embarrassed', 'feel stupid', 'should have', 'failure')",
-              "- overwhelmed: Too much to handle ('overwhelmed', 'too much', 'can't handle', 'drowning', 'don't know where to start')",
-              "- fomo: Fear of missing out ('saw on tiktok', 'everyone's doing', 'fomo', 'impulse', 'couldn't resist')",
-              "",
-              "CRITICAL EMOTIONAL DETECTION RULES:",
-              "- Only detect emotional state if there are CLEAR signals. Don't infer emotions from neutral questions.",
-              "- 'Tell me about investing' → neutral (informational query, no emotional distress)",
-              "- 'I'm worried about my debt' → anxious (explicit worry)",
-              "- 'Can I afford Italy trip?' → neutral (affordability question, not emotional)",
-              "- 'I can't pay my rent this month' → panicked (crisis language)",
-              "- 'I feel stupid for spending so much' → ashamed (self-blame language)",
-              "",
-              "=== FLAG RULES (can combine) ===",
-              "- needs_user_data=true: Answer requires user's actual data (spend, net worth, accounts, goals, personal recommendations, affordability checks)",
-              "- needs_web=true: Answer requires current/2024-2025 info (limits, rates, brackets, market/news, card offers, current regulations)",
-              "- needs_clarification=true: The user is asking for advice/plan but key inputs are missing or intent is ambiguous (Ask handler will ask 1–3 questions before advising)",
-              "",
-              "=== INFO SUFFICIENCY & RISK (Reliable routing) ===",
-              "Set these fields so the Ask handler can safely clarify instead of guessing:",
-              "- info_sufficiency: 'sufficient'|'missing'|'unknown'",
-              "- missing_fields: array of strings from this set:",
-              "  [income_takehome,income_gross,fixed_expenses,current_savings,debt_balances,credit_score,purchase_price,down_payment,timeline,location,risk_tolerance,investing_horizon,goal_amount,goal_date,move_countries,employer_match]",
-              "- decision_risk: 'low'|'medium'|'high'",
-              "- missing_fields must be UNIQUE and short: choose at most 5, no duplicates",
-              "",
-              "Decision risk guidance (examples, context-dependent):",
-              "- high: decisions that commit a large portion of the user's resources, create long-term obligations, or require missing planning data",
-              "- medium: decisions with meaningful tradeoffs but reversible or limited downside",
-              "- low: definitions, explanations, or small factual questions",
-              "",
-              "If the user asks a high-risk question and details are missing, set needs_clarification=true and include missing_fields like timeline, income_takehome, fixed_expenses, current_savings, debt_balances, location (as applicable).",
-              "",
-              "Ambiguity rule:",
-              "- If the user asks an ambiguous decision question (e.g., 'should I', 'is it worth it', 'help me decide') and it's medium/high stakes, set needs_clarification=true even if missing_fields is empty (Ask handler may ask 1 sharp question to confirm goal).",
-              "",
-              "High-stakes planning rule (non-rigid, apply broadly):",
-              "- If the user is describing a major plan/decision (big purchase, multiple big goals, multi-country plan, life decision) and asks for guidance/feasibility without key numbers, set decision_risk='high', needs_clarification=true, info_sufficiency='missing'.",
-              "- In those cases, include the most relevant missing_fields (pick 3–5): timeline, purchase_price, down_payment, income_takehome, fixed_expenses, current_savings, debt_balances, location.",
-              "- Set intent_type='actionable' for feasibility/planning questions, even if the user didn't explicitly say 'how'.",
-              "- Do NOT set needs_web=true just because it's a big decision. needs_web is only for current rates/brackets/regulations/news or explicitly asked country-specific rules.",
-              "",
-              "Info sufficiency rule:",
-              "- Default to info_sufficiency='missing' for advice/feasibility questions unless the user supplied the key inputs in their message.",
-              "- Do not label info_sufficiency='sufficient' when missing_fields is empty but the user gave no numbers.",
-              "",
-              "Consistency rule:",
-              "- If info_sufficiency is 'missing', needs_clarification MUST be true.",
-              "",
-              "Examples (follow these patterns):",
-              "- 'I want to buy houses in Italy and Japan' -> intent_type:'actionable', decision_risk:'high', needs_web:false, needs_clarification:true, info_sufficiency:'missing', missing_fields includes 3–5 of: timeline, purchase_price, down_payment, income_takehome, fixed_expenses, current_savings, debt_balances, location",
-              "- 'Should I save $5000 for a house?' -> ask_personalized (advice), NOT goal_conversation; intent_type:'actionable'",
-              "",
-              "=== CRITICAL CLASSIFICATION RULES ===",
-              "1. Affordability queries are ALWAYS ask_personalized (not goal_conversation):",
-              "   - 'Can I afford X?' → ask_personalized, needs_user_data:true, intent_type:actionable",
-              "   - 'Can I afford to go Italy trip?' → ask_personalized, needs_user_data:true, intent_type:actionable",
-              "   - 'Can I go afford a $1500 trip?' → ask_personalized, needs_user_data:true, intent_type:actionable",
-              "",
-              "2. Investment advice queries NEVER need web search:",
-              "   - 'Tell me about investing' → ask_personalized, needs_web:false, needs_user_data:true, intent_type:exploratory",
-              "   - 'Investment advice' → ask_personalized, needs_web:false, needs_user_data:true, intent_type:actionable",
-              "   - 'What should I invest in?' → ask_personalized, needs_web:false, needs_user_data:true, intent_type:actionable",
-              "",
-              "3. Goal queries NEVER need web search:",
-              "   - 'Show my goals' → ask_personalized, needs_web:false, needs_user_data:true (inquiry, not creation)",
-              "   - 'I want to save $5000 for a house' → goal_conversation, needs_web:false, needs_user_data:true (creation)",
-              "",
-              "4. Advice-seeking queries are ask_personalized (not goal_conversation):",
-              "   - 'What's a good emergency amount for me?' → ask_personalized, needs_user_data:true, intent_type:actionable",
-              "   - 'Should I buy X?' → ask_personalized, needs_user_data:true, intent_type:actionable",
-              "   - 'Is it worth it to buy X?' → ask_personalized, needs_user_data:true, intent_type:actionable",
-              "",
-              "5. Credit card queries ALWAYS need web search:",
-              "   - 'What credit card should I get?' → ask_personalized, needs_web:true, needs_user_data:true",
-              "",
-              "6. Stock queries REQUIRE a SPECIFIC ticker/company - general queries are ask_personalized:",
-              "   - 'What about Apple stock?' → stock_query, needs_web:false, needs_user_data:false, ticker:'AAPL' (SPECIFIC company)",
-              "   - 'Tell me about AAPL' → stock_query, needs_web:false, needs_user_data:false, ticker:'AAPL' (SPECIFIC ticker)",
-              "   - 'Should I buy Tesla?' → stock_query, needs_web:false, needs_user_data:true, ticker:'TSLA' (SPECIFIC company)",
-              "   - 'Tell me about the stock market' → ask_personalized, needs_web:true (GENERAL - no specific ticker)",
-              "",
-              "7. TICKER DETECTION RULES:",
-              "   - ONLY classify as stock_query if a SPECIFIC ticker symbol OR company name is mentioned",
-              "   - Extract ticker symbols (1-5 uppercase letters): AAPL, TSLA, MSFT, GOOGL, etc.",
-              "   - Map company names to tickers: Apple→AAPL, Tesla→TSLA, Microsoft→MSFT, Google→GOOGL, Amazon→AMZN, Meta→META, NVIDIA→NVDA",
-              "   - If multiple tickers detected, include all in entities array",
-              "   - If ticker is ambiguous (e.g., 'Apple' without context), set confidence < 0.8",
-              "   - If NO specific ticker/company mentioned, use ask_personalized (NOT stock_query)",
-              "",
-              "=== OUTPUT FORMAT ===",
-              "CRITICAL: You MUST return ONLY valid JSON. No markdown, no code fences, no extra text, no comments.",
-              "The JSON must be parseable by JSON.parse(). Follow this EXACT structure:",
-              "",
-              '{"intent":"ask_personalized","intent_type":"exploratory","emotional_state":"neutral","needs_web":false,"needs_user_data":true,"needs_clarification":false,"info_sufficiency":"sufficient","missing_fields":[],"decision_risk":"low","state":null,"entities":[],"ticker":null,"confidence":0.95}',
-              "",
-              "Valid JSON format rules:",
-              "- Use double quotes for all strings",
-              "- Use lowercase true/false (not True/False)",
-              "- Use null (not NULL or None)",
-              "- No trailing commas",
-              "- No extra whitespace or line breaks inside JSON",
-              "- All fields must be present",
-              "",
-              "Field requirements:",
-              "- intent: REQUIRED string (ask_personalized|goal_conversation|stock_query|off_topic)",
-              "- intent_type: string or null (exploratory|actionable|emotional_support|crisis|planning|null)",
-              "- emotional_state: REQUIRED string (neutral|anxious|panicked|ashamed|overwhelmed|fomo)",
-              "- needs_web: REQUIRED boolean (true|false)",
-              "- needs_user_data: REQUIRED boolean (true|false)",
-              "- needs_clarification: REQUIRED boolean (true|false)",
-              "- info_sufficiency: REQUIRED string ('sufficient'|'missing'|'unknown')",
-              "- missing_fields: REQUIRED array (empty array [] if none)",
-              "- decision_risk: REQUIRED string ('low'|'medium'|'high')",
-              "- state: string or null (state code like AZ, CA, or null)",
-              "- entities: REQUIRED array (empty array [] if none, or ticker symbols if stock_query)",
-              "- ticker: string or null (ticker symbol like 'AAPL', 'TSLA', or null if not stock_query or ambiguous)",
-              "- confidence: REQUIRED number (0.0-1.0)",
-              "",
-              "TICKER EXTRACTION RULES:",
-              "- For stock_query intent, extract ticker symbol from message",
-              "- If ticker is clear (e.g., 'AAPL', 'TSLA'), set ticker field and confidence >= 0.9",
-              "- If company name maps to ticker (e.g., 'Apple'→'AAPL'), set ticker and confidence >= 0.8",
-              "- If ticker is ambiguous or unclear, set ticker:null and confidence < 0.8",
-              "- Always include ticker in entities array if detected",
-              "",
-              "CRITICAL: Meta/system questions about AI capabilities are ALWAYS off_topic:",
-              "- 'Can you learn from our conversations?' → off_topic",
-              "- 'Do you remember our previous chat?' → off_topic",
-              "- 'Are you an AI?' → off_topic",
-              "- 'How do you work?' → off_topic",
-              "",
-              "IMPORTANT:",
-              "- Be precise with emotional_state: only detect if CLEAR signals exist, default to 'neutral'",
-              "- intent_type can be null for off_topic queries",
-              "- confidence should reflect how certain you are (0.9+ for clear cases, 0.7-0.9 for ambiguous)",
-              "- If needs_clarification=true, set info_sufficiency to 'missing' or 'unknown' and include missing_fields",
-              "- Return ONLY the JSON object, nothing else",
-            ].join("\n"),
+            content: getClassificationPrompt(),
           },
           {
             role: "user",
