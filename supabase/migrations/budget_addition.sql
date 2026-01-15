@@ -20,6 +20,10 @@ DECLARE
   v_default_start date;
   v_default_end date;
 
+  -- Auth
+  v_claim_sub uuid;
+  v_claim_role text;
+
   -- Budget
   v_budget_period_id uuid;
   v_budget_currency_code text;
@@ -30,6 +34,18 @@ DECLARE
   v_budget_categories jsonb;
   v_budget jsonb;
 BEGIN
+  -- SECURITY: Prevent cross-user access when called via PostgREST.
+  -- Allow service_role callers (server-side) to request any user.
+  -- For authenticated callers, enforce p_user_id matches JWT subject.
+  v_claim_role := NULLIF(current_setting('request.jwt.claim.role', true), '');
+  v_claim_sub := NULLIF(current_setting('request.jwt.claim.sub', true), '')::uuid;
+
+  IF v_claim_role IS DISTINCT FROM 'service_role' THEN
+    IF v_claim_sub IS NULL OR v_claim_sub <> p_user_id THEN
+      RAISE EXCEPTION 'forbidden' USING ERRCODE = '42501';
+    END IF;
+  END IF;
+
   -- Set default date range to last 30 days if not provided
   IF p_start IS NULL OR p_end IS NULL THEN
     v_default_end := CURRENT_DATE;
@@ -108,7 +124,8 @@ BEGIN
     INTO v_budget_total
     FROM budget_entries be
     WHERE be.budget_period_id = v_budget_period_id
-      AND be.scope_type = 'category';
+      AND be.scope_type = 'category'
+      AND be.category_id IS NOT NULL;
 
     -- Per-category limits (simple, no grouping)
     SELECT COALESCE(
@@ -125,7 +142,8 @@ BEGIN
     FROM budget_entries be
     LEFT JOIN categories c ON c.id = be.category_id
     WHERE be.budget_period_id = v_budget_period_id
-      AND be.scope_type = 'category';
+      AND be.scope_type = 'category'
+      AND be.category_id IS NOT NULL;
 
     v_budget := jsonb_build_object(
       'period_start', v_budget_period_start,
@@ -153,4 +171,3 @@ GRANT EXECUTE ON FUNCTION public.get_summary_min_composite(uuid, integer, date, 
 
 COMMENT ON FUNCTION public.get_summary_min_composite IS
 'Composite function that fetches net worth, recent transactions, spend by category, and current budget (active preferred, fallback to draft).';
-

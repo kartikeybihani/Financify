@@ -74,6 +74,21 @@ FINANCIAL ANALYTICS & REPORTING
    - Purpose: Category-based spending analysis
    - Used in: store_accounts.js
 
+7.5 get_summary_min_composite ⭐ ACTIVE
+   - Composite function for Finny base context (summary_min)
+   - Parameters: p_user_id (uuid), p_limit (integer DEFAULT 5), p_start (date DEFAULT NULL), p_end (date DEFAULT NULL)
+   - Returns: jsonb
+   - Includes:
+     * net_worth: liquid_assets, investments_total, total_liabilities, net_worth, bank_accounts
+     * recent_transactions: limited by p_limit
+     * spend_by_category: for date range (defaults to last 30 days)
+     * budget: current-month budget period (active preferred, fallback draft)
+       - total_budget: sum of category limits only
+       - categories: [{ category, limit }] for scope_type='category' entries with category_id IS NOT NULL
+   - Notes:
+     * Budget is NULL if no current budget period exists
+     * Security: blocks cross-user access unless caller role is service_role
+
 8. get_cashflow_monthly ⭐ ACTIVE
    - Returns monthly cashflow data (income, expenses, net)
    - Parameters: p_user_id (uuid), p_months (integer DEFAULT 6)
