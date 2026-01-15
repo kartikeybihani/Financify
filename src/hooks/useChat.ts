@@ -577,7 +577,7 @@ export const useChat = () => {
   };
 
   /**
-   * Split a single Finny response into up to 3 bubbles.
+   * Split a single Finny response into up to 4 bubbles.
    *
    * - Always allow strong breaks (2+ blank lines).
    * - Allow weak breaks (single blank line) only for long messages.
@@ -681,9 +681,63 @@ export const useChat = () => {
       return parts;
     }
 
-    parts.push(p2, p3);
+    // Third split (optional): only if p3 is still long.
+    parts.push(p2);
+    if (p3.length <= LONG_MESSAGE_THRESHOLD_CHARS) {
+      parts.push(p3);
+      logger.info(
+        `[CHAT] split:ok parts=3 kind=${first.kind}+${best2.kind} len=${normalized.length} p1="${previewWords(p1)}" p2="${previewWords(p2)}" p3="${previewWords(p3)}"`
+      );
+      return parts;
+    }
+
+    // Recompute candidates on p3 for correctness.
+    const p3Candidates = findSplitCandidates(p3, p3.length > LONG_MESSAGE_THRESHOLD_CHARS);
+    const safeP3Candidates = p3Candidates.filter((c) => isSafeSplit(p3, c));
+    if (safeP3Candidates.length === 0) {
+      parts.push(p3);
+      logger.info(
+        `[CHAT] split:ok parts=3 kind=${first.kind}+${best2.kind} len=${normalized.length} p1="${previewWords(p1)}" p2="${previewWords(p2)}" p3="${previewWords(p3)}"`
+      );
+      return parts;
+    }
+
+    // Pick split within p3 aiming for ~TARGET_PART_CHARS.
+    let best3: FinnySplitCandidate | null = null;
+    let bestScore3 = Number.POSITIVE_INFINITY;
+    for (const c of safeP3Candidates) {
+      const len = c.index;
+      const score = Math.abs(len - TARGET_PART_CHARS);
+      if (score < bestScore3) {
+        best3 = c;
+        bestScore3 = score;
+      }
+    }
+    if (!best3) {
+      parts.push(p3);
+      logger.info(
+        `[CHAT] split:ok parts=3 kind=${first.kind}+${best2.kind} len=${normalized.length} p1="${previewWords(p1)}" p2="${previewWords(p2)}" p3="${previewWords(p3)}"`
+      );
+      return parts;
+    }
+
+    const { left: p3a, right: p4 } = splitAtCandidate(p3, best3);
+    if (
+      !p3a ||
+      !p4 ||
+      p3a.length < MIN_SPLIT_PART_CHARS ||
+      p4.length < MIN_SPLIT_PART_CHARS
+    ) {
+      parts.push(p3);
+      logger.info(
+        `[CHAT] split:ok parts=3 kind=${first.kind}+${best2.kind} len=${normalized.length} p1="${previewWords(p1)}" p2="${previewWords(p2)}" p3="${previewWords(p3)}"`
+      );
+      return parts;
+    }
+
+    parts.push(p3a, p4);
     logger.info(
-      `[CHAT] split:ok parts=3 kind=${first.kind}+${best2.kind} len=${normalized.length} p1="${previewWords(p1)}" p2="${previewWords(p2)}" p3="${previewWords(p3)}"`
+      `[CHAT] split:ok parts=4 kind=${first.kind}+${best2.kind}+${best3.kind} len=${normalized.length} p1="${previewWords(p1)}" p2="${previewWords(p2)}" p3="${previewWords(p3a)}" p4="${previewWords(p4)}"`
     );
     return parts;
   };
@@ -890,7 +944,7 @@ export const useChat = () => {
 
                     if (splitParts.length > 1) {
                       const extra: ChatMessage[] = [];
-                      for (let i = 1; i < Math.min(splitParts.length, 3); i++) {
+                      for (let i = 1; i < Math.min(splitParts.length, 4); i++) {
                         const partText = (splitParts[i] || "").trim();
                         if (!partText) continue;
                         extra.push({
@@ -1074,7 +1128,7 @@ export const useChat = () => {
 
                     if (splitParts.length > 1) {
                       const extra: ChatMessage[] = [];
-                      for (let i = 1; i < Math.min(splitParts.length, 3); i++) {
+                      for (let i = 1; i < Math.min(splitParts.length, 4); i++) {
                         const partText = (splitParts[i] || "").trim();
                         if (!partText) continue;
                         extra.push({
