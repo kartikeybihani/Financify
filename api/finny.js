@@ -1329,41 +1329,9 @@ export default async function handler(req, res) {
             50
           )}..."`
         );
-        // Log cached memory details for debugging
-        console.log(
-          `🧠 [FINNY] Cached memory result:`,
-          JSON.stringify({
-            hasMemory: !!cachedMemory,
-            memoryType: typeof cachedMemory,
-            memoriesCount: cachedMemory?.memories?.length || 0,
-            totalCount: cachedMemory?.totalCount || 0,
-            memoryKeys: cachedMemory ? Object.keys(cachedMemory) : [],
-            sampleMemory: cachedMemory?.memories?.[0] ? {
-              id: cachedMemory.memories[0].id,
-              hasContent: !!cachedMemory.memories[0].content,
-              contentLength: cachedMemory.memories[0].content?.length || 0,
-            } : null,
-          }, null, 2)
-        );
       } else {
         // Load from Supermemory and cache the result
         userMemory = await loadUserMemory(finalUserId, message);
-        // Log what was loaded for debugging
-        console.log(
-          `🧠 [FINNY] Memory loading result:`,
-          JSON.stringify({
-            hasMemory: !!userMemory,
-            memoryType: typeof userMemory,
-            memoriesCount: userMemory?.memories?.length || 0,
-            totalCount: userMemory?.totalCount || 0,
-            memoryKeys: userMemory ? Object.keys(userMemory) : [],
-            sampleMemory: userMemory?.memories?.[0] ? {
-              id: userMemory.memories[0].id,
-              hasContent: !!userMemory.memories[0].content,
-              contentLength: userMemory.memories[0].content?.length || 0,
-            } : null,
-          }, null, 2)
-        );
         // Always cache the result (even if empty) to avoid repeated API calls for same query
         // loadUserMemory always returns { memories: [], totalCount: 0 } on error/null, so it's safe
         if (userMemory && typeof userMemory === "object") {
@@ -1432,27 +1400,6 @@ export default async function handler(req, res) {
     // NEW: Add feedback patterns for adaptation
     feedbackPatterns: feedbackPatterns,
   };
-
-  // Log context memory structure for debugging
-  if (action === "ask") {
-    console.log(
-      `🧠 [FINNY] Context memory structure:`,
-      JSON.stringify({
-        hasContextMemory: !!context.memory,
-        memoryType: typeof context.memory,
-        hasMemoriesArray: !!context.memory?.memories,
-        memoriesIsArray: Array.isArray(context.memory?.memories),
-        memoriesLength: context.memory?.memories?.length || 0,
-        totalCount: context.memory?.totalCount || 0,
-        memoryKeys: context.memory ? Object.keys(context.memory) : [],
-        sampleMemory: context.memory?.memories?.[0] ? {
-          id: context.memory.memories[0].id,
-          hasContent: !!context.memory.memories[0].content,
-          contentPreview: context.memory.memories[0].content?.substring(0, 100) || null,
-        } : null,
-      }, null, 2)
-    );
-  }
 
   // === PROFILE CACHE INVALIDATION ===
   if (action === "invalidate_profile_cache") {

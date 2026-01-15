@@ -20,6 +20,7 @@ process.env.CLASSIFICATION_MODEL_PAID = "meta-llama/llama-3.2-3b-instruct";
 process.env.CLASSIFICATION_MODEL_FREE = "meta-llama/llama-3.2-3b-instruct:free";
 
 import { handleClassify, handleAsk, handleOffTopic } from "../api/finny.js";
+import { loadUserMemory, loadUserProfile } from "../lib/memoryUtils.js";
 
 // Test user context
 const TEST_USER_CONTEXT = {
@@ -69,12 +70,29 @@ async function testFullPipeline(message) {
     let response;
     const handlerStartTime = Date.now();
 
+    // Load memory and profile for ask handler (same as main handler does)
+    let contextWithData = { ...TEST_USER_CONTEXT };
+    if (classification.intent !== "off_topic") {
+      // Load memory and profile (only for ask handler)
+      const userId = TEST_USER_CONTEXT.user_id;
+      const [userMemory, userProfile] = await Promise.all([
+        loadUserMemory(userId, message),
+        loadUserProfile(userId),
+      ]);
+
+      contextWithData = {
+        ...TEST_USER_CONTEXT,
+        memory: userMemory,
+        profile: userProfile,
+      };
+    }
+
     // Route to appropriate handler based on intent
     if (classification.intent === "off_topic") {
       // Handle off-topic queries
       response = await handleOffTopic(
         message,
-        TEST_USER_CONTEXT,
+        contextWithData,
         null // conversationContext
       );
     } else {
@@ -87,7 +105,7 @@ async function testFullPipeline(message) {
       // Call handleAsk with classification result
       response = await handleAsk(
         message,
-        TEST_USER_CONTEXT,
+        contextWithData,
         askIntent,
         classification, // Pass classification result
         null, // conversationContext
