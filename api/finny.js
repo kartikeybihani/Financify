@@ -3015,21 +3015,21 @@ async function handleAsk(
 
     // Log complete system prompt with clear dividers (only for ask_personalized)
     if (intent === "ask_personalized") {
-      console.log("\n" + "=".repeat(100));
-      console.log(
-        "📋 [PROMPT_ENGINE] COMPLETE SYSTEM PROMPT SENT TO LLM (ask_personalized)"
-      );
-      console.log("=".repeat(100));
-      console.log(system);
-      console.log("=".repeat(100));
-      console.log("📋 [PROMPT_ENGINE] USER MESSAGE");
-      console.log("=".repeat(100));
-      console.log(userMessage);
-      console.log("=".repeat(100));
-      console.log("📋 [PROMPT_ENGINE] RECENT TURNS");
-      console.log("=".repeat(100));
-      console.log(JSON.stringify(recentTurns, null, 2));
-      console.log("=".repeat(100) + "\n");
+      // console.log("\n" + "=".repeat(100));
+      // console.log(
+      //   "📋 [PROMPT_ENGINE] COMPLETE SYSTEM PROMPT SENT TO LLM (ask_personalized)"
+      // );
+      // console.log("=".repeat(100));
+      // console.log(system);
+      // console.log("=".repeat(100));
+      // console.log("📋 [PROMPT_ENGINE] USER MESSAGE");
+      // console.log("=".repeat(100));
+      // console.log(userMessage);
+      // console.log("=".repeat(100));
+      // console.log("📋 [PROMPT_ENGINE] RECENT TURNS");
+      // console.log("=".repeat(100));
+      // console.log(JSON.stringify(recentTurns, null, 2));
+      // console.log("=".repeat(100) + "\n");
     }
 
     // Memory extraction removed - migrating to Supermemory
@@ -5445,99 +5445,111 @@ async function handleClassify(message, context) {
     }
 
     // Classification models: openai/gpt-oss-20b (paid) and openai/gpt-oss-20b:free
-    // Tactical approach: Try both in parallel with 3s timeout, accept first successful response
+    // Simple sequential approach: Try free model first, fallback to paid if it fails
     const paidModel = CLASSIFICATION_MODEL_PAID || "openai/gpt-oss-20b";
     const freeModel = CLASSIFICATION_MODEL_FREE || "openai/gpt-oss-20b:free";
     const timeoutMs = 3000; // 3 second timeout
 
-    // Try both models in parallel - use whichever responds first
-    const controllerPaid = new AbortController();
-    const controllerFree = new AbortController();
+    // Initialize variables to avoid undefined errors
+    let data = null;
+    let usedModel = null;
 
-    const paidPromise = Promise.resolve()
-      .then(() => callLLM(paidModel, { signal: controllerPaid.signal }))
-      .then((result) => ({ result, model: paidModel }))
-      .catch((err) => {
-        if (controllerPaid.signal.aborted || err?.name === "AbortError") {
-          return { __aborted: true };
-        }
-        throw err;
-      });
+    // Try free model first
+    let freeSucceeded = false;
+    try {
+      const controllerFree = new AbortController();
+      const freePromise = Promise.resolve()
+        .then(() => callLLM(freeModel, { signal: controllerFree.signal }))
+        .catch((err) => {
+          if (controllerFree.signal.aborted || err?.name === "AbortError") {
+            return { __aborted: true };
+          }
+          throw err;
+        });
 
-    const freePromise = Promise.resolve()
-      .then(() => callLLM(freeModel, { signal: controllerFree.signal }))
-      .then((result) => ({ result, model: freeModel }))
-      .catch((err) => {
-        if (controllerFree.signal.aborted || err?.name === "AbortError") {
-          return { __aborted: true };
-        }
-        throw err;
-      });
+      const freeResult = await withTimeout(
+        freePromise,
+        timeoutMs,
+        { __timeout: true },
+        () => controllerFree.abort()
+      );
 
-    const paidWithTimeout = withTimeout(
-      paidPromise,
-      timeoutMs,
-      { __timeout: true },
-      () => controllerPaid.abort()
-    );
-
-    const freeWithTimeout = withTimeout(
-      freePromise,
-      timeoutMs,
-      { __timeout: true },
-      () => controllerFree.abort()
-    );
-
-    // Race both - use first successful response
-    const results = await Promise.allSettled([
-      paidWithTimeout,
-      freeWithTimeout,
-    ]);
-
-    // Check paid model result first (preferred)
-    if (
-      results[0].status === "fulfilled" &&
-      results[0].value &&
-      !results[0].value.__timeout &&
-      !results[0].value.__aborted &&
-      results[0].value.result
-    ) {
-      controllerFree.abort(); // Cancel free model request
-      data = results[0].value.result;
-      usedModel = results[0].value.model;
+      if (
+        freeResult &&
+        !freeResult.__timeout &&
+        !freeResult.__aborted &&
+        freeResult.choices &&
+        Array.isArray(freeResult.choices) &&
+        freeResult.choices.length > 0
+      ) {
+        data = freeResult;
+        usedModel = freeModel;
+        freeSucceeded = true;
+        console.log("🔍 [FINNY] Classification using model:", usedModel);
+      }
+    } catch (freeError) {
+      console.log(
+        `⚠️ [FINNY] Free model failed: ${freeError?.message || "unknown error"}`
+      );
+      freeSucceeded = false;
     }
-    // Check free model result
-    else if (
-      results[1].status === "fulfilled" &&
-      results[1].value &&
-      !results[1].value.__timeout &&
-      !results[1].value.__aborted &&
-      results[1].value.result
-    ) {
-      controllerPaid.abort(); // Cancel paid model request
-      data = results[1].value.result;
-      usedModel = results[1].value.model;
+
+    // If free model failed, try paid model
+    if (!freeSucceeded) {
+      try {
+        const controllerPaid = new AbortController();
+        const paidPromise = Promise.resolve()
+          .then(() => callLLM(paidModel, { signal: controllerPaid.signal }))
+          .catch((err) => {
+            if (controllerPaid.signal.aborted || err?.name === "AbortError") {
+              return { __aborted: true };
+            }
+            throw err;
+          });
+
+        const paidResult = await withTimeout(
+          paidPromise,
+          timeoutMs,
+          { __timeout: true },
+          () => controllerPaid.abort()
+        );
+
+        if (
+          paidResult &&
+          !paidResult.__timeout &&
+          !paidResult.__aborted &&
+          paidResult.choices &&
+          Array.isArray(paidResult.choices) &&
+          paidResult.choices.length > 0
+        ) {
+          data = paidResult;
+          usedModel = paidModel;
+          console.log("🔍 [FINNY] Classification using model:", usedModel);
+        } else {
+          throw new Error(
+            `Classification timeout after ${timeoutMs}ms (both models failed)`
+          );
+        }
+      } catch (paidError) {
+        console.error(
+          `❌ [FINNY] Paid model also failed: ${
+            paidError?.message || "unknown error"
+          }`
+        );
+        throw new Error(
+          `Classification failed: free model error, paid model error: ${
+            paidError?.message || "unknown"
+          }`
+        );
+      }
     }
-    // Both failed or timed out
-    else {
-      const paidError =
-        results[0].status === "rejected"
-          ? results[0].reason?.message
-          : results[0].value?.__timeout || results[0].value?.__aborted
-          ? "timeout"
-          : "no result";
-      const freeError =
-        results[1].status === "rejected"
-          ? results[1].reason?.message
-          : results[1].value?.__timeout || results[1].value?.__aborted
-          ? "timeout"
-          : "no result";
+
+    // Ensure we have valid data before proceeding
+    if (!data || !usedModel) {
       throw new Error(
-        `Classification timeout after ${timeoutMs}ms (paid: ${paidError}, free: ${freeError})`
+        "Classification failed: no valid response from either model"
       );
     }
-
-    console.log("🔍 [FINNY] Classification using model:", usedModel);
 
     const content = data.choices?.[0]?.message?.content;
     if (!content) {
