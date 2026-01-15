@@ -5878,7 +5878,7 @@ async function handleOffTopic(message, context) {
 
     const memorySnippets = Array.isArray(userMemory?.memories)
       ? userMemory.memories
-          .slice(0, 5)
+          .slice(0, 10)
           .map((m, idx) => {
             const raw = String(m?.content || "");
             const cleaned = redactPII(raw).replace(/\s+/g, " ").trim();
@@ -5993,7 +5993,7 @@ async function handleOffTopic(message, context) {
         llmError?.message
       );
       return {
-        text: "I'm strictly a finance coach. What financial questions can I help you with?",
+        text: "I'm a finance coach. What financial questions can I help you with?",
         type: "assistant",
         intent: "off_topic",
         category: category,
