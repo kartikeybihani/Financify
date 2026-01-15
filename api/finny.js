@@ -1316,43 +1316,81 @@ export default async function handler(req, res) {
 
   // Only load memory and profile data for "ask" action
   if (action === "ask") {
-    // Load memory (only for ask handler)
-    const memoryLoadingStartTime = Date.now();
-    if (message) {
-      // Check cache first
-      const cachedMemory = getCachedMemory(finalUserId, message);
-      if (cachedMemory) {
-        userMemory = cachedMemory;
-        logInfo(
-          `⚡ [MEMORY_CACHE] Using cached memories for message: "${message.substring(
-            0,
-            50
-          )}..."`
-        );
-      } else {
-        // Load from Supermemory and cache the result
-        userMemory = await loadUserMemory(finalUserId, message);
-        // Always cache the result (even if empty) to avoid repeated API calls for same query
-        // loadUserMemory always returns { memories: [], totalCount: 0 } on error/null, so it's safe
-        if (userMemory && typeof userMemory === "object") {
-          setCachedMemory(finalUserId, message, userMemory);
-        }
-      }
-    } else {
-      // No message provided, load empty memories
-      userMemory = await loadUserMemory(finalUserId, null);
-    }
-    timings.memory_loading_ms = Date.now() - memoryLoadingStartTime;
+    // OPTIMIZED: Load memory, profile, and feedback patterns in parallel for better performance
+    const prepStartTime = Date.now();
 
-    // Load profile and feedback patterns in parallel (only for ask handler)
-    const profileLoadingStartTime = Date.now();
-    const [profileData, feedback] = await Promise.all([
-      loadUserProfile(finalUserId),
-      retrieveFeedbackPatterns(finalUserId, null), // Will extract topic from message later if needed
+    // Prepare memory loading promise (with cache check)
+    const memoryPromise = (async () => {
+      if (message) {
+        // Check cache first
+        const cachedMemory = getCachedMemory(finalUserId, message);
+        if (cachedMemory) {
+          logInfo(
+            `⚡ [MEMORY_CACHE] Using cached memories for message: "${message.substring(
+              0,
+              50
+            )}..."`
+          );
+          return cachedMemory;
+        } else {
+          // Load from Supermemory and cache the result
+          const loadedMemory = await loadUserMemory(finalUserId, message);
+          // Always cache the result (even if empty) to avoid repeated API calls for same query
+          // loadUserMemory always returns { memories: [], totalCount: 0 } on error/null, so it's safe
+          if (loadedMemory && typeof loadedMemory === "object") {
+            setCachedMemory(finalUserId, message, loadedMemory);
+          }
+          return loadedMemory;
+        }
+      } else {
+        // No message provided, load empty memories
+        return await loadUserMemory(finalUserId, null);
+      }
+    })().catch((error) => {
+      logError("❌ [MEMORY] Error loading memory:", error);
+      return { memories: [], totalCount: 0 };
+    });
+
+    // Prepare profile and feedback loading promises
+    const profilePromise = loadUserProfile(finalUserId).catch((error) => {
+      logError("❌ [PROFILE] Error loading profile:", error);
+      return {
+        name: null,
+        age: null,
+        occupation: null,
+        finny_style: "conversational",
+        intent_context: "",
+      };
+    });
+
+    const feedbackPromise = retrieveFeedbackPatterns(finalUserId, null).catch(
+      (error) => {
+        logError("❌ [FEEDBACK] Error loading feedback patterns:", error);
+        return {
+          preferences: [],
+          patterns: {},
+          deepInsights: [],
+        };
+      }
+    );
+
+    // Execute all three in parallel
+    const [loadedMemory, profileData, feedback] = await Promise.all([
+      memoryPromise,
+      profilePromise,
+      feedbackPromise,
     ]);
+
+    userMemory = loadedMemory;
     userProfileData = profileData;
     feedbackPatterns = feedback;
-    timings.profile_loading_ms = Date.now() - profileLoadingStartTime;
+
+    const prepTime = Date.now() - prepStartTime;
+    timings.memory_loading_ms = prepTime; // Combined time for parallel operations
+    timings.profile_loading_ms = prepTime; // Combined time for parallel operations
+    logInfo(
+      `⚡ [PARALLEL_PREP] Loaded memory, profile, and feedback in ${prepTime}ms (parallel)`
+    );
   } else {
     // For classify and prebuild_context: Skip memory and feedback patterns
     // Only load minimal profile if needed (but classification doesn't need user data)
@@ -1531,7 +1569,12 @@ export default async function handler(req, res) {
         break;
       }
       case "off_topic": {
-        response = await handleOffTopic(message, safeContext);
+        response = await handleOffTopic(
+          message,
+          safeContext,
+          wantsStreaming, // Pass streaming preference
+          wantsStreaming ? res : null // Pass response object for progress updates if streaming
+        );
         break;
       }
       case "goal_conversation": {
@@ -2251,12 +2294,25 @@ async function handleAsk(
 
     // 3) Build targeted context packs
     const contextPacksStartTime = Date.now();
+
+    // Send progress update for data loading
+    if (wantsStreaming && res && !res.writableEnded) {
+      sendStreamEvent(res, "progress", { status: "Loading your accounts..." });
+    }
+
     const { packs, gaps, contextHeader } = await buildContextPacks(
       userId,
       needs,
       slots
     );
     const contextPacksTime = Date.now() - contextPacksStartTime;
+
+    // Send progress update after data is loaded
+    if (wantsStreaming && res && !res.writableEnded) {
+      sendStreamEvent(res, "progress", {
+        status: "Analyzing your finances...",
+      });
+    }
     // Update parent timings if provided
     if (requestTimings) {
       requestTimings.context_packs_ms = contextPacksTime;
@@ -4950,6 +5006,39 @@ async function handlePrebuildContext(userId) {
       logError("❌ [PREBUILD] Spend context failed:", error);
     }
 
+    // OPTIMIZED: Pre-warm memory and profile data for faster first message response
+    // This happens in background after financial context is built
+    logInfo("🔄 [PREBUILD] Pre-warming memory and profile data...");
+    try {
+      // Pre-warm memory and profile in parallel (fire and forget - don't block response)
+      Promise.all([
+        // Pre-warm Supermemory profile (general profile, not query-specific)
+        fetchSupermemoryProfile(userId).catch((error) => {
+          logWarn("⚠️ [PREBUILD] Failed to pre-warm profile:", error?.message);
+          return null;
+        }),
+        // Note: We don't pre-warm query-specific memories since they depend on the actual message
+        // But we can pre-warm a general memory search if needed in the future
+      ])
+        .then(([profile]) => {
+          if (profile) {
+            logInfo("✅ [PREBUILD] Memory and profile pre-warmed successfully");
+          }
+        })
+        .catch((error) => {
+          logWarn(
+            "⚠️ [PREBUILD] Pre-warming failed (non-blocking):",
+            error?.message
+          );
+        });
+    } catch (error) {
+      // Non-blocking: if pre-warming fails, it's okay - handlers will load on-demand
+      logWarn(
+        "⚠️ [PREBUILD] Pre-warming error (non-blocking):",
+        error?.message
+      );
+    }
+
     const totalTime = Date.now() - startTime;
     logInfo(`🎯 [PREBUILD] Context pre-building completed in ${totalTime}ms`);
 
@@ -5659,9 +5748,21 @@ async function handleClassify(message, context) {
   }
 }
 
-async function handleOffTopic(message, context) {
+async function handleOffTopic(
+  message,
+  context,
+  wantsStreaming = false,
+  res = null
+) {
   console.log("🚫 [FINNY] Handling off-topic query:", message);
   const startTime = Date.now();
+
+  // Helper to send progress updates
+  const sendProgress = (status) => {
+    if (wantsStreaming && res && !res.writableEnded) {
+      sendStreamEvent(res, "progress", { status });
+    }
+  };
 
   const messageText =
     typeof message === "string" ? message : String(message || "");
@@ -5688,6 +5789,7 @@ async function handleOffTopic(message, context) {
   let netWorthData = null;
   if (userId) {
     try {
+      sendProgress("Loading your financess...");
       netWorthData = await getNetWorthData(userId);
       if (netWorthData) {
         console.log("📊 [OFF_TOPIC] Net worth data loaded for context");
@@ -5758,20 +5860,38 @@ async function handleOffTopic(message, context) {
   ].join("\n");
 
   try {
-    // Load relevant memories for this message (always)
+    // OPTIMIZED: Load memory and profile in parallel for better performance
     let userMemory = { memories: [], totalCount: 0 };
     let userProfileForFinny = null;
     if (userId) {
       try {
-        console.log("🧠 [OFF_TOPIC] Loading user memories for user:", userId);
-        userMemory = await loadUserMemory(userId, messageText);
-        userProfileForFinny = await fetchSupermemoryProfile(userId);
+        sendProgress("Loading your memories...");
+        console.log(
+          "🧠 [OFF_TOPIC] Loading user memories and profile in parallel for user:",
+          userId
+        );
+
+        // Load memory and profile in parallel
+        const [loadedMemory, loadedProfile] = await Promise.all([
+          loadUserMemory(userId, messageText).catch((error) => {
+            console.log("⚠️ [OFF_TOPIC] Error loading memory:", error?.message);
+            return { memories: [], totalCount: 0 };
+          }),
+          fetchSupermemoryProfile(userId).catch((error) => {
+            console.log(
+              "⚠️ [OFF_TOPIC] Error loading profile:",
+              error?.message
+            );
+            return null;
+          }),
+        ]);
+
+        userMemory = loadedMemory;
+        userProfileForFinny = loadedProfile;
+        sendProgress("Analyzing your context...");
         console.log("🧠 [OFF_TOPIC] User memories:", userMemory);
       } catch (error) {
-        console.log(
-          "⚠️ [OFF_TOPIC] Could not load user memories:",
-          error?.message
-        );
+        console.log("⚠️ [OFF_TOPIC] Could not load user data:", error?.message);
         userMemory = { memories: [], totalCount: 0 };
       }
     }
