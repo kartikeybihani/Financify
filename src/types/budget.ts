@@ -934,6 +934,74 @@ export async function getOrCreateCurrentBudgetPeriod(
 }
 
 /**
+ * Get the current month's budget period if it exists.
+ *
+ * IMPORTANT: This is intentionally read-only (does not create rows). Use
+ * getOrCreateCurrentBudgetPeriod() only when the user explicitly initializes a budget.
+ */
+export async function getCurrentBudgetPeriodIfExists(
+  userId: string,
+  today: Date = new Date()
+): Promise<BudgetPeriod | null> {
+  try {
+    const year = today.getFullYear();
+    const month = today.getMonth();
+    const periodStart = new Date(year, month, 1);
+    const periodEnd = new Date(year, month + 1, 0);
+
+    const periodStartStr = formatLocalDate(periodStart);
+    const periodEndStr = formatLocalDate(periodEnd);
+
+    // Exact match first
+    const { data: existing, error: fetchError } = await supabase
+      .from("budget_periods")
+      .select("*")
+      .eq("user_id", userId)
+      .eq("period_start", periodStartStr)
+      .eq("period_end", periodEndStr)
+      .maybeSingle();
+
+    if (fetchError && fetchError.code !== "PGRST116") {
+      logger.error("Error fetching budget period:", fetchError);
+      return null;
+    }
+
+    if (existing) {
+      return existing as BudgetPeriod;
+    }
+
+    // Fallback: overlap match (timezone/legacy safety)
+    const { data: overlappingPeriod, error: overlapError } = await supabase
+      .from("budget_periods")
+      .select("*")
+      .eq("user_id", userId)
+      .lte("period_start", periodEndStr)
+      .gte("period_end", periodStartStr)
+      .maybeSingle();
+
+    if (overlapError && overlapError.code !== "PGRST116") {
+      logger.error("Error fetching overlapping budget period:", overlapError);
+      return null;
+    }
+
+    if (overlappingPeriod) {
+      // Normalize dates for legacy/overlap periods without mutating the DB.
+      // We want actuals calculations to use the canonical month boundaries.
+      return {
+        ...(overlappingPeriod as BudgetPeriod),
+        period_start: periodStartStr,
+        period_end: periodEndStr,
+      };
+    }
+
+    return null;
+  } catch (error) {
+    logger.error("Error in getCurrentBudgetPeriodIfExists:", error);
+    return null;
+  }
+}
+
+/**
  * Get all budget entries for a budget period, joined with category info
  */
 export async function getBudgetEntriesForPeriod(
@@ -977,6 +1045,71 @@ export async function getBudgetEntriesForPeriod(
   } catch (error) {
     logger.error("Error in getBudgetEntriesForPeriod:", error);
     return [];
+  }
+}
+
+/**
+ * Normalize legacy budget entries for the current period (read-only period lookup).
+ *
+ * Fixes older data shapes where entries were stored as scope_type="group" or
+ * where category_id was missing even though the label matches a known category.
+ *
+ * IMPORTANT: This does NOT create a new budget period. If the user has no
+ * current period, this is a no-op.
+ */
+export async function normalizeLegacyBudgetEntriesForCurrentPeriodIfExists(
+  userId: string,
+  today: Date = new Date()
+): Promise<{ updated: number }>
+{
+  try {
+    const period = await getCurrentBudgetPeriodIfExists(userId, today);
+    if (!period) return { updated: 0 };
+
+    const entries = await getBudgetEntriesForPeriod(period.id);
+    if (!entries || entries.length === 0) return { updated: 0 };
+
+    const needsNormalization = entries.filter((entry) => {
+      if (entry.scope_type === "group") return true;
+      if (entry.scope_type === "category" && !entry.category_id) return true;
+      return false;
+    });
+
+    if (needsNormalization.length === 0) return { updated: 0 };
+
+    const categoryIndex = await buildCategoryIndex(userId);
+
+    let updated = 0;
+    for (const entry of needsNormalization) {
+      const resolved = resolveCategoryLabel(entry.label, categoryIndex);
+      if (!resolved.category?.id) continue;
+
+      // Only write when there's something to fix.
+      const shouldUpdate =
+        entry.scope_type !== "category" || entry.category_id !== resolved.category.id;
+      if (!shouldUpdate) continue;
+
+      const { error } = await supabase
+        .from("budget_entries")
+        .update({
+          scope_type: "category",
+          category_id: resolved.category.id,
+          group_key: null,
+          label: resolved.label,
+        })
+        .eq("id", entry.id);
+
+      if (!error) {
+        updated++;
+      } else {
+        logger.error("[BUDGET] Error normalizing legacy budget entry:", error);
+      }
+    }
+
+    return { updated };
+  } catch (error) {
+    logger.error("[BUDGET] Error normalizing legacy budget entries:", error);
+    return { updated: 0 };
   }
 }
 
@@ -1782,7 +1915,7 @@ export async function getBudgetSummary(
   today: Date = new Date()
 ): Promise<BudgetSummary | null> {
   try {
-    const period = await getOrCreateCurrentBudgetPeriod(userId, today);
+    const period = await getCurrentBudgetPeriodIfExists(userId, today);
     if (!period) {
       return null;
     }

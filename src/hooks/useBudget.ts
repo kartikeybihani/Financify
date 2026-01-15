@@ -4,6 +4,7 @@ import { DeviceEventEmitter } from "react-native";
 import {
   getBudgetSummary,
   initializeBudgetForNewUserOrMonth,
+  normalizeLegacyBudgetEntriesForCurrentPeriodIfExists,
   upsertBudgetEntry,
   deleteBudgetEntry,
   updateBudgetPeriodMeta,
@@ -85,8 +86,8 @@ export function useBudget(categoryBreakdown?: CategoryBreakdown): UseBudgetRetur
         return;
       }
 
-      // Backfill any missing categories without overwriting existing limits
-      await initializeBudgetForNewUserOrMonth(authResult.user.id, false);
+      // Legacy safety: normalize older budget entry shapes without creating any new periods.
+      await normalizeLegacyBudgetEntriesForCurrentPeriodIfExists(authResult.user.id);
 
       const summary = await getBudgetSummary(authResult.user.id);
       setBudgetSummary(summary);

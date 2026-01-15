@@ -4577,6 +4577,7 @@ function processSummaryData(results) {
   const netWorth = compositeData.net_worth || {};
   const recentTransactions = compositeData.recent_transactions || [];
   const spendByCategory = compositeData.spend_by_category || [];
+  const budget = compositeData.budget || null;
 
   // Log raw data for debugging
   console.log("📊 [SUMMARY_DATA] Raw composite data from RPC:", {
@@ -4587,6 +4588,7 @@ function processSummaryData(results) {
     bank_accounts_count: netWorth.bank_accounts_count || 0,
     recent_transactions_count: recentTransactions.length,
     spend_categories_count: spendByCategory.length,
+    has_budget: !!budget,
   });
 
   return {
@@ -4605,6 +4607,7 @@ function processSummaryData(results) {
     accounts: Array.isArray(netWorth.bank_accounts)
       ? netWorth.bank_accounts
       : [],
+    budget,
   };
 }
 
