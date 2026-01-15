@@ -3075,21 +3075,21 @@ async function handleAsk(
 
     // Log complete system prompt with clear dividers (only for ask_personalized)
     if (intent === "ask_personalized") {
-      // console.log("\n" + "=".repeat(100));
-      // console.log(
-      //   "📋 [PROMPT_ENGINE] COMPLETE SYSTEM PROMPT SENT TO LLM (ask_personalized)"
-      // );
-      // console.log("=".repeat(100));
-      // console.log(system);
-      // console.log("=".repeat(100));
-      // console.log("📋 [PROMPT_ENGINE] USER MESSAGE");
-      // console.log("=".repeat(100));
-      // console.log(userMessage);
-      // console.log("=".repeat(100));
-      // console.log("📋 [PROMPT_ENGINE] RECENT TURNS");
-      // console.log("=".repeat(100));
-      // console.log(JSON.stringify(recentTurns, null, 2));
-      // console.log("=".repeat(100) + "\n");
+      console.log("\n" + "=".repeat(100));
+      console.log(
+        "📋 [PROMPT_ENGINE] COMPLETE SYSTEM PROMPT SENT TO LLM (ask_personalized)"
+      );
+      console.log("=".repeat(100));
+      console.log(system);
+      console.log("=".repeat(100));
+      console.log("📋 [PROMPT_ENGINE] USER MESSAGE");
+      console.log("=".repeat(100));
+      console.log(userMessage);
+      console.log("=".repeat(100));
+      console.log("📋 [PROMPT_ENGINE] RECENT TURNS");
+      console.log("=".repeat(100));
+      console.log(JSON.stringify(recentTurns, null, 2));
+      console.log("=".repeat(100) + "\n");
     }
 
     // Memory extraction removed - migrating to Supermemory
@@ -5402,7 +5402,7 @@ async function handleClassify(message, context) {
             }),
           },
         ],
-        response_format: { type: "json_schema" },
+        // response_format: { type: "json_schema" },
       };
 
       const fetchPromise = fetch(
