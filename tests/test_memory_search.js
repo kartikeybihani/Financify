@@ -7,12 +7,12 @@
  *   Default search:
  *     node test_memory_search.js "your query"
  *
- *   Memories-only search (searchMode: 'memories'):
- *     node test_memory_search.js "your query" -m
+ *   Base profile memories (all memories like detailed-memories screen):
+ *     node test_memory_search.js --base
  *
  * Examples:
  *   node test_memory_search.js "what do you know about my goals"
- *   node test_memory_search.js "what do you know about my goals" -m
+ *   node test_memory_search.js --base
  */
 
 const SUPERMEMORY_API_KEY =
@@ -131,8 +131,8 @@ async function searchSupermemoryMemories(userId, query, options = {}) {
   }
 }
 
-// Search Supermemory with searchMode: 'memories' (memories only, not documents)
-async function searchSupermemoryMemoriesOnly(userId, query, options = {}) {
+// Fetch all profile memories (same as detailed-memories screen)
+async function fetchProfileMemories(userId) {
   if (!SUPERMEMORY_API_KEY) {
     throw new Error("⚠️ SUPERMEMORY_API_KEY environment variable is not set");
   }
@@ -141,51 +141,12 @@ async function searchSupermemoryMemoriesOnly(userId, query, options = {}) {
     throw new Error("⚠️ userId is required");
   }
 
-  if (!query || typeof query !== "string" || query.trim().length === 0) {
-    throw new Error("⚠️ Query is required and must be a non-empty string");
-  }
-
-  const {
-    limit = 10,
-    threshold = 0.3,
-    filters = null,
-    rerank = false,
-    rewriteQuery = false,
-    quiet = false,
-  } = options;
-
   try {
-    if (!quiet) {
-      console.log(
-        `\n🔍 Searching MEMORIES ONLY (searchMode: 'memories') for user: ${userId}`
-      );
-      console.log(`📝 Query: "${query}"`);
-      console.log(
-        `⚙️  Options: limit=${limit}, threshold=${threshold}, rerank=${rerank}, rewriteQuery=${rewriteQuery}\n`
-      );
-    }
-
-    const requestBody = {
-      q: query.trim(),
-      containerTag: `user_${userId}`,
-      threshold: threshold,
-      include: {
-        documents: false,
-        summaries: false,
-        relatedMemories: false,
-        forgottenMemories: false,
-        chunks: false,
-      },
-      limit: limit,
-      rerank: rerank,
-      rewriteQuery: rewriteQuery,
-      searchMode: "memories",
-    };
-
-    // Add filters if provided
-    if (filters) {
-      requestBody.filters = filters;
-    }
+    console.log(`\n🔍 Fetching all profile memories for user: ${userId}`);
+    console.log(`⚙️  Query: "*" (all memories)`);
+    console.log(
+      `⚙️  Options: limit=100, threshold=0.0, searchMode='memories'\n`
+    );
 
     const response = await fetchWithTimeout(
       `${SUPERMEMORY_BASE_URL}/v4/search`,
@@ -195,7 +156,15 @@ async function searchSupermemoryMemoriesOnly(userId, query, options = {}) {
           Authorization: `Bearer ${SUPERMEMORY_API_KEY}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(requestBody),
+        body: JSON.stringify({
+          q: "*", // Broad query to get all memories
+          limit: 100, // Get up to 100 memories
+          threshold: 0.0, // Low threshold to get all results
+          rerank: false,
+          rewriteQuery: false,
+          containerTag: `user_${userId}`,
+          searchMode: "memories",
+        }),
       },
       SUPERMEMORY_FETCH_TIMEOUT_MS
     );
@@ -230,23 +199,87 @@ async function searchSupermemoryMemoriesOnly(userId, query, options = {}) {
       );
     }
 
-    // Debug: Log raw response structure for memories-only mode when no results
-    if (memories.length === 0) {
-      console.log("\n🔍 Debug: Raw API response structure:");
-      console.log(JSON.stringify(result, null, 2));
-    }
-
     return {
       memories,
       timing: result.timing || null,
       total: result.total || memories.length,
     };
   } catch (error) {
-    throw new Error(`❌ Error searching memories: ${error.message}`);
+    throw new Error(`❌ Error fetching profile memories: ${error.message}`);
   }
 }
 
-// v3/search removed intentionally (v4/search only)
+// Format and display profile memories (like detailed-memories screen)
+function displayProfileMemories(results) {
+  const { memories, timing, total } = results;
+
+  console.log("=".repeat(80));
+  console.log("📊 PROFILE MEMORIES (All Memories)");
+  console.log("=".repeat(80));
+  console.log(`Total memories: ${total}`);
+  console.log(`Returned: ${memories.length}`);
+  if (timing) console.log(`Response time: ${timing}ms`);
+  console.log("=".repeat(80));
+
+  if (memories.length === 0) {
+    console.log("\n❌ No memories found.\n");
+    return;
+  }
+
+  // Sort by date (newest first) - same as detailed-memories screen
+  const sortedMemories = [...memories].sort((a, b) => {
+    const dateA = new Date(a.updatedAt || a.createdAt || 0).getTime();
+    const dateB = new Date(b.updatedAt || b.createdAt || 0).getTime();
+    return dateB - dateA;
+  });
+
+  console.log(`\n📅 Sorted by date (newest first)\n`);
+
+  sortedMemories.forEach((memory, index) => {
+    console.log(`\n${"-".repeat(80)}`);
+    console.log(`📌 Memory #${index + 1}`);
+    console.log(`${"-".repeat(80)}`);
+
+    // Format date (same as detailed-memories screen)
+    const dateStr =
+      memory.updatedAt ||
+      memory.documents?.[0]?.updatedAt ||
+      memory.documents?.[0]?.createdAt ||
+      memory.createdAt ||
+      "N/A";
+    const date = new Date(dateStr);
+    const formattedDate = date.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+    console.log(`Date: ${formattedDate}`);
+
+    // Show memory text (main content) - same as detailed-memories screen
+    const memoryText = memory.memory || memory.content || "";
+    if (memoryText) {
+      console.log(`\nMemory:`);
+      console.log(memoryText);
+    }
+
+    // Show document summary if available and different from memory
+    const summary = memory.documents?.[0]?.summary || memory.summary || null;
+    if (summary && summary !== memoryText) {
+      console.log(`\nSummary (document):`);
+      console.log(summary);
+    }
+
+    // Show additional metadata if available
+    if (memory.id) {
+      console.log(`\nID: ${memory.id}`);
+    }
+    if (memory.similarity !== undefined) {
+      console.log(`Similarity: ${memory.similarity.toFixed(3)}`);
+    }
+  });
+
+  console.log(`\n${"=".repeat(80)}`);
+}
 
 // Format and display results - only main content and modes
 function displayResults(results, query) {
@@ -321,66 +354,59 @@ function displayResults(results, query) {
 async function main() {
   const args = process.argv.slice(2);
 
+  // Check for --base flag first (profile memories test)
+  const isBaseTest = args.includes("--base");
+
+  if (isBaseTest) {
+    // Always use the default userId from the file
+    const userId = "f948c4ab-dc68-41d5-89bf-1935653cca37";
+
+    try {
+      const results = await fetchProfileMemories(userId);
+      displayProfileMemories(results);
+    } catch (error) {
+      console.error(`\n${error.message}\n`);
+      process.exit(1);
+    }
+    return;
+  }
+
   if (args.length === 0) {
     console.error('Usage: node test_memory_search.js "your query" [mode]');
     console.error("\nModes:");
-    console.error("  -m        - Memories only");
+    console.error(
+      "  --base    - Fetch all profile memories (like detailed-memories screen)"
+    );
     console.error("\nExamples:");
     console.error("  # Default search:");
     console.error(
       '  node test_memory_search.js "what do you know about my goals"'
     );
-    console.error("  # Search memories only:");
-    console.error(
-      '  node test_memory_search.js "what do you know about my goals" -m'
-    );
+    console.error("  # Fetch all profile memories:");
+    console.error("  node test_memory_search.js --base");
     console.error("\nEnvironment variables required:");
     console.error("  SUPERMEMORY_API_KEY - Your Supermemory API key");
     process.exit(1);
   }
 
   const query = args[0];
-  const memoriesOnly = args.includes("--memories-only") || args.includes("-m");
 
   // Always use the default userId from the file
   const userId = "f948c4ab-dc68-41d5-89bf-1935653cca37";
 
   try {
-    let results;
-    if (memoriesOnly) {
-      // Use memories-only search mode
-      const memoriesResult = await searchSupermemoryMemoriesOnly(
-        userId,
-        query,
-        {
-          limit: 10,
-          threshold: 0.3,
-          rerank: false,
-          rewriteQuery: false,
-        }
-      );
-      // Add mode labels to results
-      results = {
-        ...memoriesResult,
-        memories: memoriesResult.memories.map((m) => ({
-          ...m,
-          mode: "memory",
-        })),
-      };
-    } else {
-      // Default: v4/search
-      const memoriesResult = await searchSupermemoryMemories(userId, query, {
-        limit: 10,
-        threshold: 0.4,
-      });
-      results = {
-        ...memoriesResult,
-        memories: memoriesResult.memories.map((m) => ({
-          ...m,
-          mode: "memory",
-        })),
-      };
-    }
+    // Default: v4/search
+    const memoriesResult = await searchSupermemoryMemories(userId, query, {
+      limit: 10,
+      threshold: 0.4,
+    });
+    const results = {
+      ...memoriesResult,
+      memories: memoriesResult.memories.map((m) => ({
+        ...m,
+        mode: "memory",
+      })),
+    };
 
     displayResults(results, query);
   } catch (error) {
