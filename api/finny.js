@@ -1966,6 +1966,8 @@ export default async function handler(req, res) {
         streamCompleted = true;
         res.end();
         console.log("✅ [STREAMING] Streaming completed");
+
+        // Memory storage will be triggered by res.once('finish') handler set earlier
       } catch (streamError) {
         logError("❌ [STREAMING] Stream error:", streamError);
         if (!res.writableEnded) {
@@ -2805,30 +2807,31 @@ async function handleAsk(
             })
           );
 
-          // Store conversation memory in Supermemory (async, non-blocking)
+          // Store conversation memory AFTER response is sent (non-blocking)
           if (userId && conversationalResponse) {
             recordConversationTurns(conversationalResponse);
-            setImmediate(async () => {
-              try {
-                await storeConversationMemory(
-                  userId,
-                  message,
-                  conversationalResponse,
-                  {
-                    intent: "ask_personalized",
-                    userName: context?.profile?.name || null,
-                    chat_id: context?.chat_id,
-                    stock_ticker: stockData.ticker,
-                  }
-                );
-              } catch (error) {
+
+            const storeMemoryAfterResponse = () => {
+              storeConversationMemory(userId, message, conversationalResponse, {
+                intent: "ask_personalized",
+                userName: context?.profile?.name || null,
+                chat_id: context?.chat_id,
+                stock_ticker: stockData.ticker,
+              }).catch((error) => {
                 console.error(
                   "❌ [FINNY] Failed to store stock conversation memory:",
                   error
                 );
                 // Non-fatal, don't break conversation flow
-              }
-            });
+              });
+            };
+
+            // For streaming: store after res.end(), for non-streaming: store after response sent
+            if (wantsStreaming && res) {
+              res.once("finish", storeMemoryAfterResponse);
+            } else {
+              setImmediate(storeMemoryAfterResponse);
+            }
           }
 
           return response;
@@ -2889,30 +2892,31 @@ async function handleAsk(
             })
           );
 
-          // Store conversation memory in Supermemory (async, non-blocking)
+          // Store conversation memory AFTER response is sent (non-blocking)
           if (userId && fallbackResponse) {
             recordConversationTurns(fallbackResponse);
-            setImmediate(async () => {
-              try {
-                await storeConversationMemory(
-                  userId,
-                  message,
-                  fallbackResponse,
-                  {
-                    intent: "ask_personalized",
-                    userName: context?.profile?.name || null,
-                    chat_id: context?.chat_id,
-                    fallback_used: true,
-                  }
-                );
-              } catch (error) {
+
+            const storeMemoryAfterResponse = () => {
+              storeConversationMemory(userId, message, fallbackResponse, {
+                intent: "ask_personalized",
+                userName: context?.profile?.name || null,
+                chat_id: context?.chat_id,
+                fallback_used: true,
+              }).catch((error) => {
                 console.error(
                   "❌ [FINNY] Failed to store fallback conversation memory:",
                   error
                 );
                 // Non-fatal, don't break conversation flow
-              }
-            });
+              });
+            };
+
+            // For streaming: store after res.end(), for non-streaming: store after response sent
+            if (wantsStreaming && res) {
+              res.once("finish", storeMemoryAfterResponse);
+            } else {
+              setImmediate(storeMemoryAfterResponse);
+            }
           }
 
           return response;
@@ -3348,7 +3352,7 @@ async function handleAsk(
     // Log conversation asynchronously to avoid adding latency
     setImmediate(() => logConversation(conversationData));
 
-    // Store conversation memory in Supermemory (async, non-blocking)
+    // Store conversation memory AFTER response is sent (non-blocking)
     // Use cleanedMessage (actual response text) instead of cleanText (raw LLM output)
     const responseTextForStorage =
       cleanedMessage ||
@@ -3359,26 +3363,30 @@ async function handleAsk(
 
     if (userId && responseTextForStorage) {
       recordConversationTurns(responseTextForStorage);
-      setImmediate(async () => {
-        try {
-          await storeConversationMemory(
-            userId,
-            message,
-            responseTextForStorage,
-            {
-              intent: intent,
-              chat_id: context?.chat_id,
-              userName: context?.profile?.name || null,
-            }
-          );
-        } catch (error) {
+
+      // Store memory after response is sent (for both streaming and non-streaming)
+      const storeMemoryAfterResponse = () => {
+        storeConversationMemory(userId, message, responseTextForStorage, {
+          intent: intent,
+          chat_id: context?.chat_id,
+          userName: context?.profile?.name || null,
+        }).catch((error) => {
           console.error(
             "❌ [FINNY] Failed to store conversation memory:",
             error
           );
           // Non-fatal, don't break conversation flow
-        }
-      });
+        });
+      };
+
+      // For streaming: store after res.end(), for non-streaming: store after response sent
+      if (wantsStreaming && res) {
+        // Will be called after res.end() in streaming handler
+        res.once("finish", storeMemoryAfterResponse);
+      } else {
+        // For non-streaming, use setImmediate to ensure response is sent first
+        setImmediate(storeMemoryAfterResponse);
+      }
     }
 
     // Update handler time in parent timings if provided
@@ -4097,6 +4105,8 @@ async function createOptimizedFetchOperations(userId, needs, slots) {
         priority: 1, // High priority
       });
     } else {
+      // OPTIMIZED: Use composite RPC function to reduce network round-trips from 3 to 1
+      const dateRange = getDateRange(30);
       addOperation("summary_min", {
         key: "summary_min",
         type: "summary_min",
@@ -4105,22 +4115,13 @@ async function createOptimizedFetchOperations(userId, needs, slots) {
         priority: 1,
         fetchers: [
           {
-            name: "net_worth",
-            rpc: "get_net_worth",
-            params: { p_user_id: userId },
-          },
-          {
-            name: "recent_transactions",
-            rpc: "get_recent_transactions",
-            params: { p_user_id: userId, p_limit: 5 },
-          },
-          {
-            name: "spend_by_category",
-            rpc: "get_spend_by_category",
+            name: "summary_min_composite",
+            rpc: "get_summary_min_composite",
             params: {
               p_user_id: userId,
-              p_start: getDateRange(30).start,
-              p_end: getDateRange(30).end,
+              p_limit: 5,
+              p_start: dateRange.start,
+              p_end: dateRange.end,
             },
           },
         ],
@@ -4550,42 +4551,63 @@ function processOperationData(operation, results) {
   }
 }
 
-// OPTIMIZED: Process summary data from multiple RPC calls
+// OPTIMIZED: Process summary data from composite RPC call (single JSONB response)
 function processSummaryData(results) {
-  const [netWorthRes, recentRes, spendCatRes] = results;
+  // Composite function returns single result with all data in JSONB format
+  const compositeRes = results[0];
 
-  const net = netWorthRes?.data?.[0] || null;
-  if (!net) {
-    console.log("⚠️ [SUMMARY_DATA] No net worth data in RPC response");
+  if (!compositeRes?.data) {
+    console.log("⚠️ [SUMMARY_DATA] No data in composite RPC response");
     return null;
   }
 
-  // Log raw net worth data for debugging
-  console.log("📊 [SUMMARY_DATA] Raw net worth from RPC:", {
-    net_worth: net.net_worth,
-    liquid_assets: net.liquid_assets,
-    investments_total: net.investments_total,
-    total_liabilities: net.total_liabilities,
-    bank_accounts_count: Array.isArray(net.bank_accounts)
-      ? net.bank_accounts.length
-      : 0,
+  // Handle both old format (array of results) and new format (single JSONB object)
+  let compositeData;
+  if (
+    typeof compositeRes.data === "object" &&
+    !Array.isArray(compositeRes.data)
+  ) {
+    // New composite format: single JSONB object
+    compositeData = compositeRes.data;
+  } else if (Array.isArray(compositeRes.data) && compositeRes.data.length > 0) {
+    // Fallback: if it's an array, take first element (shouldn't happen with composite)
+    compositeData = compositeRes.data[0];
+  } else {
+    console.log("⚠️ [SUMMARY_DATA] Invalid composite RPC response format");
+    return null;
+  }
+
+  const netWorth = compositeData.net_worth || {};
+  const recentTransactions = compositeData.recent_transactions || [];
+  const spendByCategory = compositeData.spend_by_category || [];
+
+  // Log raw data for debugging
+  console.log("📊 [SUMMARY_DATA] Raw composite data from RPC:", {
+    net_worth: netWorth.net_worth,
+    liquid_assets: netWorth.liquid_assets,
+    investments_total: netWorth.investments_total,
+    total_liabilities: netWorth.total_liabilities,
+    bank_accounts_count: netWorth.bank_accounts_count || 0,
+    recent_transactions_count: recentTransactions.length,
+    spend_categories_count: spendByCategory.length,
   });
 
-  const recent = Array.isArray(recentRes?.data) ? recentRes.data : [];
-  const spendCats = Array.isArray(spendCatRes?.data) ? spendCatRes.data : [];
-
   return {
-    netWorth: Number(net.net_worth || 0),
-    liquidAssets: Number(net.liquid_assets || 0),
-    investmentsTotal: Number(net.investments_total || 0),
-    totalLiabilities: Number(net.total_liabilities || 0),
-    recentTransactions: recent.slice(0, 5).map((txn) => ({
-      date: txn.date,
-      amount: txn.amount,
-      merchant: txn.merchant || txn.name,
-    })),
-    spendByCategory: spendCats,
-    accounts: Array.isArray(net.bank_accounts) ? net.bank_accounts : [],
+    netWorth: Number(netWorth.net_worth || 0),
+    liquidAssets: Number(netWorth.liquid_assets || 0),
+    investmentsTotal: Number(netWorth.investments_total || 0),
+    totalLiabilities: Number(netWorth.total_liabilities || 0),
+    recentTransactions: Array.isArray(recentTransactions)
+      ? recentTransactions.slice(0, 5).map((txn) => ({
+          date: txn.date,
+          amount: txn.amount,
+          merchant: txn.merchant || txn.name,
+        }))
+      : [],
+    spendByCategory: Array.isArray(spendByCategory) ? spendByCategory : [],
+    accounts: Array.isArray(netWorth.bank_accounts)
+      ? netWorth.bank_accounts
+      : [],
   };
 }
 
@@ -5404,110 +5426,44 @@ async function handleClassify(message, context) {
       return r.json();
     }
 
-    // Classification models: openai/gpt-oss-20b (paid) and openai/gpt-oss-20b:free
-    // Simple sequential approach: Try free model first, fallback to paid if it fails
-    const paidModel = CLASSIFICATION_MODEL_PAID || "openai/gpt-oss-20b";
-    const freeModel = CLASSIFICATION_MODEL_FREE || "openai/gpt-oss-20b:free";
-    const timeoutMs = 6000; // 3 second timeout
+    // Use same models as ask_personalized: reasoning model as primary, with fallbacks
+    const llmModels = [
+      REASONING_MODEL_PAID_SCOUT || "meta-llama/llama-4-scout",
+      STANDARD_MODEL,
+      TERTIARY_MODEL,
+    ];
+    const timeoutMs = 20000; // 20 second timeout (same as ask_personalized)
 
-    // Initialize variables to avoid undefined errors
     let data = null;
     let usedModel = null;
 
-    // Try free model first
-    let freeSucceeded = false;
     try {
-      const controllerFree = new AbortController();
-      const freePromise = Promise.resolve()
-        .then(() => callLLM(freeModel, { signal: controllerFree.signal }))
-        .catch((err) => {
-          if (controllerFree.signal.aborted || err?.name === "AbortError") {
-            return { __aborted: true };
-          }
-          throw err;
-        });
-
-      const freeResult = await withTimeout(
-        freePromise,
+      const llmResult = await callWithFallback(
+        llmModels,
+        callLLM,
         timeoutMs,
-        { __timeout: true },
-        () => controllerFree.abort()
+        "Classification"
       );
-
-      if (
-        freeResult &&
-        !freeResult.__timeout &&
-        !freeResult.__aborted &&
-        freeResult.choices &&
-        Array.isArray(freeResult.choices) &&
-        freeResult.choices.length > 0
-      ) {
-        data = freeResult;
-        usedModel = freeModel;
-        freeSucceeded = true;
-        console.log("🔍 [FINNY] Classification using model:", usedModel);
-      }
-    } catch (freeError) {
-      console.log(
-        `⚠️ [FINNY] Free model failed: ${freeError?.message || "unknown error"}`
+      data = llmResult.result;
+      usedModel = llmResult.model;
+      console.log("🔍 [FINNY] Classification using model:", usedModel);
+    } catch (llmError) {
+      console.error(
+        `❌ [FINNY] All classification models failed: ${
+          llmError?.message || "unknown error"
+        }`
       );
-      freeSucceeded = false;
-    }
-
-    // If free model failed, try paid model
-    if (!freeSucceeded) {
-      try {
-        const controllerPaid = new AbortController();
-        const paidPromise = Promise.resolve()
-          .then(() => callLLM(paidModel, { signal: controllerPaid.signal }))
-          .catch((err) => {
-            if (controllerPaid.signal.aborted || err?.name === "AbortError") {
-              return { __aborted: true };
-            }
-            throw err;
-          });
-
-        const paidResult = await withTimeout(
-          paidPromise,
-          timeoutMs,
-          { __timeout: true },
-          () => controllerPaid.abort()
-        );
-
-        if (
-          paidResult &&
-          !paidResult.__timeout &&
-          !paidResult.__aborted &&
-          paidResult.choices &&
-          Array.isArray(paidResult.choices) &&
-          paidResult.choices.length > 0
-        ) {
-          data = paidResult;
-          usedModel = paidModel;
-          console.log("🔍 [FINNY] Classification using model:", usedModel);
-        } else {
-          throw new Error(
-            `Classification timeout after ${timeoutMs}ms (both models failed)`
-          );
-        }
-      } catch (paidError) {
-        console.error(
-          `❌ [FINNY] Paid model also failed: ${
-            paidError?.message || "unknown error"
-          }`
-        );
-        throw new Error(
-          `Classification failed: free model error, paid model error: ${
-            paidError?.message || "unknown"
-          }`
-        );
-      }
+      throw new Error(
+        `Classification failed: all models failed - ${
+          llmError?.message || "unknown"
+        }`
+      );
     }
 
     // Ensure we have valid data before proceeding
     if (!data || !usedModel) {
       throw new Error(
-        "Classification failed: no valid response from either model"
+        "Classification failed: no valid response from any model"
       );
     }
 
@@ -6026,23 +5982,28 @@ async function handleOffTopic(
       data.choices?.[0]?.message?.content ||
       "I'm all about finance. What money questions can I help you with?";
 
-    // Store conversation memory
+    // Store conversation memory AFTER response is sent (non-blocking)
     if (userId && content) {
-      setImmediate(async () => {
-        try {
-          await storeConversationMemory(userId, messageText, content, {
-            intent: "off_topic",
-            chat_id: context?.chat_id,
-            category: category,
-            userName: userProfile?.name || null,
-          });
-        } catch (error) {
+      const storeMemoryAfterResponse = () => {
+        storeConversationMemory(userId, messageText, content, {
+          intent: "off_topic",
+          chat_id: context?.chat_id,
+          category: category,
+          userName: userProfile?.name || null,
+        }).catch((error) => {
           console.error(
-            "❌ [FINNY] Failed to store off-topic conversation memory:",
+            "❌ [OFF_TOPIC] Failed to store conversation memory:",
             error
           );
-        }
-      });
+        });
+      };
+
+      // For streaming: store after res.end(), for non-streaming: store after response sent
+      if (wantsStreaming && res) {
+        res.once("finish", storeMemoryAfterResponse);
+      } else {
+        setImmediate(storeMemoryAfterResponse);
+      }
     }
 
     // Log the interaction
