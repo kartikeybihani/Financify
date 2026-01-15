@@ -5432,7 +5432,7 @@ async function handleClassify(message, context) {
       STANDARD_MODEL,
       TERTIARY_MODEL,
     ];
-    const timeoutMs = 20000; // 20 second timeout (same as ask_personalized)
+    const timeoutMs = 6000; // 6 second timeout
 
     let data = null;
     let usedModel = null;
