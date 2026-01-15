@@ -15,7 +15,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import IconButton from "@/src/components/shared/IconButton";
-import MemoriesScreen from "@/app/(tabs)/chat/memories";
+import DetailedMemoriesScreen from "@/app/(tabs)/chat/detailed-memories";
 import FinnyStyleScreen from "@/app/(tabs)/chat/finny-style";
 import FinnyCheckinScreen from "@/app/(tabs)/chat/finny-checkin";
 import LegalSummaryScreen from "@/app/(tabs)/chat/legal-summary";
@@ -661,7 +661,7 @@ export default function FinnySettingsScreen() {
               },
             ]}
           >
-            <MemoriesScreen onBack={closeMemories} />
+            <DetailedMemoriesScreen onBack={closeMemories} />
           </Animated.View>
         )}
 

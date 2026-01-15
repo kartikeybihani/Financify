@@ -308,7 +308,7 @@ export default function DetailedMemoriesScreen({
           {loadingProfileMemories ? (
             <FinnyLoadingIndicator
               message="Loading detailed memories..."
-              duration={1500}
+              duration={1400}
               onComplete={() => {
                 animationCompletedRef.current = true;
                 checkAndHideLoading();
