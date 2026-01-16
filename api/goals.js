@@ -1775,12 +1775,20 @@ async function analyzeGoalWithLLM(goalData, userId) {
     const allSettledStartTime = Date.now();
 
     // Create a heartbeat to verify the event loop is still running
+    // Start it BEFORE any async operations to ensure it runs
     const heartbeat = setInterval(() => {
       const elapsed = Date.now() - allSettledStartTime;
       console.log(
         `    💓 [HEARTBEAT] Event loop active - ${elapsed}ms elapsed since Promise.allSettled started`
       );
     }, 5000); // Log every 5 seconds
+
+    // Force first heartbeat immediately to verify it's working
+    setTimeout(() => {
+      console.log(
+        "    💓 [HEARTBEAT] Initial heartbeat fired - event loop is active"
+      );
+    }, 100);
 
     let results;
     try {
@@ -1791,17 +1799,40 @@ async function analyzeGoalWithLLM(goalData, userId) {
           wrapWithTimeout(
             async () => {
               console.log("  📈 Fetching net worth...");
-              const result = await supabase.rpc("get_net_worth", {
-                p_user_id: userId,
-              });
-              if (!result.error && result?.data?.[0]) {
+              const startTime = Date.now();
+              try {
+                const result = await supabase.rpc("get_net_worth", {
+                  p_user_id: userId,
+                });
+                const duration = Date.now() - startTime;
                 console.log(
-                  `    ✅ Net worth: $${
-                    result.data[0].net_worth?.toLocaleString() || 0
-                  }`
+                  `  📈 [Net Worth] RPC call completed in ${duration}ms`
                 );
+                if (result.error) {
+                  console.error(
+                    "    ❌ Error fetching net worth:",
+                    result.error.message,
+                    "Code:",
+                    result.error.code
+                  );
+                  return { data: null, error: result.error };
+                }
+                if (result?.data?.[0]) {
+                  console.log(
+                    `    ✅ Net worth: $${
+                      result.data[0].net_worth?.toLocaleString() || 0
+                    }`
+                  );
+                }
+                return result;
+              } catch (err) {
+                const duration = Date.now() - startTime;
+                console.error(
+                  `    ❌ Exception fetching net worth after ${duration}ms:`,
+                  err.message
+                );
+                return { data: null, error: err };
               }
-              return result;
             },
             "Net Worth",
             15000
@@ -1809,13 +1840,30 @@ async function analyzeGoalWithLLM(goalData, userId) {
           wrapWithTimeout(
             async () => {
               console.log("  💼 Fetching investment snapshot...");
-              const result = await supabase.rpc("get_investment_snapshot", {
-                p_user_id: userId,
-              });
-              if (!result.error && result?.data?.[0]) {
-                console.log(`    ✅ Investment snapshot retrieved`);
+              try {
+                const result = await supabase.rpc("get_investment_snapshot", {
+                  p_user_id: userId,
+                });
+                if (result.error) {
+                  console.error(
+                    "    ❌ Error fetching investment snapshot:",
+                    result.error.message,
+                    "Code:",
+                    result.error.code
+                  );
+                  return { data: null, error: result.error };
+                }
+                if (result?.data?.[0]) {
+                  console.log(`    ✅ Investment snapshot retrieved`);
+                }
+                return result;
+              } catch (err) {
+                console.error(
+                  "    ❌ Exception fetching investment snapshot:",
+                  err.message
+                );
+                return { data: null, error: err };
               }
-              return result;
             },
             "Investment Snapshot",
             15000
@@ -1823,14 +1871,33 @@ async function analyzeGoalWithLLM(goalData, userId) {
           wrapWithTimeout(
             async () => {
               console.log("  💳 Fetching recent transactions (limit: 200)...");
-              const result = await supabase.rpc("get_recent_transactions", {
-                p_user_id: userId,
-                p_limit: 200,
-              });
-              if (!result.error && result?.data) {
-                console.log(`    ✅ Transactions: ${result.data.length} found`);
+              try {
+                const result = await supabase.rpc("get_recent_transactions", {
+                  p_user_id: userId,
+                  p_limit: 200,
+                });
+                if (result.error) {
+                  console.error(
+                    "    ❌ Error fetching transactions:",
+                    result.error.message,
+                    "Code:",
+                    result.error.code
+                  );
+                  return { data: null, error: result.error };
+                }
+                if (result?.data) {
+                  console.log(
+                    `    ✅ Transactions: ${result.data.length} found`
+                  );
+                }
+                return result;
+              } catch (err) {
+                console.error(
+                  "    ❌ Exception fetching transactions:",
+                  err.message
+                );
+                return { data: null, error: err };
               }
-              return result;
             },
             "Recent Transactions",
             20000
@@ -1838,17 +1905,34 @@ async function analyzeGoalWithLLM(goalData, userId) {
           wrapWithTimeout(
             async () => {
               console.log("  📊 Fetching spend by category (last 30 days)...");
-              const result = await supabase.rpc("get_spend_by_category", {
-                p_user_id: userId,
-                p_start: thirtyDaysAgo.toISOString().split("T")[0],
-                p_end: currentDate.toISOString().split("T")[0],
-              });
-              if (!result.error && result?.data) {
-                console.log(
-                  `    ✅ Spending categories: ${result.data.length} found`
+              try {
+                const result = await supabase.rpc("get_spend_by_category", {
+                  p_user_id: userId,
+                  p_start: thirtyDaysAgo.toISOString().split("T")[0],
+                  p_end: currentDate.toISOString().split("T")[0],
+                });
+                if (result.error) {
+                  console.error(
+                    "    ❌ Error fetching spend by category:",
+                    result.error.message,
+                    "Code:",
+                    result.error.code
+                  );
+                  return { data: null, error: result.error };
+                }
+                if (result?.data) {
+                  console.log(
+                    `    ✅ Spending categories: ${result.data.length} found`
+                  );
+                }
+                return result;
+              } catch (err) {
+                console.error(
+                  "    ❌ Exception fetching spend by category:",
+                  err.message
                 );
+                return { data: null, error: err };
               }
-              return result;
             },
             "Spend by Category",
             15000
@@ -1856,16 +1940,33 @@ async function analyzeGoalWithLLM(goalData, userId) {
           wrapWithTimeout(
             async () => {
               console.log("  💰 Fetching cashflow (last 3 months)...");
-              const result = await supabase.rpc("get_cashflow_monthly", {
-                p_user_id: userId,
-                p_months: 3,
-              });
-              if (!result.error && result?.data) {
-                console.log(
-                  `    ✅ Cashflow months: ${result.data.length} found`
+              try {
+                const result = await supabase.rpc("get_cashflow_monthly", {
+                  p_user_id: userId,
+                  p_months: 3,
+                });
+                if (result.error) {
+                  console.error(
+                    "    ❌ Error fetching cashflow:",
+                    result.error.message,
+                    "Code:",
+                    result.error.code
+                  );
+                  return { data: null, error: result.error };
+                }
+                if (result?.data) {
+                  console.log(
+                    `    ✅ Cashflow months: ${result.data.length} found`
+                  );
+                }
+                return result;
+              } catch (err) {
+                console.error(
+                  "    ❌ Exception fetching cashflow:",
+                  err.message
                 );
+                return { data: null, error: err };
               }
-              return result;
             },
             "Cashflow",
             15000
