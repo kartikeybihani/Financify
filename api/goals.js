@@ -2018,12 +2018,12 @@ async function analyzeGoalWithLLM(goalData, userId) {
     );
 
     // Process financial data from composite result
-    const netWorthRecord = compositeData.net_worth
-      ? { net_worth: compositeData.net_worth }
-      : null;
-    const investmentRecord = compositeData.investment_snapshot
-      ? { ...compositeData.investment_snapshot }
-      : null;
+    // NOTE: compositeData.net_worth is already an object with keys like
+    // { liquid_assets, investments_total, total_liabilities, net_worth, bank_accounts }.
+    // Wrapping it (as done previously) turns netWorthRecord.net_worth into an object,
+    // which then becomes NaN when coerced to a number in prompt formatting.
+    const netWorthRecord = compositeData?.net_worth || null;
+    const investmentRecord = compositeData?.investment_snapshot || null;
     const transactions = compositeData.recent_transactions || [];
     const spending = compositeData.spend_by_category || [];
     const cashflowData = compositeData.cashflow || [];
@@ -2052,18 +2052,25 @@ async function analyzeGoalWithLLM(goalData, userId) {
       };
     }
 
+    const toFiniteNumber = (value, fallback = 0) => {
+      const num = typeof value === "number" ? value : Number(value);
+      return Number.isFinite(num) ? num : fallback;
+    };
+
     // Format financial data for prompt
     const financialData = {
       base: {
-        liquidAssets: Math.round(Number(netWorthRecord?.liquid_assets ?? 0)),
+        liquidAssets: Math.round(toFiniteNumber(netWorthRecord?.liquid_assets)),
         totalLiabilities: Math.round(
-          Number(netWorthRecord?.total_liabilities ?? 0)
+          toFiniteNumber(netWorthRecord?.total_liabilities)
         ),
-        netWorth: Math.round(Number(netWorthRecord?.net_worth ?? 0)),
+        netWorth: Math.round(toFiniteNumber(netWorthRecord?.net_worth)),
         investmentsTotal: Math.round(
-          Number(netWorthRecord?.investments_total ?? 0)
+          toFiniteNumber(netWorthRecord?.investments_total)
         ),
-        accounts: netWorthRecord?.bank_accounts || [],
+        accounts: Array.isArray(netWorthRecord?.bank_accounts)
+          ? netWorthRecord.bank_accounts
+          : [],
         recentTransactions: transactions.filter((txn) => {
           const txnDate = new Date(txn.date || txn.inserted_at);
           return txnDate >= oneMonthAgo;
