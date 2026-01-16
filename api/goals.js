@@ -1916,13 +1916,27 @@ async function analyzeGoalWithLLM(goalData, userId) {
       (async () => {
         console.log("  🎯 Fetching current goals...");
         try {
-          const result = await supabase
+          // Check if goalData.id is a valid UUID before using .neq()
+          // Test IDs like "test-123" will cause UUID validation errors
+          const isTestId =
+            goalData.id &&
+            !goalData.id.match(
+              /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+            );
+
+          let query = supabase
             .from("goals")
             .select("*")
             .eq("user_id", userId)
-            .eq("status", "active")
-            .neq("id", goalData.id)
-            .order("created_at", { ascending: false });
+            .eq("status", "active");
+
+          // Only exclude the goal if it's a valid UUID (not a test ID)
+          if (!isTestId) {
+            query = query.neq("id", goalData.id);
+          }
+
+          const result = await query.order("created_at", { ascending: false });
+
           if (result.error) {
             console.error("    ❌ Error fetching goals:", result.error.message);
             return { data: [] };
@@ -2115,39 +2129,26 @@ async function analyzeGoalWithLLM(goalData, userId) {
       content.length
     );
 
-    // Store analysis in database (skip if test ID - not a valid UUID)
-    const isTestId =
-      goalData.id &&
-      !goalData.id.match(
-        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-      );
-    if (isTestId) {
-      console.log(
-        "⚠️ [GOAL ANALYSIS] Skipping DB update for test ID:",
-        goalData.id
-      );
-    } else {
-      const { error: updateError } = await supabase
-        .from("goals")
-        .update({ analysis: content })
-        .eq("id", goalData.id);
+    // Store analysis in database
+    const { error: updateError } = await supabase
+      .from("goals")
+      .update({ analysis: content })
+      .eq("id", goalData.id);
 
-      if (updateError) {
-        console.error(
-          "❌ [GOAL ANALYSIS] Error storing analysis:",
-          updateError
-        );
-        // Still return the analysis even if DB update fails (useful for testing)
-        // Attach the analysis to the error so caller can access it
-        const errorWithAnalysis = new Error(
-          `Analysis generated but DB update failed: ${updateError.message}`
-        );
-        errorWithAnalysis.analysis = content;
-        errorWithAnalysis.dbUpdateFailed = true;
-        throw errorWithAnalysis;
-      }
-      console.log("✅ [GOAL ANALYSIS] Analysis stored successfully");
+    if (updateError) {
+      console.error("❌ [GOAL ANALYSIS] Error storing analysis:", updateError);
+      // Still return the analysis even if DB update fails (useful for testing)
+      // This can happen if the goal doesn't exist in the DB (e.g., during testing)
+      // Attach the analysis to the error so caller can access it
+      const errorWithAnalysis = new Error(
+        `Analysis generated but DB update failed: ${updateError.message}`
+      );
+      errorWithAnalysis.analysis = content;
+      errorWithAnalysis.dbUpdateFailed = true;
+      throw errorWithAnalysis;
     }
+
+    console.log("✅ [GOAL ANALYSIS] Analysis stored successfully");
 
     return content;
   } catch (error) {

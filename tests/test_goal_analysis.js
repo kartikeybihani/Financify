@@ -12,6 +12,7 @@
 import "dotenv/config";
 import readline from "readline";
 import { analyzeGoalWithLLM } from "../api/goals.js";
+import { supabase } from "../lib/api/supabase.js";
 
 // Test user context - you can change this to test with different users
 const TEST_USER_ID = "f948c4ab-dc68-41d5-89bf-1935653cca37";
@@ -48,7 +49,6 @@ async function getGoalDetails() {
   );
 
   return {
-    id: `test-${Date.now()}`, // Temporary ID for testing
     label: label.trim(),
     target_amount: parseFloat(targetAmount) || 0,
     current_amount: parseFloat(currentAmount) || 0,
@@ -57,42 +57,68 @@ async function getGoalDetails() {
     note: note.trim() || null,
     status: "active",
     user_id: TEST_USER_ID,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
   };
 }
 
-async function testGoalAnalysis(goalData) {
+async function testGoalAnalysis(goalInput) {
   try {
     console.log("\n" + "=".repeat(80));
-    console.log("🧠 Starting Goal Analysis");
+    console.log("🧠 Starting Goal Analysis Test");
     console.log("=".repeat(80));
     console.log("\nGoal Details:");
-    console.log(`  Name: ${goalData.label}`);
-    console.log(`  Target Amount: $${goalData.target_amount.toLocaleString()}`);
+    console.log(`  Name: ${goalInput.label}`);
     console.log(
-      `  Current Amount: $${goalData.current_amount.toLocaleString()}`
+      `  Target Amount: $${goalInput.target_amount.toLocaleString()}`
     );
-    console.log(`  Target Date: ${goalData.target_date}`);
-    console.log(`  Category: ${goalData.category}`);
-    if (goalData.note) {
-      console.log(`  Note: ${goalData.note}`);
+    console.log(
+      `  Current Amount: $${goalInput.current_amount.toLocaleString()}`
+    );
+    console.log(`  Target Date: ${goalInput.target_date}`);
+    console.log(`  Category: ${goalInput.category}`);
+    if (goalInput.note) {
+      console.log(`  Note: ${goalInput.note}`);
     }
 
     const startTime = Date.now();
 
-    // Use the production function directly - it will handle all fetching and logging
-    console.log("\n📊 Calling analyzeGoalWithLLM (production function)...");
+    // Step 1: Create the goal in the database first
+    console.log("\n📝 Step 1: Creating goal in database...");
+    const goalRow = {
+      user_id: goalInput.user_id,
+      label: String(goalInput.label),
+      description: null,
+      note: goalInput.note || null,
+      target_amount: Math.round(Number(goalInput.target_amount)),
+      current_amount: Math.round(Number(goalInput.current_amount || 0)),
+      target_date: String(goalInput.target_date),
+      category: String(goalInput.category || "other"),
+      status: "active",
+    };
+
+    const { data: createdGoal, error: insertError } = await supabase
+      .from("goals")
+      .insert([goalRow])
+      .select()
+      .single();
+
+    if (insertError) {
+      throw new Error(`Failed to create goal: ${insertError.message}`);
+    }
+
+    console.log(`✅ Goal created in database with ID: ${createdGoal.id}`);
+
+    // Step 2: Analyze the goal (this will save the analysis to the database)
+    console.log("\n📊 Step 2: Analyzing goal with LLM...");
     console.log("   This will fetch all data in parallel and log each step.\n");
 
     let analysis;
     try {
       // Call the production function - it will log everything internally
-      // The function will skip DB update for test IDs (non-UUID format)
-      // All logs including memory queries will be shown in the console
-      analysis = await analyzeGoalWithLLM(goalData, TEST_USER_ID);
+      // The analysis will be saved to the database automatically
+      analysis = await analyzeGoalWithLLM(createdGoal, TEST_USER_ID);
+      console.log("\n✅ Analysis saved to database successfully");
     } catch (error) {
-      // If DB update fails (unexpected error), extract the analysis from the error
+      // If DB update fails, extract the analysis from the error
       if (error.dbUpdateFailed && error.analysis) {
         console.log(
           "\n⚠️  Note: Database update failed, but analysis was generated."
@@ -119,7 +145,7 @@ async function testGoalAnalysis(goalData) {
     console.log("-".repeat(80));
 
     return {
-      goal: goalData,
+      goal: createdGoal,
       analysis,
       totalTime,
     };
