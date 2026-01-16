@@ -1772,9 +1772,14 @@ async function analyzeGoalWithLLM(goalData, userId) {
       );
     }, 5000);
 
-    // Force first heartbeat immediately
+    // Force first heartbeat immediately - use setImmediate to ensure it runs
+    setImmediate(() => {
+      console.log("    💓 [HEARTBEAT] Initial heartbeat fired (setImmediate)");
+    });
     setTimeout(() => {
-      console.log("    💓 [HEARTBEAT] Initial heartbeat fired");
+      console.log(
+        "    💓 [HEARTBEAT] Initial heartbeat fired (setTimeout 100ms)"
+      );
     }, 100);
 
     let results;
@@ -1868,18 +1873,28 @@ async function analyzeGoalWithLLM(goalData, userId) {
 
       const memoryQuery = `Goal: ${goalData.label}. Target: $${goalData.target_amount}. Category: ${goalData.category}`;
       console.log(`    🔍 [SUPERMEMORY] Search query: "${memoryQuery}"`);
-      const supermemoryPromise = withTimeout(
-        searchSupermemoryMemories(userId, memoryQuery, {
-          limit: 15,
-          threshold: 0.4,
-        }),
-        5000,
-        [],
-        null,
-        "Supermemory Search"
-      )
+
+      // Use very aggressive timeout - if Supermemory hangs, skip it
+      // Wrap in Promise.resolve to ensure it's async and doesn't block
+      const supermemoryWithTimeout = Promise.resolve()
+        .then(async () => {
+          console.log(`    🔍 [SUPERMEMORY] Starting search...`);
+          return await withTimeout(
+            searchSupermemoryMemories(userId, memoryQuery, {
+              limit: 15,
+              threshold: 0.4,
+            }),
+            2000, // 2 second timeout - very aggressive
+            [], // Return empty array on timeout
+            null,
+            "Supermemory Search Internal"
+          );
+        })
         .then((supermemoryResults) => {
-          const memories = supermemoryResults.map((result) => ({
+          console.log(
+            `    🔍 [SUPERMEMORY] Search completed, processing results...`
+          );
+          const memories = (supermemoryResults || []).map((result) => ({
             id: result.id,
             content: result.memory || "",
             similarity: result.similarity || 0,
@@ -1891,7 +1906,10 @@ async function analyzeGoalWithLLM(goalData, userId) {
           }
           return result;
         })
-        .catch(() => ({ memories: [], totalCount: 0 }));
+        .catch((err) => {
+          console.error(`    ❌ [SUPERMEMORY] Error:`, err.message);
+          return { memories: [], totalCount: 0 };
+        });
 
       const isTestId =
         goalData.id &&
@@ -1955,7 +1973,7 @@ async function analyzeGoalWithLLM(goalData, userId) {
       results = await Promise.allSettled([
         compositeDataPromise,
         userProfilePromise,
-        supermemoryPromise,
+        supermemoryWithTimeout,
         currentGoalsPromise,
         budgetPromise,
       ]);
