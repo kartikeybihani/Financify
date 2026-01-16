@@ -88,14 +88,14 @@ async function testGoalAnalysis(goalData) {
     let analysis;
     try {
       // Call the production function - it will log everything internally
-      // The function will try to update the DB, but since we're using a test ID, it will fail
-      // That's okay - we'll catch it and still show the analysis
+      // The function will skip DB update for test IDs (non-UUID format)
+      // All logs including memory queries will be shown in the console
       analysis = await analyzeGoalWithLLM(goalData, TEST_USER_ID);
     } catch (error) {
-      // If DB update fails (because we're using a test ID), extract the analysis from the error
+      // If DB update fails (unexpected error), extract the analysis from the error
       if (error.dbUpdateFailed && error.analysis) {
         console.log(
-          "\n⚠️  Note: Database update failed (expected for test ID), but analysis was generated."
+          "\n⚠️  Note: Database update failed, but analysis was generated."
         );
         analysis = error.analysis;
       } else {

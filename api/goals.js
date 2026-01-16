@@ -5,7 +5,7 @@ import crypto from "crypto";
 import { buildGoalAnalysisPrompt } from "../lib/prompt_engine.js";
 import {
   loadUserProfile,
-  fetchSupermemoryProfile,
+  searchSupermemoryMemories,
 } from "../lib/memoryUtils.js";
 
 // Utilities
@@ -1875,15 +1875,40 @@ async function analyzeGoalWithLLM(goalData, userId) {
       // Memories
       (async () => {
         console.log("  🧠 Fetching relevant memories...");
-        const result = await fetchSupermemoryProfile(userId, {
-          query: `Goal: ${goalData.label}. Target: $${goalData.target_amount}. Category: ${goalData.category}`,
-          limit: 10,
-        }).catch((err) => {
+        const memoryQuery = `Goal: ${goalData.label}. Target: $${goalData.target_amount}. Category: ${goalData.category}`;
+        console.log(`    🔍 [SUPERMEMORY] Search query: "${memoryQuery}"`);
+        console.log(`    ⚙️ [SUPERMEMORY] Settings: limit=15, threshold=0.4`);
+        const supermemoryResults = await searchSupermemoryMemories(
+          userId,
+          memoryQuery,
+          { limit: 15, threshold: 0.4 }
+        ).catch((err) => {
           console.error("    ❌ Error fetching memories:", err.message);
-          return { memories: [] };
+          return [];
         });
+
+        // Transform to match loadUserMemory format
+        const memories = supermemoryResults.map((result) => ({
+          id: result.id,
+          content: result.memory || "",
+          similarity: result.similarity || 0,
+          metadata: result.metadata || {},
+        }));
+
+        const result = { memories, totalCount: memories.length };
         if (result?.memories) {
           console.log(`    ✅ Memories: ${result.memories.length} found`);
+          if (result.memories.length > 0) {
+            console.log(`    📝 [SUPERMEMORY] Memory previews:`);
+            result.memories.slice(0, 3).forEach((mem, idx) => {
+              const preview = (mem.content || "").substring(0, 100);
+              console.log(
+                `       ${idx + 1}. ${preview}${
+                  preview.length >= 100 ? "..." : ""
+                } (similarity: ${((mem.similarity || 0) * 100).toFixed(1)}%)`
+              );
+            });
+          }
         }
         return result;
       })(),
@@ -2090,25 +2115,39 @@ async function analyzeGoalWithLLM(goalData, userId) {
       content.length
     );
 
-    // Store analysis in database
-    const { error: updateError } = await supabase
-      .from("goals")
-      .update({ analysis: content })
-      .eq("id", goalData.id);
-
-    if (updateError) {
-      console.error("❌ [GOAL ANALYSIS] Error storing analysis:", updateError);
-      // Still return the analysis even if DB update fails (useful for testing)
-      // Attach the analysis to the error so caller can access it
-      const errorWithAnalysis = new Error(
-        `Analysis generated but DB update failed: ${updateError.message}`
+    // Store analysis in database (skip if test ID - not a valid UUID)
+    const isTestId =
+      goalData.id &&
+      !goalData.id.match(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
       );
-      errorWithAnalysis.analysis = content;
-      errorWithAnalysis.dbUpdateFailed = true;
-      throw errorWithAnalysis;
-    }
+    if (isTestId) {
+      console.log(
+        "⚠️ [GOAL ANALYSIS] Skipping DB update for test ID:",
+        goalData.id
+      );
+    } else {
+      const { error: updateError } = await supabase
+        .from("goals")
+        .update({ analysis: content })
+        .eq("id", goalData.id);
 
-    console.log("✅ [GOAL ANALYSIS] Analysis stored successfully");
+      if (updateError) {
+        console.error(
+          "❌ [GOAL ANALYSIS] Error storing analysis:",
+          updateError
+        );
+        // Still return the analysis even if DB update fails (useful for testing)
+        // Attach the analysis to the error so caller can access it
+        const errorWithAnalysis = new Error(
+          `Analysis generated but DB update failed: ${updateError.message}`
+        );
+        errorWithAnalysis.analysis = content;
+        errorWithAnalysis.dbUpdateFailed = true;
+        throw errorWithAnalysis;
+      }
+      console.log("✅ [GOAL ANALYSIS] Analysis stored successfully");
+    }
 
     return content;
   } catch (error) {
