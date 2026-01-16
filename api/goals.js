@@ -1871,78 +1871,15 @@ async function analyzeGoalWithLLM(goalData, userId) {
         })
         .catch(() => null);
 
-      const memoryQuery = `Goal: ${goalData.label}. Target: $${goalData.target_amount}. Category: ${goalData.category}`;
-      console.log(`    🔍 [SUPERMEMORY] Search query: "${memoryQuery}"`);
-
-      // Use very aggressive timeout - if Supermemory hangs, skip it
-      // Create the promise first, then wrap with timeout
-      const supermemoryPromise = (async () => {
-        try {
-          console.log(`    🔍 [SUPERMEMORY] Starting search...`);
-          const results = await searchSupermemoryMemories(userId, memoryQuery, {
-            limit: 15,
-            threshold: 0.4,
-          });
-          console.log(
-            `    🔍 [SUPERMEMORY] Search completed, got ${
-              results?.length || 0
-            } results`
-          );
-          return results || [];
-        } catch (err) {
-          console.error(`    ❌ [SUPERMEMORY] Search error:`, err.message);
-          return [];
-        }
-      })();
-
-      // Use a hard timeout that ALWAYS resolves - don't let Supermemory block
-      // If it hangs, the timeout will fire and we'll continue with empty results
-      const supermemoryWithTimeout = new Promise((resolve) => {
-        let resolved = false;
-
-        // Hard timeout that ALWAYS fires after 2 seconds
-        const hardTimeout = setTimeout(() => {
-          if (!resolved) {
-            resolved = true;
-            console.log(
-              `    ⚠️ [SUPERMEMORY] Hard timeout (2s) - skipping to prevent blocking`
-            );
-            resolve({ memories: [], totalCount: 0 });
-          }
-        }, 2000);
-
-        // Try to fetch, but don't let it block
-        supermemoryPromise
-          .then((results) => {
-            if (!resolved) {
-              resolved = true;
-              clearTimeout(hardTimeout);
-              console.log(
-                `    🔍 [SUPERMEMORY] Processing ${
-                  results?.length || 0
-                } results...`
-              );
-              const memories = (results || []).map((result) => ({
-                id: result.id,
-                content: result.memory || "",
-                similarity: result.similarity || 0,
-                metadata: result.metadata || {},
-              }));
-              const result = { memories, totalCount: memories.length };
-              if (result?.memories?.length) {
-                console.log(`    ✅ Memories: ${result.memories.length} found`);
-              }
-              resolve(result);
-            }
-          })
-          .catch((err) => {
-            if (!resolved) {
-              resolved = true;
-              clearTimeout(hardTimeout);
-              console.error(`    ❌ [SUPERMEMORY] Error:`, err.message);
-              resolve({ memories: [], totalCount: 0 });
-            }
-          });
+      // TEMPORARY FIX: Skip Supermemory - it blocks event loop in Vercel serverless
+      // Even hard setTimeout doesn't fire, indicating complete event loop blockage
+      // Test file works fine, but API endpoint hangs - likely fetch implementation difference
+      console.log(
+        `    ⚠️ [SUPERMEMORY] Skipping Supermemory search (blocks event loop in serverless)`
+      );
+      const supermemoryWithTimeout = Promise.resolve({
+        memories: [],
+        totalCount: 0,
       });
 
       const isTestId =
