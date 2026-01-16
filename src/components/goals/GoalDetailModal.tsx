@@ -18,6 +18,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
+import { BlurView } from "expo-blur";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Goal } from "@/src/types/finny";
@@ -31,6 +32,8 @@ import CategoryPickerModal from "@/src/components/shared/CategoryPickerModal";
 import { getAuthenticatedUser } from "@/src/utils/auth/auth";
 import { supabase } from "@/src/lib/supabase/supabase";
 import { ActivityIndicator } from "react-native";
+import IconButton from "@/src/components/shared/IconButton";
+import GoalAnalysisModal from "@/src/components/modals/GoalAnalysisModal";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 
@@ -56,16 +59,36 @@ const GoalDetailModal = ({
   const scrollViewRef = useRef<ScrollView | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysis, setAnalysis] = useState<string | null>(null);
-  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const [showFullAnalysis, setShowFullAnalysis] = useState(false);
+  const pollingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(
+    null
+  );
   const pollingAttemptsRef = useRef(0);
   const MAX_POLLING_ATTEMPTS = 30; // 30 attempts * 1.5s = 45 seconds max
 
   // Animation refs
   const noteAnimation = useRef(new Animated.Value(0)).current;
   const noteHeightAnimation = useRef(new Animated.Value(0)).current;
+  const goalDetailSlideAnim = useRef(new Animated.Value(0)).current;
   const insets = useSafeAreaInsets();
 
   React.useEffect(() => {
+    // Reset analysis state first when goal changes to prevent showing wrong analysis
+    setAnalysis(null);
+    setIsAnalyzing(false);
+    if (showFullAnalysis) {
+      setShowFullAnalysis(false); // Reset full analysis view when goal changes
+    }
+    // Reset animation values
+    goalDetailSlideAnim.setValue(0);
+
+    // Clear any existing polling
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+      pollingIntervalRef.current = null;
+    }
+    pollingAttemptsRef.current = 0;
+
     if (goal) {
       setEditedGoal(goal);
       // Set the selected date based on goal's target_date
@@ -78,8 +101,8 @@ const GoalDetailModal = ({
       // Reset animations when goal changes
       noteAnimation.setValue(goal.note ? 1 : 0);
       noteHeightAnimation.setValue(goal.note ? 1 : 0);
-      
-      // Handle analysis state
+
+      // Handle analysis state - use the goal's analysis directly
       if (goal.analysis) {
         setAnalysis(goal.analysis);
         setIsAnalyzing(false);
@@ -88,40 +111,43 @@ const GoalDetailModal = ({
         // Start polling if goal was just created (no analysis and goal is recent)
         const goalCreatedAt = new Date(goal.created_at);
         const now = new Date();
-        const minutesSinceCreation = (now.getTime() - goalCreatedAt.getTime()) / (1000 * 60);
-        
+        const minutesSinceCreation =
+          (now.getTime() - goalCreatedAt.getTime()) / (1000 * 60);
+
         // If goal was created in the last 2 minutes, start polling
         if (minutesSinceCreation < 2) {
           setIsAnalyzing(true);
-          startPollingForAnalysis();
+          // Use the current goal ID to start polling
+          startPollingForAnalysis(goal.id);
         } else {
           setIsAnalyzing(false);
         }
       }
     }
-    
-    // Cleanup polling on unmount or goal change
-    return () => {
-      if (pollingIntervalRef.current) {
-        clearInterval(pollingIntervalRef.current);
-        pollingIntervalRef.current = null;
-      }
-      pollingAttemptsRef.current = 0;
-    };
-  }, [goal]);
+  }, [goal?.id]); // Only depend on goal.id to properly detect goal changes
 
-  // Polling function to check for analysis
-  const startPollingForAnalysis = () => {
-    if (!goal?.id) return;
-    
+  // Polling function to check for analysis - takes goalId parameter to ensure correct goal
+  const startPollingForAnalysis = (goalId: string) => {
+    if (!goalId || !goal) return;
+
     // Clear any existing polling
     if (pollingIntervalRef.current) {
       clearInterval(pollingIntervalRef.current);
     }
-    
+
     pollingAttemptsRef.current = 0;
-    
+
     const pollForAnalysis = async () => {
+      // Check if goal has changed - if so, stop polling
+      if (goal?.id !== goalId) {
+        setIsAnalyzing(false);
+        if (pollingIntervalRef.current) {
+          clearInterval(pollingIntervalRef.current);
+          pollingIntervalRef.current = null;
+        }
+        return;
+      }
+
       if (pollingAttemptsRef.current >= MAX_POLLING_ATTEMPTS) {
         // Max attempts reached - stop polling and hide spinner
         setIsAnalyzing(false);
@@ -131,25 +157,27 @@ const GoalDetailModal = ({
         }
         return;
       }
-      
+
       pollingAttemptsRef.current++;
-      
+
       try {
         const authResult = await getAuthenticatedUser();
-        if (!authResult?.user?.id || !goal?.id) {
+        if (!authResult?.user?.id || goal?.id !== goalId) {
           setIsAnalyzing(false);
           return;
         }
-        
+
         // Fetch goal directly from Supabase to check if analysis exists
+        // Use goalId parameter to ensure we're checking the correct goal
         const { data: goalData, error } = await supabase
           .from("goals")
           .select("analysis")
-          .eq("id", goal.id)
+          .eq("id", goalId)
           .eq("user_id", authResult.user.id)
           .single();
-        
-        if (!error && goalData?.analysis) {
+
+        // Double-check goal hasn't changed before updating state
+        if (goal?.id === goalId && !error && goalData?.analysis) {
           // Analysis found - stop polling and update state
           setAnalysis(goalData.analysis);
           setIsAnalyzing(false);
@@ -157,7 +185,7 @@ const GoalDetailModal = ({
             clearInterval(pollingIntervalRef.current);
             pollingIntervalRef.current = null;
           }
-          
+
           // Update goal in parent if onOptimisticUpdate is available
           if (onOptimisticUpdate && goal) {
             onOptimisticUpdate({
@@ -171,7 +199,7 @@ const GoalDetailModal = ({
         // Continue polling on error (might be transient)
       }
     };
-    
+
     // Start polling immediately, then every 1.5 seconds
     pollForAnalysis();
     pollingIntervalRef.current = setInterval(pollForAnalysis, 1500);
@@ -211,6 +239,25 @@ const GoalDetailModal = ({
       ]).start();
     }
   }, [showNoteField]);
+
+  // Animate goal detail view slide when analysis modal opens/closes
+  useEffect(() => {
+    if (showFullAnalysis) {
+      // Slide main view to the left when analysis modal opens
+      Animated.timing(goalDetailSlideAnim, {
+        toValue: -SCREEN_WIDTH,
+        duration: 300,
+        useNativeDriver: true,
+      }).start();
+    } else {
+      // Slide main view back to center when analysis modal closes
+      Animated.timing(goalDetailSlideAnim, {
+        toValue: 0,
+        duration: 250,
+        useNativeDriver: true,
+      }).start();
+    }
+  }, [showFullAnalysis, goalDetailSlideAnim]);
 
   // Keyboard listeners to smoothly adjust padding and scroll target into view
   useEffect(() => {
@@ -255,7 +302,10 @@ const GoalDetailModal = ({
       pollingIntervalRef.current = null;
     }
     pollingAttemptsRef.current = 0;
-    
+
+    // Reset full analysis view
+    setShowFullAnalysis(false);
+
     // If in editing mode, first exit editing mode
     if (isEditing) {
       setIsEditing(false);
@@ -331,6 +381,76 @@ const GoalDetailModal = ({
     }
   };
 
+  // Get snippet of analysis (text until first blank line)
+  const getAnalysisSnippet = (text: string): string => {
+    if (!text) return "";
+    const firstBlankLineIndex = text.indexOf("\n\n");
+    if (firstBlankLineIndex === -1) {
+      // If no blank line, return first paragraph or first 200 chars
+      const firstNewline = text.indexOf("\n");
+      if (firstNewline === -1) {
+        return text.length > 200 ? text.substring(0, 200) + "..." : text;
+      }
+      return text.substring(0, firstNewline);
+    }
+    return text.substring(0, firstBlankLineIndex).trim();
+  };
+
+  // Check if analysis has more content beyond snippet
+  const hasMoreAnalysis = (text: string): boolean => {
+    if (!text) return false;
+    const snippet = getAnalysisSnippet(text);
+    return text.length > snippet.length;
+  };
+
+  // Parse markdown-style bold text (**text**) and render with bold formatting (for snippet only)
+  const renderAnalysisText = (text: string) => {
+    if (!text) return null;
+
+    const displayText = getAnalysisSnippet(text);
+
+    // Split by **text** pattern while keeping the delimiters
+    const parts: (string | { bold: string })[] = [];
+    const regex = /\*\*(.+?)\*\*/g;
+    let lastIndex = 0;
+    let match;
+
+    while ((match = regex.exec(displayText)) !== null) {
+      // Add text before the match
+      if (match.index > lastIndex) {
+        parts.push(displayText.substring(lastIndex, match.index));
+      }
+      // Add the bold text
+      parts.push({ bold: match[1] });
+      lastIndex = regex.lastIndex;
+    }
+
+    // Add remaining text after last match
+    if (lastIndex < displayText.length) {
+      parts.push(displayText.substring(lastIndex));
+    }
+
+    // If no matches, return original text
+    if (parts.length === 0) {
+      parts.push(displayText);
+    }
+
+    return (
+      <Text style={styles.analysisText}>
+        {parts.map((part, index) => {
+          if (typeof part === "object" && "bold" in part) {
+            return (
+              <Text key={index} style={styles.analysisBoldText}>
+                {part.bold}
+              </Text>
+            );
+          }
+          return <Text key={index}>{part as string}</Text>;
+        })}
+      </Text>
+    );
+  };
+
   const renderProgressSection = () => {
     const targetAmount = goal.target_amount || 0;
 
@@ -372,620 +492,709 @@ const GoalDetailModal = ({
       <TouchableWithoutFeedback onPress={handleClose}>
         <View style={styles.overlay}>
           <TouchableWithoutFeedback onPress={(e) => e.stopPropagation()}>
-            <LinearGradient
-              colors={["rgba(31, 31, 31, 0.98)", "rgba(18, 18, 18, 0.99)"]}
-              style={styles.content}
-            >
-              <View style={styles.header}>
-                <View style={styles.headerTextContainer}>
-                  <Text style={styles.headerTitle}>
-                    {isEditing ? `Edit Goal` : goal.label}
-                  </Text>
-                </View>
-              </View>
-
-              <ScrollView
-                showsVerticalScrollIndicator={false}
-                ref={scrollViewRef}
-                contentContainerStyle={[
-                  styles.scrollContent,
-                  {
-                    paddingBottom:
-                      Math.max(20, SCREEN_HEIGHT * 0.025) + keyboardHeight,
-                  },
-                ]}
-                keyboardShouldPersistTaps="handled"
-                keyboardDismissMode="interactive"
+            <View style={styles.contentWrapper}>
+              <LinearGradient
+                colors={["rgba(31, 31, 31, 0.98)", "rgba(18, 18, 18, 0.99)"]}
+                style={styles.content}
               >
-                {!isEditing && (
-                  <>
-                    <View style={styles.infoSection}>
-                      <View style={styles.topInfoRow}>
-                        <View style={styles.targetSection}>
-                          <Text style={styles.targetLabel}>TARGET</Text>
-                          <Text style={styles.targetAmountMain}>
-                            ${(goal.target_amount || 0).toLocaleString()}
-                          </Text>
-                        </View>
-                        <View
-                          style={[
-                            styles.statusBadge,
-                            {
-                              backgroundColor:
-                                goal.status === "completed"
-                                  ? "#32D74B"
-                                  : goal.status === "paused"
-                                  ? "#FF9500"
-                                  : "#4A90E2",
-                            },
-                          ]}
-                        >
-                          <Text style={styles.statusText}>
-                            {goal.status.charAt(0).toUpperCase() +
-                              goal.status.slice(1)}
-                          </Text>
-                        </View>
-                      </View>
+                <View style={styles.header}>
+                  <View style={styles.headerTextContainer}>
+                    <Text style={styles.headerTitle}>
+                      {isEditing ? `Edit Goal` : goal.label}
+                    </Text>
+                  </View>
+                </View>
 
-                      <View style={styles.categoryDateRow}>
-                        <View
-                          style={[
-                            styles.categoryDisplay,
-                            {
-                              backgroundColor:
-                                getCategoryOptions().find(
-                                  (c) => c.value === goal.category
-                                )?.backgroundColor || "rgba(255,255,255,0.08)",
-                            },
-                          ]}
-                        >
-                          <Text style={styles.categoryEmoji}>
-                            {getCategoryOptions().find(
-                              (c) => c.value === goal.category
-                            )?.emoji || "🎯"}
-                          </Text>
-                          <Text
-                            style={[
-                              styles.categoryName,
-                              {
-                                color:
-                                  getCategoryOptions().find(
-                                    (c) => c.value === goal.category
-                                  )?.color || "#fff",
-                              },
-                            ]}
-                          >
-                            {getCategoryDisplayName(goal.category)}
-                          </Text>
-                        </View>
-
-                        <View style={styles.dateDisplay}>
-                          <Text style={styles.detailLabel}>Target Date</Text>
-                          <Text style={styles.detailValue}>
-                            {new Date(goal.target_date).toLocaleDateString(
-                              "en-US",
-                              {
-                                month: "short",
-                                day: "numeric",
-                                year: "numeric",
-                              }
-                            )}
-                          </Text>
-                        </View>
-                      </View>
-
-                      {/* Loading chip for analysis */}
-                      {isAnalyzing && (
-                        <View style={styles.analysisLoadingChip}>
-                          <ActivityIndicator
-                            size="small"
-                            color="#4A90E2"
-                            style={styles.analysisLoadingSpinner}
-                          />
-                          <Text style={styles.analysisLoadingText}>
-                            Finny is thinking about goal...
-                          </Text>
-                        </View>
-                      )}
-
-                      {/* Analysis display */}
-                      {analysis && !isAnalyzing && (
-                        <View style={styles.analysisSection}>
-                          <ScrollView
-                            style={styles.analysisScrollView}
-                            showsVerticalScrollIndicator={true}
-                            nestedScrollEnabled={true}
-                          >
-                            <Text style={styles.analysisText}>{analysis}</Text>
-                          </ScrollView>
-                        </View>
-                      )}
-
-                      {goal.note && (
-                        <View style={styles.noteSection}>
-                          <Text style={styles.noteText}>{goal.note}</Text>
-                        </View>
-                      )}
-                    </View>
-
-                    <KeyboardAvoidingView
-                      behavior={Platform.OS === "ios" ? "padding" : "height"}
-                      style={styles.keyboardAvoidingView}
-                      enabled={isInputFocused}
-                      keyboardVerticalOffset={Math.max(0, insets.top) + 56}
-                    >
-                      <View
-                        onLayout={(e) =>
-                          setProgressSectionY(e.nativeEvent.layout.y)
-                        }
-                      >
-                        <View style={styles.progressSection}>
-                          <View style={styles.progressHeader}>
-                            <Text style={styles.progressTitle}>
-                              Current Progress
-                            </Text>
-                            <Text style={styles.progressAmount}>
-                              of ${(goal.target_amount || 0).toLocaleString()}
-                            </Text>
-                          </View>
-                          <View style={styles.progressInputContainer}>
-                            <Text style={styles.currencySymbol}>$</Text>
-                            <TextInput
-                              style={styles.progressInput}
-                              value={String(localProgressAmount)}
-                              onChangeText={(text) => {
-                                const newAmount = Math.max(
-                                  0,
-                                  parseFloat(text) || 0
-                                );
-                                setLocalProgressAmount(newAmount);
-                              }}
-                              onFocus={() => {
-                                setIsInputFocused(true);
-                                setIsProgressFocused(true);
-                              }}
-                              onBlur={() => {
-                                setIsInputFocused(false);
-                                setIsProgressFocused(false);
-                              }}
-                              keyboardType="numeric"
-                              placeholder="0"
-                              placeholderTextColor="#666"
-                            />
-                            {hasProgressChanged && (
-                              <TouchableOpacity
-                                onPress={handleClose}
-                                style={styles.progressSaveButton}
-                                activeOpacity={0.7}
-                              >
-                                <LinearGradient
-                                  colors={[
-                                    "rgba(50, 215, 75, 0.15)",
-                                    "rgba(50, 215, 75, 0.05)",
-                                  ]}
-                                  style={styles.progressSaveIcon}
-                                  start={{ x: 0, y: 0 }}
-                                  end={{ x: 1, y: 1 }}
-                                >
-                                  <Ionicons
-                                    name="checkmark-outline"
-                                    size={16}
-                                    color="#32D74B"
-                                  />
-                                </LinearGradient>
-                              </TouchableOpacity>
-                            )}
-                          </View>
-                        </View>
-                      </View>
-                    </KeyboardAvoidingView>
-                  </>
-                )}
-
-                {isEditing && (
-                  <KeyboardAvoidingView
-                    behavior={Platform.OS === "ios" ? "padding" : "height"}
-                    style={styles.keyboardAvoidingView}
-                    enabled={isInputFocused}
-                    keyboardVerticalOffset={Math.max(0, insets.top) + 56}
+                {/* Normal Goal Detail View */}
+                <Animated.View
+                  style={{
+                    flex: 1,
+                    transform: [{ translateX: goalDetailSlideAnim }],
+                    minHeight: 200,
+                  }}
+                >
+                  <ScrollView
+                    showsVerticalScrollIndicator={false}
+                    ref={scrollViewRef}
+                    style={{ flex: 1 }}
+                    contentContainerStyle={[
+                      styles.scrollContent,
+                      {
+                        paddingBottom:
+                          Math.max(20, SCREEN_HEIGHT * 0.025) + keyboardHeight,
+                      },
+                    ]}
+                    keyboardShouldPersistTaps="handled"
+                    keyboardDismissMode="interactive"
+                    nestedScrollEnabled={true}
+                    scrollEventThrottle={16}
                   >
-                    <View style={styles.editSection}>
-                      <View style={styles.editNameRow}>
-                        <Text style={styles.editLabel}>Goal Name</Text>
-                        <TextInput
-                          style={styles.editNameInput}
-                          value={editedGoal.label}
-                          onChangeText={(text) =>
-                            setEditedGoal({
-                              ...editedGoal,
-                              label: text,
-                            })
-                          }
-                          onFocus={() => setIsInputFocused(true)}
-                          onBlur={() => setIsInputFocused(false)}
-                          placeholder="Goal name"
-                          placeholderTextColor="#666"
-                        />
-                      </View>
+                    {!isEditing && (
+                      <>
+                        <View style={styles.infoSection}>
+                          <View style={styles.topInfoRow}>
+                            <View style={styles.targetSection}>
+                              <Text style={styles.targetLabel}>TARGET</Text>
+                              <Text style={styles.targetAmountMain}>
+                                ${(goal.target_amount || 0).toLocaleString()}
+                              </Text>
+                            </View>
+                            <View
+                              style={[
+                                styles.statusBadge,
+                                {
+                                  backgroundColor:
+                                    goal.status === "completed"
+                                      ? "#32D74B"
+                                      : goal.status === "paused"
+                                      ? "#FF9500"
+                                      : "#4A90E2",
+                                },
+                              ]}
+                            >
+                              <Text style={styles.statusText}>
+                                {goal.status.charAt(0).toUpperCase() +
+                                  goal.status.slice(1)}
+                              </Text>
+                            </View>
+                          </View>
 
-                      <View style={styles.editRow}>
-                        <View style={styles.editField}>
-                          <Text style={styles.editLabel}>Target Amount</Text>
-                          <View style={styles.editAmountContainer}>
-                            <Text style={styles.currencySymbol}>$</Text>
+                          <View style={styles.categoryDateRow}>
+                            <View
+                              style={[
+                                styles.categoryDisplay,
+                                {
+                                  backgroundColor:
+                                    getCategoryOptions().find(
+                                      (c) => c.value === goal.category
+                                    )?.backgroundColor ||
+                                    "rgba(255,255,255,0.08)",
+                                },
+                              ]}
+                            >
+                              <Text style={styles.categoryEmoji}>
+                                {getCategoryOptions().find(
+                                  (c) => c.value === goal.category
+                                )?.emoji || "🎯"}
+                              </Text>
+                              <Text
+                                style={[
+                                  styles.categoryName,
+                                  {
+                                    color:
+                                      getCategoryOptions().find(
+                                        (c) => c.value === goal.category
+                                      )?.color || "#fff",
+                                  },
+                                ]}
+                              >
+                                {getCategoryDisplayName(goal.category)}
+                              </Text>
+                            </View>
+
+                            <View style={styles.dateDisplay}>
+                              <Text style={styles.detailLabel}>
+                                Target Date
+                              </Text>
+                              <Text style={styles.detailValue}>
+                                {new Date(goal.target_date).toLocaleDateString(
+                                  "en-US",
+                                  {
+                                    month: "short",
+                                    day: "numeric",
+                                    year: "numeric",
+                                  }
+                                )}
+                              </Text>
+                            </View>
+                          </View>
+
+                          {/* Loading chip for analysis */}
+                          {isAnalyzing && (
+                            <View style={styles.analysisLoadingChip}>
+                              <ActivityIndicator
+                                size="small"
+                                color="#4A90E2"
+                                style={styles.analysisLoadingSpinner}
+                              />
+                              <Text style={styles.analysisLoadingText}>
+                                Finny is thinking about goal...
+                              </Text>
+                            </View>
+                          )}
+
+                          {/* Analysis snippet with Read More */}
+                          {analysis &&
+                            !isAnalyzing &&
+                            (Platform.OS === "ios" ? (
+                              <BlurView
+                                intensity={80}
+                                tint="dark"
+                                style={styles.analysisSnippetSection}
+                              >
+                                <View style={styles.analysisSnippetContent}>
+                                  {renderAnalysisText(analysis)}
+                                  {hasMoreAnalysis(analysis) && (
+                                    <TouchableOpacity
+                                      onPress={() => setShowFullAnalysis(true)}
+                                      style={styles.readMoreButton}
+                                      activeOpacity={0.8}
+                                    >
+                                      <Text style={styles.readMoreText}>
+                                        Read More from Finny
+                                      </Text>
+                                      <Ionicons
+                                        name="chevron-forward"
+                                        size={14}
+                                        color="#4A90E2"
+                                        style={styles.readMoreIcon}
+                                      />
+                                    </TouchableOpacity>
+                                  )}
+                                </View>
+                              </BlurView>
+                            ) : (
+                              <TouchableOpacity
+                                onPress={() => setShowFullAnalysis(true)}
+                                style={styles.readMoreButton}
+                                activeOpacity={0.8}
+                              >
+                                <View style={styles.analysisSnippetSection}>
+                                  <View style={styles.analysisSnippetContent}>
+                                    {renderAnalysisText(analysis)}
+                                    {hasMoreAnalysis(analysis) && (
+                                      <TouchableOpacity
+                                        onPress={() =>
+                                          setShowFullAnalysis(true)
+                                        }
+                                        style={styles.readMoreButton}
+                                        activeOpacity={0.8}
+                                      >
+                                        <Text style={styles.readMoreText}>
+                                          Read More from Finny
+                                        </Text>
+                                        <Ionicons
+                                          name="chevron-forward"
+                                          size={14}
+                                          color="#4A90E2"
+                                          style={styles.readMoreIcon}
+                                        />
+                                      </TouchableOpacity>
+                                    )}
+                                  </View>
+                                </View>
+                              </TouchableOpacity>
+                            ))}
+
+                          {goal.note && (
+                            <View style={styles.noteSection}>
+                              <Text style={styles.noteText}>{goal.note}</Text>
+                            </View>
+                          )}
+                        </View>
+
+                        <KeyboardAvoidingView
+                          behavior={
+                            Platform.OS === "ios" ? "padding" : "height"
+                          }
+                          style={styles.keyboardAvoidingView}
+                          enabled={isInputFocused}
+                          keyboardVerticalOffset={Math.max(0, insets.top) + 56}
+                        >
+                          <View
+                            onLayout={(e) =>
+                              setProgressSectionY(e.nativeEvent.layout.y)
+                            }
+                          >
+                            <View style={styles.progressSection}>
+                              <View style={styles.progressHeader}>
+                                <Text style={styles.progressTitle}>
+                                  Current Progress
+                                </Text>
+                                <Text style={styles.progressAmount}>
+                                  of $
+                                  {(goal.target_amount || 0).toLocaleString()}
+                                </Text>
+                              </View>
+                              <View style={styles.progressInputContainer}>
+                                <Text style={styles.currencySymbol}>$</Text>
+                                <TextInput
+                                  style={styles.progressInput}
+                                  value={String(localProgressAmount)}
+                                  onChangeText={(text) => {
+                                    const newAmount = Math.max(
+                                      0,
+                                      parseFloat(text) || 0
+                                    );
+                                    setLocalProgressAmount(newAmount);
+                                  }}
+                                  onFocus={() => {
+                                    setIsInputFocused(true);
+                                    setIsProgressFocused(true);
+                                  }}
+                                  onBlur={() => {
+                                    setIsInputFocused(false);
+                                    setIsProgressFocused(false);
+                                  }}
+                                  keyboardType="numeric"
+                                  placeholder="0"
+                                  placeholderTextColor="#666"
+                                />
+                                {hasProgressChanged && (
+                                  <TouchableOpacity
+                                    onPress={handleClose}
+                                    style={styles.progressSaveButton}
+                                    activeOpacity={0.7}
+                                  >
+                                    <LinearGradient
+                                      colors={[
+                                        "rgba(50, 215, 75, 0.15)",
+                                        "rgba(50, 215, 75, 0.05)",
+                                      ]}
+                                      style={styles.progressSaveIcon}
+                                      start={{ x: 0, y: 0 }}
+                                      end={{ x: 1, y: 1 }}
+                                    >
+                                      <Ionicons
+                                        name="checkmark-outline"
+                                        size={16}
+                                        color="#32D74B"
+                                      />
+                                    </LinearGradient>
+                                  </TouchableOpacity>
+                                )}
+                              </View>
+                            </View>
+                          </View>
+                        </KeyboardAvoidingView>
+                      </>
+                    )}
+
+                    {isEditing && (
+                      <KeyboardAvoidingView
+                        behavior={Platform.OS === "ios" ? "padding" : "height"}
+                        style={styles.keyboardAvoidingView}
+                        enabled={isInputFocused}
+                        keyboardVerticalOffset={Math.max(0, insets.top) + 56}
+                      >
+                        <View style={styles.editSection}>
+                          <View style={styles.editNameRow}>
+                            <Text style={styles.editLabel}>Goal Name</Text>
                             <TextInput
-                              style={styles.amountInput}
-                              value={String(editedGoal.target_amount || 0)}
+                              style={styles.editNameInput}
+                              value={editedGoal.label}
                               onChangeText={(text) =>
                                 setEditedGoal({
                                   ...editedGoal,
-                                  target_amount: parseFloat(text) || 0,
+                                  label: text,
                                 })
                               }
                               onFocus={() => setIsInputFocused(true)}
                               onBlur={() => setIsInputFocused(false)}
-                              keyboardType="numeric"
-                              placeholder="0"
+                              placeholder="Goal name"
                               placeholderTextColor="#666"
                             />
                           </View>
-                        </View>
 
-                        <View style={styles.editField}>
-                          <Text style={styles.editLabel}>Category</Text>
-                          <TouchableOpacity
-                            style={styles.editCategoryButton}
-                            onPress={() => setShowCategoryPicker(true)}
-                          >
-                            <View style={styles.editCategoryContent}>
-                              <Text style={styles.editCategoryEmoji}>
-                                {getCategoryOptions().find(
-                                  (c) => c.value === editedGoal.category
-                                )?.emoji || "🎯"}
-                              </Text>
-                              <Text style={styles.editCategoryText}>
-                                {getCategoryDisplayName(editedGoal.category)}
-                              </Text>
-                            </View>
-                            <Ionicons
-                              name="chevron-down"
-                              size={16}
-                              color="#888"
-                            />
-                          </TouchableOpacity>
-                        </View>
-                      </View>
-
-                      <View style={styles.editDateRow}>
-                        <Text style={styles.editLabel}>Target Date</Text>
-                        <TouchableOpacity
-                          style={styles.editDateButton}
-                          onPress={() => setShowDatePicker(true)}
-                        >
-                          <Text style={styles.editDateText}>
-                            {selectedDate.toLocaleDateString("en-US", {
-                              month: "short",
-                              day: "numeric",
-                              year: "numeric",
-                            })}
-                          </Text>
-                          <Ionicons name="calendar" size={16} color="#4A90E2" />
-                        </TouchableOpacity>
-                      </View>
-
-                      {/* Note editing section */}
-                      {!showNoteField ? (
-                        <TouchableOpacity
-                          style={styles.addNoteButtonContainer}
-                          onPress={() => setShowNoteField(true)}
-                          activeOpacity={0.7}
-                        >
-                          <LinearGradient
-                            colors={[
-                              "rgba(74, 144, 226, 0.15)",
-                              "rgba(74, 144, 226, 0.05)",
-                            ]}
-                            style={styles.addNoteButton}
-                            start={{ x: 0, y: 0 }}
-                            end={{ x: 1, y: 1 }}
-                          >
-                            <Ionicons
-                              name="add-circle-outline"
-                              size={18}
-                              color="#4A90E2"
-                            />
-                            <Text style={styles.addNoteText}>Add note</Text>
-                          </LinearGradient>
-                        </TouchableOpacity>
-                      ) : (
-                        <Animated.View
-                          style={[
-                            styles.editNoteSection,
-                            {
-                              maxHeight: noteHeightAnimation.interpolate({
-                                inputRange: [0, 1],
-                                outputRange: [0, 200], // Adjust based on content height
-                              }),
-                              overflow: "hidden", // Ensure content clips during animation
-                            },
-                          ]}
-                        >
-                          <Animated.View
-                            style={{
-                              opacity: noteAnimation,
-                              transform: [
-                                {
-                                  translateY: noteAnimation.interpolate({
-                                    inputRange: [0, 1],
-                                    outputRange: [-10, 0],
-                                  }),
-                                },
-                              ],
-                            }}
-                          >
-                            <View style={styles.noteHeader}>
+                          <View style={styles.editRow}>
+                            <View style={styles.editField}>
                               <Text style={styles.editLabel}>
-                                Note (Optional)
+                                Target Amount
                               </Text>
+                              <View style={styles.editAmountContainer}>
+                                <Text style={styles.currencySymbol}>$</Text>
+                                <TextInput
+                                  style={styles.amountInput}
+                                  value={String(editedGoal.target_amount || 0)}
+                                  onChangeText={(text) =>
+                                    setEditedGoal({
+                                      ...editedGoal,
+                                      target_amount: parseFloat(text) || 0,
+                                    })
+                                  }
+                                  onFocus={() => setIsInputFocused(true)}
+                                  onBlur={() => setIsInputFocused(false)}
+                                  keyboardType="numeric"
+                                  placeholder="0"
+                                  placeholderTextColor="#666"
+                                />
+                              </View>
+                            </View>
+
+                            <View style={styles.editField}>
+                              <Text style={styles.editLabel}>Category</Text>
                               <TouchableOpacity
-                                onPress={() => {
-                                  setShowNoteField(false);
-                                  setEditedGoal((prev) =>
-                                    prev ? { ...prev, note: undefined } : null
-                                  );
-                                }}
-                                style={styles.removeNoteButton}
+                                style={styles.editCategoryButton}
+                                onPress={() => setShowCategoryPicker(true)}
                               >
+                                <View style={styles.editCategoryContent}>
+                                  <Text style={styles.editCategoryEmoji}>
+                                    {getCategoryOptions().find(
+                                      (c) => c.value === editedGoal.category
+                                    )?.emoji || "🎯"}
+                                  </Text>
+                                  <Text style={styles.editCategoryText}>
+                                    {getCategoryDisplayName(
+                                      editedGoal.category
+                                    )}
+                                  </Text>
+                                </View>
                                 <Ionicons
-                                  name="close-circle"
+                                  name="chevron-down"
                                   size={16}
                                   color="#888"
                                 />
                               </TouchableOpacity>
                             </View>
-                            <Animated.View
-                              style={{
-                                transform: [
-                                  {
-                                    scale: noteAnimation.interpolate({
-                                      inputRange: [0, 1],
-                                      outputRange: [0.95, 1],
-                                    }),
-                                  },
-                                ],
-                              }}
+                          </View>
+
+                          <View style={styles.editDateRow}>
+                            <Text style={styles.editLabel}>Target Date</Text>
+                            <TouchableOpacity
+                              style={styles.editDateButton}
+                              onPress={() => setShowDatePicker(true)}
                             >
-                              <TextInput
-                                style={styles.editNoteInput}
-                                value={editedGoal?.note || ""}
-                                onChangeText={(text) =>
-                                  setEditedGoal((prev) =>
-                                    prev ? { ...prev, note: text } : null
-                                  )
-                                }
-                                onFocus={() => setIsInputFocused(true)}
-                                onBlur={() => setIsInputFocused(false)}
-                                placeholder="Add a note about this goal..."
-                                placeholderTextColor="#666"
-                                multiline
-                                textAlignVertical="top"
-                                maxLength={200}
+                              <Text style={styles.editDateText}>
+                                {selectedDate.toLocaleDateString("en-US", {
+                                  month: "short",
+                                  day: "numeric",
+                                  year: "numeric",
+                                })}
+                              </Text>
+                              <Ionicons
+                                name="calendar"
+                                size={16}
+                                color="#4A90E2"
                               />
+                            </TouchableOpacity>
+                          </View>
+
+                          {/* Note editing section */}
+                          {!showNoteField ? (
+                            <TouchableOpacity
+                              style={styles.addNoteButtonContainer}
+                              onPress={() => setShowNoteField(true)}
+                              activeOpacity={0.7}
+                            >
+                              <LinearGradient
+                                colors={[
+                                  "rgba(74, 144, 226, 0.15)",
+                                  "rgba(74, 144, 226, 0.05)",
+                                ]}
+                                style={styles.addNoteButton}
+                                start={{ x: 0, y: 0 }}
+                                end={{ x: 1, y: 1 }}
+                              >
+                                <Ionicons
+                                  name="add-circle-outline"
+                                  size={18}
+                                  color="#4A90E2"
+                                />
+                                <Text style={styles.addNoteText}>Add note</Text>
+                              </LinearGradient>
+                            </TouchableOpacity>
+                          ) : (
+                            <Animated.View
+                              style={[
+                                styles.editNoteSection,
+                                {
+                                  maxHeight: noteHeightAnimation.interpolate({
+                                    inputRange: [0, 1],
+                                    outputRange: [0, 200], // Adjust based on content height
+                                  }),
+                                  overflow: "hidden", // Ensure content clips during animation
+                                },
+                              ]}
+                            >
+                              <Animated.View
+                                style={{
+                                  opacity: noteAnimation,
+                                  transform: [
+                                    {
+                                      translateY: noteAnimation.interpolate({
+                                        inputRange: [0, 1],
+                                        outputRange: [-10, 0],
+                                      }),
+                                    },
+                                  ],
+                                }}
+                              >
+                                <View style={styles.noteHeader}>
+                                  <Text style={styles.editLabel}>
+                                    Note (Optional)
+                                  </Text>
+                                  <TouchableOpacity
+                                    onPress={() => {
+                                      setShowNoteField(false);
+                                      setEditedGoal((prev) =>
+                                        prev
+                                          ? { ...prev, note: undefined }
+                                          : null
+                                      );
+                                    }}
+                                    style={styles.removeNoteButton}
+                                  >
+                                    <Ionicons
+                                      name="close-circle"
+                                      size={16}
+                                      color="#888"
+                                    />
+                                  </TouchableOpacity>
+                                </View>
+                                <Animated.View
+                                  style={{
+                                    transform: [
+                                      {
+                                        scale: noteAnimation.interpolate({
+                                          inputRange: [0, 1],
+                                          outputRange: [0.95, 1],
+                                        }),
+                                      },
+                                    ],
+                                  }}
+                                >
+                                  <TextInput
+                                    style={styles.editNoteInput}
+                                    value={editedGoal?.note || ""}
+                                    onChangeText={(text) =>
+                                      setEditedGoal((prev) =>
+                                        prev ? { ...prev, note: text } : null
+                                      )
+                                    }
+                                    onFocus={() => setIsInputFocused(true)}
+                                    onBlur={() => setIsInputFocused(false)}
+                                    placeholder="Add a note about this goal..."
+                                    placeholderTextColor="#666"
+                                    multiline
+                                    textAlignVertical="top"
+                                    maxLength={200}
+                                  />
+                                </Animated.View>
+                              </Animated.View>
                             </Animated.View>
-                          </Animated.View>
-                        </Animated.View>
-                      )}
-                    </View>
-                  </KeyboardAvoidingView>
-                )}
-              </ScrollView>
-
-              {/* Bottom action buttons */}
-              {!isEditing ? (
-                <View style={styles.bottomButtonRow}>
-                  <TouchableOpacity
-                    style={[
-                      styles.bottomButtonContainer,
-                      styles.bottomEditButtonContainer,
-                    ]}
-                    onPress={() => setIsEditing(true)}
-                    activeOpacity={0.7}
-                  >
-                    <LinearGradient
-                      colors={[
-                        "rgba(74, 144, 226, 0.15)",
-                        "rgba(74, 144, 226, 0.05)",
-                      ]}
-                      style={styles.bottomEditButton}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 1 }}
-                    >
-                      <Ionicons name="pencil" size={19} color="#4A90E2" />
-                      <Text
-                        style={[styles.bottomButtonText, { color: "#4A90E2" }]}
-                      >
-                        Edit Goal
-                      </Text>
-                    </LinearGradient>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={[
-                      styles.bottomButtonContainer,
-                      styles.bottomDeleteButtonContainer,
-                    ]}
-                    onPress={() => {
-                      Alert.alert(
-                        "Delete Goal",
-                        `Are you sure you want to delete "${goal.label}"? This action cannot be undone.`,
-                        [
-                          { text: "Cancel", style: "cancel" },
-                          {
-                            text: "Delete",
-                            style: "destructive",
-                            onPress: () => {
-                              onDelete(goal);
-                              handleClose();
-                            },
-                          },
-                        ]
-                      );
-                    }}
-                    activeOpacity={0.7}
-                  >
-                    <LinearGradient
-                      colors={[
-                        "rgba(255, 59, 48, 0.15)",
-                        "rgba(255, 59, 48, 0.05)",
-                      ]}
-                      style={styles.bottomDeleteButton}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 1 }}
-                    >
-                      <Ionicons name="trash-sharp" size={19} color="#FF3B30" />
-                    </LinearGradient>
-                  </TouchableOpacity>
-                </View>
-              ) : (
-                <View style={styles.bottomButtonRow}>
-                  <TouchableOpacity
-                    style={[
-                      styles.bottomButtonContainer,
-                      styles.bottomCancelButtonContainer,
-                    ]}
-                    onPress={() => {
-                      setIsEditing(false);
-                      setEditedGoal(goal);
-                      setShowNoteField(!!goal?.note);
-                      noteAnimation.setValue(goal?.note ? 1 : 0);
-                      noteHeightAnimation.setValue(goal?.note ? 1 : 0);
-                    }}
-                    activeOpacity={0.7}
-                  >
-                    <LinearGradient
-                      colors={[
-                        "rgba(142, 142, 147, 0.15)",
-                        "rgba(142, 142, 147, 0.05)",
-                      ]}
-                      style={styles.bottomCancelButton}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 1 }}
-                    >
-                      <Ionicons name="close-circle" size={16} color="#fff" />
-                      <Text
-                        style={[styles.bottomButtonText, { color: "#fff" }]}
-                      >
-                        Cancel
-                      </Text>
-                    </LinearGradient>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={[
-                      styles.bottomButtonContainer,
-                      styles.bottomSaveButtonContainer,
-                    ]}
-                    onPress={handleSave}
-                    activeOpacity={0.7}
-                  >
-                    <LinearGradient
-                      colors={[
-                        "rgba(50, 215, 75, 0.15)",
-                        "rgba(50, 215, 75, 0.05)",
-                      ]}
-                      style={styles.bottomSaveButton}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 1 }}
-                    >
-                      <Ionicons
-                        name="checkmark-circle"
-                        size={16}
-                        color="#fff"
-                      />
-                      <Text
-                        style={[styles.bottomButtonText, { color: "#fff" }]}
-                      >
-                        Save Changes
-                      </Text>
-                    </LinearGradient>
-                  </TouchableOpacity>
-                </View>
-              )}
-
-              {showDatePicker && (
-                <Modal
-                  visible={showDatePicker}
-                  transparent
-                  animationType="slide"
-                  onRequestClose={() => setShowDatePicker(false)}
-                >
-                  <TouchableWithoutFeedback
-                    onPress={() => setShowDatePicker(false)}
-                  >
-                    <View style={styles.datePickerOverlay}>
-                      <TouchableWithoutFeedback
-                        onPress={(e) => e.stopPropagation()}
-                      >
-                        <View style={styles.datePickerModal}>
-                          <View style={styles.datePickerHeader}>
-                            <TouchableOpacity
-                              onPress={() => setShowDatePicker(false)}
-                            >
-                              <LinearGradient
-                                colors={[
-                                  "rgba(255, 255, 255, 0.12)",
-                                  "rgba(255, 255, 255, 0.03)",
-                                ]}
-                                style={styles.datePickerButton}
-                                start={{ x: 0, y: 0 }}
-                                end={{ x: 1, y: 1 }}
-                              >
-                                <Text style={styles.datePickerCancel}>
-                                  Cancel
-                                </Text>
-                              </LinearGradient>
-                            </TouchableOpacity>
-                            <Text style={styles.datePickerTitle}>
-                              Select Date
-                            </Text>
-                            <TouchableOpacity
-                              onPress={() => setShowDatePicker(false)}
-                            >
-                              <LinearGradient
-                                colors={[
-                                  "rgba(74, 144, 226, 0.8)",
-                                  "rgba(74, 144, 226, 0.6)",
-                                ]}
-                                style={styles.datePickerButton}
-                                start={{ x: 0, y: 0 }}
-                                end={{ x: 1, y: 1 }}
-                              >
-                                <Text style={styles.datePickerDone}>Done</Text>
-                              </LinearGradient>
-                            </TouchableOpacity>
-                          </View>
-                          <View style={styles.datePickerContent}>
-                            <DateTimePicker
-                              value={selectedDate}
-                              mode="date"
-                              display="spinner"
-                              onChange={(event, date) => {
-                                if (date) {
-                                  setSelectedDate(date);
-                                }
-                              }}
-                              minimumDate={new Date()}
-                              textColor="#fff"
-                              style={styles.datePickerSpinner}
-                            />
-                          </View>
+                          )}
                         </View>
-                      </TouchableWithoutFeedback>
-                    </View>
-                  </TouchableWithoutFeedback>
-                </Modal>
-              )}
-            </LinearGradient>
+                      </KeyboardAvoidingView>
+                    )}
+                  </ScrollView>
+                </Animated.View>
+
+                {/* Bottom action buttons */}
+                {!isEditing ? (
+                  <View style={styles.bottomButtonRow}>
+                    <TouchableOpacity
+                      style={[
+                        styles.bottomButtonContainer,
+                        styles.bottomEditButtonContainer,
+                      ]}
+                      onPress={() => setIsEditing(true)}
+                      activeOpacity={0.7}
+                    >
+                      <LinearGradient
+                        colors={[
+                          "rgba(74, 144, 226, 0.15)",
+                          "rgba(74, 144, 226, 0.05)",
+                        ]}
+                        style={styles.bottomEditButton}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                      >
+                        <Ionicons name="pencil" size={19} color="#4A90E2" />
+                        <Text
+                          style={[
+                            styles.bottomButtonText,
+                            { color: "#4A90E2" },
+                          ]}
+                        >
+                          Edit Goal
+                        </Text>
+                      </LinearGradient>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[
+                        styles.bottomButtonContainer,
+                        styles.bottomDeleteButtonContainer,
+                      ]}
+                      onPress={() => {
+                        Alert.alert(
+                          "Delete Goal",
+                          `Are you sure you want to delete "${goal.label}"? This action cannot be undone.`,
+                          [
+                            { text: "Cancel", style: "cancel" },
+                            {
+                              text: "Delete",
+                              style: "destructive",
+                              onPress: () => {
+                                onDelete(goal);
+                                handleClose();
+                              },
+                            },
+                          ]
+                        );
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <LinearGradient
+                        colors={[
+                          "rgba(255, 59, 48, 0.15)",
+                          "rgba(255, 59, 48, 0.05)",
+                        ]}
+                        style={styles.bottomDeleteButton}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                      >
+                        <Ionicons
+                          name="trash-sharp"
+                          size={19}
+                          color="#FF3B30"
+                        />
+                      </LinearGradient>
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <View style={styles.bottomButtonRow}>
+                    <TouchableOpacity
+                      style={[
+                        styles.bottomButtonContainer,
+                        styles.bottomCancelButtonContainer,
+                      ]}
+                      onPress={() => {
+                        setIsEditing(false);
+                        setEditedGoal(goal);
+                        setShowNoteField(!!goal?.note);
+                        noteAnimation.setValue(goal?.note ? 1 : 0);
+                        noteHeightAnimation.setValue(goal?.note ? 1 : 0);
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <LinearGradient
+                        colors={[
+                          "rgba(142, 142, 147, 0.15)",
+                          "rgba(142, 142, 147, 0.05)",
+                        ]}
+                        style={styles.bottomCancelButton}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                      >
+                        <Ionicons name="close-circle" size={16} color="#fff" />
+                        <Text
+                          style={[styles.bottomButtonText, { color: "#fff" }]}
+                        >
+                          Cancel
+                        </Text>
+                      </LinearGradient>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[
+                        styles.bottomButtonContainer,
+                        styles.bottomSaveButtonContainer,
+                      ]}
+                      onPress={handleSave}
+                      activeOpacity={0.7}
+                    >
+                      <LinearGradient
+                        colors={[
+                          "rgba(50, 215, 75, 0.15)",
+                          "rgba(50, 215, 75, 0.05)",
+                        ]}
+                        style={styles.bottomSaveButton}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                      >
+                        <Ionicons
+                          name="checkmark-circle"
+                          size={16}
+                          color="#fff"
+                        />
+                        <Text
+                          style={[styles.bottomButtonText, { color: "#fff" }]}
+                        >
+                          Save Changes
+                        </Text>
+                      </LinearGradient>
+                    </TouchableOpacity>
+                  </View>
+                )}
+
+                {showDatePicker && (
+                  <Modal
+                    visible={showDatePicker}
+                    transparent
+                    animationType="slide"
+                    onRequestClose={() => setShowDatePicker(false)}
+                  >
+                    <TouchableWithoutFeedback
+                      onPress={() => setShowDatePicker(false)}
+                    >
+                      <View style={styles.datePickerOverlay}>
+                        <TouchableWithoutFeedback
+                          onPress={(e) => e.stopPropagation()}
+                        >
+                          <View style={styles.datePickerModal}>
+                            <View style={styles.datePickerHeader}>
+                              <TouchableOpacity
+                                onPress={() => setShowDatePicker(false)}
+                              >
+                                <LinearGradient
+                                  colors={[
+                                    "rgba(255, 255, 255, 0.12)",
+                                    "rgba(255, 255, 255, 0.03)",
+                                  ]}
+                                  style={styles.datePickerButton}
+                                  start={{ x: 0, y: 0 }}
+                                  end={{ x: 1, y: 1 }}
+                                >
+                                  <Text style={styles.datePickerCancel}>
+                                    Cancel
+                                  </Text>
+                                </LinearGradient>
+                              </TouchableOpacity>
+                              <Text style={styles.datePickerTitle}>
+                                Select Date
+                              </Text>
+                              <TouchableOpacity
+                                onPress={() => setShowDatePicker(false)}
+                              >
+                                <LinearGradient
+                                  colors={[
+                                    "rgba(74, 144, 226, 0.8)",
+                                    "rgba(74, 144, 226, 0.6)",
+                                  ]}
+                                  style={styles.datePickerButton}
+                                  start={{ x: 0, y: 0 }}
+                                  end={{ x: 1, y: 1 }}
+                                >
+                                  <Text style={styles.datePickerDone}>
+                                    Done
+                                  </Text>
+                                </LinearGradient>
+                              </TouchableOpacity>
+                            </View>
+                            <View style={styles.datePickerContent}>
+                              <DateTimePicker
+                                value={selectedDate}
+                                mode="date"
+                                display="spinner"
+                                onChange={(event, date) => {
+                                  if (date) {
+                                    setSelectedDate(date);
+                                  }
+                                }}
+                                minimumDate={new Date()}
+                                textColor="#fff"
+                                style={styles.datePickerSpinner}
+                              />
+                            </View>
+                          </View>
+                        </TouchableWithoutFeedback>
+                      </View>
+                    </TouchableWithoutFeedback>
+                  </Modal>
+                )}
+              </LinearGradient>
+            </View>
           </TouchableWithoutFeedback>
         </View>
       </TouchableWithoutFeedback>
@@ -998,6 +1207,14 @@ const GoalDetailModal = ({
           onClose={() => setShowCategoryPicker(false)}
         />
       )}
+
+      {/* Goal Analysis Modal */}
+      <GoalAnalysisModal
+        visible={showFullAnalysis}
+        analysis={analysis}
+        isAnalyzing={isAnalyzing}
+        onClose={() => setShowFullAnalysis(false)}
+      />
     </Modal>
   );
 };
@@ -1008,12 +1225,17 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(0, 0, 0, 0.75)",
     justifyContent: "flex-end",
   },
+  contentWrapper: {
+    width: SCREEN_WIDTH,
+    maxHeight: SCREEN_HEIGHT * 0.8,
+    minHeight: SCREEN_HEIGHT * 0.5,
+  },
   content: {
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    minHeight: SCREEN_HEIGHT * 0.5,
-    maxHeight: SCREEN_HEIGHT * 0.85,
     width: SCREEN_WIDTH,
+    height: "100%",
+    flexDirection: "column" as const,
   },
   header: {
     flexDirection: "row",
@@ -1124,6 +1346,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: Math.max(20, SCREEN_WIDTH * 0.05),
+    flexGrow: 1,
   },
   keyboardAvoidingView: {
     flex: 0,
@@ -1689,23 +1912,85 @@ const styles = StyleSheet.create({
     color: "#4A90E2",
     fontWeight: "500",
   },
-  // Analysis display styles
+  // Analysis display styles with glass effect
   analysisSection: {
-    backgroundColor: "rgba(255,255,255,0.05)",
     borderRadius: 12,
-    padding: 16,
     marginTop: 12,
-    maxHeight: 300, // Limit height, make it scrollable
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.1)",
+    borderColor: "rgba(255, 255, 255, 0.2)",
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 12,
+    },
+    shadowOpacity: 0.5,
+    shadowRadius: 24,
+    elevation: 16,
+    overflow: "hidden",
+    height: 300, // Fixed height for the container
   },
   analysisScrollView: {
-    maxHeight: 300,
+    flex: 1,
+    height: 300,
+  },
+  analysisScrollContent: {
+    padding: 16,
+    paddingBottom: 16,
+    flexGrow: 1,
   },
   analysisText: {
     fontSize: 14,
     color: "#fff",
     lineHeight: 22,
+  },
+  analysisBoldText: {
+    fontSize: 14,
+    color: "#fff",
+    lineHeight: 22,
+    fontWeight: "700",
+  },
+  // Analysis snippet styles
+  analysisSnippetSection: {
+    borderRadius: 12,
+    marginTop: 12,
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.2)",
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 8,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 16,
+    elevation: 12,
+    overflow: "hidden" as const,
+  },
+  analysisSnippetContent: {
+    padding: 12,
+  },
+  readMoreButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 18,
+    backgroundColor: "rgba(74, 144, 226, 0.15)",
+    borderWidth: 1,
+    borderColor: "rgba(74, 144, 226, 0.3)",
+    alignSelf: "flex-start",
+  },
+  readMoreText: {
+    color: "#4A90E2",
+    fontSize: 13,
+    fontWeight: "600",
+    marginRight: 4,
+  },
+  readMoreIcon: {
+    marginLeft: 2,
   },
 });
 
