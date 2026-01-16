@@ -1735,84 +1735,126 @@ async function analyzeGoalWithLLM(goalData, userId) {
       // Financial data
       (async () => {
         console.log("  📈 Fetching net worth...");
-        const result = await supabase
-          .rpc("get_net_worth", { p_user_id: userId })
-          .catch((err) => {
-            console.error("    ❌ Error fetching net worth:", err.message);
-            return { data: null, error: err };
+        try {
+          const result = await supabase.rpc("get_net_worth", {
+            p_user_id: userId,
           });
-        if (result?.data?.[0]) {
-          console.log(
-            `    ✅ Net worth: $${
-              result.data[0].net_worth?.toLocaleString() || 0
-            }`
-          );
+          if (result.error) {
+            console.error(
+              "    ❌ Error fetching net worth:",
+              result.error.message
+            );
+            return { data: null, error: result.error };
+          }
+          if (result?.data?.[0]) {
+            console.log(
+              `    ✅ Net worth: $${
+                result.data[0].net_worth?.toLocaleString() || 0
+              }`
+            );
+          }
+          return result;
+        } catch (err) {
+          console.error("    ❌ Error fetching net worth:", err.message);
+          return { data: null, error: err };
         }
-        return result;
       })(),
       (async () => {
         console.log("  💼 Fetching investment snapshot...");
-        const result = await supabase
-          .rpc("get_investment_snapshot", { p_user_id: userId })
-          .catch((err) => {
-            console.error("    ❌ Error fetching investments:", err.message);
-            return { data: null, error: err };
+        try {
+          const result = await supabase.rpc("get_investment_snapshot", {
+            p_user_id: userId,
           });
-        if (result?.data?.[0]) {
-          console.log(`    ✅ Investment snapshot retrieved`);
+          if (result.error) {
+            console.error(
+              "    ❌ Error fetching investments:",
+              result.error.message
+            );
+            return { data: null, error: result.error };
+          }
+          if (result?.data?.[0]) {
+            console.log(`    ✅ Investment snapshot retrieved`);
+          }
+          return result;
+        } catch (err) {
+          console.error("    ❌ Error fetching investments:", err.message);
+          return { data: null, error: err };
         }
-        return result;
       })(),
       (async () => {
         console.log("  💳 Fetching recent transactions (limit: 200)...");
-        const result = await supabase
-          .rpc("get_recent_transactions", {
+        try {
+          const result = await supabase.rpc("get_recent_transactions", {
             p_user_id: userId,
             p_limit: 200,
-          })
-          .catch((err) => {
-            console.error("    ❌ Error fetching transactions:", err.message);
-            return { data: null, error: err };
           });
-        if (result?.data) {
-          console.log(`    ✅ Transactions: ${result.data.length} found`);
+          if (result.error) {
+            console.error(
+              "    ❌ Error fetching transactions:",
+              result.error.message
+            );
+            return { data: null, error: result.error };
+          }
+          if (result?.data) {
+            console.log(`    ✅ Transactions: ${result.data.length} found`);
+          }
+          return result;
+        } catch (err) {
+          console.error("    ❌ Error fetching transactions:", err.message);
+          return { data: null, error: err };
         }
-        return result;
       })(),
       (async () => {
         console.log("  📊 Fetching spend by category (last 30 days)...");
-        const result = await supabase
-          .rpc("get_spend_by_category", {
+        try {
+          const result = await supabase.rpc("get_spend_by_category", {
             p_user_id: userId,
             p_start: thirtyDaysAgo.toISOString().split("T")[0],
             p_end: currentDate.toISOString().split("T")[0],
-          })
-          .catch((err) => {
+          });
+          if (result.error) {
             console.error(
               "    ❌ Error fetching spend by category:",
-              err.message
+              result.error.message
             );
-            return { data: null, error: err };
-          });
-        if (result?.data) {
-          console.log(
-            `    ✅ Spending categories: ${result.data.length} found`
+            return { data: null, error: result.error };
+          }
+          if (result?.data) {
+            console.log(
+              `    ✅ Spending categories: ${result.data.length} found`
+            );
+          }
+          return result;
+        } catch (err) {
+          console.error(
+            "    ❌ Error fetching spend by category:",
+            err.message
           );
+          return { data: null, error: err };
         }
-        return result;
       })(),
       (async () => {
         console.log("  💰 Fetching cashflow (last 3 months)...");
-        const result = await supabase
-          .rpc("get_cashflow_monthly", { p_user_id: userId, p_months: 3 })
-          .catch((err) => {
-            console.error("    ❌ Error fetching cashflow:", err.message);
-            return { data: null, error: err };
+        try {
+          const result = await supabase.rpc("get_cashflow_monthly", {
+            p_user_id: userId,
+            p_months: 3,
           });
-        if (result?.data) {
-          console.log(`    ✅ Cashflow months: ${result.data.length} found`);
+          if (result.error) {
+            console.error(
+              "    ❌ Error fetching cashflow:",
+              result.error.message
+            );
+            return { data: null, error: result.error };
+          }
+          if (result?.data) {
+            console.log(`    ✅ Cashflow months: ${result.data.length} found`);
+          }
+          return result;
+        } catch (err) {
+          console.error("    ❌ Error fetching cashflow:", err.message);
+          return { data: null, error: err };
         }
-        return result;
       })(),
       // User profile
       (async () => {
@@ -1848,49 +1890,62 @@ async function analyzeGoalWithLLM(goalData, userId) {
       // Current goals (excluding the one being analyzed)
       (async () => {
         console.log("  🎯 Fetching current goals...");
-        const result = await supabase
-          .from("goals")
-          .select("*")
-          .eq("user_id", userId)
-          .eq("status", "active")
-          .neq("id", goalData.id)
-          .order("created_at", { ascending: false })
-          .catch((err) => {
-            console.error("    ❌ Error fetching goals:", err.message);
+        try {
+          const result = await supabase
+            .from("goals")
+            .select("*")
+            .eq("user_id", userId)
+            .eq("status", "active")
+            .neq("id", goalData.id)
+            .order("created_at", { ascending: false });
+          if (result.error) {
+            console.error("    ❌ Error fetching goals:", result.error.message);
             return { data: [] };
-          });
-        if (result?.data) {
-          console.log(`    ✅ Current goals: ${result.data.length} found`);
+          }
+          if (result?.data) {
+            console.log(`    ✅ Current goals: ${result.data.length} found`);
+          }
+          return result;
+        } catch (err) {
+          console.error("    ❌ Error fetching goals:", err.message);
+          return { data: [] };
         }
-        return result;
       })(),
       // Current budget
       (async () => {
         console.log("  💵 Fetching current budget...");
-        const result = await supabase
-          .from("budget_periods")
-          .select(
-            `
+        try {
+          const result = await supabase
+            .from("budget_periods")
+            .select(
+              `
           *,
           budget_entries (
             *
           )
         `
-          )
-          .eq("user_id", userId)
-          .eq("status", "active")
-          .order("created_at", { ascending: false })
-          .limit(1)
-          .single()
-          .catch((err) => {
-            console.error("    ❌ Error fetching budget:", err.message);
+            )
+            .eq("user_id", userId)
+            .eq("status", "active")
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .single();
+          if (result.error) {
+            console.error(
+              "    ❌ Error fetching budget:",
+              result.error.message
+            );
             return { data: null };
-          });
-        if (result?.data) {
-          const entryCount = result.data.budget_entries?.length || 0;
-          console.log(`    ✅ Budget: ${entryCount} category entries found`);
+          }
+          if (result?.data) {
+            const entryCount = result.data.budget_entries?.length || 0;
+            console.log(`    ✅ Budget: ${entryCount} category entries found`);
+          }
+          return result;
+        } catch (err) {
+          console.error("    ❌ Error fetching budget:", err.message);
+          return { data: null };
         }
-        return result;
       })(),
     ]);
 
