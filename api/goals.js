@@ -1733,6 +1733,7 @@ async function analyzeGoalWithLLM(goalData, userId) {
     // Helper function to wrap promises with timeout and logging
     const wrapWithTimeout = async (promiseFn, label, timeoutMs = 15000) => {
       const startTime = Date.now();
+      console.log(`    🚀 [${label}] Starting (timeout: ${timeoutMs}ms)...`);
       try {
         const result = await withTimeout(promiseFn(), timeoutMs, label);
         const duration = Date.now() - startTime;
@@ -1742,266 +1743,294 @@ async function analyzeGoalWithLLM(goalData, userId) {
         const duration = Date.now() - startTime;
         console.error(
           `    ❌ [${label}] Failed after ${duration}ms:`,
-          err.message
+          err.message || err
         );
+        // Return a safe default instead of throwing to prevent Promise.allSettled from hanging
         throw err;
       }
     };
 
     // Use Promise.allSettled to ensure all promises complete even if some fail
-    const results = await Promise.allSettled([
-      // Financial data
-      wrapWithTimeout(
-        async () => {
-          console.log("  📈 Fetching net worth...");
-          const result = await supabase.rpc("get_net_worth", {
-            p_user_id: userId,
-          });
-          if (result.error) {
-            console.error(
-              "    ❌ Error fetching net worth:",
-              result.error.message
-            );
-            return { data: null, error: result.error };
-          }
-          if (result?.data?.[0]) {
-            console.log(
-              `    ✅ Net worth: $${
-                result.data[0].net_worth?.toLocaleString() || 0
-              }`
-            );
-          }
-          return result;
-        },
-        "Net Worth",
-        15000
-      ),
-      wrapWithTimeout(
-        async () => {
-          console.log("  💼 Fetching investment snapshot...");
-          const result = await supabase.rpc("get_investment_snapshot", {
-            p_user_id: userId,
-          });
-          if (result.error) {
-            console.error(
-              "    ❌ Error fetching investments:",
-              result.error.message
-            );
-            return { data: null, error: result.error };
-          }
-          if (result?.data?.[0]) {
-            console.log(`    ✅ Investment snapshot retrieved`);
-          }
-          return result;
-        },
-        "Investment Snapshot",
-        15000
-      ),
-      wrapWithTimeout(
-        async () => {
-          console.log("  💳 Fetching recent transactions (limit: 200)...");
-          const result = await supabase.rpc("get_recent_transactions", {
-            p_user_id: userId,
-            p_limit: 200,
-          });
-          if (result.error) {
-            console.error(
-              "    ❌ Error fetching transactions:",
-              result.error.message
-            );
-            return { data: null, error: result.error };
-          }
-          if (result?.data) {
-            console.log(`    ✅ Transactions: ${result.data.length} found`);
-          }
-          return result;
-        },
-        "Recent Transactions",
-        20000
-      ),
-      wrapWithTimeout(
-        async () => {
-          console.log("  📊 Fetching spend by category (last 30 days)...");
-          const result = await supabase.rpc("get_spend_by_category", {
-            p_user_id: userId,
-            p_start: thirtyDaysAgo.toISOString().split("T")[0],
-            p_end: currentDate.toISOString().split("T")[0],
-          });
-          if (result.error) {
-            console.error(
-              "    ❌ Error fetching spend by category:",
-              result.error.message
-            );
-            return { data: null, error: result.error };
-          }
-          if (result?.data) {
-            console.log(
-              `    ✅ Spending categories: ${result.data.length} found`
-            );
-          }
-          return result;
-        },
-        "Spend by Category",
-        15000
-      ),
-      wrapWithTimeout(
-        async () => {
-          console.log("  💰 Fetching cashflow (last 3 months)...");
-          const result = await supabase.rpc("get_cashflow_monthly", {
-            p_user_id: userId,
-            p_months: 3,
-          });
-          if (result.error) {
-            console.error(
-              "    ❌ Error fetching cashflow:",
-              result.error.message
-            );
-            return { data: null, error: result.error };
-          }
-          if (result?.data) {
-            console.log(`    ✅ Cashflow months: ${result.data.length} found`);
-          }
-          return result;
-        },
-        "Cashflow",
-        15000
-      ),
-      // User profile
-      wrapWithTimeout(
-        async () => {
-          console.log("  👤 Fetching user profile...");
-          const result = await loadUserProfile(userId);
-          if (result) {
-            console.log(
-              `    ✅ Profile: ${result.name || "N/A"} (${
-                result.finny_style || "conversational"
-              } style)`
-            );
-          }
-          return result;
-        },
-        "User Profile",
-        10000
-      ),
-      // Memories
-      wrapWithTimeout(
-        async () => {
-          console.log("  🧠 Fetching relevant memories...");
-          const memoryQuery = `Goal: ${goalData.label}. Target: $${goalData.target_amount}. Category: ${goalData.category}`;
-          console.log(`    🔍 [SUPERMEMORY] Search query: "${memoryQuery}"`);
-          console.log(`    ⚙️ [SUPERMEMORY] Settings: limit=15, threshold=0.4`);
-          const supermemoryResults = await searchSupermemoryMemories(
-            userId,
-            memoryQuery,
-            { limit: 15, threshold: 0.4 }
-          );
+    // Wrap the entire Promise.allSettled with a global timeout to prevent infinite hangs
+    console.log(
+      "    🔄 [GOAL ANALYSIS] Starting Promise.allSettled with 60s global timeout..."
+    );
+    const allSettledStartTime = Date.now();
 
-          // Transform to match loadUserMemory format
-          const memories = supermemoryResults.map((result) => ({
-            id: result.id,
-            content: result.memory || "",
-            similarity: result.similarity || 0,
-            metadata: result.metadata || {},
-          }));
-
-          const result = { memories, totalCount: memories.length };
-          if (result?.memories) {
-            console.log(`    ✅ Memories: ${result.memories.length} found`);
-            if (result.memories.length > 0) {
-              console.log(`    📝 [SUPERMEMORY] Memory previews:`);
-              result.memories.slice(0, 3).forEach((mem, idx) => {
-                const preview = (mem.content || "").substring(0, 100);
-                console.log(
-                  `       ${idx + 1}. ${preview}${
-                    preview.length >= 100 ? "..." : ""
-                  } (similarity: ${((mem.similarity || 0) * 100).toFixed(1)}%)`
-                );
-              });
+    const results = await withTimeout(
+      Promise.allSettled([
+        // Financial data
+        wrapWithTimeout(
+          async () => {
+            console.log("  📈 Fetching net worth...");
+            const result = await supabase.rpc("get_net_worth", {
+              p_user_id: userId,
+            });
+            if (result.error) {
+              console.error(
+                "    ❌ Error fetching net worth:",
+                result.error.message
+              );
+              return { data: null, error: result.error };
             }
-          }
-          return result;
-        },
-        "Supermemory Search",
-        20000
-      ),
-      // Current goals (excluding the one being analyzed)
-      wrapWithTimeout(
-        async () => {
-          console.log("  🎯 Fetching current goals...");
-          // Check if goalData.id is a valid UUID before using .neq()
-          // Test IDs like "test-123" will cause UUID validation errors
-          const isTestId =
-            goalData.id &&
-            !goalData.id.match(
-              /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+            if (result?.data?.[0]) {
+              console.log(
+                `    ✅ Net worth: $${
+                  result.data[0].net_worth?.toLocaleString() || 0
+                }`
+              );
+            }
+            return result;
+          },
+          "Net Worth",
+          15000
+        ),
+        wrapWithTimeout(
+          async () => {
+            console.log("  💼 Fetching investment snapshot...");
+            const result = await supabase.rpc("get_investment_snapshot", {
+              p_user_id: userId,
+            });
+            if (result.error) {
+              console.error(
+                "    ❌ Error fetching investments:",
+                result.error.message
+              );
+              return { data: null, error: result.error };
+            }
+            if (result?.data?.[0]) {
+              console.log(`    ✅ Investment snapshot retrieved`);
+            }
+            return result;
+          },
+          "Investment Snapshot",
+          15000
+        ),
+        wrapWithTimeout(
+          async () => {
+            console.log("  💳 Fetching recent transactions (limit: 200)...");
+            const result = await supabase.rpc("get_recent_transactions", {
+              p_user_id: userId,
+              p_limit: 200,
+            });
+            if (result.error) {
+              console.error(
+                "    ❌ Error fetching transactions:",
+                result.error.message
+              );
+              return { data: null, error: result.error };
+            }
+            if (result?.data) {
+              console.log(`    ✅ Transactions: ${result.data.length} found`);
+            }
+            return result;
+          },
+          "Recent Transactions",
+          20000
+        ),
+        wrapWithTimeout(
+          async () => {
+            console.log("  📊 Fetching spend by category (last 30 days)...");
+            const result = await supabase.rpc("get_spend_by_category", {
+              p_user_id: userId,
+              p_start: thirtyDaysAgo.toISOString().split("T")[0],
+              p_end: currentDate.toISOString().split("T")[0],
+            });
+            if (result.error) {
+              console.error(
+                "    ❌ Error fetching spend by category:",
+                result.error.message
+              );
+              return { data: null, error: result.error };
+            }
+            if (result?.data) {
+              console.log(
+                `    ✅ Spending categories: ${result.data.length} found`
+              );
+            }
+            return result;
+          },
+          "Spend by Category",
+          15000
+        ),
+        wrapWithTimeout(
+          async () => {
+            console.log("  💰 Fetching cashflow (last 3 months)...");
+            const result = await supabase.rpc("get_cashflow_monthly", {
+              p_user_id: userId,
+              p_months: 3,
+            });
+            if (result.error) {
+              console.error(
+                "    ❌ Error fetching cashflow:",
+                result.error.message
+              );
+              return { data: null, error: result.error };
+            }
+            if (result?.data) {
+              console.log(
+                `    ✅ Cashflow months: ${result.data.length} found`
+              );
+            }
+            return result;
+          },
+          "Cashflow",
+          15000
+        ),
+        // User profile
+        wrapWithTimeout(
+          async () => {
+            console.log("  👤 Fetching user profile...");
+            const result = await loadUserProfile(userId);
+            if (result) {
+              console.log(
+                `    ✅ Profile: ${result.name || "N/A"} (${
+                  result.finny_style || "conversational"
+                } style)`
+              );
+            }
+            return result;
+          },
+          "User Profile",
+          10000
+        ),
+        // Memories
+        wrapWithTimeout(
+          async () => {
+            console.log("  🧠 Fetching relevant memories...");
+            const memoryQuery = `Goal: ${goalData.label}. Target: $${goalData.target_amount}. Category: ${goalData.category}`;
+            console.log(`    🔍 [SUPERMEMORY] Search query: "${memoryQuery}"`);
+            console.log(
+              `    ⚙️ [SUPERMEMORY] Settings: limit=15, threshold=0.4`
+            );
+            const supermemoryResults = await searchSupermemoryMemories(
+              userId,
+              memoryQuery,
+              { limit: 15, threshold: 0.4 }
             );
 
-          let query = supabase
-            .from("goals")
-            .select("*")
-            .eq("user_id", userId)
-            .eq("status", "active");
+            // Transform to match loadUserMemory format
+            const memories = supermemoryResults.map((result) => ({
+              id: result.id,
+              content: result.memory || "",
+              similarity: result.similarity || 0,
+              metadata: result.metadata || {},
+            }));
 
-          // Only exclude the goal if it's a valid UUID (not a test ID)
-          if (!isTestId) {
-            query = query.neq("id", goalData.id);
-          }
+            const result = { memories, totalCount: memories.length };
+            if (result?.memories) {
+              console.log(`    ✅ Memories: ${result.memories.length} found`);
+              if (result.memories.length > 0) {
+                console.log(`    📝 [SUPERMEMORY] Memory previews:`);
+                result.memories.slice(0, 3).forEach((mem, idx) => {
+                  const preview = (mem.content || "").substring(0, 100);
+                  console.log(
+                    `       ${idx + 1}. ${preview}${
+                      preview.length >= 100 ? "..." : ""
+                    } (similarity: ${((mem.similarity || 0) * 100).toFixed(
+                      1
+                    )}%)`
+                  );
+                });
+              }
+            }
+            return result;
+          },
+          "Supermemory Search",
+          20000
+        ),
+        // Current goals (excluding the one being analyzed)
+        wrapWithTimeout(
+          async () => {
+            console.log("  🎯 Fetching current goals...");
+            // Check if goalData.id is a valid UUID before using .neq()
+            // Test IDs like "test-123" will cause UUID validation errors
+            const isTestId =
+              goalData.id &&
+              !goalData.id.match(
+                /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+              );
 
-          const result = await query.order("created_at", { ascending: false });
+            let query = supabase
+              .from("goals")
+              .select("*")
+              .eq("user_id", userId)
+              .eq("status", "active");
 
-          if (result.error) {
-            console.error("    ❌ Error fetching goals:", result.error.message);
-            return { data: [] };
-          }
-          if (result?.data) {
-            console.log(`    ✅ Current goals: ${result.data.length} found`);
-          }
-          return result;
-        },
-        "Current Goals",
-        10000
-      ),
-      // Current budget
-      wrapWithTimeout(
-        async () => {
-          console.log("  💵 Fetching current budget...");
-          const result = await supabase
-            .from("budget_periods")
-            .select(
-              `
+            // Only exclude the goal if it's a valid UUID (not a test ID)
+            if (!isTestId) {
+              query = query.neq("id", goalData.id);
+            }
+
+            const result = await query.order("created_at", {
+              ascending: false,
+            });
+
+            if (result.error) {
+              console.error(
+                "    ❌ Error fetching goals:",
+                result.error.message
+              );
+              return { data: [] };
+            }
+            if (result?.data) {
+              console.log(`    ✅ Current goals: ${result.data.length} found`);
+            }
+            return result;
+          },
+          "Current Goals",
+          10000
+        ),
+        // Current budget
+        wrapWithTimeout(
+          async () => {
+            console.log("  💵 Fetching current budget...");
+            const result = await supabase
+              .from("budget_periods")
+              .select(
+                `
           *,
           budget_entries (
             *
           )
         `
-            )
-            .eq("user_id", userId)
-            .eq("status", "active")
-            .order("created_at", { ascending: false })
-            .limit(1)
-            .single();
-          if (result.error) {
-            console.error(
-              "    ❌ Error fetching budget:",
-              result.error.message
-            );
-            return { data: null };
-          }
-          if (result?.data) {
-            const entryCount = result.data.budget_entries?.length || 0;
-            console.log(`    ✅ Budget: ${entryCount} category entries found`);
-          }
-          return result;
-        },
-        "Budget",
-        10000
-      ),
-    ]);
+              )
+              .eq("user_id", userId)
+              .eq("status", "active")
+              .order("created_at", { ascending: false })
+              .limit(1)
+              .single();
+            if (result.error) {
+              console.error(
+                "    ❌ Error fetching budget:",
+                result.error.message
+              );
+              return { data: null };
+            }
+            if (result?.data) {
+              const entryCount = result.data.budget_entries?.length || 0;
+              console.log(
+                `    ✅ Budget: ${entryCount} category entries found`
+              );
+            }
+            return result;
+          },
+          "Budget",
+          10000
+        ),
+      ]),
+      60000, // 60 second global timeout for entire Promise.allSettled
+      "Promise.allSettled (All Data Fetches)"
+    );
 
     // Process Promise.allSettled results
+    const allSettledDuration = Date.now() - allSettledStartTime;
     const fetchTime = Date.now() - fetchStartTime;
     console.log(
-      `✅ [GOAL ANALYSIS] All data fetch operations completed in ${fetchTime}ms`
+      `✅ [GOAL ANALYSIS] Promise.allSettled resolved in ${allSettledDuration}ms (total fetch time: ${fetchTime}ms)`
+    );
+    console.log(
+      `    📊 [GOAL ANALYSIS] Processing ${results.length} settled results...`
     );
 
     // Extract results from Promise.allSettled
