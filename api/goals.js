@@ -2287,18 +2287,21 @@ export default async function handler(req, res) {
         });
       }
 
-      // Run analysis (this is async and will update the DB)
-      // We don't wait for it to complete - it runs in background
-      analyzeGoalWithLLM(goal, userId).catch((error) => {
-        console.error("❌ [GOAL_ANALYZE] Analysis failed:", error);
-        // Don't throw - analysis runs in background
-      });
+      // SERVERLESS NOTE:
+      // Vercel serverless functions may freeze/terminate execution after sending a response.
+      // The previous fire-and-forget approach caused analysis to hang indefinitely in production
+      // because timers/callbacks wouldn't run once the invocation was considered complete.
+      // To make this reliable, we run analysis within the request lifecycle.
+      console.log(
+        `🧠 [GOAL_ANALYZE] Running analysis inline (await) for goal: ${goalId}`
+      );
 
-      // Return immediately - analysis will be stored when complete
-      return res.status(202).json({
+      const analysis = await analyzeGoalWithLLM(goal, userId);
+
+      return res.status(200).json({
         success: true,
-        message: "Analysis started",
-        analysis: null,
+        analysis,
+        cached: false,
       });
     } catch (error) {
       console.error("❌ [GOAL_ANALYZE] Error:", error);
