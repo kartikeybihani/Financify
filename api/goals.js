@@ -1794,14 +1794,7 @@ async function analyzeGoalWithLLM(goalData, userId) {
               const result = await supabase.rpc("get_net_worth", {
                 p_user_id: userId,
               });
-              if (result.error) {
-                console.error(
-                  "    ❌ Error fetching net worth:",
-                  result.error.message
-                );
-                return { data: null, error: result.error };
-              }
-              if (result?.data?.[0]) {
+              if (!result.error && result?.data?.[0]) {
                 console.log(
                   `    ✅ Net worth: $${
                     result.data[0].net_worth?.toLocaleString() || 0
@@ -1819,14 +1812,7 @@ async function analyzeGoalWithLLM(goalData, userId) {
               const result = await supabase.rpc("get_investment_snapshot", {
                 p_user_id: userId,
               });
-              if (result.error) {
-                console.error(
-                  "    ❌ Error fetching investments:",
-                  result.error.message
-                );
-                return { data: null, error: result.error };
-              }
-              if (result?.data?.[0]) {
+              if (!result.error && result?.data?.[0]) {
                 console.log(`    ✅ Investment snapshot retrieved`);
               }
               return result;
@@ -1841,14 +1827,7 @@ async function analyzeGoalWithLLM(goalData, userId) {
                 p_user_id: userId,
                 p_limit: 200,
               });
-              if (result.error) {
-                console.error(
-                  "    ❌ Error fetching transactions:",
-                  result.error.message
-                );
-                return { data: null, error: result.error };
-              }
-              if (result?.data) {
+              if (!result.error && result?.data) {
                 console.log(`    ✅ Transactions: ${result.data.length} found`);
               }
               return result;
@@ -1864,14 +1843,7 @@ async function analyzeGoalWithLLM(goalData, userId) {
                 p_start: thirtyDaysAgo.toISOString().split("T")[0],
                 p_end: currentDate.toISOString().split("T")[0],
               });
-              if (result.error) {
-                console.error(
-                  "    ❌ Error fetching spend by category:",
-                  result.error.message
-                );
-                return { data: null, error: result.error };
-              }
-              if (result?.data) {
+              if (!result.error && result?.data) {
                 console.log(
                   `    ✅ Spending categories: ${result.data.length} found`
                 );
@@ -1888,14 +1860,7 @@ async function analyzeGoalWithLLM(goalData, userId) {
                 p_user_id: userId,
                 p_months: 3,
               });
-              if (result.error) {
-                console.error(
-                  "    ❌ Error fetching cashflow:",
-                  result.error.message
-                );
-                return { data: null, error: result.error };
-              }
-              if (result?.data) {
+              if (!result.error && result?.data) {
                 console.log(
                   `    ✅ Cashflow months: ${result.data.length} found`
                 );
@@ -2281,7 +2246,8 @@ async function analyzeGoalWithLLM(goalData, userId) {
     const { error: updateError } = await supabase
       .from("goals")
       .update({ analysis: content })
-      .eq("id", goalData.id);
+      .eq("id", goalData.id)
+      .eq("user_id", userId);
 
     if (updateError) {
       console.error("❌ [GOAL ANALYSIS] Error storing analysis:", updateError);
