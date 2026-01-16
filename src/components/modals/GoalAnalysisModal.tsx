@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import {
+  Modal,
   View,
   Text,
   ScrollView,
@@ -8,7 +9,6 @@ import {
   Animated,
   TouchableOpacity,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { BlurView } from "expo-blur";
 import { LinearGradient } from "expo-linear-gradient";
@@ -40,41 +40,41 @@ const responsivePadding = (basePadding: number) => {
 };
 
 const styles = {
+  backdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.55)",
+  },
   container: {
+    flex: 1,
+    width: screenWidth,
     height: screenHeight,
-    position: "absolute" as const,
-    bottom: -25,
-    left: 0,
-    right: 0,
-    backgroundColor: "#0F0F0F",
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    overflow: "hidden" as const,
+    backgroundColor: "#0B0B0C",
   },
   fullAnalysisScrollView: {
     flex: 1,
   },
-  fullAnalysisScrollContent: {
-    paddingHorizontal: responsivePadding(10),
-    paddingTop: responsivePadding(12),
-    paddingBottom: responsivePadding(60),
-  },
-  fullAnalysisBlurContainer: {
-    borderRadius: 16,
-    paddingHorizontal: responsivePadding(12),
-    paddingTop: responsivePadding(12),
-    paddingBottom: responsivePadding(16),
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.2)",
+  fullAnalysisScrollContent: (bottomInset: number) => ({
+    paddingHorizontal: responsivePadding(16),
+    paddingTop: responsivePadding(14),
+    paddingBottom: Math.max(responsivePadding(28), bottomInset + responsivePadding(20)),
+  }),
+  cardOuter: {
+    borderRadius: 20,
+    padding: 1,
     shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 8,
-    },
-    shadowOpacity: 0.3,
-    shadowRadius: 16,
-    elevation: 12,
+    shadowOffset: { width: 0, height: 18 },
+    shadowOpacity: 0.45,
+    shadowRadius: 28,
+    elevation: 18,
+  },
+  cardInner: {
+    borderRadius: 19,
+    paddingHorizontal: responsivePadding(14),
+    paddingTop: responsivePadding(14),
+    paddingBottom: responsivePadding(18),
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.18)",
     overflow: "hidden" as const,
   },
   analysisText: {
@@ -104,17 +104,17 @@ const styles = {
     color: "rgba(255, 255, 255, 0.6)",
     textAlign: "center" as const,
   },
-  header: {
+  header: (topInset: number) => ({
     flexDirection: "row" as const,
     alignItems: "center" as const,
     justifyContent: "space-between" as const,
-    paddingHorizontal: responsivePadding(10),
-    paddingTop: Platform.OS === "ios" ? 8 : 12,
-    paddingBottom: 6,
-    backgroundColor: "#0F0F0F",
+    paddingHorizontal: responsivePadding(14),
+    paddingTop: topInset + 8,
+    paddingBottom: 10,
+    backgroundColor: "transparent",
     borderBottomWidth: 1,
     borderBottomColor: "rgba(30, 30, 30, 0.8)",
-  },
+  }),
   headerTitle: {
     fontSize: responsiveFontSize(17),
     fontWeight: "600" as const,
@@ -218,8 +218,8 @@ export default function GoalAnalysisModal({
   isAnalyzing = false,
   onClose,
 }: GoalAnalysisModalProps) {
-  const insets = useSafeAreaInsets();
   const [slideAnimation] = useState(new Animated.Value(screenWidth));
+  const insets = useSafeAreaInsets();
 
   useEffect(() => {
     if (visible) {
@@ -243,83 +243,93 @@ export default function GoalAnalysisModal({
 
   const translateX = slideAnimation;
 
-  if (!visible) return null;
-
   return (
-    <Animated.View
-      style={[
-        styles.container,
-        {
-          zIndex: 10,
-          transform: [{ translateX }],
-        },
-      ]}
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      onRequestClose={onClose}
     >
-      <View style={{ flex: 1, backgroundColor: "#0F0F0F" }}>
-        <SafeAreaView style={{ flex: 1, marginBottom: insets.bottom - 10 }}>
-          {/* Fixed Header */}
-          <View style={styles.header}>
-            <TouchableOpacity
-              style={styles.closeButton}
-              onPress={onClose}
-              activeOpacity={0.7}
-            >
-              <LinearGradient
-                colors={[
-                  "rgba(255, 255, 255, 0.15)",
-                  "rgba(255, 255, 255, 0.05)",
-                ]}
-                style={styles.closeButtonCircle}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
+      <View style={styles.backdrop}>
+        <Animated.View
+          style={[
+            styles.container,
+            {
+              transform: [{ translateX }],
+            },
+          ]}
+        >
+          <View style={{ flex: 1 }}>
+            {/* Fixed Header */}
+            <View style={styles.header(insets.top)}>
+              <TouchableOpacity
+                style={styles.closeButton}
+                onPress={onClose}
+                activeOpacity={0.7}
               >
-                <Ionicons name="chevron-back" size={20} color="#fff" />
-              </LinearGradient>
-            </TouchableOpacity>
-            <Text style={styles.headerTitle}>Finny's thoughts</Text>
-            <View style={styles.spacer} />
-          </View>
-
-          {/* Scrollable Content */}
-          <ScrollView
-            style={styles.fullAnalysisScrollView}
-            contentContainerStyle={styles.fullAnalysisScrollContent}
-            showsVerticalScrollIndicator={true}
-            bounces={true}
-            nestedScrollEnabled={true}
-            keyboardShouldPersistTaps="handled"
-            scrollEnabled={true}
-          >
-            {isAnalyzing ? (
-              <View style={styles.emptyState}>
-                <Text style={styles.emptyStateText}>
-                  Finny is thinking about this goal...
-                </Text>
-              </View>
-            ) : analysis ? (
-              Platform.OS === "ios" ? (
-                <BlurView
-                  intensity={80}
-                  tint="dark"
-                  style={styles.fullAnalysisBlurContainer}
+                <LinearGradient
+                  colors={[
+                    "rgba(255, 255, 255, 0.18)",
+                    "rgba(255, 255, 255, 0.06)",
+                  ]}
+                  style={styles.closeButtonCircle}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
                 >
-                  {renderAnalysisText(analysis)}
-                </BlurView>
-              ) : (
-                <View style={styles.fullAnalysisBlurContainer}>
-                  {renderAnalysisText(analysis)}
+                  <Ionicons name="chevron-back" size={20} color="#fff" />
+                </LinearGradient>
+              </TouchableOpacity>
+              <Text style={styles.headerTitle}>Finny's thoughts</Text>
+              <View style={styles.spacer} />
+            </View>
+
+            {/* Scrollable Content */}
+            <ScrollView
+              style={styles.fullAnalysisScrollView}
+              contentContainerStyle={styles.fullAnalysisScrollContent(insets.bottom)}
+              showsVerticalScrollIndicator={true}
+              bounces={true}
+              nestedScrollEnabled={true}
+              keyboardShouldPersistTaps="handled"
+            >
+              {isAnalyzing ? (
+                <View style={styles.emptyState}>
+                  <Text style={styles.emptyStateText}>
+                    Finny is thinking about this goal...
+                  </Text>
                 </View>
-              )
-            ) : (
-              <View style={styles.emptyState}>
-                <Text style={styles.emptyStateText}>
-                  No analysis available yet.
-                </Text>
-              </View>
-            )}
-          </ScrollView>
-        </SafeAreaView>
+              ) : analysis ? (
+                <LinearGradient
+                  colors={[
+                    "rgba(255, 255, 255, 0.12)",
+                    "rgba(255, 255, 255, 0.04)",
+                    "rgba(255, 255, 255, 0.08)",
+                  ]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.cardOuter}
+                >
+                  {Platform.OS === "ios" ? (
+                    <BlurView intensity={90} tint="dark" style={styles.cardInner}>
+                      {renderAnalysisText(analysis)}
+                    </BlurView>
+                  ) : (
+                    <View style={styles.cardInner}>
+                      {renderAnalysisText(analysis)}
+                    </View>
+                  )}
+                </LinearGradient>
+              ) : (
+                <View style={styles.emptyState}>
+                  <Text style={styles.emptyStateText}>
+                    No analysis available yet.
+                  </Text>
+                </View>
+              )}
+            </ScrollView>
+          </View>
+        </Animated.View>
       </View>
-    </Animated.View>
+    </Modal>
   );
 }

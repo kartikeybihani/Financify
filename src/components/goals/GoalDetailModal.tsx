@@ -13,7 +13,6 @@ import {
   TouchableWithoutFeedback,
   Animated,
   Alert,
-  KeyboardAvoidingView,
   Keyboard,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
@@ -70,7 +69,13 @@ const GoalDetailModal = ({
   const noteAnimation = useRef(new Animated.Value(0)).current;
   const noteHeightAnimation = useRef(new Animated.Value(0)).current;
   const goalDetailSlideAnim = useRef(new Animated.Value(0)).current;
+  const sheetHeightAnim = useRef(new Animated.Value(0)).current;
+  const didInitSheetHeightRef = useRef(false);
   const insets = useSafeAreaInsets();
+
+  const [headerHeight, setHeaderHeight] = useState(0);
+  const [footerHeight, setFooterHeight] = useState(0);
+  const [scrollContentHeight, setScrollContentHeight] = useState(0);
 
   React.useEffect(() => {
     // Reset analysis state first when goal changes to prevent showing wrong analysis
@@ -125,6 +130,57 @@ const GoalDetailModal = ({
       }
     }
   }, [goal?.id]); // Only depend on goal.id to properly detect goal changes
+
+  // Dynamically size the sheet based on its content, capped by available viewport.
+  // This prevents clipping (especially when the analysis snippet appears, or when the
+  // keyboard is up) while still keeping the modal feeling like a premium bottom sheet.
+  useEffect(() => {
+    if (!visible) {
+      sheetHeightAnim.setValue(0);
+      didInitSheetHeightRef.current = false;
+      return;
+    }
+
+    const maxSheetHeight = Math.max(
+      320,
+      SCREEN_HEIGHT - Math.max(insets.top, 12) - 12 - Math.max(0, keyboardHeight)
+    );
+    const minSheetHeight = Math.min(
+      maxSheetHeight,
+      Math.max(380, SCREEN_HEIGHT * 0.55)
+    );
+
+    const measuredTotal =
+      (headerHeight || 0) + (footerHeight || 0) + (scrollContentHeight || 0);
+
+    const target = Math.max(
+      minSheetHeight,
+      Math.min(maxSheetHeight, measuredTotal > 0 ? measuredTotal : minSheetHeight)
+    );
+
+    // Prevent a blank/zero-height first paint (common on slower devices
+    // where the effect runs a frame later).
+    if (!didInitSheetHeightRef.current) {
+      didInitSheetHeightRef.current = true;
+      sheetHeightAnim.setValue(minSheetHeight);
+    }
+
+    Animated.spring(sheetHeightAnim, {
+      toValue: target,
+      damping: 26,
+      stiffness: 240,
+      mass: 1,
+      useNativeDriver: false,
+    }).start();
+  }, [
+    visible,
+    headerHeight,
+    footerHeight,
+    scrollContentHeight,
+    keyboardHeight,
+    insets.top,
+    sheetHeightAnim,
+  ]);
 
   // Polling function to check for analysis - takes goalId parameter to ensure correct goal
   const startPollingForAnalysis = (goalId: string) => {
@@ -327,6 +383,15 @@ const GoalDetailModal = ({
 
   if (!goal || !editedGoal) return null;
 
+  const maxSheetHeight = Math.max(
+    320,
+    SCREEN_HEIGHT - Math.max(insets.top, 12) - 12 - Math.max(0, keyboardHeight)
+  );
+  const minSheetHeight = Math.min(
+    maxSheetHeight,
+    Math.max(380, SCREEN_HEIGHT * 0.55)
+  );
+
   const handleSave = async () => {
     if (onEdit && editedGoal && goal) {
       const updates: Partial<Goal> = {
@@ -492,12 +557,29 @@ const GoalDetailModal = ({
       <TouchableWithoutFeedback onPress={handleClose}>
         <View style={styles.overlay}>
           <TouchableWithoutFeedback onPress={(e) => e.stopPropagation()}>
-            <View style={styles.contentWrapper}>
+            <Animated.View
+              style={[
+                styles.contentWrapper,
+                {
+                  height: sheetHeightAnim,
+                  minHeight: minSheetHeight,
+                  maxHeight: maxSheetHeight,
+                  marginBottom: Math.max(0, keyboardHeight - (insets.bottom || 0)),
+                },
+              ]}
+            >
               <LinearGradient
                 colors={["rgba(31, 31, 31, 0.98)", "rgba(18, 18, 18, 0.99)"]}
                 style={styles.content}
               >
-                <View style={styles.header}>
+                <View style={styles.sheetHandleContainer}>
+                  <View style={styles.sheetHandle} />
+                </View>
+
+                <View
+                  style={styles.header}
+                  onLayout={(e) => setHeaderHeight(e.nativeEvent.layout.height)}
+                >
                   <View style={styles.headerTextContainer}>
                     <Text style={styles.headerTitle}>
                       {isEditing ? `Edit Goal` : goal.label}
@@ -520,14 +602,17 @@ const GoalDetailModal = ({
                     contentContainerStyle={[
                       styles.scrollContent,
                       {
-                        paddingBottom:
-                          Math.max(20, SCREEN_HEIGHT * 0.025) + keyboardHeight,
+                        paddingBottom: Math.max(
+                          20,
+                          (insets.bottom || 0) + SCREEN_HEIGHT * 0.02
+                        ),
                       },
                     ]}
                     keyboardShouldPersistTaps="handled"
                     keyboardDismissMode="interactive"
                     nestedScrollEnabled={true}
                     scrollEventThrottle={16}
+                    onContentSizeChange={(_, h) => setScrollContentHeight(h)}
                   >
                     {!isEditing && (
                       <>
@@ -654,36 +739,28 @@ const GoalDetailModal = ({
                                 </View>
                               </BlurView>
                             ) : (
-                              <TouchableOpacity
-                                onPress={() => setShowFullAnalysis(true)}
-                                style={styles.readMoreButton}
-                                activeOpacity={0.8}
-                              >
-                                <View style={styles.analysisSnippetSection}>
-                                  <View style={styles.analysisSnippetContent}>
-                                    {renderAnalysisText(analysis)}
-                                    {hasMoreAnalysis(analysis) && (
-                                      <TouchableOpacity
-                                        onPress={() =>
-                                          setShowFullAnalysis(true)
-                                        }
-                                        style={styles.readMoreButton}
-                                        activeOpacity={0.8}
-                                      >
-                                        <Text style={styles.readMoreText}>
-                                          Read More from Finny
-                                        </Text>
-                                        <Ionicons
-                                          name="chevron-forward"
-                                          size={14}
-                                          color="#4A90E2"
-                                          style={styles.readMoreIcon}
-                                        />
-                                      </TouchableOpacity>
-                                    )}
-                                  </View>
+                              <View style={styles.analysisSnippetSection}>
+                                <View style={styles.analysisSnippetContent}>
+                                  {renderAnalysisText(analysis)}
+                                  {hasMoreAnalysis(analysis) && (
+                                    <TouchableOpacity
+                                      onPress={() => setShowFullAnalysis(true)}
+                                      style={styles.readMoreButton}
+                                      activeOpacity={0.8}
+                                    >
+                                      <Text style={styles.readMoreText}>
+                                        Read More from Finny
+                                      </Text>
+                                      <Ionicons
+                                        name="chevron-forward"
+                                        size={14}
+                                        color="#4A90E2"
+                                        style={styles.readMoreIcon}
+                                      />
+                                    </TouchableOpacity>
+                                  )}
                                 </View>
-                              </TouchableOpacity>
+                              </View>
                             ))}
 
                           {goal.note && (
@@ -693,91 +770,75 @@ const GoalDetailModal = ({
                           )}
                         </View>
 
-                        <KeyboardAvoidingView
-                          behavior={
-                            Platform.OS === "ios" ? "padding" : "height"
+                        <View
+                          onLayout={(e) =>
+                            setProgressSectionY(e.nativeEvent.layout.y)
                           }
-                          style={styles.keyboardAvoidingView}
-                          enabled={isInputFocused}
-                          keyboardVerticalOffset={Math.max(0, insets.top) + 56}
                         >
-                          <View
-                            onLayout={(e) =>
-                              setProgressSectionY(e.nativeEvent.layout.y)
-                            }
-                          >
-                            <View style={styles.progressSection}>
-                              <View style={styles.progressHeader}>
-                                <Text style={styles.progressTitle}>
-                                  Current Progress
-                                </Text>
-                                <Text style={styles.progressAmount}>
-                                  of $
-                                  {(goal.target_amount || 0).toLocaleString()}
-                                </Text>
-                              </View>
-                              <View style={styles.progressInputContainer}>
-                                <Text style={styles.currencySymbol}>$</Text>
-                                <TextInput
-                                  style={styles.progressInput}
-                                  value={String(localProgressAmount)}
-                                  onChangeText={(text) => {
-                                    const newAmount = Math.max(
-                                      0,
-                                      parseFloat(text) || 0
-                                    );
-                                    setLocalProgressAmount(newAmount);
-                                  }}
-                                  onFocus={() => {
-                                    setIsInputFocused(true);
-                                    setIsProgressFocused(true);
-                                  }}
-                                  onBlur={() => {
-                                    setIsInputFocused(false);
-                                    setIsProgressFocused(false);
-                                  }}
-                                  keyboardType="numeric"
-                                  placeholder="0"
-                                  placeholderTextColor="#666"
-                                />
-                                {hasProgressChanged && (
-                                  <TouchableOpacity
-                                    onPress={handleClose}
-                                    style={styles.progressSaveButton}
-                                    activeOpacity={0.7}
+                          <View style={styles.progressSection}>
+                            <View style={styles.progressHeader}>
+                              <Text style={styles.progressTitle}>
+                                Current Progress
+                              </Text>
+                              <Text style={styles.progressAmount}>
+                                of ${(goal.target_amount || 0).toLocaleString()}
+                              </Text>
+                            </View>
+                            <View style={styles.progressInputContainer}>
+                              <Text style={styles.currencySymbol}>$</Text>
+                              <TextInput
+                                style={styles.progressInput}
+                                value={String(localProgressAmount)}
+                                onChangeText={(text) => {
+                                  const newAmount = Math.max(
+                                    0,
+                                    parseFloat(text) || 0
+                                  );
+                                  setLocalProgressAmount(newAmount);
+                                }}
+                                onFocus={() => {
+                                  setIsInputFocused(true);
+                                  setIsProgressFocused(true);
+                                }}
+                                onBlur={() => {
+                                  setIsInputFocused(false);
+                                  setIsProgressFocused(false);
+                                }}
+                                keyboardType="numeric"
+                                placeholder="0"
+                                placeholderTextColor="#666"
+                              />
+                              {hasProgressChanged && (
+                                <TouchableOpacity
+                                  onPress={handleClose}
+                                  style={styles.progressSaveButton}
+                                  activeOpacity={0.7}
+                                >
+                                  <LinearGradient
+                                    colors={[
+                                      "rgba(50, 215, 75, 0.15)",
+                                      "rgba(50, 215, 75, 0.05)",
+                                    ]}
+                                    style={styles.progressSaveIcon}
+                                    start={{ x: 0, y: 0 }}
+                                    end={{ x: 1, y: 1 }}
                                   >
-                                    <LinearGradient
-                                      colors={[
-                                        "rgba(50, 215, 75, 0.15)",
-                                        "rgba(50, 215, 75, 0.05)",
-                                      ]}
-                                      style={styles.progressSaveIcon}
-                                      start={{ x: 0, y: 0 }}
-                                      end={{ x: 1, y: 1 }}
-                                    >
-                                      <Ionicons
-                                        name="checkmark-outline"
-                                        size={16}
-                                        color="#32D74B"
-                                      />
-                                    </LinearGradient>
-                                  </TouchableOpacity>
-                                )}
-                              </View>
+                                    <Ionicons
+                                      name="checkmark-outline"
+                                      size={16}
+                                      color="#32D74B"
+                                    />
+                                  </LinearGradient>
+                                </TouchableOpacity>
+                              )}
                             </View>
                           </View>
-                        </KeyboardAvoidingView>
+                        </View>
                       </>
                     )}
 
                     {isEditing && (
-                      <KeyboardAvoidingView
-                        behavior={Platform.OS === "ios" ? "padding" : "height"}
-                        style={styles.keyboardAvoidingView}
-                        enabled={isInputFocused}
-                        keyboardVerticalOffset={Math.max(0, insets.top) + 56}
-                      >
-                        <View style={styles.editSection}>
+                      <View style={styles.editSection}>
                           <View style={styles.editNameRow}>
                             <Text style={styles.editLabel}>Goal Name</Text>
                             <TextInput
@@ -973,150 +1034,158 @@ const GoalDetailModal = ({
                               </Animated.View>
                             </Animated.View>
                           )}
-                        </View>
-                      </KeyboardAvoidingView>
+                      </View>
                     )}
                   </ScrollView>
                 </Animated.View>
 
                 {/* Bottom action buttons */}
-                {!isEditing ? (
-                  <View style={styles.bottomButtonRow}>
-                    <TouchableOpacity
-                      style={[
-                        styles.bottomButtonContainer,
-                        styles.bottomEditButtonContainer,
-                      ]}
-                      onPress={() => setIsEditing(true)}
-                      activeOpacity={0.7}
-                    >
-                      <LinearGradient
-                        colors={[
-                          "rgba(74, 144, 226, 0.15)",
-                          "rgba(74, 144, 226, 0.05)",
+                <View
+                  onLayout={(e) => setFooterHeight(e.nativeEvent.layout.height)}
+                  style={{ paddingBottom: Math.max(0, insets.bottom) }}
+                >
+                  {!isEditing ? (
+                    <View style={styles.bottomButtonRow}>
+                      <TouchableOpacity
+                        style={[
+                          styles.bottomButtonContainer,
+                          styles.bottomEditButtonContainer,
                         ]}
-                        style={styles.bottomEditButton}
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 1, y: 1 }}
+                        onPress={() => setIsEditing(true)}
+                        activeOpacity={0.7}
                       >
-                        <Ionicons name="pencil" size={19} color="#4A90E2" />
-                        <Text
-                          style={[
-                            styles.bottomButtonText,
-                            { color: "#4A90E2" },
+                        <LinearGradient
+                          colors={[
+                            "rgba(74, 144, 226, 0.15)",
+                            "rgba(74, 144, 226, 0.05)",
                           ]}
+                          style={styles.bottomEditButton}
+                          start={{ x: 0, y: 0 }}
+                          end={{ x: 1, y: 1 }}
                         >
-                          Edit Goal
-                        </Text>
-                      </LinearGradient>
-                    </TouchableOpacity>
+                          <Ionicons name="pencil" size={19} color="#4A90E2" />
+                          <Text
+                            style={[
+                              styles.bottomButtonText,
+                              { color: "#4A90E2" },
+                            ]}
+                          >
+                            Edit Goal
+                          </Text>
+                        </LinearGradient>
+                      </TouchableOpacity>
 
-                    <TouchableOpacity
-                      style={[
-                        styles.bottomButtonContainer,
-                        styles.bottomDeleteButtonContainer,
-                      ]}
-                      onPress={() => {
-                        Alert.alert(
-                          "Delete Goal",
-                          `Are you sure you want to delete "${goal.label}"? This action cannot be undone.`,
-                          [
-                            { text: "Cancel", style: "cancel" },
-                            {
-                              text: "Delete",
-                              style: "destructive",
-                              onPress: () => {
-                                onDelete(goal);
-                                handleClose();
+                      <TouchableOpacity
+                        style={[
+                          styles.bottomButtonContainer,
+                          styles.bottomDeleteButtonContainer,
+                        ]}
+                        onPress={() => {
+                          Alert.alert(
+                            "Delete Goal",
+                            `Are you sure you want to delete "${goal.label}"? This action cannot be undone.`,
+                            [
+                              { text: "Cancel", style: "cancel" },
+                              {
+                                text: "Delete",
+                                style: "destructive",
+                                onPress: () => {
+                                  onDelete(goal);
+                                  handleClose();
+                                },
                               },
-                            },
-                          ]
-                        );
-                      }}
-                      activeOpacity={0.7}
-                    >
-                      <LinearGradient
-                        colors={[
-                          "rgba(255, 59, 48, 0.15)",
-                          "rgba(255, 59, 48, 0.05)",
-                        ]}
-                        style={styles.bottomDeleteButton}
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 1, y: 1 }}
+                            ]
+                          );
+                        }}
+                        activeOpacity={0.7}
                       >
-                        <Ionicons
-                          name="trash-sharp"
-                          size={19}
-                          color="#FF3B30"
-                        />
-                      </LinearGradient>
-                    </TouchableOpacity>
-                  </View>
-                ) : (
-                  <View style={styles.bottomButtonRow}>
-                    <TouchableOpacity
-                      style={[
-                        styles.bottomButtonContainer,
-                        styles.bottomCancelButtonContainer,
-                      ]}
-                      onPress={() => {
-                        setIsEditing(false);
-                        setEditedGoal(goal);
-                        setShowNoteField(!!goal?.note);
-                        noteAnimation.setValue(goal?.note ? 1 : 0);
-                        noteHeightAnimation.setValue(goal?.note ? 1 : 0);
-                      }}
-                      activeOpacity={0.7}
-                    >
-                      <LinearGradient
-                        colors={[
-                          "rgba(142, 142, 147, 0.15)",
-                          "rgba(142, 142, 147, 0.05)",
-                        ]}
-                        style={styles.bottomCancelButton}
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 1, y: 1 }}
-                      >
-                        <Ionicons name="close-circle" size={16} color="#fff" />
-                        <Text
-                          style={[styles.bottomButtonText, { color: "#fff" }]}
+                        <LinearGradient
+                          colors={[
+                            "rgba(255, 59, 48, 0.15)",
+                            "rgba(255, 59, 48, 0.05)",
+                          ]}
+                          style={styles.bottomDeleteButton}
+                          start={{ x: 0, y: 0 }}
+                          end={{ x: 1, y: 1 }}
                         >
-                          Cancel
-                        </Text>
-                      </LinearGradient>
-                    </TouchableOpacity>
+                          <Ionicons
+                            name="trash-sharp"
+                            size={19}
+                            color="#FF3B30"
+                          />
+                        </LinearGradient>
+                      </TouchableOpacity>
+                    </View>
+                  ) : (
+                    <View style={styles.bottomButtonRow}>
+                      <TouchableOpacity
+                        style={[
+                          styles.bottomButtonContainer,
+                          styles.bottomCancelButtonContainer,
+                        ]}
+                        onPress={() => {
+                          setIsEditing(false);
+                          setEditedGoal(goal);
+                          setShowNoteField(!!goal?.note);
+                          noteAnimation.setValue(goal?.note ? 1 : 0);
+                          noteHeightAnimation.setValue(goal?.note ? 1 : 0);
+                        }}
+                        activeOpacity={0.7}
+                      >
+                        <LinearGradient
+                          colors={[
+                            "rgba(142, 142, 147, 0.15)",
+                            "rgba(142, 142, 147, 0.05)",
+                          ]}
+                          style={styles.bottomCancelButton}
+                          start={{ x: 0, y: 0 }}
+                          end={{ x: 1, y: 1 }}
+                        >
+                          <Ionicons
+                            name="close-circle"
+                            size={16}
+                            color="#fff"
+                          />
+                          <Text
+                            style={[styles.bottomButtonText, { color: "#fff" }]}
+                          >
+                            Cancel
+                          </Text>
+                        </LinearGradient>
+                      </TouchableOpacity>
 
-                    <TouchableOpacity
-                      style={[
-                        styles.bottomButtonContainer,
-                        styles.bottomSaveButtonContainer,
-                      ]}
-                      onPress={handleSave}
-                      activeOpacity={0.7}
-                    >
-                      <LinearGradient
-                        colors={[
-                          "rgba(50, 215, 75, 0.15)",
-                          "rgba(50, 215, 75, 0.05)",
+                      <TouchableOpacity
+                        style={[
+                          styles.bottomButtonContainer,
+                          styles.bottomSaveButtonContainer,
                         ]}
-                        style={styles.bottomSaveButton}
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 1, y: 1 }}
+                        onPress={handleSave}
+                        activeOpacity={0.7}
                       >
-                        <Ionicons
-                          name="checkmark-circle"
-                          size={16}
-                          color="#fff"
-                        />
-                        <Text
-                          style={[styles.bottomButtonText, { color: "#fff" }]}
+                        <LinearGradient
+                          colors={[
+                            "rgba(50, 215, 75, 0.15)",
+                            "rgba(50, 215, 75, 0.05)",
+                          ]}
+                          style={styles.bottomSaveButton}
+                          start={{ x: 0, y: 0 }}
+                          end={{ x: 1, y: 1 }}
                         >
-                          Save Changes
-                        </Text>
-                      </LinearGradient>
-                    </TouchableOpacity>
-                  </View>
-                )}
+                          <Ionicons
+                            name="checkmark-circle"
+                            size={16}
+                            color="#fff"
+                          />
+                          <Text
+                            style={[styles.bottomButtonText, { color: "#fff" }]}
+                          >
+                            Save Changes
+                          </Text>
+                        </LinearGradient>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                </View>
 
                 {showDatePicker && (
                   <Modal
@@ -1194,7 +1263,7 @@ const GoalDetailModal = ({
                   </Modal>
                 )}
               </LinearGradient>
-            </View>
+            </Animated.View>
           </TouchableWithoutFeedback>
         </View>
       </TouchableWithoutFeedback>
@@ -1227,15 +1296,31 @@ const styles = StyleSheet.create({
   },
   contentWrapper: {
     width: SCREEN_WIDTH,
-    maxHeight: SCREEN_HEIGHT * 0.8,
-    minHeight: SCREEN_HEIGHT * 0.5,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -10 },
+    shadowOpacity: 0.35,
+    shadowRadius: 24,
+    elevation: 24,
   },
   content: {
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     width: SCREEN_WIDTH,
-    height: "100%",
     flexDirection: "column" as const,
+    overflow: "hidden",
+    flex: 1,
+  },
+  sheetHandleContainer: {
+    paddingTop: 10,
+    paddingBottom: 2,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  sheetHandle: {
+    width: 44,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: "rgba(255,255,255,0.18)",
   },
   header: {
     flexDirection: "row",
@@ -1347,9 +1432,6 @@ const styles = StyleSheet.create({
   scrollContent: {
     padding: Math.max(20, SCREEN_WIDTH * 0.05),
     flexGrow: 1,
-  },
-  keyboardAvoidingView: {
-    flex: 0,
   },
   goalTitleSection: {
     marginBottom: 24,

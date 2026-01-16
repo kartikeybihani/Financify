@@ -1699,18 +1699,41 @@ const REASONING_MODEL_PAID_SCOUT =
   process.env.REASONING_MODEL_PAID_SCOUT || "meta-llama/llama-4-scout";
 const STANDARD_MODEL = "meta-llama/llama-3.2-3b-instruct";
 const TERTIARY_MODEL = "mistralai/mistral-small-3.1-24b-instruct";
+// Keep total analysis runtime safely under Vercel's 60s maxDuration.
+const ANALYSIS_TOTAL_BUDGET_MS = 50000;
 
 function getOpenRouterKey() {
   return process.env.OPENROUTER_GROK_KEY || process.env.OPENROUTER_API_KEY;
 }
 
-async function callWithFallback(models, callFn, timeoutMs, label = "LLM") {
+async function callWithFallback(
+  models,
+  callFn,
+  timeoutMs,
+  label = "LLM",
+  options = {}
+) {
+  const baseTimeoutMs = timeoutMs;
+  const deadlineMs = options.deadlineMs;
   let lastErr = null;
   const tried = [];
 
   for (const model of models) {
     if (!model) continue;
     tried.push(model);
+    // Leave a small buffer so we can still finish DB writes and send the response
+    // before the serverless platform hard-stops the invocation.
+    const remainingMs = deadlineMs
+      ? deadlineMs - Date.now() - 1500
+      : baseTimeoutMs;
+    const attemptTimeoutMs = deadlineMs
+      ? Math.min(baseTimeoutMs, remainingMs)
+      : baseTimeoutMs;
+    if (deadlineMs && attemptTimeoutMs <= 0) {
+      const deadlineError = new Error(`${label} deadline exceeded`);
+      deadlineError.modelsTried = tried;
+      throw deadlineError;
+    }
     try {
       const controller = new AbortController();
       const callPromise = Promise.resolve()
@@ -1723,12 +1746,13 @@ async function callWithFallback(models, callFn, timeoutMs, label = "LLM") {
         });
       const result = await withTimeout(
         callPromise,
-        timeoutMs,
+        attemptTimeoutMs,
         { __timeout: true },
-        () => controller.abort()
+        () => controller.abort(),
+        `${label} (${model})`
       );
       if (result && (result.__timeout || result.__aborted)) {
-        throw new Error(`${label} timeout after ${timeoutMs}ms`);
+        throw new Error(`${label} timeout after ${attemptTimeoutMs}ms`);
       }
       return { result, model };
     } catch (err) {
@@ -1751,6 +1775,8 @@ async function callWithFallback(models, callFn, timeoutMs, label = "LLM") {
  */
 async function analyzeGoalWithLLM(goalData, userId) {
   try {
+    const analysisStartTime = Date.now();
+    const analysisDeadlineMs = analysisStartTime + ANALYSIS_TOTAL_BUDGET_MS;
     console.log("🧠 [GOAL ANALYSIS] Starting analysis for goal:", goalData.id);
 
     // Fetch all data in parallel
@@ -2151,7 +2177,8 @@ async function analyzeGoalWithLLM(goalData, userId) {
       llmModels,
       callLLM,
       30000, // 30 second timeout
-      "Goal Analysis LLM"
+      "Goal Analysis LLM",
+      { deadlineMs: analysisDeadlineMs }
     );
 
     const content =
