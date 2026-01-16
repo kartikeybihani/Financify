@@ -2213,11 +2213,28 @@ export default async function handler(req, res) {
     return res.status(200).json({});
   }
 
+  // Parse body if it's a string (Vercel sometimes doesn't auto-parse)
+  let parsedBody = req.body;
+  if (typeof req.body === "string") {
+    try {
+      parsedBody = JSON.parse(req.body);
+    } catch (e) {
+      console.error("❌ [GOALS] Failed to parse body:", e);
+      parsedBody = {};
+    }
+  }
+
+  console.log(`📥 [GOALS] Request received: ${req.method} ${req.url}`);
+  console.log(`📥 [GOALS] Query:`, req.query);
+  console.log(`📥 [GOALS] Body:`, parsedBody);
+
   // Check if this is an analyze request (via query param or body)
   const isAnalyzeRequest =
     req.query?.action === "analyze" ||
-    req.body?.action === "analyze" ||
-    (req.method === "POST" && req.body?.goalId && !req.body?.label); // Analyze request has goalId but no label
+    parsedBody?.action === "analyze" ||
+    (req.method === "POST" && parsedBody?.goalId && !parsedBody?.label); // Analyze request has goalId but no label
+
+  console.log(`🔍 [GOALS] Is analyze request: ${isAnalyzeRequest}`);
 
   if (isAnalyzeRequest) {
     // Handle goal analysis endpoint
@@ -2249,9 +2266,10 @@ export default async function handler(req, res) {
     }
 
     try {
-      const { goalId } = req.body;
+      const { goalId } = parsedBody;
 
       if (!goalId) {
+        console.error("❌ [GOAL_ANALYZE] Missing goalId in request body");
         return res.status(400).json({ error: "goalId is required" });
       }
 

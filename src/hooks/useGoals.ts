@@ -250,16 +250,28 @@ export function useGoals(pushChat: (sender: "user" | "finny", message: string) =
           const BASE_URL =
             process.env.EXPO_PUBLIC_APP_BASE_URL ||
             "https://financify-rose.vercel.app";
-          await authenticatedFetch(`${BASE_URL}/api/goals?action=analyze`, {
-            method: "POST",
-            body: JSON.stringify({
-              goalId: data.id,
-              action: "analyze",
-            }),
-          }).catch((error) => {
-            logger.error("❌ [GOAL ANALYSIS] Failed to trigger analysis:", error);
-            // Don't show error to user - analysis is optional
-          });
+          logger.info(`🚀 [GOAL ANALYSIS] Triggering analysis for goal: ${data.id}`);
+          const response = await authenticatedFetch(
+            `${BASE_URL}/api/goals?action=analyze`,
+            {
+              method: "POST",
+              body: JSON.stringify({
+                goalId: data.id,
+                action: "analyze",
+              }),
+            }
+          );
+
+          if (!response.ok) {
+            const errorText = await response.text();
+            logger.error(
+              `❌ [GOAL ANALYSIS] Request failed with status ${response.status}:`,
+              errorText
+            );
+          } else {
+            const result = await response.json();
+            logger.info(`✅ [GOAL ANALYSIS] Analysis triggered successfully:`, result);
+          }
         } catch (error) {
           logger.error("❌ [GOAL ANALYSIS] Error triggering analysis:", error);
           // Don't show error to user - analysis is optional

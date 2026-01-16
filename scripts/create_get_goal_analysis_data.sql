@@ -49,57 +49,29 @@ BEGIN
   FROM get_net_worth(p_user_id)
   LIMIT 1;
 
-  -- Fetch investment snapshot
-  SELECT jsonb_build_object(
-    'total_value', total_value,
-    'total_cost_basis', total_cost_basis,
-    'total_gain_loss', total_gain_loss,
-    'total_gain_loss_percent', total_gain_loss_percent,
-    'holdings_count', holdings_count,
-    'accounts_count', accounts_count
+  -- Fetch investment snapshot (pass through all columns from the function)
+  SELECT COALESCE(
+    to_jsonb(inv_snap.*),
+    '{}'::jsonb
   )
   INTO v_investment_snapshot
-  FROM get_investment_snapshot(p_user_id)
+  FROM get_investment_snapshot(p_user_id) AS inv_snap
   LIMIT 1;
 
-  -- Fetch recent transactions
-  SELECT COALESCE(jsonb_agg(
-    jsonb_build_object(
-      'date', date,
-      'amount', amount,
-      'merchant', merchant,
-      'category', category,
-      'name', name
-    )
-    ORDER BY date DESC
-  ), '[]'::jsonb)
+  -- Fetch recent transactions (pass through all columns)
+  SELECT COALESCE(jsonb_agg(to_jsonb(txn.*) ORDER BY txn.date DESC), '[]'::jsonb)
   INTO v_recent_transactions
-  FROM get_recent_transactions(p_user_id, p_transaction_limit);
+  FROM get_recent_transactions(p_user_id, p_transaction_limit) AS txn;
 
-  -- Fetch spend by category
-  SELECT COALESCE(jsonb_agg(
-    jsonb_build_object(
-      'category', category,
-      'total_spend', total_spend,
-      'txn_count', txn_count
-    )
-    ORDER BY total_spend DESC
-  ), '[]'::jsonb)
+  -- Fetch spend by category (pass through all columns)
+  SELECT COALESCE(jsonb_agg(to_jsonb(cat.*) ORDER BY cat.total_spend DESC), '[]'::jsonb)
   INTO v_spend_by_category
-  FROM get_spend_by_category(p_user_id, v_default_start, v_default_end);
+  FROM get_spend_by_category(p_user_id, v_default_start, v_default_end) AS cat;
 
-  -- Fetch cashflow
-  SELECT COALESCE(jsonb_agg(
-    jsonb_build_object(
-      'month', month,
-      'income', income,
-      'expenses', expenses,
-      'net', net
-    )
-    ORDER BY month DESC
-  ), '[]'::jsonb)
+  -- Fetch cashflow (pass through all columns)
+  SELECT COALESCE(jsonb_agg(to_jsonb(cf.*) ORDER BY cf.month DESC), '[]'::jsonb)
   INTO v_cashflow
-  FROM get_cashflow_monthly(p_user_id, p_cashflow_months);
+  FROM get_cashflow_monthly(p_user_id, p_cashflow_months) AS cf;
 
   -- Build composite result
   v_result := jsonb_build_object(
