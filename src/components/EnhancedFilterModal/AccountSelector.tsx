@@ -157,7 +157,11 @@ export const AccountSelector: React.FC<AccountSelectorProps> = ({
                         const isSelected = (
                           localFilters.accountIds || []
                         ).includes(account.account_id);
-                        const gradient = getAccountGradient(account.subtype);
+                        const gradient = getAccountGradient(
+                          account.subtype,
+                          account.type,
+                          account.name
+                        );
 
                         return (
                           <TouchableOpacity

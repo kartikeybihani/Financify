@@ -1,40 +1,10 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Account, Category, FilterOptions } from '@/src/components/EnhancedFilterModal/types';
 import { ALL_TIME_PERIODS } from '@/src/components/EnhancedFilterModal/constants';
+import { getAccountGradient } from '@/src/utils/accountGradients';
 
-// Get card gradient based on account type
-export const getAccountGradient = (subtype: string) => {
-  const gradients: {
-    [key: string]: {
-      colors: readonly [string, string];
-      start: { x: number; y: number };
-      end: { x: number; y: number };
-    };
-  } = {
-    checking: {
-      colors: ["#4A90E2", "#357AFF"] as const,
-      start: { x: 0, y: 0 },
-      end: { x: 1, y: 1 },
-    },
-    savings: {
-      colors: ["#f093fb", "#f5576c"] as const,
-      start: { x: 0, y: 0 },
-      end: { x: 1, y: 1 },
-    },
-    "credit card": {
-      colors: ["#1e3a8a", "#1e40af"] as const,
-      start: { x: 0, y: 0 },
-      end: { x: 1, y: 1 },
-    },
-    default: {
-      colors: ["#a8edea", "#fed6e3"] as const,
-      start: { x: 0, y: 0 },
-      end: { x: 1, y: 1 },
-    },
-  };
-
-  return gradients[subtype.toLowerCase()] || gradients.default;
-};
+// Re-export getAccountGradient for backward compatibility
+export { getAccountGradient };
 
 // Get account type icon
 export const getAccountIcon = (subtype: string): keyof typeof Ionicons.glyphMap => {

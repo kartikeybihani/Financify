@@ -1,5 +1,5 @@
 // React hook for managing budgets
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { DeviceEventEmitter } from "react-native";
 import {
   getBudgetSummary,
@@ -72,11 +72,16 @@ export function useBudget(categoryBreakdown?: CategoryBreakdown): UseBudgetRetur
   );
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Track if we've done the initial load - only show loading spinner on initial load, not refreshes
+  const hasInitiallyLoadedRef = useRef(false);
 
   // Load budget data
-  const loadBudget = useCallback(async () => {
+  const loadBudget = useCallback(async (isRefresh: boolean = false) => {
     try {
-      setLoading(true);
+      // Only set loading state on initial load, not on refreshes
+      if (!isRefresh && !hasInitiallyLoadedRef.current) {
+        setLoading(true);
+      }
       setError(null);
 
       const authResult = await getAuthenticatedUser();
@@ -91,6 +96,7 @@ export function useBudget(categoryBreakdown?: CategoryBreakdown): UseBudgetRetur
 
       const summary = await getBudgetSummary(authResult.user.id);
       setBudgetSummary(summary);
+      hasInitiallyLoadedRef.current = true;
     } catch (err) {
       logger.error("❌ [BUDGET] Error loading budget:", err);
       setError(err instanceof Error ? err.message : "Failed to load budget");
@@ -562,7 +568,8 @@ export function useBudget(categoryBreakdown?: CategoryBreakdown): UseBudgetRetur
 
   // Actions
   const refreshBudget = useCallback(async () => {
-    await loadBudget();
+    // Pass isRefresh=true to prevent showing loading spinner on refresh
+    await loadBudget(true);
   }, [loadBudget]);
 
   const updateCategoryBudget = useCallback(

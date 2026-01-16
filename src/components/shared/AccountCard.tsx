@@ -9,6 +9,7 @@ import {
 import { LinearGradient } from "expo-linear-gradient";
 import { FontAwesome } from "@expo/vector-icons";
 import { Account } from "@/src/types/plaid";
+import { getAccountGradientColors } from "@/src/utils/accountGradients";
 
 interface AccountCardProps {
   account: Account;
@@ -16,38 +17,6 @@ interface AccountCardProps {
   height?: number;
   showFullCard?: boolean;
 }
-
-// Card gradient schemes based on account type
-const getAccountGradient = (accountName?: string, accountType?: string) => {
-  const normalizedType = (accountType || "").toLowerCase();
-  const normalizedName = (accountName || "").toLowerCase();
-
-  // Credit cards
-  if (normalizedType.includes("credit") || normalizedName.includes("credit")) {
-    return ["#151f59", "#343d70"] as const;
-  }
-
-  // Savings accounts
-  if (normalizedType.includes("saving") || normalizedName.includes("saving")) {
-    return ["#0d7377", "#2bb5a0"] as const;
-  }
-
-  // Investment accounts
-  if (
-    normalizedType.includes("investment") ||
-    normalizedName.includes("investment")
-  ) {
-    return ["#04780d", "#02ab10"] as const;
-  }
-
-  // Loan accounts
-  if (normalizedType.includes("loan") || normalizedName.includes("loan")) {
-    return ["#3b82db", "#0091c7"] as const;
-  }
-
-  // Default gradient for checking/depository accounts
-  return ["#1a759f", "#5aa3c7"] as const;
-};
 
 // Get appropriate icon for account type
 const getAccountIcon = (accountType?: string) => {
@@ -83,7 +52,11 @@ export default function AccountCard({
   const isSmallPhone = screenHeight < 700;
   const isTallPhone = screenHeight >= 840;
 
-  const gradient = getAccountGradient(account.name, account.type);
+  const gradient = getAccountGradientColors(
+    account.subtype,
+    account.type,
+    account.name
+  );
   const iconName = getAccountIcon(account.type);
 
   const cardHeight = height || (isSmallPhone ? 45 : isTallPhone ? 85 : 65);

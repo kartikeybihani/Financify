@@ -150,6 +150,7 @@ export interface CategoryBudgetCardProps {
   hasChildren?: boolean;
   isCollapsed?: boolean;
   onToggleCollapse?: () => void;
+  isLoading?: boolean;
 }
 
 export interface SubcategoryRowProps {
@@ -157,6 +158,7 @@ export interface SubcategoryRowProps {
   statusColor: string;
   formatCategoryName: (category: string) => string;
   onOpenActions: () => void;
+  isLoading?: boolean;
 }
 
 export interface CategoryActionSheetProps {

@@ -9,6 +9,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { FontAwesome } from "@expo/vector-icons";
+import { getAccountGradient } from "@/src/utils/accountGradients";
 
 // Font size constants for consistency
 const FONTS = {
@@ -33,50 +34,6 @@ interface AccountItemProps {
   accountData?: any;
 }
 
-// Card gradient schemes based on account type
-const getCardGradient = (type: string) => {
-  const normalizedType = type.toLowerCase();
-
-  if (normalizedType.includes("credit")) {
-    return {
-      colors: ["#151f59", "#343d70"] as const,
-      start: { x: 0, y: 0 },
-      end: { x: 1, y: 1 },
-    };
-  }
-
-  if (normalizedType.includes("saving")) {
-    return {
-      colors: ["#0d7377", "#2bb5a0"] as const,
-      start: { x: 0, y: 0 },
-      end: { x: 1, y: 1 },
-    };
-  }
-
-  if (normalizedType.includes("investment")) {
-    return {
-      colors: ["#04780d", "#02ab10"] as const,
-      start: { x: 0, y: 0 },
-      end: { x: 1, y: 1 },
-    };
-  }
-
-  if (normalizedType.includes("loan")) {
-    return {
-      colors: ["#3b82db", "#0091c7"] as const,
-      start: { x: 0, y: 0 },
-      end: { x: 1, y: 1 },
-    };
-  }
-
-  // Default gradient for checking/depository accounts
-  return {
-    colors: ["#1a759f", "#5aa3c7"] as const,
-    start: { x: 0, y: 0 },
-    end: { x: 1, y: 1 },
-  };
-};
-
 export default function AccountItem({
   name,
   type,
@@ -88,7 +45,9 @@ export default function AccountItem({
   accountId,
   accountData,
 }: AccountItemProps) {
-  const gradient = getCardGradient(type);
+  // Get subtype from accountData if available, otherwise infer from type/name
+  const subtype = accountData?.subtype || null;
+  const gradient = getAccountGradient(subtype, type, name);
 
   return (
     <View style={styles.cardWrapper}>

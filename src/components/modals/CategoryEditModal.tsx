@@ -3,7 +3,6 @@ import {
   Modal,
   View,
   Text,
-  TouchableWithoutFeedback,
   TextInput,
   Animated,
   Easing,
@@ -12,8 +11,9 @@ import {
   TouchableOpacity,
   ScrollView,
   Alert,
-  KeyboardAvoidingView,
   Platform,
+  Keyboard,
+  Pressable,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -68,8 +68,10 @@ const CategoryEditModal: React.FC<Props> = ({
   const [mode, setMode] = useState<"edit" | "group">("edit");
   const screenHeight = Dimensions.get("window").height;
   const slideAnim = useRef(new Animated.Value(screenHeight)).current;
+  const keyboardOffset = useRef(new Animated.Value(0)).current;
   const [rendered, setRendered] = useState(visible);
   const [currentCategory, setCurrentCategory] = useState(category);
+  const amountInputRef = useRef<TextInput>(null);
 
   useEffect(() => {
     if (visible && category) {
@@ -94,6 +96,37 @@ const CategoryEditModal: React.FC<Props> = ({
     }
   }, [visible, category, rendered, screenHeight, slideAnim]);
 
+  // Handle keyboard events manually for smooth bottom sheet behavior
+  useEffect(() => {
+    const showEvent =
+      Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+    const hideEvent =
+      Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+
+    const showSub = Keyboard.addListener(showEvent, (e) => {
+      Animated.timing(keyboardOffset, {
+        toValue: e.endCoordinates.height,
+        duration: Platform.OS === "ios" ? e.duration || 250 : 200,
+        easing: Easing.out(Easing.ease),
+        useNativeDriver: true,
+      }).start();
+    });
+
+    const hideSub = Keyboard.addListener(hideEvent, (e) => {
+      Animated.timing(keyboardOffset, {
+        toValue: 0,
+        duration: Platform.OS === "ios" ? e.duration || 250 : 200,
+        easing: Easing.in(Easing.ease),
+        useNativeDriver: true,
+      }).start();
+    });
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, [keyboardOffset]);
+
   // Use category prop directly instead of currentCategory to avoid timing issues
   if (!visible || !category) return null;
 
@@ -102,18 +135,13 @@ const CategoryEditModal: React.FC<Props> = ({
     return isNaN(next) || next < 0 ? null : next;
   };
 
-  const handleSave = async () => {
+  const handleSave = () => {
     const parsed = parseAmount();
     if (parsed === null) return;
 
-    // Don't show loading - optimistic update handles UI instantly
-    // Close modal immediately for instant feedback
     onClose();
-
-    // Save in background (optimistic update already handled in parent)
-    // Fire and forget - parent handles rollback on failure
     onSave(parsed).catch(() => {
-      // Error handling is done in parent component
+      // parent handles rollback
     });
   };
 
@@ -168,45 +196,41 @@ const CategoryEditModal: React.FC<Props> = ({
       visible={visible}
       onRequestClose={onClose}
     >
-      <TouchableWithoutFeedback onPress={onClose}>
-        <View style={styles.overlay}>
-          <TouchableWithoutFeedback onPress={(e) => e.stopPropagation()}>
-            <KeyboardAvoidingView
-              behavior={Platform.OS === "ios" ? "padding" : "height"}
-              style={styles.keyboardAvoidingView}
-              keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
-            >
-              <Animated.View
-                style={[
-                  styles.container,
-                  {
-                    height: screenHeight * 0.5, // 50% height as requested
-                    transform: [{ translateY: slideAnim }],
-                  },
-                ]}
-              >
-              <View style={styles.handle} />
-              <ScrollView
-                style={styles.scrollContent}
-                contentContainerStyle={styles.scrollContentContainer}
-                showsVerticalScrollIndicator={true}
-                keyboardShouldPersistTaps="handled"
-                nestedScrollEnabled={true}
-              >
-                <View style={styles.header}>
-                  <View style={styles.headerContent}>
-                    <Text style={styles.title}>
-                      {currentCategory?.category ||
-                        category?.category ||
-                        "Category"}
-                    </Text>
-                    {parentLabel && (
-                      <Text style={styles.subtitle}>
-                        Child of {parentLabel}
-                      </Text>
-                    )}
-                  </View>
-                </View>
+      <View style={styles.overlay}>
+        <Pressable
+          onPress={onClose}
+          style={StyleSheet.absoluteFillObject}
+        />
+        <Animated.View
+          style={[
+            styles.container,
+            {
+              height: screenHeight * 0.5, // 50% height as requested
+              transform: [
+                { translateY: slideAnim },
+                { translateY: Animated.multiply(keyboardOffset, -1) },
+              ],
+            },
+          ]}
+        >
+          <View style={styles.handle} />
+          <ScrollView
+            style={styles.scrollContent}
+            contentContainerStyle={styles.scrollContentContainer}
+            showsVerticalScrollIndicator={true}
+            keyboardShouldPersistTaps="always"
+            nestedScrollEnabled={true}
+          >
+            <View style={styles.header}>
+              <View style={styles.headerContent}>
+                <Text style={styles.title}>
+                  {currentCategory?.category || category?.category || "Category"}
+                </Text>
+                {parentLabel && (
+                  <Text style={styles.subtitle}>Child of {parentLabel}</Text>
+                )}
+              </View>
+            </View>
 
                 {mode === "edit" ? (
                   <>
@@ -216,6 +240,7 @@ const CategoryEditModal: React.FC<Props> = ({
                       <View style={styles.inputRow}>
                         <Text style={styles.prefix}>$</Text>
                         <TextInput
+                          ref={amountInputRef}
                           style={styles.input}
                           keyboardType="decimal-pad"
                           value={amount}
@@ -225,12 +250,41 @@ const CategoryEditModal: React.FC<Props> = ({
                         />
                       </View>
                       <View style={styles.actions}>
-                        <Text style={styles.cancel} onPress={onClose}>
-                          Cancel
-                        </Text>
-                        <Text style={styles.save} onPress={handleSave}>
-                          Save
-                        </Text>
+                        <TouchableOpacity
+                          onPress={() => {
+                            onClose();
+                          }}
+                          activeOpacity={0.7}
+                          delayPressIn={0}
+                          style={styles.buttonContainer}
+                        >
+                          <LinearGradient
+                            colors={[
+                              "rgba(255, 255, 255, 0.12)",
+                              "rgba(255, 255, 255, 0.04)",
+                            ]}
+                            start={{ x: 0, y: 0 }}
+                            end={{ x: 1, y: 1 }}
+                            style={styles.button}
+                          >
+                            <Text style={styles.cancel}>Cancel</Text>
+                          </LinearGradient>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          onPress={handleSave}
+                          activeOpacity={0.7}
+                          delayPressIn={0}
+                          style={styles.buttonContainer}
+                        >
+                          <LinearGradient
+                            colors={["#4A90E2", "#5BA3F5"]}
+                            start={{ x: 0, y: 0 }}
+                            end={{ x: 1, y: 1 }}
+                            style={styles.button}
+                          >
+                            <Text style={styles.save}>Save</Text>
+                          </LinearGradient>
+                        </TouchableOpacity>
                       </View>
                     </View>
 
@@ -442,11 +496,8 @@ const CategoryEditModal: React.FC<Props> = ({
                   </>
                 )}
               </ScrollView>
-            </Animated.View>
-            </KeyboardAvoidingView>
-          </TouchableWithoutFeedback>
-        </View>
-      </TouchableWithoutFeedback>
+        </Animated.View>
+      </View>
     </Modal>
   );
 };
@@ -456,9 +507,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.75)",
     justifyContent: "flex-end",
-  },
-  keyboardAvoidingView: {
-    width: "100%",
   },
   container: {
     backgroundColor: "#1f1f1f",
@@ -541,16 +589,32 @@ const styles = StyleSheet.create({
   actions: {
     flexDirection: "row",
     justifyContent: "flex-end",
-    gap: 16,
-    marginTop: 16,
+    gap: 12,
+    marginTop: 20,
+  },
+  buttonContainer: {
+    borderRadius: 28,
+    overflow: "hidden",
+  },
+  button: {
+    paddingVertical: 10,
+    paddingHorizontal: 28,
+    borderRadius: 28,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.15)",
+    alignItems: "center",
+    justifyContent: "center",
+    minWidth: 100,
   },
   cancel: {
-    color: "rgba(255,255,255,0.7)",
+    color: "rgba(255,255,255,0.9)",
     fontWeight: "600",
+    fontSize: 15,
   },
   save: {
-    color: "#4A90E2",
+    color: "#fff",
     fontWeight: "700",
+    fontSize: 15,
   },
   divider: {
     height: 1,

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, useMemo } from "react";
 import {
   View,
   Text,
@@ -160,6 +160,10 @@ const BudgetView: React.FC<BudgetViewProps> = ({
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [editTarget, setEditTarget] = useState<BudgetData | null>(null);
   const [editParentLabel, setEditParentLabel] = useState<string | null>(null);
+  // Track which categories are currently loading (for per-row loading state)
+  const [loadingCategories, setLoadingCategories] = useState<Set<string>>(
+    new Set()
+  );
 
   const openActions = (item: BudgetData, parentLabel?: string | null) => {
     setActionTarget({ item, parentLabel: parentLabel || null });
@@ -228,6 +232,35 @@ const BudgetView: React.FC<BudgetViewProps> = ({
     setEditModalVisible(false);
     setEditTarget(null);
     setEditParentLabel(null);
+  };
+
+  // Helper to get loading key for a category (prefer categoryId, fallback to entryId)
+  const getLoadingKey = (categoryId: string | null | undefined, entryId?: string | null): string | null => {
+    if (categoryId) return `category_${categoryId}`;
+    if (entryId) return `entry_${entryId}`;
+    return null;
+  };
+
+  // Helper to set loading state for a category
+  const setCategoryLoading = (categoryId: string | null | undefined, entryId: string | null | undefined, isLoading: boolean) => {
+    const key = getLoadingKey(categoryId, entryId);
+    if (!key) return;
+
+    setLoadingCategories((prev) => {
+      const next = new Set(prev);
+      if (isLoading) {
+        next.add(key);
+      } else {
+        next.delete(key);
+      }
+      return next;
+    });
+  };
+
+  // Helper to check if a category is loading
+  const isCategoryLoading = (categoryId: string | null | undefined, entryId?: string | null): boolean => {
+    const key = getLoadingKey(categoryId, entryId);
+    return key ? loadingCategories.has(key) : false;
   };
 
   return (
@@ -312,6 +345,7 @@ const BudgetView: React.FC<BudgetViewProps> = ({
               const cardCategoryId =
                 budget.categoryId || entryInfo?.categoryId || null;
               const children = budget.children || [];
+              const isLoadingCard = isCategoryLoading(cardCategoryId, cardEntryId);
 
               // CRITICAL: Always include index to ensure uniqueness, even when categoryId exists
               // This prevents duplicate keys when multiple budgets share the same categoryId
@@ -347,6 +381,7 @@ const BudgetView: React.FC<BudgetViewProps> = ({
                     onDelete={undefined}
                     delay={index * 30}
                     onOpenActions={() => openTransactions(budget)}
+                    isLoading={isLoadingCard}
                   />
                   {children.length > 0 &&
                     (() => {
@@ -362,6 +397,7 @@ const BudgetView: React.FC<BudgetViewProps> = ({
                                 : 0;
                             const childStatusColor =
                               getStatusColor(childProgress);
+                            const isLoadingChild = isCategoryLoading(child.categoryId, child.entryId);
                             // CRITICAL: Always include childIndex to ensure uniqueness, even when categoryId exists
                             // This prevents duplicate keys when multiple children share the same categoryId
                             const childUniqueKey = child.categoryId
@@ -376,6 +412,7 @@ const BudgetView: React.FC<BudgetViewProps> = ({
                                 onOpenActions={() =>
                                   openTransactions(child, budget.category)
                                 }
+                                isLoading={isLoadingChild}
                               />
                             );
                           })}
@@ -442,6 +479,9 @@ const BudgetView: React.FC<BudgetViewProps> = ({
         onClose={closeEdit}
         onSave={async (amount) => {
           if (!editTarget || !onUpdateBudget) return false;
+
+          // Set loading state for this category
+          setCategoryLoading(editTarget.categoryId, editTarget.entryId, true);
 
           // OPTIMISTIC UPDATE: Update UI immediately
           const updatedBudgets = finalBudgets.map((budget) => {
@@ -523,6 +563,9 @@ const BudgetView: React.FC<BudgetViewProps> = ({
                 "[BUDGET] Error updating budget, rolling back:",
                 error
               );
+            } finally {
+              // Clear loading state
+              setCategoryLoading(editTarget.categoryId, editTarget.entryId, false);
             }
           })();
 
@@ -535,12 +578,29 @@ const BudgetView: React.FC<BudgetViewProps> = ({
           if (!editTarget || !onDeleteCategory || !editTarget.categoryId) {
             return;
           }
-          const success = await onDeleteCategory(
-            editTarget.categoryId,
-            editTarget.entryId || null
-          );
-          if (success) {
-            closeEdit();
+
+          // Set loading state for this category
+          setCategoryLoading(editTarget.categoryId, editTarget.entryId, true);
+
+          try {
+            const success = await onDeleteCategory(
+              editTarget.categoryId,
+              editTarget.entryId || null
+            );
+            if (success) {
+              closeEdit();
+              // Clear optimistic updates since category was deleted
+              setOptimisticBudgets(null);
+              // Reload budget data including monthly total after category deletion
+              if (refreshBudget) {
+                await refreshBudget();
+              }
+            }
+          } catch (error) {
+            logger.error("[BUDGET] Error deleting category:", error);
+          } finally {
+            // Clear loading state
+            setCategoryLoading(editTarget.categoryId, editTarget.entryId, false);
           }
         }}
       />
@@ -697,7 +757,18 @@ const SubcategoryRow: React.FC<SubcategoryRowProps> = ({
   statusColor,
   formatCategoryName,
   onOpenActions,
+  isLoading = false,
 }) => {
+  // Animate opacity when loading state changes
+  const loadingOpacityAnim = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    Animated.timing(loadingOpacityAnim, {
+      toValue: isLoading ? 0.5 : 1,
+      duration: 200,
+      useNativeDriver: true,
+    }).start();
+  }, [isLoading, loadingOpacityAnim]);
   const iconDisplay = (() => {
     if (item.icon) {
       const emojiRegex =
@@ -716,10 +787,18 @@ const SubcategoryRow: React.FC<SubcategoryRowProps> = ({
   const progress = item.budget > 0 ? (item.spent / item.budget) * 100 : 0;
 
   return (
+    <Animated.View
+      style={[
+        styles.subcategoryCard,
+        {
+          opacity: loadingOpacityAnim,
+        },
+      ]}
+    >
     <TouchableOpacity
-      style={styles.subcategoryCard}
       activeOpacity={0.85}
       onPress={onOpenActions}
+      disabled={isLoading}
     >
       <View style={styles.subcategoryRow}>
         <View style={styles.subcategorySpacer}>
@@ -765,6 +844,7 @@ const SubcategoryRow: React.FC<SubcategoryRowProps> = ({
         </View>
       </View>
     </TouchableOpacity>
+    </Animated.View>
   );
 };
 
@@ -1077,6 +1157,7 @@ const CategoryBudgetCard: React.FC<CategoryBudgetCardProps> = ({
   hasChildren = false,
   isCollapsed = false,
   onToggleCollapse,
+  isLoading = false,
 }) => {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const arrowScaleAnim = useRef(new Animated.Value(1)).current;
@@ -1152,16 +1233,31 @@ const CategoryBudgetCard: React.FC<CategoryBudgetCardProps> = ({
   const remaining = budget - spent;
   const overspent = isOverBudget ? spent - budget : 0;
 
+  // Animate opacity when loading state changes
+  const loadingOpacityAnim = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    Animated.timing(loadingOpacityAnim, {
+      toValue: isLoading ? 0.5 : 1,
+      duration: 200,
+      useNativeDriver: true,
+    }).start();
+  }, [isLoading, loadingOpacityAnim]);
+
   return (
     <Animated.View
       style={[
         styles.categoryCard,
         {
-          opacity: fadeAnim,
+          opacity: Animated.multiply(fadeAnim, loadingOpacityAnim),
         },
       ]}
     >
-      <TouchableOpacity activeOpacity={0.85} onPress={onOpenActions}>
+      <TouchableOpacity
+        activeOpacity={0.85}
+        onPress={onOpenActions}
+        disabled={isLoading}
+      >
         <View style={styles.categoryCardContent}>
           {/* Compact Row Layout */}
           <View style={styles.categoryRow}>

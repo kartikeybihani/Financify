@@ -218,6 +218,7 @@ export default function TransactionDetailModal({
             ...data,
             account_name: data.accounts?.name || "Unknown Account",
             account_type: data.accounts?.type || "depository",
+            account_subtype: data.accounts?.subtype || null,
             institution_name:
               data.accounts?.user_items?.institution_name ||
               "Unknown Institution",
@@ -833,7 +834,8 @@ export default function TransactionDetailModal({
                           name: transaction.account_name || "Unknown Account",
                           mask: transaction.account_mask,
                           type: transaction.account_type || "depository",
-                          subtype: "checking", // Default subtype since it's required
+                          subtype:
+                            (transaction as any).account_subtype || null,
                           institution_name: transaction.institution_name,
                         }}
                         onPress={handleAccountPress}
