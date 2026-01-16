@@ -253,10 +253,12 @@ const TERTIARY_MODEL = "mistralai/mistral-small-3.1-24b-instruct";
 // Classification cache - in-memory cache for classification results
 const classificationCache = new Map();
 const CLASSIFICATION_CACHE_TTL = 60 * 60 * 1000; // 1 hour in milliseconds
+const CLASSIFICATION_CACHE_MAX_SIZE = 2000; // Maximum number of entries
 
 // Memory cache - in-memory cache for memory search results (to avoid duplicate loads)
 const memoryCache = new Map();
 const MEMORY_CACHE_TTL = 5 * 60 * 1000; // 5 minutes - memories can change, but same query within 5min should reuse
+const MEMORY_CACHE_MAX_SIZE = 5000; // Maximum number of entries
 
 // Data cache - in-memory cache for user data with different TTLs
 const dataCache = new Map();
@@ -445,7 +447,7 @@ const NEED_CONFIG = {
 const CACHE_STRATEGY = {
   // In-memory cache settings
   in_memory: {
-    max_size: 1000, // Maximum number of entries
+    max_size: 2000, // Maximum number of entries
     cleanup_interval: 10 * 60 * 1000, // Cleanup every 10 minutes
     ttl_multiplier: 0.5, // In-memory TTL is 50% of persistent TTL
   },
@@ -535,6 +537,13 @@ function setCachedClassification(message, result) {
   const key = generateClassificationCacheKey(message);
   const expires_at = Date.now() + CLASSIFICATION_CACHE_TTL;
 
+  // Enforce max size: remove oldest entries if at capacity
+  if (classificationCache.size >= CLASSIFICATION_CACHE_MAX_SIZE) {
+    // Delete oldest entry (first in Map iteration order)
+    const firstKey = classificationCache.keys().next().value;
+    if (firstKey) classificationCache.delete(firstKey);
+  }
+
   classificationCache.set(key, {
     result,
     expires_at,
@@ -608,6 +617,13 @@ function getCachedMemory(userId, query) {
 function setCachedMemory(userId, query, result) {
   const key = generateMemoryCacheKey(userId, query);
   if (!key) return;
+
+  // Enforce max size: remove oldest entries if at capacity
+  if (memoryCache.size >= MEMORY_CACHE_MAX_SIZE) {
+    // Delete oldest entry (first in Map iteration order)
+    const firstKey = memoryCache.keys().next().value;
+    if (firstKey) memoryCache.delete(firstKey);
+  }
 
   const expires_at = Date.now() + MEMORY_CACHE_TTL;
   memoryCache.set(key, { result, expires_at });
@@ -3077,22 +3093,23 @@ async function handleAsk(
     logInfo(`📝 [PROMPT] Ready (system: ${promptSize}k chars)`);
 
     // Log complete system prompt with clear dividers (only for ask_personalized)
+    // Only log in debug mode (dev) - not in production for efficiency
     if (intent === "ask_personalized") {
-      console.log("\n" + "=".repeat(100));
-      console.log(
+      logDebug("\n" + "=".repeat(100));
+      logDebug(
         "📋 [PROMPT_ENGINE] COMPLETE SYSTEM PROMPT SENT TO LLM (ask_personalized)"
       );
-      console.log("=".repeat(100));
-      console.log(system);
-      console.log("=".repeat(100));
-      console.log("📋 [PROMPT_ENGINE] USER MESSAGE");
-      console.log("=".repeat(100));
-      console.log(userMessage);
-      console.log("=".repeat(100));
-      console.log("📋 [PROMPT_ENGINE] RECENT TURNS");
-      console.log("=".repeat(100));
-      console.log(JSON.stringify(recentTurns, null, 2));
-      console.log("=".repeat(100) + "\n");
+      logDebug("=".repeat(100));
+      logDebug(system);
+      logDebug("=".repeat(100));
+      logDebug("📋 [PROMPT_ENGINE] USER MESSAGE");
+      logDebug("=".repeat(100));
+      logDebug(userMessage);
+      logDebug("=".repeat(100));
+      logDebug("📋 [PROMPT_ENGINE] RECENT TURNS");
+      logDebug("=".repeat(100));
+      logDebug(JSON.stringify(recentTurns, null, 2));
+      logDebug("=".repeat(100) + "\n");
     }
 
     // Memory extraction removed - migrating to Supermemory
@@ -5734,15 +5751,16 @@ async function handleOffTopic(
     const userMessage = userContextParts.join("\n\n");
 
     // Log complete prompt with clear dividers (similar to handleAsk)
-    console.log("\n" + "=".repeat(100));
-    console.log("📋 [OFF_TOPIC] COMPLETE SYSTEM PROMPT SENT TO LLM");
-    console.log("=".repeat(100));
-    console.log(systemPrompt);
-    console.log("=".repeat(100));
-    console.log("📋 [OFF_TOPIC] USER MESSAGE");
-    console.log("=".repeat(100));
-    console.log(userMessage);
-    console.log("=".repeat(100) + "\n");
+    // Only log in debug mode (dev) - not in production for efficiency
+    logDebug("\n" + "=".repeat(100));
+    logDebug("📋 [OFF_TOPIC] COMPLETE SYSTEM PROMPT SENT TO LLM");
+    logDebug("=".repeat(100));
+    logDebug(systemPrompt);
+    logDebug("=".repeat(100));
+    logDebug("📋 [OFF_TOPIC] USER MESSAGE");
+    logDebug("=".repeat(100));
+    logDebug(userMessage);
+    logDebug("=".repeat(100) + "\n");
 
     async function callMainLLM(model, options = {}) {
       const resp = await fetch(

@@ -646,13 +646,15 @@ RULES:
       } catch {
         errorDetails = errorText;
       }
+      // Log full error details server-side only (don't leak to client)
       console.error("❌ [GOAL EXTRACTION] OpenRouter error details:", {
         status: response.status,
         statusText: response.statusText,
         error: errorDetails,
       });
+      // Return generic error message to client (sanitized)
       throw new Error(
-        `OpenRouter error ${response.status}: ${JSON.stringify(errorDetails)}`
+        `Failed to extract goal information. Please try again.`
       );
     }
 
@@ -774,13 +776,15 @@ RULES:
       } catch {
         errorDetails = errorText;
       }
+      // Log full error details server-side only (don't leak to client)
       console.error("❌ [GOAL ANALYSIS] OpenRouter error details:", {
         status: response.status,
         statusText: response.statusText,
         error: errorDetails,
       });
+      // Return generic error message to client (sanitized)
       throw new Error(
-        `OpenRouter error ${response.status}: ${JSON.stringify(errorDetails)}`
+        `Failed to analyze goal. Please try again.`
       );
     }
 

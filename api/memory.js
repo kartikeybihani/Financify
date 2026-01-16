@@ -22,7 +22,8 @@ import {
 // Simple in-memory cache for list endpoint (UI display)
 // Key: userId, Value: { data: [...], timestamp: number }
 const listCache = new Map();
-const LIST_CACHE_TTL_MS = 30000; // 30 seconds cache for list endpoint
+const LIST_CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes cache for list endpoint
+const LIST_CACHE_MAX_SIZE = 2500; // Maximum number of entries
 
 function getCachedList(userId) {
   const cached = listCache.get(userId);
@@ -36,6 +37,12 @@ function getCachedList(userId) {
 }
 
 function setCachedList(userId, data) {
+  // Enforce max size: remove oldest entries if at capacity
+  if (listCache.size >= LIST_CACHE_MAX_SIZE) {
+    // Delete oldest entry (first in Map iteration order)
+    const firstKey = listCache.keys().next().value;
+    if (firstKey) listCache.delete(firstKey);
+  }
   listCache.set(userId, { data, timestamp: Date.now() });
 }
 
@@ -175,11 +182,12 @@ export default async function handler(req, res) {
         return res.status(400).json({ error: "memoryId is required" });
       }
 
+      // Invalidate cache BEFORE deletion to prevent race conditions
+      // This ensures concurrent GET requests will fetch fresh data
+      invalidateListCache(serverUserId);
+
       // v4 API uses memoryId and requires userId for containerTag
       const result = await deleteSupermemoryMemory(memoryId, serverUserId);
-
-      // Invalidate cache after deletion
-      invalidateListCache(serverUserId);
 
       // Delete from database cache
       await deleteCachedSupermemoryDocument(serverUserId, memoryId);
@@ -219,6 +227,10 @@ export default async function handler(req, res) {
         return res.status(400).json({ error: "content is required" });
       }
 
+      // Invalidate cache BEFORE update to prevent race conditions
+      // This ensures concurrent GET requests will fetch fresh data
+      invalidateListCache(serverUserId);
+
       // v4 API uses memoryId and requires userId for containerTag
       const result = await updateSupermemoryMemory(
         memoryId,
@@ -228,9 +240,6 @@ export default async function handler(req, res) {
         },
         serverUserId
       );
-
-      // Invalidate cache after update
-      invalidateListCache(serverUserId);
 
       // Update database cache
       await updateCachedSupermemoryDocument(serverUserId, memoryId, {

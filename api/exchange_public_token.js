@@ -206,6 +206,14 @@ export default async function handler(req, res) {
 
     // Exchange public token for access token
     const { data } = await client.itemPublicTokenExchange({ public_token });
+    
+    if (!data || !data.access_token || !data.item_id) {
+      console.error("❌ Invalid Plaid response: missing access_token or item_id", data);
+      return res.status(500).json({ 
+        error: "Invalid token exchange response from Plaid" 
+      });
+    }
+
     const { access_token, item_id } = data;
 
     // Fetch institution metadata using access_token
