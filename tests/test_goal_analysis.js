@@ -86,7 +86,6 @@ async function testGoalAnalysis(goalInput) {
     const goalRow = {
       user_id: goalInput.user_id,
       label: String(goalInput.label),
-      description: null,
       note: goalInput.note || null,
       target_amount: Math.round(Number(goalInput.target_amount)),
       current_amount: Math.round(Number(goalInput.current_amount || 0)),

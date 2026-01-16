@@ -1288,7 +1288,6 @@ async function createGoalFromSlots(
   const goalRow = {
     user_id: userId,
     label: String(slots.label),
-    description: null,
     note: null,
     target_amount: Math.round(Number(slots.target_amount)),
     current_amount: 0,
@@ -1580,7 +1579,6 @@ Ready to create this goal?`;
   const goalRow = {
     user_id: userId,
     label: String(slots.label),
-    description: null,
     note: null,
     target_amount: Math.round(Number(slots.target_amount)),
     current_amount: 0,
