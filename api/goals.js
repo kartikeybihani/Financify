@@ -1895,41 +1895,55 @@ async function analyzeGoalWithLLM(goalData, userId) {
         }
       })();
 
-      // Apply aggressive timeout - if it hangs, return empty array
-      console.log(`    🔍 [SUPERMEMORY] Wrapping promise with 3s timeout...`);
-      const supermemoryWithTimeout = withTimeout(
-        supermemoryPromise,
-        3000, // 3 second timeout - shorter than Supermemory's 15s internal timeout
-        [], // Return empty array on timeout
-        () => {
-          console.log(
-            `    ⚠️ [SUPERMEMORY] Timeout callback fired - search took too long`
-          );
-        },
-        "Supermemory Search"
-      )
-        .then((supermemoryResults) => {
-          console.log(
-            `    🔍 [SUPERMEMORY] Processing ${
-              supermemoryResults?.length || 0
-            } results...`
-          );
-          const memories = (supermemoryResults || []).map((result) => ({
-            id: result.id,
-            content: result.memory || "",
-            similarity: result.similarity || 0,
-            metadata: result.metadata || {},
-          }));
-          const result = { memories, totalCount: memories.length };
-          if (result?.memories?.length) {
-            console.log(`    ✅ Memories: ${result.memories.length} found`);
+      // Use a hard timeout that ALWAYS resolves - don't let Supermemory block
+      // If it hangs, the timeout will fire and we'll continue with empty results
+      const supermemoryWithTimeout = new Promise((resolve) => {
+        let resolved = false;
+
+        // Hard timeout that ALWAYS fires after 2 seconds
+        const hardTimeout = setTimeout(() => {
+          if (!resolved) {
+            resolved = true;
+            console.log(
+              `    ⚠️ [SUPERMEMORY] Hard timeout (2s) - skipping to prevent blocking`
+            );
+            resolve({ memories: [], totalCount: 0 });
           }
-          return result;
-        })
-        .catch((err) => {
-          console.error(`    ❌ [SUPERMEMORY] Processing error:`, err.message);
-          return { memories: [], totalCount: 0 };
-        });
+        }, 2000);
+
+        // Try to fetch, but don't let it block
+        supermemoryPromise
+          .then((results) => {
+            if (!resolved) {
+              resolved = true;
+              clearTimeout(hardTimeout);
+              console.log(
+                `    🔍 [SUPERMEMORY] Processing ${
+                  results?.length || 0
+                } results...`
+              );
+              const memories = (results || []).map((result) => ({
+                id: result.id,
+                content: result.memory || "",
+                similarity: result.similarity || 0,
+                metadata: result.metadata || {},
+              }));
+              const result = { memories, totalCount: memories.length };
+              if (result?.memories?.length) {
+                console.log(`    ✅ Memories: ${result.memories.length} found`);
+              }
+              resolve(result);
+            }
+          })
+          .catch((err) => {
+            if (!resolved) {
+              resolved = true;
+              clearTimeout(hardTimeout);
+              console.error(`    ❌ [SUPERMEMORY] Error:`, err.message);
+              resolve({ memories: [], totalCount: 0 });
+            }
+          });
+      });
 
       const isTestId =
         goalData.id &&
