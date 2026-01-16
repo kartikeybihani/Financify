@@ -305,6 +305,23 @@ export function useGoals(pushChat: (sender: "user" | "finny", message: string) =
 
   const deleteGoal = async (id: string): Promise<void> => {
     try {
+      // Fetch goal data before deletion for memory storage
+      let goalDataBeforeDelete = null;
+      try {
+        const { data: goalData, error: fetchError } = await supabase
+          .from('goals')
+          .select('*')
+          .eq('id', id)
+          .single();
+
+        if (!fetchError && goalData) {
+          goalDataBeforeDelete = goalData;
+        }
+      } catch (fetchErr) {
+        logger.warn("Could not fetch goal data before deletion:", fetchErr);
+        // Continue with deletion even if fetch fails
+      }
+
       const { error } = await supabase
         .from('goals')
         .delete()
@@ -313,6 +330,38 @@ export function useGoals(pushChat: (sender: "user" | "finny", message: string) =
       if (error) {
         logger.error("Error deleting goal:", error);
         throw error;
+      }
+
+      // Store goal deletion memory in Supermemory (non-blocking)
+      if (goalDataBeforeDelete) {
+        setTimeout(async () => {
+          try {
+            const BASE_URL =
+              process.env.EXPO_PUBLIC_APP_BASE_URL ||
+              "https://financify-rose.vercel.app";
+            await authenticatedFetch(`${BASE_URL}/api/memory`, {
+              method: "POST",
+              body: JSON.stringify({
+                type: "goal_deletion",
+                goalData: {
+                  id: goalDataBeforeDelete.id,
+                  label: goalDataBeforeDelete.label,
+                  target_amount: goalDataBeforeDelete.target_amount,
+                  current_amount: goalDataBeforeDelete.current_amount,
+                  target_date: goalDataBeforeDelete.target_date,
+                  category: goalDataBeforeDelete.category,
+                  note: goalDataBeforeDelete.note,
+                  status: goalDataBeforeDelete.status,
+                },
+                deletedVia: "goals_screen",
+              }),
+            }).catch((error) => {
+              logger.error("❌ [GOAL MEMORY] Failed to store goal deletion memory:", error);
+            });
+          } catch (error) {
+            logger.error("❌ [GOAL MEMORY] Error storing goal deletion memory:", error);
+          }
+        }, 0);
       }
 
       // Clear cache first to ensure fresh data, then refresh from server

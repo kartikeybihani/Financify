@@ -10,6 +10,7 @@ import {
   updateSupermemoryMemory,
   storeOnboardingMemory,
   storeGoalCreationMemory,
+  storeGoalDeletionMemory,
   storeMessageFeedback,
   loadUserProfile,
   getCachedSupermemoryDocuments,
@@ -393,6 +394,42 @@ export default async function handler(req, res) {
           `✅ [MEMORY_API] POST success - stored goal creation memory`
         );
         return res.status(200).json({ success: true, result });
+      } else if (type === "goal_deletion") {
+        // Store goal deletion memory
+        const { goalData, deletedVia } = req.body;
+        console.log(
+          `🔍 [MEMORY_API] POST - goal_deletion, goalId: ${goalData?.id}, deletedVia: ${deletedVia}`
+        );
+
+        if (!goalData || !goalData.id) {
+          console.log(`⚠️ [MEMORY_API] POST - missing required fields`);
+          return res.status(400).json({
+            error: "Missing required fields: goalData with id",
+          });
+        }
+
+        const result = await storeGoalDeletionMemory(
+          serverUserId,
+          goalData,
+          deletedVia || "goals_screen"
+        );
+
+        if (!result) {
+          console.log(
+            `⚠️ [MEMORY_API] POST - failed to store goal deletion memory`
+          );
+          return res.status(500).json({
+            error: "Failed to store goal deletion memory",
+          });
+        }
+
+        // Invalidate cache after storing new memory
+        invalidateListCache(serverUserId);
+
+        console.log(
+          `✅ [MEMORY_API] POST success - stored goal deletion memory`
+        );
+        return res.status(200).json({ success: true, result });
       } else {
         console.log(`⚠️ [MEMORY_API] POST - unsupported type: ${type}`);
         return res.status(400).json({
@@ -401,6 +438,7 @@ export default async function handler(req, res) {
             "onboarding_profile",
             "message_feedback",
             "goal_creation",
+            "goal_deletion",
           ],
         });
       }
