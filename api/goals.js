@@ -2116,9 +2116,14 @@ async function analyzeGoalWithLLM(goalData, userId) {
     const budget = budgetPeriod?.data;
 
     // Format budget data
+    // Filter out entries with null category_id (like the "Housing" entry that has category_id=null)
     let formattedBudget = null;
     if (budget && budget.budget_entries) {
-      const totalBudget = budget.budget_entries.reduce(
+      // Only include entries that have a valid category_id (scope_type="category" entries should have category_id)
+      const validEntries = budget.budget_entries.filter(
+        (entry) => entry.category_id != null
+      );
+      const totalBudget = validEntries.reduce(
         (sum, entry) => sum + Number(entry.limit_amount || 0),
         0
       );
@@ -2128,7 +2133,7 @@ async function analyzeGoalWithLLM(goalData, userId) {
         period_start: budget.period_start,
         period_end: budget.period_end,
         status: budget.status,
-        categories: budget.budget_entries.map((entry) => ({
+        categories: validEntries.map((entry) => ({
           category: entry.label,
           limit: entry.limit_amount,
         })),

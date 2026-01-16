@@ -143,7 +143,10 @@ const GoalDetailModal = ({
 
     const maxSheetHeight = Math.max(
       320,
-      SCREEN_HEIGHT - Math.max(insets.top, 12) - 12 - Math.max(0, keyboardHeight)
+      SCREEN_HEIGHT -
+        Math.max(insets.top, 12) -
+        12 -
+        Math.max(0, keyboardHeight)
     );
     const minSheetHeight = Math.min(
       maxSheetHeight,
@@ -155,7 +158,10 @@ const GoalDetailModal = ({
 
     const target = Math.max(
       minSheetHeight,
-      Math.min(maxSheetHeight, measuredTotal > 0 ? measuredTotal : minSheetHeight)
+      Math.min(
+        maxSheetHeight,
+        measuredTotal > 0 ? measuredTotal : minSheetHeight
+      )
     );
 
     // Prevent a blank/zero-height first paint (common on slower devices
@@ -564,7 +570,10 @@ const GoalDetailModal = ({
                   height: sheetHeightAnim,
                   minHeight: minSheetHeight,
                   maxHeight: maxSheetHeight,
-                  marginBottom: Math.max(0, keyboardHeight - (insets.bottom || 0)),
+                  marginBottom: Math.max(
+                    0,
+                    keyboardHeight - (insets.bottom || 0)
+                  ),
                 },
               ]}
             >
@@ -839,201 +848,195 @@ const GoalDetailModal = ({
 
                     {isEditing && (
                       <View style={styles.editSection}>
-                          <View style={styles.editNameRow}>
-                            <Text style={styles.editLabel}>Goal Name</Text>
-                            <TextInput
-                              style={styles.editNameInput}
-                              value={editedGoal.label}
-                              onChangeText={(text) =>
-                                setEditedGoal({
-                                  ...editedGoal,
-                                  label: text,
-                                })
-                              }
-                              onFocus={() => setIsInputFocused(true)}
-                              onBlur={() => setIsInputFocused(false)}
-                              placeholder="Goal name"
-                              placeholderTextColor="#666"
-                            />
-                          </View>
+                        <View style={styles.editNameRow}>
+                          <Text style={styles.editLabel}>Goal Name</Text>
+                          <TextInput
+                            style={styles.editNameInput}
+                            value={editedGoal.label}
+                            onChangeText={(text) =>
+                              setEditedGoal({
+                                ...editedGoal,
+                                label: text,
+                              })
+                            }
+                            onFocus={() => setIsInputFocused(true)}
+                            onBlur={() => setIsInputFocused(false)}
+                            placeholder="Goal name"
+                            placeholderTextColor="#666"
+                          />
+                        </View>
 
-                          <View style={styles.editRow}>
-                            <View style={styles.editField}>
-                              <Text style={styles.editLabel}>
-                                Target Amount
-                              </Text>
-                              <View style={styles.editAmountContainer}>
-                                <Text style={styles.currencySymbol}>$</Text>
-                                <TextInput
-                                  style={styles.amountInput}
-                                  value={String(editedGoal.target_amount || 0)}
-                                  onChangeText={(text) =>
-                                    setEditedGoal({
-                                      ...editedGoal,
-                                      target_amount: parseFloat(text) || 0,
-                                    })
-                                  }
-                                  onFocus={() => setIsInputFocused(true)}
-                                  onBlur={() => setIsInputFocused(false)}
-                                  keyboardType="numeric"
-                                  placeholder="0"
-                                  placeholderTextColor="#666"
-                                />
-                              </View>
-                            </View>
-
-                            <View style={styles.editField}>
-                              <Text style={styles.editLabel}>Category</Text>
-                              <TouchableOpacity
-                                style={styles.editCategoryButton}
-                                onPress={() => setShowCategoryPicker(true)}
-                              >
-                                <View style={styles.editCategoryContent}>
-                                  <Text style={styles.editCategoryEmoji}>
-                                    {getCategoryOptions().find(
-                                      (c) => c.value === editedGoal.category
-                                    )?.emoji || "🎯"}
-                                  </Text>
-                                  <Text style={styles.editCategoryText}>
-                                    {getCategoryDisplayName(
-                                      editedGoal.category
-                                    )}
-                                  </Text>
-                                </View>
-                                <Ionicons
-                                  name="chevron-down"
-                                  size={16}
-                                  color="#888"
-                                />
-                              </TouchableOpacity>
+                        <View style={styles.editRow}>
+                          <View style={styles.editField}>
+                            <Text style={styles.editLabel}>Target Amount</Text>
+                            <View style={styles.editAmountContainer}>
+                              <Text style={styles.currencySymbol}>$</Text>
+                              <TextInput
+                                style={styles.amountInput}
+                                value={String(editedGoal.target_amount || 0)}
+                                onChangeText={(text) =>
+                                  setEditedGoal({
+                                    ...editedGoal,
+                                    target_amount: parseFloat(text) || 0,
+                                  })
+                                }
+                                onFocus={() => setIsInputFocused(true)}
+                                onBlur={() => setIsInputFocused(false)}
+                                keyboardType="numeric"
+                                placeholder="0"
+                                placeholderTextColor="#666"
+                              />
                             </View>
                           </View>
 
-                          <View style={styles.editDateRow}>
-                            <Text style={styles.editLabel}>Target Date</Text>
+                          <View style={styles.editField}>
+                            <Text style={styles.editLabel}>Category</Text>
                             <TouchableOpacity
-                              style={styles.editDateButton}
-                              onPress={() => setShowDatePicker(true)}
+                              style={styles.editCategoryButton}
+                              onPress={() => setShowCategoryPicker(true)}
                             >
-                              <Text style={styles.editDateText}>
-                                {selectedDate.toLocaleDateString("en-US", {
-                                  month: "short",
-                                  day: "numeric",
-                                  year: "numeric",
-                                })}
-                              </Text>
+                              <View style={styles.editCategoryContent}>
+                                <Text style={styles.editCategoryEmoji}>
+                                  {getCategoryOptions().find(
+                                    (c) => c.value === editedGoal.category
+                                  )?.emoji || "🎯"}
+                                </Text>
+                                <Text style={styles.editCategoryText}>
+                                  {getCategoryDisplayName(editedGoal.category)}
+                                </Text>
+                              </View>
                               <Ionicons
-                                name="calendar"
+                                name="chevron-down"
                                 size={16}
-                                color="#4A90E2"
+                                color="#888"
                               />
                             </TouchableOpacity>
                           </View>
+                        </View>
 
-                          {/* Note editing section */}
-                          {!showNoteField ? (
-                            <TouchableOpacity
-                              style={styles.addNoteButtonContainer}
-                              onPress={() => setShowNoteField(true)}
-                              activeOpacity={0.7}
-                            >
-                              <LinearGradient
-                                colors={[
-                                  "rgba(74, 144, 226, 0.15)",
-                                  "rgba(74, 144, 226, 0.05)",
-                                ]}
-                                style={styles.addNoteButton}
-                                start={{ x: 0, y: 0 }}
-                                end={{ x: 1, y: 1 }}
-                              >
-                                <Ionicons
-                                  name="add-circle-outline"
-                                  size={18}
-                                  color="#4A90E2"
-                                />
-                                <Text style={styles.addNoteText}>Add note</Text>
-                              </LinearGradient>
-                            </TouchableOpacity>
-                          ) : (
-                            <Animated.View
-                              style={[
-                                styles.editNoteSection,
-                                {
-                                  maxHeight: noteHeightAnimation.interpolate({
-                                    inputRange: [0, 1],
-                                    outputRange: [0, 200], // Adjust based on content height
-                                  }),
-                                  overflow: "hidden", // Ensure content clips during animation
-                                },
+                        <View style={styles.editDateRow}>
+                          <Text style={styles.editLabel}>Target Date</Text>
+                          <TouchableOpacity
+                            style={styles.editDateButton}
+                            onPress={() => setShowDatePicker(true)}
+                          >
+                            <Text style={styles.editDateText}>
+                              {selectedDate.toLocaleDateString("en-US", {
+                                month: "short",
+                                day: "numeric",
+                                year: "numeric",
+                              })}
+                            </Text>
+                            <Ionicons
+                              name="calendar"
+                              size={16}
+                              color="#4A90E2"
+                            />
+                          </TouchableOpacity>
+                        </View>
+
+                        {/* Note editing section */}
+                        {!showNoteField ? (
+                          <TouchableOpacity
+                            style={styles.addNoteButtonContainer}
+                            onPress={() => setShowNoteField(true)}
+                            activeOpacity={0.7}
+                          >
+                            <LinearGradient
+                              colors={[
+                                "rgba(74, 144, 226, 0.15)",
+                                "rgba(74, 144, 226, 0.05)",
                               ]}
+                              style={styles.addNoteButton}
+                              start={{ x: 0, y: 0 }}
+                              end={{ x: 1, y: 1 }}
                             >
+                              <Ionicons
+                                name="add-circle-outline"
+                                size={18}
+                                color="#4A90E2"
+                              />
+                              <Text style={styles.addNoteText}>Add note</Text>
+                            </LinearGradient>
+                          </TouchableOpacity>
+                        ) : (
+                          <Animated.View
+                            style={[
+                              styles.editNoteSection,
+                              {
+                                maxHeight: noteHeightAnimation.interpolate({
+                                  inputRange: [0, 1],
+                                  outputRange: [0, 200], // Adjust based on content height
+                                }),
+                                overflow: "hidden", // Ensure content clips during animation
+                              },
+                            ]}
+                          >
+                            <Animated.View
+                              style={{
+                                opacity: noteAnimation,
+                                transform: [
+                                  {
+                                    translateY: noteAnimation.interpolate({
+                                      inputRange: [0, 1],
+                                      outputRange: [-10, 0],
+                                    }),
+                                  },
+                                ],
+                              }}
+                            >
+                              <View style={styles.noteHeader}>
+                                <Text style={styles.editLabel}>
+                                  Note (Optional)
+                                </Text>
+                                <TouchableOpacity
+                                  onPress={() => {
+                                    setShowNoteField(false);
+                                    setEditedGoal((prev) =>
+                                      prev ? { ...prev, note: undefined } : null
+                                    );
+                                  }}
+                                  style={styles.removeNoteButton}
+                                >
+                                  <Ionicons
+                                    name="close-circle"
+                                    size={16}
+                                    color="#888"
+                                  />
+                                </TouchableOpacity>
+                              </View>
                               <Animated.View
                                 style={{
-                                  opacity: noteAnimation,
                                   transform: [
                                     {
-                                      translateY: noteAnimation.interpolate({
+                                      scale: noteAnimation.interpolate({
                                         inputRange: [0, 1],
-                                        outputRange: [-10, 0],
+                                        outputRange: [0.95, 1],
                                       }),
                                     },
                                   ],
                                 }}
                               >
-                                <View style={styles.noteHeader}>
-                                  <Text style={styles.editLabel}>
-                                    Note (Optional)
-                                  </Text>
-                                  <TouchableOpacity
-                                    onPress={() => {
-                                      setShowNoteField(false);
-                                      setEditedGoal((prev) =>
-                                        prev
-                                          ? { ...prev, note: undefined }
-                                          : null
-                                      );
-                                    }}
-                                    style={styles.removeNoteButton}
-                                  >
-                                    <Ionicons
-                                      name="close-circle"
-                                      size={16}
-                                      color="#888"
-                                    />
-                                  </TouchableOpacity>
-                                </View>
-                                <Animated.View
-                                  style={{
-                                    transform: [
-                                      {
-                                        scale: noteAnimation.interpolate({
-                                          inputRange: [0, 1],
-                                          outputRange: [0.95, 1],
-                                        }),
-                                      },
-                                    ],
-                                  }}
-                                >
-                                  <TextInput
-                                    style={styles.editNoteInput}
-                                    value={editedGoal?.note || ""}
-                                    onChangeText={(text) =>
-                                      setEditedGoal((prev) =>
-                                        prev ? { ...prev, note: text } : null
-                                      )
-                                    }
-                                    onFocus={() => setIsInputFocused(true)}
-                                    onBlur={() => setIsInputFocused(false)}
-                                    placeholder="Add a note about this goal..."
-                                    placeholderTextColor="#666"
-                                    multiline
-                                    textAlignVertical="top"
-                                    maxLength={200}
-                                  />
-                                </Animated.View>
+                                <TextInput
+                                  style={styles.editNoteInput}
+                                  value={editedGoal?.note || ""}
+                                  onChangeText={(text) =>
+                                    setEditedGoal((prev) =>
+                                      prev ? { ...prev, note: text } : null
+                                    )
+                                  }
+                                  onFocus={() => setIsInputFocused(true)}
+                                  onBlur={() => setIsInputFocused(false)}
+                                  placeholder="Add a note about this goal..."
+                                  placeholderTextColor="#666"
+                                  multiline
+                                  textAlignVertical="top"
+                                  maxLength={200}
+                                />
                               </Animated.View>
                             </Animated.View>
-                          )}
+                          </Animated.View>
+                        )}
                       </View>
                     )}
                   </ScrollView>
@@ -1318,7 +1321,7 @@ const styles = StyleSheet.create({
   },
   sheetHandle: {
     width: 44,
-    height: 5,
+    height: 3,
     borderRadius: 3,
     backgroundColor: "rgba(255,255,255,0.18)",
   },
@@ -1327,7 +1330,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: Math.max(20, SCREEN_WIDTH * 0.05),
-    paddingTop: 16,
+    paddingTop: 10,
     paddingBottom: 8,
     borderBottomWidth: 1,
     borderBottomColor: "rgba(255,255,255,0.1)",
@@ -1341,20 +1344,12 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: "#fff",
     textAlign: "center",
-    paddingVertical: 7,
+    paddingVertical: 0,
   },
   headerActions: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-  },
-  headerActionButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: "rgba(255, 255, 255, 0.08)",
-    alignItems: "center",
-    justifyContent: "center",
   },
   deleteMenuButton: {
     width: 32,
@@ -2036,16 +2031,16 @@ const styles = StyleSheet.create({
   analysisSnippetSection: {
     borderRadius: 12,
     marginTop: 12,
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    backgroundColor: "rgba(255, 255, 255, 0.05)",
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.2)",
-    shadowColor: "#000",
+    shadowColor: "#4A90E2",
     shadowOffset: {
       width: 0,
-      height: 8,
+      height: 4,
     },
-    shadowOpacity: 0.3,
-    shadowRadius: 16,
+    shadowOpacity: 0.6,
+    shadowRadius: 28,
     elevation: 12,
     overflow: "hidden" as const,
   },
