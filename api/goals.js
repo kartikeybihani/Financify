@@ -1875,24 +1875,44 @@ async function analyzeGoalWithLLM(goalData, userId) {
       console.log(`    🔍 [SUPERMEMORY] Search query: "${memoryQuery}"`);
 
       // Use very aggressive timeout - if Supermemory hangs, skip it
-      // Wrap in Promise.resolve to ensure it's async and doesn't block
-      const supermemoryWithTimeout = Promise.resolve()
-        .then(async () => {
+      // Create the promise first, then wrap with timeout
+      const supermemoryPromise = (async () => {
+        try {
           console.log(`    🔍 [SUPERMEMORY] Starting search...`);
-          return await withTimeout(
-            searchSupermemoryMemories(userId, memoryQuery, {
-              limit: 15,
-              threshold: 0.4,
-            }),
-            2000, // 2 second timeout - very aggressive
-            [], // Return empty array on timeout
-            null,
-            "Supermemory Search Internal"
+          const results = await searchSupermemoryMemories(userId, memoryQuery, {
+            limit: 15,
+            threshold: 0.4,
+          });
+          console.log(
+            `    🔍 [SUPERMEMORY] Search completed, got ${
+              results?.length || 0
+            } results`
           );
-        })
+          return results || [];
+        } catch (err) {
+          console.error(`    ❌ [SUPERMEMORY] Search error:`, err.message);
+          return [];
+        }
+      })();
+
+      // Apply aggressive timeout - if it hangs, return empty array
+      console.log(`    🔍 [SUPERMEMORY] Wrapping promise with 3s timeout...`);
+      const supermemoryWithTimeout = withTimeout(
+        supermemoryPromise,
+        3000, // 3 second timeout - shorter than Supermemory's 15s internal timeout
+        [], // Return empty array on timeout
+        () => {
+          console.log(
+            `    ⚠️ [SUPERMEMORY] Timeout callback fired - search took too long`
+          );
+        },
+        "Supermemory Search"
+      )
         .then((supermemoryResults) => {
           console.log(
-            `    🔍 [SUPERMEMORY] Search completed, processing results...`
+            `    🔍 [SUPERMEMORY] Processing ${
+              supermemoryResults?.length || 0
+            } results...`
           );
           const memories = (supermemoryResults || []).map((result) => ({
             id: result.id,
@@ -1907,7 +1927,7 @@ async function analyzeGoalWithLLM(goalData, userId) {
           return result;
         })
         .catch((err) => {
-          console.error(`    ❌ [SUPERMEMORY] Error:`, err.message);
+          console.error(`    ❌ [SUPERMEMORY] Processing error:`, err.message);
           return { memories: [], totalCount: 0 };
         });
 
