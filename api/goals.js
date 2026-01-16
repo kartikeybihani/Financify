@@ -1897,16 +1897,73 @@ async function analyzeGoalWithLLM(goalData, userId) {
         })
         .catch(() => null);
 
-      // TEMPORARY FIX: Skip Supermemory - it blocks event loop in Vercel serverless
-      // Even hard setTimeout doesn't fire, indicating complete event loop blockage
-      // Test file works fine, but API endpoint hangs - likely fetch implementation difference
+      // Search Supermemory for relevant memories about this goal
+      // Create a query based on goal name and category for semantic search
+      const goalQuery = `${goalData.name || ""} ${
+        goalData.category || ""
+      } goal savings financial`.trim();
       console.log(
-        `    ⚠️ [SUPERMEMORY] Skipping Supermemory search (blocks event loop in serverless)`
+        `    🔍 [SUPERMEMORY] Searching memories with query: "${goalQuery}"`
       );
-      const supermemoryWithTimeout = Promise.resolve({
-        memories: [],
-        totalCount: 0,
-      });
+
+      const supermemoryWithTimeout = withTimeout(
+        (async () => {
+          try {
+            const supermemoryResults = await searchSupermemoryMemories(
+              userId,
+              goalQuery,
+              {
+                limit: 10,
+                threshold: 0.4,
+              }
+            );
+
+            // Transform Supermemory results to expected format
+            const memories = supermemoryResults
+              .map((result) => {
+                const memoryText = result.memory || "";
+                if (!memoryText) return null;
+
+                const metadata = result.metadata || {};
+                return {
+                  id: result.id,
+                  documentId: result.documents?.[0]?.id || result.id,
+                  content: memoryText,
+                  summary: null,
+                  metadata: metadata,
+                  context_type: metadata.context_type || "general",
+                  financial_relevance: metadata.financial_relevance || "medium",
+                  tags: Array.isArray(metadata.tags) ? metadata.tags : [],
+                  similarity: result.similarity || 0,
+                  updatedAt:
+                    result.updatedAt ||
+                    metadata.timestamp ||
+                    new Date().toISOString(),
+                };
+              })
+              .filter(Boolean);
+
+            console.log(
+              `    ✅ [SUPERMEMORY] Found ${memories.length} relevant memories`
+            );
+
+            return {
+              memories: memories,
+              totalCount: memories.length,
+            };
+          } catch (error) {
+            console.error(
+              `    ❌ [SUPERMEMORY] Error searching memories:`,
+              error.message
+            );
+            return { memories: [], totalCount: 0 };
+          }
+        })(),
+        5000, // 5 second timeout
+        { memories: [], totalCount: 0 }, // Return empty on timeout
+        null,
+        "Supermemory Search"
+      );
 
       const isTestId =
         goalData.id &&
