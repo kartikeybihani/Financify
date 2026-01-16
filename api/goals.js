@@ -1718,6 +1718,9 @@ async function analyzeGoalWithLLM(goalData, userId) {
     const oneMonthAgo = new Date(currentDate);
     oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
 
+    console.log("📊 [GOAL ANALYSIS] Fetching all user data in parallel...");
+    const fetchStartTime = Date.now();
+
     const [
       netWorthData,
       invSnap,
@@ -1730,90 +1733,169 @@ async function analyzeGoalWithLLM(goalData, userId) {
       budgetPeriod,
     ] = await Promise.all([
       // Financial data
-      supabase.rpc("get_net_worth", { p_user_id: userId }).catch((err) => {
-        console.error("❌ [GOAL ANALYSIS] Error fetching net worth:", err);
-        return { data: null, error: err };
-      }),
-      supabase
-        .rpc("get_investment_snapshot", { p_user_id: userId })
-        .catch((err) => {
-          console.error("❌ [GOAL ANALYSIS] Error fetching investments:", err);
-          return { data: null, error: err };
-        }),
-      supabase
-        .rpc("get_recent_transactions", {
-          p_user_id: userId,
-          p_limit: 200, // Get more transactions for better analysis
-        })
-        .catch((err) => {
-          console.error("❌ [GOAL ANALYSIS] Error fetching transactions:", err);
-          return { data: null, error: err };
-        }),
-      supabase
-        .rpc("get_spend_by_category", {
-          p_user_id: userId,
-          p_start: thirtyDaysAgo.toISOString().split("T")[0],
-          p_end: currentDate.toISOString().split("T")[0],
-        })
-        .catch((err) => {
-          console.error(
-            "❌ [GOAL ANALYSIS] Error fetching spend by category:",
-            err
+      (async () => {
+        console.log("  📈 Fetching net worth...");
+        const result = await supabase
+          .rpc("get_net_worth", { p_user_id: userId })
+          .catch((err) => {
+            console.error("    ❌ Error fetching net worth:", err.message);
+            return { data: null, error: err };
+          });
+        if (result?.data?.[0]) {
+          console.log(
+            `    ✅ Net worth: $${
+              result.data[0].net_worth?.toLocaleString() || 0
+            }`
           );
-          return { data: null, error: err };
-        }),
-      supabase
-        .rpc("get_cashflow_monthly", { p_user_id: userId, p_months: 3 })
-        .catch((err) => {
-          console.error("❌ [GOAL ANALYSIS] Error fetching cashflow:", err);
-          return { data: null, error: err };
-        }),
+        }
+        return result;
+      })(),
+      (async () => {
+        console.log("  💼 Fetching investment snapshot...");
+        const result = await supabase
+          .rpc("get_investment_snapshot", { p_user_id: userId })
+          .catch((err) => {
+            console.error("    ❌ Error fetching investments:", err.message);
+            return { data: null, error: err };
+          });
+        if (result?.data?.[0]) {
+          console.log(`    ✅ Investment snapshot retrieved`);
+        }
+        return result;
+      })(),
+      (async () => {
+        console.log("  💳 Fetching recent transactions (limit: 200)...");
+        const result = await supabase
+          .rpc("get_recent_transactions", {
+            p_user_id: userId,
+            p_limit: 200,
+          })
+          .catch((err) => {
+            console.error("    ❌ Error fetching transactions:", err.message);
+            return { data: null, error: err };
+          });
+        if (result?.data) {
+          console.log(`    ✅ Transactions: ${result.data.length} found`);
+        }
+        return result;
+      })(),
+      (async () => {
+        console.log("  📊 Fetching spend by category (last 30 days)...");
+        const result = await supabase
+          .rpc("get_spend_by_category", {
+            p_user_id: userId,
+            p_start: thirtyDaysAgo.toISOString().split("T")[0],
+            p_end: currentDate.toISOString().split("T")[0],
+          })
+          .catch((err) => {
+            console.error(
+              "    ❌ Error fetching spend by category:",
+              err.message
+            );
+            return { data: null, error: err };
+          });
+        if (result?.data) {
+          console.log(
+            `    ✅ Spending categories: ${result.data.length} found`
+          );
+        }
+        return result;
+      })(),
+      (async () => {
+        console.log("  💰 Fetching cashflow (last 3 months)...");
+        const result = await supabase
+          .rpc("get_cashflow_monthly", { p_user_id: userId, p_months: 3 })
+          .catch((err) => {
+            console.error("    ❌ Error fetching cashflow:", err.message);
+            return { data: null, error: err };
+          });
+        if (result?.data) {
+          console.log(`    ✅ Cashflow months: ${result.data.length} found`);
+        }
+        return result;
+      })(),
       // User profile
-      loadUserProfile(userId).catch((err) => {
-        console.error("❌ [GOAL ANALYSIS] Error fetching profile:", err);
-        return null;
-      }),
+      (async () => {
+        console.log("  👤 Fetching user profile...");
+        const result = await loadUserProfile(userId).catch((err) => {
+          console.error("    ❌ Error fetching profile:", err.message);
+          return null;
+        });
+        if (result) {
+          console.log(
+            `    ✅ Profile: ${result.name || "N/A"} (${
+              result.finny_style || "conversational"
+            } style)`
+          );
+        }
+        return result;
+      })(),
       // Memories
-      fetchSupermemoryProfile(userId, {
-        query: `Goal: ${goalData.label}. Target: $${goalData.target_amount}. Category: ${goalData.category}`,
-        limit: 10,
-      }).catch((err) => {
-        console.error("❌ [GOAL ANALYSIS] Error fetching memories:", err);
-        return { memories: [] };
-      }),
+      (async () => {
+        console.log("  🧠 Fetching relevant memories...");
+        const result = await fetchSupermemoryProfile(userId, {
+          query: `Goal: ${goalData.label}. Target: $${goalData.target_amount}. Category: ${goalData.category}`,
+          limit: 10,
+        }).catch((err) => {
+          console.error("    ❌ Error fetching memories:", err.message);
+          return { memories: [] };
+        });
+        if (result?.memories) {
+          console.log(`    ✅ Memories: ${result.memories.length} found`);
+        }
+        return result;
+      })(),
       // Current goals (excluding the one being analyzed)
-      supabase
-        .from("goals")
-        .select("*")
-        .eq("user_id", userId)
-        .eq("status", "active")
-        .neq("id", goalData.id)
-        .order("created_at", { ascending: false })
-        .catch((err) => {
-          console.error("❌ [GOAL ANALYSIS] Error fetching goals:", err);
-          return { data: [] };
-        }),
+      (async () => {
+        console.log("  🎯 Fetching current goals...");
+        const result = await supabase
+          .from("goals")
+          .select("*")
+          .eq("user_id", userId)
+          .eq("status", "active")
+          .neq("id", goalData.id)
+          .order("created_at", { ascending: false })
+          .catch((err) => {
+            console.error("    ❌ Error fetching goals:", err.message);
+            return { data: [] };
+          });
+        if (result?.data) {
+          console.log(`    ✅ Current goals: ${result.data.length} found`);
+        }
+        return result;
+      })(),
       // Current budget
-      supabase
-        .from("budget_periods")
-        .select(
-          `
+      (async () => {
+        console.log("  💵 Fetching current budget...");
+        const result = await supabase
+          .from("budget_periods")
+          .select(
+            `
           *,
           budget_entries (
             *
           )
         `
-        )
-        .eq("user_id", userId)
-        .eq("status", "active")
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .single()
-        .catch((err) => {
-          console.error("❌ [GOAL ANALYSIS] Error fetching budget:", err);
-          return { data: null };
-        }),
+          )
+          .eq("user_id", userId)
+          .eq("status", "active")
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .single()
+          .catch((err) => {
+            console.error("    ❌ Error fetching budget:", err.message);
+            return { data: null };
+          });
+        if (result?.data) {
+          const entryCount = result.data.budget_entries?.length || 0;
+          console.log(`    ✅ Budget: ${entryCount} category entries found`);
+        }
+        return result;
+      })(),
     ]);
+
+    const fetchTime = Date.now() - fetchStartTime;
+    console.log(`✅ [GOAL ANALYSIS] All data fetched in ${fetchTime}ms`);
 
     // Process financial data
     const netWorthRecord = netWorthData?.data?.[0];
@@ -1961,7 +2043,14 @@ async function analyzeGoalWithLLM(goalData, userId) {
 
     if (updateError) {
       console.error("❌ [GOAL ANALYSIS] Error storing analysis:", updateError);
-      throw updateError;
+      // Still return the analysis even if DB update fails (useful for testing)
+      // Attach the analysis to the error so caller can access it
+      const errorWithAnalysis = new Error(
+        `Analysis generated but DB update failed: ${updateError.message}`
+      );
+      errorWithAnalysis.analysis = content;
+      errorWithAnalysis.dbUpdateFailed = true;
+      throw errorWithAnalysis;
     }
 
     console.log("✅ [GOAL ANALYSIS] Analysis stored successfully");
