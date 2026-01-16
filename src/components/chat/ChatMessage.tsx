@@ -532,8 +532,6 @@ export const ChatMessageComponent = memo(
               ])}
             </Text>
           </LinearGradient>
-          {/* Tail only if last in group */}
-          {isLastInGroup && <BubbleTail side="right" color={userTailColor} />}
         </Animated.View>
       );
     }
@@ -613,10 +611,6 @@ export const ChatMessageComponent = memo(
                     ))}
                   </Text>
                 </LinearGradient>
-                {/* Tail only if last in group */}
-                {isLastInGroup && (
-                  <BubbleTail side="left" color={finnyTailColor} />
-                )}
               </View>
               {/* Feedback buttons - hide for initial welcome message and confirmation messages */}
               {isLastInGroup &&
@@ -759,10 +753,6 @@ export const ChatMessageComponent = memo(
                   ))}
                 </Text>
               </LinearGradient>
-              {/* Tail only if last in group */}
-              {isLastInGroup && (
-                <BubbleTail side="left" color={finnyTailColor} />
-              )}
             </View>
             {/* Feedback buttons - hide for initial welcome message and confirmation messages */}
             {(() => {

@@ -3047,6 +3047,13 @@ async function handleAsk(
       .filter(Boolean)
       .join("\n\n");
 
+    // Short-term conversation continuity: include recent turns (no extra LLM calls)
+    const recentTurns = getRecentConversationTurns(userId, context?.chat_id, {
+      maxMessages: 8,
+      maxChars: 6000,
+    });
+
+    // Build complete prompt using 6-layer architecture (with recent turns)
     const system = buildContextAwarePrompt(
       message,
       contextWithFeedback,
@@ -3055,7 +3062,8 @@ async function handleAsk(
       finnyStyle,
       classificationResult, // Pass classification result for intent-first architecture
       webSummary, // Web context
-      runtimeHeader // Context header (+ classification)
+      runtimeHeader, // Context header (+ classification)
+      recentTurns // Recent conversation turns for context
     );
 
     // 5) Parallel processing: Main response + Memory extraction
@@ -3063,12 +3071,6 @@ async function handleAsk(
 
     // Build user message (financial data is already synthesized in the system prompt)
     const userMessage = message;
-
-    // Short-term conversation continuity: include recent turns (no extra LLM calls)
-    const recentTurns = getRecentConversationTurns(userId, context?.chat_id, {
-      maxMessages: 8,
-      maxChars: 6000,
-    });
 
     // Log prompt summary
     const promptSize = Math.round(system.length / 100) / 10;

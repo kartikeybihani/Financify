@@ -12,6 +12,8 @@ import {
   TouchableOpacity,
   ScrollView,
   Alert,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -169,20 +171,27 @@ const CategoryEditModal: React.FC<Props> = ({
       <TouchableWithoutFeedback onPress={onClose}>
         <View style={styles.overlay}>
           <TouchableWithoutFeedback onPress={(e) => e.stopPropagation()}>
-            <Animated.View
-              style={[
-                styles.container,
-                {
-                  height: screenHeight * 0.5, // 50% height as requested
-                  transform: [{ translateY: slideAnim }],
-                },
-              ]}
+            <KeyboardAvoidingView
+              behavior={Platform.OS === "ios" ? "padding" : "height"}
+              style={styles.keyboardAvoidingView}
+              keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
             >
+              <Animated.View
+                style={[
+                  styles.container,
+                  {
+                    height: screenHeight * 0.5, // 50% height as requested
+                    transform: [{ translateY: slideAnim }],
+                  },
+                ]}
+              >
               <View style={styles.handle} />
               <ScrollView
                 style={styles.scrollContent}
                 contentContainerStyle={styles.scrollContentContainer}
                 showsVerticalScrollIndicator={true}
+                keyboardShouldPersistTaps="handled"
+                nestedScrollEnabled={true}
               >
                 <View style={styles.header}>
                   <View style={styles.headerContent}>
@@ -434,6 +443,7 @@ const CategoryEditModal: React.FC<Props> = ({
                 )}
               </ScrollView>
             </Animated.View>
+            </KeyboardAvoidingView>
           </TouchableWithoutFeedback>
         </View>
       </TouchableWithoutFeedback>
@@ -446,6 +456,9 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.75)",
     justifyContent: "flex-end",
+  },
+  keyboardAvoidingView: {
+    width: "100%",
   },
   container: {
     backgroundColor: "#1f1f1f",
@@ -464,6 +477,7 @@ const styles = StyleSheet.create({
   },
   scrollContentContainer: {
     paddingBottom: 8,
+    flexGrow: 1,
   },
   handle: {
     width: 44,

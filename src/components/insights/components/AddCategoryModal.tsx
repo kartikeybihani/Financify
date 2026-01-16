@@ -9,6 +9,8 @@ import {
   ScrollView,
   TextInput,
   Dimensions,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -234,7 +236,12 @@ const AddCategoryModal: React.FC<AddCategoryModalProps> = ({
       <TouchableWithoutFeedback onPress={handleClose}>
         <View style={styles.overlay}>
           <TouchableWithoutFeedback onPress={(e) => e.stopPropagation()}>
-            <LinearGradient colors={FAB_GRADIENT_COLORS} style={styles.content}>
+            <KeyboardAvoidingView
+              behavior={Platform.OS === "ios" ? "padding" : "height"}
+              style={styles.keyboardAvoidingView}
+              keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
+            >
+              <LinearGradient colors={FAB_GRADIENT_COLORS} style={styles.content}>
               <View style={styles.header}>
                 <View style={styles.headerTextContainer}>
                   <Text style={styles.headerTitle}>Add New Category</Text>
@@ -254,6 +261,7 @@ const AddCategoryModal: React.FC<AddCategoryModalProps> = ({
                 keyboardShouldPersistTaps="handled"
                 keyboardDismissMode="interactive"
                 bounces={false}
+                nestedScrollEnabled={true}
               >
                 {/* Category Name Section */}
                 <View style={styles.nameSection}>
@@ -388,6 +396,7 @@ const AddCategoryModal: React.FC<AddCategoryModalProps> = ({
                 </TouchableOpacity>
               </View>
             </LinearGradient>
+            </KeyboardAvoidingView>
           </TouchableWithoutFeedback>
         </View>
       </TouchableWithoutFeedback>
@@ -400,6 +409,9 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "rgba(0, 0, 0, 0.75)",
     justifyContent: "flex-end",
+  },
+  keyboardAvoidingView: {
+    width: "100%",
   },
   content: {
     borderTopLeftRadius: 24,

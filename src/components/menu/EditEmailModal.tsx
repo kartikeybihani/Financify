@@ -228,9 +228,7 @@ export default function EditEmailModal({
         <KeyboardAvoidingView
           style={styles.overlay}
           behavior={Platform.OS === "ios" ? "padding" : "height"}
-          keyboardVerticalOffset={
-            Platform.OS === "ios" ? Math.max(0, insets.top) + 12 : 20
-          }
+          keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
           enabled
         >
           <TouchableWithoutFeedback onPress={(e) => e.stopPropagation()}>
@@ -248,9 +246,16 @@ export default function EditEmailModal({
                   ]}
                 >
                   <ScrollView
-                    contentContainerStyle={styles.scrollContent}
+                    contentContainerStyle={[
+                      styles.scrollContent,
+                      {
+                        paddingBottom: Math.max(32, insets.bottom + 16),
+                        flexGrow: 1,
+                      },
+                    ]}
                     keyboardShouldPersistTaps="handled"
                     showsVerticalScrollIndicator={false}
+                    nestedScrollEnabled={true}
                   >
                     <IconButton
                       icon="close"
@@ -331,9 +336,16 @@ export default function EditEmailModal({
                   ]}
                 >
                   <ScrollView
-                    contentContainerStyle={styles.verificationContent}
+                    contentContainerStyle={[
+                      styles.verificationContent,
+                      {
+                        paddingBottom: Math.max(24, insets.bottom + 16),
+                        flexGrow: 1,
+                      },
+                    ]}
                     keyboardShouldPersistTaps="handled"
                     showsVerticalScrollIndicator={false}
+                    nestedScrollEnabled={true}
                   >
                     <IconButton
                       icon="close"
@@ -510,15 +522,15 @@ const styles = StyleSheet.create({
     width: "100%",
   },
   scrollContent: {
-    padding: 32,
+    paddingHorizontal: 32,
+    paddingTop: 32,
     alignItems: "center",
-    minHeight: 300,
   },
   verificationContent: {
-    padding: 24,
+    paddingHorizontal: 24,
+    paddingTop: 24,
     alignItems: "center",
     justifyContent: "center",
-    minHeight: 300,
   },
   closeIcon: {
     position: "absolute",

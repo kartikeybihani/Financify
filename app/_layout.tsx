@@ -74,6 +74,13 @@ function RootLayoutNav() {
 export default function RootLayout() {
   const [loaded] = useFonts({
     SpaceMono: require("../assets/fonts/SpaceMono-Regular.ttf"),
+    Manrope: require("../assets/fonts/Manrope-Regular.ttf"),
+    ManropeBold: require("../assets/fonts/Manrope-Bold.ttf"),
+    ManropeExtraBold: require("../assets/fonts/Manrope-ExtraBold.ttf"),
+    ManropeLight: require("../assets/fonts/Manrope-Light.ttf"),
+    ManropeMedium: require("../assets/fonts/Manrope-Medium.ttf"),
+    ManropeSemiBold: require("../assets/fonts/Manrope-SemiBold.ttf"),
+    ManropeExtraLight: require("../assets/fonts/Manrope-ExtraLight.ttf"),
   });
 
   useEffect(() => {

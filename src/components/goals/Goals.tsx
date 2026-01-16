@@ -13,6 +13,7 @@ import {
   Image,
   Easing,
   Platform,
+  Dimensions,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -31,6 +32,7 @@ import { GoalsProps, GoalsState } from "@/src/types/goalsTypes";
 import { useRouter } from "expo-router";
 import logger from "@/src/utils/core/logger";
 import { supabase } from "@/src/lib/supabase/supabase";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const Goals: React.FC<GoalsProps> = ({
   deleteGoal,
@@ -365,7 +367,8 @@ const Goals: React.FC<GoalsProps> = ({
         contentContainerStyle={[
           styles.goalsWrapper,
           !sortedGoalsData.length && styles.emptyGoalsWrapper,
-          { paddingBottom: Math.max(insets.bottom, 16) + 120 },
+          !sortedGoalsData.length && { paddingBottom: Math.max(insets.bottom, 16) },
+          sortedGoalsData.length > 0 && { paddingBottom: Math.max(insets.bottom, 16) + 120 },
         ]}
         refreshControl={
           <RefreshControl
@@ -377,104 +380,87 @@ const Goals: React.FC<GoalsProps> = ({
       >
         {sortedGoalsData.length === 0 ? (
           <View style={styles.emptyStateContainer}>
-            {/* Clean, minimal mascot */}
-            <View style={styles.mascotContainer}>
-              <View style={styles.mascotImageContainer}>
+            {/* Mascot focus area - emotional anchor */}
+            <View style={styles.mascotFocusArea}>
+              <View style={styles.mascotGlowContainer}>
+                <View style={styles.mascotGlow} />
                 <Image
-                  source={require("../../../assets/images/mascotgpt.png")}
-                  style={styles.emptyStateImage}
+                  source={require("../../../assets/images/thinking4.png")}
+                  style={styles.mascotFocusImage}
                   resizeMode="cover"
                 />
               </View>
             </View>
 
-            {/* Direct, outcome-focused messaging */}
-            <View style={styles.emptyHeaderSection}>
-              <Text style={styles.emptyStateTitle}>
-                What do you want to achieve?
-              </Text>
-              <Text style={styles.emptyStateSubtitle}>
-                Set a goal and we'll help you get there.
-              </Text>
-            </View>
+            {/* Primary headline - reassurance first */}
+            <Text style={styles.emptyStatePrimaryHeadline}>
+              Let's figure out your money, together.
+            </Text>
 
-            {/* Single, clear call-to-action with liquid glass */}
-            {(() => {
-              const isIOS = Platform.OS === "ios";
-              const iosVersion = isIOS
-                ? parseInt(String(Platform.Version).split(".")[0] || "0", 10)
-                : 0;
-              const shouldUseLiquidGlass = isIOS && iosVersion >= 18;
-              const ButtonShell = shouldUseLiquidGlass ? GlassView : View;
+            {/* Supporting subtext - remove fear */}
+            <Text style={styles.emptyStateSupportingText}>
+              You don't need a perfect goal.
+              {"\n"}
+              A thought, a worry, or a rough idea is enough.
+            </Text>
 
-              return (
-                <TouchableOpacity
-                  style={styles.primaryActionButton}
-                  activeOpacity={0.9}
-                  onPress={() =>
-                    setState((prev: GoalsState) => ({
-                      ...prev,
-                      showAddGoalModal: true,
-                    }))
-                  }
-                >
-                  {shouldUseLiquidGlass ? (
-                    <ButtonShell
-                      glassEffectStyle="regular"
-                      tintColor="rgba(74, 144, 226, 0.8)"
-                      style={styles.glassButtonContainer}
-                    >
-                      <Ionicons
-                        name="add-circle-outline"
-                        size={24}
-                        color="#fff"
-                      />
-                      <Text style={styles.primaryActionButtonText}>
-                        Create your first goal
-                      </Text>
-                    </ButtonShell>
-                  ) : (
-                    <LinearGradient
-                      colors={["#FFFFFF", "#D0D0D0", "#999999"]}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 0, y: 1 }}
-                      style={styles.gradientButtonContainer}
-                    >
-                      <Ionicons
-                        name="add-circle-outline"
-                        size={24}
-                        color="#1A1A1A"
-                      />
-                      <Text
-                        style={[
-                          styles.primaryActionButtonText,
-                          { color: "#1A1A1A" },
-                        ]}
-                      >
-                        Create your first goal
-                      </Text>
-                    </LinearGradient>
-                  )}
-                </TouchableOpacity>
-              );
-            })()}
-
-            {/* Alternative path - more compelling */}
+            {/* Primary CTA button */}
             <TouchableOpacity
-              style={styles.secondaryActionButton}
+              style={styles.talkToFinnyButton}
               activeOpacity={0.8}
-              onPress={() => router.push("/chat")}
+              onPress={async () => {
+                await AsyncStorage.setItem("initialChatMessage", "");
+                router.push("/chat");
+              }}
             >
-              <Text style={styles.secondaryActionButtonText}>
-                Need ideas? Ask Finny to suggest goals for you
-              </Text>
+              <Text style={styles.talkToFinnyButtonText}>Talk to Finny</Text>
             </TouchableOpacity>
 
-            {/* Social proof - the only element that actually works */}
-            <Text style={styles.footerNote}>
-              Join thousands who've turned their dreams into reality with
-              structured goal tracking
-            </Text>
+            {/* Assistive suggestion chips */}
+            <View style={styles.suggestionChipsSection}>
+              <Text style={styles.suggestionChipsLabel}>
+                Not sure where to start?
+              </Text>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.suggestionChipsContainer}
+              >
+                {[
+                  "Am I spending too much?",
+                  "I want to start saving",
+                  "Help me plan something upcoming",
+                ].map((prompt, index) => (
+                  <TouchableOpacity
+                    key={index}
+                    style={styles.suggestionChip}
+                    activeOpacity={0.7}
+                    onPress={async () => {
+                      await AsyncStorage.setItem("initialChatMessage", prompt);
+                      router.push("/chat");
+                    }}
+                  >
+                    <Text style={styles.suggestionChipText}>{prompt}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+
+            {/* Secondary action - quiet, optional */}
+            <TouchableOpacity
+              style={styles.createManualButton}
+              activeOpacity={0.7}
+              onPress={() =>
+                setState((prev: GoalsState) => ({
+                  ...prev,
+                  showAddGoalModal: true,
+                }))
+              }
+            >
+              <Text style={styles.createManualButtonText}>
+                Create a goal manually
+              </Text>
+            </TouchableOpacity>
           </View>
         ) : (
           <>

@@ -1,5 +1,5 @@
 // @refresh reset
-import { StyleSheet, Platform } from "react-native";
+import { StyleSheet, Platform, Dimensions } from "react-native";
 
 const styles = StyleSheet.create({
     goalsContainer: {
@@ -17,10 +17,11 @@ const styles = StyleSheet.create({
     },
     emptyStateContainer: {
       alignItems: "center",
-      padding: 20,
+      paddingVertical: 16,
       paddingTop: 20,
+      paddingHorizontal: 0,
       flex: 1,
-      justifyContent: "center",
+      justifyContent: "flex-start",
     },
     emptyHeaderSection: {
       alignItems: "center",
@@ -52,7 +53,30 @@ const styles = StyleSheet.create({
       width: "100%",
       height: "100%",
     },
-    // Clean, direct messaging
+    // Primary headline - reassurance first
+    emptyStatePrimaryHeadline: {
+      fontSize: 24,
+      fontWeight: "600",
+      color: "#fff",
+      textAlign: "center",
+      letterSpacing: 0.2,
+      marginBottom: 12,
+      paddingHorizontal: 0,
+      lineHeight: 30,
+      fontFamily: "Manrope",
+    },
+    // Supporting subtext - remove fear
+    emptyStateSupportingText: {
+      fontSize: 14,
+      color: "#999",
+      textAlign: "center",
+      lineHeight: 20,
+      fontWeight: "400",
+      marginBottom: 24,
+      paddingHorizontal: 0,
+      fontFamily: "ManropeMedium"
+    },
+    // Clean, direct messaging (legacy, keeping for compatibility)
     emptyStateTitle: {
       fontSize: 28,
       fontWeight: "700",
@@ -195,7 +219,38 @@ const styles = StyleSheet.create({
       marginBottom: 20,
       fontWeight: "500",
     },
-    // Clean mascot container
+    // Mascot focus area - reduced height to fit on screen
+    mascotFocusArea: {
+      alignItems: "center",
+      justifyContent: "center",
+      width: "100%",
+      height: Dimensions.get("window").height * 0.18,
+      marginBottom: 20,
+    },
+    mascotGlowContainer: {
+      position: "relative",
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    mascotGlow: {
+      position: "absolute",
+      width: 120,
+      height: 120,
+      borderRadius: 60,
+      backgroundColor: "rgba(74, 144, 226, 0.08)",
+      shadowColor: "rgba(74, 144, 226, 0.3)",
+      shadowOffset: { width: 0, height: 0 },
+      shadowOpacity: 1,
+      shadowRadius: 30,
+      elevation: 0,
+    },
+    mascotFocusImage: {
+      width: 140,
+      height: 140,
+      borderRadius: 70,
+      zIndex: 1,
+    },
+    // Clean mascot container (legacy, keeping for compatibility)
     mascotContainer: {
       alignItems: "center",
       justifyContent: "center",
@@ -881,6 +936,78 @@ const styles = StyleSheet.create({
       textAlign: "center",
       fontWeight: "600",
       letterSpacing: 0.3,
+    },
+    // Primary CTA button - Talk to Finny
+    talkToFinnyButton: {
+      backgroundColor: "#4A90E2",
+      borderRadius: 28,
+      paddingVertical: 14,
+      paddingHorizontal: 32,
+      marginBottom: 20,
+      minWidth: 200,
+      alignItems: "center",
+      justifyContent: "center",
+      shadowColor: "#4A90E2",
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.3,
+      shadowRadius: 8,
+      elevation: 6,
+    },
+    talkToFinnyButtonText: {
+      color: "#fff",
+      fontSize: 16,
+      fontWeight: "600",
+      letterSpacing: 0.3,
+    },
+    // Suggestion chips section
+    suggestionChipsSection: {
+      width: "100%",
+      alignItems: "center",
+      marginBottom: 20,
+    },
+    suggestionChipsLabel: {
+      fontSize: 12,
+      color: "#888",
+      marginBottom: 8,
+      textAlign: "center",
+    },
+    suggestionChipsContainer: {
+      flexDirection: "row",
+      paddingHorizontal: 0,
+      gap: 10,
+    },
+    suggestionChip: {
+      paddingVertical: 8,
+      paddingHorizontal: 14,
+      borderRadius: 18,
+      borderWidth: 1,
+      borderColor: "rgba(74, 144, 226, 0.3)",
+      backgroundColor: "transparent",
+    },
+    suggestionChipText: {
+      color: "#4A90E2",
+      fontSize: 13,
+      fontWeight: "500",
+    },
+    // Secondary action - create manually
+    createManualButton: {
+      paddingVertical: 12,
+      paddingHorizontal: 24,
+      marginTop: 12,
+      borderRadius: 20,
+      borderWidth: 1,
+      borderColor: "rgba(136, 136, 136, 0.3)",
+      backgroundColor: "rgba(136, 136, 136, 0.08)",
+      minWidth: 180,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    createManualButtonText: {
+      color: "#aaa",
+      fontSize: 15,
+      fontWeight: "500",
+      textAlign: "center",
+      fontFamily: "Manrope"
     },
   });
   

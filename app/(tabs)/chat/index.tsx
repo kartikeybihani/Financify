@@ -36,6 +36,7 @@ import ReportModal from "@/src/components/modals/ReportModal";
 import StockTickerEditModal from "@/src/components/modals/StockTickerEditModal";
 import FeedbackNotification from "@/src/components/chat/FeedbackNotification";
 import { submitLoveIt } from "@/src/utils/analytics/reports";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 interface Suggestion {
   text: string;
@@ -107,6 +108,17 @@ function ChatScreenContent() {
     };
   }, []);
 
+  const {
+    chatMessages,
+    showNudges,
+    progressStatus,
+    pushChat,
+    handleUserMessage,
+    handleFinnyResponse,
+    handleActionButton,
+    currentSessionId,
+  } = useChatContext();
+
   // Auto-scroll to bottom when user comes to this screen (every time)
   useFocusEffect(
     useCallback(() => {
@@ -118,8 +130,31 @@ function ChatScreenContent() {
       // Trigger context pre-building when user enters chat tab
       triggerContextPrebuild();
 
+      // Check for initial message from other screens (e.g., Goals)
+      // Pre-fill the input box instead of auto-sending
+      (async () => {
+        try {
+          const initialMessage = await AsyncStorage.getItem("initialChatMessage");
+          if (initialMessage !== null) {
+            // Clear the stored message
+            await AsyncStorage.removeItem("initialChatMessage");
+            // Small delay to ensure screen is fully loaded
+            setTimeout(() => {
+              if (initialMessage) {
+                // Pre-fill the input box instead of auto-sending
+                setUserInput(initialMessage);
+              }
+              // Empty string means just navigate, no pre-filled message
+            }, 300);
+          }
+        } catch (error) {
+          // Silently fail if AsyncStorage isn't available or message check fails
+          console.log("Could not check for initial chat message:", error);
+        }
+      })();
+
       return () => clearTimeout(timer);
-    }, [])
+    }, [handleUserMessage])
   );
 
   const [suggestions] = useState<Suggestion[]>(() => {
@@ -156,17 +191,6 @@ function ChatScreenContent() {
     new Animated.Value(0),
     new Animated.Value(0),
   ]).current;
-
-  const {
-    chatMessages,
-    showNudges,
-    progressStatus,
-    pushChat,
-    handleUserMessage,
-    handleFinnyResponse,
-    handleActionButton,
-    currentSessionId,
-  } = useChatContext();
 
   // Prepare FlatList data with nudges and messages
   const flatListData = React.useMemo(() => {

@@ -40,7 +40,7 @@ export const GoalsSection: React.FC<GoalsSectionProps> = React.memo(
               <View style={styles.emptyGoalsTextContainer}>
                 <Text style={styles.emptyGoalsTitle}>No Goals Yet</Text>
                 <Text style={styles.emptyGoalsDescription}>
-                  Start your financial journey by setting your first goal.
+                  Journey begins by setting your first goal.
                 </Text>
                 {(() => {
                   const isIOS = Platform.OS === "ios";

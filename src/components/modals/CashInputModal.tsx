@@ -9,12 +9,10 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
-  Dimensions,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { BlurView } from "expo-blur";
 import { LinearGradient } from "expo-linear-gradient";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import IconButton from "../shared/IconButton";
 
 interface CashInputModalProps {
   visible: boolean;
@@ -30,7 +28,6 @@ export default function CashInputModal({
   const [amount, setAmount] = useState("");
   const [description, setDescription] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const insets = useSafeAreaInsets();
 
   const handleSave = async () => {
     const numericAmount = parseFloat(amount);
@@ -71,209 +68,163 @@ export default function CashInputModal({
     <Modal
       visible={visible}
       transparent
-      animationType="fade"
+      animationType="slide"
+      statusBarTranslucent
       onRequestClose={handleClose}
     >
-      <BlurView intensity={20} style={styles.overlay}>
-        <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
-          style={styles.container}
-        >
-          <View style={[styles.modal, { paddingBottom: insets.bottom + 20 }]}>
-            {/* Header */}
-            <View style={styles.header}>
-              <View style={styles.headerLeft}>
-                <View style={styles.iconContainer}>
-                  <Ionicons name="cash-outline" size={24} color="#4A90E2" />
-                </View>
-                <View>
-                  <Text style={styles.title}>Add Cash</Text>
-                  <Text style={styles.subtitle}>Enter your cash amount</Text>
-                </View>
-              </View>
-              <TouchableOpacity
-                onPress={handleClose}
-                style={styles.closeButton}
-              >
-                <LinearGradient
-                  colors={[
-                    "rgba(255, 255, 255, 0.15)",
-                    "rgba(255, 255, 255, 0.05)",
-                  ]}
-                  style={styles.closeButtonGradient}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                >
-                  <Ionicons name="close" size={24} color="#fff" />
-                </LinearGradient>
-              </TouchableOpacity>
-            </View>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        style={styles.container}
+      >
+        <View style={styles.modalContent}>
+          {/* Header */}
+          <View style={styles.header}>
+            <Text style={styles.title}>Add Cash</Text>
+            <TouchableOpacity onPress={handleClose} activeOpacity={0.7}>
+              <IconButton onPress={handleClose} icon="close" size={20} />
+            </TouchableOpacity>
+          </View>
 
-            {/* Content */}
-            <View style={styles.content}>
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>Amount ($)</Text>
-                <View style={styles.amountInputContainer}>
-                  <Text style={styles.dollarSign}>$</Text>
-                  <TextInput
-                    style={styles.amountInput}
-                    value={amount}
-                    onChangeText={setAmount}
-                    placeholder="0.00"
-                    placeholderTextColor="#666"
-                    keyboardType="decimal-pad"
-                    autoFocus
-                    selectTextOnFocus
-                  />
-                </View>
-              </View>
+          <Text style={styles.description}>
+            Enter your cash amount to track in your portfolio
+          </Text>
 
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>Description (Optional)</Text>
+          {/* Content */}
+          <View style={styles.content}>
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>Amount ($)</Text>
+              <View style={styles.amountInputContainer}>
+                <Text style={styles.dollarSign}>$</Text>
                 <TextInput
-                  style={styles.descriptionInput}
-                  value={description}
-                  onChangeText={setDescription}
-                  placeholder="e.g., Emergency fund, Petty cash"
+                  style={styles.amountInput}
+                  value={amount}
+                  onChangeText={setAmount}
+                  placeholder="0.00"
                   placeholderTextColor="#666"
-                  multiline
-                  maxLength={100}
+                  keyboardType="decimal-pad"
+                  autoFocus
+                  selectTextOnFocus
                 />
               </View>
             </View>
 
-            {/* Actions */}
-            <View style={styles.actions}>
-              <TouchableOpacity
-                style={styles.button}
-                onPress={handleClose}
-                disabled={isLoading}
-              >
-                <LinearGradient
-                  colors={[
-                    "rgba(255, 255, 255, 0.12)",
-                    "rgba(255, 255, 255, 0.03)",
-                  ]}
-                  style={styles.glassButton}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                >
-                  <Text style={styles.buttonText}>Cancel</Text>
-                </LinearGradient>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.button}
-                onPress={handleSave}
-                disabled={!amount || isLoading}
-              >
-                <LinearGradient
-                  colors={
-                    !amount || isLoading
-                      ? [
-                          "rgba(255, 255, 255, 0.08)",
-                          "rgba(255, 255, 255, 0.02)",
-                        ]
-                      : ["#4A90E2", "#4A90E2"]
-                  }
-                  style={styles.glassButton}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                >
-                  <Ionicons
-                    name="checkmark"
-                    size={20}
-                    color={!amount || isLoading ? "#666" : "#fff"}
-                  />
-                  <Text
-                    style={[
-                      styles.buttonText,
-                      (!amount || isLoading) && styles.buttonTextDisabled,
-                    ]}
-                  >
-                    {isLoading ? "Saving..." : "Add Cash"}
-                  </Text>
-                </LinearGradient>
-              </TouchableOpacity>
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>Description (Optional)</Text>
+              <TextInput
+                style={styles.descriptionInput}
+                value={description}
+                onChangeText={setDescription}
+                placeholder="e.g., Emergency fund, Petty cash"
+                placeholderTextColor="#666"
+                multiline
+                maxLength={100}
+              />
             </View>
           </View>
-        </KeyboardAvoidingView>
-      </BlurView>
+
+          {/* Actions */}
+          <View style={styles.actions}>
+            <TouchableOpacity
+              style={styles.button}
+              onPress={handleClose}
+              disabled={isLoading}
+              activeOpacity={0.7}
+            >
+              <LinearGradient
+                colors={[
+                  "rgba(255, 255, 255, 0.12)",
+                  "rgba(255, 255, 255, 0.03)",
+                ]}
+                style={styles.glassButton}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+              >
+                <Text style={styles.buttonText}>Cancel</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.button}
+              onPress={handleSave}
+              disabled={!amount || isLoading}
+              activeOpacity={0.7}
+            >
+              <LinearGradient
+                colors={
+                  !amount || isLoading
+                    ? [
+                        "rgba(255, 255, 255, 0.08)",
+                        "rgba(255, 255, 255, 0.02)",
+                      ]
+                    : ["#4A90E2", "#4A90E2"]
+                }
+                style={styles.glassButton}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+              >
+                <Ionicons
+                  name="checkmark"
+                  size={20}
+                  color={!amount || isLoading ? "#666" : "#fff"}
+                />
+                <Text
+                  style={[
+                    styles.buttonText,
+                    (!amount || isLoading) && styles.buttonTextDisabled,
+                  ]}
+                >
+                  {isLoading ? "Saving..." : "Add Cash"}
+                </Text>
+              </LinearGradient>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
-  },
   container: {
     flex: 1,
     justifyContent: "center",
-    alignItems: "center",
-    paddingHorizontal: 20,
+    padding: 20,
+    backgroundColor: "rgba(0, 0, 0, 0.85)",
   },
-  modal: {
-    backgroundColor: "#1a1a1a",
-    borderRadius: 20,
+  modalContent: {
+    backgroundColor: "#0F0F0F",
+    borderRadius: 28,
+    padding: 24,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.1)",
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.3,
-    shadowRadius: 20,
-    elevation: 10,
-    width: Dimensions.get("window").width - 50,
+    shadowOffset: {
+      width: 0,
+      height: 8,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 24,
+    elevation: 12,
   },
   header: {
     flexDirection: "row",
-    alignItems: "center",
     justifyContent: "space-between",
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: "rgba(255, 255, 255, 0.1)",
-  },
-  headerLeft: {
-    flexDirection: "row",
     alignItems: "center",
-    flex: 1,
-  },
-  iconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: "rgba(78, 205, 196, 0.2)",
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 12,
+    marginBottom: 20,
   },
   title: {
-    fontSize: 20,
+    fontSize: 24,
     fontWeight: "600",
     color: "#fff",
-    marginBottom: 2,
   },
-  subtitle: {
-    fontSize: 14,
+  description: {
+    fontSize: 16,
     color: "#888",
-  },
-  closeButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    overflow: "hidden",
-  },
-  closeButtonGradient: {
-    width: "100%",
-    height: "100%",
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.2)",
+    lineHeight: 24,
+    marginBottom: 24,
   },
   content: {
-    padding: 20,
+    marginBottom: 24,
   },
   inputGroup: {
     marginBottom: 20,
@@ -321,8 +272,6 @@ const styles = StyleSheet.create({
   },
   actions: {
     flexDirection: "row",
-    paddingHorizontal: 20,
-    paddingTop: 10,
     gap: 12,
   },
   button: {
