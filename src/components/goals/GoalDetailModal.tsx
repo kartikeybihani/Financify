@@ -618,7 +618,7 @@ const GoalDetailModal = ({
                                 style={styles.analysisLoadingSpinner}
                               />
                               <Text style={styles.analysisLoadingText}>
-                                Finny is thinking about goal...
+                                Finny is thinking about your goal...
                               </Text>
                             </View>
                           )}

@@ -27,11 +27,22 @@ function redactPII(text) {
   return text;
 }
 
-function withTimeout(promise, timeoutMs = 10000) {
+function withTimeout(promise, timeoutMs = 10000, label = "Operation") {
+  const startTime = Date.now();
   return Promise.race([
-    promise,
+    promise.then((result) => {
+      const duration = Date.now() - startTime;
+      console.log(`⏱️  [TIMEOUT] ${label} completed in ${duration}ms`);
+      return result;
+    }),
     new Promise((_, reject) =>
-      setTimeout(() => reject(new Error("Timeout")), timeoutMs)
+      setTimeout(() => {
+        const duration = Date.now() - startTime;
+        console.error(
+          `⏱️  [TIMEOUT] ${label} timed out after ${duration}ms (limit: ${timeoutMs}ms)`
+        );
+        reject(new Error(`${label} timed out after ${timeoutMs}ms`));
+      }, timeoutMs)
     ),
   ]);
 }
@@ -1719,21 +1730,30 @@ async function analyzeGoalWithLLM(goalData, userId) {
     console.log("📊 [GOAL ANALYSIS] Fetching all user data in parallel...");
     const fetchStartTime = Date.now();
 
-    const [
-      netWorthData,
-      invSnap,
-      recentTxns,
-      spendByCategory,
-      cashflow,
-      userProfile,
-      supermemoryProfile,
-      currentGoals,
-      budgetPeriod,
-    ] = await Promise.all([
+    // Helper function to wrap promises with timeout and logging
+    const wrapWithTimeout = async (promiseFn, label, timeoutMs = 15000) => {
+      const startTime = Date.now();
+      try {
+        const result = await withTimeout(promiseFn(), timeoutMs, label);
+        const duration = Date.now() - startTime;
+        console.log(`    ✅ [${label}] Completed in ${duration}ms`);
+        return result;
+      } catch (err) {
+        const duration = Date.now() - startTime;
+        console.error(
+          `    ❌ [${label}] Failed after ${duration}ms:`,
+          err.message
+        );
+        throw err;
+      }
+    };
+
+    // Use Promise.allSettled to ensure all promises complete even if some fail
+    const results = await Promise.allSettled([
       // Financial data
-      (async () => {
-        console.log("  📈 Fetching net worth...");
-        try {
+      wrapWithTimeout(
+        async () => {
+          console.log("  📈 Fetching net worth...");
           const result = await supabase.rpc("get_net_worth", {
             p_user_id: userId,
           });
@@ -1752,14 +1772,13 @@ async function analyzeGoalWithLLM(goalData, userId) {
             );
           }
           return result;
-        } catch (err) {
-          console.error("    ❌ Error fetching net worth:", err.message);
-          return { data: null, error: err };
-        }
-      })(),
-      (async () => {
-        console.log("  💼 Fetching investment snapshot...");
-        try {
+        },
+        "Net Worth",
+        15000
+      ),
+      wrapWithTimeout(
+        async () => {
+          console.log("  💼 Fetching investment snapshot...");
           const result = await supabase.rpc("get_investment_snapshot", {
             p_user_id: userId,
           });
@@ -1774,14 +1793,13 @@ async function analyzeGoalWithLLM(goalData, userId) {
             console.log(`    ✅ Investment snapshot retrieved`);
           }
           return result;
-        } catch (err) {
-          console.error("    ❌ Error fetching investments:", err.message);
-          return { data: null, error: err };
-        }
-      })(),
-      (async () => {
-        console.log("  💳 Fetching recent transactions (limit: 200)...");
-        try {
+        },
+        "Investment Snapshot",
+        15000
+      ),
+      wrapWithTimeout(
+        async () => {
+          console.log("  💳 Fetching recent transactions (limit: 200)...");
           const result = await supabase.rpc("get_recent_transactions", {
             p_user_id: userId,
             p_limit: 200,
@@ -1797,14 +1815,13 @@ async function analyzeGoalWithLLM(goalData, userId) {
             console.log(`    ✅ Transactions: ${result.data.length} found`);
           }
           return result;
-        } catch (err) {
-          console.error("    ❌ Error fetching transactions:", err.message);
-          return { data: null, error: err };
-        }
-      })(),
-      (async () => {
-        console.log("  📊 Fetching spend by category (last 30 days)...");
-        try {
+        },
+        "Recent Transactions",
+        20000
+      ),
+      wrapWithTimeout(
+        async () => {
+          console.log("  📊 Fetching spend by category (last 30 days)...");
           const result = await supabase.rpc("get_spend_by_category", {
             p_user_id: userId,
             p_start: thirtyDaysAgo.toISOString().split("T")[0],
@@ -1823,17 +1840,13 @@ async function analyzeGoalWithLLM(goalData, userId) {
             );
           }
           return result;
-        } catch (err) {
-          console.error(
-            "    ❌ Error fetching spend by category:",
-            err.message
-          );
-          return { data: null, error: err };
-        }
-      })(),
-      (async () => {
-        console.log("  💰 Fetching cashflow (last 3 months)...");
-        try {
+        },
+        "Spend by Category",
+        15000
+      ),
+      wrapWithTimeout(
+        async () => {
+          console.log("  💰 Fetching cashflow (last 3 months)...");
           const result = await supabase.rpc("get_cashflow_monthly", {
             p_user_id: userId,
             p_months: 3,
@@ -1849,71 +1862,72 @@ async function analyzeGoalWithLLM(goalData, userId) {
             console.log(`    ✅ Cashflow months: ${result.data.length} found`);
           }
           return result;
-        } catch (err) {
-          console.error("    ❌ Error fetching cashflow:", err.message);
-          return { data: null, error: err };
-        }
-      })(),
+        },
+        "Cashflow",
+        15000
+      ),
       // User profile
-      (async () => {
-        console.log("  👤 Fetching user profile...");
-        const result = await loadUserProfile(userId).catch((err) => {
-          console.error("    ❌ Error fetching profile:", err.message);
-          return null;
-        });
-        if (result) {
-          console.log(
-            `    ✅ Profile: ${result.name || "N/A"} (${
-              result.finny_style || "conversational"
-            } style)`
-          );
-        }
-        return result;
-      })(),
-      // Memories
-      (async () => {
-        console.log("  🧠 Fetching relevant memories...");
-        const memoryQuery = `Goal: ${goalData.label}. Target: $${goalData.target_amount}. Category: ${goalData.category}`;
-        console.log(`    🔍 [SUPERMEMORY] Search query: "${memoryQuery}"`);
-        console.log(`    ⚙️ [SUPERMEMORY] Settings: limit=15, threshold=0.4`);
-        const supermemoryResults = await searchSupermemoryMemories(
-          userId,
-          memoryQuery,
-          { limit: 15, threshold: 0.4 }
-        ).catch((err) => {
-          console.error("    ❌ Error fetching memories:", err.message);
-          return [];
-        });
-
-        // Transform to match loadUserMemory format
-        const memories = supermemoryResults.map((result) => ({
-          id: result.id,
-          content: result.memory || "",
-          similarity: result.similarity || 0,
-          metadata: result.metadata || {},
-        }));
-
-        const result = { memories, totalCount: memories.length };
-        if (result?.memories) {
-          console.log(`    ✅ Memories: ${result.memories.length} found`);
-          if (result.memories.length > 0) {
-            console.log(`    📝 [SUPERMEMORY] Memory previews:`);
-            result.memories.slice(0, 3).forEach((mem, idx) => {
-              const preview = (mem.content || "").substring(0, 100);
-              console.log(
-                `       ${idx + 1}. ${preview}${
-                  preview.length >= 100 ? "..." : ""
-                } (similarity: ${((mem.similarity || 0) * 100).toFixed(1)}%)`
-              );
-            });
+      wrapWithTimeout(
+        async () => {
+          console.log("  👤 Fetching user profile...");
+          const result = await loadUserProfile(userId);
+          if (result) {
+            console.log(
+              `    ✅ Profile: ${result.name || "N/A"} (${
+                result.finny_style || "conversational"
+              } style)`
+            );
           }
-        }
-        return result;
-      })(),
+          return result;
+        },
+        "User Profile",
+        10000
+      ),
+      // Memories
+      wrapWithTimeout(
+        async () => {
+          console.log("  🧠 Fetching relevant memories...");
+          const memoryQuery = `Goal: ${goalData.label}. Target: $${goalData.target_amount}. Category: ${goalData.category}`;
+          console.log(`    🔍 [SUPERMEMORY] Search query: "${memoryQuery}"`);
+          console.log(`    ⚙️ [SUPERMEMORY] Settings: limit=15, threshold=0.4`);
+          const supermemoryResults = await searchSupermemoryMemories(
+            userId,
+            memoryQuery,
+            { limit: 15, threshold: 0.4 }
+          );
+
+          // Transform to match loadUserMemory format
+          const memories = supermemoryResults.map((result) => ({
+            id: result.id,
+            content: result.memory || "",
+            similarity: result.similarity || 0,
+            metadata: result.metadata || {},
+          }));
+
+          const result = { memories, totalCount: memories.length };
+          if (result?.memories) {
+            console.log(`    ✅ Memories: ${result.memories.length} found`);
+            if (result.memories.length > 0) {
+              console.log(`    📝 [SUPERMEMORY] Memory previews:`);
+              result.memories.slice(0, 3).forEach((mem, idx) => {
+                const preview = (mem.content || "").substring(0, 100);
+                console.log(
+                  `       ${idx + 1}. ${preview}${
+                    preview.length >= 100 ? "..." : ""
+                  } (similarity: ${((mem.similarity || 0) * 100).toFixed(1)}%)`
+                );
+              });
+            }
+          }
+          return result;
+        },
+        "Supermemory Search",
+        20000
+      ),
       // Current goals (excluding the one being analyzed)
-      (async () => {
-        console.log("  🎯 Fetching current goals...");
-        try {
+      wrapWithTimeout(
+        async () => {
+          console.log("  🎯 Fetching current goals...");
           // Check if goalData.id is a valid UUID before using .neq()
           // Test IDs like "test-123" will cause UUID validation errors
           const isTestId =
@@ -1943,15 +1957,14 @@ async function analyzeGoalWithLLM(goalData, userId) {
             console.log(`    ✅ Current goals: ${result.data.length} found`);
           }
           return result;
-        } catch (err) {
-          console.error("    ❌ Error fetching goals:", err.message);
-          return { data: [] };
-        }
-      })(),
+        },
+        "Current Goals",
+        10000
+      ),
       // Current budget
-      (async () => {
-        console.log("  💵 Fetching current budget...");
-        try {
+      wrapWithTimeout(
+        async () => {
+          console.log("  💵 Fetching current budget...");
           const result = await supabase
             .from("budget_periods")
             .select(
@@ -1979,15 +1992,88 @@ async function analyzeGoalWithLLM(goalData, userId) {
             console.log(`    ✅ Budget: ${entryCount} category entries found`);
           }
           return result;
-        } catch (err) {
-          console.error("    ❌ Error fetching budget:", err.message);
-          return { data: null };
-        }
-      })(),
+        },
+        "Budget",
+        10000
+      ),
     ]);
 
+    // Process Promise.allSettled results
     const fetchTime = Date.now() - fetchStartTime;
-    console.log(`✅ [GOAL ANALYSIS] All data fetched in ${fetchTime}ms`);
+    console.log(
+      `✅ [GOAL ANALYSIS] All data fetch operations completed in ${fetchTime}ms`
+    );
+
+    // Extract results from Promise.allSettled
+    const [
+      netWorthResult,
+      invSnapResult,
+      recentTxnsResult,
+      spendByCategoryResult,
+      cashflowResult,
+      userProfileResult,
+      supermemoryProfileResult,
+      currentGoalsResult,
+      budgetPeriodResult,
+    ] = results;
+
+    // Helper to extract value or default from settled result
+    const getValue = (settledResult, defaultValue, label) => {
+      if (settledResult.status === "fulfilled") {
+        return settledResult.value;
+      } else {
+        console.error(
+          `    ⚠️ [${label || "Unknown"}] Promise rejected:`,
+          settledResult.reason?.message || settledResult.reason
+        );
+        return defaultValue;
+      }
+    };
+
+    const netWorthData = getValue(
+      netWorthResult,
+      { data: null, error: null },
+      "Net Worth"
+    );
+    const invSnap = getValue(
+      invSnapResult,
+      { data: null, error: null },
+      "Investment Snapshot"
+    );
+    const recentTxns = getValue(
+      recentTxnsResult,
+      { data: [], error: null },
+      "Recent Transactions"
+    );
+    const spendByCategory = getValue(
+      spendByCategoryResult,
+      { data: [], error: null },
+      "Spend by Category"
+    );
+    const cashflow = getValue(
+      cashflowResult,
+      { data: [], error: null },
+      "Cashflow"
+    );
+    const userProfile = getValue(userProfileResult, null, "User Profile");
+    const supermemoryProfile = getValue(
+      supermemoryProfileResult,
+      { memories: [], totalCount: 0 },
+      "Supermemory Search"
+    );
+    const currentGoals = getValue(
+      currentGoalsResult,
+      { data: [] },
+      "Current Goals"
+    );
+    const budgetPeriod = getValue(budgetPeriodResult, { data: null }, "Budget");
+
+    // Log summary of what succeeded/failed
+    const successCount = results.filter((r) => r.status === "fulfilled").length;
+    const failureCount = results.filter((r) => r.status === "rejected").length;
+    console.log(
+      `📊 [GOAL ANALYSIS] Data fetch summary: ${successCount} succeeded, ${failureCount} failed`
+    );
 
     // Process financial data
     const netWorthRecord = netWorthData?.data?.[0];
