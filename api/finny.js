@@ -667,27 +667,33 @@ function generateDataCacheKey(dataType, userId, params = {}) {
 }
 
 // Get cached user data
-async function getCachedUserData(dataType, userId, params = {}) {
+async function getCachedUserData(dataType, userId, params = {}, silent = false) {
   const key = generateDataCacheKey(dataType, userId, params);
 
   // First check in-memory cache
   const cached = dataCache.get(key);
   if (cached && Date.now() < cached.expires_at) {
-    console.log(`✅ [DATA_CACHE] In-memory cache HIT for ${dataType} (${key})`);
+    if (!silent) {
+      console.log(`✅ [DATA_CACHE] In-memory cache HIT for ${dataType} (${key})`);
+    }
     return cached.data;
   }
 
   if (cached) {
-    logDebug(
-      `⏰ [DATA_CACHE] In-memory cache EXPIRED for ${dataType} (${key})`
-    );
+    if (!silent) {
+      logDebug(
+        `⏰ [DATA_CACHE] In-memory cache EXPIRED for ${dataType} (${key})`
+      );
+    }
     dataCache.delete(key);
   }
 
   // Fallback to persistent cache
-  console.log(
-    `🔍 [DATA_CACHE] Checking persistent cache for ${dataType} (${key})`
-  );
+  if (!silent) {
+    console.log(
+      `🔍 [DATA_CACHE] Checking persistent cache for ${dataType} (${key})`
+    );
+  }
   const persistentData = await getPersistentCache(dataType, userId, params);
   if (persistentData) {
     // Store in in-memory cache for faster access
@@ -1172,7 +1178,24 @@ export default async function handler(req, res) {
     total_ms: 0,
   };
 
-  logInfo("🤖 [FINNY] Request received:", req.method);
+  const { action, message, context, classification, ...otherParams } = req.body;
+  
+  // For prebuild_context, we'll check if all contexts are cached after we have userId
+  // and suppress logs if they are. For now, we'll log normally and check later.
+  let shouldSuppressLogs = false;
+
+  // Try to check early if we have userId in context (for prebuild_context silent mode)
+  if (action === "prebuild_context" && context?.user_id) {
+    try {
+      shouldSuppressLogs = await areAllContextsCached(context.user_id);
+    } catch (error) {
+      // If check fails, continue with normal logging
+    }
+  }
+
+  if (!shouldSuppressLogs) {
+    logInfo("🤖 [FINNY] Request received:", req.method);
+  }
 
   if (req.method !== "POST") {
     logWarn("❌ [FINNY] Method not allowed:", req.method);
@@ -1182,10 +1205,11 @@ export default async function handler(req, res) {
   // Check if client wants streaming response
   const wantsStreaming = req.body.stream === true;
 
-  const { action, message, context, classification, ...otherParams } = req.body;
-  logInfo("📝 [FINNY] Action:", action);
-  // Avoid logging full message/context to reduce PII exposure
-  logInfo("📊 [FINNY] Context provided:", context ? "Yes" : "No");
+  if (!shouldSuppressLogs) {
+    logInfo("📝 [FINNY] Action:", action);
+    // Avoid logging full message/context to reduce PII exposure
+    logInfo("📊 [FINNY] Context provided:", context ? "Yes" : "No");
+  }
 
   if (!action) {
     return res
@@ -1240,6 +1264,15 @@ export default async function handler(req, res) {
   // But fall back to client-provided user_id if no JWT token is present (for testing)
   const finalUserId = serverUserId || context?.user_id;
   const chatId = req.body.chat_id || context?.chat_id; // Get chat_id from request
+
+  // Re-check with finalUserId (more secure) - always use server-verified userId when available
+  if (action === "prebuild_context" && finalUserId) {
+    try {
+      shouldSuppressLogs = await areAllContextsCached(finalUserId);
+    } catch (error) {
+      // If check fails, continue with normal logging
+    }
+  }
 
   if (
     (hadAuthHeader && !serverUserId) ||
@@ -1878,7 +1911,7 @@ export default async function handler(req, res) {
         // Set flag to suppress memory storage warnings during prebuild_context
         setPrebuildContextActive(finalUserId);
         try {
-          response = await handlePrebuildContext(finalUserId);
+          response = await handlePrebuildContext(finalUserId, shouldSuppressLogs);
         } finally {
           // Always clear the flag, even if there's an error
           clearPrebuildContextActive(finalUserId);
@@ -1896,15 +1929,17 @@ export default async function handler(req, res) {
     // Log all timings in seconds
     const formatTime = (ms) => (ms / 1000).toFixed(3);
 
-    // Consolidated timing log
-    console.log(`\n⏱️  [TIMING] Total: ${formatTime(timings.total_ms)}s`);
-    console.log(
-      `   └─ Handler: ${formatTime(timings.handler_ms)}s | LLM: ${formatTime(
-        timings.llm_ms || 0
-      )}s | Memory: ${formatTime(
-        timings.memory_loading_ms
-      )}s | Profile: ${formatTime(timings.profile_loading_ms)}s`
-    );
+    // Consolidated timing log (suppress if all contexts cached for prebuild_context)
+    if (!shouldSuppressLogs) {
+      console.log(`\n⏱️  [TIMING] Total: ${formatTime(timings.total_ms)}s`);
+      console.log(
+        `   └─ Handler: ${formatTime(timings.handler_ms)}s | LLM: ${formatTime(
+          timings.llm_ms || 0
+        )}s | Memory: ${formatTime(
+          timings.memory_loading_ms
+        )}s | Profile: ${formatTime(timings.profile_loading_ms)}s`
+      );
+    }
 
     // Detailed breakdown only in debug mode
     logDebug("⏱️  [TIMING] Detailed breakdown:");
@@ -2007,7 +2042,9 @@ export default async function handler(req, res) {
     } else {
       res.status(200).json(response);
     }
-    console.log("🔍 [FINNY] Response:", response);
+    if (!shouldSuppressLogs) {
+      console.log("🔍 [FINNY] Response:", response);
+    }
   } catch (error) {
     console.error("❌ [FINNY] Error:", error);
     if (wantsStreaming && res && !res.writableEnded) {
@@ -4707,7 +4744,27 @@ async function cacheOperationData(operation, data) {
   await setCachedUserData(cfg.cacheType, operation.userId, data, params);
 }
 
-async function handlePrebuildContext(userId) {
+// Helper function to check if all contexts are cached (silently)
+async function areAllContextsCached(userId) {
+  const commonContexts = [
+    "summary_min",
+    "invest_holdings",
+    "goals_overview",
+    "cashflow_monthly",
+  ];
+
+  for (const need of commonContexts) {
+    const cacheType = NEED_CONFIG[need]?.cacheType || need;
+    const cached = await getCachedUserData(cacheType, userId, {}, true); // silent = true
+    if (!cached) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+async function handlePrebuildContext(userId, silent = false) {
   const startTime = Date.now();
 
   try {
@@ -4725,7 +4782,7 @@ async function handlePrebuildContext(userId) {
 
     for (const need of commonContexts) {
       const cacheType = NEED_CONFIG[need]?.cacheType || need;
-      const cached = await getCachedUserData(cacheType, userId);
+      const cached = await getCachedUserData(cacheType, userId, {}, silent);
       cachedContexts[need] = !!cached;
       if (!cached) {
         allCached = false;
@@ -4735,9 +4792,11 @@ async function handlePrebuildContext(userId) {
     // If all contexts are already cached and fresh, return early
     if (allCached) {
       const totalTime = Date.now() - startTime;
-      logInfo(
-        `⚡ [PREBUILD] All contexts already cached and fresh (checked in ${totalTime}ms)`
-      );
+      if (!silent) {
+        logInfo(
+          `⚡ [PREBUILD] All contexts already cached and fresh (checked in ${totalTime}ms)`
+        );
+      }
       return {
         success: true,
         message: "Context already cached and fresh",
@@ -5557,9 +5616,9 @@ async function handleOffTopic(
     // OPTIMIZED: Load memory and profile in parallel for better performance
     let userMemory = { memories: [], totalCount: 0 };
     let userProfileForFinny = null;
+    sendProgress("Brewing...");
     if (userId) {
       try {
-        sendProgress("Loading your memories...");
         console.log(
           "🧠 [OFF_TOPIC] Loading user memories and profile in parallel for user:",
           userId
