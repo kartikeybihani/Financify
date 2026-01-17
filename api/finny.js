@@ -5641,7 +5641,7 @@ async function handleOffTopic(
 
         userMemory = loadedMemory;
         userProfileForFinny = loadedProfile;
-        sendProgress("Analyzing your context...");
+        sendProgress("Brewing about you...");
         console.log("🧠 [OFF_TOPIC] User memories:", userMemory);
       } catch (error) {
         console.log("⚠️ [OFF_TOPIC] Could not load user data:", error?.message);
