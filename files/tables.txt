@@ -96,17 +96,6 @@ CREATE TABLE public.category_rules (
   transaction_name text,
   CONSTRAINT category_rules_pkey PRIMARY KEY (id)
 );
-CREATE TABLE public.chat_conversation_state (
-  conversation_id text NOT NULL,
-  state jsonb NOT NULL,
-  asked_at timestamp with time zone NOT NULL DEFAULT now(),
-  expires_at timestamp with time zone,
-  status text NOT NULL DEFAULT 'pending'::text,
-  last_updated timestamp with time zone NOT NULL DEFAULT now(),
-  user_id uuid,
-  CONSTRAINT chat_conversation_state_pkey PRIMARY KEY (conversation_id),
-  CONSTRAINT chat_conversation_state_user_fk FOREIGN KEY (user_id) REFERENCES auth.users(id)
-);
 CREATE TABLE public.chat_sessions (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL,

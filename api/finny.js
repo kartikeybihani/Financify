@@ -3101,7 +3101,8 @@ async function handleAsk(
       .join("\n\n");
 
     // Short-term conversation continuity: include recent turns (no extra LLM calls)
-    const recentTurns = getRecentConversationTurns(userId, context?.chat_id, {
+    // Now uses database for persistence across serverless instances
+    const recentTurns = await getRecentConversationTurns(userId, context?.chat_id, {
       maxMessages: 8,
       maxChars: 6000,
     });
@@ -3114,7 +3115,7 @@ async function handleAsk(
         hasContext: !!context,
       });
     } else if (recentTurns.length === 0) {
-      console.log("⚠️ [RECENT_TURNS] No recent turns found (cache may be empty):", {
+      console.log("⚠️ [RECENT_TURNS] No recent turns found:", {
         userId,
         chat_id: context?.chat_id,
         cacheKey: `${userId}:${context?.chat_id}`,
