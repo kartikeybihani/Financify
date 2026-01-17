@@ -82,6 +82,11 @@ export const useChat = () => {
    * This ensures we never save partially streamed Finny messages, which can
    * otherwise lead to truncated responses being rehydrated when the user
    * returns to the Finny tab.
+   * 
+   * CRITICAL: All split message parts must be added synchronously in the same
+   * state update. Never use setTimeout or async delays when adding split parts,
+   * as this creates a race condition where persistence happens before all parts
+   * are added, causing split messages to be lost on app restart.
    */
   useEffect(() => {
     if (!shouldPersistRef.current) return;
@@ -201,6 +206,24 @@ export const useChat = () => {
         // User changed - don't save messages for wrong user
         console.log("⚠️ [SECURITY] User mismatch detected, not saving chat messages");
         return;
+      }
+
+      // Validate message integrity: check for orphaned split messages
+      // Split messages have IDs like "messageId::2", "messageId::3", etc.
+      // They should always have a corresponding base message with ID "messageId"
+      const messageIds = new Set(chatMessages.map(m => m.id));
+      const orphanedSplits: string[] = [];
+      for (const msg of chatMessages) {
+        if (msg.id.includes('::')) {
+          const baseId = msg.id.split('::')[0];
+          if (!messageIds.has(baseId)) {
+            orphanedSplits.push(msg.id);
+          }
+        }
+      }
+      if (orphanedSplits.length > 0) {
+        logger.warn(`[PERSISTENCE] ⚠️ Detected ${orphanedSplits.length} orphaned split messages:`, orphanedSplits);
+        // Still save, but log the issue for debugging
       }
 
       await AsyncStorage.setItem("chatMessages", JSON.stringify(chatMessages));
@@ -960,16 +983,15 @@ export const useChat = () => {
                         });
                       }
 
-                      if (extra.length === 0) return updated;
-
-                      setTimeout(() => {
-                        setChatMessages((prevNow) => {
-                          const updatedNow = [...prevNow];
-                          const idxNow = updatedNow.findIndex((m) => m.id === messageId);
-                          const at = idxNow >= 0 ? idxNow : updatedNow.length - 1;
-                          return insertAfterIndex(updatedNow, at, extra);
-                        });
-                      }, 200);
+                      if (extra.length > 0) {
+                        // CRITICAL: Add all split parts immediately in the same state update.
+                        // Never use setTimeout or async delays here, as this creates a race condition
+                        // where persistence happens before all parts are added, causing split messages
+                        // to be lost on app restart. All parts must be in state before shouldPersistRef triggers.
+                        const messageIndexInUpdated = updated.findIndex((m) => m.id === messageId);
+                        const at = messageIndexInUpdated >= 0 ? messageIndexInUpdated : updated.length - 1;
+                        return insertAfterIndex(updated, at, extra);
+                      }
                     }
 
                     return updated;
@@ -1143,16 +1165,15 @@ export const useChat = () => {
                           ...(resolvedHideActions !== undefined && { hideActions: resolvedHideActions }),
                         });
                       }
-                      if (extra.length === 0) return updated;
-
-                      setTimeout(() => {
-                        setChatMessages((prevNow) => {
-                          const updatedNow = [...prevNow];
-                          const idxNow = updatedNow.findIndex((m) => m.id === messageId);
-                          const at = idxNow >= 0 ? idxNow : updatedNow.length - 1;
-                          return insertAfterIndex(updatedNow, at, extra);
-                        });
-                      }, 200);
+                      if (extra.length > 0) {
+                        // CRITICAL: Add all split parts immediately in the same state update.
+                        // Never use setTimeout or async delays here, as this creates a race condition
+                        // where persistence happens before all parts are added, causing split messages
+                        // to be lost on app restart. All parts must be in state before shouldPersistRef triggers.
+                        const messageIndexInUpdated = updated.findIndex((m) => m.id === messageId);
+                        const at = messageIndexInUpdated >= 0 ? messageIndexInUpdated : updated.length - 1;
+                        return insertAfterIndex(updated, at, extra);
+                      }
                     }
 
                     return updated;
@@ -1266,40 +1287,8 @@ export const useChat = () => {
     }
   };
 
-  // Handle split messages for non-streaming responses (backward compatibility)
-  // NOTE: This is only used when streaming is disabled. Currently streaming is always enabled,
-  // so this function is kept for backward compatibility only.
-  const handleSplitMessages = async (splitMessages: Array<{type: string, content: string}>) => {
-    try {
-      console.log(`[Frontend] Processing ${splitMessages.length} split messages`);
-      
-      for (let i = 0; i < splitMessages.length; i++) {
-        const messageObj = splitMessages[i];
-        
-        // Show typing indicator for each message (Gen Z expects this)
-        setIsTyping(true);
-        
-        // Gen Z-optimized delay: 1.2 seconds (faster than 1.5s for better engagement)
-        const delay = 1200 + Math.random() * 300; // 1.2-1.5s range
-        await new Promise((resolve) => setTimeout(resolve, delay));
-        
-        setIsTyping(false);
-        
-        // Push the message
-        pushChat("finny", messageObj.content);
-        
-        // Small pause between messages (but not after the last one)
-        if (i < splitMessages.length - 1) {
-          await new Promise((resolve) => setTimeout(resolve, 300));
-        }
-      }
-      
-      console.log(`[Frontend] Completed sending ${splitMessages.length} split messages`);
-    } catch (error) {
-      logger.error("Error handling split messages:", error);
-      setIsTyping(false);
-    }
-  };
+  // handleSplitMessages removed - frontend now handles all splitting with splitFinnyMessage()
+  // Backend always sends full message strings, frontend splits intelligently for consistent behavior
 
   const handleUserMessage = async (messageText: string, startTime?: number) => {
     setIsTyping(true); // Start typing indicator immediately
@@ -1817,8 +1806,7 @@ export const useChat = () => {
         data.hideActions !== undefined
           ? data.hideActions
           : answerPayload.hideActions;
-      const resolvedIsSplit =
-        data.isSplit !== undefined ? data.isSplit : answerPayload.isSplit;
+      // isSplit flag removed - frontend handles all splitting with splitFinnyMessage()
       const resolvedMessagePayload = data.message ?? answerPayload.message;
 
       if (hasActions) {
@@ -1881,30 +1869,46 @@ export const useChat = () => {
       }
       
       // Note: Finny's response will be logged in pushChat() when it's added to chat
-      // Handle split messages for better UX
-      if (resolvedIsSplit && Array.isArray(resolvedMessagePayload)) {
-        await handleSplitMessages(resolvedMessagePayload);
-      } else {
-        // Create message object with UI flags from backend
-        // Ensure message is always a string
-        const messageText = typeof message === "string" ? message : String(message || "");
+      // Frontend handles all message splitting with splitFinnyMessage() for consistent behavior
+      // Backend always sends full message string - frontend splits intelligently
+      const finalMessageText = typeof message === "string" ? message : String(message || "");
+      
+      // Split message using sophisticated frontend algorithm (respects code blocks, lists, etc.)
+      const splitParts = splitFinnyMessage(finalMessageText);
+      
+      // Create and add all message parts
+      for (let i = 0; i < splitParts.length; i++) {
+        const partText = splitParts[i].trim();
+        if (!partText) continue;
+        
         const finnyMessage: ChatMessage = {
-          id: `finny-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          id: i === 0 
+            ? `finny-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+            : `finny-${Date.now()}-${Math.random().toString(36).substr(2, 9)}::${i + 1}`,
           sender: "finny",
-          text: messageText,
-          timestamp: Date.now(),
+          text: partText,
+          timestamp: Date.now() + i,
           type: "text",
           ...(stockCandidate && { stockCandidate }),
           ...(resolvedHideFeedback !== undefined && { hideFeedback: resolvedHideFeedback }),
           ...(resolvedHideActions !== undefined && { hideActions: resolvedHideActions }),
         };
         
-        // Add typing delay for finny messages
-        setIsTyping(true);
-        await new Promise((resolve) => setTimeout(resolve, 1000 + Math.random() * 1000));
+        // Add typing delay only for first message
+        if (i === 0) {
+          setIsTyping(true);
+          await new Promise((resolve) => setTimeout(resolve, 1000 + Math.random() * 1000));
+        }
+        
         pushChat(finnyMessage);
-        setIsTyping(false);
+        
+        // Small delay between split parts for smooth UX
+        if (i < splitParts.length - 1) {
+          await new Promise((resolve) => setTimeout(resolve, 200));
+        }
       }
+      
+      setIsTyping(false);
     } catch (error) {
       const totalDuration = Date.now() - funcStartTime;
       logger.error(`[CHAT] ❌ Error after ${totalDuration}ms:`, error);

@@ -3312,26 +3312,13 @@ async function handleAsk(
         : cleanText
     );
 
-    // For streaming: frontend handles splitting during stream (no backend splitting needed)
-    // For non-streaming: split long responses into digestible chunks for better UX
-    let response;
-    if (wantsStreaming) {
-      // Streaming - send raw text, frontend will split intelligently
-      response = {
-        message: cleanedMessage,
-        type: "assistant",
-        isSplit: false,
-      };
-    } else {
-      // Non-streaming - split on backend for backward compatibility
-      const splitMessages = splitLongResponse(cleanedMessage);
-      response = {
-        message:
-          splitMessages.length === 1 ? splitMessages[0].content : splitMessages,
-        type: "assistant",
-        isSplit: splitMessages.length > 1,
-      };
-    }
+    // Frontend handles all message splitting with sophisticated algorithm
+    // Backend always sends full message string - frontend splits intelligently
+    // This ensures consistent behavior between streaming and non-streaming modes
+    const response = {
+      message: cleanedMessage,
+      type: "assistant",
+    };
 
     // Log the conversation
     // Bug fix: Log cleanedMessage (actual response sent to user) instead of cleanText (raw LLM output)
@@ -3447,9 +3434,7 @@ function normalizeResponseEnvelope(response) {
   if (normalized.type == null && answer.type != null) {
     normalized.type = answer.type;
   }
-  if (normalized.isSplit == null && answer.isSplit != null) {
-    normalized.isSplit = answer.isSplit;
-  }
+  // isSplit flag removed - frontend handles all splitting
   if (normalized.actions == null && answer.actions != null) {
     normalized.actions = answer.actions;
   }
@@ -3537,106 +3522,10 @@ function cleanResponseFormatting(response) {
   return cleaned.trim();
 }
 
-// === SIMPLE MESSAGE SPLITTING ===
-// Split long responses using only natural boundaries (double line breaks, complete sentences)
-function splitLongResponse(text) {
-  if (!text || typeof text !== "string") {
-    return [{ type: "text", content: text }];
-  }
-
-  // If response is short enough, return as single message
-  if (text.length <= 600) {
-    return [{ type: "text", content: text }];
-  }
-
-  console.log(
-    `[Message Splitting] Response length: ${text.length} characters - splitting needed`
-  );
-
-  // Try to split at double line breaks first (natural paragraph boundaries)
-  const paragraphs = text.split(/\n\s*\n/);
-
-  if (paragraphs.length > 1) {
-    const chunks = [];
-    let currentChunk = "";
-
-    for (const paragraph of paragraphs) {
-      const trimmedParagraph = paragraph.trim();
-
-      // If adding this paragraph would exceed 500 chars, start a new chunk
-      if (
-        currentChunk.length + trimmedParagraph.length > 500 &&
-        currentChunk.trim()
-      ) {
-        chunks.push(currentChunk.trim());
-        currentChunk = trimmedParagraph;
-      } else {
-        currentChunk += (currentChunk ? "\n\n" : "") + trimmedParagraph;
-      }
-    }
-
-    // Add the last chunk
-    if (currentChunk.trim()) {
-      chunks.push(currentChunk.trim());
-    }
-
-    // If we have multiple chunks, return them
-    if (chunks.length > 1) {
-      console.log(
-        `[Message Splitting] Split into ${chunks.length} chunks using paragraph boundaries`
-      );
-      return chunks.map((chunk) => ({
-        type: "text",
-        content: chunk,
-      }));
-    }
-  }
-
-  // If no good paragraph boundaries or still too long, split at complete sentences only
-  const sentences = text.split(/(?<=[.!?])\s+/);
-
-  if (sentences.length > 1) {
-    const chunks = [];
-    let currentChunk = "";
-
-    for (const sentence of sentences) {
-      const trimmedSentence = sentence.trim();
-
-      // If adding this sentence would exceed 500 chars, start a new chunk
-      if (
-        currentChunk.length + trimmedSentence.length > 500 &&
-        currentChunk.trim()
-      ) {
-        chunks.push(currentChunk.trim());
-        currentChunk = trimmedSentence;
-      } else {
-        currentChunk += (currentChunk ? " " : "") + trimmedSentence;
-      }
-    }
-
-    // Add the last chunk
-    if (currentChunk.trim()) {
-      chunks.push(currentChunk.trim());
-    }
-
-    // Only return multiple chunks if we actually have them
-    if (chunks.length > 1) {
-      console.log(
-        `[Message Splitting] Split into ${chunks.length} chunks using sentence boundaries`
-      );
-      return chunks.map((chunk) => ({
-        type: "text",
-        content: chunk,
-      }));
-    }
-  }
-
-  // If all else fails and it's still too long, send as single message
-  console.log(
-    `[Message Splitting] Could not find good split points - sending as single message`
-  );
-  return [{ type: "text", content: text }];
-}
+// === MESSAGE SPLITTING ===
+// Message splitting is now handled entirely on the frontend using a sophisticated
+// algorithm that respects code blocks, list contexts, and sentence boundaries.
+// Backend always sends full message strings - frontend splits intelligently.
 
 // === ENHANCED WEB SEARCH DETECTION ===
 // Enhanced web search detection patterns
