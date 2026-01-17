@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import {
   Modal,
   View,
@@ -12,6 +12,8 @@ import { styles } from "@/src/styles/insightsStyles";
 import TransactionDetailModal from "@/src/components/modals/TransactionDetailModal";
 import { Transaction } from "@/src/types/plaid";
 import { getDisplayCategory } from "@/src/utils/categories/transactionCategory";
+import { useCategories } from "@/src/hooks/useCategories";
+import { supabase } from "@/src/lib/supabase/supabase";
 
 interface CategoryData {
   amount: number;
@@ -27,6 +29,7 @@ interface CategoryDetailModalProps {
   transactions: Transaction[];
   formatCategoryName: (category: string) => string;
   formatDate: (date: string) => string;
+  categoryId?: string | null; // Optional category ID for more reliable filtering
 }
 
 const CategoryDetailModal: React.FC<CategoryDetailModalProps> = ({
@@ -37,7 +40,43 @@ const CategoryDetailModal: React.FC<CategoryDetailModalProps> = ({
   transactions,
   formatCategoryName,
   formatDate,
+  categoryId: providedCategoryId,
 }) => {
+  const [userId, setUserId] = useState<string | undefined>(undefined);
+
+  // Fetch user ID when modal becomes visible
+  useEffect(() => {
+    if (visible) {
+      const fetchUserId = async () => {
+        try {
+          const {
+            data: { user },
+          } = await supabase.auth.getUser();
+          if (user?.id) {
+            setUserId(user.id);
+          }
+        } catch (error) {
+          console.error("[CategoryDetailModal] Error fetching user ID:", error);
+        }
+      };
+      fetchUserId();
+    }
+  }, [visible]);
+
+  const { getCategoryByName } = useCategories(userId);
+
+  // Try to find category ID from name if not provided
+  const resolvedCategoryId = useMemo(() => {
+    if (providedCategoryId) return providedCategoryId;
+    const foundCategory = getCategoryByName(category);
+    if (__DEV__ && visible) {
+      console.log(
+        `[CategoryDetailModal] Resolving category ID: category="${category}", foundCategory=${foundCategory ? foundCategory.id : null}`
+      );
+    }
+    return foundCategory?.id || null;
+  }, [providedCategoryId, category, getCategoryByName, visible]);
+
   // Map category names to Ionicons
   const getCategoryIcon = (
     categoryName: string
@@ -66,9 +105,55 @@ const CategoryDetailModal: React.FC<CategoryDetailModalProps> = ({
 
     return iconMap[categoryName] || "cube-outline";
   };
-  const categoryTransactions = transactions.filter(
-    (tx) => getDisplayCategory(tx) === category
-  );
+
+  // Filter transactions by category_id first (more reliable), then fall back to name matching
+  const categoryTransactions = useMemo(() => {
+    const filtered = transactions.filter((tx) => {
+      // Priority 1: Match by category_id if available
+      if (resolvedCategoryId && tx.category_id) {
+        const matches = tx.category_id === resolvedCategoryId;
+        if (__DEV__ && visible) {
+          console.log(
+            `[CategoryDetailModal] Checking tx ${tx.id}: category_id=${tx.category_id}, resolvedCategoryId=${resolvedCategoryId}, matches=${matches}`
+          );
+        }
+        return matches;
+      }
+
+      // Priority 2: Match by category name using getDisplayCategory
+      const displayCategory = getDisplayCategory(tx);
+      const matches = displayCategory === category;
+      
+      if (__DEV__ && visible) {
+        console.log(
+          `[CategoryDetailModal] Checking tx ${tx.id}: displayCategory="${displayCategory}", targetCategory="${category}", category_id=${tx.category_id}, matches=${matches}`
+        );
+      }
+      
+      return matches;
+    });
+
+    if (__DEV__ && visible) {
+      console.log(
+        `[CategoryDetailModal] Filtering results:`,
+        {
+          category,
+          resolvedCategoryId,
+          totalTransactions: transactions.length,
+          filteredCount: filtered.length,
+          sampleTransaction: filtered[0] ? {
+            id: filtered[0].id,
+            name: filtered[0].name,
+            category_id: filtered[0].category_id,
+            displayCategory: getDisplayCategory(filtered[0]),
+            categories: filtered[0].categories,
+          } : null,
+        }
+      );
+    }
+
+    return filtered;
+  }, [transactions, category, resolvedCategoryId, visible]);
 
   const [selectedTransactionId, setSelectedTransactionId] = useState<
     string | null

@@ -691,10 +691,12 @@ export async function getTransactionsByResolvedCategory(
 /**
  * Fetch transactions for a specific category (all time), filtered by resolved category label.
  * FIXED: Queries all transactions and filters by resolved category key to catch all variations.
+ * IMPROVED: Now also filters by category_id when available for more reliable matching.
  */
 export async function getTransactionsForCategory(
   userId: string,
-  targetCategoryLabel: string
+  targetCategoryLabel: string,
+  targetCategoryId?: string | null
 ): Promise<CategoryTransaction[]> {
   if (!userId || !targetCategoryLabel) {
     logger.error("[BUDGET] getTransactionsForCategory called with invalid parameters", {
@@ -704,6 +706,17 @@ export async function getTransactionsForCategory(
     return [];
   }
 
+  if (__DEV__) {
+    console.log(
+      `[BUDGET] getTransactionsForCategory called:`,
+      {
+        userId,
+        targetCategoryLabel,
+        targetCategoryId: targetCategoryId || null,
+      }
+    );
+  }
+
   try {
     const categoryIndex = await buildCategoryIndex(userId);
     
@@ -711,6 +724,18 @@ export async function getTransactionsForCategory(
       targetCategoryLabel,
       categoryIndex
     );
+
+    if (__DEV__) {
+      console.log(
+        `[BUDGET] Category resolution:`,
+        {
+          targetCategoryLabel,
+          targetCategoryId: targetCategoryId || null,
+          resolvedKey: targetResolved.key,
+          resolvedLabel: targetResolved.label,
+        }
+      );
+    }
 
 
     // Query ALL transactions (with basic filters) and filter by resolved category key in JavaScript
@@ -757,15 +782,61 @@ export async function getTransactionsForCategory(
     }
 
 
-    // Filter transactions by resolved category key
+    // Filter transactions by category_id first (more reliable), then fall back to resolved category key
     // This matches the same logic used in getActualsForBudgetPeriod and spending breakdown
     const results: CategoryTransaction[] = [];
     let matchedCount = 0;
     let skippedCount = 0;
+    let matchedByCategoryId = 0;
+    let matchedByResolvedKey = 0;
 
     data.forEach((tx: any) => {
-      // Determine effective category (priority: new_category > top_category)
-      const effectiveCategory = tx.new_category || tx.top_category;
+      // Priority 1: Match by category_id if both transaction and target have category_id
+      if (targetCategoryId && tx.category_id) {
+        if (tx.category_id === targetCategoryId) {
+          // Valid match by category_id - add to results
+          const amount = Math.abs(Number(tx.amount || 0));
+          if (!Number.isFinite(amount)) {
+            skippedCount++;
+            return;
+          }
+
+          results.push({
+            id: tx.id,
+            plaid_transaction_id: tx.plaid_transaction_id,
+            name: tx.name,
+            merchant_name: tx.merchant_name,
+            amount,
+            date: tx.date,
+            authorized_date: tx.authorized_date,
+            category_label: targetResolved.label,
+          });
+          
+          matchedCount++;
+          matchedByCategoryId++;
+          
+          if (__DEV__ && matchedCount <= 5) {
+            console.log(
+              `[BUDGET] Matched tx by category_id:`,
+              {
+                txId: tx.id,
+                txName: tx.name,
+                txCategoryId: tx.category_id,
+                targetCategoryId,
+                categoriesName: tx.categories?.name,
+              }
+            );
+          }
+          return;
+        }
+      }
+
+      // Priority 2: Match by resolved category key (fallback for transactions without category_id)
+      // Determine effective category (priority: categories.name > new_category > top_category)
+      const effectiveCategory = 
+        tx.categories?.name || 
+        tx.new_category || 
+        tx.top_category;
       
       // Skip if no category
       if (!effectiveCategory) {
@@ -807,7 +878,38 @@ export async function getTransactionsForCategory(
       });
       
       matchedCount++;
+      matchedByResolvedKey++;
+      
+      if (__DEV__ && matchedCount <= 5) {
+        console.log(
+          `[BUDGET] Matched tx by resolved key:`,
+          {
+            txId: tx.id,
+            txName: tx.name,
+            effectiveCategory,
+            txResolvedKey: txResolved.key,
+            targetResolvedKey: targetResolved.key,
+            txCategoryId: tx.category_id,
+          }
+        );
+      }
     });
+
+    if (__DEV__) {
+      console.log(
+        `[BUDGET] getTransactionsForCategory filtering results:`,
+        {
+          targetCategoryLabel,
+          targetCategoryId: targetCategoryId || null,
+          totalTransactionsFetched: data.length,
+          matchedCount,
+          matchedByCategoryId,
+          matchedByResolvedKey,
+          skippedCount,
+          finalResultsCount: results.length,
+        }
+      );
+    }
 
 
     // Results are already sorted by database query, but ensure consistency
