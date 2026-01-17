@@ -196,20 +196,6 @@ const BudgetView: React.FC<BudgetViewProps> = ({
     item: BudgetData,
     parentLabel?: string | null
   ) => {
-    if (__DEV__) {
-      console.log(
-        `[BudgetView] openTransactions called:`,
-        {
-          category: item.category,
-          categoryId: item.categoryId,
-          entryId: item.entryId,
-          spent: item.spent,
-          budget: item.budget,
-          parentLabel: parentLabel || null,
-        }
-      );
-    }
-
     setTxTarget({ item, parentLabel: parentLabel || null });
     setActionTarget({ item, parentLabel: parentLabel || null });
     setTxModalVisible(true);
@@ -230,29 +216,8 @@ const BudgetView: React.FC<BudgetViewProps> = ({
         item.category,
         item.categoryId || null
       );
-      
-      if (__DEV__) {
-        console.log(
-          `[BudgetView] getTransactionsForCategory returned:`,
-          {
-            category: item.category,
-            categoryId: item.categoryId,
-            transactionCount: txs.length,
-            sampleTransaction: txs[0] ? {
-              id: txs[0].id,
-              name: txs[0].name,
-              amount: txs[0].amount,
-              date: txs[0].date,
-            } : null,
-          }
-        );
-      }
-      
       setTxList(txs);
     } catch (err) {
-      if (__DEV__) {
-        console.error(`[BudgetView] Error in openTransactions:`, err);
-      }
       setTxError("Failed to load transactions");
     } finally {
       setTxLoading(false);

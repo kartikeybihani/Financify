@@ -56,7 +56,7 @@ const CategoryDetailModal: React.FC<CategoryDetailModalProps> = ({
             setUserId(user.id);
           }
         } catch (error) {
-          console.error("[CategoryDetailModal] Error fetching user ID:", error);
+          // Silently fail - userId will remain undefined
         }
       };
       fetchUserId();
@@ -69,13 +69,8 @@ const CategoryDetailModal: React.FC<CategoryDetailModalProps> = ({
   const resolvedCategoryId = useMemo(() => {
     if (providedCategoryId) return providedCategoryId;
     const foundCategory = getCategoryByName(category);
-    if (__DEV__ && visible) {
-      console.log(
-        `[CategoryDetailModal] Resolving category ID: category="${category}", foundCategory=${foundCategory ? foundCategory.id : null}`
-      );
-    }
     return foundCategory?.id || null;
-  }, [providedCategoryId, category, getCategoryByName, visible]);
+  }, [providedCategoryId, category, getCategoryByName]);
 
   // Map category names to Ionicons
   const getCategoryIcon = (
@@ -111,49 +106,16 @@ const CategoryDetailModal: React.FC<CategoryDetailModalProps> = ({
     const filtered = transactions.filter((tx) => {
       // Priority 1: Match by category_id if available
       if (resolvedCategoryId && tx.category_id) {
-        const matches = tx.category_id === resolvedCategoryId;
-        if (__DEV__ && visible) {
-          console.log(
-            `[CategoryDetailModal] Checking tx ${tx.id}: category_id=${tx.category_id}, resolvedCategoryId=${resolvedCategoryId}, matches=${matches}`
-          );
-        }
-        return matches;
+        return tx.category_id === resolvedCategoryId;
       }
 
       // Priority 2: Match by category name using getDisplayCategory
       const displayCategory = getDisplayCategory(tx);
-      const matches = displayCategory === category;
-      
-      if (__DEV__ && visible) {
-        console.log(
-          `[CategoryDetailModal] Checking tx ${tx.id}: displayCategory="${displayCategory}", targetCategory="${category}", category_id=${tx.category_id}, matches=${matches}`
-        );
-      }
-      
-      return matches;
+      return displayCategory === category;
     });
 
-    if (__DEV__ && visible) {
-      console.log(
-        `[CategoryDetailModal] Filtering results:`,
-        {
-          category,
-          resolvedCategoryId,
-          totalTransactions: transactions.length,
-          filteredCount: filtered.length,
-          sampleTransaction: filtered[0] ? {
-            id: filtered[0].id,
-            name: filtered[0].name,
-            category_id: filtered[0].category_id,
-            displayCategory: getDisplayCategory(filtered[0]),
-            categories: filtered[0].categories,
-          } : null,
-        }
-      );
-    }
-
     return filtered;
-  }, [transactions, category, resolvedCategoryId, visible]);
+  }, [transactions, category, resolvedCategoryId]);
 
   const [selectedTransactionId, setSelectedTransactionId] = useState<
     string | null
