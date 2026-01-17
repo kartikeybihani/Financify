@@ -2482,6 +2482,7 @@ export default function InsightsScreen() {
                     categoryBreakdown={categoryBreakdown}
                     onCategoryPress={handleCategoryPress}
                     formatCategoryName={formatCategoryFromHook}
+                    getCategoryIcon={getCategoryIcon}
                     availableMonths={availableMonths}
                     selectedMonth={selectedMonth}
                     selectedYear={selectedYear}

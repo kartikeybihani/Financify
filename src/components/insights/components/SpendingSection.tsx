@@ -37,6 +37,7 @@ interface Props {
     }
   ) => void;
   formatCategoryName: (cat: string) => string;
+  getCategoryIcon?: (categoryName: string) => string; // Function to get icon from database
   availableMonths?: MonthOption[];
   selectedMonth?: number;
   selectedYear?: number;
@@ -50,6 +51,7 @@ export default function SpendingSection({
   categoryBreakdown,
   onCategoryPress,
   formatCategoryName,
+  getCategoryIcon,
   availableMonths,
   selectedMonth,
   selectedYear,
@@ -258,6 +260,7 @@ export default function SpendingSection({
             categoryBreakdown={categoryBreakdown}
             onCategoryPress={onCategoryPress}
             formatCategoryName={formatCategoryName}
+            getCategoryIcon={getCategoryIcon}
             period={formatPeriodDisplay()}
             onPeriodPress={() => setMonthPickerVisible(true)}
           />

@@ -129,8 +129,9 @@ export default function LoginScreen() {
         logger.info("User logged in:", user.email);
       }
       // Auth listener will trigger navigation via context
-      // The loading indicator in the button shows feedback during auth
-      router.push("(tabs)/chat" as any);
+      // The context will redirect to /(tabs) which defaults to home
+      // Navigate to root so index.tsx can handle the redirect
+      router.replace("/" as any);
     }
   };
 

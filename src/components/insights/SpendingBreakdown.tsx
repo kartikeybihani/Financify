@@ -21,6 +21,7 @@ interface SpendingBreakdownProps {
   formatCategoryName: (category: string) => string;
   period?: string; // Optional period label (e.g., "This Month", "December 2024")
   onPeriodPress?: () => void; // Callback when period chip is pressed
+  getCategoryIcon?: (categoryName: string) => string; // Function to get icon from database
 }
 
 const SpendingBreakdown: React.FC<SpendingBreakdownProps> = ({
@@ -29,6 +30,7 @@ const SpendingBreakdown: React.FC<SpendingBreakdownProps> = ({
   formatCategoryName,
   period = "This Month",
   onPeriodPress,
+  getCategoryIcon: getCategoryIconFromDb,
 }) => {
   const totalSpent = categoryBreakdown.reduce(
     (sum, [_, data]) => sum + data.amount,
@@ -44,9 +46,28 @@ const SpendingBreakdown: React.FC<SpendingBreakdownProps> = ({
     .sort((a, b) => b[1].amount - a[1].amount)
     .slice(3);
 
-  const getCategoryIcon = (
-    categoryName: string
-  ): keyof typeof Ionicons.glyphMap => {
+  // Helper to determine if icon is emoji or Ionicons
+  const getCategoryIconDisplay = (categoryName: string) => {
+    // Use database icon if available
+    const iconValue = getCategoryIconFromDb
+      ? getCategoryIconFromDb(categoryName)
+      : null;
+
+    if (iconValue) {
+      // Check if it's an emoji (contains emoji unicode ranges)
+      const emojiRegex =
+        /[\u{1F300}-\u{1F9FF}]|[\u{1F600}-\u{1F64F}]|[\u{1F680}-\u{1F6FF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF}]/u;
+      if (emojiRegex.test(iconValue)) {
+        return { type: "emoji" as const, value: iconValue };
+      }
+      // Otherwise treat as Ionicons name
+      return {
+        type: "ionicon" as const,
+        value: iconValue as keyof typeof Ionicons.glyphMap,
+      };
+    }
+
+    // Fallback to hardcoded mapping if no database icon
     const iconMap: { [key: string]: keyof typeof Ionicons.glyphMap } = {
       Groceries: "storefront-outline",
       Food: "restaurant-outline",
@@ -68,7 +89,11 @@ const SpendingBreakdown: React.FC<SpendingBreakdownProps> = ({
       Income: "cash-outline",
       Other: "cube-outline",
     };
-    return iconMap[categoryName] || "cube-outline";
+    const fallbackIcon = iconMap[categoryName] || "cube-outline";
+    return {
+      type: "ionicon" as const,
+      value: fallbackIcon,
+    };
   };
 
   const getSpendingMood = (total: number) => {
@@ -199,11 +224,20 @@ const SpendingBreakdown: React.FC<SpendingBreakdownProps> = ({
                 >
                   <View style={styles.flowCardContent}>
                     <View style={styles.flowIconContainer}>
-                      <Ionicons
-                        name={getCategoryIcon(category)}
-                        size={18}
-                        color="#fff"
-                      />
+                      {(() => {
+                        const iconDisplay = getCategoryIconDisplay(category);
+                        return iconDisplay.type === "emoji" ? (
+                          <Text style={styles.flowIconEmoji}>
+                            {iconDisplay.value}
+                          </Text>
+                        ) : (
+                          <Ionicons
+                            name={iconDisplay.value}
+                            size={18}
+                            color="#fff"
+                          />
+                        );
+                      })()}
                     </View>
 
                     <Text style={styles.flowCategoryName} numberOfLines={1}>
@@ -243,14 +277,23 @@ const SpendingBreakdown: React.FC<SpendingBreakdownProps> = ({
                   <View
                     style={[
                       styles.remainingIcon,
-                      { backgroundColor: `${data.color}15` },
+                      // { backgroundColor: `${data.color}15` },
                     ]}
                   >
-                    <Ionicons
-                      name={getCategoryIcon(category)}
-                      size={16}
-                      color={data.color}
-                    />
+                    {(() => {
+                      const iconDisplay = getCategoryIconDisplay(category);
+                      return iconDisplay.type === "emoji" ? (
+                        <Text style={styles.remainingIconEmoji}>
+                          {iconDisplay.value}
+                        </Text>
+                      ) : (
+                        <Ionicons
+                          name={iconDisplay.value}
+                          size={16}
+                          color={data.color}
+                        />
+                      );
+                    })()}
                   </View>
                   <Text style={styles.remainingName} numberOfLines={1}>
                     {formatCategoryName(category)}
@@ -417,6 +460,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 8,
   },
+  flowIconEmoji: {
+    fontSize: 18,
+  },
   flowCategoryName: {
     fontSize: 12,
     fontWeight: "600",
@@ -477,6 +523,9 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     marginRight: 12,
+  },
+  remainingIconEmoji: {
+    fontSize: 16,
   },
   remainingName: {
     fontSize: 14,
