@@ -517,7 +517,6 @@ export function useBudget(categoryBreakdown?: CategoryBreakdown): UseBudgetRetur
             // Since we're using categoryId as primary key, this should catch most duplicates
             if (item.categoryId) {
               if (seenCategoryIdsInFlat.has(item.categoryId)) {
-                logger.warn(`[BUDGET] Skipping duplicate category by ID: ${item.category} (${item.categoryId})`);
                 return false; // Skip duplicate
               }
               seenCategoryIdsInFlat.add(item.categoryId);
@@ -533,7 +532,6 @@ export function useBudget(categoryBreakdown?: CategoryBreakdown): UseBudgetRetur
             const normalizedName = toKey(item.category);
             if (!item.categoryId) {
               if (seenCategoryNamesInFlat.has(normalizedName)) {
-                logger.warn(`[BUDGET] Skipping duplicate category by name: ${item.category}`);
                 return false;
               }
               // Check if this name matches any existing category with an ID
@@ -544,7 +542,6 @@ export function useBudget(categoryBreakdown?: CategoryBreakdown): UseBudgetRetur
                 return catName === normalizedName || catSlug === normalizedName;
               });
               if (matchingCategory) {
-                logger.warn(`[BUDGET] Skipping duplicate category by name (matches existing category): ${item.category}`);
                 return false;
               }
               seenCategoryNamesInFlat.add(normalizedName);
@@ -751,8 +748,19 @@ export function useBudget(categoryBreakdown?: CategoryBreakdown): UseBudgetRetur
         const roots: BudgetData[] = [];
         const addedRootIds = new Set<string>();
         
+        // Track added category names (for deduplication of items without categoryId)
+        const addedCategoryNames = new Set<string>();
+        // Track category IDs to names mapping for matching renamed categories
+        const categoryIdToName = new Map<string, string>();
+        allCategories.forEach(cat => {
+          if (cat.id) {
+            categoryIdToName.set(cat.id, toKey(cat.name));
+          }
+        });
+        
         // Build roots - only include items that aren't children
         // Use categoryId as the unique identifier to avoid duplicates
+        // PRIORITY: Categories with categoryId take precedence over those without
         budgetById.forEach((item, id) => {
           // Skip if this is a child category - check by categoryId (UUID) not by map key
           // The map key could be UUID or category name, but childIds only contains UUIDs
@@ -762,7 +770,24 @@ export function useBudget(categoryBreakdown?: CategoryBreakdown): UseBudgetRetur
           
           // Skip if we've already added this root (by categoryId)
           if (item.categoryId && addedRootIds.has(item.categoryId)) return;
-          if (!item.categoryId && addedRootIds.has(id)) return;
+          
+          // For items without categoryId, check if a category with the same name already exists WITH an ID
+          // If so, skip this one (prioritize categories with IDs)
+          if (!item.categoryId) {
+            const normalizedName = toKey(item.category);
+            // Check if this name matches an existing category with an ID (case-insensitive)
+            const matchingCategoryId = Array.from(categoryIdToName.entries()).find(
+              ([_, catName]) => catName === normalizedName
+            )?.[0];
+            if (matchingCategoryId && addedRootIds.has(matchingCategoryId)) {
+              return;
+            }
+            // Also check if we've already added a root with this name
+            if (addedRootIds.has(id) || addedCategoryNames.has(normalizedName)) {
+              return;
+            }
+            addedCategoryNames.add(normalizedName);
+          }
           
           // Sort children if they exist
           if (item.children && item.children.length > 0) {
@@ -776,6 +801,9 @@ export function useBudget(categoryBreakdown?: CategoryBreakdown): UseBudgetRetur
           // Mark as added
           if (item.categoryId) {
             addedRootIds.add(item.categoryId);
+            // Track the normalized name for this categoryId
+            const normalizedName = toKey(item.category);
+            addedCategoryNames.add(normalizedName);
           } else {
             addedRootIds.add(id);
           }
@@ -783,18 +811,53 @@ export function useBudget(categoryBreakdown?: CategoryBreakdown): UseBudgetRetur
           roots.push(item);
         });
 
-        // Add any items without categoryId (can't be grouped)
-        flatBudgets
-          .filter((item) => !item.categoryId)
-          .forEach((item) => roots.push(item));
+        // Add any items without categoryId that weren't already in budgetById map
+        // CRITICAL: Skip items without categoryId if a category with the same name exists WITH an ID
+        const flatBudgetsWithoutId = flatBudgets.filter((item) => !item.categoryId);
+        flatBudgetsWithoutId.forEach((item) => {
+          const normalizedName = toKey(item.category);
+          
+          // PRIORITY: If a category with this name already exists WITH an ID, skip this one
+          const matchingCategoryId = Array.from(categoryIdToName.entries()).find(
+            ([_, catName]) => catName === normalizedName
+          )?.[0];
+          if (matchingCategoryId && addedRootIds.has(matchingCategoryId)) {
+            return;
+          }
+          
+          // Check if a category with this name already exists in roots (with or without ID)
+          const existingWithSameName = roots.find(r => toKey(r.category) === normalizedName);
+          if (existingWithSameName) {
+            // If the existing one has an ID and this one doesn't, skip this one
+            if (existingWithSameName.categoryId && !item.categoryId) {
+              return;
+            }
+            // If both don't have IDs, skip duplicate
+            if (!existingWithSameName.categoryId && !item.categoryId) {
+              return;
+            }
+          }
+          
+          // Skip if already added by name
+          if (addedCategoryNames.has(normalizedName)) {
+            return;
+          }
+          
+          addedCategoryNames.add(normalizedName);
+          roots.push(item);
+        });
 
         // Remove Income from budget UI
-        const filteredRoots = roots
+        let filteredRoots = roots
           .map((root) => ({
             ...root,
             children: root.children?.filter((c) => toKey(c.category) !== "income"),
           }))
           .filter((root) => toKey(root.category) !== "income");
+
+        // FINAL FILTER: Remove ALL categories without categoryId
+        // Simple rule: if categoryId is null/undefined, remove it
+        filteredRoots = filteredRoots.filter((root) => !!root.categoryId);
 
         const sortedRoots = filteredRoots.sort((a, b) => b.budget - a.budget || b.spent - a.spent);
 

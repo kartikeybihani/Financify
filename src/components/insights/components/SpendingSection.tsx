@@ -87,6 +87,23 @@ export default function SpendingSection({
     deleteCategory,
   } = useBudget(categoryBreakdown);
 
+  // Log categoryBreakdown when it changes
+  useEffect(() => {
+    logger.info("📊 [SPENDING_SECTION] categoryBreakdown received:", {
+      count: categoryBreakdown.length,
+      categories: categoryBreakdown.map(([name, data]) => ({
+        name,
+        amount: data.amount,
+        color: data.color,
+      })),
+      duplicateCheck: (() => {
+        const names = categoryBreakdown.map(([name]) => name.toLowerCase().trim());
+        const duplicates = names.filter((name, index) => names.indexOf(name) !== index);
+        return duplicates.length > 0 ? { duplicates } : { duplicates: [] };
+      })(),
+    });
+  }, [categoryBreakdown]);
+
   // Initialize budget on first mount if needed
   useEffect(() => {
     if (isBudgetMode && budgetData.length === 0 && !budgetLoading) {

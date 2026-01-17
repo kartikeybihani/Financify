@@ -9,6 +9,7 @@ import {
   TouchableWithoutFeedback,
   ScrollView,
   Easing,
+  Alert,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -110,7 +111,6 @@ const BudgetView: React.FC<BudgetViewProps> = ({
 
   // Sort categories by budget amount (highest first)
   const sortedBudgets = [...finalBudgets].sort((a, b) => b.budget - a.budget);
-  
 
   const actionOptions: BudgetData[] = [];
   finalBudgets.forEach((item) => {
@@ -339,6 +339,7 @@ const BudgetView: React.FC<BudgetViewProps> = ({
           </View>
           <View style={styles.categoriesList}>
             {sortedBudgets.map((budget, index) => {
+
               const categoryProgress =
                 budget.budget > 0 ? (budget.spent / budget.budget) * 100 : 0;
               const categoryStatusColor = getStatusColor(categoryProgress);
@@ -486,6 +487,29 @@ const BudgetView: React.FC<BudgetViewProps> = ({
           if (!categoryId) return false;
           
           try {
+            // Check for duplicate category name (case-insensitive, excluding current category)
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user?.id) {
+              return false;
+            }
+            
+            const { data: existingCategory } = await supabase
+              .from("categories")
+              .select("id, name")
+              .eq("user_id", user.id)
+              .eq("is_active", true)
+              .neq("id", categoryId) // Exclude current category
+              .ilike("name", newName.trim());
+            
+            if (existingCategory && existingCategory.length > 0) {
+              // Show error alert
+              Alert.alert(
+                "Duplicate Category",
+                `A category named "${newName.trim()}" already exists. Please choose a different name.`
+              );
+              return false;
+            }
+            
             const baseSlug = newName
               .toLowerCase()
               .replace(/[^a-z0-9\s-]/g, "")
@@ -496,7 +520,7 @@ const BudgetView: React.FC<BudgetViewProps> = ({
             const { error: categoryError } = await supabase
               .from("categories")
               .update({ 
-                name: newName,
+                name: newName.trim(),
                 slug: baseSlug,
               })
               .eq("id", categoryId);
