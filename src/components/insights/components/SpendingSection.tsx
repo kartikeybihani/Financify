@@ -46,6 +46,7 @@ interface Props {
   onBudgetModeChange?: (isBudgetMode: boolean) => void;
   onOpenAddCategoryModalRef?: (openFn: () => void) => void;
   onRefreshBudgetRef?: (refreshFn: () => Promise<void>) => void;
+  refreshCategories?: () => void; // Refresh categories hook when category name changes
 }
 
 export default function SpendingSection({
@@ -61,6 +62,7 @@ export default function SpendingSection({
   onBudgetModeChange,
   onOpenAddCategoryModalRef,
   onRefreshBudgetRef,
+  refreshCategories,
 }: Props) {
   const [isBudgetMode, setIsBudgetMode] = useState(false);
   const [addCategoryModalVisible, setAddCategoryModalVisible] = useState(false);
@@ -264,6 +266,7 @@ export default function SpendingSection({
               onRemoveGrouping={ungroupCategory}
               onDeleteCategory={deleteCategory}
               refreshBudget={refreshBudget}
+              refreshCategories={refreshCategories}
             />
           )
         ) : (

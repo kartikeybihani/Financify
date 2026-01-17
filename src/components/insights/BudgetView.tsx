@@ -41,6 +41,7 @@ const BudgetView: React.FC<BudgetViewProps> = ({
   onRemoveGrouping,
   onDeleteCategory,
   refreshBudget,
+  refreshCategories,
 }) => {
   // Optimistic updates: track local budget changes before DB sync
   const [optimisticBudgets, setOptimisticBudgets] = useState<
@@ -515,6 +516,15 @@ const BudgetView: React.FC<BudgetViewProps> = ({
               // Don't fail the whole operation
             }
             
+            // NOTE: Transactions don't need updating because they're linked via category_id.
+            // The category_id foreign key maintains the relationship even when the name changes.
+            // Queries should use category_id instead of name matching for better performance.
+            
+            // Refresh categories hook so formatCategoryName uses updated names
+            if (refreshCategories) {
+              refreshCategories();
+            }
+            
             // Refresh budget data to reflect changes
             // Small delay to ensure database updates are committed
             if (refreshBudget) {
@@ -645,26 +655,32 @@ const BudgetView: React.FC<BudgetViewProps> = ({
             return;
           }
           
-          // Set loading state for this category
+          // Set loading state for this category immediately
           setCategoryLoading(editTarget.categoryId, editTarget.entryId, true);
 
-          try {
-            const success = await onDeleteCategory(
-              editTarget.categoryId,
-              editTarget.entryId || null
-            );
-            if (success) {
-              closeEdit();
-              setOptimisticBudgets(null);
-              if (refreshBudget) {
-                await refreshBudget();
+          // Close modal immediately for instant feedback
+          closeEdit();
+
+          // Delete category in background (fire and forget with error handling)
+          (async () => {
+            try {
+              const success = await onDeleteCategory(
+                editTarget.categoryId!,
+                editTarget.entryId || null
+              );
+              if (success) {
+                setOptimisticBudgets(null);
+                if (refreshBudget) {
+                  await refreshBudget();
+                }
               }
+            } catch (error) {
+              // Error handled silently
+            } finally {
+              // Clear loading state when done
+              setCategoryLoading(editTarget.categoryId, editTarget.entryId, false);
             }
-          } catch (error) {
-            // Error handled silently
-          } finally {
-            setCategoryLoading(editTarget.categoryId, editTarget.entryId, false);
-          }
+          })();
         }}
       />
     </View>

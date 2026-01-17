@@ -128,6 +128,7 @@ export interface BudgetViewProps {
   onRemoveGrouping?: (childCategoryId: string) => Promise<boolean>;
   onDeleteCategory?: (categoryId: string, entryId?: string | null) => Promise<boolean>;
   refreshBudget?: () => Promise<void>;
+  refreshCategories?: () => void; // Refresh categories hook when category name changes
 }
 
 export interface CategoryBudgetCardProps {
@@ -720,10 +721,18 @@ export async function getTransactionsForCategory(
     const startDateStr = formatLocalDate(twoYearsAgo);
 
     // Build base query - fetch all transactions (excluding transfers and internal transfers)
+    // Include category join to get category name from categories table via category_id
     let query = supabase
       .from("transactions")
       .select(
-        "id, plaid_transaction_id, amount, new_category, top_category, date, authorized_date, name, merchant_name, transaction_type"
+        `id, plaid_transaction_id, amount, new_category, top_category, date, authorized_date, name, merchant_name, transaction_type, category_id,
+        categories:category_id (
+          id,
+          name,
+          slug,
+          icon,
+          color
+        )`
       )
       .eq("user_id", userId)
       .gt("amount", 0)

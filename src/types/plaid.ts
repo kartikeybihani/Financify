@@ -24,7 +24,8 @@ export interface Transaction {
   category?: string; // Original Plaid category stored as string
   top_category?: string; // Simplified top-level category (e.g., "Food", "Transportation")
   sub_category?: string; // Simplified sub-category (e.g., "Eating Out", "Groceries")
-  new_category?: string; // User-overridden category (highest priority)
+  new_category?: string; // User-overridden category (legacy - use category_id instead)
+  category_id?: string | null; // Reference to categories table (preferred way to get category name)
   date: string; // Posted date (when transaction was posted to account)
   authorized_date?: string | null; // Authorization date (when user actually made the transaction) - optional
   name: string;
@@ -41,6 +42,13 @@ export interface Transaction {
   merchant_name?: string;
   recurring_stream_id?: string; // Link to recurring stream if applicable
   recurring_streams?: RecurringStream[]; // Joined recurring stream data from database
+  categories?: { // Joined category data from database (when category_id is populated)
+    id: string;
+    name: string;
+    slug?: string | null;
+    icon?: string | null;
+    color?: string | null;
+  } | null;
 }
 
 // RecurringStream interface - shared across all components

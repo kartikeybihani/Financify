@@ -184,14 +184,14 @@ export default function CategorySelectorModal({
       }> = [];
 
       if (updateType === "single") {
-        // Single transaction: Update new_category column
-        const { error } = await supabase.rpc(
-          "update_transaction_category_by_name",
-          {
-            p_transaction_id: transactionId,
-            p_new_category: selectedCategory.name,
-          }
-        );
+        // Single transaction: Update ONLY category_id (not new_category)
+        // Category name will be resolved via join with categories table
+        const { error } = await supabase
+          .from("transactions")
+          .update({ 
+            category_id: selectedCategory.id, // Use ID only - name comes from categories table
+          })
+          .eq("id", transactionId);
 
         if (error) throw error;
 
@@ -229,9 +229,12 @@ export default function CategorySelectorModal({
         }
 
         // Build the query based on which field we're using
+        // Update ONLY category_id (not new_category) - name comes from categories table
         let updateQuery = supabase
           .from("transactions")
-          .update({ new_category: selectedCategory.name })
+          .update({ 
+            category_id: selectedCategory.id, // Use ID only - name comes from categories table
+          })
           .eq("user_id", userId);
 
         let selectQuery = supabase
@@ -266,8 +269,9 @@ export default function CategorySelectorModal({
           updatedCount: data,
         });
 
+        // Filter by category_id instead of new_category name
         const { data: affectedData, error: affectedError } =
-          await selectQuery.eq("new_category", selectedCategory.name);
+          await selectQuery.eq("category_id", selectedCategory.id);
 
         console.log("📊 Affected transactions result:", {
           affectedData,

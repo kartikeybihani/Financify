@@ -278,5 +278,182 @@ export const TEXT_STYLES = {
   },
 };
 
+// Curated set of icons for category selection - all emojis
+export interface CuratedIcon {
+  type: "emoji";
+  value: string;
+  name: string;
+}
+
+export const CURATED_ICONS: CuratedIcon[] = [
+  // Financial & Money
+  { type: "emoji", value: "💰", name: "Money" },
+  { type: "emoji", value: "💵", name: "Dollar" },
+  { type: "emoji", value: "💴", name: "Yen" },
+  { type: "emoji", value: "💶", name: "Euro" },
+  { type: "emoji", value: "💷", name: "Pound" },
+  { type: "emoji", value: "💳", name: "Credit Card" },
+  { type: "emoji", value: "💎", name: "Savings" },
+  { type: "emoji", value: "🏦", name: "Bank" },
+  { type: "emoji", value: "📊", name: "Investment" },
+  { type: "emoji", value: "📈", name: "Stocks" },
+  
+  // Shopping & Retail
+  { type: "emoji", value: "🛒", name: "Shopping" },
+  { type: "emoji", value: "🛍️", name: "Store" },
+  { type: "emoji", value: "👜", name: "Bag" },
+  { type: "emoji", value: "👕", name: "Clothing" },
+  { type: "emoji", value: "👟", name: "Shoes" },
+  { type: "emoji", value: "👔", name: "Tie" },
+  
+  // Food & Dining
+  { type: "emoji", value: "🍽️", name: "Food" },
+  { type: "emoji", value: "🍕", name: "Pizza" },
+  { type: "emoji", value: "🍔", name: "Fast Food" },
+  { type: "emoji", value: "🍟", name: "Fries" },
+  { type: "emoji", value: "🌮", name: "Taco" },
+  { type: "emoji", value: "🍜", name: "Noodles" },
+  { type: "emoji", value: "🍱", name: "Bento" },
+  { type: "emoji", value: "🍣", name: "Sushi" },
+  { type: "emoji", value: "🥗", name: "Salad" },
+  { type: "emoji", value: "☕", name: "Cafe" },
+  { type: "emoji", value: "🍺", name: "Beer" },
+  { type: "emoji", value: "🍷", name: "Wine" },
+  { type: "emoji", value: "🥂", name: "Cheers" },
+  { type: "emoji", value: "🍰", name: "Dessert" },
+  { type: "emoji", value: "🍪", name: "Cookie" },
+  { type: "emoji", value: "🍩", name: "Donut" },
+  { type: "emoji", value: "🧋", name: "Bubble Tea" },
+  
+  // Home & Living
+  { type: "emoji", value: "🏠", name: "Home" },
+  { type: "emoji", value: "🏡", name: "House" },
+  { type: "emoji", value: "🛋️", name: "Furniture" },
+  { type: "emoji", value: "🛏️", name: "Bed" },
+  { type: "emoji", value: "🪑", name: "Chair" },
+  { type: "emoji", value: "🪔", name: "Lamp" },
+  { type: "emoji", value: "🔧", name: "Tools" },
+  { type: "emoji", value: "🧹", name: "Cleaning" },
+  { type: "emoji", value: "🌱", name: "Plants" },
+  
+  // Transportation
+  { type: "emoji", value: "🚗", name: "Car" },
+  { type: "emoji", value: "🚙", name: "SUV" },
+  { type: "emoji", value: "🚕", name: "Taxi" },
+  { type: "emoji", value: "🚌", name: "Bus" },
+  { type: "emoji", value: "🚂", name: "Train" },
+  { type: "emoji", value: "✈️", name: "Travel" },
+  { type: "emoji", value: "🚢", name: "Ship" },
+  { type: "emoji", value: "🚲", name: "Bike" },
+  { type: "emoji", value: "🛴", name: "Scooter" },
+  { type: "emoji", value: "⛽", name: "Gas" },
+  { type: "emoji", value: "🅿️", name: "Parking" },
+  
+  // Entertainment & Media
+  { type: "emoji", value: "🎬", name: "Entertainment" },
+  { type: "emoji", value: "🎮", name: "Gaming" },
+  { type: "emoji", value: "🎵", name: "Music" },
+  { type: "emoji", value: "🎧", name: "Headphones" },
+  { type: "emoji", value: "🎤", name: "Karaoke" },
+  { type: "emoji", value: "🎭", name: "Theater" },
+  { type: "emoji", value: "🎪", name: "Circus" },
+  { type: "emoji", value: "🎨", name: "Art" },
+  { type: "emoji", value: "🎯", name: "Darts" },
+  { type: "emoji", value: "🎲", name: "Games" },
+  { type: "emoji", value: "📺", name: "TV" },
+  { type: "emoji", value: "🎥", name: "Camera" },
+  { type: "emoji", value: "📷", name: "Photo" },
+  { type: "emoji", value: "📱", name: "Phone" },
+  { type: "emoji", value: "💻", name: "Computer" },
+  { type: "emoji", value: "📚", name: "Education" },
+  { type: "emoji", value: "📖", name: "Book" },
+  { type: "emoji", value: "✏️", name: "School" },
+  { type: "emoji", value: "🎓", name: "Graduation" },
+  
+  // Health & Fitness
+  { type: "emoji", value: "🏥", name: "Health" },
+  { type: "emoji", value: "💊", name: "Medicine" },
+  { type: "emoji", value: "🩺", name: "Doctor" },
+  { type: "emoji", value: "💉", name: "Vaccine" },
+  { type: "emoji", value: "🏋️", name: "Gym" },
+  { type: "emoji", value: "💪", name: "Fitness" },
+  { type: "emoji", value: "🧘", name: "Yoga" },
+  { type: "emoji", value: "🏃", name: "Running" },
+  { type: "emoji", value: "🚴", name: "Cycling" },
+  { type: "emoji", value: "🏊", name: "Swimming" },
+  { type: "emoji", value: "⚽", name: "Sports" },
+  { type: "emoji", value: "🏀", name: "Basketball" },
+  { type: "emoji", value: "🎾", name: "Tennis" },
+  { type: "emoji", value: "🏸", name: "Badminton" },
+  { type: "emoji", value: "🧴", name: "Personal Care" },
+  { type: "emoji", value: "✨", name: "Beauty" },
+  { type: "emoji", value: "💅", name: "Nails" },
+  { type: "emoji", value: "💇", name: "Haircut" },
+  { type: "emoji", value: "💄", name: "Cosmetics" },
+  
+  // Utilities & Services
+  { type: "emoji", value: "⚡", name: "Utilities" },
+  { type: "emoji", value: "🔌", name: "Electricity" },
+  { type: "emoji", value: "💧", name: "Water" },
+  { type: "emoji", value: "🔥", name: "Gas" },
+  { type: "emoji", value: "📡", name: "Internet" },
+  { type: "emoji", value: "📞", name: "Phone Bill" },
+  { type: "emoji", value: "🗑️", name: "Trash" },
+  { type: "emoji", value: "📦", name: "Package" },
+  { type: "emoji", value: "🚚", name: "Delivery" },
+  { type: "emoji", value: "🔨", name: "Repair" },
+  { type: "emoji", value: "🛠️", name: "Maintenance" },
+  
+  // Lifestyle & Personal
+  { type: "emoji", value: "🌿", name: "Nature" },
+  { type: "emoji", value: "🌳", name: "Tree" },
+  { type: "emoji", value: "🌺", name: "Flowers" },
+  { type: "emoji", value: "🐕", name: "Pet" },
+  { type: "emoji", value: "🐈", name: "Cat" },
+  { type: "emoji", value: "🐦", name: "Bird" },
+  { type: "emoji", value: "🎁", name: "Gift" },
+  { type: "emoji", value: "🎉", name: "Party" },
+  { type: "emoji", value: "🎊", name: "Celebration" },
+  { type: "emoji", value: "💐", name: "Bouquet" },
+  { type: "emoji", value: "🌹", name: "Rose" },
+  { type: "emoji", value: "💍", name: "Jewelry" },
+  { type: "emoji", value: "👗", name: "Fashion" },
+  { type: "emoji", value: "🧥", name: "Jacket" },
+  { type: "emoji", value: "👓", name: "Glasses" },
+  { type: "emoji", value: "⌚", name: "Watch" },
+  { type: "emoji", value: "🎒", name: "Backpack" },
+  { type: "emoji", value: "🧳", name: "Luggage" },
+  { type: "emoji", value: "🕶️", name: "Sunglasses" },
+  
+  // Travel & Vacation
+  { type: "emoji", value: "🏖️", name: "Beach" },
+  { type: "emoji", value: "🏔️", name: "Mountain" },
+  { type: "emoji", value: "⛺", name: "Camping" },
+  { type: "emoji", value: "🏨", name: "Hotel" },
+  { type: "emoji", value: "🛫", name: "Flight" },
+  { type: "emoji", value: "🗺️", name: "Map" },
+  { type: "emoji", value: "🧭", name: "Compass" },
+  { type: "emoji", value: "🎫", name: "Ticket" },
+  { type: "emoji", value: "🎟️", name: "Admission" },
+  
+  // Miscellaneous
+  { type: "emoji", value: "💌", name: "Mail" },
+  { type: "emoji", value: "📧", name: "Email" },
+  { type: "emoji", value: "📝", name: "Notes" },
+  { type: "emoji", value: "📋", name: "Clipboard" },
+  { type: "emoji", value: "🔑", name: "Keys" },
+  { type: "emoji", value: "🚪", name: "Door" },
+  { type: "emoji", value: "🪟", name: "Window" },
+  { type: "emoji", value: "🛡️", name: "Insurance" },
+  { type: "emoji", value: "⚖️", name: "Legal" },
+  { type: "emoji", value: "📜", name: "Document" },
+  { type: "emoji", value: "🏛️", name: "Government" },
+  { type: "emoji", value: "⛪", name: "Church" },
+  { type: "emoji", value: "🕌", name: "Mosque" },
+  { type: "emoji", value: "🕍", name: "Synagogue" },
+  { type: "emoji", value: "🙏", name: "Charity" },
+  { type: "emoji", value: "🤝", name: "Donation" },
+];
+
 // Prevent Expo Router from treating this as a route by providing a no-op default export
 export default function ModalConstantsPlaceholder() { return null; }

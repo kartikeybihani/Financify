@@ -203,6 +203,13 @@ export default function TransactionDetailModal({
               stream_type,
               is_active
             ),
+            categories:category_id (
+              id,
+              name,
+              slug,
+              icon,
+              color
+            ),
             goal:linked_goal_id (
               label
             )
@@ -548,14 +555,17 @@ export default function TransactionDetailModal({
         updatedCategory === "INTERNAL_TRANSFER" ||
         (updatedCategory === undefined &&
           transaction?.new_category === "INTERNAL_TRANSFER");
-      const newCategoryValue = currentlyInternalTransfer
-        ? null
-        : "INTERNAL_TRANSFER";
+      
+      // INTERNAL_TRANSFER is a special marker (not a real category)
+      // Set category_id to NULL and use new_category as marker
+      const updateData = currentlyInternalTransfer
+        ? { category_id: null, new_category: null } // Remove internal transfer marker
+        : { category_id: null, new_category: "INTERNAL_TRANSFER" }; // Set internal transfer marker
 
       // Update the database
       const { error } = await supabase
         .from("transactions")
-        .update({ new_category: newCategoryValue })
+        .update(updateData)
         .eq("id", transaction?.id);
 
       if (error) {
@@ -566,12 +576,12 @@ export default function TransactionDetailModal({
 
       // Update local state
       setIsInternalTransfer(!currentlyInternalTransfer);
-      setUpdatedCategory(newCategoryValue);
+      setUpdatedCategory(updateData.new_category);
 
       // Emit event to notify other components
       DeviceEventEmitter.emit("transactionCategoryUpdated", {
         transactionId: transaction?.id,
-        newCategory: newCategoryValue,
+        newCategory: updateData.new_category,
       });
 
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);

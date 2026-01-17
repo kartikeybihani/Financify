@@ -567,6 +567,13 @@ export const getRecentTransactions = async (user_id: string, limit: number = 50)
           stream_id,
           stream_type,
           is_active
+        ),
+        categories:category_id (
+          id,
+          name,
+          slug,
+          icon,
+          color
         )
       `)
       .eq("user_id", user_id)
@@ -1350,18 +1357,20 @@ export const getFilteredTransactions = async (
       searchQuery = ""
     } = options;
 
-    // Convert category IDs to category names for database filtering
+    // Note: We now use category_id directly for filtering (more secure and performant)
+    // categoryNames is kept for legacy fallback support only
     let categoryNames: string[] = [];
     if (categoryIds.length > 0) {
-      // Get category names from the categories table
+      // Validate that category IDs exist (optional - for error checking)
       const { data: categories, error: categoryError } = await supabase
         .from('categories')
         .select('id, name')
         .in('id', categoryIds);
       
       if (categoryError) {
-        console.error("❌ Error fetching category names:", categoryError);
+        console.error("❌ Error validating category IDs:", categoryError);
       } else {
+        // Store names for legacy fallback (if needed)
         categoryNames = categories?.map(cat => cat.name) || [];
       }
     }
@@ -1390,6 +1399,13 @@ export const getFilteredTransactions = async (
           stream_id,
           stream_type,
           is_active
+        ),
+        categories:category_id (
+          id,
+          name,
+          slug,
+          icon,
+          color
         )
       `)
       .eq("user_id", userId)
@@ -1407,14 +1423,20 @@ export const getFilteredTransactions = async (
     }
 
     // Add category filter if specified (multiple categories)
-    if (categoryNames.length > 0) {
+    // Use category_id for filtering (more secure and performant than name matching)
+    if (categoryIds.length > 0) {
+      // Filter by category_id directly (preferred method)
+      query = query.in("category_id", categoryIds);
+    } else if (categoryNames.length > 0) {
+      // Fallback: If categoryIds not provided but categoryNames are, 
+      // we need to filter by name (legacy support, but should use categoryIds)
       // logger.info(`🔍 Filtering by ${categoryNames.length} specific categories:`, categoryNames);
       
-      // Use COALESCE to fallback from new_category to top_category
-      // This handles the case where new_category is null and we need to use top_category
+      // Use COALESCE to fallback from category_id (via join) to new_category to top_category
+      // This handles the case where category_id is null and we need to use name fallbacks
       query = query.or(
         categoryNames.map(cat => 
-          `new_category.eq.${cat},and(new_category.is.null,top_category.eq.${cat})`
+          `categories.name.eq.${cat},and(category_id.is.null,new_category.eq.${cat}),and(category_id.is.null,new_category.is.null,top_category.eq.${cat})`
         ).join(',')
       );
     } else {
@@ -1425,12 +1447,14 @@ export const getFilteredTransactions = async (
     if (searchQuery && searchQuery.trim()) {
       const searchTerm = searchQuery.trim();
       // Search in transaction name (case-insensitive)
-      // Search in effective category: new_category if exists, else top_category
-      // This respects user overrides - if user changed category, we only search the new category
+      // Search in effective category: categories.name (from join) if category_id exists,
+      // else new_category if exists (for INTERNAL_TRANSFER), else top_category
       // PostgREST uses * as wildcard for ilike (not %)
-      // Pattern: name matches OR (new_category matches AND new_category is not null) OR (top_category matches AND new_category is null)
+      // Pattern: name matches OR (categories.name matches AND category_id is not null) 
+      //          OR (new_category matches AND category_id is null AND new_category is not null) 
+      //          OR (top_category matches AND category_id is null AND new_category is null)
       query = query.or(
-        `name.ilike.*${searchTerm}*,and(new_category.ilike.*${searchTerm}*,new_category.not.is.null),and(top_category.ilike.*${searchTerm}*,new_category.is.null)`
+        `name.ilike.*${searchTerm}*,and(categories.name.ilike.*${searchTerm}*,category_id.not.is.null),and(new_category.ilike.*${searchTerm}*,category_id.is.null,new_category.not.is.null),and(top_category.ilike.*${searchTerm}*,category_id.is.null,new_category.is.null)`
       );
     }
 

@@ -11,6 +11,7 @@ import {
   Dimensions,
   KeyboardAvoidingView,
   Platform,
+  Alert,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -21,6 +22,7 @@ import {
   getOrCreateCurrentBudgetPeriod,
   upsertBudgetEntry,
 } from "@/src/types/budget";
+import { CURATED_ICONS } from "@/src/components/shared/modal-constants";
 
 export const FAB_GRADIENT_COLORS = [
   "rgba(31, 31, 31, 0.98)",
@@ -39,42 +41,6 @@ interface AddCategoryModalProps {
 }
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
-
-// Curated set of icons - all emojis
-const CURATED_ICONS = [
-  { type: "emoji", value: "💰", name: "Money" },
-  { type: "emoji", value: "🛒", name: "Shopping" },
-  { type: "emoji", value: "🍽️", name: "Food" },
-  { type: "emoji", value: "🏠", name: "Home" },
-  { type: "emoji", value: "🚗", name: "Car" },
-  { type: "emoji", value: "🛍️", name: "Store" },
-  { type: "emoji", value: "🎬", name: "Entertainment" },
-  { type: "emoji", value: "📱", name: "Phone" },
-  { type: "emoji", value: "💪", name: "Fitness" },
-  { type: "emoji", value: "⚡", name: "Utilities" },
-  { type: "emoji", value: "✈️", name: "Travel" },
-  { type: "emoji", value: "📚", name: "Education" },
-  { type: "emoji", value: "💎", name: "Savings" },
-  { type: "emoji", value: "🏥", name: "Health" },
-  { type: "emoji", value: "🎮", name: "Gaming" },
-  { type: "emoji", value: "🎵", name: "Music" },
-  { type: "emoji", value: "🎬", name: "Film" },
-  { type: "emoji", value: "⚡", name: "Flash" },
-  { type: "emoji", value: "✨", name: "Beauty" },
-  { type: "emoji", value: "📚", name: "Book" },
-  { type: "emoji", value: "💎", name: "Diamond" },
-  { type: "emoji", value: "🏥", name: "Medical" },
-  { type: "emoji", value: "🎨", name: "Art" },
-  { type: "emoji", value: "🏋️", name: "Gym" },
-  { type: "emoji", value: "🌿", name: "Nature" },
-  { type: "emoji", value: "🍕", name: "Pizza" },
-  { type: "emoji", value: "☕", name: "Cafe" },
-  { type: "emoji", value: "🍔", name: "Fast Food" },
-  { type: "emoji", value: "🍺", name: "Beer" },
-  { type: "emoji", value: "🍷", name: "Wine" },
-  { type: "emoji", value: "🚌", name: "Bus" },
-  { type: "emoji", value: "🚂", name: "Train" },
-];
 
 const AddCategoryModal: React.FC<AddCategoryModalProps> = ({
   visible,
@@ -113,6 +79,23 @@ const AddCategoryModal: React.FC<AddCategoryModalProps> = ({
       } = await supabase.auth.getUser();
       if (!user?.id) {
         throw new Error("Not authenticated");
+      }
+
+      // Check for duplicate category name (case-insensitive, trimmed)
+      const { data: existingCategory } = await supabase
+        .from("categories")
+        .select("id, name")
+        .eq("user_id", user.id)
+        .eq("is_active", true)
+        .ilike("name", categoryName.trim());
+
+      if (existingCategory && existingCategory.length > 0) {
+        Alert.alert(
+          "Duplicate Category",
+          `A category named "${categoryName.trim()}" already exists. Please choose a different name.`
+        );
+        setLoading(false);
+        return;
       }
 
       // Create slug from name

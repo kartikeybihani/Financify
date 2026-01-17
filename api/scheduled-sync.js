@@ -261,6 +261,27 @@ async function syncItemTransactions(item_id, user_id) {
       }
     }
 
+    // Fetch user's categories to build name -> category_id map for ID-based linking
+    const { data: userCategories, error: categoriesError } = await supabase
+      .from("categories")
+      .select("id, name")
+      .eq("user_id", user_id)
+      .eq("is_active", true);
+
+    if (categoriesError) {
+      console.error("Error fetching user categories:", categoriesError);
+    }
+
+    // Build category name -> category_id map (case-insensitive for matching)
+    const categoryIdMap = new Map();
+    if (userCategories) {
+      userCategories.forEach((cat) => {
+        // Store both exact name and lowercase for flexible matching
+        categoryIdMap.set(cat.name, cat.id);
+        categoryIdMap.set(cat.name.toLowerCase(), cat.id);
+      });
+    }
+
     // Get existing recurring streams (is_active column exists in recurring_streams table)
     const { data: recurringStreams, error: streamsError } = await supabase
       .from("recurring_streams")
@@ -364,6 +385,18 @@ async function syncItemTransactions(item_id, user_id) {
           }
         }
 
+        // Look up category_id from categories table
+        // Priority: newCategory (if set and not INTERNAL_TRANSFER) > top_category
+        let categoryId = null;
+        if (newCategory && newCategory !== "INTERNAL_TRANSFER") {
+          // Look up category_id for user-set category (from stream or override)
+          categoryId = categoryIdMap.get(newCategory) || categoryIdMap.get(newCategory.toLowerCase()) || null;
+        } else if (!newCategory && mappedCategory.top && mappedCategory.top !== "INTERNAL_TRANSFER") {
+          // Look up category_id for top_category (Plaid mapped category)
+          categoryId = categoryIdMap.get(mappedCategory.top) || categoryIdMap.get(mappedCategory.top.toLowerCase()) || null;
+        }
+        // For INTERNAL_TRANSFER, categoryId stays null (not a real category)
+
         return {
           user_id: user_id,
           account_id: txn.account_id,
@@ -376,11 +409,12 @@ async function syncItemTransactions(item_id, user_id) {
           category: category, // Keep original Plaid category (detailed or primary)
           top_category: mappedCategory.top, // Mapped top category
           sub_category: mappedCategory.sub, // Mapped sub category
-          new_category: newCategory, // Set to INTERNAL_TRANSFER if detected
+          new_category: newCategory, // Only set for INTERNAL_TRANSFER or stream categories (legacy support)
           transaction_type: txn.payment_channel || null,
           pending: txn.pending ?? false,
           recurring_stream_id: recurringStreamId,
           if_recurring: ifRecurring, // Set recurring flag based on stream membership and internal transfer detection
+          category_id: categoryId, // Set category_id for ID-based linking (preferred method)
         };
       });
 
@@ -390,12 +424,12 @@ async function syncItemTransactions(item_id, user_id) {
       // CRITICAL: If we can't fetch existing transactions, we MUST NOT set new_category
       //           to avoid overwriting user overrides
 
-      // First, get existing transactions to check which ones already have new_category and if_recurring
+      // First, get existing transactions to check which ones already have new_category, category_id, and if_recurring
       const plaidTxIds = rows.map((r) => r.plaid_transaction_id);
       const { data: existingTxs, error: fetchErr } = await supabase
         .from("transactions")
         .select(
-          "plaid_transaction_id, new_category, if_recurring, recurring_stream_id"
+          "plaid_transaction_id, new_category, category_id, if_recurring, recurring_stream_id"
         )
         .eq("user_id", user_id)
         .in("plaid_transaction_id", plaidTxIds);
@@ -415,13 +449,18 @@ async function syncItemTransactions(item_id, user_id) {
         );
       }
 
-      // Create maps of existing transactions with new_category and if_recurring
+      // Create maps of existing transactions with new_category, category_id, and if_recurring
       const existingCategoryMap = new Map();
+      const existingCategoryIdMap = new Map();
       const existingRecurringMap = new Map();
       if (canSafelySetCategories) {
         existingTxs.forEach((tx) => {
           if (tx.new_category) {
             existingCategoryMap.set(tx.plaid_transaction_id, tx.new_category);
+          }
+          // Preserve existing category_id if set (user may have manually assigned)
+          if (tx.category_id) {
+            existingCategoryIdMap.set(tx.plaid_transaction_id, tx.category_id);
           }
           // Track if_recurring for transactions NOT in streams (user might have manually set it)
           if (!tx.recurring_stream_id && tx.if_recurring === "yes") {
@@ -462,16 +501,38 @@ async function syncItemTransactions(item_id, user_id) {
         }
 
         // Existing transaction - preserve user overrides
-        if (existingCategory) {
-          // User has overridden this category - preserve it
-          // This includes if user manually set INTERNAL_TRANSFER
+        const existingCategoryId = existingCategoryIdMap.get(row.plaid_transaction_id);
+        
+        if (existingCategoryId) {
+          // User has set category_id - preserve it (highest priority)
+          updatedRow.category_id = existingCategoryId;
+          // If category_id exists, we don't need to set new_category (except for INTERNAL_TRANSFER)
+          if (existingCategory === "INTERNAL_TRANSFER") {
+            updatedRow.new_category = "INTERNAL_TRANSFER";
+            updatedRow.category_id = null; // INTERNAL_TRANSFER doesn't have a category_id
+          } else {
+            // Clear new_category since we're using category_id
+            updatedRow.new_category = null;
+          }
+        } else if (existingCategory) {
+          // User has overridden category via new_category - preserve it and look up category_id
           updatedRow.new_category = existingCategory;
+          if (existingCategory !== "INTERNAL_TRANSFER") {
+            // Try to look up category_id for the existing category name
+            updatedRow.category_id = categoryIdMap.get(existingCategory) || categoryIdMap.get(existingCategory.toLowerCase()) || null;
+          } else {
+            updatedRow.category_id = null; // INTERNAL_TRANSFER doesn't have a category_id
+          }
         } else {
           // No user override - check if top_category indicates internal transfer
           // (mapper already detected it from Plaid categories)
           if (row.top_category === "INTERNAL_TRANSFER") {
             updatedRow.new_category = "INTERNAL_TRANSFER";
+            updatedRow.category_id = null;
             updatedRow.if_recurring = "no"; // Internal transfers are not recurring
+          } else {
+            // No override - use the category_id we looked up in the row mapping
+            // (already set in the row, just keep it)
           }
         }
 

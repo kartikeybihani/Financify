@@ -19,42 +19,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { supabase } from "@/src/lib/supabase/supabase";
 import logger from "@/src/utils/core/logger";
-
-// Curated set of icons - all emojis (reused from AddCategoryModal)
-const CURATED_ICONS = [
-  { type: "emoji", value: "💰", name: "Money" },
-  { type: "emoji", value: "🛒", name: "Shopping" },
-  { type: "emoji", value: "🍽️", name: "Food" },
-  { type: "emoji", value: "🏠", name: "Home" },
-  { type: "emoji", value: "🚗", name: "Car" },
-  { type: "emoji", value: "🛍️", name: "Store" },
-  { type: "emoji", value: "🎬", name: "Entertainment" },
-  { type: "emoji", value: "📱", name: "Phone" },
-  { type: "emoji", value: "💪", name: "Fitness" },
-  { type: "emoji", value: "⚡", name: "Utilities" },
-  { type: "emoji", value: "✈️", name: "Travel" },
-  { type: "emoji", value: "📚", name: "Education" },
-  { type: "emoji", value: "💎", name: "Savings" },
-  { type: "emoji", value: "🏥", name: "Health" },
-  { type: "emoji", value: "🎮", name: "Gaming" },
-  { type: "emoji", value: "🎵", name: "Music" },
-  { type: "emoji", value: "🎬", name: "Film" },
-  { type: "emoji", value: "⚡", name: "Flash" },
-  { type: "emoji", value: "✨", name: "Beauty" },
-  { type: "emoji", value: "📚", name: "Book" },
-  { type: "emoji", value: "💎", name: "Diamond" },
-  { type: "emoji", value: "🏥", name: "Medical" },
-  { type: "emoji", value: "🎨", name: "Art" },
-  { type: "emoji", value: "🏋️", name: "Gym" },
-  { type: "emoji", value: "🌿", name: "Nature" },
-  { type: "emoji", value: "🍕", name: "Pizza" },
-  { type: "emoji", value: "☕", name: "Cafe" },
-  { type: "emoji", value: "🍔", name: "Fast Food" },
-  { type: "emoji", value: "🍺", name: "Beer" },
-  { type: "emoji", value: "🍷", name: "Wine" },
-  { type: "emoji", value: "🚌", name: "Bus" },
-  { type: "emoji", value: "🚂", name: "Train" },
-];
+import { CURATED_ICONS } from "@/src/components/shared/modal-constants";
 
 interface CategoryLike {
   category: string;
@@ -164,6 +129,15 @@ const CategoryEditModal: React.FC<Props> = ({
     }
   }, [visible, category, rendered, screenHeight, slideAnim]);
   
+  // Wrapper for onClose that saves any pending name changes
+  const handleClose = async () => {
+    // Save any pending name changes before closing
+    if (isEditingName && category?.categoryId && editingName.trim() && editingName.trim() !== category.category) {
+      await handleNameUpdate(editingName);
+    }
+    onClose();
+  };
+  
   // Animate icon picker
   useEffect(() => {
     if (showIconPicker) {
@@ -243,7 +217,7 @@ const CategoryEditModal: React.FC<Props> = ({
 
     if (success) {
       // Close modal after successful save
-      onClose();
+      handleClose();
     } else {
       // Clear loading state on error
       if (setCategoryLoading && category) {
@@ -255,13 +229,13 @@ const CategoryEditModal: React.FC<Props> = ({
   const handleGroup = async (parentCategoryId: string) => {
     if (!category.categoryId || !onGroupCategory) return;
     await onGroupCategory(category.categoryId, parentCategoryId);
-    onClose();
+    handleClose();
   };
 
   const handleRemoveGroup = async () => {
     if (!category.categoryId || !onRemoveGrouping) return;
     await onRemoveGrouping(category.categoryId);
-    onClose();
+    handleClose();
   };
 
   const handleDelete = () => {
@@ -449,11 +423,11 @@ const CategoryEditModal: React.FC<Props> = ({
       transparent
       animationType="fade"
       visible={visible}
-      onRequestClose={onClose}
+      onRequestClose={handleClose}
     >
       <View style={styles.overlay}>
         <Pressable
-          onPress={onClose}
+          onPress={handleClose}
           style={StyleSheet.absoluteFillObject}
         />
         <Animated.View

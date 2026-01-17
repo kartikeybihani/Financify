@@ -154,6 +154,7 @@ export default function InsightsScreen() {
     getCategoryColor,
     formatCategoryName: formatCategoryFromHook,
     getCategoryIcon,
+    refreshCategories,
   } = useCategories(userId);
   const [categoryBreakdown, setCategoryBreakdown] = useState<
     [
@@ -2499,6 +2500,7 @@ export default function InsightsScreen() {
                     onRefreshBudgetRef={(refreshFn) => {
                       refreshBudgetRef.current = refreshFn;
                     }}
+                    refreshCategories={refreshCategories}
                   />
                 </Animated.View>
               )}
