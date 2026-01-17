@@ -2366,7 +2366,7 @@ async function handleAsk(
     // Send progress update after data is loaded
     if (wantsStreaming && res && !res.writableEnded) {
       sendStreamEvent(res, "progress", {
-        status: "Analyzing your finances...",
+        status: "Let me cook...",
       });
     }
     // Update parent timings if provided
@@ -3105,6 +3105,23 @@ async function handleAsk(
       maxMessages: 8,
       maxChars: 6000,
     });
+    
+    // Debug logging for recent turns
+    if (!context?.chat_id) {
+      console.log("⚠️ [RECENT_TURNS] chat_id is missing:", {
+        userId,
+        chat_id: context?.chat_id,
+        hasContext: !!context,
+      });
+    } else if (recentTurns.length === 0) {
+      console.log("⚠️ [RECENT_TURNS] No recent turns found (cache may be empty):", {
+        userId,
+        chat_id: context?.chat_id,
+        cacheKey: `${userId}:${context?.chat_id}`,
+      });
+    } else {
+      console.log(`✅ [RECENT_TURNS] Found ${recentTurns.length} recent turns`);
+    }
 
     // Build complete prompt using 6-layer architecture (with recent turns)
     const system = buildContextAwarePrompt(
