@@ -263,7 +263,8 @@ export const useChat = () => {
       console.log("🆕 [CLEAR_CHAT] New chat ID generated:", newChatId);
       
       // Save current session to database in the background (don't await)
-      saveCurrentSession().catch(error => {
+      // Note: saveCurrentSession is defined later, but this is fine since it's called asynchronously
+      saveCurrentSession().catch((error: any) => {
         logger.error("Background database save failed:", error);
       });
       
@@ -277,6 +278,13 @@ export const useChat = () => {
   const truncate = (text: string, maxLength: number): string => {
     if (text.length <= maxLength) return text;
     return text.substring(0, maxLength).trim() + '...';
+  };
+
+  // Helper function to validate message integrity
+  const validateMessages = (messages: ChatMessage[]): { hasUser: boolean; hasFinny: boolean } => {
+    const hasUserMessages = messages.some(m => m.sender === 'user');
+    const hasFinnyMessages = messages.some(m => m.sender === 'finny');
+    return { hasUser: hasUserMessages, hasFinny: hasFinnyMessages };
   };
 
   // Save current session to database (only when conversation ends)
@@ -306,9 +314,19 @@ export const useChat = () => {
         return timestampA - timestampB;
       });
 
-      logger.info("Saving chat session:", {
-        userId: user.id,
+      // Validate message integrity before saving
+      const { hasUser: hasUserMessages } = validateMessages(sortedMessages);
+      
+      if (!hasUserMessages) {
+        logger.warn("[SAVE_SESSION] No user messages found, skipping save");
+        return;
+      }
+
+      logger.info("[SAVE_SESSION] Saving chat session:", {
+        userId: user.id.substring(0, 8) + '...',
         messageCount: sortedMessages.length,
+        userMessageCount: sortedMessages.filter(m => m.sender === 'user').length,
+        finnyMessageCount: sortedMessages.filter(m => m.sender === 'finny').length,
         firstMessage: firstUserMsg.text.substring(0, 50) + '...',
         sessionTitle: truncate(firstUserMsg.text || 'Chat', 60),
         currentSessionId: currentSessionId,
@@ -394,7 +412,15 @@ export const useChat = () => {
   const loadSession = async (sessionId: string) => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user?.id) return;
+      if (!user?.id) {
+        logger.warn("[LOAD_SESSION] No user ID available");
+        return;
+      }
+
+      logger.info("[LOAD_SESSION] Loading session:", {
+        sessionId,
+        userId: user.id.substring(0, 8) + '...'
+      });
 
       const { data, error } = await supabase.rpc('get_chat_session_messages', {
         p_session_id: sessionId,
@@ -402,20 +428,71 @@ export const useChat = () => {
       });
 
       if (error) {
-        logger.error("Error loading session:", error);
+        logger.error("[LOAD_SESSION] RPC error:", error);
         return;
       }
 
-      if (data && Array.isArray(data)) {
-        setChatMessages(data);
-        setCurrentSessionId(sessionId);
-        setIsNewSession(false);
-        await AsyncStorage.setItem('chatMessages', JSON.stringify(data));
-        setShowNudges(data.length <= 1);
-        logger.info("Session loaded:", sessionId);
+      if (!data) {
+        logger.warn("[LOAD_SESSION] No data returned from RPC");
+        return;
       }
+
+      // Handle both array and object responses
+      let messages: ChatMessage[] = [];
+      if (Array.isArray(data)) {
+        messages = data;
+      } else if (data.messages && Array.isArray(data.messages)) {
+        messages = data.messages;
+      } else {
+        logger.error("[LOAD_SESSION] Invalid data format:", typeof data);
+        return;
+      }
+
+      // Ensure messages are sorted by timestamp (same as when saving)
+      const sortedMessages = [...messages].sort((a, b) => {
+        const timestampA = a.timestamp || 0;
+        const timestampB = b.timestamp || 0;
+        return timestampA - timestampB;
+      });
+
+      // Validate message integrity
+      const { hasUser: hasUserMessages, hasFinny: hasFinnyMessages } = validateMessages(sortedMessages);
+      
+      if (!hasUserMessages || !hasFinnyMessages) {
+        logger.warn("[LOAD_SESSION] Session appears incomplete:", {
+          messageCount: sortedMessages.length,
+          hasUser: hasUserMessages,
+          hasFinny: hasFinnyMessages
+        });
+      }
+
+      logger.info("[LOAD_SESSION] Session loaded successfully:", {
+        sessionId,
+        messageCount: sortedMessages.length,
+        firstUserMsg: sortedMessages.find(m => m.sender === 'user')?.text?.substring(0, 50) + '...',
+        lastMsg: sortedMessages[sortedMessages.length - 1]?.text?.substring(0, 50) + '...'
+      });
+
+      // Set messages and state
+      setChatMessages(sortedMessages);
+      setCurrentSessionId(sessionId);
+      setIsNewSession(false);
+      await AsyncStorage.setItem('chatMessages', JSON.stringify(sortedMessages));
+      setShowNudges(sortedMessages.length <= 1);
+      
+      // Clear goal flow when loading old session (old sessions don't have active goal flows)
+      setGoalFlow(null);
+      
+      // Generate new chatId for this loaded session to prevent context mixing
+      // The backend uses chatId for conversation context, so we need a fresh one
+      const newChatId = `chat_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
+      setChatId(newChatId);
+      await AsyncStorage.setItem("chatId", newChatId);
+      logger.info("[LOAD_SESSION] Generated new chatId for loaded session:", newChatId);
+      
+      logger.info("[LOAD_SESSION] ✅ Session restored successfully");
     } catch (error) {
-      logger.error("Error in loadSession:", error);
+      logger.error("[LOAD_SESSION] Error loading session:", error);
     }
   };
 

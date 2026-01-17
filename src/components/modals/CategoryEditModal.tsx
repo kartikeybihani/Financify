@@ -17,6 +17,44 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
+import { supabase } from "@/src/lib/supabase/supabase";
+import logger from "@/src/utils/core/logger";
+
+// Curated set of icons - all emojis (reused from AddCategoryModal)
+const CURATED_ICONS = [
+  { type: "emoji", value: "💰", name: "Money" },
+  { type: "emoji", value: "🛒", name: "Shopping" },
+  { type: "emoji", value: "🍽️", name: "Food" },
+  { type: "emoji", value: "🏠", name: "Home" },
+  { type: "emoji", value: "🚗", name: "Car" },
+  { type: "emoji", value: "🛍️", name: "Store" },
+  { type: "emoji", value: "🎬", name: "Entertainment" },
+  { type: "emoji", value: "📱", name: "Phone" },
+  { type: "emoji", value: "💪", name: "Fitness" },
+  { type: "emoji", value: "⚡", name: "Utilities" },
+  { type: "emoji", value: "✈️", name: "Travel" },
+  { type: "emoji", value: "📚", name: "Education" },
+  { type: "emoji", value: "💎", name: "Savings" },
+  { type: "emoji", value: "🏥", name: "Health" },
+  { type: "emoji", value: "🎮", name: "Gaming" },
+  { type: "emoji", value: "🎵", name: "Music" },
+  { type: "emoji", value: "🎬", name: "Film" },
+  { type: "emoji", value: "⚡", name: "Flash" },
+  { type: "emoji", value: "✨", name: "Beauty" },
+  { type: "emoji", value: "📚", name: "Book" },
+  { type: "emoji", value: "💎", name: "Diamond" },
+  { type: "emoji", value: "🏥", name: "Medical" },
+  { type: "emoji", value: "🎨", name: "Art" },
+  { type: "emoji", value: "🏋️", name: "Gym" },
+  { type: "emoji", value: "🌿", name: "Nature" },
+  { type: "emoji", value: "🍕", name: "Pizza" },
+  { type: "emoji", value: "☕", name: "Cafe" },
+  { type: "emoji", value: "🍔", name: "Fast Food" },
+  { type: "emoji", value: "🍺", name: "Beer" },
+  { type: "emoji", value: "🍷", name: "Wine" },
+  { type: "emoji", value: "🚌", name: "Bus" },
+  { type: "emoji", value: "🚂", name: "Train" },
+];
 
 interface CategoryLike {
   category: string;
@@ -25,6 +63,7 @@ interface CategoryLike {
   budget: number;
   entryId?: string | null;
   parentCategoryId?: string | null;
+  icon?: string | null;
 }
 
 interface GroupOption extends CategoryLike {
@@ -48,6 +87,11 @@ interface Props {
     parentCategoryId: string
   ) => Promise<boolean>;
   onRemoveGrouping?: (childCategoryId: string) => Promise<boolean>;
+  // Callbacks for name/icon updates with loading state
+  onNameUpdate?: (categoryId: string, newName: string) => Promise<boolean>;
+  onIconUpdate?: (categoryId: string, newIcon: string) => Promise<boolean>;
+  setCategoryLoading?: (categoryId: string | null | undefined, entryId: string | null | undefined, isLoading: boolean) => void;
+  refreshBudget?: () => Promise<void>;
 }
 
 const CategoryEditModal: React.FC<Props> = ({
@@ -61,9 +105,16 @@ const CategoryEditModal: React.FC<Props> = ({
   groupOptions = [],
   onGroupCategory,
   onRemoveGrouping,
+  onNameUpdate,
+  onIconUpdate,
+  setCategoryLoading,
+  refreshBudget,
 }) => {
   const [amount, setAmount] = useState<string>(
     category ? Math.round(category.budget).toString() : ""
+  );
+  const [originalAmount, setOriginalAmount] = useState<number>(
+    category ? Math.round(category.budget) : 0
   );
   const [mode, setMode] = useState<"edit" | "group">("edit");
   const screenHeight = Dimensions.get("window").height;
@@ -72,14 +123,31 @@ const CategoryEditModal: React.FC<Props> = ({
   const [rendered, setRendered] = useState(visible);
   const [currentCategory, setCurrentCategory] = useState(category);
   const amountInputRef = useRef<TextInput>(null);
+  
+  // Inline editing states
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [editingName, setEditingName] = useState(category?.category || "");
+  const [showIconPicker, setShowIconPicker] = useState(false);
+  const [currentIcon, setCurrentIcon] = useState<string | null>(
+    category?.icon || null
+  );
+  const iconPickerAnim = useRef(new Animated.Value(0)).current;
+  const nameInputRef = useRef<TextInput>(null);
 
   useEffect(() => {
     if (visible && category) {
       setCurrentCategory(category);
-      setAmount(category ? Math.round(category.budget).toString() : "");
+      const budgetAmount = category ? Math.round(category.budget) : 0;
+      setAmount(budgetAmount.toString());
+      setOriginalAmount(budgetAmount);
       setMode("edit"); // Reset to edit mode when modal opens
       setRendered(true);
       slideAnim.setValue(screenHeight);
+      setIsEditingName(false);
+      setEditingName(category.category || "");
+      setCurrentIcon(category.icon || null);
+      setShowIconPicker(false);
+      iconPickerAnim.setValue(0);
       Animated.timing(slideAnim, {
         toValue: 0,
         duration: 240,
@@ -95,6 +163,34 @@ const CategoryEditModal: React.FC<Props> = ({
       }).start(() => setRendered(false));
     }
   }, [visible, category, rendered, screenHeight, slideAnim]);
+  
+  // Animate icon picker
+  useEffect(() => {
+    if (showIconPicker) {
+      Animated.timing(iconPickerAnim, {
+        toValue: 1,
+        duration: 250,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }).start();
+    } else {
+      Animated.timing(iconPickerAnim, {
+        toValue: 0,
+        duration: 200,
+        easing: Easing.in(Easing.cubic),
+        useNativeDriver: true,
+      }).start();
+    }
+  }, [showIconPicker, iconPickerAnim]);
+  
+  // Focus name input when editing starts
+  useEffect(() => {
+    if (isEditingName && nameInputRef.current) {
+      setTimeout(() => {
+        nameInputRef.current?.focus();
+      }, 100);
+    }
+  }, [isEditingName]);
 
   // Handle keyboard events manually for smooth bottom sheet behavior
   useEffect(() => {
@@ -130,19 +226,30 @@ const CategoryEditModal: React.FC<Props> = ({
   // Use category prop directly instead of currentCategory to avoid timing issues
   if (!visible || !category) return null;
 
-  const parseAmount = () => {
-    const next = parseFloat(amount);
-    return isNaN(next) || next < 0 ? null : next;
-  };
-
-  const handleSave = () => {
+  const handleSave = async () => {
     const parsed = parseAmount();
     if (parsed === null) return;
 
-    onClose();
-    onSave(parsed).catch(() => {
+    // Set loading state
+    if (setCategoryLoading && category) {
+      setCategoryLoading(category.categoryId, category.entryId, true);
+    }
+
+    // Save budget
+    const success = await onSave(parsed).catch(() => {
       // parent handles rollback
+      return false;
     });
+
+    if (success) {
+      // Close modal after successful save
+      onClose();
+    } else {
+      // Clear loading state on error
+      if (setCategoryLoading && category) {
+        setCategoryLoading(category.categoryId, category.entryId, false);
+      }
+    }
   };
 
   const handleGroup = async (parentCategoryId: string) => {
@@ -180,6 +287,154 @@ const CategoryEditModal: React.FC<Props> = ({
       ]
     );
   };
+  
+  // Handle category name update
+  const handleNameUpdate = async (newName: string) => {
+    if (!category?.categoryId || !newName.trim() || newName.trim() === category.category) {
+      setIsEditingName(false);
+      setEditingName(category?.category || "");
+      return;
+    }
+    
+    // Set loading state
+    if (setCategoryLoading) {
+      setCategoryLoading(category.categoryId, category.entryId, true);
+    }
+    
+    try {
+      // Use callback if provided (it handles DB update, refresh, and logging)
+      if (onNameUpdate) {
+        const success = await onNameUpdate(category.categoryId, newName.trim());
+        if (!success) {
+          setEditingName(category?.category || "");
+        } else {
+          setCurrentCategory({ ...category, category: newName.trim() });
+        }
+      } else {
+        // Fallback: Update directly if callback not provided
+        const oldName = category.category;
+        const baseSlug = newName
+          .toLowerCase()
+          .replace(/[^a-z0-9\s-]/g, "")
+          .replace(/\s+/g, "-")
+          .trim();
+        
+        const { error } = await supabase
+          .from("categories")
+          .update({ 
+            name: newName.trim(),
+            slug: baseSlug,
+          })
+          .eq("id", category.categoryId);
+          
+        if (error) throw error;
+        
+        setCurrentCategory({ ...category, category: newName.trim() });
+        logger.info(`[CATEGORY] Updated name: "${oldName}" → "${newName.trim()}" (${category.categoryId})`);
+        
+        if (refreshBudget) {
+          await refreshBudget();
+        }
+      }
+      
+      setIsEditingName(false);
+    } catch (error) {
+      logger.error("[BUDGET] Error updating category name:", error);
+      setEditingName(category?.category || "");
+      setIsEditingName(false);
+    } finally {
+      // Clear loading state
+      if (setCategoryLoading) {
+        setCategoryLoading(category.categoryId, category.entryId, false);
+      }
+    }
+  };
+  
+  // Handle icon update - optimistic update (instant UI, background DB)
+  const handleIconUpdate = async (newIcon: string) => {
+    if (!category?.categoryId || newIcon === currentIcon) {
+      setShowIconPicker(false);
+      return;
+    }
+    
+    // OPTIMISTIC UPDATE: Update UI instantly
+    const previousIcon = currentIcon || null;
+    setCurrentIcon(newIcon);
+    setCurrentCategory({ ...category, icon: newIcon });
+    setShowIconPicker(false);
+    
+    // Set loading state
+    if (setCategoryLoading) {
+      setCategoryLoading(category.categoryId, category.entryId, true);
+    }
+    
+    // Update database in background
+    (async () => {
+      try {
+        // Use callback if provided (it handles DB update, refresh, and logging)
+        if (onIconUpdate && category.categoryId) {
+          const success = await onIconUpdate(category.categoryId, newIcon);
+          if (!success) {
+            setCurrentIcon(previousIcon);
+            setCurrentCategory({ ...category, icon: previousIcon });
+            logger.error("[BUDGET] Failed to update category icon, rolling back");
+          }
+        } else {
+          // Fallback: Update directly if callback not provided
+          const categoryName = category.category || "Unknown";
+          const { error } = await supabase
+            .from("categories")
+            .update({ icon: newIcon })
+            .eq("id", category.categoryId);
+            
+          if (error) throw error;
+          
+          logger.info(`[CATEGORY] Updated icon: "${categoryName}" → ${newIcon} (${category.categoryId})`);
+          
+          if (refreshBudget) {
+            await refreshBudget();
+          }
+        }
+      } catch (error) {
+        // Rollback on error
+        setCurrentIcon(previousIcon);
+        setCurrentCategory({ ...category, icon: previousIcon });
+        logger.error("[BUDGET] Error updating category icon, rolling back:", error);
+      } finally {
+        // Clear loading state
+        if (setCategoryLoading) {
+          setCategoryLoading(category.categoryId, category.entryId, false);
+        }
+      }
+    })();
+  };
+  
+  // Get icon display helper
+  const getCategoryIconDisplay = (iconValue?: string | null) => {
+    if (iconValue) {
+      const emojiRegex =
+        /[\u{1F300}-\u{1F9FF}]|[\u{1F600}-\u{1F64F}]|[\u{1F680}-\u{1F6FF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF}]/u;
+      if (emojiRegex.test(iconValue)) {
+        return { type: "emoji" as const, value: iconValue };
+      }
+      return {
+        type: "ionicon" as const,
+        value: iconValue as keyof typeof Ionicons.glyphMap,
+      };
+    }
+    return { type: "emoji" as const, value: "💰" };
+  };
+  
+  const iconDisplay = getCategoryIconDisplay(currentIcon);
+  
+  // Check if budget has changed
+  const parseAmount = () => {
+    const next = parseFloat(amount);
+    return isNaN(next) || next < 0 ? null : next;
+  };
+  
+  const currentBudgetAmount = parseAmount();
+  const hasBudgetChanged = currentBudgetAmount !== null && currentBudgetAmount !== originalAmount;
 
   const filteredGroupOptions = groupOptions.filter((c) => {
     if (!c.categoryId) return false;
@@ -223,14 +478,126 @@ const CategoryEditModal: React.FC<Props> = ({
           >
             <View style={styles.header}>
               <View style={styles.headerContent}>
-                <Text style={styles.title}>
-                  {currentCategory?.category || category?.category || "Category"}
-                </Text>
-                {parentLabel && (
-                  <Text style={styles.subtitle}>Child of {parentLabel}</Text>
-                )}
+                {/* Icon on the left */}
+                <TouchableOpacity
+                  style={styles.headerIconButton}
+                  onPress={() => {
+                    setShowIconPicker(!showIconPicker);
+                    setIsEditingName(false);
+                  }}
+                  activeOpacity={0.7}
+                >
+                  {iconDisplay.type === "emoji" ? (
+                    <Text style={styles.headerIconEmoji}>{iconDisplay.value}</Text>
+                  ) : (
+                    <Ionicons
+                      name={iconDisplay.value}
+                      size={28}
+                      color={category?.color || "#4A90E2"}
+                      style={styles.headerIconIonicon}
+                    />
+                  )}
+                </TouchableOpacity>
+                
+                {/* Category name - editable */}
+                <View style={styles.headerNameContainer}>
+                  {isEditingName ? (
+                    <TextInput
+                      ref={nameInputRef}
+                      style={styles.headerNameInput}
+                      value={editingName}
+                      onChangeText={setEditingName}
+                      onBlur={() => {
+                        handleNameUpdate(editingName);
+                        setShowIconPicker(false);
+                      }}
+                      onSubmitEditing={() => {
+                        handleNameUpdate(editingName);
+                        setShowIconPicker(false);
+                      }}
+                      autoFocus
+                      selectTextOnFocus
+                    />
+                  ) : (
+                    <TouchableOpacity
+                      style={styles.headerNameButton}
+                      onPress={() => {
+                        setIsEditingName(true);
+                        setShowIconPicker(false);
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={styles.title} numberOfLines={1}>
+                        {currentCategory?.category || category?.category || "Category"}
+                      </Text>
+                      <Ionicons
+                        name="pencil-outline"
+                        size={18}
+                        color="rgba(255,255,255,0.6)"
+                        style={styles.pencilIcon}
+                      />
+                    </TouchableOpacity>
+                  )}
+                  {parentLabel && (
+                    <Text style={styles.subtitle}>Child of {parentLabel}</Text>
+                  )}
+                </View>
               </View>
             </View>
+            
+            {/* Icon Picker Section */}
+            {showIconPicker && (
+              <Animated.View
+                style={[
+                  styles.iconPickerContainer,
+                  {
+                    opacity: iconPickerAnim,
+                    transform: [
+                      {
+                        translateY: Animated.multiply(
+                          iconPickerAnim,
+                          new Animated.Value(-10)
+                        ),
+                      },
+                    ],
+                  },
+                ]}
+              >
+                <Text style={styles.iconPickerLabel}>CHOOSE ICON</Text>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  style={styles.iconScroll}
+                  contentContainerStyle={styles.iconScrollContent}
+                  bounces={false}
+                >
+                  {CURATED_ICONS.map((icon, index) => {
+                    const isSelected = currentIcon === icon.value;
+                    return (
+                      <TouchableOpacity
+                        key={`${icon.type}-${icon.value}-${index}`}
+                        style={[
+                          styles.iconOption,
+                          isSelected && styles.iconOptionSelected,
+                        ]}
+                        onPress={() => handleIconUpdate(icon.value)}
+                        activeOpacity={0.7}
+                      >
+                        {icon.type === "emoji" ? (
+                          <Text style={styles.iconEmojiRow}>{icon.value}</Text>
+                        ) : (
+                          <Ionicons
+                            name={icon.value as keyof typeof Ionicons.glyphMap}
+                            size={20}
+                            color="#fff"
+                          />
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              </Animated.View>
+            )}
 
                 {mode === "edit" ? (
                   <>
@@ -248,43 +615,23 @@ const CategoryEditModal: React.FC<Props> = ({
                           placeholder="0"
                           placeholderTextColor="rgba(255,255,255,0.4)"
                         />
-                      </View>
-                      <View style={styles.actions}>
-                        <TouchableOpacity
-                          onPress={() => {
-                            onClose();
-                          }}
-                          activeOpacity={0.7}
-                          delayPressIn={0}
-                          style={styles.buttonContainer}
-                        >
-                          <LinearGradient
-                            colors={[
-                              "rgba(255, 255, 255, 0.12)",
-                              "rgba(255, 255, 255, 0.04)",
-                            ]}
-                            start={{ x: 0, y: 0 }}
-                            end={{ x: 1, y: 1 }}
-                            style={styles.button}
+                        {hasBudgetChanged && (
+                          <TouchableOpacity
+                            onPress={handleSave}
+                            activeOpacity={0.7}
+                            delayPressIn={0}
+                            style={styles.saveButtonInline}
                           >
-                            <Text style={styles.cancel}>Cancel</Text>
-                          </LinearGradient>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          onPress={handleSave}
-                          activeOpacity={0.7}
-                          delayPressIn={0}
-                          style={styles.buttonContainer}
-                        >
-                          <LinearGradient
-                            colors={["#4A90E2", "#5BA3F5"]}
-                            start={{ x: 0, y: 0 }}
-                            end={{ x: 1, y: 1 }}
-                            style={styles.button}
-                          >
-                            <Text style={styles.save}>Save</Text>
-                          </LinearGradient>
-                        </TouchableOpacity>
+                            <LinearGradient
+                              colors={["#215896", "#4991e3"]}
+                              start={{ x: 0, y: 0 }}
+                              end={{ x: 1, y: 1 }}
+                              style={styles.saveButtonInlineGradient}
+                            >
+                              <Text style={styles.saveButtonInlineText}>Save</Text>
+                            </LinearGradient>
+                          </TouchableOpacity>
+                        )}
                       </View>
                     </View>
 
@@ -540,20 +887,103 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   headerContent: {
+    flexDirection: "row",
     alignItems: "center",
     width: "100%",
+    gap: 12,
+  },
+  headerIconButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: "rgba(255,255,255,0.08)",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 2,
+    borderColor: "rgba(255,255,255,0.12)",
+  },
+  headerIconEmoji: {
+    fontSize: 28,
+  },
+  headerIconIonicon: {
+    // No additional styles needed
+  },
+  headerNameContainer: {
+    flex: 1,
+    alignItems: "flex-start",
+  },
+  headerNameButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    flex: 1,
+  },
+  headerNameInput: {
+    flex: 1,
+    color: "#fff",
+    fontSize: 18,
+    fontWeight: "700",
+    backgroundColor: "rgba(255,255,255,0.08)",
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.12)",
+  },
+  pencilIcon: {
+    marginLeft: 8,
+    paddingRight: 4,
   },
   title: {
     color: "#fff",
     fontSize: 18,
     fontWeight: "700",
-    textAlign: "center",
+    flex: 1,
   },
   subtitle: {
     color: "rgba(255,255,255,0.6)",
     fontSize: 12,
     marginTop: 4,
-    textAlign: "center",
+  },
+  iconPickerContainer: {
+    marginBottom: 16,
+    marginTop: 8,
+  },
+  iconPickerLabel: {
+    color: "rgba(255,255,255,0.6)",
+    fontSize: 11,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    marginBottom: 12,
+  },
+  iconScroll: {
+    marginHorizontal: -18,
+    paddingHorizontal: 18,
+  },
+  iconScrollContent: {
+    gap: 12,
+    paddingRight: 18,
+    paddingTop: 5,
+    paddingBottom: 5,
+  },
+  iconOption: {
+    width: 50,
+    height: 50,
+    borderRadius: 12,
+    backgroundColor: "rgba(255,255,255,0.08)",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 2,
+    borderColor: "transparent",
+  },
+  iconOptionSelected: {
+    borderColor: "#4A90E2",
+    backgroundColor: "rgba(74, 144, 226, 0.2)",
+    transform: [{ scale: 1.05 }],
+  },
+  iconEmojiRow: {
+    fontSize: 20,
   },
   section: {
     marginTop: 4,
@@ -573,12 +1003,13 @@ const styles = StyleSheet.create({
     borderColor: "rgba(255,255,255,0.12)",
     paddingHorizontal: 12,
     paddingVertical: 10,
+    gap: 8,
   },
   prefix: {
     color: "rgba(255,255,255,0.8)",
     fontSize: 18,
     fontWeight: "700",
-    marginRight: 8,
+    marginRight: 4,
   },
   input: {
     flex: 1,
@@ -586,35 +1017,22 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "700",
   },
-  actions: {
-    flexDirection: "row",
-    justifyContent: "flex-end",
-    gap: 12,
-    marginTop: 20,
-  },
-  buttonContainer: {
-    borderRadius: 28,
+  saveButtonInline: {
+    borderRadius: 8,
     overflow: "hidden",
   },
-  button: {
-    paddingVertical: 10,
-    paddingHorizontal: 28,
-    borderRadius: 28,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.15)",
+  saveButtonInlineGradient: {
+    paddingVertical: 6,
+    paddingHorizontal: 16,
+    borderRadius: 20,
     alignItems: "center",
     justifyContent: "center",
-    minWidth: 100,
   },
-  cancel: {
-    color: "rgba(255,255,255,0.9)",
-    fontWeight: "600",
-    fontSize: 15,
-  },
-  save: {
+  saveButtonInlineText: {
     color: "#fff",
     fontWeight: "700",
-    fontSize: 15,
+    fontSize: 14,
+    paddingHorizontal: 2,
   },
   divider: {
     height: 1,

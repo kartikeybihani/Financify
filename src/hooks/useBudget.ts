@@ -135,22 +135,21 @@ export function useBudget(categoryBreakdown?: CategoryBreakdown): UseBudgetRetur
   const [hiddenCategoryKeys, setHiddenCategoryKeys] = useState<Set<string>>(new Set());
 
   // Fetch historical averages and categories
-  useEffect(() => {
-    const fetchHistoricalData = async () => {
-      try {
-        const authResult = await getAuthenticatedUser();
-        if (!authResult?.user?.id) return;
+  const fetchHistoricalData = useCallback(async () => {
+    try {
+      const authResult = await getAuthenticatedUser();
+      if (!authResult?.user?.id) return;
 
-        // Fetch historical averages
-        const averages = await getHistoricalCategoryAverages(authResult.user.id, 12);
-        setHistoricalAverages(averages);
+      // Fetch historical averages
+      const averages = await getHistoricalCategoryAverages(authResult.user.id, 12);
+      setHistoricalAverages(averages);
 
-        // Fetch all categories from categories table (user-specific only)
-        const { data: categories } = await supabase
-          .from("categories")
-          .select("id, user_id, name, icon, color, slug, is_active, rank")
-          .eq("user_id", authResult.user.id)
-          .order("rank", { ascending: true });
+      // Fetch all categories from categories table (user-specific only)
+      const { data: categories } = await supabase
+        .from("categories")
+        .select("id, user_id, name, icon, color, slug, is_active, rank")
+        .eq("user_id", authResult.user.id)
+        .order("rank", { ascending: true });
 
         if (categories) {
           const hiddenKeys = new Set<string>();
@@ -179,17 +178,18 @@ export function useBudget(categoryBreakdown?: CategoryBreakdown): UseBudgetRetur
           setHiddenCategoryKeys(hiddenKeys);
         }
 
-        const groupings = await getCategoryGroupings(authResult.user.id);
-        setCategoryGroupings(groupings);
-      } catch (err) {
-        logger.error("❌ [BUDGET] Error fetching historical data:", err);
-      }
-    };
+      const groupings = await getCategoryGroupings(authResult.user.id);
+      setCategoryGroupings(groupings);
+    } catch (err) {
+      logger.error("❌ [BUDGET] Error fetching historical data:", err);
+    }
+  }, []);
 
+  useEffect(() => {
     if (budgetSummary) {
       fetchHistoricalData();
     }
-  }, [budgetSummary]);
+  }, [budgetSummary, fetchHistoricalData]);
 
   // Convert budget summary to BudgetData array for BudgetView
   // Include ALL categories that have had transactions in the past OR exist in categories table
@@ -246,53 +246,233 @@ export function useBudget(categoryBreakdown?: CategoryBreakdown): UseBudgetRetur
         });
 
         // Create a map of budget entries by category key
+        // CRITICAL: Deduplicate by categoryId first, then by key to prevent duplicates
         const budgetEntriesMap = new Map<string, { entry: typeof budgetSummary.entries[0]; label: string }>();
+        const entriesByCategoryId = new Map<string, typeof budgetSummary.entries[0]>();
+        
         budgetSummary.entries
           .filter((entry) => entry.scope_type === "category")
           .forEach((entry) => {
+            // If entry has a category_id, use it for deduplication
+            if (entry.category_id) {
+              // Only keep the first entry per category_id (prefer entries with budgets)
+              const existing = entriesByCategoryId.get(entry.category_id);
+              if (!existing || (entry.limit_amount > 0 && existing.limit_amount === 0)) {
+                entriesByCategoryId.set(entry.category_id, entry);
+              }
+            }
+          });
+        
+        // Now build the key map from deduplicated entries
+        entriesByCategoryId.forEach((entry) => {
+          const label = entry.category?.name || entry.label.trim();
+          // Use categoryId as primary key when available, fallback to slug/name
+          const key = entry.category_id 
+            ? `cat_${entry.category_id}` 
+            : (entry.category?.slug ? toKey(entry.category.slug) : toKey(label));
+          budgetEntriesMap.set(key, { entry, label });
+        });
+        
+        // Also add entries without category_id (legacy entries)
+        budgetSummary.entries
+          .filter((entry) => entry.scope_type === "category" && !entry.category_id)
+          .forEach((entry) => {
             const label = entry.category?.name || entry.label.trim();
             const key = entry.category?.slug ? toKey(entry.category.slug) : toKey(label);
-            budgetEntriesMap.set(key, { entry, label });
+            // Only add if not already in map
+            if (!budgetEntriesMap.has(key)) {
+              budgetEntriesMap.set(key, { entry, label });
+            }
           });
 
         // Get all categories from multiple sources
+        // CRITICAL: Use categoryId as the primary key to prevent duplicates
         const allCategoryKeys = new Set<string>();
-        // Prioritize categoryBreakdown keys (source of truth)
-        if (categoryBreakdown) {
-          breakdownByKey.forEach((_, key) => allCategoryKeys.add(key));
-        }
-        actualsByKey.forEach((_, key) => allCategoryKeys.add(key));
-        budgetEntriesMap.forEach((_, key) => allCategoryKeys.add(key));
-        historicalByKey.forEach((_, key) => allCategoryKeys.add(key));
+        const categoryIdsSeen = new Set<string>();
+        const nameToCategoryId = new Map<string, string>(); // Map name keys to categoryIds
+        
+        // Helper function to find matching category by name variations
+        const findCategoryByName = (name: string): CategoryRecord | undefined => {
+          const normalizedName = toKey(name);
+          // Try exact match first
+          let match = categoriesByKey.get(normalizedName);
+          if (match) return match;
+          
+          // Try matching against all category names/slugs with fuzzy matching
+          // Match if one is a prefix of the other (e.g., "transport" matches "transportation")
+          match = allCategories.find(cat => {
+            const catName = toKey(cat.name || '');
+            const catSlug = toKey(cat.slug || '');
+            
+            // Exact match
+            if (catName === normalizedName || catSlug === normalizedName) return true;
+            
+            // One is a prefix of the other (minimum 6 chars to avoid false matches)
+            const minLength = Math.min(normalizedName.length, Math.max(catName.length, catSlug.length));
+            if (minLength >= 6) {
+              if (normalizedName.startsWith(catName) || catName.startsWith(normalizedName)) return true;
+              if (normalizedName.startsWith(catSlug) || catSlug.startsWith(normalizedName)) return true;
+            }
+            
+            return false;
+          });
+          return match;
+        };
+
+        // First, add all categories by their IDs (primary key)
         allCategories.forEach((cat) => {
-          allCategoryKeys.add(toKey(cat.slug || cat.name));
+          if (cat.id && !categoryIdsSeen.has(cat.id)) {
+            categoryIdsSeen.add(cat.id);
+            allCategoryKeys.add(`cat_${cat.id}`);
+            // Map all name variations to this categoryId
+            const nameKey = toKey(cat.slug || cat.name);
+            const altNameKey = toKey(cat.name);
+            nameToCategoryId.set(nameKey, cat.id);
+            if (altNameKey !== nameKey) {
+              nameToCategoryId.set(altNameKey, cat.id);
+            }
+          }
+        });
+        
+        // Add budget entries by categoryId (they should already be in the map)
+        budgetEntriesMap.forEach((_, key) => {
+          if (key.startsWith('cat_')) {
+            allCategoryKeys.add(key);
+            const categoryId = key.replace('cat_', '');
+            categoryIdsSeen.add(categoryId);
+          }
         });
 
-        // CRITICAL: Add parent categories from groupings even if they have no transactions
-        // This ensures parent categories exist in flatBudgets so children can attach to them
+        // Process categoryBreakdown, actuals, and historical - use categoryId keys only
+        if (categoryBreakdown) {
+          breakdownByKey.forEach((_, key) => {
+            const matchingCategory = findCategoryByName(key);
+            if (matchingCategory?.id) {
+              // Use categoryId key
+              if (!categoryIdsSeen.has(matchingCategory.id)) {
+                allCategoryKeys.add(`cat_${matchingCategory.id}`);
+                categoryIdsSeen.add(matchingCategory.id);
+              }
+              nameToCategoryId.set(key, matchingCategory.id);
+            } else {
+              // No matching category - use name key (legacy/uncategorized)
+              allCategoryKeys.add(key);
+            }
+          });
+        }
+        
+        actualsByKey.forEach((_, key) => {
+          const matchingCategory = findCategoryByName(key);
+          if (matchingCategory?.id) {
+            if (!categoryIdsSeen.has(matchingCategory.id)) {
+              allCategoryKeys.add(`cat_${matchingCategory.id}`);
+              categoryIdsSeen.add(matchingCategory.id);
+            }
+            nameToCategoryId.set(key, matchingCategory.id);
+          } else {
+            allCategoryKeys.add(key);
+          }
+        });
+        
+        historicalByKey.forEach((_, key) => {
+          const matchingCategory = findCategoryByName(key);
+          if (matchingCategory?.id) {
+            if (!categoryIdsSeen.has(matchingCategory.id)) {
+              allCategoryKeys.add(`cat_${matchingCategory.id}`);
+              categoryIdsSeen.add(matchingCategory.id);
+            }
+            nameToCategoryId.set(key, matchingCategory.id);
+          } else {
+            allCategoryKeys.add(key);
+          }
+        });
+
+        // CRITICAL: Add parent/child categories from groupings by ID only
         categoryGroupings.forEach((g) => {
           if (!g.active) return;
-          // Add parent category by ID lookup
+          // Add parent category by ID
           const parentCat = allCategories.find((cat) => cat.id === g.parent_category_id);
-          if (parentCat) {
-            allCategoryKeys.add(toKey(parentCat.slug || parentCat.name));
+          if (parentCat?.id && !categoryIdsSeen.has(parentCat.id)) {
+            allCategoryKeys.add(`cat_${parentCat.id}`);
+            categoryIdsSeen.add(parentCat.id);
           }
-          // Add child category by ID lookup
+          // Add child category by ID
           const childCat = allCategories.find((cat) => cat.id === g.child_category_id);
-          if (childCat) {
-            allCategoryKeys.add(toKey(childCat.slug || childCat.name));
+          if (childCat?.id && !categoryIdsSeen.has(childCat.id)) {
+            allCategoryKeys.add(`cat_${childCat.id}`);
+            categoryIdsSeen.add(childCat.id);
           }
         });
 
         // Create flat BudgetData for each category (filtered by visibility)
+        // CRITICAL: Deduplicate by categoryId to prevent showing the same category multiple times
+        const seenCategoryIdsInFlat = new Set<string>();
+        const seenCategoryNamesInFlat = new Set<string>();
         const flatBudgets = Array.from(allCategoryKeys)
           .filter((categoryKey) => !hiddenCategoryKeys.has(categoryKey))
           .map((categoryKey) => {
-            const entryInfo = budgetEntriesMap.get(categoryKey);
-            const historicalData = historicalByKey.get(categoryKey);
-            const categoryMeta = categoriesByKey.get(categoryKey);
-            const actualData = actualsByKey.get(categoryKey);
-            const breakdownData = breakdownByKey.get(categoryKey);
+            // Handle categoryId-based keys
+            let entryInfo = budgetEntriesMap.get(categoryKey);
+            let categoryMeta: CategoryRecord | undefined;
+            let actualData = actualsByKey.get(categoryKey);
+            let breakdownData = breakdownByKey.get(categoryKey);
+            let historicalData = historicalByKey.get(categoryKey);
+            
+            // If key is categoryId-based, extract the ID and find the category
+            if (categoryKey.startsWith('cat_')) {
+              const categoryId = categoryKey.replace('cat_', '');
+              categoryMeta = allCategories.find(cat => cat.id === categoryId);
+              
+              // Find entry info by categoryId (already in map with cat_ prefix)
+              entryInfo = budgetEntriesMap.get(categoryKey) || entryInfo;
+              
+              if (categoryMeta) {
+                const metaKey = toKey(categoryMeta.slug || categoryMeta.name);
+                // Also try entry info by name key
+                entryInfo = budgetEntriesMap.get(metaKey) || entryInfo;
+                
+                // Try to find data by category name/slug key
+                if (!breakdownData) {
+                  breakdownData = breakdownByKey.get(metaKey);
+                }
+                if (!actualData) {
+                  actualData = actualsByKey.get(metaKey);
+                }
+                if (!historicalData) {
+                  historicalData = historicalByKey.get(metaKey);
+                }
+              }
+              
+              // Find data by checking all name keys that map to this categoryId
+              // This handles cases where breakdown uses a different name (e.g., "Transportation" vs "Transport")
+              if (!breakdownData && categoryBreakdown) {
+                for (const [breakdownKey, data] of breakdownByKey.entries()) {
+                  if (nameToCategoryId.get(breakdownKey) === categoryId) {
+                    breakdownData = data;
+                    break;
+                  }
+                }
+              }
+              if (!actualData) {
+                for (const [actualKey, data] of actualsByKey.entries()) {
+                  if (nameToCategoryId.get(actualKey) === categoryId) {
+                    actualData = data;
+                    break;
+                  }
+                }
+              }
+              if (!historicalData) {
+                for (const [historicalKey, data] of historicalByKey.entries()) {
+                  if (nameToCategoryId.get(historicalKey) === categoryId) {
+                    historicalData = data;
+                    break;
+                  }
+                }
+              }
+            } else {
+              // Regular key lookup (name-based, no categoryId)
+              categoryMeta = categoriesByKey.get(categoryKey);
+            }
 
             // Use categoryBreakdown as source of truth for spent amounts (most accurate)
             // Fallback to actualsByKey if categoryBreakdown not available
@@ -332,6 +512,46 @@ export function useBudget(categoryBreakdown?: CategoryBreakdown): UseBudgetRetur
               children: [],
             } as BudgetData;
           })
+          .filter((item) => {
+            // Deduplicate by categoryId first - only keep first occurrence
+            // Since we're using categoryId as primary key, this should catch most duplicates
+            if (item.categoryId) {
+              if (seenCategoryIdsInFlat.has(item.categoryId)) {
+                logger.warn(`[BUDGET] Skipping duplicate category by ID: ${item.category} (${item.categoryId})`);
+                return false; // Skip duplicate
+              }
+              seenCategoryIdsInFlat.add(item.categoryId);
+              // Track the category's actual name to prevent name-based duplicates
+              const categoryMeta = allCategories.find(c => c.id === item.categoryId);
+              if (categoryMeta) {
+                const catNameKey = toKey(categoryMeta.name || categoryMeta.slug || '');
+                seenCategoryNamesInFlat.add(catNameKey);
+              }
+            }
+            
+            // Deduplicate by normalized name for categories without IDs (legacy/uncategorized)
+            const normalizedName = toKey(item.category);
+            if (!item.categoryId) {
+              if (seenCategoryNamesInFlat.has(normalizedName)) {
+                logger.warn(`[BUDGET] Skipping duplicate category by name: ${item.category}`);
+                return false;
+              }
+              // Check if this name matches any existing category with an ID
+              const matchingCategory = allCategories.find(cat => {
+                if (!cat.id || !seenCategoryIdsInFlat.has(cat.id)) return false;
+                const catName = toKey(cat.name || '');
+                const catSlug = toKey(cat.slug || '');
+                return catName === normalizedName || catSlug === normalizedName;
+              });
+              if (matchingCategory) {
+                logger.warn(`[BUDGET] Skipping duplicate category by name (matches existing category): ${item.category}`);
+                return false;
+              }
+              seenCategoryNamesInFlat.add(normalizedName);
+            }
+            
+            return true;
+          })
           .sort((a, b) => {
             const aKey = toKey(a.category);
             const bKey = toKey(b.category);
@@ -341,6 +561,7 @@ export function useBudget(categoryBreakdown?: CategoryBreakdown): UseBudgetRetur
             if (!aHasBudget && bHasBudget) return 1;
             return b.spent - a.spent;
           });
+        
 
         // Build grouping maps
         const groupingByChild = new Map<string, string>();
@@ -350,10 +571,32 @@ export function useBudget(categoryBreakdown?: CategoryBreakdown): UseBudgetRetur
         });
 
         // Index budgets by categoryId for grouping
-        // CRITICAL: Use categoryId as primary key, fallback to category name only if no ID
+        // CRITICAL: Deduplicate by categoryId first to prevent duplicates
         const budgetById = new Map<string, BudgetData>();
         const baseById = new Map<string, BudgetData>();
+        const seenCategoryIds = new Set<string>();
+        
         flatBudgets.forEach((item) => {
+          // Deduplicate by categoryId - only keep one entry per categoryId
+          if (item.categoryId) {
+            if (seenCategoryIds.has(item.categoryId)) {
+              // Skip duplicate - prefer entry with budget over entry without
+              const existing = budgetById.get(item.categoryId);
+              if (existing && existing.budget > 0 && item.budget === 0) {
+                return; // Keep existing entry with budget
+              }
+              if (existing && existing.budget === 0 && item.budget > 0) {
+                // Replace existing with this one (has budget)
+                seenCategoryIds.delete(item.categoryId);
+                budgetById.delete(item.categoryId);
+                baseById.delete(item.categoryId);
+              } else {
+                return; // Skip duplicate
+              }
+            }
+            seenCategoryIds.add(item.categoryId);
+          }
+          
           // Create a fresh object with empty children array
           const itemWithChildren = { ...item, children: [] as BudgetData[] };
           const itemBase = { ...item, children: [] as BudgetData[] };
@@ -365,8 +608,9 @@ export function useBudget(categoryBreakdown?: CategoryBreakdown): UseBudgetRetur
           }
           
           // Also index by category name as fallback (for categories without IDs)
+          // But only if we haven't seen this categoryId already
           const nameKey = item.category;
-          if (!budgetById.has(nameKey)) {
+          if (!item.categoryId || !budgetById.has(nameKey)) {
             budgetById.set(nameKey, itemWithChildren);
             baseById.set(nameKey, itemBase);
           }
@@ -570,7 +814,9 @@ export function useBudget(categoryBreakdown?: CategoryBreakdown): UseBudgetRetur
   const refreshBudget = useCallback(async () => {
     // Pass isRefresh=true to prevent showing loading spinner on refresh
     await loadBudget(true);
-  }, [loadBudget]);
+    // Also refresh categories and historical data to ensure consistency
+    await fetchHistoricalData();
+  }, [loadBudget, fetchHistoricalData]);
 
   const updateCategoryBudget = useCallback(
     async (
@@ -582,10 +828,23 @@ export function useBudget(categoryBreakdown?: CategoryBreakdown): UseBudgetRetur
       if (!budgetSummary) return false;
 
       try {
+        // If categoryId is provided, fetch the category name from database
+        let label = categoryName;
+        if (categoryId) {
+          const { data: category } = await supabase
+            .from("categories")
+            .select("name")
+            .eq("id", categoryId)
+            .single();
+          if (category?.name) {
+            label = category.name;
+          }
+        }
+
         const entry = await upsertBudgetEntry(budgetSummary.period.id, {
           scope_type: categoryId ? "category" : "group",
           category_id: categoryId,
-          label: categoryName,
+          label: label,
           limit_amount: amount,
         });
 
@@ -595,7 +854,6 @@ export function useBudget(categoryBreakdown?: CategoryBreakdown): UseBudgetRetur
         }
         return false;
       } catch (err) {
-        logger.error("❌ [BUDGET] Error updating category budget:", err);
         return false;
       }
     },
@@ -722,7 +980,6 @@ export function useBudget(categoryBreakdown?: CategoryBreakdown): UseBudgetRetur
           );
 
           if (updatedCount === -1) {
-            logger.error("❌ [BUDGET] Failed to update transactions to Other category");
             return false;
           }
 
@@ -742,17 +999,18 @@ export function useBudget(categoryBreakdown?: CategoryBreakdown): UseBudgetRetur
         if (!rulesDeactivated) {
           // Don't fail the whole operation for this
         }
-
+        
         // Step 6: Delete all budget entries for this category (across all periods)
+        // This removes the category from all budget periods
         const budgetEntriesDeleted = await deleteBudgetEntriesForCategory(categoryId);
         if (!budgetEntriesDeleted) {
           // Don't fail the whole operation for this
         }
-
-        // Step 7: Soft delete the category (mark as inactive)
+        
+        // Step 7: Soft delete the category (mark as inactive in categories table)
+        // This preserves the category record but hides it from the user
         const deleted = await softDeleteCategoryForUser(userId, categoryId);
         if (!deleted) {
-          logger.error("❌ [BUDGET] Failed to soft delete category");
           return false;
         }
 
@@ -761,7 +1019,6 @@ export function useBudget(categoryBreakdown?: CategoryBreakdown): UseBudgetRetur
 
         return true;
       } catch (err) {
-        logger.error("❌ [BUDGET] Error deleting category:", err);
         return false;
       }
     },

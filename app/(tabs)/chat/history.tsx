@@ -252,7 +252,7 @@ export default function ChatHistoryScreen({
   onBack,
 }: ChatHistoryScreenProps = {}) {
   const insets = useSafeAreaInsets();
-  const { session } = useAuthNavigation();
+  const { session, isLoading: isAuthLoading } = useAuthNavigation();
   const { loadSession } = useChatContext();
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [loading, setLoading] = useState(true);
@@ -260,38 +260,65 @@ export default function ChatHistoryScreen({
   const [error, setError] = useState<string | null>(null);
 
   const fetchSessions = useCallback(async () => {
+    // Don't fetch if auth is still loading
+    if (isAuthLoading) {
+      console.log("[History] Auth still loading, waiting...");
+      return;
+    }
+
     try {
       if (!session?.user?.id) {
+        console.log("[History] No session or user ID available");
         setError("Not authenticated");
+        setLoading(false);
+        setRefreshing(false);
         return;
       }
 
-      const { data, error: fetchError } = await supabase.rpc(
-        "get_user_chat_sessions",
-        {
-          p_user_id: session.user.id,
-        }
-      );
+      console.log("[History] Fetching sessions for user:", session.user.id);
+
+      // Add timeout to prevent infinite hanging
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error("Request timeout")), 10000); // 10 second timeout
+      });
+
+      const rpcPromise = supabase.rpc("get_user_chat_sessions", {
+        p_user_id: session.user.id,
+      });
+
+      const { data, error: fetchError } = await Promise.race([
+        rpcPromise,
+        timeoutPromise,
+      ]) as any;
 
       if (fetchError) {
+        console.error("[History] RPC error:", fetchError);
         throw fetchError;
       }
 
-      console.log("Raw data from get_user_chat_sessions:", data);
+      console.log("[History] Raw data from get_user_chat_sessions:", data);
       setSessions(data || []);
       setError(null);
-    } catch (err) {
-      console.error("Error fetching sessions:", err);
-      setError("Failed to load chat history");
+    } catch (err: any) {
+      console.error("[History] Error fetching sessions:", err);
+      const errorMessage = err?.message || err?.error_description || "Failed to load chat history";
+      setError(errorMessage);
+      setSessions([]); // Clear sessions on error
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [session?.user?.id]);
+  }, [session?.user?.id, isAuthLoading]);
 
   useEffect(() => {
-    fetchSessions();
-  }, [fetchSessions]);
+    // Only fetch when auth is not loading
+    if (!isAuthLoading) {
+      fetchSessions();
+    } else {
+      // If auth is loading, keep loading state true
+      setLoading(true);
+    }
+  }, [fetchSessions, isAuthLoading]);
 
   const handleRefresh = useCallback(() => {
     setRefreshing(true);

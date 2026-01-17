@@ -260,6 +260,7 @@ export default function InsightsScreen() {
   const [isBudgetMode, setIsBudgetMode] = useState(false);
   const openAddCategoryModalRef = useRef<(() => void) | null>(null);
   const [hasOpenAddCategoryModal, setHasOpenAddCategoryModal] = useState(false);
+  const refreshBudgetRef = useRef<(() => Promise<void>) | null>(null);
 
   // Wrapper function that calls the ref
   const openAddCategoryModal = useCallback(() => {
@@ -1755,6 +1756,12 @@ export default function InsightsScreen() {
       await clearTransactionsCache();
       await clearSpendingCache();
       await fetchFreshData();
+      
+      // Refresh budget data if in budget mode
+      if (isBudgetMode && refreshBudgetRef.current) {
+        await refreshBudgetRef.current();
+      }
+      
       // Only reload filtered transactions if on Transactions section
       if (activeSection === "transactions") {
         await loadFilteredTransactions(filterOptions, true, searchQuery);
@@ -2489,6 +2496,9 @@ export default function InsightsScreen() {
                     onMonthSelect={handleMonthSelect}
                     onBudgetModeChange={setIsBudgetMode}
                     onOpenAddCategoryModalRef={handleOpenAddCategoryModalRef}
+                    onRefreshBudgetRef={(refreshFn) => {
+                      refreshBudgetRef.current = refreshFn;
+                    }}
                   />
                 </Animated.View>
               )}

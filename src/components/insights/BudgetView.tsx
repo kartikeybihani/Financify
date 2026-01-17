@@ -109,6 +109,7 @@ const BudgetView: React.FC<BudgetViewProps> = ({
 
   // Sort categories by budget amount (highest first)
   const sortedBudgets = [...finalBudgets].sort((a, b) => b.budget - a.budget);
+  
 
   const actionOptions: BudgetData[] = [];
   finalBudgets.forEach((item) => {
@@ -118,20 +119,22 @@ const BudgetView: React.FC<BudgetViewProps> = ({
     }
   });
 
-  // Create a map of category name to entry ID and category ID for edit/delete
+  // Create a map of categoryId to entry ID for edit/delete
   const categoryToEntry = new Map<
     string,
-    { entryId: string; categoryId: string | null }
+    { entryId: string; categoryId: string }
   >();
   if (budgetSummary?.entries) {
     budgetSummary.entries
-      .filter((e: any) => e.scope_type === "category")
+      .filter((e: any) => e.scope_type === "category" && e.category_id)
       .forEach((entry: any) => {
-        const categoryName = entry.category?.name || entry.label;
-        categoryToEntry.set(categoryName, {
-          entryId: entry.id,
-          categoryId: entry.category_id || null,
-        });
+        const categoryId = entry.category_id;
+        if (categoryId) {
+          categoryToEntry.set(categoryId, {
+            entryId: entry.id,
+            categoryId: categoryId,
+          });
+        }
       });
   }
 
@@ -340,10 +343,9 @@ const BudgetView: React.FC<BudgetViewProps> = ({
               const categoryStatusColor = getStatusColor(categoryProgress);
               const isOverBudget = categoryProgress >= 100;
 
-              const entryInfo = categoryToEntry.get(budget.category);
+              const entryInfo = budget.categoryId ? categoryToEntry.get(budget.categoryId) : null;
               const cardEntryId = budget.entryId || entryInfo?.entryId;
-              const cardCategoryId =
-                budget.categoryId || entryInfo?.categoryId || null;
+              const cardCategoryId = budget.categoryId || null;
               const children = budget.children || [];
               const isLoadingCard = isCategoryLoading(cardCategoryId, cardEntryId);
 
@@ -477,6 +479,77 @@ const BudgetView: React.FC<BudgetViewProps> = ({
         category={editTarget}
         parentLabel={editParentLabel}
         onClose={closeEdit}
+        setCategoryLoading={setCategoryLoading}
+        refreshBudget={refreshBudget}
+        onNameUpdate={async (categoryId: string, newName: string) => {
+          if (!categoryId) return false;
+          
+          try {
+            const baseSlug = newName
+              .toLowerCase()
+              .replace(/[^a-z0-9\s-]/g, "")
+              .replace(/\s+/g, "-")
+              .trim();
+            
+            // Update category name and slug
+            const { error: categoryError } = await supabase
+              .from("categories")
+              .update({ 
+                name: newName,
+                slug: baseSlug,
+              })
+              .eq("id", categoryId);
+            
+            if (categoryError) {
+              return false;
+            }
+            
+            // Update label in all budget_entries for this category
+            const { error: entriesError } = await supabase
+              .from("budget_entries")
+              .update({ label: newName })
+              .eq("category_id", categoryId)
+              .eq("scope_type", "category");
+            
+            if (entriesError) {
+              // Don't fail the whole operation
+            }
+            
+            // Refresh budget data to reflect changes
+            // Small delay to ensure database updates are committed
+            if (refreshBudget) {
+              await new Promise(resolve => setTimeout(resolve, 100));
+              await refreshBudget();
+            }
+            
+            return true;
+          } catch (error) {
+            return false;
+          }
+        }}
+        onIconUpdate={async (categoryId: string, newIcon: string) => {
+          if (!categoryId) return false;
+          
+          try {
+            const { error } = await supabase
+              .from("categories")
+              .update({ icon: newIcon })
+              .eq("id", categoryId);
+            
+            if (error) {
+              return false;
+            }
+            
+            // Refresh budget data to reflect changes
+            if (refreshBudget) {
+              await refreshBudget();
+            }
+            
+            return true;
+          } catch (error) {
+            return false;
+          }
+        }}
         onSave={async (amount) => {
           if (!editTarget || !onUpdateBudget) return false;
 
@@ -546,9 +619,6 @@ const BudgetView: React.FC<BudgetViewProps> = ({
               if (!success) {
                 // Rollback on failure - revert to original budgets
                 setOptimisticBudgets(null);
-                logger.error(
-                  "[BUDGET] Failed to update budget, rolling back optimistic update"
-                );
               } else {
                 // Clear optimistic state after successful DB update
                 // The refreshBudget will update with real data
@@ -559,10 +629,6 @@ const BudgetView: React.FC<BudgetViewProps> = ({
             } catch (error) {
               // Rollback on error
               setOptimisticBudgets(null);
-              logger.error(
-                "[BUDGET] Error updating budget, rolling back:",
-                error
-              );
             } finally {
               // Clear loading state
               setCategoryLoading(editTarget.categoryId, editTarget.entryId, false);
@@ -578,7 +644,7 @@ const BudgetView: React.FC<BudgetViewProps> = ({
           if (!editTarget || !onDeleteCategory || !editTarget.categoryId) {
             return;
           }
-
+          
           // Set loading state for this category
           setCategoryLoading(editTarget.categoryId, editTarget.entryId, true);
 
@@ -589,17 +655,14 @@ const BudgetView: React.FC<BudgetViewProps> = ({
             );
             if (success) {
               closeEdit();
-              // Clear optimistic updates since category was deleted
               setOptimisticBudgets(null);
-              // Reload budget data including monthly total after category deletion
               if (refreshBudget) {
                 await refreshBudget();
               }
             }
           } catch (error) {
-            logger.error("[BUDGET] Error deleting category:", error);
+            // Error handled silently
           } finally {
-            // Clear loading state
             setCategoryLoading(editTarget.categoryId, editTarget.entryId, false);
           }
         }}

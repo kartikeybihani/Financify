@@ -1,5 +1,5 @@
 // React hook for managing categories from database
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/src/lib/supabase/supabase";
 
 // Types
@@ -19,30 +19,26 @@ export function useCategories(userId?: string) {
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const previousUserId = useRef<string | undefined>(undefined);
 
   const fetchCategories = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
 
-      // console.log('useCategories - Fetching categories for userId:', userId);
-
       // Require userId - all categories are now user-specific
       if (!userId) {
-        // Enhanced warning with call stack for debugging
-        // This helps identify which component is calling useCategories without userId
-        if (__DEV__) {
-          console.warn('useCategories - userId required (this is normal during initial render if userId loads asynchronously)');
-          // Uncomment the line below to see the full call stack when debugging:
-          console.trace('useCategories called without userId from:');
-        } else {
-          // In production, still log but without trace to avoid performance issues
-          console.warn('useCategories - userId required');
+        // Only warn if userId was previously set but is now undefined (unexpected state change)
+        if (previousUserId.current !== undefined && __DEV__) {
+          console.warn('useCategories - userId became undefined after being set (unexpected state change)');
         }
+        
         setCategories([]);
         setLoading(false);
         return;
       }
+
+      previousUserId.current = userId;
 
       // Build query - only get user-specific categories
       const query = supabase
@@ -56,12 +52,8 @@ export function useCategories(userId?: string) {
 
       if (fetchError) {
         console.error('useCategories - Query error:', fetchError);
-        console.error('useCategories - Error details:', JSON.stringify(fetchError, null, 2));
         throw fetchError;
       }
-
-      // console.log('useCategories - Fetched categories:', data?.length || 0, 'categories');
-      // console.log('useCategories - Sample categories:', data?.slice(0, 3));
       
       setCategories(data || []);
     } catch (err) {
@@ -157,8 +149,6 @@ export function useCategories(userId?: string) {
   const refreshCategories = useCallback(() => {
     fetchCategories();
   }, [fetchCategories]);
-
-  // console.log('useCategories - returning:', { categories, loading, error });
 
   return {
     categories,

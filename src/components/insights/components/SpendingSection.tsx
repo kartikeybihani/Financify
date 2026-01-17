@@ -15,6 +15,7 @@ import AddCategoryModal from "./AddCategoryModal";
 import MonthPickerModal from "@/src/components/modals/MonthPickerModal";
 import { analyzeSpendingPersonality } from "@/src/utils/analytics/personalityAnalysis";
 import { useBudget } from "@/src/hooks/useBudget";
+import logger from "@/src/utils/core/logger";
 
 interface Props {
   titleStyle: any;
@@ -44,6 +45,7 @@ interface Props {
   onMonthSelect?: (month: number, year: number) => void;
   onBudgetModeChange?: (isBudgetMode: boolean) => void;
   onOpenAddCategoryModalRef?: (openFn: () => void) => void;
+  onRefreshBudgetRef?: (refreshFn: () => Promise<void>) => void;
 }
 
 export default function SpendingSection({
@@ -58,6 +60,7 @@ export default function SpendingSection({
   onMonthSelect,
   onBudgetModeChange,
   onOpenAddCategoryModalRef,
+  onRefreshBudgetRef,
 }: Props) {
   const [isBudgetMode, setIsBudgetMode] = useState(false);
   const [addCategoryModalVisible, setAddCategoryModalVisible] = useState(false);
@@ -89,6 +92,7 @@ export default function SpendingSection({
       initializeBudget();
     }
   }, [isBudgetMode, budgetData.length, budgetLoading, initializeBudget]);
+
 
   // Calculate total spent from category breakdown (fallback)
   const totalSpent = categoryBreakdown.reduce(
@@ -165,6 +169,13 @@ export default function SpendingSection({
   useEffect(() => {
     onBudgetModeChange?.(isBudgetMode);
   }, [isBudgetMode, onBudgetModeChange]);
+
+  // Expose refreshBudget function to parent for pull-to-refresh
+  useEffect(() => {
+    if (onRefreshBudgetRef && refreshBudget) {
+      onRefreshBudgetRef(refreshBudget);
+    }
+  }, [onRefreshBudgetRef, refreshBudget]);
 
   // Get current month/year or use defaults
   const currentMonth =

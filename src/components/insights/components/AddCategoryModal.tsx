@@ -17,6 +17,10 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { supabase } from "@/src/lib/supabase/supabase";
 import logger from "@/src/utils/core/logger";
 import { LinearGradient } from "expo-linear-gradient";
+import {
+  getOrCreateCurrentBudgetPeriod,
+  upsertBudgetEntry,
+} from "@/src/types/budget";
 
 export const FAB_GRADIENT_COLORS = [
   "rgba(31, 31, 31, 0.98)",
@@ -79,6 +83,7 @@ const AddCategoryModal: React.FC<AddCategoryModalProps> = ({
 }) => {
   const [categoryName, setCategoryName] = useState("");
   const [selectedIcon, setSelectedIcon] = useState("💰");
+  const [budgetAmount, setBudgetAmount] = useState("");
   const [loading, setLoading] = useState(false);
   const insets = useSafeAreaInsets();
 
@@ -89,6 +94,7 @@ const AddCategoryModal: React.FC<AddCategoryModalProps> = ({
       const timer = setTimeout(() => {
         setCategoryName("");
         setSelectedIcon("💰");
+        setBudgetAmount("");
         setLoading(false);
       }, 300); // Wait for animation to complete
       return () => clearTimeout(timer);
@@ -169,6 +175,30 @@ const AddCategoryModal: React.FC<AddCategoryModalProps> = ({
       });
 
       if (error) throw error;
+
+      // Log category creation
+      logger.info(`[CATEGORY] Created category: "${categoryName.trim()}" (${categoryId})${budgetAmount.trim() ? ` with budget $${budgetAmount.trim()}` : ''}`);
+
+      // Create budget entry if budget amount is provided
+      if (budgetAmount.trim()) {
+        const budgetValue = parseFloat(budgetAmount.trim());
+        if (!isNaN(budgetValue) && budgetValue > 0) {
+          try {
+            const period = await getOrCreateCurrentBudgetPeriod(user.id);
+            if (period) {
+              await upsertBudgetEntry(period.id, {
+                scope_type: "category",
+                category_id: categoryId,
+                label: categoryName.trim(),
+                limit_amount: budgetValue,
+              });
+            }
+          } catch (budgetError) {
+            // Log error but don't fail the category creation
+            logger.error("[BUDGET] Error creating budget entry for new category:", budgetError);
+          }
+        }
+      }
 
       await onCategoryAdded();
       onClose();
@@ -299,6 +329,26 @@ const AddCategoryModal: React.FC<AddCategoryModalProps> = ({
                       accessibilityLabel="Category name input"
                     />
                   </View>
+                </View>
+
+                {/* Budget Section */}
+                <View style={styles.budgetSection}>
+                  <Text style={styles.sectionLabel}>BUDGET</Text>
+                  <View style={styles.budgetInputRow}>
+                    <Text style={styles.budgetPrefix}>$</Text>
+                    <TextInput
+                      style={styles.budgetInput}
+                      keyboardType="decimal-pad"
+                      value={budgetAmount}
+                      onChangeText={setBudgetAmount}
+                      placeholder="0"
+                      placeholderTextColor="rgba(255,255,255,0.4)"
+                      accessibilityLabel="Budget amount input"
+                    />
+                  </View>
+                  <Text style={styles.budgetHint}>
+                    Set a monthly budget limit for this category
+                  </Text>
                 </View>
 
                 {/* Icon Selection Section */}
@@ -446,6 +496,36 @@ const styles = StyleSheet.create({
   },
   nameSection: {
     marginBottom: 24,
+  },
+  budgetSection: {
+    marginBottom: 24,
+  },
+  budgetInputRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.08)",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.12)",
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+  },
+  budgetPrefix: {
+    color: "rgba(255,255,255,0.8)",
+    fontSize: 18,
+    fontWeight: "700",
+    marginRight: 8,
+  },
+  budgetInput: {
+    flex: 1,
+    color: "#fff",
+    fontSize: 18,
+    fontWeight: "700",
+  },
+  budgetHint: {
+    color: "rgba(255,255,255,0.5)",
+    fontSize: 12,
+    marginTop: 8,
   },
   sectionLabel: {
     color: "rgba(255,255,255,0.6)",
