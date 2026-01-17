@@ -5698,16 +5698,15 @@ async function handleOffTopic(
     const userMessage = userContextParts.join("\n\n");
 
     // Log complete prompt with clear dividers (similar to handleAsk)
-    // Only log in debug mode (dev) - not in production for efficiency
-    logDebug("\n" + "=".repeat(100));
-    logDebug("📋 [OFF_TOPIC] COMPLETE SYSTEM PROMPT SENT TO LLM");
-    logDebug("=".repeat(100));
-    logDebug(systemPrompt);
-    logDebug("=".repeat(100));
-    logDebug("📋 [OFF_TOPIC] USER MESSAGE");
-    logDebug("=".repeat(100));
-    logDebug(userMessage);
-    logDebug("=".repeat(100) + "\n");
+    console.log("\n" + "=".repeat(100));
+    console.log("📋 [OFF_TOPIC] COMPLETE SYSTEM PROMPT SENT TO LLM");
+    console.log("=".repeat(100));
+    console.log(systemPrompt);
+    console.log("=".repeat(100));
+    console.log("📋 [OFF_TOPIC] USER MESSAGE");
+    console.log("=".repeat(100));
+    console.log(userMessage);
+    console.log("=".repeat(100) + "\n");
 
     async function callMainLLM(model, options = {}) {
       const resp = await fetch(
