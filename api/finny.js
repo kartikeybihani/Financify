@@ -302,7 +302,7 @@ async function getPersistentCache(dataType, userId, params = {}) {
 
     // Check if expired
     const now = Date.now();
-    logDebug(
+    console.log(
       `🔍 [PERSISTENT_CACHE] Checking expiration for ${dataType}: now=${now}, expires=${
         cacheEntry.expires_at
       }, expired=${now > cacheEntry.expires_at}`
@@ -321,7 +321,7 @@ async function getPersistentCache(dataType, userId, params = {}) {
 
     // If there are duplicates, clean them up in the background
     if (data.length > 1) {
-      logDebug(
+      console.log(
         `🧹 [PERSISTENT_CACHE] Found ${data.length} duplicate entries, cleaning up...`
       );
       setImmediate(() => {
@@ -331,7 +331,7 @@ async function getPersistentCache(dataType, userId, params = {}) {
       });
     }
 
-    logDebug(`✅ [PERSISTENT_CACHE] Cache HIT for ${dataType} (${key})`);
+    console.log(`✅ [PERSISTENT_CACHE] Cache HIT for ${dataType} (${key})`);
     return cacheEntry.cache_data;
   } catch (error) {
     logError(
@@ -385,7 +385,7 @@ async function setPersistentCache(dataType, userId, data, params = {}) {
         error
       );
     } else {
-      logDebug(`✅ [PERSISTENT_CACHE] Cache SET for ${dataType} (${key})`);
+      console.log(`✅ [PERSISTENT_CACHE] Cache SET for ${dataType} (${key})`);
     }
   } catch (error) {
     logError(
@@ -673,7 +673,7 @@ async function getCachedUserData(dataType, userId, params = {}) {
   // First check in-memory cache
   const cached = dataCache.get(key);
   if (cached && Date.now() < cached.expires_at) {
-    logDebug(`✅ [DATA_CACHE] In-memory cache HIT for ${dataType} (${key})`);
+    console.log(`✅ [DATA_CACHE] In-memory cache HIT for ${dataType} (${key})`);
     return cached.data;
   }
 
@@ -685,7 +685,7 @@ async function getCachedUserData(dataType, userId, params = {}) {
   }
 
   // Fallback to persistent cache
-  logDebug(
+  console.log(
     `🔍 [DATA_CACHE] Checking persistent cache for ${dataType} (${key})`
   );
   const persistentData = await getPersistentCache(dataType, userId, params);
@@ -929,7 +929,7 @@ async function prePopulateUserCache(userId) {
       const cacheType = cfg?.cacheType || need;
       const cached = await getCachedUserData(cacheType, userId);
       if (cached) {
-        logDebug(`✅ [CACHE] ${need} already cached for user ${userId}`);
+        console.log(`✅ [CACHE] ${need} already cached for user ${userId}`);
         results.success++;
         continue;
       }
@@ -1019,12 +1019,12 @@ async function cleanupExistingDuplicates() {
         }
       }
 
-      logDebug("✅ [CACHE] Existing duplicates cleaned up");
+      console.log("✅ [CACHE] Existing duplicates cleaned up");
     } else {
-      logDebug("✅ [CACHE] No existing duplicates found");
+      console.log("✅ [CACHE] No existing duplicates found");
     }
   } catch (error) {
-    logError("❌ [CACHE] Error cleaning up existing duplicates:", error);
+    console.error("❌ [CACHE] Error cleaning up existing duplicates:", error);
   }
 }
 
@@ -2179,10 +2179,10 @@ async function handleAsk(
       // Try to retrieve from cache
       const cachedClassification = getCachedClassification(message);
       if (cachedClassification) {
-        logDebug("✅ [FINNY] Retrieved classification from cache");
+        console.log("✅ [FINNY] Retrieved classification from cache");
         classificationResult = cachedClassification;
       } else {
-        logDebug(
+        console.log(
           "⚠️ [FINNY] No classification result passed and not in cache, using keyword fallback"
         );
       }
@@ -3095,21 +3095,21 @@ async function handleAsk(
     // Log complete system prompt with clear dividers (only for ask_personalized)
     // Only log in debug mode (dev) - not in production for efficiency
     if (intent === "ask_personalized") {
-      logDebug("\n" + "=".repeat(100));
-      logDebug(
+      console.log("\n" + "=".repeat(100));
+      console.log(
         "📋 [PROMPT_ENGINE] COMPLETE SYSTEM PROMPT SENT TO LLM (ask_personalized)"
       );
-      logDebug("=".repeat(100));
-      logDebug(system);
-      logDebug("=".repeat(100));
-      logDebug("📋 [PROMPT_ENGINE] USER MESSAGE");
-      logDebug("=".repeat(100));
-      logDebug(userMessage);
-      logDebug("=".repeat(100));
-      logDebug("📋 [PROMPT_ENGINE] RECENT TURNS");
-      logDebug("=".repeat(100));
-      logDebug(JSON.stringify(recentTurns, null, 2));
-      logDebug("=".repeat(100) + "\n");
+      console.log("=".repeat(100));
+      console.log(system);
+      console.log("=".repeat(100));
+      console.log("📋 [PROMPT_ENGINE] USER MESSAGE");
+      console.log("=".repeat(100));
+      console.log(userMessage);
+      console.log("=".repeat(100));
+      console.log("📋 [PROMPT_ENGINE] RECENT TURNS");
+      console.log("=".repeat(100));
+      console.log(JSON.stringify(recentTurns, null, 2));
+      console.log("=".repeat(100) + "\n");
     }
 
     // Memory extraction removed - migrating to Supermemory
@@ -3651,7 +3651,6 @@ function detectWebSearchNeeded(message) {
     "2024",
     "current",
     "latest",
-    "recent",
     "updated",
     "today",
 
