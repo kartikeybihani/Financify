@@ -126,7 +126,9 @@ export default async function handler(req, res) {
     // 5) Get existing recurring streams for this account to check if transactions are recurring
     const { data: recurringStreams, error: streamsError } = await supabase
       .from("recurring_streams")
-      .select("stream_id, stream_type, transaction_ids, account_id")
+      .select(
+        "stream_id, stream_type, transaction_ids, description, average_amount, last_date, last_amount"
+      )
       .eq("user_id", userId)
       .eq("is_active", true);
 
@@ -136,8 +138,11 @@ export default async function handler(req, res) {
 
     // Create a map for quick lookup of transaction_id -> stream data
     const transactionToStreamMap = new Map();
+    const nameToStreamMap = new Map();
+    const recurringStreamById = new Map();
     if (recurringStreams) {
       recurringStreams.forEach((stream) => {
+        recurringStreamById.set(stream.stream_id, stream);
         if (stream.transaction_ids && Array.isArray(stream.transaction_ids)) {
           stream.transaction_ids.forEach((transactionId) => {
             transactionToStreamMap.set(transactionId, {
@@ -145,6 +150,24 @@ export default async function handler(req, res) {
               streamType: stream.stream_type,
             });
           });
+        }
+
+        const streamName = stream.description || null;
+        if (streamName) {
+          const existing = nameToStreamMap.get(streamName);
+          if (!existing) {
+            nameToStreamMap.set(streamName, stream);
+          } else {
+            const existingDate = existing.last_date
+              ? new Date(existing.last_date)
+              : null;
+            const incomingDate = stream.last_date
+              ? new Date(stream.last_date)
+              : null;
+            if (incomingDate && (!existingDate || incomingDate > existingDate)) {
+              nameToStreamMap.set(streamName, stream);
+            }
+          }
         }
       });
     }
@@ -162,6 +185,8 @@ export default async function handler(req, res) {
 
     // 6) Store transactions in database
     if (added.length || modified.length) {
+      const addedIds = new Set(added.map((txn) => txn.transaction_id));
+      const streamUpdates = new Map();
       const rows = [...added, ...modified].map((txn) => {
         // Extract Plaid categories with proper fallback hierarchy
         const primary = txn.personal_finance_category?.primary || null;
@@ -185,7 +210,21 @@ export default async function handler(req, res) {
 
         // Check if this transaction is part of a recurring stream
         const streamData = transactionToStreamMap.get(txn.transaction_id);
-        const recurringStreamId = streamData ? streamData.streamId : null;
+        const nameMatchedStream =
+          addedIds.has(txn.transaction_id) && txn.name
+            ? nameToStreamMap.get(txn.name)
+            : null;
+        const effectiveStreamData =
+          streamData ||
+          (nameMatchedStream
+            ? {
+                streamId: nameMatchedStream.stream_id,
+                streamType: nameMatchedStream.stream_type,
+              }
+            : null);
+        const recurringStreamId = effectiveStreamData
+          ? effectiveStreamData.streamId
+          : null;
 
         // Determine category and recurring status based on stream
         let newCategory = null;
@@ -196,18 +235,28 @@ export default async function handler(req, res) {
           newCategory = "INTERNAL_TRANSFER";
           // Internal transfers are not recurring (they're account movements)
           ifRecurring = "no";
-        } else if (streamData) {
+        } else if (effectiveStreamData) {
           // Priority 2: Transaction is part of a recurring stream
           ifRecurring = "yes";
 
           // Set category based on stream type (will be used as new_category)
           // Note: This will only be set if the transaction doesn't already have new_category
           const categoryFromStream = getCategoryFromStreamType(
-            streamData.streamType
+            effectiveStreamData.streamType
           );
-          if (categoryFromStream && streamData.streamType !== "other") {
+          if (categoryFromStream && effectiveStreamData.streamType !== "other") {
             newCategory = categoryFromStream;
           }
+        }
+
+        if (nameMatchedStream) {
+          const list = streamUpdates.get(nameMatchedStream.stream_id) || [];
+          list.push({
+            plaidId: txn.transaction_id,
+            date: txn.date,
+            amount: Math.abs(txn.amount || 0),
+          });
+          streamUpdates.set(nameMatchedStream.stream_id, list);
         }
 
         // If category is "Subscriptions", automatically mark as recurring
@@ -427,6 +476,64 @@ export default async function handler(req, res) {
       if (upsertErr) {
         console.error("Transaction upsert error:", upsertErr);
         return res.status(500).json({ error: "Failed to save transactions" });
+      }
+
+      if (streamUpdates.size > 0) {
+        const updatePromises = [];
+        streamUpdates.forEach((updates, streamId) => {
+          const stream = recurringStreamById.get(streamId);
+          if (!stream) return;
+
+          const existingIds = Array.isArray(stream.transaction_ids)
+            ? stream.transaction_ids
+            : [];
+          const transactionIdSet = new Set(existingIds);
+          let count = existingIds.length;
+          let averageAmount = Number(stream.average_amount || 0);
+          let lastDate = stream.last_date ? new Date(stream.last_date) : null;
+          let lastAmount = Number(stream.last_amount || 0);
+
+          updates.forEach((update) => {
+            if (transactionIdSet.has(update.plaidId)) return;
+            transactionIdSet.add(update.plaidId);
+            averageAmount =
+              count === 0
+                ? update.amount
+                : (averageAmount * count + update.amount) / (count + 1);
+            count += 1;
+
+            const updateDate = update.date ? new Date(update.date) : null;
+            if (updateDate && (!lastDate || updateDate > lastDate)) {
+              lastDate = updateDate;
+              lastAmount = update.amount;
+            }
+          });
+
+          updatePromises.push(
+            supabase
+              .from("recurring_streams")
+              .update({
+                transaction_ids: Array.from(transactionIdSet),
+                average_amount: averageAmount,
+                last_date: lastDate
+                  ? lastDate.toISOString().split("T")[0]
+                  : stream.last_date,
+                last_amount: lastAmount,
+                last_synced_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+              })
+              .eq("stream_id", streamId)
+          );
+        });
+
+        const results = await Promise.all(updatePromises);
+        const updateErrors = results.filter((r) => r.error);
+        if (updateErrors.length > 0) {
+          console.error(
+            "Recurring stream update errors:",
+            updateErrors.map((r) => r.error)
+          );
+        }
       }
     }
 

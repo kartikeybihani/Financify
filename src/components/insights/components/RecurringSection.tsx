@@ -375,6 +375,8 @@ export default function RecurringSection({
       stream
     ) as keyof typeof Ionicons.glyphMap;
     const nextDate = getNextTransactionDate(stream);
+    const showNextDate =
+      stream.frequency && stream.frequency !== "user-marked" && nextDate;
 
     const CardShell = shouldUseLiquidGlass ? GlassView : View;
 
@@ -450,9 +452,11 @@ export default function RecurringSection({
             )}
           </View>
 
-          <View style={styles.boxFooter}>
-            <Text style={styles.nextDate}>Next: {formatShort(nextDate)}</Text>
-          </View>
+          {showNextDate && (
+            <View style={styles.boxFooter}>
+              <Text style={styles.nextDate}>Next: {formatShort(nextDate)}</Text>
+            </View>
+          )}
         </CardShell>
       </TouchableOpacity>
     );

@@ -17,36 +17,44 @@ export default function ReAuthBanner({
   type = "re_auth",
 }: ReAuthBannerProps) {
   const isNewAccounts = type === "new_accounts";
-  
-  const iconName = isNewAccounts ? "add-circle" : "refresh-circle";
-  const iconColor = isNewAccounts ? "#4CAF50" : "#FF9500";
-  const title = isNewAccounts 
-    ? "New Accounts Available" 
-    : "Connection Update Required";
-  const subtitle = isNewAccounts
-    ? `Add new accounts for ${institutionName}`
-    : `${institutionName} needs to be reconnected`;
+  const theme = isNewAccounts
+    ? {
+        icon: "add-circle" as const,
+        color: "#4CAF50",
+        title: "New Accounts Available",
+        subtitle: `Add new accounts for ${institutionName}`,
+        gradient: ["rgba(76, 175, 80, 0.08)", "rgba(76, 175, 80, 0.03)"] as const,
+        chip: "rgba(76, 175, 80, 0.12)",
+        border: "rgba(76, 175, 80, 0.25)",
+        cta: "Add",
+      }
+    : {
+        icon: "refresh-circle" as const,
+        color: "#FF9500",
+        title: "Connection Update Required",
+        subtitle: `${institutionName} needs to be reconnected`,
+        gradient: ["rgba(255, 149, 0, 0.08)", "rgba(255, 149, 0, 0.03)"] as const,
+        chip: "rgba(255, 149, 0, 0.12)",
+        border: "rgba(255, 149, 0, 0.25)",
+        cta: "Update",
+      };
 
   return (
     <View style={styles.container}>
       <LinearGradient
-        colors={
-          isNewAccounts
-            ? ["rgba(76, 175, 80, 0.08)", "rgba(76, 175, 80, 0.03)"]
-            : ["rgba(255, 149, 0, 0.08)", "rgba(255, 149, 0, 0.03)"]
-        }
+        colors={theme.gradient}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={styles.gradient}
       >
         <View style={styles.content}>
           <View style={styles.leftSection}>
-            <View style={[styles.iconContainer, { backgroundColor: isNewAccounts ? "rgba(76, 175, 80, 0.12)" : "rgba(255, 149, 0, 0.12)" }]}>
-              <Ionicons name={iconName} size={22} color={iconColor} />
+            <View style={[styles.iconContainer, { backgroundColor: theme.chip }]}>
+              <Ionicons name={theme.icon} size={22} color={theme.color} />
             </View>
             <View style={styles.textContainer}>
-              <Text style={styles.title}>{title}</Text>
-              <Text style={styles.subtitle}>{subtitle}</Text>
+              <Text style={styles.title}>{theme.title}</Text>
+              <Text style={styles.subtitle}>{theme.subtitle}</Text>
             </View>
           </View>
 
@@ -55,17 +63,17 @@ export default function ReAuthBanner({
               style={[
                 styles.actionButton,
                 {
-                  backgroundColor: isNewAccounts ? "rgba(76, 175, 80, 0.12)" : "rgba(255, 149, 0, 0.12)",
-                  borderColor: isNewAccounts ? "rgba(76, 175, 80, 0.25)" : "rgba(255, 149, 0, 0.25)",
+                  backgroundColor: theme.chip,
+                  borderColor: theme.border,
                 },
               ]}
               onPress={onReAuth}
               activeOpacity={0.7}
             >
-              <Text style={[styles.actionButtonText, { color: iconColor }]}>
-                {isNewAccounts ? "Add" : "Update"}
+              <Text style={[styles.actionButtonText, { color: theme.color }]}>
+                {theme.cta}
               </Text>
-              <Ionicons name="chevron-forward" size={14} color={iconColor} />
+              <Ionicons name="chevron-forward" size={14} color={theme.color} />
             </TouchableOpacity>
 
             {onDismiss && (

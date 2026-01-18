@@ -944,9 +944,8 @@ export const getRecurringTransactionsFromDatabase = async (item_id?: string) => 
       const firstTx = transactions[0];
       const category = firstTx.new_category || firstTx.top_category || 'Other';
       
-      // Collect all plaid_transaction_ids and dates for frequency detection
+      // Collect all plaid_transaction_ids for user-marked stream
       const plaidTxIds: string[] = [];
-      const transactionDates: string[] = [];
       let totalAmount = 0;
       let lastAmount = 0;
       let lastDate = firstTx.date;
@@ -956,9 +955,6 @@ export const getRecurringTransactionsFromDatabase = async (item_id?: string) => 
         const plaidTxId = tx.plaid_transaction_id;
         if (plaidTxId) {
           plaidTxIds.push(plaidTxId);
-        }
-        if (tx.date) {
-          transactionDates.push(tx.date);
         }
         const absAmount = Math.abs(tx.amount);
         totalAmount += absAmount;
@@ -978,10 +974,6 @@ export const getRecurringTransactionsFromDatabase = async (item_id?: string) => 
         return;
       }
       
-      // Detect frequency from transaction dates
-      const { calculateNextDateFromDates } = require('@/src/utils/recurring/frequencyDetection');
-      const { frequency: detectedFrequency } = calculateNextDateFromDates(transactionDates);
-      
       const averageAmount = transactions.length > 0 ? totalAmount / transactions.length : 0;
       const merchantName = firstTx.merchant_name || firstTx.name;
       const description = firstTx.name || 'User-marked recurring';
@@ -997,8 +989,7 @@ export const getRecurringTransactionsFromDatabase = async (item_id?: string) => 
       }
       const streamId = `user-marked-group-${Math.abs(hash).toString(36)}`;
       
-      // Use detected frequency or fallback to 'user-marked' if detection failed
-      const frequency = detectedFrequency || 'user-marked';
+      const frequency = 'user-marked';
       
       const streamData = {
         stream_id: streamId,
