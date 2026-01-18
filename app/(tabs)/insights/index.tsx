@@ -46,7 +46,6 @@ import CategorySelectionModal from "@/src/components/modals/CategorySelectionMod
 import CashDepositInstitutionModal from "@/src/components/modals/CashDepositInstitutionModal";
 import CreditCardInstitutionModal from "@/src/components/modals/CreditCardInstitutionModal";
 import InstitutionSelectionModal from "@/src/components/modals/InstitutionSelectionModal";
-import UpdateModeNotificationModal from "@/src/components/modals/UpdateModeNotificationModal";
 import { addNewBankAccount } from "@/src/utils/plaid/plaid";
 import { supabase } from "@/src/lib/supabase/supabase";
 import InvestmentsScreen from "@/app/investments";
@@ -193,20 +192,15 @@ export default function InsightsScreen() {
   const hasData = useRef(false);
   const hasCachedData = useRef(false); // Track if we have cached data to avoid skeleton
   const [refreshing, setRefreshing] = useState(false);
-  const [showUpdateModal, setShowUpdateModal] = useState(false);
-  const [updateModalInfo, setUpdateModalInfo] = useState<{
-    type: "new_accounts" | "re_auth";
-    message: string;
-    item_id: string;
-  } | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
 
-  // Re-auth banner state
+  // Re-auth banner state (handles both re-auth and new accounts)
   const [reAuthItems, setReAuthItems] = useState<
     Array<{
       item_id: string;
       institution_name: string;
       dismissed: boolean;
+      type?: "re_auth" | "new_accounts";
     }>
   >([]);
 
@@ -476,38 +470,52 @@ export default function InsightsScreen() {
 
   // Listen for transaction recurring status updates - refresh recurring section
   useEffect(() => {
-    const subscription = DeviceEventEmitter.addListener(
+    const handleRecurringUpdate = async () => {
+      // Clear recurring cache since recurring status has changed
+      await clearRecurringCache();
+      logger.info("🗑️ Cleared recurring cache after recurring status update");
+
+      // Refresh recurring transactions data
+      // Only refresh if we're on the recurring section or if we have recurring data loaded
+      // This prevents unnecessary refreshes when user is on other sections
+      if (
+        activeSectionRef.current === "recurring" ||
+        recurringDataRef.current !== null
+      ) {
+        logger.info(
+          "🔄 Refreshing recurring transactions after status update"
+        );
+        if (loadRecurringTransactionsRef.current) {
+          await loadRecurringTransactionsRef.current();
+        }
+      } else {
+        // If not on recurring section, just clear cache - will load fresh when user navigates
+        logger.info(
+          "📦 Cleared recurring cache (will load fresh when user navigates to recurring section)"
+        );
+      }
+    };
+
+    const singleUpdateSubscription = DeviceEventEmitter.addListener(
       "transactionRecurringUpdated",
       async (data) => {
         console.log("🔄 Transaction recurring status updated:", data);
-
-        // Clear recurring cache since recurring status has changed
-        await clearRecurringCache();
-        logger.info("🗑️ Cleared recurring cache after recurring status update");
-
-        // Refresh recurring transactions data
-        // Only refresh if we're on the recurring section or if we have recurring data loaded
-        // This prevents unnecessary refreshes when user is on other sections
-        if (
-          activeSectionRef.current === "recurring" ||
-          recurringDataRef.current !== null
-        ) {
-          logger.info(
-            "🔄 Refreshing recurring transactions after status update"
-          );
-          if (loadRecurringTransactionsRef.current) {
-            await loadRecurringTransactionsRef.current();
-          }
-        } else {
-          // If not on recurring section, just clear cache - will load fresh when user navigates
-          logger.info(
-            "📦 Cleared recurring cache (will load fresh when user navigates to recurring section)"
-          );
-        }
+        await handleRecurringUpdate();
       }
     );
 
-    return () => subscription.remove();
+    const bulkUpdateSubscription = DeviceEventEmitter.addListener(
+      "recurringBulkUpdate",
+      async (data) => {
+        console.log(`🔄 Bulk recurring update: ${data.count} transactions updated`);
+        await handleRecurringUpdate();
+      }
+    );
+
+    return () => {
+      singleUpdateSubscription.remove();
+      bulkUpdateSubscription.remove();
+    };
   }, []); // Empty deps - listener only set up once, uses refs for latest values
 
   // Initialize section animations and preload tasks
@@ -1953,6 +1961,7 @@ export default function InsightsScreen() {
         item_id: string;
         institution_name: string;
         dismissed: boolean;
+        type?: "re_auth" | "new_accounts";
       }> = [];
 
       // Check for items requiring re-auth or new accounts
@@ -1962,19 +1971,18 @@ export default function InsightsScreen() {
             item_id: item.item_id,
             institution_name: item.institution_name || "Unknown Bank",
             dismissed: false,
+            type: "re_auth",
           });
         }
 
-        // Still handle new accounts via modal (less urgent)
-        if (item.has_new_accounts && reAuthNeeded.length === 0) {
-          setUpdateModalInfo({
-            type: "new_accounts",
-            message: `New accounts are available for ${
-              item.institution_name || "your bank"
-            }. Would you like to add them?`,
+        // Handle new accounts via banner
+        if (item.has_new_accounts) {
+          reAuthNeeded.push({
             item_id: item.item_id,
+            institution_name: item.institution_name || "Unknown Bank",
+            dismissed: false,
+            type: "new_accounts",
           });
-          setShowUpdateModal(true);
         }
       }
 
@@ -2109,11 +2117,12 @@ export default function InsightsScreen() {
       await openPlaidLink(linkToken);
       logger.info("✅ Re-authentication successful");
 
-      // Step 2: Clear re-auth flags in database
+      // Step 2: Clear re-auth and new accounts flags in database
       await supabase
         .from("user_items")
         .update({
           requires_update_mode: false,
+          has_new_accounts: false,
           last_synced_at: new Date().toISOString(),
         })
         .eq("item_id", item_id);
@@ -2163,7 +2172,24 @@ export default function InsightsScreen() {
   };
 
   // Handle API errors that indicate re-auth needed
-  const handleApiReAuthError = (item_id: string, institution_name: string) => {
+  const handleApiReAuthError = async (item_id: string, institution_name: string) => {
+    try {
+      // Update database flag so checkForReAuthNeeds will pick it up
+      const { error: updateError } = await supabase
+        .from("user_items")
+        .update({ requires_update_mode: true })
+        .eq("item_id", item_id);
+
+      if (updateError) {
+        logger.error(`Failed to update requires_update_mode for ${item_id}:`, updateError);
+      } else {
+        logger.info(`✅ Set requires_update_mode flag for ${item_id} (${institution_name})`);
+      }
+    } catch (error) {
+      logger.error("Error updating requires_update_mode flag:", error);
+    }
+
+    // Show re-auth banner immediately
     setReAuthItems((prev) => {
       const exists = prev.find((item) => item.item_id === item_id);
       if (exists) return prev;
@@ -2174,6 +2200,7 @@ export default function InsightsScreen() {
           item_id,
           institution_name: institution_name || "Unknown Bank",
           dismissed: false,
+          type: "re_auth" as const,
         },
       ];
     });
@@ -2203,11 +2230,29 @@ export default function InsightsScreen() {
 
       // Step 2: Check for re-auth errors and handle them
       if (result.results) {
+        const reAuthPromises: Promise<void>[] = [];
         result.results.forEach((res: any) => {
-          if (!res.success && res.error?.includes("re-authentication")) {
-            handleApiReAuthError(res.item_id, res.institution_name);
+          if (!res.success) {
+            const isLoginRequired = 
+              res.requires_update_mode === true ||
+              res.error_code === "ITEM_LOGIN_REQUIRED" ||
+              res.error?.includes("ITEM_LOGIN_REQUIRED") ||
+              res.error?.includes("login details of this item have changed") ||
+              res.error?.includes("OAuth connection") ||
+              res.error?.includes("re-authentication") ||
+              res.error?.includes("use Link's update mode");
+            
+            if (isLoginRequired && res.item_id) {
+              reAuthPromises.push(
+                handleApiReAuthError(res.item_id, res.institution_name || "Unknown Bank")
+              );
+            }
           }
         });
+        // Wait for all re-auth error handlers to complete
+        if (reAuthPromises.length > 0) {
+          await Promise.all(reAuthPromises);
+        }
       }
 
       logger.info("✅ Combined refresh completed:", result.message);
@@ -2220,6 +2265,33 @@ export default function InsightsScreen() {
       logger.info("🔄 Step 3: Calling syncAllUserTransactions()...");
       const syncResult = await syncAllUserTransactions();
       logger.info("📦 syncAllUserTransactions result:", syncResult);
+      
+      // Check for re-auth errors in sync results
+      if (syncResult.results) {
+        const reAuthPromises: Promise<void>[] = [];
+        syncResult.results.forEach((res: any) => {
+          if (res.error) {
+            const isLoginRequired = 
+              res.requires_update_mode === true ||
+              res.error_code === "ITEM_LOGIN_REQUIRED" ||
+              res.error?.includes("ITEM_LOGIN_REQUIRED") ||
+              res.error?.includes("login details of this item have changed") ||
+              res.error?.includes("OAuth connection") ||
+              res.error?.includes("re-authentication") ||
+              res.error?.includes("use Link's update mode");
+            
+            if (isLoginRequired && res.item_id) {
+              reAuthPromises.push(
+                handleApiReAuthError(res.item_id, res.institution_name || "Unknown Bank")
+              );
+            }
+          }
+        });
+        // Wait for all re-auth error handlers to complete
+        if (reAuthPromises.length > 0) {
+          await Promise.all(reAuthPromises);
+        }
+      }
 
       // Step 4: Refresh recurring transactions
       setRefreshStatus({
@@ -2229,6 +2301,33 @@ export default function InsightsScreen() {
       logger.info("🔄 Step 4: Calling refreshRecurringTransactions()...");
       const recurringResult = await refreshRecurringTransactions();
       logger.info("📦 refreshRecurringTransactions result:", recurringResult);
+      
+      // Check for re-auth errors in recurring refresh results
+      if (recurringResult.results) {
+        const reAuthPromises: Promise<void>[] = [];
+        recurringResult.results.forEach((res: any) => {
+          if (!res.success) {
+            const isLoginRequired = 
+              res.requires_update_mode === true ||
+              res.error_code === "ITEM_LOGIN_REQUIRED" ||
+              res.error?.includes("ITEM_LOGIN_REQUIRED") ||
+              res.error?.includes("login details of this item have changed") ||
+              res.error?.includes("OAuth connection") ||
+              res.error?.includes("re-authentication") ||
+              res.error?.includes("use Link's update mode");
+            
+            if (isLoginRequired && res.item_id) {
+              reAuthPromises.push(
+                handleApiReAuthError(res.item_id, res.institution_name || "Unknown Bank")
+              );
+            }
+          }
+        });
+        // Wait for all re-auth error handlers to complete
+        if (reAuthPromises.length > 0) {
+          await Promise.all(reAuthPromises);
+        }
+      }
 
       // Clear caches since we have fresh data
       await clearRecurringCache();
@@ -2280,39 +2379,6 @@ export default function InsightsScreen() {
     }
   };
 
-  // Handle update mode flow
-  const handleUpdateMode = async () => {
-    if (!updateModalInfo) return;
-
-    try {
-      logger.info("🔄 Starting update mode for item:", updateModalInfo.item_id);
-
-      // Get update link token
-      const linkToken = await getUpdateLinkToken(updateModalInfo.item_id);
-
-      // Open Plaid Link in update mode
-      await openPlaidLink(linkToken);
-
-      // Clear the flag after successful update
-      await supabase
-        .from("user_items")
-        .update({
-          has_new_accounts: false,
-          requires_update_mode: false,
-        })
-        .eq("item_id", updateModalInfo.item_id);
-
-      setShowUpdateModal(false);
-      setUpdateModalInfo(null);
-
-      // Refresh data after update
-      await fetchFreshData();
-
-      logger.info("✅ Update mode completed");
-    } catch (error) {
-      logger.error("❌ Update mode failed:", error);
-    }
-  };
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -2439,7 +2505,7 @@ export default function InsightsScreen() {
                 <RefreshStatus message={refreshStatus.message} type="loading" />
               )}
 
-              {/* Re-auth banners */}
+              {/* Re-auth and new accounts banners */}
               {reAuthItems
                 .filter((item) => !item.dismissed)
                 .map((item) => (
@@ -2448,6 +2514,7 @@ export default function InsightsScreen() {
                     institutionName={item.institution_name}
                     onReAuth={() => handleReAuth(item.item_id)}
                     onDismiss={() => dismissReAuthBanner(item.item_id)}
+                    type={item.type || "re_auth"}
                   />
                 ))}
 
@@ -2753,16 +2820,6 @@ export default function InsightsScreen() {
           </View>
         )}
 
-      {/* Update Mode Notification Modal */}
-      {updateModalInfo && (
-        <UpdateModeNotificationModal
-          visible={showUpdateModal}
-          onClose={() => setShowUpdateModal(false)}
-          onUpdate={handleUpdateMode}
-          type={updateModalInfo.type}
-          message={updateModalInfo.message}
-        />
-      )}
     </SafeAreaView>
   );
 }

@@ -27,6 +27,7 @@ import {
   getDisplayCategory as getDisplayCategoryUtil,
   shouldShowRecurringChip,
 } from "@/src/utils/categories/transactionCategory";
+import { bulkUpdateRecurringStatus } from "@/src/utils/recurring/recurringBulkUpdate";
 
 const getCategoryBackgroundColorForName = (categoryName: string): string => {
   const map: { [key: string]: string } = {
@@ -593,35 +594,49 @@ export default function TransactionDetailModal({
 
   const handleRecurringToggle = async () => {
     try {
+      if (!transaction || !userId) {
+        Alert.alert("Error", "Transaction or user information missing.");
+        return;
+      }
+
       const currentIsRecurring = transaction?.if_recurring === "yes";
       const newRecurringValue = currentIsRecurring ? "no" : "yes";
-      // Update the database
-      const { error } = await supabase
-        .from("transactions")
-        .update({ if_recurring: newRecurringValue })
-        .eq("id", transaction?.id);
+      
+      // Update all similar transactions
+      // Priority: Use recurring_stream_id if available (Plaid streams), otherwise use name/merchant_name
+      const result = await bulkUpdateRecurringStatus(
+        userId,
+        {
+          recurring_stream_id: transaction.recurring_stream_id || undefined,
+          merchant_name: transaction.merchant_name,
+          name: transaction.name,
+        },
+        newRecurringValue,
+        newRecurringValue === "no" // Clear stream_id when removing
+      );
 
-      if (error) {
-        console.error("Error updating transaction recurring status:", error);
-        Alert.alert("Error", "Failed to update transaction. Please try again.");
+      if (result.updated === 0) {
+        Alert.alert("Error", "Failed to update transactions. Please try again.");
         return;
       }
 
       // Update the transaction object directly
-      if (transaction) {
-        setTransaction({
-          ...transaction,
-          if_recurring: newRecurringValue,
-        });
-      }
+      setTransaction({
+        ...transaction,
+        if_recurring: newRecurringValue,
+        recurring_stream_id: newRecurringValue === "no" ? undefined : transaction.recurring_stream_id || undefined,
+      });
 
       // Update local state for consistency
       setIsRecurring(!currentIsRecurring);
-      // Emit event to notify other components
-      DeviceEventEmitter.emit("transactionRecurringUpdated", {
-        transactionId: transaction?.id,
-        isRecurring: !currentIsRecurring,
-      });
+
+      // Show success message with count
+      if (result.updated > 1) {
+        Alert.alert(
+          "Success",
+          `Updated ${result.updated} similar transactions to ${newRecurringValue === "yes" ? "recurring" : "non-recurring"}.`
+        );
+      }
 
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     } catch (error) {

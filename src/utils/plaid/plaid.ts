@@ -524,7 +524,27 @@ export const syncTransactions = async (item_id: string) => {
     const data = await res.json();
     logger.info("📦 API response:", { status: res.status, data });
     
-    if (!res.ok) throw new Error(data.error || "API sync failed");
+    if (!res.ok) {
+      // Check for ITEM_LOGIN_REQUIRED errors (OAuth invalid token, credentials changed, etc.)
+      const errorMessage = data.error || "API sync failed";
+      const isLoginRequired = 
+        errorMessage.includes("ITEM_LOGIN_REQUIRED") ||
+        errorMessage.includes("login details of this item have changed") ||
+        errorMessage.includes("OAuth connection") ||
+        errorMessage.includes("use Link's update mode") ||
+        data.requires_update_mode === true;
+      
+      if (isLoginRequired) {
+        // Create a special error that includes item_id for re-auth handling
+        const reAuthError: any = new Error(errorMessage);
+        reAuthError.item_id = item_id;
+        reAuthError.requires_update_mode = true;
+        reAuthError.error_code = "ITEM_LOGIN_REQUIRED";
+        throw reAuthError;
+      }
+      
+      throw new Error(errorMessage);
+    }
     
     logger.info("✅ Transaction sync complete via API:", {
       added: data.added,
@@ -763,7 +783,24 @@ export const syncAllUserTransactions = async () => {
     const syncPromises = plaidItems.map(item => 
       syncTransactions(item.item_id).catch(error => {
         logger.error(`Failed to sync item ${item.item_id}:`, error);
-        return { error: error.message };
+        
+        // Check if error indicates login required
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        const isLoginRequired = 
+          (error as any)?.requires_update_mode === true ||
+          (error as any)?.error_code === "ITEM_LOGIN_REQUIRED" ||
+          errorMessage.includes("ITEM_LOGIN_REQUIRED") ||
+          errorMessage.includes("login details of this item have changed") ||
+          errorMessage.includes("OAuth connection") ||
+          errorMessage.includes("use Link's update mode");
+        
+        return { 
+          error: errorMessage,
+          item_id: item.item_id,
+          institution_name: item.institution_name,
+          requires_update_mode: isLoginRequired,
+          error_code: isLoginRequired ? "ITEM_LOGIN_REQUIRED" : undefined
+        };
       })
     );
     
@@ -873,8 +910,10 @@ export const getRecurringTransactionsFromDatabase = async (item_id?: string) => 
       }
     });
     
-    // Add user-marked transactions as "pseudo-streams" - one stream per transaction
-    // BUT: Skip if a Plaid stream already exists for the same merchant (deduplication)
+    // Group user-marked transactions by merchant_name (or name if no merchant_name)
+    // Create one stream per merchant group instead of one per transaction
+    const userMarkedGroups = new Map<string, typeof userMarkedTxs>();
+    
     (userMarkedTxs || []).forEach(tx => {
       // Check if a Plaid stream already exists for this merchant
       const txMerchantName = (tx.merchant_name || tx.name || '').toLowerCase().trim();
@@ -883,38 +922,102 @@ export const getRecurringTransactionsFromDatabase = async (item_id?: string) => 
         logger.info(`Skipping user-marked transaction for ${txMerchantName} - Plaid stream already exists`);
         return;
       }
-      const category = tx.new_category || tx.top_category || 'Other';
-      // CRITICAL: Use plaid_transaction_id (not database UUID) for transaction_ids array
-      // This matches the format used by Plaid recurring streams and allows backfill to work correctly
-      const plaidTxId = tx.plaid_transaction_id;
-      if (!plaidTxId) {
-        logger.warn(`Skipping user-marked transaction ${tx.id} - missing plaid_transaction_id`);
+      
+      // Use merchant_name as key, fallback to name
+      const groupKey = (tx.merchant_name || tx.name || '').toLowerCase().trim();
+      if (!groupKey) {
+        logger.warn(`Skipping user-marked transaction ${tx.id} - no merchant_name or name`);
         return;
       }
       
+      if (!userMarkedGroups.has(groupKey)) {
+        userMarkedGroups.set(groupKey, []);
+      }
+      userMarkedGroups.get(groupKey)!.push(tx);
+    });
+    
+    // Create one stream per merchant group
+    userMarkedGroups.forEach((transactions, groupKey) => {
+      if (!transactions || transactions.length === 0) return;
+      
+      // Use first transaction for metadata (merchant_name, category, etc.)
+      const firstTx = transactions[0];
+      const category = firstTx.new_category || firstTx.top_category || 'Other';
+      
+      // Collect all plaid_transaction_ids and dates for frequency detection
+      const plaidTxIds: string[] = [];
+      const transactionDates: string[] = [];
+      let totalAmount = 0;
+      let lastAmount = 0;
+      let lastDate = firstTx.date;
+      let firstDate = firstTx.date;
+      
+      transactions.forEach(tx => {
+        const plaidTxId = tx.plaid_transaction_id;
+        if (plaidTxId) {
+          plaidTxIds.push(plaidTxId);
+        }
+        if (tx.date) {
+          transactionDates.push(tx.date);
+        }
+        const absAmount = Math.abs(tx.amount);
+        totalAmount += absAmount;
+        // Track most recent transaction
+        if (new Date(tx.date) > new Date(lastDate)) {
+          lastDate = tx.date;
+          lastAmount = absAmount;
+        }
+        // Track earliest transaction
+        if (new Date(tx.date) < new Date(firstDate)) {
+          firstDate = tx.date;
+        }
+      });
+      
+      if (plaidTxIds.length === 0) {
+        logger.warn(`Skipping user-marked group ${groupKey} - no valid plaid_transaction_ids`);
+        return;
+      }
+      
+      // Detect frequency from transaction dates
+      const { calculateNextDateFromDates } = require('@/src/utils/recurring/frequencyDetection');
+      const { frequency: detectedFrequency } = calculateNextDateFromDates(transactionDates);
+      
+      const averageAmount = transactions.length > 0 ? totalAmount / transactions.length : 0;
+      const merchantName = firstTx.merchant_name || firstTx.name;
+      const description = firstTx.name || 'User-marked recurring';
+      
+      // Create stream_id based on merchant name (hash for uniqueness)
+      // Use a simple hash of the merchant name to create a stable ID
+      // Simple hash function for React Native compatibility
+      let hash = 0;
+      for (let i = 0; i < groupKey.length; i++) {
+        const char = groupKey.charCodeAt(i);
+        hash = ((hash << 5) - hash) + char;
+        hash = hash & hash; // Convert to 32bit integer
+      }
+      const streamId = `user-marked-group-${Math.abs(hash).toString(36)}`;
+      
+      // Use detected frequency or fallback to 'user-marked' if detection failed
+      const frequency = detectedFrequency || 'user-marked';
+      
       const streamData = {
-        stream_id: `user-marked-${tx.id}`, // Unique ID for user-marked transactions (uses DB UUID for uniqueness)
-        description: tx.name || 'User-marked recurring',
-        merchant_name: tx.merchant_name || tx.name,
+        stream_id: streamId,
+        description: description,
+        merchant_name: merchantName,
         category: category,
-        frequency: 'user-marked', // Special indicator
-        average_amount: Math.abs(tx.amount),
-        last_amount: Math.abs(tx.amount),
-        last_date: tx.date,
-        first_date: tx.date,
+        frequency: frequency,
+        average_amount: averageAmount,
+        last_amount: lastAmount,
+        last_date: lastDate,
+        first_date: firstDate,
         is_active: true,
-        account_id: tx.account_id,
-        transaction_ids: [plaidTxId], // Use Plaid transaction ID, not database UUID
+        account_id: firstTx.account_id, // Use first transaction's account
+        transaction_ids: plaidTxIds, // All transaction IDs for this merchant group
         iso_currency_code: 'USD',
-        updated_at: tx.date,
+        updated_at: lastDate,
       };
       
       // Categorize based on transaction category
-      // If category is 'Subscriptions', add to subscriptions
-      // If category is 'Income', add to income
-      // If category suggests it's a bill (Housing, utilities, etc.), add to bills
-      // Otherwise add to other
-      
       const categoryLower = category.toLowerCase();
       if (categoryLower.includes('subscription')) {
         groupedStreams.subscriptions.push(streamData);
@@ -1003,7 +1106,28 @@ export const refreshRecurringTransactions = async (item_id?: string) => {
         const data = await res.json();
         
         if (!res.ok) {
-          throw new Error(data.error || `Recurring refresh failed for ${item.institution_name}`);
+          const errorMessage = data.error || `Recurring refresh failed for ${item.institution_name}`;
+          
+          // Check for ITEM_LOGIN_REQUIRED errors (OAuth invalid token, credentials changed, etc.)
+          const isLoginRequired = 
+            data.requires_update_mode === true ||
+            errorMessage.includes("ITEM_LOGIN_REQUIRED") ||
+            errorMessage.includes("login details of this item have changed") ||
+            errorMessage.includes("OAuth connection") ||
+            errorMessage.includes("use Link's update mode");
+          
+          if (isLoginRequired) {
+            return {
+              item_id: item.item_id,
+              institution_name: item.institution_name,
+              success: false,
+              error: errorMessage,
+              requires_update_mode: true,
+              error_code: "ITEM_LOGIN_REQUIRED"
+            };
+          }
+          
+          throw new Error(errorMessage);
         }
         
         logger.info(`✅ Recurring transactions refreshed for ${item.institution_name || item.item_id}:`, data.summary);
@@ -1016,11 +1140,22 @@ export const refreshRecurringTransactions = async (item_id?: string) => {
         };
       } catch (error) {
         logger.error(`Failed to refresh recurring transactions for item ${item.item_id}:`, error);
+        
+        // Check if error indicates login required
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        const isLoginRequired = 
+          errorMessage.includes("ITEM_LOGIN_REQUIRED") ||
+          errorMessage.includes("login details of this item have changed") ||
+          errorMessage.includes("OAuth connection") ||
+          errorMessage.includes("use Link's update mode");
+        
         return { 
           item_id: item.item_id, 
           institution_name: item.institution_name,
           success: false, 
-          error: error instanceof Error ? error.message : String(error)
+          error: errorMessage,
+          requires_update_mode: isLoginRequired,
+          error_code: isLoginRequired ? "ITEM_LOGIN_REQUIRED" : undefined
         };
       }
     });
@@ -1086,36 +1221,102 @@ export const getTransactionsForRecurringStream = async (streamId: string) => {
     
     // Check if this is a user-marked pseudo-stream (starts with "user-marked-")
     if (streamId.startsWith("user-marked-")) {
-      // Extract the transaction ID from the stream ID
-      const transactionId = streamId.replace("user-marked-", "");
-      
-      // Fetch the single transaction
-      const { data: transaction, error: txError } = await supabase
-        .from("transactions")
-        .select(`
-          *,
-          accounts:account_id (
-            name,
-            mask,
-            type,
-            subtype,
-            item_id,
-            user_items:item_id (
-              institution_name
+      // Check if it's a grouped stream (user-marked-group-*) or single transaction (user-marked-{uuid})
+      if (streamId.startsWith("user-marked-group-")) {
+        // This is a grouped user-marked stream - need to find all transactions with same merchant_name
+        // We need to decode the merchant name from the stream_id or fetch differently
+        // For now, let's fetch all user-marked transactions and filter by matching merchant_name
+        // Actually, we should store the merchant_name in a way we can retrieve it
+        // For grouped streams, we'll fetch all user-marked transactions and group them client-side
+        
+        // Fetch all user-marked recurring transactions
+        const { data: allUserMarkedTxs, error: allTxError } = await supabase
+          .from("transactions")
+          .select(`
+            *,
+            accounts:account_id (
+              name,
+              mask,
+              type,
+              subtype,
+              item_id,
+              user_items:item_id (
+                institution_name
+              )
             )
-          )
-        `)
-        .eq("user_id", user.id)
-        .eq("id", transactionId)
-        .single();
-      
-      if (txError) {
-        logger.error("Error fetching user-marked transaction:", txError);
+          `)
+          .eq("user_id", user.id)
+          .eq("if_recurring", "yes")
+          .is("recurring_stream_id", null)
+          .order("date", { ascending: false });
+        
+        if (allTxError) {
+          logger.error("Error fetching user-marked transactions:", allTxError);
+          return [];
+        }
+        
+        // Group by merchant_name (or name if no merchant_name)
+        const grouped = new Map<string, typeof allUserMarkedTxs>();
+        (allUserMarkedTxs || []).forEach(tx => {
+          const key = (tx.merchant_name || tx.name || '').toLowerCase().trim();
+          if (!key) return;
+          if (!grouped.has(key)) {
+            grouped.set(key, []);
+          }
+          grouped.get(key)!.push(tx);
+        });
+        
+        // Find the group that matches this stream_id
+        // We need to match by recreating the stream_id from the merchant name
+        for (const [merchantKey, txs] of grouped.entries()) {
+          // Recreate hash using same algorithm
+          let hash = 0;
+          for (let i = 0; i < merchantKey.length; i++) {
+            const char = merchantKey.charCodeAt(i);
+            hash = ((hash << 5) - hash) + char;
+            hash = hash & hash; // Convert to 32bit integer
+          }
+          const expectedStreamId = `user-marked-group-${Math.abs(hash).toString(36)}`;
+          if (expectedStreamId === streamId) {
+            logger.info(`✅ Found ${txs.length} user-marked transactions for grouped stream: ${streamId}`);
+            return txs;
+          }
+        }
+        
+        logger.warn(`⚠️ Could not find transactions for grouped stream: ${streamId}`);
         return [];
+      } else {
+        // Legacy: Single transaction stream (user-marked-{uuid})
+        const transactionId = streamId.replace("user-marked-", "");
+        
+        // Fetch the single transaction
+        const { data: transaction, error: txError } = await supabase
+          .from("transactions")
+          .select(`
+            *,
+            accounts:account_id (
+              name,
+              mask,
+              type,
+              subtype,
+              item_id,
+              user_items:item_id (
+                institution_name
+              )
+            )
+          `)
+          .eq("user_id", user.id)
+          .eq("id", transactionId)
+          .single();
+        
+        if (txError) {
+          logger.error("Error fetching user-marked transaction:", txError);
+          return [];
+        }
+        
+        logger.info(`✅ Found user-marked transaction for stream: ${streamId}`);
+        return transaction ? [transaction] : [];
       }
-      
-      logger.info(`✅ Found user-marked transaction for stream: ${streamId}`);
-      return transaction ? [transaction] : [];
     }
     
     // This is a Plaid recurring stream - fetch from recurring_streams table
@@ -1216,7 +1417,28 @@ export const refreshBothBalancesAndTransactions = async (item_id?: string) => {
         const data = await res.json();
         
         if (!res.ok) {
-          throw new Error(data.error || `Combined refresh failed for ${item.institution_name}`);
+          const errorMessage = data.error || `Combined refresh failed for ${item.institution_name}`;
+          
+          // Check for ITEM_LOGIN_REQUIRED errors (OAuth invalid token, credentials changed, etc.)
+          const isLoginRequired = 
+            data.requires_update_mode === true ||
+            errorMessage.includes("ITEM_LOGIN_REQUIRED") ||
+            errorMessage.includes("login details of this item have changed") ||
+            errorMessage.includes("OAuth connection") ||
+            errorMessage.includes("use Link's update mode");
+          
+          if (isLoginRequired) {
+            return {
+              item_id: item.item_id,
+              institution_name: item.institution_name,
+              success: false,
+              error: errorMessage,
+              requires_update_mode: true,
+              error_code: "ITEM_LOGIN_REQUIRED"
+            };
+          }
+          
+          throw new Error(errorMessage);
         }
         
         logger.info(`✅ Combined refresh completed for ${item.institution_name || item.item_id}:`, {
@@ -1234,11 +1456,22 @@ export const refreshBothBalancesAndTransactions = async (item_id?: string) => {
         };
       } catch (error) {
         logger.error(`Failed to refresh item ${item.item_id}:`, error);
+        
+        // Check if error indicates login required
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        const isLoginRequired = 
+          errorMessage.includes("ITEM_LOGIN_REQUIRED") ||
+          errorMessage.includes("login details of this item have changed") ||
+          errorMessage.includes("OAuth connection") ||
+          errorMessage.includes("use Link's update mode");
+        
         return { 
           item_id: item.item_id, 
           institution_name: item.institution_name,
           success: false, 
-          error: error instanceof Error ? error.message : String(error)
+          error: errorMessage,
+          requires_update_mode: isLoginRequired,
+          error_code: isLoginRequired ? "ITEM_LOGIN_REQUIRED" : undefined
         };
       }
     });

@@ -9,6 +9,7 @@ import {
   Dimensions,
   ActivityIndicator,
   ScrollView,
+  Alert,
 } from "react-native";
 import { Ionicons, AntDesign, Feather } from "@expo/vector-icons";
 import { GlassView } from "expo-glass-effect";
@@ -19,6 +20,9 @@ import {
   RecurringStream,
   RecurringTransaction,
 } from "@/src/types/plaid";
+import IconButton from "@/src/components/shared/IconButton";
+import { supabase } from "@/src/lib/supabase/supabase";
+import { bulkUpdateRecurringStatus } from "@/src/utils/recurring/recurringBulkUpdate";
 
 interface Props {
   recurringData: {
@@ -55,6 +59,8 @@ export default function RecurringSection({
   const [preloadingStreams, setPreloadingStreams] = useState<Set<string>>(
     new Set()
   );
+  const [removingRecurring, setRemovingRecurring] = useState(false);
+  const [userId, setUserId] = useState<string | null>(null);
 
   const isIOS = Platform.OS === "ios";
   const iosVersion = isIOS
@@ -68,6 +74,23 @@ export default function RecurringSection({
   const cardWidth = Math.floor(
     (width - 40 - horizontalPadding * 2 - interCardGap) / 2
   ); // 40px is the parent container padding (20px left + 20px right)
+
+  // Fetch user ID on mount
+  useEffect(() => {
+    const fetchUserId = async () => {
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (user?.id) {
+          setUserId(user.id);
+        }
+      } catch (error) {
+        console.error("Error fetching user ID:", error);
+      }
+    };
+    fetchUserId();
+  }, []);
 
   // Pre-load transactions for all recurring streams when data is available
   useEffect(() => {
@@ -175,13 +198,23 @@ export default function RecurringSection({
     const last = safeDate(stream.last_date);
     if (!last) return null;
 
+    const frequency = (stream.frequency || "").toLowerCase();
+    
+    // Skip if frequency is "user-marked" (will be null and won't show next date)
+    if (frequency === "user-marked") {
+      return null;
+    }
+
     const next = new Date(last);
-    switch ((stream.frequency || "").toLowerCase()) {
+    switch (frequency) {
       case "daily":
         next.setDate(next.getDate() + 1);
         break;
       case "weekly":
         next.setDate(next.getDate() + 7);
+        break;
+      case "bi-weekly":
+        next.setDate(next.getDate() + 14);
         break;
       case "monthly":
         next.setMonth(next.getMonth() + 1);
@@ -194,7 +227,7 @@ export default function RecurringSection({
         next.setFullYear(next.getFullYear() + 1);
         break;
       default:
-        next.setDate(next.getDate() + 1);
+        return null; // Return null for unknown frequencies instead of defaulting
     }
     return next;
   };
@@ -253,6 +286,71 @@ export default function RecurringSection({
     // Instant switch - no animations
     setShowTransactionHistory(false);
     setSelectedStream(null);
+  };
+
+  const handleRemoveRecurring = async () => {
+    if (!selectedStream || !userId) {
+      Alert.alert("Error", "Unable to remove recurring status. Please try again.");
+      return;
+    }
+
+    Alert.alert(
+      "Remove Recurring Status",
+      `Remove recurring status from all transactions with "${selectedStream.merchant_name || selectedStream.description}"?`,
+      [
+        {
+          text: "Cancel",
+          style: "cancel",
+        },
+        {
+          text: "Remove",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              setRemovingRecurring(true);
+              
+              // Priority: Use stream_id if this is a Plaid stream (not user-marked)
+              // User-marked streams have stream_id starting with "user-marked-"
+              const isPlaidStream = !selectedStream.stream_id.startsWith("user-marked-");
+              
+              const result = await bulkUpdateRecurringStatus(
+                userId,
+                {
+                  recurring_stream_id: isPlaidStream ? selectedStream.stream_id : undefined,
+                  merchant_name: selectedStream.merchant_name || undefined,
+                  name: selectedStream.description || undefined,
+                },
+                "no",
+                true // Clear recurring_stream_id
+              );
+
+              if (result.updated > 0) {
+                Alert.alert(
+                  "Success",
+                  `Removed recurring status from ${result.updated} transaction${result.updated > 1 ? "s" : ""}.`,
+                  [
+                    {
+                      text: "OK",
+                      onPress: () => {
+                        // Go back to grid after successful removal
+                        handleBackToGrid();
+                      },
+                    },
+                  ]
+                );
+              } else {
+                Alert.alert("Error", "No transactions were updated. Please try again.");
+              }
+            } catch (error) {
+              console.error("Error removing recurring status:", error);
+              Alert.alert("Error", "Failed to remove recurring status. Please try again.");
+            } finally {
+              setRemovingRecurring(false);
+            }
+          },
+        },
+      ]
+    );
   };
 
   const renderCard = ({ item }: { item: ListItem }) => {
@@ -345,9 +443,11 @@ export default function RecurringSection({
               {stream.average_amount < 0 ? "+" : "-"}$
               {Math.abs(stream.average_amount).toFixed(2)}
             </Text>
-            <Text style={styles.frequency}>
-              {(stream.frequency || "").toLowerCase()}
-            </Text>
+            {stream.frequency && stream.frequency !== "user-marked" && (
+              <Text style={styles.frequency}>
+                {(stream.frequency || "").toLowerCase()}
+              </Text>
+            )}
           </View>
 
           <View style={styles.boxFooter}>
@@ -368,7 +468,7 @@ export default function RecurringSection({
 
     return (
       <View style={styles.fullWidthContainer}>
-        {/* Header with cross button */}
+        {/* Header with remove recurring button and close button */}
         <View style={styles.historyHeader}>
           <View style={styles.headerInfo}>
             <View style={styles.headerText}>
@@ -376,19 +476,20 @@ export default function RecurringSection({
                 {selectedStream.merchant_name || selectedStream.description}
               </Text>
               <Text style={styles.headerSubtitle}>
-                {(selectedStream.frequency || "").charAt(0).toUpperCase() +
-                  (selectedStream.frequency || "").slice(1).toLowerCase()}{" "}
-                • {selectedStream.transaction_ids?.length || 0} transactions
+                {selectedStream.frequency && selectedStream.frequency !== "user-marked"
+                  ? `${(selectedStream.frequency || "").charAt(0).toUpperCase() +
+                      (selectedStream.frequency || "").slice(1).toLowerCase()} • `
+                  : ""}
+                {selectedStream.transaction_ids?.length || 0} transactions
               </Text>
             </View>
           </View>
-          <TouchableOpacity
-            style={styles.closeButton}
+          <IconButton
+            icon="close"
+            size={18}
             onPress={handleBackToGrid}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="close" size={20} color="#fff" />
-          </TouchableOpacity>
+            style={styles.closeButton}
+          />
         </View>
 
         {/* Loading Overlay */}
@@ -401,6 +502,20 @@ export default function RecurringSection({
               </Text>
             </View>
           </View>
+        )}
+
+        {/* Remove Recurring Button */}
+        {!loadingTransactions && streamTransactions.length > 0 && (
+          <TouchableOpacity
+            style={styles.removeRecurringButton}
+            onPress={handleRemoveRecurring}
+            disabled={removingRecurring}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.removeRecurringButtonText}>
+              {removingRecurring ? "Removing..." : "Remove this from recurring"}
+            </Text>
+          </TouchableOpacity>
         )}
 
         {/* Transaction History */}
@@ -739,12 +854,25 @@ const styles = StyleSheet.create({
     borderColor: "rgba(255, 255, 255, 0.1)",
   },
   closeButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    marginLeft: 8,
+  },
+  removeRecurringButton: {
+    backgroundColor: "rgba(74, 144, 226, 0.15)",
+    borderWidth: 1,
+    borderColor: "rgba(74, 144, 226, 0.3)",
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    marginBottom: 12,
     alignItems: "center",
     justifyContent: "center",
+    opacity: 1,
+  },
+  removeRecurringButtonText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#4A90E2",
+    letterSpacing: 0.2,
   },
   headerInfo: {
     flex: 1,

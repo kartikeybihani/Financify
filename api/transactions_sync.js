@@ -477,8 +477,18 @@ export default async function handler(req, res) {
     });
   } catch (e) {
     console.error("transactions_sync error", e.response?.data || e);
+    
+    // Handle specific Plaid errors
+    const plaidError = e.response?.data;
+    if (plaidError?.error_code === "ITEM_LOGIN_REQUIRED") {
+      return res.status(400).json({
+        error: plaidError.error_message || "Item requires re-authentication",
+        requires_update_mode: true,
+      });
+    }
+    
     return res
       .status(500)
-      .json({ error: e.response?.data?.error_message || e.message });
+      .json({ error: plaidError?.error_message || e.message });
   }
 }
