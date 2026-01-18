@@ -1,5 +1,5 @@
 // /api/scheduled-sync.js
-import { supabase } from "../lib/api/supabase.js";
+import { supabase, supabaseUrl, supabaseServiceKey } from "../lib/api/supabase.js";
 import {
   mapPlaidToAppCategory,
   isInternalTransfer,
@@ -15,8 +15,14 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
+  const url = new URL(
+    req.url || "/",
+    `http://${req.headers?.host || "localhost"}`
+  );
+  const mode = url.searchParams.get("mode") || "scheduled";
+
   const cronRateLimit = await checkRateLimit(req, {
-    scope: "scheduled_sync",
+    scope: `scheduled_sync:${mode}`,
     userId: null,
     limit: 1,
     windowMs: 60 * 1000,
@@ -41,8 +47,8 @@ export default async function handler(req, res) {
   const startedAt = new Date().toISOString();
 
   try {
-    // 1) Get all user items that need syncing
-    // Note: user_items table doesn't have is_active column, so we sync all items
+    // 1) Get all user items
+    // Note: user_items table doesn't have is_active column, so we consider all items
     const { data: userItems, error: fetchError } = await supabase
       .from("user_items")
       .select("item_id, user_id, last_synced_at, last_automated_sync");
@@ -61,64 +67,28 @@ export default async function handler(req, res) {
       });
     }
 
-    console.log(`📊 Found ${userItems.length} items to sync`);
+    const plaidItems = userItems.filter(
+      (item) => !item.item_id.startsWith("snaptrade-")
+    );
+    const snaptradeItems = userItems.filter((item) =>
+      item.item_id.startsWith("snaptrade-")
+    );
 
-    // 2) Sync each item
-    const results = {
-      synced: 0,
-      errors: 0,
-      errorDetails: [],
-    };
+    console.log(
+      `📊 Found ${userItems.length} items (Plaid: ${plaidItems.length}, SnapTrade: ${snaptradeItems.length}) | mode=${mode}`
+    );
 
-    for (const item of userItems) {
-      try {
-        console.log(`🔄 Syncing item ${item.item_id} for user ${item.user_id}`);
-
-        // Call the existing sync function logic (transactions + balances)
-        const syncResult = await syncItemTransactions(
-          item.item_id,
-          item.user_id
-        );
-
-        if (syncResult.success) {
-          results.synced++;
-          console.log(
-            `✅ Successfully synced item ${item.item_id}: ${
-              syncResult.added
-            } added, ${syncResult.modified} modified, ${
-              syncResult.removed
-            } removed transactions, ${
-              syncResult.balancesUpdated || 0
-            } balances updated`
-          );
-        } else {
-          results.errors++;
-          results.errorDetails.push({
-            item_id: item.item_id,
-            user_id: item.user_id,
-            error: syncResult.error,
-          });
-          console.error(
-            `❌ Failed to sync item ${item.item_id}:`,
-            syncResult.error
-          );
-        }
-      } catch (error) {
-        results.errors++;
-        results.errorDetails.push({
-          item_id: item.item_id,
-          user_id: item.user_id,
-          error: error.message,
-        });
-        console.error(`❌ Error syncing item ${item.item_id}:`, error);
-      }
-    }
+    const results =
+      mode === "weekly_balances"
+        ? await runWeeklyBalanceSync(plaidItems)
+        : await runScheduledSync(plaidItems, snaptradeItems);
 
     // 3) Update global sync status in sync_logs table
     const completedAt = new Date().toISOString();
     await supabase.from("sync_logs").insert({
-      sync_type: "scheduled",
-      total_items: userItems.length,
+      sync_type: mode,
+      total_items:
+        mode === "weekly_balances" ? plaidItems.length : userItems.length,
       successful_syncs: results.synced,
       failed_syncs: results.errors,
       error_details:
@@ -132,8 +102,13 @@ export default async function handler(req, res) {
     );
 
     return res.status(200).json({
-      message: "Scheduled sync completed",
-      total_items: userItems.length,
+      message:
+        mode === "weekly_balances"
+          ? "Weekly balance sync completed"
+          : "Scheduled sync completed",
+      mode,
+      total_items:
+        mode === "weekly_balances" ? plaidItems.length : userItems.length,
       synced: results.synced,
       errors: results.errors,
       errorDetails: results.errorDetails,
@@ -145,6 +120,170 @@ export default async function handler(req, res) {
       details: error.message,
     });
   }
+}
+
+async function runScheduledSync(plaidItems, snaptradeItems) {
+  const results = {
+    synced: 0,
+    errors: 0,
+    errorDetails: [],
+  };
+
+  for (const item of plaidItems) {
+    try {
+      console.log(`🔄 Syncing item ${item.item_id} for user ${item.user_id}`);
+
+      const syncResult = await syncItemTransactions(item.item_id, item.user_id);
+
+      if (syncResult.success) {
+        results.synced++;
+        console.log(
+          `✅ Successfully synced item ${item.item_id}: ${
+            syncResult.added
+          } added, ${syncResult.modified} modified, ${
+            syncResult.removed
+          } removed transactions, ${
+            syncResult.derivedBalancesUpdated || 0
+          } derived balances updated`
+        );
+      } else {
+        results.errors++;
+        results.errorDetails.push({
+          item_id: item.item_id,
+          user_id: item.user_id,
+          error: syncResult.error,
+        });
+        console.error(`❌ Failed to sync item ${item.item_id}:`, syncResult.error);
+      }
+    } catch (error) {
+      results.errors++;
+      results.errorDetails.push({
+        item_id: item.item_id,
+        user_id: item.user_id,
+        error: error.message,
+      });
+      console.error(`❌ Error syncing item ${item.item_id}:`, error);
+    }
+  }
+
+  for (const item of snaptradeItems) {
+    try {
+      console.log(
+        `🔄 Syncing SnapTrade item ${item.item_id} for user ${item.user_id}`
+      );
+
+      const accountId = item.item_id.replace("snaptrade-", "");
+      const { data: connection, error: connectionErr } = await supabase
+        .from("snaptrade_connections")
+        .select("snaptrade_user_id, account_id, is_active")
+        .eq("user_id", item.user_id)
+        .eq("account_id", accountId)
+        .single();
+
+      if (connectionErr || !connection) {
+        throw new Error(`SnapTrade connection not found for account ${accountId}`);
+      }
+
+      if (!connection.is_active) {
+        throw new Error(`SnapTrade connection inactive for account ${accountId}`);
+      }
+
+      const response = await fetch(`${supabaseUrl}/functions/v1/sync-investments`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${supabaseServiceKey}`,
+        },
+        body: JSON.stringify({
+          user_id: item.user_id,
+          snaptrade_user_id: connection.snaptrade_user_id,
+          account_id: connection.account_id,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`SnapTrade sync failed (${response.status}): ${errorText}`);
+      }
+
+      results.synced++;
+      console.log(`✅ SnapTrade sync successful for ${item.item_id}`);
+    } catch (error) {
+      results.errors++;
+      results.errorDetails.push({
+        item_id: item.item_id,
+        user_id: item.user_id,
+        error: error.message,
+      });
+      console.error(`❌ SnapTrade sync failed for item ${item.item_id}:`, error);
+    }
+  }
+
+  return results;
+}
+
+async function runWeeklyBalanceSync(plaidItems) {
+  const results = {
+    synced: 0,
+    errors: 0,
+    errorDetails: [],
+  };
+
+  const { client } = await import("../app/plaidClient.js");
+
+  for (const item of plaidItems) {
+    try {
+      const { data: access_token, error: tokenErr } = await supabase.rpc(
+        "secure_get_plaid_token",
+        {
+          p_item_id: item.item_id,
+          p_user_id: item.user_id,
+        }
+      );
+
+      if (tokenErr || !access_token) {
+        throw new Error(
+          `Access token not found: ${tokenErr?.message || "Token is null/undefined"}`
+        );
+      }
+
+      const balanceResponse = await client.accountsBalanceGet({
+        access_token: access_token,
+      });
+
+      const accounts = balanceResponse.data.accounts || [];
+      if (accounts.length > 0) {
+        const balanceUpdates = accounts.map((account) => ({
+          account_id: account.account_id,
+          item_id: item.item_id,
+          current_balance: account.balances.current,
+          available_balance: account.balances.available,
+          last_balance_sync_at: new Date().toISOString(),
+          balance_source: "plaid",
+        }));
+
+        const { error: balanceErr } = await supabase
+          .from("accounts")
+          .upsert(balanceUpdates, { onConflict: "account_id" });
+
+        if (balanceErr) {
+          throw new Error(`Balance update failed: ${balanceErr.message}`);
+        }
+      }
+
+      results.synced++;
+    } catch (error) {
+      results.errors++;
+      results.errorDetails.push({
+        item_id: item.item_id,
+        user_id: item.user_id,
+        error: error.message,
+      });
+      console.error(`❌ Weekly balance sync failed for ${item.item_id}:`, error);
+    }
+  }
+
+  return results;
 }
 
 // Helper function to sync individual item transactions
@@ -424,15 +563,15 @@ async function syncItemTransactions(item_id, user_id) {
       // CRITICAL: If we can't fetch existing transactions, we MUST NOT set new_category
       //           to avoid overwriting user overrides
 
-      // First, get existing transactions to check which ones already have new_category, category_id, and if_recurring
-      const plaidTxIds = rows.map((r) => r.plaid_transaction_id);
-      const { data: existingTxs, error: fetchErr } = await supabase
-        .from("transactions")
+    // First, get existing transactions to check which ones already have new_category, category_id, and if_recurring
+    const plaidTxIds = rows.map((r) => r.plaid_transaction_id);
+    const { data: existingTxs, error: fetchErr } = await supabase
+      .from("transactions")
         .select(
-          "plaid_transaction_id, new_category, category_id, if_recurring, recurring_stream_id"
+          "plaid_transaction_id, new_category, category_id, if_recurring, recurring_stream_id, amount, account_id, pending"
         )
-        .eq("user_id", user_id)
-        .in("plaid_transaction_id", plaidTxIds);
+      .eq("user_id", user_id)
+      .in("plaid_transaction_id", plaidTxIds);
 
       // CRITICAL FIX: If fetch fails, we cannot safely set new_category or if_recurring
       // because we don't know which transactions have user overrides or manual recurring flags.
@@ -567,15 +706,37 @@ async function syncItemTransactions(item_id, user_id) {
       }
     }
 
+    let removedExisting = [];
+    if (removed.length) {
+      const { data: removedTxs, error: removedErr } = await supabase
+        .from("transactions")
+        .select("plaid_transaction_id, amount, account_id, pending")
+        .eq("user_id", user_id)
+        .in(
+          "plaid_transaction_id",
+          removed.map((r) => r.transaction_id)
+        );
+
+      if (removedErr) {
+        throw new Error(`Failed to fetch removed transactions: ${removedErr.message}`);
+      }
+
+      removedExisting = removedTxs || [];
+    }
+
     // Delete removed transactions
     if (removed.length) {
-      await supabase
+      const { error: deleteErr } = await supabase
         .from("transactions")
         .delete()
         .in(
           "plaid_transaction_id",
           removed.map((r) => r.transaction_id)
         );
+
+      if (deleteErr) {
+        throw new Error(`Transaction delete failed: ${deleteErr.message}`);
+      }
     }
 
     // Update cursor, timestamps, and sync status
@@ -596,53 +757,22 @@ async function syncItemTransactions(item_id, user_id) {
       );
     }
 
-    // Sync account balances after transactions (balances change with transactions)
-    let balancesUpdated = 0;
-    try {
-      console.log(`💰 Syncing account balances for item ${item_id}...`);
-      const balanceResponse = await client.accountsBalanceGet({
-        access_token: access_token,
-      });
-
-      const accounts = balanceResponse.data.accounts;
-      if (accounts && accounts.length > 0) {
-        const balanceUpdates = accounts.map((account) => ({
-          account_id: account.account_id,
-          item_id: item_id,
-          current_balance: account.balances.current,
-          available_balance: account.balances.available,
-        }));
-
-        const { error: balanceErr } = await supabase
-          .from("accounts")
-          .upsert(balanceUpdates, { onConflict: "account_id" });
-
-        if (balanceErr) {
-          console.error(
-            `⚠️ Balance update failed for item ${item_id}:`,
-            balanceErr
-          );
-        } else {
-          balancesUpdated = balanceUpdates.length;
-          console.log(
-            `✅ Updated ${balancesUpdated} account balances for item ${item_id}`
-          );
-        }
-      }
-    } catch (balanceError) {
-      // Don't fail the whole sync if balance update fails
-      console.error(
-        `⚠️ Balance sync failed for item ${item_id} (non-critical):`,
-        balanceError.message
-      );
-    }
+    // Update derived balances based on transaction deltas (no paid balance call)
+    const derivedBalancesUpdated = await updateDerivedBalances(
+      user_id,
+      added,
+      modified,
+      removed,
+      existingTxs || [],
+      removedExisting
+    );
 
     return {
       success: true,
       added: added.length,
       modified: modified.length,
       removed: removed.length,
-      balancesUpdated: balancesUpdated,
+      derivedBalancesUpdated: derivedBalancesUpdated,
     };
   } catch (error) {
     // Update sync status to error on failure
@@ -665,6 +795,114 @@ async function syncItemTransactions(item_id, user_id) {
       error: error.message,
     };
   }
+}
+
+async function updateDerivedBalances(
+  user_id,
+  added,
+  modified,
+  removed,
+  existingTxs,
+  removedExisting
+) {
+  const existingMap = new Map();
+  existingTxs.forEach((tx) => {
+    existingMap.set(tx.plaid_transaction_id, tx);
+  });
+
+  removedExisting.forEach((tx) => {
+    existingMap.set(tx.plaid_transaction_id, tx);
+  });
+
+  const deltas = new Map();
+  const addDelta = (accountId, delta) => {
+    if (!accountId || !Number.isFinite(delta)) return;
+    deltas.set(accountId, (deltas.get(accountId) || 0) + delta);
+  };
+
+  added.forEach((txn) => {
+    if (txn.pending === true) return;
+    addDelta(txn.account_id, -Number(txn.amount || 0));
+  });
+
+  modified.forEach((txn) => {
+    const prev = existingMap.get(txn.transaction_id);
+    if (!prev) return;
+
+    const prevPending = prev.pending === true;
+    const nextPending = txn.pending === true;
+    const prevAccount = prev.account_id;
+    const prevAmount = Number(prev.amount || 0);
+    const nextAccount = txn.account_id;
+    const nextAmount = Number(txn.amount || 0);
+
+    if (prevPending && nextPending) return;
+
+    if (prevPending && !nextPending) {
+      addDelta(nextAccount || prevAccount, -nextAmount);
+      return;
+    }
+
+    if (!prevPending && nextPending) {
+      addDelta(prevAccount || nextAccount, prevAmount);
+      return;
+    }
+
+    if (prevAccount && nextAccount && prevAccount !== nextAccount) {
+      addDelta(prevAccount, prevAmount);
+      addDelta(nextAccount, -nextAmount);
+      return;
+    }
+
+    addDelta(prevAccount || nextAccount, prevAmount - nextAmount);
+  });
+
+  removed.forEach((txn) => {
+    const prev = existingMap.get(txn.transaction_id);
+    if (!prev) return;
+    if (prev.pending === true) return;
+    addDelta(prev.account_id, Number(prev.amount || 0));
+  });
+
+  if (deltas.size === 0) return 0;
+
+  let updated = 0;
+  for (const [accountId, delta] of deltas.entries()) {
+    const { data: accountRow, error: accountErr } = await supabase
+      .from("accounts")
+      .select("current_balance, available_balance")
+      .eq("account_id", accountId)
+      .single();
+
+    if (accountErr || !accountRow) {
+      console.error("⚠️ Account not found for derived balance update:", accountId);
+      continue;
+    }
+
+    const current = Number(accountRow.current_balance || 0) + delta;
+    const updatePayload = {
+      current_balance: current,
+      balance_source: "derived",
+    };
+
+    if (accountRow.available_balance !== null && accountRow.available_balance !== undefined) {
+      updatePayload.available_balance = Number(accountRow.available_balance) + delta;
+    }
+
+    const { error: updateErr } = await supabase
+      .from("accounts")
+      .update(updatePayload)
+      .eq("account_id", accountId);
+
+    if (updateErr) {
+      console.error("⚠️ Failed derived balance update:", updateErr);
+      continue;
+    }
+
+    updated++;
+  }
+
+  return updated;
 }
 
 // Category mapping is now handled by plaidCategoryMapper.js

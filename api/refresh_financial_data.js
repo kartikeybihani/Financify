@@ -2,139 +2,11 @@
 import { client } from "../app/plaidClient.js";
 import { supabase } from "../lib/api/supabase.js";
 import { verifyItemOwnership } from "../lib/api/auth.js";
+import { refreshAndStoreRecurringForItem } from "../lib/plaid/recurringRefresh.js";
 import {
   checkRateLimit,
   formatRetryAfterSeconds,
 } from "../lib/api/rateLimiter.js";
-
-/**
- * Helper function to get category from stream type
- */
-function getCategoryFromStreamType(streamType) {
-  const mapping = {
-    subscription: "Subscriptions",
-    income: "Income",
-    bill: "Housing",
-    other: "Other",
-  };
-  return mapping[streamType] || null;
-}
-
-/**
- * Backfill transactions with recurring stream links and categories
- * This runs after recurring streams are stored to link existing transactions
- */
-async function backfillRecurringCategories(userId, recurringRows) {
-  console.log(
-    `📦 Backfilling recurring categories for ${recurringRows.length} streams...`
-  );
-
-  try {
-    // Build a map of transaction_id -> stream data
-    const transactionToStreamMap = new Map();
-
-    recurringRows.forEach((stream) => {
-      if (stream.transaction_ids && Array.isArray(stream.transaction_ids)) {
-        stream.transaction_ids.forEach((txId) => {
-          transactionToStreamMap.set(txId, {
-            streamId: stream.stream_id,
-            streamType: stream.stream_type,
-          });
-        });
-      }
-    });
-
-    const transactionIds = Array.from(transactionToStreamMap.keys());
-    if (transactionIds.length === 0) {
-      console.log("No transactions to backfill");
-      return { updated: 0 };
-    }
-
-    console.log(
-      `Found ${transactionIds.length} transactions to potentially update`
-    );
-
-    // Fetch these transactions from database
-    const { data: transactions, error: fetchErr } = await supabase
-      .from("transactions")
-      .select(
-        "id, plaid_transaction_id, recurring_stream_id, new_category, if_recurring"
-      )
-      .eq("user_id", userId)
-      .in("plaid_transaction_id", transactionIds);
-
-    if (fetchErr) {
-      throw new Error(`Failed to fetch transactions: ${fetchErr.message}`);
-    }
-
-    if (!transactions || transactions.length === 0) {
-      console.log("No matching transactions found in database");
-      return { updated: 0 };
-    }
-
-    // Prepare updates
-    const updates = [];
-
-    transactions.forEach((tx) => {
-      const streamData = transactionToStreamMap.get(tx.plaid_transaction_id);
-      if (!streamData) return;
-
-      const update = { id: tx.id, user_id: userId };
-      let hasChanges = false;
-
-      // Link to stream if not already linked
-      if (!tx.recurring_stream_id) {
-        update.recurring_stream_id = streamData.streamId;
-        hasChanges = true;
-      }
-
-      // Set if_recurring flag
-      // Note: If a transaction is part of a recurring stream, it IS recurring by definition.
-      // We set it to "yes" regardless of previous value because stream membership is a fact.
-      // If a user explicitly unmarked it as recurring, they would need to remove it from the stream.
-      // This is intentional behavior - stream membership implies recurring status.
-      if (tx.if_recurring !== "yes") {
-        update.if_recurring = "yes";
-        hasChanges = true;
-      }
-
-      // Set category ONLY if new_category is NULL (respect user overrides)
-      if (!tx.new_category) {
-        const categoryToSet = getCategoryFromStreamType(streamData.streamType);
-        if (categoryToSet && streamData.streamType !== "other") {
-          update.new_category = categoryToSet;
-          hasChanges = true;
-        }
-      }
-
-      if (hasChanges) {
-        updates.push(update);
-      }
-    });
-
-    if (updates.length === 0) {
-      console.log("No updates needed");
-      return { updated: 0 };
-    }
-
-    console.log(`Applying ${updates.length} updates...`);
-
-    // Apply updates in batch
-    const { error: updateErr } = await supabase
-      .from("transactions")
-      .upsert(updates, { onConflict: "id", ignoreDuplicates: false });
-
-    if (updateErr) {
-      throw new Error(`Failed to update transactions: ${updateErr.message}`);
-    }
-
-    console.log(`✅ Successfully updated ${updates.length} transactions`);
-    return { updated: updates.length };
-  } catch (error) {
-    console.error("Backfill error:", error);
-    throw error;
-  }
-}
 
 export default async function handler(req, res) {
   if (req.method !== "POST")
@@ -237,11 +109,14 @@ export default async function handler(req, res) {
         if (accounts && accounts.length > 0) {
           console.log("💾 Updating account balances in database...");
 
+          const now = new Date().toISOString();
           const balanceUpdates = accounts.map((account) => ({
             account_id: account.account_id,
             item_id: item_id,
             current_balance: account.balances.current,
             available_balance: account.balances.available,
+            last_balance_sync_at: now,
+            balance_source: "plaid",
           }));
 
           // Batch upsert balances to minimize DB round-trips
@@ -333,304 +208,20 @@ export default async function handler(req, res) {
       try {
         console.log("🔄 Refreshing recurring transactions...");
 
-        // Get account IDs for this item
-        const { data: accounts, error: accountsError } = await supabase
-          .from("accounts")
-          .select("account_id")
-          .eq("item_id", item_id);
+        const recurringResult = await refreshAndStoreRecurringForItem({
+          supabase,
+          plaidClient: client,
+          accessToken: access_token,
+          itemId: item_id,
+          userId: actualUserId,
+        });
 
-        if (accountsError) {
-          console.error("Error fetching accounts:", accountsError);
-          throw new Error("Failed to fetch accounts");
-        }
-
-        if (!accounts || accounts.length === 0) {
-          console.log(`⚠️ No accounts found for item: ${item_id}`);
-          results.recurring = {
-            message: "No accounts found for recurring analysis",
-            summary: {
-              subscriptions: 0,
-              income: 0,
-              bills: 0,
-              other: 0,
-              total: 0,
-            },
-            stored: 0,
-            debug: {
-              item_id,
-              accounts_found: 0,
-              reason: "No accounts in database for this item",
-            },
-          };
-        } else {
-          const accountIds = accounts.map((acc) => acc.account_id);
-          console.log(
-            `📡 Calling Plaid transactions/recurring/get for ${accountIds.length} accounts...`
-          );
-
-          // Call Plaid's transactions/recurring/get endpoint
-          const recurringResponse = await client.transactionsRecurringGet({
-            access_token: access_token,
-            account_ids: accountIds,
-          });
-
-          const recurringData = recurringResponse.data;
-          console.log(
-            `✅ Found ${recurringData.inflow_streams?.length || 0} inflow and ${
-              recurringData.outflow_streams?.length || 0
-            } outflow recurring streams`
-          );
-
-          // Process and categorize recurring transactions
-          const processedStreams = {
-            subscriptions: [],
-            income: [],
-            bills: [],
-            other: [],
-          };
-
-          // Process outflow streams (subscriptions, bills, etc.)
-          if (recurringData.outflow_streams) {
-            recurringData.outflow_streams.forEach((stream) => {
-              const streamData = {
-                stream_id: stream.stream_id,
-                description: stream.description,
-                merchant_name: stream.merchant_name,
-                category: stream.category?.[0] || "Other",
-                frequency: stream.frequency,
-                average_amount: stream.average_amount?.amount || 0,
-                last_amount: stream.last_amount?.amount || 0,
-                last_date: stream.last_date,
-                first_date: stream.first_date,
-                is_active: stream.is_active,
-                account_id: stream.account_id,
-                transaction_ids: stream.transaction_ids || [],
-                iso_currency_code:
-                  stream.average_amount?.iso_currency_code || "USD",
-              };
-
-              // Categorize based on category and merchant
-              const category = stream.category?.[0]?.toLowerCase() || "";
-              const merchant = (stream.merchant_name || "").toLowerCase();
-
-              if (
-                category.includes("subscription") ||
-                merchant.includes("netflix") ||
-                merchant.includes("spotify") ||
-                merchant.includes("apple") ||
-                merchant.includes("google") ||
-                merchant.includes("amazon prime") ||
-                merchant.includes("hulu") ||
-                merchant.includes("disney") ||
-                merchant.includes("youtube") ||
-                merchant.includes("adobe") ||
-                merchant.includes("microsoft")
-              ) {
-                processedStreams.subscriptions.push(streamData);
-              } else if (
-                category.includes("utilities") ||
-                category.includes("rent") ||
-                merchant.includes("electric") ||
-                merchant.includes("gas") ||
-                merchant.includes("water") ||
-                merchant.includes("rent") ||
-                merchant.includes("mortgage") ||
-                merchant.includes("insurance") ||
-                merchant.includes("phone") ||
-                merchant.includes("internet")
-              ) {
-                processedStreams.bills.push(streamData);
-              } else {
-                processedStreams.other.push(streamData);
-              }
-            });
-          }
-
-          // Process inflow streams (income, etc.)
-          if (recurringData.inflow_streams) {
-            recurringData.inflow_streams.forEach((stream) => {
-              processedStreams.income.push({
-                stream_id: stream.stream_id,
-                description: stream.description,
-                merchant_name: stream.merchant_name,
-                category: stream.category?.[0] || "Income",
-                frequency: stream.frequency,
-                average_amount: stream.average_amount?.amount || 0,
-                last_amount: stream.last_amount?.amount || 0,
-                last_date: stream.last_date,
-                first_date: stream.first_date,
-                is_active: stream.is_active,
-                account_id: stream.account_id,
-                transaction_ids: stream.transaction_ids || [],
-                iso_currency_code:
-                  stream.average_amount?.iso_currency_code || "USD",
-              });
-            });
-          }
-
-          // Store recurring streams in database
-          let storedCount = 0;
-          try {
-            // First, mark all existing streams for this item as inactive
-            await supabase
-              .from("recurring_streams")
-              .update({
-                is_active: false,
-                updated_at: new Date().toISOString(),
-              })
-              .eq("item_id", item_id);
-
-            // Prepare data for database insertion
-            const recurringRows = [
-              ...processedStreams.subscriptions.map((s) => ({
-                user_id: actualUserId,
-                item_id,
-                account_id: s.account_id,
-                stream_id: s.stream_id,
-                stream_type: "subscription",
-                flow_type: "outflow",
-                description: s.description,
-                merchant_name: s.merchant_name,
-                category: s.category,
-                average_amount: s.average_amount,
-                last_amount: s.last_amount,
-                iso_currency_code: s.iso_currency_code,
-                frequency: s.frequency,
-                first_date: s.first_date,
-                last_date: s.last_date,
-                is_active: s.is_active,
-                transaction_ids: s.transaction_ids,
-                last_synced_at: new Date().toISOString(),
-              })),
-              ...processedStreams.income.map((s) => ({
-                user_id: actualUserId,
-                item_id,
-                account_id: s.account_id,
-                stream_id: s.stream_id,
-                stream_type: "income",
-                flow_type: "inflow",
-                description: s.description,
-                merchant_name: s.merchant_name,
-                category: s.category,
-                average_amount: s.average_amount,
-                last_amount: s.last_amount,
-                iso_currency_code: s.iso_currency_code,
-                frequency: s.frequency,
-                first_date: s.first_date,
-                last_date: s.last_date,
-                is_active: s.is_active,
-                transaction_ids: s.transaction_ids,
-                last_synced_at: new Date().toISOString(),
-              })),
-              ...processedStreams.bills.map((s) => ({
-                user_id: actualUserId,
-                item_id,
-                account_id: s.account_id,
-                stream_id: s.stream_id,
-                stream_type: "bill",
-                flow_type: "outflow",
-                description: s.description,
-                merchant_name: s.merchant_name,
-                category: s.category,
-                average_amount: s.average_amount,
-                last_amount: s.last_amount,
-                iso_currency_code: s.iso_currency_code,
-                frequency: s.frequency,
-                first_date: s.first_date,
-                last_date: s.last_date,
-                is_active: s.is_active,
-                transaction_ids: s.transaction_ids,
-                last_synced_at: new Date().toISOString(),
-              })),
-              ...processedStreams.other.map((s) => ({
-                user_id: actualUserId,
-                item_id,
-                account_id: s.account_id,
-                stream_id: s.stream_id,
-                stream_type: "other",
-                flow_type: "outflow",
-                description: s.description,
-                merchant_name: s.merchant_name,
-                category: s.category,
-                average_amount: s.average_amount,
-                last_amount: s.last_amount,
-                iso_currency_code: s.iso_currency_code,
-                frequency: s.frequency,
-                first_date: s.first_date,
-                last_date: s.last_date,
-                is_active: s.is_active,
-                transaction_ids: s.transaction_ids,
-                last_synced_at: new Date().toISOString(),
-              })),
-            ];
-
-            if (recurringRows.length > 0) {
-              // Upsert recurring streams (insert or update based on stream_id)
-              const { data: insertedData, error: upsertErr } = await supabase
-                .from("recurring_streams")
-                .upsert(recurringRows, {
-                  onConflict: "stream_id",
-                  ignoreDuplicates: false,
-                })
-                .select();
-
-              if (upsertErr) {
-                console.error(
-                  "❌ Failed to store recurring streams:",
-                  upsertErr
-                );
-                throw new Error(
-                  `Database storage failed: ${upsertErr.message}`
-                );
-              }
-
-              storedCount = insertedData?.length || recurringRows.length;
-              console.log(
-                `💾 Stored ${storedCount} recurring streams in database`
-              );
-
-              // Trigger backfill to link transactions to streams and set categories
-              console.log(
-                "🔄 Running backfill to link transactions to streams..."
-              );
-              try {
-                const backfillResult = await backfillRecurringCategories(
-                  actualUserId,
-                  recurringRows
-                );
-                console.log(
-                  `✅ Backfill complete: ${backfillResult.updated} transactions updated`
-                );
-              } catch (backfillError) {
-                console.error(
-                  "⚠️  Backfill failed (non-fatal):",
-                  backfillError.message
-                );
-                // Don't fail the whole operation if backfill fails
-              }
-            }
-          } catch (storageError) {
-            console.error("❌ Recurring streams storage failed:", storageError);
-            throw new Error(`Storage failed: ${storageError.message}`);
-          }
-
-          results.recurring = {
-            message: "Recurring transactions refreshed and stored successfully",
-            summary: {
-              subscriptions: processedStreams.subscriptions.length,
-              income: processedStreams.income.length,
-              bills: processedStreams.bills.length,
-              other: processedStreams.other.length,
-              total:
-                processedStreams.subscriptions.length +
-                processedStreams.income.length +
-                processedStreams.bills.length +
-                processedStreams.other.length,
-            },
-            stored: storedCount,
-            data: processedStreams,
-          };
-        }
+        results.recurring = {
+          message: "Recurring transactions refreshed and stored successfully",
+          summary: recurringResult.summary,
+          stored: recurringResult.stored,
+          updated_transactions: recurringResult.updated_transactions,
+        };
       } catch (error) {
         console.error("❌ Recurring transactions refresh failed:", error);
         results.errors.push(

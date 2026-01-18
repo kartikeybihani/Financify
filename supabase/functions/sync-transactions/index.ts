@@ -224,6 +224,27 @@ serve(async (req: Request) => {
 
     console.log(`📋 Found ${transactionToStreamMap.size} transactions in recurring streams`);
 
+    // 4.7. Fetch existing transactions for balance delta calculations
+    const deltaIds = [
+      ...modified.map((t) => t.transaction_id),
+      ...removed.map((t) => t.transaction_id),
+    ].filter(Boolean);
+
+    let deltaExisting: any[] = [];
+    if (deltaIds.length > 0) {
+      const { data: deltaTxs, error: deltaErr } = await supabase
+        .from("transactions")
+        .select("plaid_transaction_id, amount, account_id, pending")
+        .eq("user_id", user_id)
+        .in("plaid_transaction_id", deltaIds);
+
+      if (deltaErr) {
+        console.error("⚠️ Failed to fetch delta transactions:", deltaErr);
+      } else {
+        deltaExisting = deltaTxs || [];
+      }
+    }
+
     // 5. Upsert new and modified transactions into database
     if (added.length || modified.length) {
       console.log(`💽 Saving ${added.length + modified.length} transactions to database...`);
@@ -339,7 +360,7 @@ serve(async (req: Request) => {
       const plaidTxIds = rows.map((r) => r.plaid_transaction_id);
       const { data: existingTxs, error: fetchErr } = await supabase
         .from("transactions")
-        .select("plaid_transaction_id, new_category, category_id, if_recurring, recurring_stream_id")
+        .select("plaid_transaction_id, new_category, category_id, if_recurring, recurring_stream_id, amount, account_id, pending")
         .eq("user_id", user_id)
         .in("plaid_transaction_id", plaidTxIds);
 
@@ -502,17 +523,27 @@ serve(async (req: Request) => {
       }
     }
 
+    // 7. Update derived balances based on transaction deltas
+    const derivedBalancesUpdated = await updateDerivedBalances(
+      user_id,
+      added,
+      modified,
+      removed,
+      deltaExisting
+    );
+
     const summary = {
       message: "Sync complete",
       added: added.length,
       modified: modified.length,
       removed: removed.length,
+      derivedBalancesUpdated,
       item_id,
     };
 
     console.log("🎉 Transaction sync completed successfully:", summary);
 
-    // 7. Return summary
+    // 8. Return summary
     return new Response(
       JSON.stringify(summary),
       { headers: { "Content-Type": "application/json" }, status: 200 }
@@ -533,3 +564,117 @@ serve(async (req: Request) => {
     );
   }
 });
+
+async function updateDerivedBalances(
+  user_id: string,
+  added: any[],
+  modified: any[],
+  removed: any[],
+  existingTxs: any[]
+) {
+  const existingMap = new Map<
+    string,
+    { amount: number; account_id: string; pending: boolean }
+  >();
+  existingTxs.forEach((tx: any) => {
+    existingMap.set(tx.plaid_transaction_id, {
+      amount: Number(tx.amount || 0),
+      account_id: tx.account_id,
+      pending: tx.pending === true,
+    });
+  });
+
+  const deltas = new Map<string, number>();
+  const addDelta = (accountId: string | null, delta: number) => {
+    if (!accountId || !Number.isFinite(delta)) return;
+    deltas.set(accountId, (deltas.get(accountId) || 0) + delta);
+  };
+
+  added.forEach((txn: any) => {
+    if (txn.pending === true) return;
+    addDelta(txn.account_id, -Number(txn.amount || 0));
+  });
+
+  modified.forEach((txn: any) => {
+    const prev = existingMap.get(txn.transaction_id);
+    if (!prev) return;
+
+    const prevPending = prev.pending === true;
+    const nextPending = txn.pending === true;
+    const prevAccount = prev.account_id;
+    const prevAmount = Number(prev.amount || 0);
+    const nextAccount = txn.account_id;
+    const nextAmount = Number(txn.amount || 0);
+
+    if (prevPending && nextPending) return;
+
+    if (prevPending && !nextPending) {
+      addDelta(nextAccount || prevAccount, -nextAmount);
+      return;
+    }
+
+    if (!prevPending && nextPending) {
+      addDelta(prevAccount || nextAccount, prevAmount);
+      return;
+    }
+
+    if (prevAccount && nextAccount && prevAccount !== nextAccount) {
+      addDelta(prevAccount, prevAmount);
+      addDelta(nextAccount, -nextAmount);
+      return;
+    }
+
+    addDelta(prevAccount || nextAccount, prevAmount - nextAmount);
+  });
+
+  removed.forEach((txn: any) => {
+    const prev = existingMap.get(txn.transaction_id);
+    if (!prev) return;
+    if (prev.pending === true) return;
+    addDelta(prev.account_id, Number(prev.amount || 0));
+  });
+
+  if (deltas.size === 0) return 0;
+
+  let updated = 0;
+  for (const [accountId, delta] of deltas.entries()) {
+    const { data: accountRow, error: accountErr } = await supabase
+      .from("accounts")
+      .select("current_balance, available_balance")
+      .eq("account_id", accountId)
+      .single();
+
+    if (accountErr || !accountRow) {
+      console.error("⚠️ Account not found for derived balance update:", accountId);
+      continue;
+    }
+
+    const current = Number(accountRow.current_balance || 0) + delta;
+    const updatePayload: {
+      current_balance: number;
+      balance_source: string;
+      available_balance?: number;
+    } = {
+      current_balance: current,
+      balance_source: "derived",
+    };
+
+    if (accountRow.available_balance !== null && accountRow.available_balance !== undefined) {
+      updatePayload.available_balance = Number(accountRow.available_balance) + delta;
+    }
+
+    const { error: updateErr } = await supabase
+      .from("accounts")
+      .update(updatePayload)
+      .eq("account_id", accountId);
+
+    if (updateErr) {
+      console.error("⚠️ Failed derived balance update:", updateErr);
+      continue;
+    }
+
+    updated++;
+  }
+
+  return updated;
+}

@@ -4,6 +4,8 @@ import {
   supabaseUrl,
   supabaseServiceKey,
 } from "../lib/api/supabase.js";
+import { client as plaidClient } from "../app/plaidClient.js";
+import { refreshAndStoreRecurringForItem } from "../lib/plaid/recurringRefresh.js";
 
 export default async function handler(req, res) {
   // Log ALL incoming requests for debugging
@@ -127,6 +129,9 @@ export default async function handler(req, res) {
         webhook_code === "HISTORICAL_UPDATE" ||
         webhook_code === "SYNC_UPDATES_AVAILABLE";
 
+      const shouldRefreshRecurring =
+        webhook_code === "RECURRING_TRANSACTIONS_UPDATE";
+
       if (shouldSync) {
         try {
           // Look up user_id from item_id
@@ -157,8 +162,53 @@ export default async function handler(req, res) {
         }
       }
 
+      if (shouldRefreshRecurring) {
+        try {
+          const { data: userItem, error } = await supabase
+            .from("user_items")
+            .select("user_id")
+            .eq("item_id", item_id)
+            .single();
+
+          if (error || !userItem) {
+            console.error("Could not find user for item_id:", item_id, error);
+            return res.status(200).json({ ok: true, error: "user_not_found" });
+          }
+
+          const { data: access_token, error: tokenErr } = await supabase.rpc(
+            "secure_get_plaid_token",
+            {
+              p_item_id: item_id,
+              p_user_id: userItem.user_id,
+            }
+          );
+
+          if (tokenErr || !access_token) {
+            console.error("Recurring refresh token missing", {
+              item_id,
+              tokenErr,
+            });
+            return res.status(200).json({ ok: true, error: "token_not_found" });
+          }
+
+          await refreshAndStoreRecurringForItem({
+            supabase,
+            plaidClient,
+            accessToken: access_token,
+            itemId: item_id,
+            userId: userItem.user_id,
+          });
+        } catch (e) {
+          console.error("webhook recurring refresh error", e);
+        }
+      }
+
       // Always ack quickly so Plaid doesn't retry
-      return res.status(200).json({ ok: true, trigger_sync: !!shouldSync });
+      return res.status(200).json({
+        ok: true,
+        trigger_sync: !!shouldSync,
+        trigger_recurring_refresh: !!shouldRefreshRecurring,
+      });
     }
 
     // default: acknowledge

@@ -19,7 +19,7 @@ import { useRouter, useLocalSearchParams } from "expo-router";
 import { supabase } from "@/src/lib/supabase/supabase";
 import FeedbackModal from "@/src/components/modals/FeedbackModal";
 import ContactModal from "@/src/components/modals/ContactModal";
-import { handleDisconnect, getPrimaryItemId, syncTransactions } from "@/src/utils/plaid/plaid";
+import { handleDisconnectAll, syncAllUserTransactions } from "@/src/utils/plaid/plaid";
 import logger from "@/src/utils/core/logger";
 import { TEXT_STYLES } from "@/src/components/shared/modal-constants";
 import { ActivityIndicator } from "react-native";
@@ -63,8 +63,8 @@ export default function SettingsScreen() {
 
   const handleDisconnectBank = async () => {
     Alert.alert(
-      "Disconnect Bank Account",
-      "This will disconnect your bank accounts and clear all financial data. Your account will remain active.",
+      "Disconnect Bank Accounts",
+      "This will disconnect all connected bank accounts and clear all financial data. Your account will remain active.",
       [
         {
           text: "Cancel",
@@ -77,32 +77,44 @@ export default function SettingsScreen() {
             try {
               logger.info("[SettingsIndex] Starting bank disconnection...");
 
-              // Get the primary item_id to disconnect
-              const item_id = await getPrimaryItemId();
-              logger.info("[SettingsIndex] Primary item_id:", item_id);
+              const result = await handleDisconnectAll();
+              const disconnected = result.disconnected || 0;
+              const failed = result.failed || 0;
+              const total = result.total ?? disconnected + failed;
 
-              if (!item_id) {
+              logger.info("[SettingsIndex] Bank disconnection result:", result);
+
+              if (total === 0) {
                 Alert.alert(
-                  "Error",
+                  "No Account Found",
                   "No connected bank accounts found to disconnect."
                 );
                 return;
               }
 
-              await handleDisconnect(item_id);
-              DeviceEventEmitter.emit("financialDataRefreshed", {
-                accounts: [],
-                identity: null,
-                investments: null,
-                liabilities: null,
-                institution: null,
-              });
+              if (disconnected > 0) {
+                DeviceEventEmitter.emit("financialDataRefreshed", {
+                  accounts: [],
+                  identity: null,
+                  investments: null,
+                  liabilities: null,
+                  institution: null,
+                });
+              }
 
-              logger.info("[SettingsIndex] Bank disconnection successful");
-              Alert.alert(
-                "Success",
-                "Bank accounts have been disconnected successfully"
-              );
+              if (failed > 0) {
+                Alert.alert(
+                  disconnected === 0 ? "Disconnect Failed" : "Partial Disconnect",
+                  disconnected === 0
+                    ? "Unable to disconnect any bank connections. Please try again."
+                    : `Disconnected ${disconnected}/${total} bank connection(s). Some connections could not be removed.`
+                );
+              } else {
+                Alert.alert(
+                  "Success",
+                  `Disconnected ${disconnected} bank connection(s).`
+                );
+              }
             } catch (error) {
               logger.error("Error disconnecting bank:", error);
               Alert.alert(
@@ -170,45 +182,53 @@ export default function SettingsScreen() {
       setIsSyncingTransactions(true);
       logger.info("[SettingsIndex] Starting transaction sync...");
 
-      // Get the primary item_id
-      const item_id = await getPrimaryItemId();
-      if (!item_id) {
+      const result = await syncAllUserTransactions();
+      const synced = result.synced || 0;
+      const total = result.total ?? synced;
+      const results = Array.isArray(result.results) ? result.results : [];
+      const failed = results.filter((entry) => entry?.error).length;
+      const requiresUpdateCount = results.filter(
+        (entry) => entry?.requires_update_mode
+      ).length;
+
+      logger.info("[SettingsIndex] Transaction sync results:", result);
+
+      if (total === 0) {
         Alert.alert(
           "No Account Found",
           "Please connect a bank account first to sync transactions."
         );
-        setIsSyncingTransactions(false);
         return;
       }
 
-      // Get user ID
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user?.id) {
-        Alert.alert("Error", "Please log in to sync transactions.");
-        setIsSyncingTransactions(false);
-        return;
+      if (synced > 0) {
+        DeviceEventEmitter.emit("financialDataRefreshed", {
+          accounts: [],
+          identity: null,
+          investments: null,
+          liabilities: null,
+          institution: null,
+        });
       }
 
-      // Call sync API
-      const result = await syncTransactions(item_id);
+      if (failed > 0) {
+        const reauthMessage =
+          requiresUpdateCount > 0
+            ? " Some accounts need reconnection to continue syncing."
+            : "";
 
-      logger.info("[SettingsIndex] Transaction sync complete:", result);
-
-      // Refresh financial data
-      DeviceEventEmitter.emit("financialDataRefreshed", {
-        accounts: [],
-        identity: null,
-        investments: null,
-        liabilities: null,
-        institution: null,
-      });
-
-      Alert.alert(
-        "Sync Complete",
-        `Synced ${result.added || 0} new transactions, updated ${result.modified || 0} transactions.`
-      );
+        Alert.alert(
+          synced === 0 ? "Sync Failed" : "Sync Partially Complete",
+          synced === 0
+            ? `Unable to sync any bank connections.${reauthMessage}`
+            : `Synced ${synced}/${total} bank connection(s).${reauthMessage}`
+        );
+      } else {
+        Alert.alert(
+          "Sync Complete",
+          `Synced ${synced}/${total} bank connection(s).`
+        );
+      }
     } catch (error: any) {
       logger.error("[SettingsIndex] Error syncing transactions:", error);
       Alert.alert(

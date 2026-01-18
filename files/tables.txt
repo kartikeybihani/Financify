@@ -1,5 +1,6 @@
 -- WARNING: This schema is for context only and is not meant to be run.
 -- Table order and constraints may not be valid for execution.
+-- This is setup at Supabase
 
 CREATE TABLE public.accounts (
   account_id text NOT NULL,
@@ -12,6 +13,8 @@ CREATE TABLE public.accounts (
   current_balance numeric,
   available_balance numeric,
   created_at timestamp with time zone DEFAULT now(),
+  last_balance_sync_at timestamp with time zone,
+  balance_source text DEFAULT 'plaid'::text,
   CONSTRAINT accounts_pkey PRIMARY KEY (account_id),
   CONSTRAINT accounts_item_id_fkey FOREIGN KEY (item_id) REFERENCES public.user_items(item_id)
 );
@@ -136,15 +139,6 @@ CREATE TABLE public.conversation_logs (
   created_at timestamp with time zone DEFAULT now(),
   CONSTRAINT conversation_logs_pkey PRIMARY KEY (id),
   CONSTRAINT conversation_logs_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
-);
-CREATE TABLE public.facts_cache (
-  key text NOT NULL,
-  value_json jsonb NOT NULL,
-  source_url text NOT NULL,
-  source_title text,
-  fetched_at timestamp with time zone NOT NULL DEFAULT now(),
-  ttl_seconds integer NOT NULL DEFAULT 15552000,
-  CONSTRAINT facts_cache_pkey PRIMARY KEY (key)
 );
 CREATE TABLE public.goals (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -443,11 +437,13 @@ CREATE TABLE public.transactions (
   if_recurring text DEFAULT 'no'::text CHECK (if_recurring = ANY (ARRAY['yes'::text, 'no'::text])),
   linked_goal_id uuid,
   authorized_date date,
+  category_id uuid,
   CONSTRAINT transactions_pkey PRIMARY KEY (id),
   CONSTRAINT transactions_account_id_fkey FOREIGN KEY (account_id) REFERENCES public.accounts(account_id),
   CONSTRAINT transactions_linked_goal_id_fkey FOREIGN KEY (linked_goal_id) REFERENCES public.goals(id),
   CONSTRAINT fk_transactions_recurring_stream FOREIGN KEY (recurring_stream_id) REFERENCES public.recurring_streams(stream_id),
-  CONSTRAINT transactions_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
+  CONSTRAINT transactions_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id),
+  CONSTRAINT transactions_category_id_fkey FOREIGN KEY (category_id) REFERENCES public.categories(id)
 );
 CREATE TABLE public.user_items (
   id uuid NOT NULL DEFAULT gen_random_uuid(),

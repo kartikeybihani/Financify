@@ -392,30 +392,53 @@ export const handleDisconnect = async (item_id: string) => {
 export const handleDisconnectAll = async () => {
   try {
     const items = await getUserItems();
-    logger.info(`🔄 Disconnecting all ${items.length} connected items...`);
+    // Skip SnapTrade investment accounts (they are not Plaid items)
+    const plaidItems = items.filter((item) => !item.item_id.startsWith("snaptrade-"));
+    const snapTradeItems = items.filter((item) => item.item_id.startsWith("snaptrade-"));
+
+    if (snapTradeItems.length > 0) {
+      logger.info(
+        `🚫 Skipping ${snapTradeItems.length} SnapTrade investment accounts for Plaid disconnect-all`
+      );
+    }
+
+    logger.info(`🔄 Disconnecting all ${plaidItems.length} connected Plaid items...`);
     
-    if (items.length === 0) {
+    if (plaidItems.length === 0) {
       logger.info("ℹ️ No items to disconnect");
-      return { success: true, disconnected: 0 };
+      return { success: true, disconnected: 0, failed: 0, total: 0 };
     }
     
     const results = await Promise.allSettled(
-      items.map(item => handleDisconnect(item.item_id))
+      plaidItems.map((item) => handleDisconnect(item.item_id))
     );
-    
-    const successful = results.filter(result => result.status === 'fulfilled').length;
-    const failed = results.filter(result => result.status === 'rejected').length;
+
+    const successful = results.filter(
+      (result) => result.status === "fulfilled"
+    ).length;
+    const failedResults = results.filter(
+      (result) => result.status === "rejected"
+    ) as PromiseRejectedResult[];
+    const failed = failedResults.length;
+
+    const errors = failedResults.map((result) => ({
+      error:
+        result.reason instanceof Error
+          ? result.reason.message
+          : String(result.reason),
+    }));
     
     logger.info(`✅ Disconnect summary: ${successful} successful, ${failed} failed`);
     
     // Clear last used item regardless
     await setLastUsedItemId('');
     
-    return { 
-      success: true, 
+    return {
+      success: failed === 0,
       disconnected: successful,
-      failed: failed,
-      total: items.length 
+      failed,
+      total: plaidItems.length,
+      errors,
     };
   } catch (error) {
     logger.error("❌ Error during disconnect all:", error);
