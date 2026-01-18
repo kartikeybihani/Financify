@@ -10,7 +10,7 @@ import https from "https";
 // Configuration - you'll need to set these environment variables
 const PLAID_CLIENT_ID = "6726f1c5869739001904fb8b";
 const PLAID_SECRET = "582075c2f0c4f90c20df9a1a584cd5";
-const PLAID_ENV = "production";
+const PLAID_ENV_DEV = "production";
 
 if (!PLAID_CLIENT_ID || !PLAID_SECRET) {
   console.error("❌ Missing required environment variables:");
@@ -19,7 +19,7 @@ if (!PLAID_CLIENT_ID || !PLAID_SECRET) {
 }
 
 const PLAID_URL =
-  PLAID_ENV === "production"
+  PLAID_ENV_DEV === "production"
     ? "https://production.plaid.com"
     : "https://sandbox.plaid.com";
 
@@ -99,7 +99,7 @@ function makePlaidRequest(path, data) {
 }
 
 async function fetchInstitutions() {
-  console.log(`🔍 Fetching institutions from ${PLAID_ENV} environment...`);
+  console.log(`🔍 Fetching institutions from ${PLAID_ENV_DEV} environment...`);
 
   try {
     const response = await makePlaidRequest("/institutions/get", {
