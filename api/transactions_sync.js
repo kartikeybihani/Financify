@@ -372,8 +372,10 @@ export default async function handler(req, res) {
       const existingCategoryMap = new Map();
       const existingCategoryIdMap = new Map();
       const existingRecurringMap = new Map();
+      const existingTxIdSet = new Set();
       if (canSafelySetCategories) {
         existingTxs.forEach((tx) => {
+          existingTxIdSet.add(tx.plaid_transaction_id);
           if (tx.new_category) {
             existingCategoryMap.set(tx.plaid_transaction_id, tx.new_category);
           }
@@ -405,10 +407,8 @@ export default async function handler(req, res) {
         }
 
         // We can safely verify - check if this is an existing transaction
-        const existingTx = existingTxs.find(
-          (tx) => tx.plaid_transaction_id === row.plaid_transaction_id
-        );
-        const isNewTransaction = !existingTx;
+        // NOTE: Use a Set for O(1) membership. Avoid O(n^2) .find() for large syncs.
+        const isNewTransaction = !existingTxIdSet.has(row.plaid_transaction_id);
 
         // Preserve user overrides for existing transactions
         const existingCategory = existingCategoryMap.get(
@@ -492,6 +492,11 @@ export default async function handler(req, res) {
         console.error("Transaction upsert error:", upsertErr);
         return res.status(500).json({ error: "Failed to save transactions" });
       }
+
+      console.log("[TRANSACTIONS_SYNC] transactions upserted", {
+        userId,
+        rows: finalRows.length,
+      });
 
       if (streamUpdates.size > 0) {
         const updatePromises = [];
