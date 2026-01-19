@@ -572,6 +572,8 @@ export default async function handler(req, res) {
       })
       .eq("item_id", item_id);
 
+    console.log("[TRANSACTIONS_SYNC] Hola! updated");
+
     // 7.5) Generate onboarding early_insights (best-effort, does not block sync)
     // Runs after transactions have been written, so it can read from DB.
     // Stores raw JSON in `profiles.early_insights`.
