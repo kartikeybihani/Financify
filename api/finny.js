@@ -198,7 +198,7 @@ async function callWithFallback(models, callFn, timeoutMs, label = "LLM") {
 }
 
 function getOpenRouterKey() {
-  return process.env.OPENROUTER_GROK_KEY || process.env.OPENROUTER_API_KEY;
+  return process.env.OPENROUTER_API_KEY;
 }
 
 function redactPII(text) {
@@ -6082,7 +6082,7 @@ async function planStockRequest(message) {
     console.log("🔍 [STOCK_PLANNER] Using model:", PRIMARY_OPENROUTER_MODEL);
     console.log(
       "🔍 [STOCK_PLANNER] API key present:",
-      !!process.env.OPENROUTER_GROK_KEY
+      !!process.env.OPENROUTER_API_KEY
     );
 
     // Add timeout to prevent hangs
@@ -6098,7 +6098,7 @@ async function planStockRequest(message) {
       {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${process.env.OPENROUTER_GROK_KEY}`,
+          Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
@@ -6504,9 +6504,9 @@ CRITICAL FORMATTING REQUIREMENTS:
 
   try {
     // Check if API key is available
-    if (!process.env.OPENROUTER_GROK_KEY) {
+    if (!process.env.OPENROUTER_API_KEY) {
       console.error(
-        "❌ [STOCK_ANALYSIS] OPENROUTER_GROK_KEY not found, falling back to summary"
+        "❌ [STOCK_ANALYSIS] OPENROUTER_API_KEY not found, falling back to summary"
       );
       console.log(
         `⚠️ [STOCK_ANALYSIS] Falling back to base summary (no API key)`
@@ -6526,7 +6526,7 @@ CRITICAL FORMATTING REQUIREMENTS:
       {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${process.env.OPENROUTER_GROK_KEY}`,
+          Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
@@ -6682,7 +6682,7 @@ Provide a detailed analysis including:
       {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${process.env.OPENROUTER_GROK_KEY}`,
+          Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({

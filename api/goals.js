@@ -622,7 +622,7 @@ RULES:
       {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${process.env.OPENROUTER_GROK_KEY}`,
+          Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
@@ -752,7 +752,7 @@ RULES:
       {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${process.env.OPENROUTER_GROK_KEY}`,
+          Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
@@ -1707,7 +1707,7 @@ const TERTIARY_MODEL = "mistralai/mistral-small-3.1-24b-instruct";
 const ANALYSIS_TOTAL_BUDGET_MS = 50000;
 
 function getOpenRouterKey() {
-  return process.env.OPENROUTER_GROK_KEY || process.env.OPENROUTER_API_KEY;
+  return process.env.OPENROUTER_API_KEY;
 }
 
 async function callWithFallback(

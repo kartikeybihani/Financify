@@ -100,7 +100,7 @@ ORDER BY priority DESC, detected_at DESC;
 
 1. **No triggers created:**
    - Check user has transactions in last 30 days
-   - Verify OPENROUTER_GROK_KEY is set (for LLM detection)
+   - Verify OPENROUTER_API_KEY is set (for LLM detection)
    - Check console logs for errors
 
 2. **Triggers created but not sending:**

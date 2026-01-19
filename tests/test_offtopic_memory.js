@@ -5,7 +5,7 @@
  *
  * Usage:
  *   node test_offtopic_memory.js "I'm a 20 year old studying cs and finance"
- *   OPENROUTER_GROK_KEY=sk-or-... SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... node test_offtopic_memory.js "..."
+ *   OPENROUTER_API_KEY=sk-or-... SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... node test_offtopic_memory.js "..."
  */
 
 // import dotenv from "dotenv";
