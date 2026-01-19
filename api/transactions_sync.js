@@ -342,21 +342,60 @@ export default async function handler(req, res) {
       // CRITICAL: If we can't fetch existing transactions, we MUST NOT set new_category
       //           from streams to avoid overwriting user overrides
 
-      // First, get existing transactions to check which ones already have new_category, category_id, and if_recurring
-      const plaidTxIds = rows.map((r) => r.plaid_transaction_id);
-      const { data: existingTxs, error: fetchErr } = await supabase
-        .from("transactions")
-        .select(
-          "plaid_transaction_id, new_category, category_id, if_recurring, recurring_stream_id"
-        )
-        .eq("user_id", userId)
-        .in("plaid_transaction_id", plaidTxIds);
+      // First, get existing transactions to check which ones already have new_category, category_id, and if_recurring.
+      // IMPORTANT: This can be a large list (thousands) on first sync.
+      // Supabase/PostgREST can choke on a huge `.in(...)` list, so we batch.
+      const plaidTxIds = rows.map((r) => r.plaid_transaction_id).filter(Boolean);
+
+      const existingTxs = [];
+      let fetchErr = null;
+
+      if (plaidTxIds.length > 0) {
+        console.log("[TRANSACTIONS_SYNC] existing tx fetch: start", {
+          userId,
+          ids: plaidTxIds.length,
+        });
+
+        const batchSize = 500;
+        for (let i = 0; i < plaidTxIds.length; i += batchSize) {
+          const batch = plaidTxIds.slice(i, i + batchSize);
+          const { data, error } = await supabase
+            .from("transactions")
+            .select(
+              "plaid_transaction_id, new_category, category_id, if_recurring, recurring_stream_id"
+            )
+            .eq("user_id", userId)
+            .in("plaid_transaction_id", batch);
+
+          if (error) {
+            fetchErr = error;
+            break;
+          }
+          if (Array.isArray(data) && data.length > 0) {
+            existingTxs.push(...data);
+          }
+
+          if (i === 0 || (i / batchSize) % 3 === 0) {
+            console.log("[TRANSACTIONS_SYNC] existing tx fetch: progress", {
+              userId,
+              fetched: existingTxs.length,
+              batchEnd: Math.min(i + batchSize, plaidTxIds.length),
+              totalIds: plaidTxIds.length,
+            });
+          }
+        }
+
+        console.log("[TRANSACTIONS_SYNC] existing tx fetch: done", {
+          userId,
+          fetched: existingTxs.length,
+          error: !!fetchErr,
+        });
+      }
 
       // CRITICAL FIX: If fetch fails, we cannot safely set new_category or if_recurring from streams
       // because we don't know which transactions have user overrides or manual recurring flags.
       // We'll still set recurring_stream_id (safe - this is a fact), but skip new_category and if_recurring.
-      const canSafelySetCategories =
-        !fetchErr && existingTxs !== null && existingTxs !== undefined;
+      const canSafelySetCategories = !fetchErr;
 
       if (fetchErr) {
         console.error(
