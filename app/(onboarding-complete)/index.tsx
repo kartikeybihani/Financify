@@ -48,8 +48,6 @@ export default function FinalScreen() {
   const [typedText, setTypedText] = useState("");
   const [typedHeadline, setTypedHeadline] = useState("");
   const [earlyInsights, setEarlyInsights] = useState<any | null>(null);
-  const [shouldShowFallbackInsights, setShouldShowFallbackInsights] =
-    useState(false);
   const [insights, setInsights] = useState<InsightCard[]>([]);
   const [isLoadingInsights, setIsLoadingInsights] = useState(true);
   const [isButtonEnabled, setIsButtonEnabled] = useState(false);
@@ -766,13 +764,10 @@ export default function FinalScreen() {
         } = await supabase.auth.getUser();
 
         if (!user?.id) {
-          setShouldShowFallbackInsights(true);
-          loadInsights();
           return;
         }
 
-        const deadline = Date.now() + 10_000;
-        while (!cancelled && Date.now() < deadline) {
+        while (!cancelled) {
           const { data, error } = await supabase
             .from("profiles")
             .select("early_insights")
@@ -792,28 +787,17 @@ export default function FinalScreen() {
 
           if (!error && hasCoachCopy) {
             setEarlyInsights(maybe);
-            setIsButtonEnabled(true);
-            setShowLoadingAnimation(false);
-            setIsLoadingInsights(false);
             return;
           }
 
-          await new Promise((r) => setTimeout(r, 900));
-        }
-
-        if (!cancelled) {
-          setShouldShowFallbackInsights(true);
-          loadInsights();
+          await new Promise((r) => setTimeout(r, 1500));
         }
       } catch (e) {
         logger.warn("⚠️ FinalScreen: early_insights polling failed", e);
-        if (!cancelled) {
-          setShouldShowFallbackInsights(true);
-          loadInsights();
-        }
       }
     };
 
+    loadInsights();
     pollEarlyInsights();
 
     return () => {
@@ -1080,122 +1064,131 @@ export default function FinalScreen() {
         )}
 
         <SafeAreaView style={styles.mainContent} edges={["top", "bottom"]}>
-          <View style={styles.header}>
-            <Text style={styles.doneText}>
-              You've already done the hardest part — showing up! 🎉
-            </Text>
-            {/* <Text style={styles.subText}>
-              Your journey begins today — one step at a time.
-            </Text> */}
-          </View>
-
-          <Animated.View style={[styles.finnyBox]}>
-            <Animated.Image
-              source={require("../../assets/images/midleftshot.png")}
-              // resizeMode="contain"
-              style={[styles.mascot]}
-            />
-            <Text style={styles.finnyText}>{typedText}</Text>
-          </Animated.View>
-
-          <Text style={styles.headlineText}>{typedHeadline}</Text>
-
-          <Animated.View
-            style={[styles.cardsContainer, { opacity: cardOpacity }]}
+          <ScrollView
+            style={styles.scroll}
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
           >
-            {earlyInsights ? (
-              <View style={styles.earlyInsightsCard}>
-                <Text style={styles.earlyInsightsKicker}>Finny’s first read</Text>
-                <Text style={styles.earlyInsightsIntro}>
-                  {String(earlyInsights?.intro_line || "").trim()}
-                </Text>
-                <Text style={styles.earlyInsightsBody}>
-                  {String(earlyInsights?.mirror || "").trim()}
-                </Text>
-                <Text style={styles.earlyInsightsBody}>
-                  {String(earlyInsights?.plan || "").trim()}
-                </Text>
-                <Text style={styles.earlyInsightsHook}>
-                  {String(earlyInsights?.hook || "").trim()}
-                </Text>
-              </View>
-            ) : !shouldShowFallbackInsights ? (
-              <View style={styles.loadingContainer}>
-                <View style={styles.typingIndicatorContainer}>
-                  <View style={styles.typingDotsContainer}>
-                    {typingDotsAnim.map((dot, index) => (
-                      <Animated.View
-                        key={index}
-                        style={[
-                          styles.typingDot,
-                          {
-                            transform: [
-                              {
-                                translateY: dot.interpolate({
-                                  inputRange: [0, 1],
-                                  outputRange: [0, -8],
-                                }),
-                              },
-                            ],
-                            opacity: dot.interpolate({
-                              inputRange: [0, 1],
-                              outputRange: [0.4, 1],
-                            }),
-                          },
-                        ]}
-                      />
-                    ))}
-                  </View>
-                  <Text style={styles.loadingText}>Finny is reading 6 months…</Text>
+            <View style={styles.header}>
+              <Text style={styles.doneText}>
+                You've already done the hardest part — showing up! 🎉
+              </Text>
+              {/* <Text style={styles.subText}>
+                Your journey begins today — one step at a time.
+              </Text> */}
+            </View>
+
+            <Animated.View style={[styles.finnyBox]}>
+              <Animated.Image
+                source={require("../../assets/images/midleftshot.png")}
+                // resizeMode="contain"
+                style={[styles.mascot]}
+              />
+              <Text style={styles.finnyText}>{typedText}</Text>
+            </Animated.View>
+
+            <Text style={styles.headlineText}>{typedHeadline}</Text>
+
+            <Animated.View
+              style={[styles.cardsContainer, { opacity: cardOpacity }]}
+            >
+              {earlyInsights ? (
+                <View style={styles.earlyInsightsCard}>
+                  <Text style={styles.earlyInsightsKicker}>Finny’s first read</Text>
+                  <Text style={styles.earlyInsightsIntro}>
+                    {String(earlyInsights?.intro_line || "").trim()}
+                  </Text>
+                  <Text style={styles.earlyInsightsBody}>
+                    {String(earlyInsights?.mirror || "").trim()}
+                  </Text>
+                  <Text style={styles.earlyInsightsBody}>
+                    {String(earlyInsights?.plan || "").trim()}
+                  </Text>
+                  <Text style={styles.earlyInsightsHook}>
+                    {String(earlyInsights?.hook || "").trim()}
+                  </Text>
                 </View>
-              </View>
-            ) : isLoadingInsights || showLoadingAnimation ? (
-              <View style={styles.loadingContainer}>
-                <View style={styles.typingIndicatorContainer}>
-                  <View style={styles.typingDotsContainer}>
-                    {typingDotsAnim.map((dot, index) => (
-                      <Animated.View
-                        key={index}
-                        style={[
-                          styles.typingDot,
-                          {
-                            transform: [
-                              {
-                                translateY: dot.interpolate({
-                                  inputRange: [0, 1],
-                                  outputRange: [0, -8],
-                                }),
-                              },
-                            ],
-                            opacity: dot.interpolate({
-                              inputRange: [0, 1],
-                              outputRange: [0.4, 1],
-                            }),
-                          },
-                        ]}
-                      />
-                    ))}
+              ) : (
+                <View style={styles.loadingContainer}>
+                  <View style={styles.typingIndicatorContainer}>
+                    <View style={styles.typingDotsContainer}>
+                      {typingDotsAnim.map((dot, index) => (
+                        <Animated.View
+                          key={index}
+                          style={[
+                            styles.typingDot,
+                            {
+                              transform: [
+                                {
+                                  translateY: dot.interpolate({
+                                    inputRange: [0, 1],
+                                    outputRange: [0, -8],
+                                  }),
+                                },
+                              ],
+                              opacity: dot.interpolate({
+                                inputRange: [0, 1],
+                                outputRange: [0.4, 1],
+                              }),
+                            },
+                          ]}
+                        />
+                      ))}
+                    </View>
+                    <Text style={styles.loadingText}>
+                      Finny is reading 6 months…
+                    </Text>
                   </View>
-                  <Text style={styles.loadingText}>Loading your snapshot…</Text>
                 </View>
-              </View>
-            ) : (
-              <View style={styles.carouselContainer}>
-                <ScrollView
-                  ref={carouselRef}
-                  horizontal
-                  pagingEnabled
-                  showsHorizontalScrollIndicator={false}
-                  onMomentumScrollEnd={(event) => {
-                    const slideIndex = Math.round(
-                      event.nativeEvent.contentOffset.x / width
-                    );
-                    setCurrentSlide(slideIndex);
-                    // Enable button only when user reaches slide 2, disable on slide 1
-                    setIsButtonEnabled(slideIndex === 1);
-                  }}
-                  scrollEventThrottle={16}
-                >
+              )}
+
+              {isLoadingInsights || showLoadingAnimation ? (
+                <View style={styles.loadingContainer}>
+                  <View style={styles.typingIndicatorContainer}>
+                    <View style={styles.typingDotsContainer}>
+                      {typingDotsAnim.map((dot, index) => (
+                        <Animated.View
+                          key={index}
+                          style={[
+                            styles.typingDot,
+                            {
+                              transform: [
+                                {
+                                  translateY: dot.interpolate({
+                                    inputRange: [0, 1],
+                                    outputRange: [0, -8],
+                                  }),
+                                },
+                              ],
+                              opacity: dot.interpolate({
+                                inputRange: [0, 1],
+                                outputRange: [0.4, 1],
+                              }),
+                            },
+                          ]}
+                        />
+                      ))}
+                    </View>
+                    <Text style={styles.loadingText}>Loading your snapshot…</Text>
+                  </View>
+                </View>
+              ) : (
+                <View style={styles.carouselContainer}>
+                  <ScrollView
+                    ref={carouselRef}
+                    horizontal
+                    pagingEnabled
+                    showsHorizontalScrollIndicator={false}
+                    onMomentumScrollEnd={(event) => {
+                      const slideIndex = Math.round(
+                        event.nativeEvent.contentOffset.x / width
+                      );
+                      setCurrentSlide(slideIndex);
+                      // Enable button only when user reaches slide 2, disable on slide 1
+                      setIsButtonEnabled(slideIndex === 1);
+                    }}
+                    scrollEventThrottle={16}
+                  >
                   {/* Slide 1: Insight Cards */}
                   <View style={styles.carouselSlide}>
                     <View style={styles.insightsContent}>
@@ -1344,26 +1337,27 @@ export default function FinalScreen() {
                         )}
                     </View>
                   </View>
-                </ScrollView>
+                  </ScrollView>
 
-                {/* Carousel Indicators */}
-                <View style={styles.carouselIndicators}>
-                  <View
-                    style={[
-                      styles.carouselIndicator,
-                      currentSlide === 0 && styles.carouselIndicatorActive,
-                    ]}
-                  />
-                  <View
-                    style={[
-                      styles.carouselIndicator,
-                      currentSlide === 1 && styles.carouselIndicatorActive,
-                    ]}
-                  />
+                  {/* Carousel Indicators */}
+                  <View style={styles.carouselIndicators}>
+                    <View
+                      style={[
+                        styles.carouselIndicator,
+                        currentSlide === 0 && styles.carouselIndicatorActive,
+                      ]}
+                    />
+                    <View
+                      style={[
+                        styles.carouselIndicator,
+                        currentSlide === 1 && styles.carouselIndicatorActive,
+                      ]}
+                    />
+                  </View>
                 </View>
-              </View>
-            )}
-          </Animated.View>
+              )}
+            </Animated.View>
+          </ScrollView>
 
           <View style={styles.footer}>
             <Animated.View
@@ -1435,6 +1429,12 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "transparent",
   },
+  scroll: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingBottom: 140,
+  },
   header: {
     alignItems: "center",
     marginBottom: 8,
@@ -1487,7 +1487,6 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   cardsContainer: {
-    flex: 1,
     marginTop: 12,
   },
   earlyInsightsCard: {
@@ -1544,12 +1543,13 @@ const styles = StyleSheet.create({
     flexGrow: 1,
   },
   carouselContainer: {
-    flex: 1,
+    marginTop: 14,
+    minHeight: 520,
   },
   carouselSlide: {
     width: width,
-    flex: 1,
     justifyContent: "flex-start",
+    minHeight: 520,
   },
   carouselIndicators: {
     flexDirection: "row",
@@ -1686,10 +1686,9 @@ const styles = StyleSheet.create({
     color: "#fff",
   },
   loadingContainer: {
-    flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    paddingVertical: 60,
+    paddingVertical: 40,
   },
   typingIndicatorContainer: {
     alignItems: "center",

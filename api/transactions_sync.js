@@ -12,8 +12,13 @@ import {
 } from "../lib/api/rateLimiter.js";
 import fetch from "node-fetch";
 import {
-  buildEarlyInsightsJson,
+  callOnboardingLLM,
+  computePatterns,
+  extractFirstJsonObjectFromText,
   getDateRangeLast6Months,
+  getLast6MonthKeys,
+  isLikelyInternalOrPayment,
+  selectTopTwoPatternsForLLM,
 } from "../lib/early_insights.js";
 
 export default async function handler(req, res) {
@@ -566,41 +571,67 @@ export default async function handler(req, res) {
     // Runs after transactions have been written, so it can read from DB.
     // Stores raw JSON in `profiles.early_insights`.
     try {
+      console.log("[TRANSACTIONS_SYNC] early_insights: start", {
+        userId,
+        item_id,
+        added: added.length,
+        modified: modified.length,
+        removed: removed.length,
+      });
+
       const { data: profile, error: profileErr } = await supabase
         .from("profiles")
         .select("id, first_name, age, occupation, location, finny_style, early_insights")
         .eq("id", userId)
-        .single();
+        .maybeSingle();
 
       if (profileErr) {
-        console.error("[TRANSACTIONS_SYNC] early_insights: profile fetch failed", profileErr);
+        console.error(
+          "[TRANSACTIONS_SYNC] early_insights: profile fetch failed",
+          profileErr
+        );
+      }
+
+      const existing = profile?.early_insights;
+      const hasExistingInsights =
+        !!existing &&
+        typeof existing === "object" &&
+        !Array.isArray(existing) &&
+        typeof existing.intro_line === "string" &&
+        typeof existing.mirror === "string" &&
+        typeof existing.plan === "string" &&
+        typeof existing.hook === "string" &&
+        existing.intro_line.trim().length > 0;
+
+      if (hasExistingInsights) {
+        console.log("[TRANSACTIONS_SYNC] early_insights: already present", {
+          userId,
+        });
       } else {
-        const existing = profile?.early_insights;
-        const hasExistingInsights =
-          !!existing &&
-          typeof existing === "object" &&
-          !Array.isArray(existing) &&
-          typeof existing.intro_line === "string" &&
-          typeof existing.mirror === "string" &&
-          typeof existing.plan === "string" &&
-          typeof existing.hook === "string" &&
-          existing.intro_line.trim().length > 0;
+        const openRouterApiKey =
+          process.env.OPENROUTER_API_KEY || process.env.OPENROUTER_GROK_KEY;
 
-        if (!hasExistingInsights) {
-          // Compute (handles default []/null/partial values).
-          const openRouterApiKey =
-            process.env.OPENROUTER_API_KEY || process.env.OPENROUTER_GROK_KEY;
+        console.log("[TRANSACTIONS_SYNC] early_insights: compute", {
+          userId,
+          keyPresent: !!openRouterApiKey,
+        });
 
-          if (!openRouterApiKey) {
-            console.warn(
-              "[TRANSACTIONS_SYNC] early_insights: missing OPENROUTER_API_KEY (skipping)"
-            );
-          } else {
+        if (!openRouterApiKey) {
+          console.warn(
+            "[TRANSACTIONS_SYNC] early_insights: missing OPENROUTER_API_KEY (skipping)"
+          );
+        } else {
           const { startDate, endDate } = getDateRangeLast6Months();
           const pageSize = 1000;
           const maxRows = 5000;
           let offset = 0;
           const rows = [];
+
+          console.log("[TRANSACTIONS_SYNC] early_insights: tx window", {
+            userId,
+            startDate,
+            endDate,
+          });
 
           while (offset < maxRows) {
             const { data, error } = await supabase
@@ -636,37 +667,96 @@ export default async function handler(req, res) {
             offset += pageSize;
           }
 
-          if (rows.length > 0) {
-            const insightsJson = await buildEarlyInsightsJson({
-              openRouterApiKey,
-              fetchFn: fetch,
-              transactions: rows,
-              userProfile: profile,
-              analysisWindow: "last 6 months",
+          console.log("[TRANSACTIONS_SYNC] early_insights: tx fetched", {
+            userId,
+            rows: rows.length,
+          });
+
+          if (rows.length === 0) {
+            console.log(
+              "[TRANSACTIONS_SYNC] early_insights: no tx rows (skipping)",
+              { userId }
+            );
+          } else {
+            const months = getLast6MonthKeys();
+            const filtered = rows.filter((tx) => !isLikelyInternalOrPayment(tx));
+            const patternPayload = computePatterns({
+              transactions: filtered,
+              months,
+            });
+            const topTwoPatterns = selectTopTwoPatternsForLLM(patternPayload);
+
+            console.log("[TRANSACTIONS_SYNC] early_insights: patterns", {
+              userId,
+              fetched: rows.length,
+              afterFiltering: filtered.length,
+              patternsGenerated: patternPayload?.meta?.patternsGenerated,
+              patternsReturned: patternPayload?.meta?.patternsReturned,
+              topTwo: topTwoPatterns.length,
+              topType: topTwoPatterns[0]?.type,
+              topKey: topTwoPatterns[0]?.key,
             });
 
-            if (insightsJson) {
-              const { error: updateErr } = await supabase
-                .from("profiles")
-                .update({
-                  early_insights: insightsJson,
-                  updated_at: new Date().toISOString(),
-                })
-                .eq("id", userId);
+            if (topTwoPatterns.length === 0) {
+              console.log(
+                "[TRANSACTIONS_SYNC] early_insights: no patterns (skipping)",
+                { userId }
+              );
+            } else {
+              console.log(
+                "[TRANSACTIONS_SYNC] early_insights: calling OpenRouter",
+                { userId }
+              );
 
-              if (updateErr) {
-                console.error(
-                  "[TRANSACTIONS_SYNC] early_insights: update failed",
-                  updateErr
+              const llmResult = await callOnboardingLLM({
+                openRouterApiKey,
+                fetchFn: fetch,
+                patterns: topTwoPatterns,
+                analysisWindow: "last 6 months",
+                userProfile: profile || null,
+              });
+
+              const insightsJson =
+                llmResult?.ok && llmResult?.json
+                  ? llmResult.json
+                  : extractFirstJsonObjectFromText(llmResult?.raw);
+
+              if (!insightsJson) {
+                console.warn(
+                  "[TRANSACTIONS_SYNC] early_insights: LLM returned no JSON",
+                  {
+                    userId,
+                    ok: !!llmResult?.ok,
+                    rawPreview: String(llmResult?.rawStripped || llmResult?.raw || "")
+                      .slice(0, 160)
+                      .trim(),
+                  }
                 );
               } else {
-                console.log("✅ Stored profiles.early_insights", {
-                  userId,
-                  hasIntro: !!insightsJson?.intro_line,
-                });
+                const { error: upsertErr } = await supabase
+                  .from("profiles")
+                  .upsert(
+                    {
+                      id: userId,
+                      early_insights: insightsJson,
+                      updated_at: new Date().toISOString(),
+                    },
+                    { onConflict: "id" }
+                  );
+
+                if (upsertErr) {
+                  console.error(
+                    "[TRANSACTIONS_SYNC] early_insights: upsert failed",
+                    upsertErr
+                  );
+                } else {
+                  console.log("✅ Stored profiles.early_insights", {
+                    userId,
+                    hasIntro: !!insightsJson?.intro_line,
+                  });
+                }
               }
             }
-          }
           }
         }
       }
