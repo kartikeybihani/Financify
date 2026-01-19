@@ -25,8 +25,13 @@ export default async function handler(req, res) {
   if (req.method !== "POST")
     return res.status(405).json({ error: "Method not allowed" });
 
+  // Helpful for verifying which deployment is being hit.
+  const API_BUILD = "transactions_sync+early_insights@2026-01-19";
+
   const { item_id, user_id } = req.body;
   if (!item_id) return res.status(400).json({ error: "Missing item_id" });
+
+  console.log("[TRANSACTIONS_SYNC] build", { API_BUILD, item_id });
 
   try {
     // 1) Verify user owns this item and get user_id + cursor in one query
@@ -788,6 +793,7 @@ export default async function handler(req, res) {
       added: added.length,
       modified: modified.length,
       removed: removed.length,
+      api_build: "transactions_sync+early_insights@2026-01-19",
     });
   } catch (e) {
     console.error("transactions_sync error", e.response?.data || e);

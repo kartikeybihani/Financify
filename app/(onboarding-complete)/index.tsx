@@ -1068,6 +1068,7 @@ export default function FinalScreen() {
             style={styles.scroll}
             contentContainerStyle={styles.scrollContent}
             showsVerticalScrollIndicator={false}
+            nestedScrollEnabled
           >
             <View style={styles.header}>
               <Text style={styles.doneText}>
@@ -1179,6 +1180,7 @@ export default function FinalScreen() {
                     horizontal
                     pagingEnabled
                     showsHorizontalScrollIndicator={false}
+                    nestedScrollEnabled
                     onMomentumScrollEnd={(event) => {
                       const slideIndex = Math.round(
                         event.nativeEvent.contentOffset.x / width
