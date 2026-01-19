@@ -659,12 +659,21 @@ export default async function handler(req, res) {
           userId,
         });
       } else {
-        const openRouterApiKey =
-          process.env.OPENROUTER_API_KEY || "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";
+        const openRouterApiKeyRaw =
+          process.env.OPENROUTER_API_KEY || process.env.OPENROUTER_GROK_KEY;
+        const openRouterApiKey = String(openRouterApiKeyRaw || "").trim();
+        const keySource = process.env.OPENROUTER_API_KEY
+          ? "OPENROUTER_API_KEY"
+          : process.env.OPENROUTER_GROK_KEY
+            ? "OPENROUTER_GROK_KEY"
+            : null;
 
         console.log("[TRANSACTIONS_SYNC] early_insights: compute", {
           userId,
           keyPresent: !!openRouterApiKey,
+          keySource,
+          keyLen: openRouterApiKey ? openRouterApiKey.length : 0,
+          keyLast4: openRouterApiKey ? openRouterApiKey.slice(-4) : null,
         });
 
         if (!openRouterApiKey) {
