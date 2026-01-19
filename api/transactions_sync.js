@@ -616,7 +616,7 @@ export default async function handler(req, res) {
       })
       .eq("item_id", item_id);
 
-    console.log("[TRANSACTIONS_SYNC] Hola! updated");
+    console.log("[TRANSACTIONS_SYNC] cursor updated");
 
     // 7.5) Generate onboarding early_insights (best-effort, does not block sync)
     // Runs after transactions have been written, so it can read from DB.

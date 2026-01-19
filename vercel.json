@@ -2,6 +2,9 @@
   "functions": {
     "api/goals.js": {
       "maxDuration": 60
+    },
+    "api/transactions_sync.js": {
+      "maxDuration": 120
     }
   },
   "crons": [
