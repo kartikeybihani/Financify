@@ -260,7 +260,7 @@ Examples:
             />
           </View>
           <Text style={styles.helperText}>
-            This helps Finny give you more personalized advice
+            This helps Finny give you more personalized help
           </Text>
 
           <Text style={[styles.label, styles.referralLabel]}>

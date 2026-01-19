@@ -46,6 +46,10 @@ export default function FinalScreen() {
   const router = useRouter();
   const { refreshNavigationState } = useAuthNavigation();
   const [typedText, setTypedText] = useState("");
+  const [typedHeadline, setTypedHeadline] = useState("");
+  const [earlyInsights, setEarlyInsights] = useState<any | null>(null);
+  const [shouldShowFallbackInsights, setShouldShowFallbackInsights] =
+    useState(false);
   const [insights, setInsights] = useState<InsightCard[]>([]);
   const [isLoadingInsights, setIsLoadingInsights] = useState(true);
   const [isButtonEnabled, setIsButtonEnabled] = useState(false);
@@ -62,7 +66,8 @@ export default function FinalScreen() {
   ]).current;
 
   const index = useRef(0);
-  const messageLines = ["You're in.", "Here's what jumps out already!"];
+  const messageLines = ["You're in."];
+  const headlineLine = "Here's what jumps out already!";
   const cursorVisible = useRef(true);
 
   const cardOpacity = useRef(new Animated.Value(0)).current;
@@ -637,7 +642,7 @@ export default function FinalScreen() {
 
   // Enable button after insights load
   useEffect(() => {
-    if (!isLoadingInsights && insights.length > 0) {
+    if ((!isLoadingInsights && insights.length > 0) || !!earlyInsights) {
       // Mascot bounce celebration
       Animated.sequence([
         Animated.timing(mascotBounce, {
@@ -668,7 +673,7 @@ export default function FinalScreen() {
         ])
       ).start();
     }
-  }, [isLoadingInsights, insights]);
+  }, [isLoadingInsights, insights, earlyInsights]);
 
   useEffect(() => {
     logOnboardingEvent({ stage: "final", action: "view" });
@@ -693,70 +698,128 @@ export default function FinalScreen() {
     );
     Animated.parallel(dotAnimations).start();
 
-    // Cursor blink animation
-    const cursorInterval = setInterval(() => {
-      cursorVisible.current = !cursorVisible.current;
-      setTypedText(
-        (prev) => prev.replace(/\|$/, "") + (cursorVisible.current ? "|" : "")
-      );
-    }, 500);
+    let introTimeout: ReturnType<typeof setTimeout> | null = null;
+    let headlineTimeout: ReturnType<typeof setTimeout> | null = null;
+    let cancelled = false;
 
-    // Text typing animation
-    let typingTimeout: ReturnType<typeof setTimeout>;
-    let currentLineIndex = 0;
-    let currentCharIndex = 0;
-
-    const typeNextChar = () => {
-      if (currentLineIndex < messageLines.length) {
-        const currentLine = messageLines[currentLineIndex];
-
-        if (currentCharIndex < currentLine.length) {
-          // Type current character
-          const linesSoFar = messageLines.slice(0, currentLineIndex);
-          const currentLineText = currentLine.substring(
-            0,
-            currentCharIndex + 1
-          );
-          const fullText = [...linesSoFar, currentLineText].join("\n");
-
-          setTypedText(fullText + (cursorVisible.current ? "|" : ""));
-          currentCharIndex++;
-
+    const typeLine = ({
+      line,
+      setLine,
+      speedMs,
+      setTimer,
+    }: {
+      line: string;
+      setLine: React.Dispatch<React.SetStateAction<string>>;
+      speedMs: number;
+      setTimer: (t: ReturnType<typeof setTimeout>) => void;
+    }) => {
+      let idx = 0;
+      const tick = () => {
+        if (cancelled) return;
+        idx += 1;
+        setLine(line.slice(0, idx));
+        if (idx < line.length) {
           const variance = Math.random() * 30 - 15;
-          typingTimeout = setTimeout(typeNextChar, typingSpeed + variance);
-        } else {
-          // Move to next line
-          currentLineIndex++;
-          currentCharIndex = 0;
+          const next = Math.max(10, speedMs + variance);
+          setTimer(setTimeout(tick, next));
+        }
+      };
+      tick();
+    };
 
-          if (currentLineIndex < messageLines.length) {
-            // Add newline and continue typing
-            const fullText = messageLines.slice(0, currentLineIndex).join("\n");
-            setTypedText(fullText + (cursorVisible.current ? "|" : ""));
-            typingTimeout = setTimeout(typeNextChar, typingSpeed * 2); // Slight pause between lines
-          } else {
-            // All lines typed, show cards
-            setTypedText(messageLines.join("\n"));
-            Animated.sequence([
-              Animated.delay(300),
-              Animated.spring(cardOpacity, {
-                toValue: 1,
-                friction: 6,
-                tension: 40,
-                useNativeDriver: true,
-              }),
-            ]).start();
+    introTimeout = setTimeout(() => {
+      typeLine({
+        line: messageLines.join("\n"),
+        setLine: setTypedText,
+        speedMs: typingSpeed,
+        setTimer: (t: ReturnType<typeof setTimeout>) => {
+          introTimeout = t;
+        },
+      });
+    }, 250);
+
+    headlineTimeout = setTimeout(() => {
+      typeLine({
+        line: headlineLine,
+        setLine: setTypedHeadline,
+        speedMs: 18,
+        setTimer: (t: ReturnType<typeof setTimeout>) => {
+          headlineTimeout = t;
+        },
+      });
+    }, 650);
+
+    Animated.sequence([
+      Animated.delay(350),
+      Animated.spring(cardOpacity, {
+        toValue: 1,
+        friction: 6,
+        tension: 40,
+        useNativeDriver: true,
+      }),
+    ]).start();
+
+    const pollEarlyInsights = async () => {
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+
+        if (!user?.id) {
+          setShouldShowFallbackInsights(true);
+          loadInsights();
+          return;
+        }
+
+        const deadline = Date.now() + 10_000;
+        while (!cancelled && Date.now() < deadline) {
+          const { data, error } = await supabase
+            .from("profiles")
+            .select("early_insights")
+            .eq("id", user.id)
+            .single();
+
+          const maybe = data?.early_insights;
+          const hasCoachCopy =
+            !!maybe &&
+            typeof maybe === "object" &&
+            !Array.isArray(maybe) &&
+            typeof (maybe as any).intro_line === "string" &&
+            typeof (maybe as any).mirror === "string" &&
+            typeof (maybe as any).plan === "string" &&
+            typeof (maybe as any).hook === "string" &&
+            String((maybe as any).intro_line || "").trim().length > 0;
+
+          if (!error && hasCoachCopy) {
+            setEarlyInsights(maybe);
+            setIsButtonEnabled(true);
+            setShowLoadingAnimation(false);
+            setIsLoadingInsights(false);
+            return;
           }
+
+          await new Promise((r) => setTimeout(r, 900));
+        }
+
+        if (!cancelled) {
+          setShouldShowFallbackInsights(true);
+          loadInsights();
+        }
+      } catch (e) {
+        logger.warn("⚠️ FinalScreen: early_insights polling failed", e);
+        if (!cancelled) {
+          setShouldShowFallbackInsights(true);
+          loadInsights();
         }
       }
     };
 
-    typingTimeout = setTimeout(typeNextChar, 300);
-    loadInsights();
+    pollEarlyInsights();
 
     return () => {
-      clearTimeout(typingTimeout);
-      clearInterval(cursorInterval);
+      cancelled = true;
+      if (introTimeout) clearTimeout(introTimeout);
+      if (headlineTimeout) clearTimeout(headlineTimeout);
     };
   }, []);
 
@@ -1035,14 +1098,28 @@ export default function FinalScreen() {
             <Text style={styles.finnyText}>{typedText}</Text>
           </Animated.View>
 
+          <Text style={styles.headlineText}>{typedHeadline}</Text>
+
           <Animated.View
             style={[styles.cardsContainer, { opacity: cardOpacity }]}
           >
-            <Text style={styles.sectionTitle}>
-              Here's what I found in your spending
-            </Text>
-
-            {isLoadingInsights || showLoadingAnimation ? (
+            {earlyInsights ? (
+              <View style={styles.earlyInsightsCard}>
+                <Text style={styles.earlyInsightsKicker}>Finny’s first read</Text>
+                <Text style={styles.earlyInsightsIntro}>
+                  {String(earlyInsights?.intro_line || "").trim()}
+                </Text>
+                <Text style={styles.earlyInsightsBody}>
+                  {String(earlyInsights?.mirror || "").trim()}
+                </Text>
+                <Text style={styles.earlyInsightsBody}>
+                  {String(earlyInsights?.plan || "").trim()}
+                </Text>
+                <Text style={styles.earlyInsightsHook}>
+                  {String(earlyInsights?.hook || "").trim()}
+                </Text>
+              </View>
+            ) : !shouldShowFallbackInsights ? (
               <View style={styles.loadingContainer}>
                 <View style={styles.typingIndicatorContainer}>
                   <View style={styles.typingDotsContainer}>
@@ -1069,9 +1146,37 @@ export default function FinalScreen() {
                       />
                     ))}
                   </View>
-                  <Text style={styles.loadingText}>
-                    Analyzing your transactions...
-                  </Text>
+                  <Text style={styles.loadingText}>Finny is reading 6 months…</Text>
+                </View>
+              </View>
+            ) : isLoadingInsights || showLoadingAnimation ? (
+              <View style={styles.loadingContainer}>
+                <View style={styles.typingIndicatorContainer}>
+                  <View style={styles.typingDotsContainer}>
+                    {typingDotsAnim.map((dot, index) => (
+                      <Animated.View
+                        key={index}
+                        style={[
+                          styles.typingDot,
+                          {
+                            transform: [
+                              {
+                                translateY: dot.interpolate({
+                                  inputRange: [0, 1],
+                                  outputRange: [0, -8],
+                                }),
+                              },
+                            ],
+                            opacity: dot.interpolate({
+                              inputRange: [0, 1],
+                              outputRange: [0.4, 1],
+                            }),
+                          },
+                        ]}
+                      />
+                    ))}
+                  </View>
+                  <Text style={styles.loadingText}>Loading your snapshot…</Text>
                 </View>
               </View>
             ) : (
@@ -1337,7 +1442,7 @@ const styles = StyleSheet.create({
   },
   doneText: {
     fontSize: width < 375 ? 18 : 20,
-    fontWeight: "800",
+    fontFamily: "ManropeExtraBold",
     color: "#fff",
     textAlign: "center",
     paddingHorizontal: Math.max(20, width * 0.05),
@@ -1368,13 +1473,59 @@ const styles = StyleSheet.create({
   finnyText: {
     fontSize: 15,
     color: "#fff",
-    fontWeight: "600",
+    fontFamily: "ManropeSemiBold",
     lineHeight: 22,
     flex: 1,
+  },
+  headlineText: {
+    fontSize: width < 375 ? 22 : 24,
+    fontFamily: "ManropeExtraBold",
+    color: "#fff",
+    textAlign: "center",
+    paddingHorizontal: Math.max(20, width * 0.05),
+    marginTop: 4,
+    marginBottom: 10,
   },
   cardsContainer: {
     flex: 1,
     marginTop: 12,
+  },
+  earlyInsightsCard: {
+    backgroundColor: "rgba(255, 255, 255, 0.06)",
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.12)",
+    marginHorizontal: Math.max(20, width * 0.05),
+    padding: 18,
+  },
+  earlyInsightsKicker: {
+    fontSize: 12,
+    letterSpacing: 0.8,
+    textTransform: "uppercase",
+    fontFamily: "ManropeSemiBold",
+    color: "rgba(255,255,255,0.6)",
+    marginBottom: 10,
+  },
+  earlyInsightsIntro: {
+    fontSize: 17,
+    fontFamily: "ManropeSemiBold",
+    color: "#fff",
+    lineHeight: 24,
+    marginBottom: 10,
+  },
+  earlyInsightsBody: {
+    fontSize: 15,
+    fontFamily: "Manrope",
+    color: "rgba(255,255,255,0.92)",
+    lineHeight: 22,
+    marginBottom: 10,
+  },
+  earlyInsightsHook: {
+    fontSize: 14,
+    fontFamily: "ManropeMedium",
+    color: "rgba(255,255,255,0.72)",
+    lineHeight: 21,
+    marginTop: 2,
   },
   sectionTitle: {
     fontSize: 16,
@@ -1558,7 +1709,7 @@ const styles = StyleSheet.create({
   loadingText: {
     color: "rgba(255, 255, 255, 0.7)",
     fontSize: 15,
-    fontWeight: "500",
+    fontFamily: "ManropeMedium",
   },
   slide2Content: {
     paddingHorizontal: Math.max(20, width * 0.05),

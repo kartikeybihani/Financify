@@ -32,6 +32,16 @@ interface ConnectedAccount {
   institution_name: string;
 }
 
+type TransactionPreviewRow = {
+  date: string;
+  amount: number;
+  merchant_name: string | null;
+  name: string | null;
+  category: any;
+  top_category: string | null;
+  new_category: string | null;
+};
+
 export default function AccountConnectionScreen() {
   const params = useLocalSearchParams();
   const router = useRouter();
@@ -44,6 +54,130 @@ export default function AccountConnectionScreen() {
   const [connectedAccounts, setConnectedAccounts] = useState<
     ConnectedAccount[]
   >([]);
+
+  const formatDate = (d: Date) => {
+    const y = d.getFullYear();
+    const m = `${d.getMonth() + 1}`.padStart(2, "0");
+    const day = `${d.getDate()}`.padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  };
+
+  const formatMoney = (amount: number) => {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: "USD",
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 2,
+    }).format(Math.abs(amount));
+  };
+
+  const getTxPreviewKey = (userId: string, itemId?: string) => {
+    const suffix = itemId ? `:${itemId}` : "";
+    return `onboarding:tx_preview_logged:${userId}${suffix}`;
+  };
+
+  const fetchLast30DaysTransactions = async (userId: string) => {
+    const end = new Date();
+    const start = new Date();
+    start.setDate(end.getDate() - 30);
+
+    const startDateStr = formatDate(start);
+    const endDateStr = formatDate(end);
+
+    const { data: transactions, error: txError } = await supabase
+      .from("transactions")
+      .select(
+        "date, amount, merchant_name, name, category, top_category, new_category"
+      )
+      .eq("user_id", userId)
+      .gte("date", startDateStr)
+      .lte("date", endDateStr)
+      .order("date", { ascending: false })
+      .limit(60);
+
+    if (txError) throw txError;
+    return {
+      startDateStr,
+      endDateStr,
+      transactions: (transactions || []) as TransactionPreviewRow[],
+    };
+  };
+
+  const pollForTransactionsSync = async (userId: string) => {
+    const end = new Date();
+    const start = new Date();
+    start.setDate(end.getDate() - 30);
+    const startDateStr = formatDate(start);
+    const endDateStr = formatDate(end);
+
+    const timeoutMs = 25000;
+    const intervalMs = 2500;
+    const startedAt = Date.now();
+
+    while (Date.now() - startedAt < timeoutMs) {
+      const { count, error } = await supabase
+        .from("transactions")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", userId)
+        .gte("date", startDateStr)
+        .lte("date", endDateStr);
+
+      if (error) {
+        logger.warn("⚠️ tx preview: count failed (continuing)", error);
+      } else if ((count || 0) > 0) {
+        return;
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    }
+  };
+
+  const logLast30DaysTransactionsPreview = async (
+    userId: string,
+    itemId?: string
+  ) => {
+    const key = getTxPreviewKey(userId, itemId);
+    const alreadyLogged = await AsyncStorage.getItem(key);
+    if (alreadyLogged) return;
+
+    await pollForTransactionsSync(userId);
+
+    const { startDateStr, endDateStr, transactions } =
+      await fetchLast30DaysTransactions(userId);
+
+    logger.info("🧾 Transactions preview (last 30 days)", {
+      startDate: startDateStr,
+      endDate: endDateStr,
+      count: transactions.length,
+    });
+
+    if (transactions.length === 0) {
+      logger.info(
+        "🧾 Transactions preview: no transactions found in last 30 days"
+      );
+      await AsyncStorage.setItem(key, "1");
+      return;
+    }
+
+    const lines = transactions.slice(0, 40).map((tx) => {
+      const effectiveName =
+        (tx.merchant_name || tx.name || "Unknown").toString().trim() ||
+        "Unknown";
+      const effectiveCategory =
+        (tx.new_category || tx.top_category || "Other")?.toString() || "Other";
+
+      const kind = tx.amount > 0 ? "expense" : "income/refund";
+      const amountStr = `${formatMoney(tx.amount)} (${kind})`;
+
+      return `${tx.date} | ${effectiveName.slice(0, 34)} | ${amountStr} | ${effectiveCategory.slice(0, 22)}`;
+    });
+
+    logger.info("🧾 Transactions preview sample (up to 40)", {
+      preview: lines,
+    });
+
+    await AsyncStorage.setItem(key, "1");
+  };
 
   useEffect(() => {
     logOnboardingEvent({ stage: "plaid", action: "view" });
@@ -147,6 +281,14 @@ export default function AccountConnectionScreen() {
             const accounts = await fetchConnectedAccounts(user.id);
             setConnectedAccounts(accounts);
             setHasConnectedBank(true);
+
+            // Log a clean preview of what transactions look like (last 30 days), once.
+            // This is for onboarding/debugging visibility only.
+            try {
+              await logLast30DaysTransactionsPreview(user.id, itemId);
+            } catch (e) {
+              logger.warn("⚠️ Failed to log tx preview", e);
+            }
           }
 
           setIsConnecting(false);

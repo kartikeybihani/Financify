@@ -1,6 +1,5 @@
 -- WARNING: This schema is for context only and is not meant to be run.
 -- Table order and constraints may not be valid for execution.
--- This is setup at Supabase
 
 CREATE TABLE public.accounts (
   account_id text NOT NULL,
@@ -322,6 +321,7 @@ CREATE TABLE public.profiles (
   finny_style text NOT NULL DEFAULT 'conversational'::text CHECK (finny_style = ANY (ARRAY['conversational'::text, 'direct'::text, 'witty'::text])),
   checkin_frequency text NOT NULL DEFAULT 'daily'::text CHECK (checkin_frequency = ANY (ARRAY['daily'::text, '3times'::text, 'weekly'::text, 'never'::text])),
   location text,
+  early_insights jsonb DEFAULT '[]'::jsonb,
   CONSTRAINT profiles_pkey PRIMARY KEY (id),
   CONSTRAINT profiles_id_fkey FOREIGN KEY (id) REFERENCES auth.users(id)
 );

@@ -10,6 +10,11 @@ import {
   checkRateLimit,
   formatRetryAfterSeconds,
 } from "../lib/api/rateLimiter.js";
+import fetch from "node-fetch";
+import {
+  buildEarlyInsightsJson,
+  getDateRangeLast6Months,
+} from "../lib/early_insights.js";
 
 export default async function handler(req, res) {
   if (req.method !== "POST")
@@ -556,6 +561,118 @@ export default async function handler(req, res) {
         last_synced_at: new Date().toISOString(),
       })
       .eq("item_id", item_id);
+
+    // 7.5) Generate onboarding early_insights (best-effort, does not block sync)
+    // Runs after transactions have been written, so it can read from DB.
+    // Stores raw JSON in `profiles.early_insights`.
+    try {
+      const { data: profile, error: profileErr } = await supabase
+        .from("profiles")
+        .select("id, first_name, age, occupation, location, finny_style, early_insights")
+        .eq("id", userId)
+        .single();
+
+      if (profileErr) {
+        console.error("[TRANSACTIONS_SYNC] early_insights: profile fetch failed", profileErr);
+      } else {
+        const existing = profile?.early_insights;
+        const hasExistingInsights =
+          !!existing &&
+          typeof existing === "object" &&
+          !Array.isArray(existing) &&
+          typeof existing.intro_line === "string" &&
+          typeof existing.mirror === "string" &&
+          typeof existing.plan === "string" &&
+          typeof existing.hook === "string" &&
+          existing.intro_line.trim().length > 0;
+
+        if (!hasExistingInsights) {
+          // Compute (handles default []/null/partial values).
+          const openRouterApiKey =
+            process.env.OPENROUTER_API_KEY || process.env.OPENROUTER_GROK_KEY;
+
+          if (!openRouterApiKey) {
+            console.warn(
+              "[TRANSACTIONS_SYNC] early_insights: missing OPENROUTER_API_KEY (skipping)"
+            );
+          } else {
+          const { startDate, endDate } = getDateRangeLast6Months();
+          const pageSize = 1000;
+          const maxRows = 5000;
+          let offset = 0;
+          const rows = [];
+
+          while (offset < maxRows) {
+            const { data, error } = await supabase
+              .from("transactions")
+              .select(
+                [
+                  "date",
+                  "authorized_date",
+                  "amount",
+                  "name",
+                  "merchant_name",
+                  "category",
+                  "top_category",
+                  "sub_category",
+                  "new_category",
+                  "transaction_type",
+                  "pending",
+                  "account_id",
+                  "plaid_transaction_id",
+                  "if_recurring",
+                  "recurring_stream_id",
+                ].join(",")
+              )
+              .eq("user_id", userId)
+              .gte("date", startDate)
+              .lte("date", endDate)
+              .order("date", { ascending: false })
+              .range(offset, offset + pageSize - 1);
+
+            if (error) throw error;
+            if (!data || data.length === 0) break;
+            rows.push(...data);
+            offset += pageSize;
+          }
+
+          if (rows.length > 0) {
+            const insightsJson = await buildEarlyInsightsJson({
+              openRouterApiKey,
+              fetchFn: fetch,
+              transactions: rows,
+              userProfile: profile,
+              analysisWindow: "last 6 months",
+            });
+
+            if (insightsJson) {
+              const { error: updateErr } = await supabase
+                .from("profiles")
+                .update({
+                  early_insights: insightsJson,
+                  updated_at: new Date().toISOString(),
+                })
+                .eq("id", userId);
+
+              if (updateErr) {
+                console.error(
+                  "[TRANSACTIONS_SYNC] early_insights: update failed",
+                  updateErr
+                );
+              } else {
+                console.log("✅ Stored profiles.early_insights", {
+                  userId,
+                  hasIntro: !!insightsJson?.intro_line,
+                });
+              }
+            }
+          }
+          }
+        }
+      }
+    } catch (err) {
+      console.error("[TRANSACTIONS_SYNC] early_insights error (non-blocking)", err);
+    }
 
     console.log(
       `✅ Sync complete: ${added.length} added, ${modified.length} modified, ${removed.length} removed`
