@@ -9,13 +9,18 @@ const supabase = createClient(
 );
 
 // Plaid API configuration using native fetch
+// Environment detection: explicit PLAID_ENV > default to sandbox
+// Note: Supabase functions don't have VERCEL_ENV, so we rely on explicit env vars
 const PLAID_ENV = Deno.env.get("PLAID_ENV") || "sandbox";
-const PLAID_BASE_URL = PLAID_ENV === "production" 
-  ? "https://production.plaid.com" 
+const isProduction = PLAID_ENV === "production";
+const PLAID_BASE_URL = isProduction
+  ? "https://production.plaid.com"
   : "https://sandbox.plaid.com";
 
 const PLAID_CLIENT_ID = Deno.env.get("PLAID_CLIENT_ID")!;
-const PLAID_SECRET = Deno.env.get("PLAID_SECRET")!;
+const PLAID_SECRET = isProduction
+  ? Deno.env.get("PLAID_SECRET_PROD")!
+  : Deno.env.get("PLAID_SECRET_DEV")!; // Use PLAID_SECRET_DEV for sandbox
 
 // Category mapping is now handled by plaidCategoryMapper.ts
 

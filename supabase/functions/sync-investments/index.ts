@@ -9,8 +9,28 @@ const supabase = createClient(
 );
 
 // SnapTrade SDK configuration
-const SNAPTRADE_CLIENT_ID = Deno.env.get("SNAPTRADE_CLIENT_ID")!;
-const SNAPTRADE_CONSUMER_KEY = Deno.env.get("SNAPTRADE_CONSUMER_KEY")!;
+// Environment detection: explicit SNAPTRADE_ENVIRONMENT > default to sandbox
+// Note: Supabase functions don't have VERCEL_ENV, so we rely on explicit env vars
+const SNAPTRADE_ENV = Deno.env.get("SNAPTRADE_ENVIRONMENT") || "sandbox";
+const isProduction = SNAPTRADE_ENV === "production";
+
+const SNAPTRADE_CLIENT_ID = isProduction
+  ? Deno.env.get("SNAPTRADE_CLIENT_ID")!
+  : Deno.env.get("SNAPTRADE_CLIENT_ID_DEV")!;
+
+const SNAPTRADE_CONSUMER_KEY = isProduction
+  ? Deno.env.get("SNAPTRADE_CONSUMER_KEY")!
+  : Deno.env.get("SNAPTRADE_CONSUMER_KEY_DEV")!;
+
+if (!SNAPTRADE_CLIENT_ID || !SNAPTRADE_CONSUMER_KEY) {
+  throw new Error(
+    `Missing SnapTrade configuration for ${SNAPTRADE_ENV} environment. Ensure ${
+      isProduction ? "SNAPTRADE_CLIENT_ID" : "SNAPTRADE_CLIENT_ID_DEV"
+    } and ${
+      isProduction ? "SNAPTRADE_CONSUMER_KEY" : "SNAPTRADE_CONSUMER_KEY_DEV"
+    } are set.`
+  );
+}
 
 const snaptrade = new Snaptrade({
   clientId: SNAPTRADE_CLIENT_ID,
