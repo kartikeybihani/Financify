@@ -219,7 +219,7 @@ export default function WelcomeScreen() {
           <View style={styles.bottomSection}>
             <View style={styles.buttonSection}>
               <View style={styles.authButtons}>
-                <TouchableOpacity
+                {/* <TouchableOpacity
                   style={styles.googleButton}
                   activeOpacity={0.9}
                   onPress={signInWithApple}
@@ -230,7 +230,7 @@ export default function WelcomeScreen() {
                       Continue with Apple
                     </Text>
                   </View>
-                </TouchableOpacity>
+                </TouchableOpacity> */}
 
                 <TouchableOpacity
                   style={styles.emailButton}
