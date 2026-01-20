@@ -15,6 +15,7 @@ import { AntDesign } from "@expo/vector-icons";
 import { submitChatMessageReport } from "@/src/utils/analytics/reports";
 import IconButton from "@/src/components/shared/IconButton";
 import { authenticatedFetch } from "@/src/utils/auth/authToken";
+import { API_BASE_URL } from "@/src/utils/core/apiUrl";
 
 interface ReportModalProps {
   visible: boolean;
@@ -72,9 +73,7 @@ export default function ReportModal({
       if (result.success) {
         // Store negative feedback in Supermemory (Phase 1.1)
         try {
-          const BASE_URL =
-            process.env.EXPO_PUBLIC_APP_BASE_URL ||
-            "https://financify-rose.vercel.app";
+          const BASE_URL = API_BASE_URL;
 
           await authenticatedFetch(`${BASE_URL}/api/memory`, {
             method: "POST",

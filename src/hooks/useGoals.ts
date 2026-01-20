@@ -10,6 +10,7 @@ import logger from "@/src/utils/core/logger";
 import { CACHE_CONFIG } from "@/src/shared/constants/cacheConfig";
 import { getAuthenticatedUser } from "@/src/utils/auth/auth";
 import { authenticatedFetch } from "@/src/utils/auth/authToken";
+import { API_BASE_URL } from "@/src/utils/core/apiUrl";
 
 const GOALS_CACHE_KEY = CACHE_CONFIG.KEYS.GOALS;
 const GOALS_CACHE_TIMESTAMP_KEY = CACHE_CONFIG.KEYS.GOALS_TIMESTAMP;
@@ -218,9 +219,7 @@ export function useGoals(pushChat: (sender: "user" | "finny", message: string) =
       // Store goal creation memory in Supermemory (non-blocking)
       setTimeout(async () => {
         try {
-          const BASE_URL =
-            process.env.EXPO_PUBLIC_APP_BASE_URL ||
-            "https://financify-rose.vercel.app";
+          const BASE_URL = API_BASE_URL;
           await authenticatedFetch(`${BASE_URL}/api/memory`, {
             method: "POST",
             body: JSON.stringify({
@@ -247,9 +246,7 @@ export function useGoals(pushChat: (sender: "user" | "finny", message: string) =
       // Trigger goal analysis (non-blocking)
       setTimeout(async () => {
         try {
-          const BASE_URL =
-            process.env.EXPO_PUBLIC_APP_BASE_URL ||
-            "https://financify-rose.vercel.app";
+          const BASE_URL = API_BASE_URL;
           logger.info(`🚀 [GOAL ANALYSIS] Triggering analysis for goal: ${data.id}`);
           const response = await authenticatedFetch(
             `${BASE_URL}/api/goals?action=analyze`,

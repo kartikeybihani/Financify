@@ -6,6 +6,7 @@ import finnyConstants from '@/src/constants/finny';
 import logger from '@/src/utils/core/logger';
 import { supabase } from '@/src/lib/supabase/supabase';
 import { getFreshAccessToken, authenticatedFetch, invalidateTokenCache } from '@/src/utils/auth/authToken';
+import { API_BASE_URL } from '@/src/utils/core/apiUrl';
 
 /**
  * Creates a promise that rejects after a specified timeout duration.
@@ -1387,7 +1388,7 @@ export const useChat = (userName?: string | null) => {
     action: string,
     payload?: { ticker?: string }
   ) => {
-    const BASE_URL = process.env.EXPO_PUBLIC_APP_BASE_URL || "https://financify-rose.vercel.app";
+    const BASE_URL = API_BASE_URL;
     try {
       // Get user_id for the API calls
       const { data: { user } } = await supabase.auth.getUser();
@@ -1522,7 +1523,7 @@ export const useChat = (userName?: string | null) => {
     const callId = Math.random().toString(36).substring(2, 8);
     const funcStartTime = Date.now();
     
-    const BASE_URL = process.env.EXPO_PUBLIC_APP_BASE_URL || "https://financify-rose.vercel.app";
+    const BASE_URL = API_BASE_URL;
     try {
       // Get fresh access token
       const accessToken = await getFreshAccessToken();

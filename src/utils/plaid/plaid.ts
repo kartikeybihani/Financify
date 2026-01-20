@@ -11,7 +11,9 @@ import {
   logLinkSuccessEvent,
 } from "./linkAnalytics";
 
-const BASE_URL = process.env.EXPO_PUBLIC_APP_BASE_URL || "https://financify-rose.vercel.app";
+import { API_BASE_URL } from "@/src/utils/core/apiUrl";
+
+const BASE_URL = API_BASE_URL;
 
 // === Last Used Item Management ===
 import { setLastUsedItemId, getLastUsedItemId } from "@/src/utils/cache/lastUsedItem";

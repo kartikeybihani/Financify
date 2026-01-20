@@ -1,8 +1,9 @@
 // Account management utilities for Plaid account operations
 
 import { authenticatedFetch } from "@/src/utils/auth/authToken";
+import { API_BASE_URL } from "@/src/utils/core/apiUrl";
 
-const BASE_URL = process.env.EXPO_PUBLIC_APP_BASE_URL || "https://financify-rose.vercel.app";
+const BASE_URL = API_BASE_URL;
 
 export interface DeleteAccountResponse {
   success: boolean;
