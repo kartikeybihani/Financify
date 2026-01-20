@@ -61,6 +61,8 @@ export default function FinalScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const [showLoadingAnimation, setShowLoadingAnimation] = useState(true);
   const [showBreakdown, setShowBreakdown] = useState(false);
+  const [llmFailed, setLlmFailed] = useState(false);
+  const [userFirstName, setUserFirstName] = useState<string | null>(null);
 
   // Typing dots animation for loading
   const typingDotsAnim = useRef([
@@ -102,10 +104,18 @@ export default function FinalScreen() {
     };
   };
 
-  const { introLine, mirrorLine, planLine, hookLine } =
-    getFirstReadLines(earlyInsights);
+  // Generate fallback message when LLM fails
+  const fallbackMessage = userFirstName
+    ? `Hey ${userFirstName}, thanks for setting this up! I'm excited to start getting things on and give you the right direction with your money.`
+    : "Hey, thanks for setting this up. I'm excited to start getting things on and give you the right direction with your money.";
+
+  const { introLine, mirrorLine, planLine, hookLine } = llmFailed
+    ? { introLine: fallbackMessage, mirrorLine: "", planLine: "", hookLine: "" }
+    : getFirstReadLines(earlyInsights);
   const firstReadIsLoading =
-    !earlyInsights && (isLoadingInsights || showLoadingAnimation);
+    !llmFailed &&
+    !earlyInsights &&
+    (isLoadingInsights || showLoadingAnimation);
   const firstReadOrderedRevealLines = [mirrorLine, planLine, hookLine].filter(
     Boolean
   );
@@ -122,8 +132,9 @@ export default function FinalScreen() {
   const firstReadIsComplete =
     !firstReadIsLoading &&
     !firstReadIsTyping &&
-    firstReadOrderedRevealLines.length > 0 &&
-    firstReadRevealedCount >= firstReadOrderedRevealLines.length;
+    ((llmFailed && firstReadTypedIntro.length === introLine.length) ||
+      (firstReadOrderedRevealLines.length > 0 &&
+        firstReadRevealedCount >= firstReadOrderedRevealLines.length));
 
   useEffect(() => {
     if (firstReadIsLoading || !introLine) {
@@ -153,6 +164,19 @@ export default function FinalScreen() {
         await new Promise((r) => setTimeout(r, speedMs));
       }
 
+      // For fallback message, don't show reveal lines
+      if (llmFailed) {
+        setFirstReadShowCaret(false);
+        if (!cancelled) {
+          Animated.timing(firstReadBodyAnim, {
+            toValue: 1,
+            duration: 360,
+            useNativeDriver: true,
+          }).start();
+        }
+        return;
+      }
+
       for (let i = 0; i < orderedRevealLines.length; i++) {
         if (cancelled) return;
         await new Promise((r) => setTimeout(r, revealDelayMs));
@@ -172,7 +196,7 @@ export default function FinalScreen() {
     return () => {
       cancelled = true;
     };
-  }, [firstReadIsLoading, introLine, mirrorLine, planLine, hookLine]);
+  }, [firstReadIsLoading, introLine, mirrorLine, planLine, hookLine, llmFailed]);
 
   useEffect(() => {
     if (!firstReadIsTyping) return;
@@ -231,6 +255,7 @@ export default function FinalScreen() {
     isTyping,
     showCaret,
     isLoading,
+    isFallback,
   }: {
     introLine: string;
     typedIntro: string;
@@ -239,6 +264,7 @@ export default function FinalScreen() {
     isTyping: boolean;
     showCaret: boolean;
     isLoading: boolean;
+    isFallback?: boolean;
   }) => {
     if (isLoading || !introLine) {
       return (
@@ -271,16 +297,16 @@ export default function FinalScreen() {
           />
           <Text style={styles.firstReadKicker}>FIRST READ</Text>
         </View>
-        <Text style={styles.firstReadHero}>
+        <Text style={[styles.firstReadHero, isFallback && styles.firstReadHeroFallback]}>
           {typedIntro}
           {isTyping && showCaret ? (
             <Text style={styles.firstReadCaret}>▍</Text>
           ) : null}
         </Text>
-        {revealedCount > 0 && (
+        {!isFallback && revealedCount > 0 && (
           <Text style={styles.firstReadMirror}>{orderedRevealLines[0]}</Text>
         )}
-        {revealedCount > 1 && (
+        {!isFallback && revealedCount > 1 && (
           <Animated.View
             style={[
               styles.firstReadRule,
@@ -758,6 +784,24 @@ export default function FinalScreen() {
           return;
         }
 
+        // Fetch user's first name for fallback message
+        try {
+          const { data: profile } = await supabase
+            .from("profiles")
+            .select("first_name")
+            .eq("id", user.id)
+            .maybeSingle();
+          if (profile?.first_name) {
+            setUserFirstName(profile.first_name);
+          }
+        } catch (e) {
+          logger.warn("⚠️ FinalScreen: Failed to fetch first name", e);
+        }
+
+        const maxPollTime = 30000; // 30 seconds max polling
+        const startTime = Date.now();
+        const pollInterval = 1500;
+
         while (!cancelled) {
           const { data, error } = await supabase
             .from("profiles")
@@ -766,6 +810,19 @@ export default function FinalScreen() {
             .single();
 
           const maybe = data?.early_insights;
+          
+          // Check for error marker
+          if (
+            maybe &&
+            typeof maybe === "object" &&
+            !Array.isArray(maybe) &&
+            (maybe as any).error === "LLM_FAILED"
+          ) {
+            logger.info("⚠️ FinalScreen: LLM failed, showing fallback");
+            setLlmFailed(true);
+            return;
+          }
+
           const hasCoachCopy =
             !!maybe &&
             typeof maybe === "object" &&
@@ -781,10 +838,18 @@ export default function FinalScreen() {
             return;
           }
 
-          await new Promise((r) => setTimeout(r, 1500));
+          // Timeout after 30 seconds
+          if (Date.now() - startTime >= maxPollTime) {
+            logger.warn("⚠️ FinalScreen: Polling timeout, showing fallback");
+            setLlmFailed(true);
+            return;
+          }
+
+          await new Promise((r) => setTimeout(r, pollInterval));
         }
       } catch (e) {
         logger.warn("⚠️ FinalScreen: early_insights polling failed", e);
+        setLlmFailed(true);
       }
     };
 
@@ -1109,6 +1174,7 @@ export default function FinalScreen() {
                 isTyping={firstReadIsTyping}
                 showCaret={firstReadShowCaret}
                 isLoading={firstReadIsLoading}
+                isFallback={llmFailed}
               />
 
               {isLoadingInsights || showLoadingAnimation || !showBreakdown ? (
@@ -1302,6 +1368,9 @@ const styles = StyleSheet.create({
     color: "rgba(255,255,255,0.85)",
     lineHeight: 19,
     marginBottom: 10,
+  },
+  firstReadHeroFallback: {
+    fontFamily: "Manrope",
   },
   firstReadClose: {
     fontSize: 14,

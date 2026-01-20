@@ -792,6 +792,23 @@ export default async function handler(req, res) {
                       .trim(),
                   }
                 );
+                // Store error marker so frontend knows LLM failed
+                const { error: upsertErr } = await supabase
+                  .from("profiles")
+                  .upsert(
+                    {
+                      id: userId,
+                      early_insights: { error: "LLM_FAILED" },
+                      updated_at: new Date().toISOString(),
+                    },
+                    { onConflict: "id" }
+                  );
+                if (upsertErr) {
+                  console.error(
+                    "[TRANSACTIONS_SYNC] early_insights: error marker upsert failed",
+                    upsertErr
+                  );
+                }
               } else {
                 const { error: upsertErr } = await supabase
                   .from("profiles")
@@ -822,6 +839,27 @@ export default async function handler(req, res) {
       }
     } catch (err) {
       console.error("[TRANSACTIONS_SYNC] early_insights error (non-blocking)", err);
+      // Store error marker on exception too
+      try {
+        const { error: upsertErr } = await supabase
+          .from("profiles")
+          .upsert(
+            {
+              id: userId,
+              early_insights: { error: "LLM_FAILED" },
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: "id" }
+          );
+        if (upsertErr) {
+          console.error(
+            "[TRANSACTIONS_SYNC] early_insights: error marker upsert failed (exception path)",
+            upsertErr
+          );
+        }
+      } catch (markerErr) {
+        console.error("[TRANSACTIONS_SYNC] Failed to store error marker", markerErr);
+      }
     }
 
     console.log(
