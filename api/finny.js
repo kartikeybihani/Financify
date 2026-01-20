@@ -3593,7 +3593,6 @@ function detectWebSearchNeeded(message) {
     // Year indicators
     "2025",
     "2024",
-    "current",
     "latest",
     "updated",
     "today",
@@ -3639,15 +3638,6 @@ function detectWebSearchNeeded(message) {
     "social security",
     "medicare",
 
-    // Question patterns
-    "what is the current",
-    "what are the current",
-    "what's the current",
-    "what is the latest",
-    "what are the latest",
-    "what's the latest",
-    "what are the best",
-    "what's the best",
     "current rates",
     "latest news",
   ];
