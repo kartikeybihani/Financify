@@ -841,16 +841,16 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 2,
     elevation: 2,
-    marginBottom: responsivePadding(2),
+    marginBottom: responsivePadding(8),
     borderRadius: 18,
     position: "relative",
     overflow: "visible",
   },
   finnyMessageBubbleGrouped: {
-    marginBottom: responsivePadding(16),
+    marginBottom: responsivePadding(8),
   },
   finnyMessageBubbleLastInGroup: {
-    marginBottom: responsivePadding(20),
+    marginBottom: responsivePadding(18),
   },
   messageText: {
     fontSize: responsiveFontSize(14),
