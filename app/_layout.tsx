@@ -20,6 +20,8 @@ import { runStorageMigrationV2 } from "@/src/utils/core/migrate";
 import { runCacheMigration } from "@/src/shared/utils/cacheMigration";
 import logger from "@/src/utils/core/logger";
 import { ActionSheetProvider } from "@expo/react-native-action-sheet";
+import { PostHogProvider } from 'posthog-react-native';
+import PostHogScreenTracker from "@/src/components/analytics/PostHogScreenTracker";
 import { setupGlobalErrorHandling } from "@/src/utils/core/errorBoundary";
 import { useNotificationSetup } from "@/src/hooks/useNotificationSetup";
 import { setLastDeepLink } from "@/src/utils/linking/linkingStore";
@@ -115,13 +117,23 @@ export default function RootLayout() {
   if (!loaded) return null;
 
   return (
-    <AuthNavigationProvider>
-      <ActionSheetProvider>
-        <>
-          <RootLayoutNav />
-          <StatusBar style="light" backgroundColor="transparent" translucent />
-        </>
-      </ActionSheetProvider>
-    </AuthNavigationProvider>
+    <PostHogProvider
+      apiKey="phc_Tt3F486mn1ltHuaKW3csphOfXNAFQZ3oI69ZuPzedIT"
+      options={{
+        host: 'https://us.i.posthog.com',
+        enableSessionReplay: false,
+      }}
+      autocapture
+    >
+      <AuthNavigationProvider>
+        <PostHogScreenTracker />
+        <ActionSheetProvider>
+          <>
+            <RootLayoutNav />
+            <StatusBar style="light" backgroundColor="transparent" translucent />
+          </>
+        </ActionSheetProvider>
+      </AuthNavigationProvider>
+    </PostHogProvider>
   );
 }

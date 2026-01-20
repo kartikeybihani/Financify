@@ -57,22 +57,9 @@ export default function IntentQuestionScreen({
     isMounted.current = true;
     logOnboardingEvent({ stage: logStage, action: "view" });
 
-    // Restore saved answer if exists
-    const restoreAnswer = async () => {
-      try {
-        const savedAnswers = await AsyncStorage.getItem(
-          "pending_intent_answers"
-        );
-        if (savedAnswers) {
-          const answers = JSON.parse(savedAnswers);
-          if (answers[storageKey]) {
-            setSelectedOption(answers[storageKey]);
-          }
-        }
-      } catch (error) {}
-    };
-
-    restoreAnswer();
+    // Intentionally do NOT restore previously saved answers into UI selection.
+    // These screens should always start with nothing selected, even if the user
+    // navigates back and we have `pending_intent_answers` in storage.
 
     return () => {
       isMounted.current = false;

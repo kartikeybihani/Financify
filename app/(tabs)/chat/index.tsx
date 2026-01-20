@@ -21,6 +21,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { AntDesign } from "@expo/vector-icons";
 import { FontAwesome6 } from "@expo/vector-icons";
 import { useRouter, useFocusEffect } from "expo-router";
+import { usePostHog } from "posthog-react-native";
 import { ChatMessageComponent } from "@/src/components/chat/ChatMessage";
 import { NudgeGrid } from "@/src/components/chat/NudgeGrid";
 import { useChatContext } from "@/src/contexts/ChatContext";
@@ -62,6 +63,7 @@ const responsiveHeight = (percentage: number) =>
 function ChatScreenContent() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const posthog = usePostHog();
   const [userInput, setUserInput] = useState("");
   const [showScrollButton, setShowScrollButton] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
@@ -409,6 +411,11 @@ function ChatScreenContent() {
     if (!messageText.trim()) {
       return;
     }
+
+    posthog?.capture("finny message sent", {
+      message_length: messageText.trim().length,
+      via_nudge: Boolean(nudgeText),
+    });
 
     // Start timing for response time tracking
     const messageStartTime = Date.now();
