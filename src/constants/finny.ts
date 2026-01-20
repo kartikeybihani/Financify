@@ -1,13 +1,26 @@
 import { ChatMessage, TimelineItem } from '@/src/types/finny';
 
-export const INITIAL_CHAT_MESSAGES: ChatMessage[] = [
-  {
-    id: "welcome",
-    sender: "finny",
-    text: "hey! I'm Finny, your AI Money Coach. What would you like to know today?",
-    timestamp: Date.now(),
-  },
-];
+const extractFirstName = (name?: string | null): string | null => {
+  if (!name) return null;
+  const trimmed = name.trim();
+  if (!trimmed) return null;
+  return trimmed.split(/\s+/)[0] || null;
+};
+
+export const getInitialChatMessages = (userName?: string | null): ChatMessage[] => {
+  const firstName = extractFirstName(userName);
+  const greetingName = firstName || "there";
+  return [
+    {
+      id: "welcome",
+      sender: "finny",
+      text: `hey ${greetingName}! I'm Finny, your AI Money Coach. What would you like to know today?`,
+      timestamp: Date.now(),
+    },
+  ];
+};
+
+export const INITIAL_CHAT_MESSAGES: ChatMessage[] = getInitialChatMessages();
 
 export const NUDGE_OPTIONS = [
   { id: "1", text: "Tell me about investing!" },
@@ -37,4 +50,5 @@ export default {
   INITIAL_CHAT_MESSAGES,
   NUDGE_OPTIONS,
   FUTURE_MILESTONES,
+  getInitialChatMessages,
 }; 

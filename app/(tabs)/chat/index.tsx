@@ -68,6 +68,9 @@ function ChatScreenContent() {
   const [showStartersModal, setShowStartersModal] = useState(false);
   const [showStockTickerModal, setShowStockTickerModal] = useState(false);
   const [stockTickerDraft, setStockTickerDraft] = useState("");
+  const minInputHeight = responsiveHeight(4);
+  const maxInputHeight = responsiveHeight(14);
+  const [inputHeight, setInputHeight] = useState(minInputHeight);
   const [dimensions, setDimensions] = useState(Dimensions.get("window"));
   const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
@@ -117,7 +120,31 @@ function ChatScreenContent() {
     handleFinnyResponse,
     handleActionButton,
     currentSessionId,
+    updateUserName,
   } = useChatContext();
+
+  // Fetch user's first name and update welcome message
+  useEffect(() => {
+    const fetchUserName = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user?.id) {
+          const { data: profile } = await supabase
+            .from("profiles")
+            .select("first_name")
+            .eq("id", user.id)
+            .maybeSingle();
+          
+          if (profile?.first_name) {
+            updateUserName(profile.first_name);
+          }
+        }
+      } catch (error) {
+        console.log("Could not fetch user first name:", error);
+      }
+    };
+    fetchUserName();
+  }, [updateUserName]);
 
   // Auto-scroll to bottom when user comes to this screen (every time)
   useFocusEffect(
@@ -393,6 +420,7 @@ function ChatScreenContent() {
     pushChat("user", messageText);
     Keyboard.dismiss();
     setUserInput("");
+    setInputHeight(minInputHeight);
     setIsTyping(true);
 
     try {
@@ -832,9 +860,18 @@ function ChatScreenContent() {
                 <TextInput
                   placeholder="Ask Finny anything about money..."
                   placeholderTextColor="#888"
-                  style={styles.input}
+                  style={[styles.input, { height: inputHeight }]}
                   value={userInput}
                   onChangeText={setUserInput}
+                  multiline
+                  textAlignVertical="top"
+                  onContentSizeChange={(event) => {
+                    const nextHeight = Math.min(
+                      Math.max(event.nativeEvent.contentSize.height, minInputHeight),
+                      maxInputHeight
+                    );
+                    setInputHeight(nextHeight);
+                  }}
                   onSubmitEditing={() => handleSend()}
                   onFocus={() => {
                     // Scroll to bottom only if user isn't already at the bottom

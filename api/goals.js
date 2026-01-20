@@ -83,9 +83,27 @@ async function withTimeout(
 function logConversation(logData) {
   // Async logging - don't block the response
   setImmediate(async () => {
+    const row = {
+      ...logData,
+      chat_id: logData?.chat_id || null,
+    };
+
     try {
-      await supabase.from("conversation_logs").insert([logData]);
+      await supabase.from("conversation_logs").insert([row]);
     } catch (error) {
+      const msg = (error?.message || "").toLowerCase();
+      // Backwards compatibility if chat_id column isn't present yet
+      if (msg.includes("chat_id") && msg.includes("column")) {
+        try {
+          const { chat_id, ...fallback } = row;
+          await supabase.from("conversation_logs").insert([fallback]);
+          return;
+        } catch (e2) {
+          console.error("❌ [LOGGING] Failed to log conversation (fallback):", e2);
+          return;
+        }
+      }
+
       console.error("❌ [LOGGING] Failed to log conversation:", error);
     }
   });

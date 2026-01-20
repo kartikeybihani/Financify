@@ -136,6 +136,7 @@ CREATE TABLE public.conversation_logs (
   market_data boolean DEFAULT false,
   web_research boolean DEFAULT false,
   created_at timestamp with time zone DEFAULT now(),
+  chat_id text,
   CONSTRAINT conversation_logs_pkey PRIMARY KEY (id),
   CONSTRAINT conversation_logs_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
 );

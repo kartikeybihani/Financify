@@ -1,4 +1,4 @@
-import React, { createContext, useContext, ReactNode } from "react";
+import React, { createContext, useContext, ReactNode, useState } from "react";
 import { useChat } from "@/src/hooks/useChat";
 
 interface ChatContextType {
@@ -9,6 +9,7 @@ interface ChatContextType {
   progressStatus: string;
   currentSessionId: string | null;
   isNewSession: boolean;
+  updateUserName: (userName?: string | null) => void;
   clearChat: () => Promise<void>;
   pushChat: (
     senderOrMsg: "user" | "finny" | any,
@@ -39,10 +40,17 @@ interface ChatProviderProps {
 }
 
 export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
-  const chatHook = useChat();
+  const [userName, setUserName] = useState<string | null>(null);
+  const chatHook = useChat(userName);
+
+  const updateUserName = (nextUserName?: string | null) => {
+    setUserName(nextUserName ?? null);
+  };
 
   return (
-    <ChatContext.Provider value={chatHook}>{children}</ChatContext.Provider>
+    <ChatContext.Provider value={{ ...chatHook, updateUserName }}>
+      {children}
+    </ChatContext.Provider>
   );
 };
 

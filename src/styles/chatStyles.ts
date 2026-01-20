@@ -281,6 +281,7 @@ export default StyleSheet.create({
     shadowRadius: 12,
     elevation: 8,
     minHeight: responsiveHeight(6),
+    maxHeight: responsiveHeight(18),
   },
   plusButton: {
     padding: responsivePadding(2),
@@ -299,9 +300,10 @@ export default StyleSheet.create({
     flex: 1,
     fontSize: responsiveFontSize(14),
     color: "#fff",
-    paddingVertical: responsivePadding(1),
+    paddingVertical: responsivePadding(6),
     marginHorizontal: responsivePadding(4),
     minHeight: responsiveHeight(4),
+    maxHeight: responsiveHeight(14),
   },
   nudgeContainer: {
     marginBottom: responsivePadding(16),

@@ -1078,6 +1078,7 @@ async function logConversation(conversationData) {
       // Insert with metrics and request_id if columns exist; fallback otherwise
       const baseRow = {
         user_id: conversationData.user_id,
+        chat_id: conversationData.chat_id || null,
         user_message: conversationData.user_message,
         finny_response: conversationData.finny_response,
         timestamp: conversationData.timestamp,
@@ -1109,9 +1110,9 @@ async function logConversation(conversationData) {
         const msg = (error?.message || "").toLowerCase();
         const missingCols =
           msg.includes("column") &&
-          (msg.includes("metrics") || msg.includes("request_id"));
+          (msg.includes("metrics") || msg.includes("request_id") || msg.includes("chat_id"));
         if (missingCols) {
-          const { metrics, request_id, ...fallbackRow } = baseRow;
+          const { metrics, request_id, chat_id, ...fallbackRow } = baseRow;
           const retry = await withTimeout(
             supabase.from("conversation_logs").insert([fallbackRow]),
             5000
@@ -5000,35 +5001,7 @@ async function handlePrebuildContext(userId, silent = false) {
       logError("❌ [PREBUILD] Spend context failed:", error);
     }
 
-    // OPTIMIZED: Pre-warm memory and profile data for faster first message response
-    // This happens in background after financial context is built
-    try {
-      // Pre-warm memory and profile in parallel (fire and forget - don't block response)
-      Promise.all([
-        // Pre-warm Supermemory profile (general profile, not query-specific)
-        fetchSupermemoryProfile(userId).catch((error) => {
-          logWarn("⚠️ [PREBUILD] Failed to pre-warm profile:", error?.message);
-          return null;
-        }),
-        // Note: We don't pre-warm query-specific memories since they depend on the actual message
-        // But we can pre-warm a general memory search if needed in the future
-      ])
-        .then(() => {
-          // Pre-warming completed (silently - only log errors)
-        })
-        .catch((error) => {
-          logWarn(
-            "⚠️ [PREBUILD] Pre-warming failed (non-blocking):",
-            error?.message
-          );
-        });
-    } catch (error) {
-      // Non-blocking: if pre-warming fails, it's okay - handlers will load on-demand
-      logWarn(
-        "⚠️ [PREBUILD] Pre-warming error (non-blocking):",
-        error?.message
-      );
-    }
+    // Note: Supermemory pre-warming removed for prebuild_context to avoid external calls.
 
     const totalTime = Date.now() - startTime;
     logInfo(`🎯 [PREBUILD] Context pre-building completed in ${totalTime}ms`);

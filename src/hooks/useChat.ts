@@ -51,8 +51,10 @@ const extractUserIdFromToken = (token: string): string | null => {
 
 // Simple message handling - display messages as single strings
 
-export const useChat = () => {
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>(finnyConstants.INITIAL_CHAT_MESSAGES);
+export const useChat = (userName?: string | null) => {
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>(
+    finnyConstants.getInitialChatMessages(userName)
+  );
   const [isTyping, setIsTyping] = useState(false);
   const [showNudges, setShowNudges] = useState(true);
   const [goalFlow, setGoalFlow] = useState<any | null>(null);
@@ -66,6 +68,13 @@ export const useChat = () => {
   useEffect(() => {
     loadChatMessages();
   }, []);
+
+  // Update the welcome message when userName changes (only if chat has just the welcome message)
+  useEffect(() => {
+    if (userName && chatMessages.length === 1 && chatMessages[0].id === "welcome") {
+      setChatMessages(finnyConstants.getInitialChatMessages(userName));
+    }
+  }, [userName]);
 
   // Note: We don't save on unmount - only save on app background or clear chat
 
@@ -134,7 +143,7 @@ export const useChat = () => {
       
       if (!currentUserId) {
         // No user logged in, start fresh
-        setChatMessages(finnyConstants.INITIAL_CHAT_MESSAGES);
+        setChatMessages(finnyConstants.getInitialChatMessages(userName));
         setShowNudges(true);
         return;
       }
@@ -147,7 +156,7 @@ export const useChat = () => {
         await AsyncStorage.removeItem("chatMessages");
         await AsyncStorage.removeItem("chatId");
         await AsyncStorage.removeItem("currentChatUserId");
-        setChatMessages(finnyConstants.INITIAL_CHAT_MESSAGES);
+        setChatMessages(finnyConstants.getInitialChatMessages(userName));
         setShowNudges(true);
         // Generate new chatId for new user
         const newChatId = `chat_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
@@ -176,16 +185,16 @@ export const useChat = () => {
           setChatMessages(parsedMessages);
           setShowNudges(false);
         } else {
-          setChatMessages(finnyConstants.INITIAL_CHAT_MESSAGES);
+          setChatMessages(finnyConstants.getInitialChatMessages(userName));
           setShowNudges(true);
         }
       } else {
-        setChatMessages(finnyConstants.INITIAL_CHAT_MESSAGES);
+        setChatMessages(finnyConstants.getInitialChatMessages(userName));
         setShowNudges(true);
       }
     } catch (error) {
       logger.error("Error loading chat messages:", error);
-      setChatMessages(finnyConstants.INITIAL_CHAT_MESSAGES);
+      setChatMessages(finnyConstants.getInitialChatMessages(userName));
       setShowNudges(true);
     }
   };
@@ -240,7 +249,7 @@ export const useChat = () => {
       
       // Clear UI immediately for smooth UX
       await AsyncStorage.removeItem("chatMessages");
-      setChatMessages(finnyConstants.INITIAL_CHAT_MESSAGES);
+      setChatMessages(finnyConstants.getInitialChatMessages(userName));
       setCurrentSessionId(null);
       setIsNewSession(true);
       setShowNudges(true);
@@ -380,7 +389,7 @@ export const useChat = () => {
       
       await saveCurrentSession();
       await AsyncStorage.removeItem('chatMessages');
-      setChatMessages(finnyConstants.INITIAL_CHAT_MESSAGES);
+      setChatMessages(finnyConstants.getInitialChatMessages(userName));
       setCurrentSessionId(null);
       setIsNewSession(true);
       setShowNudges(true);
