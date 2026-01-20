@@ -61,6 +61,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     "expo-router",
     "expo-apple-authentication",
     "expo-font",
+    "expo-localization",
     [
       "expo-splash-screen",
       {
