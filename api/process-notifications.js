@@ -40,7 +40,7 @@ export default async function handler(req, res) {
           hasSandbox: hasSnaptradeDev,
         },
       },
-      message: `Currently using ${environment} environment`,
+      message: `Currently using ${environment} environment!`,
     });
   }
 
