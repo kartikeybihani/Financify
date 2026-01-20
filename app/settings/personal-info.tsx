@@ -5,7 +5,6 @@ import {
   StyleSheet,
   TouchableOpacity,
   ScrollView,
-  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -15,6 +14,7 @@ import { supabase } from "@/src/lib/supabase/supabase";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import EditEmailModal from "@/src/components/menu/EditEmailModal";
 import EditOccupationModal from "@/src/components/menu/EditOccupationModal";
+import EditLocationModal from "@/src/components/menu/EditLocationModal";
 import logger from "@/src/utils/core/logger";
 import { TEXT_STYLES } from "@/src/components/shared/modal-constants";
 
@@ -24,9 +24,12 @@ export default function PersonalInfoScreen() {
   const [userData, setUserData] = useState<any>(null);
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [showOccupationModal, setShowOccupationModal] = useState(false);
+  const [showLocationModal, setShowLocationModal] = useState(false);
   const [newEmail, setNewEmail] = useState("");
   const [newOccupation, setNewOccupation] = useState("");
+  const [newLocation, setNewLocation] = useState("");
   const [occupation, setOccupation] = useState<string>("");
+  const [location, setLocation] = useState<string>("");
   const [profileAge, setProfileAge] = useState<number | null>(null);
   const [firstName, setFirstName] = useState<string>("");
   const [lastName, setLastName] = useState<string>("");
@@ -51,11 +54,12 @@ export default function PersonalInfoScreen() {
           try {
             const { data: profile } = await supabase
               .from("profiles")
-              .select("occupation, age, first_name, last_name")
+              .select("occupation, location, age, first_name, last_name")
               .eq("id", user.id)
               .maybeSingle();
             if (profile) {
               setOccupation(profile.occupation || "");
+              setLocation(profile.location || "");
               setProfileAge(
                 typeof profile.age === "number" ? profile.age : null
               );
@@ -88,6 +92,30 @@ export default function PersonalInfoScreen() {
     }
   };
 
+  const invalidateProfileCache = async () => {
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (session?.access_token) {
+        await fetch("/api/finny", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            action: "invalidate_profile_cache",
+          }),
+        });
+        logger.info("[PersonalInfo] Profile cache invalidated");
+      }
+    } catch (cacheError) {
+      logger.warn("[PersonalInfo] Failed to invalidate cache:", cacheError);
+      // Non-critical, don't throw
+    }
+  };
+
   const handleSaveOccupation = async (occupationValue: string) => {
     try {
       const { data, error } = await supabase
@@ -101,30 +129,26 @@ export default function PersonalInfoScreen() {
       setShowOccupationModal(false);
       setNewOccupation("");
 
-      // Invalidate profile cache on server
-      try {
-        const {
-          data: { session },
-        } = await supabase.auth.getSession();
-        if (session?.access_token) {
-          await fetch("/api/finny", {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${session.access_token}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              action: "invalidate_profile_cache",
-            }),
-          });
-          logger.info("[PersonalInfo] Profile cache invalidated");
-        }
-      } catch (cacheError) {
-        logger.warn("[PersonalInfo] Failed to invalidate cache:", cacheError);
-        // Non-critical, don't throw
-      }
+      await invalidateProfileCache();
+    } catch (error: any) {
+      throw error;
+    }
+  };
 
-      Alert.alert("Success", "Occupation updated successfully!");
+  const handleSaveLocation = async (locationValue: string) => {
+    try {
+      const { data, error } = await supabase
+        .from("profiles")
+        .update({ location: locationValue })
+        .eq("id", userData?.id);
+
+      if (error) throw error;
+
+      setLocation(locationValue);
+      setShowLocationModal(false);
+      setNewLocation("");
+
+      await invalidateProfileCache();
     } catch (error: any) {
       throw error;
     }
@@ -213,6 +237,16 @@ export default function PersonalInfoScreen() {
               () => {
                 setNewOccupation(occupation || "");
                 setShowOccupationModal(true);
+              }
+            )}
+            <View style={styles.divider} />
+            {renderInfoItem(
+              "location-outline",
+              "Location",
+              location || "Not available",
+              () => {
+                setNewLocation(location || "");
+                setShowLocationModal(true);
               }
             )}
             <View style={styles.divider} />
@@ -313,6 +347,18 @@ export default function PersonalInfoScreen() {
           setNewOccupation("");
         }}
         onSave={handleSaveOccupation}
+      />
+
+      {/* Location Edit Modal */}
+      <EditLocationModal
+        visible={showLocationModal}
+        value={newLocation}
+        onChange={setNewLocation}
+        onCancel={() => {
+          setShowLocationModal(false);
+          setNewLocation("");
+        }}
+        onSave={handleSaveLocation}
       />
     </SafeAreaView>
   );

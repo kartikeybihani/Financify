@@ -358,13 +358,13 @@ export default function SettingsScreen() {
               notificationsEnabled,
               setNotificationsEnabled
             )}
-            {renderSwitchItem(
+            {/* {renderSwitchItem(
               <Ionicons name="finger-print" size={24} color="#4A90E2" />,
               "Biometric Login",
               biometricsEnabled,
               setBiometricsEnabled,
               false
-            )}
+            )} */}
           </>
         )}
 

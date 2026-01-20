@@ -23,7 +23,7 @@ import logger from "@/src/utils/core/logger";
 import { logOnboardingEvent } from "@/src/utils/auth/onboarding";
 import { useAuthNavigation } from "@/src/contexts/AuthNavigationContext";
 
-const { width } = Dimensions.get("window");
+const { width, height: SCREEN_HEIGHT } = Dimensions.get("window");
 
 interface InsightCard {
   id: string;
@@ -40,21 +40,27 @@ interface CategoryBreakdown {
   amount: number;
   percentage: number;
   count: number;
+  icon?: string;
+  categoryId?: string;
 }
+
+type EarlyInsights = {
+  intro_line?: string;
+  mirror?: string;
+  plan?: string;
+  hook?: string;
+};
 
 export default function FinalScreen() {
   const router = useRouter();
   const { refreshNavigationState } = useAuthNavigation();
-  const [typedText, setTypedText] = useState("");
-  const [typedHeadline, setTypedHeadline] = useState("");
-  const [earlyInsights, setEarlyInsights] = useState<any | null>(null);
+  const [earlyInsights, setEarlyInsights] = useState<EarlyInsights | null>(null);
   const [insights, setInsights] = useState<InsightCard[]>([]);
   const [isLoadingInsights, setIsLoadingInsights] = useState(true);
   const [isButtonEnabled, setIsButtonEnabled] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [currentSlide, setCurrentSlide] = useState(0);
   const [showLoadingAnimation, setShowLoadingAnimation] = useState(true);
-  const carouselRef = useRef<ScrollView>(null);
+  const [showBreakdown, setShowBreakdown] = useState(false);
 
   // Typing dots animation for loading
   const typingDotsAnim = useRef([
@@ -63,14 +69,11 @@ export default function FinalScreen() {
     new Animated.Value(0.4),
   ]).current;
 
-  const index = useRef(0);
-  const messageLines = ["You're in."];
-  const headlineLine = "Here's what jumps out already!";
-  const cursorVisible = useRef(true);
-
   const cardOpacity = useRef(new Animated.Value(0)).current;
+  const firstReadBodyAnim = useRef(new Animated.Value(0)).current;
+  const breakdownAnim = useRef(new Animated.Value(0)).current;
+  const footerAnim = useRef(new Animated.Value(0)).current;
   const buttonScale = useRef(new Animated.Value(1)).current;
-  const buttonPulse = useRef(new Animated.Value(1)).current;
   const rocketAnimation = useRef(new Animated.Value(0)).current;
   const cardAnimations = useRef<Animated.Value[]>([]).current;
   const mascotBounce = useRef(new Animated.Value(0)).current;
@@ -79,7 +82,6 @@ export default function FinalScreen() {
     new Animated.Value(0.3),
     new Animated.Value(0.3),
   ]).current;
-  const typingSpeed = 20;
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat("en-US", {
@@ -90,29 +92,222 @@ export default function FinalScreen() {
     }).format(Math.abs(amount));
   };
 
-  const getCategoryColor = (categoryName: string): string => {
-    const colorMap: { [key: string]: string } = {
-      Groceries: "#4CAF50",
-      Food: "#FF6B6B",
-      "Food & Dining": "#FF6B6B",
-      "Dining Out": "#FF6B6B",
-      Housing: "#8E44AD",
-      Transportation: "#45B7D1",
-      Shopping: "#4ECDC4",
-      Entertainment: "#96CEB4",
-      Subscriptions: "#FFA500",
-      "Health & Fitness": "#FF6B9D",
-      Health: "#FF6B9D",
-      "Bills & Utilities": "#FFD700",
-      "Personal Care": "#FFB6C1",
-      Travel: "#00CED1",
-      Education: "#9B59B6",
-      "Savings & Investments": "#32D74B",
-      Savings: "#32D74B",
-      Income: "#4A90E2",
-      Other: "#607D8B",
+  const getFirstReadLines = (source: EarlyInsights | null) => {
+    const coerce = (value: unknown) => String(value ?? "").trim();
+    return {
+      introLine: coerce(source?.intro_line),
+      mirrorLine: coerce(source?.mirror),
+      planLine: coerce(source?.plan),
+      hookLine: coerce(source?.hook),
     };
-    return colorMap[categoryName] || "#607D8B";
+  };
+
+  const { introLine, mirrorLine, planLine, hookLine } =
+    getFirstReadLines(earlyInsights);
+  const firstReadIsLoading =
+    !earlyInsights && (isLoadingInsights || showLoadingAnimation);
+  const firstReadOrderedRevealLines = [mirrorLine, planLine, hookLine].filter(
+    Boolean
+  );
+
+  const [firstReadTypedIntro, setFirstReadTypedIntro] = useState("");
+  const [firstReadRevealedCount, setFirstReadRevealedCount] = useState(0);
+  const [firstReadShowCaret, setFirstReadShowCaret] = useState(true);
+
+  const firstReadIsTyping =
+    !firstReadIsLoading &&
+    !!introLine &&
+    firstReadTypedIntro.length < introLine.length &&
+    introLine.length > 0;
+  const firstReadIsComplete =
+    !firstReadIsLoading &&
+    !firstReadIsTyping &&
+    firstReadOrderedRevealLines.length > 0 &&
+    firstReadRevealedCount >= firstReadOrderedRevealLines.length;
+
+  useEffect(() => {
+    if (firstReadIsLoading || !introLine) {
+      setFirstReadTypedIntro("");
+      setFirstReadRevealedCount(0);
+      setShowBreakdown(false);
+      firstReadBodyAnim.setValue(0);
+      breakdownAnim.setValue(0);
+      footerAnim.setValue(0);
+      return;
+    }
+
+    let cancelled = false;
+    setFirstReadTypedIntro("");
+    setFirstReadRevealedCount(0);
+    setFirstReadShowCaret(true);
+
+    const orderedRevealLines = [mirrorLine, planLine, hookLine].filter(Boolean);
+
+    const run = async () => {
+      const speedMs = 22;
+      const revealDelayMs = 360;
+
+      for (let i = 1; i <= introLine.length; i++) {
+        if (cancelled) return;
+        setFirstReadTypedIntro(introLine.slice(0, i));
+        await new Promise((r) => setTimeout(r, speedMs));
+      }
+
+      for (let i = 0; i < orderedRevealLines.length; i++) {
+        if (cancelled) return;
+        await new Promise((r) => setTimeout(r, revealDelayMs));
+        setFirstReadRevealedCount(i + 1);
+      }
+
+      if (!cancelled) {
+        Animated.timing(firstReadBodyAnim, {
+          toValue: 1,
+          duration: 360,
+          useNativeDriver: true,
+        }).start();
+      }
+    };
+
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [firstReadIsLoading, introLine, mirrorLine, planLine, hookLine]);
+
+  useEffect(() => {
+    if (!firstReadIsTyping) return;
+    const id = setInterval(() => setFirstReadShowCaret((prev) => !prev), 480);
+    return () => clearInterval(id);
+  }, [firstReadIsTyping]);
+
+  useEffect(() => {
+    if (!firstReadIsComplete || isLoadingInsights || showLoadingAnimation) {
+      return;
+    }
+
+    breakdownAnim.setValue(0);
+    footerAnim.setValue(0);
+    setShowBreakdown(false);
+
+    const delayId = setTimeout(() => {
+      setShowBreakdown(true);
+      Animated.timing(breakdownAnim, {
+        toValue: 1,
+        duration: 420,
+        useNativeDriver: true,
+      }).start();
+    }, 500);
+
+    const footerId = setTimeout(() => {
+      Animated.timing(footerAnim, {
+        toValue: 1,
+        duration: 360,
+        useNativeDriver: true,
+      }).start();
+    }, 1000);
+
+    const buttonId = setTimeout(() => {
+      setIsButtonEnabled(true);
+    }, 1000);
+
+    return () => {
+      clearTimeout(delayId);
+      clearTimeout(footerId);
+      clearTimeout(buttonId);
+    };
+  }, [
+    firstReadIsComplete,
+    isLoadingInsights,
+    showLoadingAnimation,
+    breakdownAnim,
+    footerAnim,
+  ]);
+
+  const FirstReadCard = ({
+    introLine,
+    typedIntro,
+    orderedRevealLines,
+    revealedCount,
+    isTyping,
+    showCaret,
+    isLoading,
+  }: {
+    introLine: string;
+    typedIntro: string;
+    orderedRevealLines: string[];
+    revealedCount: number;
+    isTyping: boolean;
+    showCaret: boolean;
+    isLoading: boolean;
+  }) => {
+    if (isLoading || !introLine) {
+      return (
+        <View style={styles.firstReadCard}>
+          <View style={styles.firstReadHeader}>
+            <Animated.Image
+              source={require("../../assets/images/midleftshot.png")}
+              resizeMode="contain"
+              style={styles.firstReadMascot}
+            />
+            <Text style={styles.firstReadKicker}>FIRST READ</Text>
+          </View>
+          <Text style={styles.firstReadHero}>Preparing your first read…</Text>
+          <View style={styles.firstReadRule}>
+            <Text style={styles.firstReadBody}>
+              Finny is reviewing your recent activity.
+            </Text>
+          </View>
+        </View>
+      );
+    }
+
+    return (
+      <View style={styles.firstReadCard}>
+        <View style={styles.firstReadHeader}>
+          <Animated.Image
+            source={require("../../assets/images/midleftshot.png")}
+            resizeMode="contain"
+            style={styles.firstReadMascot}
+          />
+          <Text style={styles.firstReadKicker}>FIRST READ</Text>
+        </View>
+        <Text style={styles.firstReadHero}>
+          {typedIntro}
+          {isTyping && showCaret ? (
+            <Text style={styles.firstReadCaret}>▍</Text>
+          ) : null}
+        </Text>
+        {revealedCount > 0 && (
+          <Text style={styles.firstReadMirror}>{orderedRevealLines[0]}</Text>
+        )}
+        {revealedCount > 1 && (
+          <Animated.View
+            style={[
+              styles.firstReadRule,
+              {
+                opacity: firstReadBodyAnim,
+                transform: [
+                  {
+                    translateY: firstReadBodyAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [-12, 0],
+                    }),
+                  },
+                ],
+              },
+            ]}
+          >
+            {orderedRevealLines
+              .slice(1, revealedCount)
+              .map((line, idx) => (
+                <Text key={idx} style={styles.firstReadBody}>
+                  {line}
+                </Text>
+              ))}
+          </Animated.View>
+        )}
+      </View>
+    );
   };
 
   const loadInsights = async () => {
@@ -151,12 +346,11 @@ export default function FinalScreen() {
         endDate: endDateStr,
       });
 
-      // Fetch transactions directly from database
-      // Use top_category (user-friendly) with fallback to category (raw Plaid)
+      // Fetch transactions directly from database with category data
       const { data: transactions, error: txError } = await supabase
         .from("transactions")
         .select(
-          "date, amount, merchant_name, name, category, top_category, new_category"
+          "date, amount, merchant_name, name, category, top_category, new_category, category_id, categories(id, name, icon)"
         )
         .eq("user_id", user.id)
         .gte("date", startDateStr)
@@ -261,23 +455,16 @@ export default function FinalScreen() {
           setShowLoadingAnimation(false);
         }, 2500);
 
-        // Initialize animation for welcome card (and teaser/feature cards)
-        for (let i = 0; i < 3; i++) {
-          if (!cardAnimations[i]) {
-            cardAnimations[i] = new Animated.Value(0);
-          }
+        // Initialize animation for welcome card
+        if (!cardAnimations[0]) {
+          cardAnimations[0] = new Animated.Value(0);
         }
-        Animated.stagger(
-          200,
-          cardAnimations.slice(0, 3).map((anim) =>
-            Animated.spring(anim, {
-              toValue: 1,
-              friction: 6,
-              tension: 40,
-              useNativeDriver: true,
-            })
-          )
-        ).start();
+        Animated.spring(cardAnimations[0], {
+          toValue: 1,
+          friction: 6,
+          tension: 40,
+          useNativeDriver: true,
+        }).start();
         return;
       }
 
@@ -395,9 +582,8 @@ export default function FinalScreen() {
           .join(" ");
       };
 
-      // Calculate category breakdown using user-friendly categories
-      const categoryMap: { [key: string]: { amount: number; count: number } } =
-        {};
+      // Calculate category breakdown using user-friendly categories with icons from DB
+      const categoryMap: { [key: string]: { amount: number; count: number; icon?: string; categoryId?: string } } = {};
       let totalSpent = 0;
 
       recentTransactions.forEach((tx: any) => {
@@ -406,7 +592,12 @@ export default function FinalScreen() {
         totalSpent += amount;
 
         if (!categoryMap[category]) {
-          categoryMap[category] = { amount: 0, count: 0 };
+          categoryMap[category] = { 
+            amount: 0, 
+            count: 0,
+            icon: tx.categories?.icon,
+            categoryId: tx.categories?.id || tx.category_id
+          };
         }
         categoryMap[category].amount += amount;
         categoryMap[category].count += 1;
@@ -418,150 +609,25 @@ export default function FinalScreen() {
           amount: data.amount,
           percentage: (data.amount / totalSpent) * 100,
           count: data.count,
+          icon: data.icon,
+          categoryId: data.categoryId,
         }))
         .sort((a, b) => b.amount - a.amount);
 
-      // 1. SURPRISE CARD - Find something counterintuitive
-      const biggestTransaction = recentTransactions.reduce(
-        (max: any, tx: any) =>
-          Number(tx.amount) > Number(max.amount) ? tx : max,
-        recentTransactions[0]
-      );
-
-      // Find most frequent merchant
-      const merchantMap: { [key: string]: number } = {};
-      recentTransactions.forEach((tx: any) => {
-        const merchant = tx.merchant_name || tx.name || "Unknown";
-        merchantMap[merchant] = (merchantMap[merchant] || 0) + 1;
+      // PATTERN CARD - Top categories with visual breakdown (only insight shown here)
+      const top3 = categoryBreakdown.slice(0, 3);
+      newInsights.push({
+        id: "pattern",
+        type: "pattern",
+        title: "Your spending breakdown so far",
+        subtitle: "", // Empty subtitle - visual boxes show the info
+        icon: "", // No icon - title will be centered
+        color: "#00CED1",
+        data: { categories: top3, total: totalSpent },
       });
-      const mostFrequentMerchant = Object.entries(merchantMap).sort(
-        (a, b) => b[1] - a[1]
-      )[0];
 
-      // Create surprise insight
-      if (biggestTransaction && biggestTransaction.amount > 50) {
-        const merchant =
-          biggestTransaction.merchant_name ||
-          biggestTransaction.name ||
-          "a merchant";
-        newInsights.push({
-          id: "surprise",
-          type: "surprise",
-          title: `Your biggest spend: ${formatCurrency(
-            biggestTransaction.amount
-          )}`,
-          subtitle: `at ${merchant} — that's ${Math.round(
-            (biggestTransaction.amount / totalSpent) * 100
-          )}% of your monthly spending`,
-          icon: "flash",
-          color: "#FF6B6B",
-          data: { amount: biggestTransaction.amount, merchant },
-        });
-      } else if (mostFrequentMerchant && mostFrequentMerchant[1] >= 3) {
-        newInsights.push({
-          id: "surprise",
-          type: "surprise",
-          title: `You visited ${mostFrequentMerchant[0]} ${mostFrequentMerchant[1]} times`,
-          subtitle: "this month — your most frequent spot",
-          icon: "repeat",
-          color: "#FFD700",
-          data: {
-            merchant: mostFrequentMerchant[0],
-            count: mostFrequentMerchant[1],
-          },
-        });
-      } else if (categoryBreakdown.length > 0) {
-        const topCategory = categoryBreakdown[0];
-        newInsights.push({
-          id: "surprise",
-          type: "surprise",
-          title: `${topCategory.category} is your top category`,
-          subtitle: `You spent ${formatCurrency(
-            topCategory.amount
-          )} (${Math.round(
-            topCategory.percentage
-          )}%) on ${topCategory.category.toLowerCase()} this month`,
-          icon: "trending-up",
-          color: "#4A90E2",
-          data: topCategory,
-        });
-      }
-
-      // 2. OPPORTUNITY CARD - Actionable insight (moved before pattern)
-      try {
-        const { data: rec } = await supabase.rpc(
-          "get_recurring_streams_active",
-          { p_user_id: user.id }
-        );
-        if (Array.isArray(rec) && rec.length > 0) {
-          const subs = rec.filter((r: any) => r.stream_type === "subscription");
-          if (subs.length > 0) {
-            const subTotal = subs.reduce(
-              (s: number, r: any) => s + Number(r.average_amount || 0),
-              0
-            );
-            newInsights.push({
-              id: "opportunity",
-              type: "opportunity",
-              title: `You're spending ${formatCurrency(
-                subTotal
-              )}/month on subscriptions`,
-              subtitle: `That's ${
-                subs.length
-              } active subscriptions — ${formatCurrency(
-                subTotal * 12
-              )} per year`,
-              icon: "card",
-              color: "#FFA500",
-              data: { total: subTotal, count: subs.length },
-            });
-          }
-        }
-      } catch (e) {
-        logger.info("get_recurring_streams_active failed", e);
-      }
-
-      // If no opportunity card, create one based on spending
-      if (!newInsights.find((i) => i.type === "opportunity")) {
-        if (categoryBreakdown.length > 0) {
-          const topCategory = categoryBreakdown[0];
-          const potentialSavings = Math.round(topCategory.amount * 0.1); // 10% reduction
-          if (potentialSavings > 20) {
-            newInsights.push({
-              id: "opportunity",
-              type: "opportunity",
-              title: `Save ${formatCurrency(potentialSavings)}/month`,
-              subtitle: `Cut back 10% on ${topCategory.category.toLowerCase()} and you'll save ${formatCurrency(
-                potentialSavings * 12
-              )} per year`,
-              icon: "bulb",
-              color: "#00D4AA",
-              data: {
-                savings: potentialSavings,
-                category: topCategory.category,
-              },
-            });
-          }
-        }
-      }
-
-      // 3. PATTERN CARD - Top 3 categories with visual breakdown (moved to 3rd position)
-      if (categoryBreakdown.length >= 2) {
-        const top3 = categoryBreakdown.slice(0, 3);
-        newInsights.push({
-          id: "pattern",
-          type: "pattern",
-          title: "Your spending breakdown",
-          subtitle: "", // Empty subtitle - visual boxes show the info
-          icon: "", // No icon - title will be centered
-          color: "#00CED1",
-          data: { categories: top3, total: totalSpent },
-        });
-      }
-
-      // Initialize card animations (including teaser and feature cards)
-      const totalCards = newInsights.length + 2; // +2 for teaser and feature cards
-      for (let i = 0; i < totalCards; i++) {
+      // Initialize card animations
+      for (let i = 0; i < newInsights.length; i++) {
         if (!cardAnimations[i]) {
           cardAnimations[i] = new Animated.Value(0);
         }
@@ -574,7 +640,6 @@ export default function FinalScreen() {
 
       setInsights(newInsights);
       setIsLoadingInsights(false);
-      // Don't enable button initially - wait for user to swipe to slide 2
       setIsButtonEnabled(false);
 
       // Show loading animation for 2.5 seconds before showing insights
@@ -582,11 +647,11 @@ export default function FinalScreen() {
         setShowLoadingAnimation(false);
       }, 2500);
 
-      // Animate cards in with stagger (including teaser and social proof)
+      // Animate cards in with stagger
       if (cardAnimations.length > 0) {
         Animated.stagger(
           200,
-          cardAnimations.slice(0, totalCards).map((anim) =>
+          cardAnimations.slice(0, newInsights.length).map((anim) =>
             Animated.spring(anim, {
               toValue: 1,
               friction: 6,
@@ -618,60 +683,19 @@ export default function FinalScreen() {
         setShowLoadingAnimation(false);
       }, 2500);
 
-      // Initialize animation for error card (and teaser/feature cards)
-      for (let i = 0; i < 3; i++) {
-        if (!cardAnimations[i]) {
-          cardAnimations[i] = new Animated.Value(0);
-        }
+      // Initialize animation for error card
+      if (!cardAnimations[0]) {
+        cardAnimations[0] = new Animated.Value(0);
       }
-      Animated.stagger(
-        200,
-        cardAnimations.slice(0, 3).map((anim) =>
-          Animated.spring(anim, {
-            toValue: 1,
-            friction: 6,
-            tension: 40,
-            useNativeDriver: true,
-          })
-        )
-      ).start();
+      Animated.spring(cardAnimations[0], {
+        toValue: 1,
+        friction: 6,
+        tension: 40,
+        useNativeDriver: true,
+      }).start();
     }
   };
 
-  // Enable button after insights load
-  useEffect(() => {
-    if ((!isLoadingInsights && insights.length > 0) || !!earlyInsights) {
-      // Mascot bounce celebration
-      Animated.sequence([
-        Animated.timing(mascotBounce, {
-          toValue: -8,
-          duration: 150,
-          useNativeDriver: true,
-        }),
-        Animated.spring(mascotBounce, {
-          toValue: 0,
-          friction: 4,
-          useNativeDriver: true,
-        }),
-      ]).start();
-
-      // Button pulse effect
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(buttonPulse, {
-            toValue: 1.05,
-            duration: 1000,
-            useNativeDriver: true,
-          }),
-          Animated.timing(buttonPulse, {
-            toValue: 1,
-            duration: 1000,
-            useNativeDriver: true,
-          }),
-        ])
-      ).start();
-    }
-  }, [isLoadingInsights, insights, earlyInsights]);
 
   useEffect(() => {
     logOnboardingEvent({ stage: "final", action: "view" });
@@ -696,56 +720,23 @@ export default function FinalScreen() {
     );
     Animated.parallel(dotAnimations).start();
 
-    let introTimeout: ReturnType<typeof setTimeout> | null = null;
-    let headlineTimeout: ReturnType<typeof setTimeout> | null = null;
+    const floatLoop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(mascotBounce, {
+          toValue: 1,
+          duration: 1800,
+          useNativeDriver: true,
+        }),
+        Animated.timing(mascotBounce, {
+          toValue: 0,
+          duration: 1800,
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    floatLoop.start();
+
     let cancelled = false;
-
-    const typeLine = ({
-      line,
-      setLine,
-      speedMs,
-      setTimer,
-    }: {
-      line: string;
-      setLine: React.Dispatch<React.SetStateAction<string>>;
-      speedMs: number;
-      setTimer: (t: ReturnType<typeof setTimeout>) => void;
-    }) => {
-      let idx = 0;
-      const tick = () => {
-        if (cancelled) return;
-        idx += 1;
-        setLine(line.slice(0, idx));
-        if (idx < line.length) {
-          const variance = Math.random() * 30 - 15;
-          const next = Math.max(10, speedMs + variance);
-          setTimer(setTimeout(tick, next));
-        }
-      };
-      tick();
-    };
-
-    introTimeout = setTimeout(() => {
-      typeLine({
-        line: messageLines.join("\n"),
-        setLine: setTypedText,
-        speedMs: typingSpeed,
-        setTimer: (t: ReturnType<typeof setTimeout>) => {
-          introTimeout = t;
-        },
-      });
-    }, 250);
-
-    headlineTimeout = setTimeout(() => {
-      typeLine({
-        line: headlineLine,
-        setLine: setTypedHeadline,
-        speedMs: 18,
-        setTimer: (t: ReturnType<typeof setTimeout>) => {
-          headlineTimeout = t;
-        },
-      });
-    }, 650);
 
     Animated.sequence([
       Animated.delay(350),
@@ -802,8 +793,7 @@ export default function FinalScreen() {
 
     return () => {
       cancelled = true;
-      if (introTimeout) clearTimeout(introTimeout);
-      if (headlineTimeout) clearTimeout(headlineTimeout);
+      floatLoop.stop();
     };
   }, []);
 
@@ -925,11 +915,28 @@ export default function FinalScreen() {
   const renderInsightCard = (insight: InsightCard, index: number) => {
     const animValue = cardAnimations[index] || new Animated.Value(0);
 
+    const isPattern = insight.type === "pattern";
+    const breakdownStyle = isPattern
+      ? {
+          opacity: breakdownAnim,
+          transform: [
+            {
+              translateY: breakdownAnim.interpolate({
+                inputRange: [0, 1],
+                outputRange: [-12, 0],
+              }),
+            },
+          ],
+        }
+      : null;
+
     return (
       <Animated.View
         key={insight.id}
         style={[
           styles.insightCard,
+          isPattern && styles.patternInsightCard,
+          isPattern && breakdownStyle,
           {
             opacity: animValue,
             transform: [
@@ -978,46 +985,69 @@ export default function FinalScreen() {
 
         {/* Visual breakdown for pattern card */}
         {insight.type === "pattern" && insight.data?.categories && (
-          <View style={styles.categoryBoxes}>
-            {insight.data.categories
-              .slice(0, 3)
-              .map((cat: CategoryBreakdown, i: number) => {
-                // Use three distinct colors based on index
-                const boxColors = ["#6B8DD6", "#00D4AA", "#FF6B6B"];
-                const boxColor = boxColors[i] || "#607D8B";
-                const isFirst = i === 0;
-                const isLast = i === 2;
-                return (
-                  <View
-                    key={i}
-                    style={[
-                      styles.categoryBox,
-                      isFirst && styles.categoryBoxFirst,
-                      isLast && styles.categoryBoxLast,
-                    ]}
-                  >
+          <>
+            <View style={styles.categoryBoxes}>
+              {insight.data.categories
+                .slice(0, 3)
+                .map((cat: CategoryBreakdown, i: number) => {
+                  // Use three distinct colors based on index
+                  const boxColors = ["#6B8DD6", "#00D4AA", "#FF6B6B"];
+                  const boxColor = boxColors[i] || "#607D8B";
+                  
+                  // Helper to determine if icon is emoji or Ionicons
+                  const isEmoji = (icon: string) => {
+                    const emojiRegex = /[\u{1F300}-\u{1F9FF}]|[\u{1F600}-\u{1F64F}]|[\u{1F680}-\u{1F6FF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF}]/u;
+                    return emojiRegex.test(icon);
+                  };
+                  
+                  const iconValue = cat.icon || '💳';
+                  const isIconEmoji = isEmoji(iconValue);
+                  
+                  return (
                     <View
-                      style={[
-                        styles.categoryBoxContent,
-                        { backgroundColor: boxColor },
-                      ]}
+                      key={i}
+                      style={styles.categoryBox}
                     >
-                      <Text style={styles.categoryBoxName} numberOfLines={1}>
-                        {cat.category}
-                      </Text>
-                      <Text style={styles.categoryBoxAmount}>
-                        {formatCurrency(cat.amount)}
-                      </Text>
-                      <View style={styles.categoryBoxPercentage}>
-                        <Text style={styles.categoryBoxPercentageText}>
-                          {Math.round(cat.percentage)}%
+                      <View
+                        style={[
+                          styles.categoryBoxContent,
+                          { backgroundColor: boxColor },
+                        ]}
+                      >
+                        <View style={styles.categoryBoxIconContainer}>
+                          {isIconEmoji ? (
+                            <Text style={styles.categoryBoxIconEmoji}>
+                              {iconValue}
+                            </Text>
+                          ) : (
+                            <Ionicons
+                              name={iconValue as any}
+                              size={18}
+                              color="#fff"
+                            />
+                          )}
+                        </View>
+                        <Text style={styles.categoryBoxName}>
+                          {cat.category}
                         </Text>
+                        <Text style={styles.categoryBoxAmount}>
+                          {formatCurrency(cat.amount)}
+                        </Text>
+                        <View style={styles.categoryBoxPercentage}>
+                          <Text style={styles.categoryBoxPercentageText}>
+                            {Math.round(cat.percentage)}%
+                          </Text>
+                        </View>
                       </View>
                     </View>
-                  </View>
-                );
-              })}
-          </View>
+                  );
+                })}
+            </View>
+            {/* Subtle nudge text */}
+            <Text style={styles.insightsNudgeText}>
+              More insights unlock once you're inside
+            </Text>
+          </>
         )}
       </Animated.View>
     );
@@ -1065,85 +1095,23 @@ export default function FinalScreen() {
 
         <SafeAreaView style={styles.mainContent} edges={["top", "bottom"]}>
           <ScrollView
-            style={styles.scroll}
             contentContainerStyle={styles.scrollContent}
             showsVerticalScrollIndicator={false}
-            nestedScrollEnabled
           >
-            <View style={styles.header}>
-              <Text style={styles.doneText}>
-                You've already done the hardest part — showing up! 🎉
-              </Text>
-              {/* <Text style={styles.subText}>
-                Your journey begins today — one step at a time.
-              </Text> */}
-            </View>
-
-            <Animated.View style={[styles.finnyBox]}>
-              <Animated.Image
-                source={require("../../assets/images/midleftshot.png")}
-                // resizeMode="contain"
-                style={[styles.mascot]}
-              />
-              <Text style={styles.finnyText}>{typedText}</Text>
-            </Animated.View>
-
-            <Text style={styles.headlineText}>{typedHeadline}</Text>
-
             <Animated.View
               style={[styles.cardsContainer, { opacity: cardOpacity }]}
             >
-              {earlyInsights ? (
-                <View style={styles.earlyInsightsCard}>
-                  <Text style={styles.earlyInsightsKicker}>Finny’s first read</Text>
-                  <Text style={styles.earlyInsightsIntro}>
-                    {String(earlyInsights?.intro_line || "").trim()}
-                  </Text>
-                  <Text style={styles.earlyInsightsBody}>
-                    {String(earlyInsights?.mirror || "").trim()}
-                  </Text>
-                  <Text style={styles.earlyInsightsBody}>
-                    {String(earlyInsights?.plan || "").trim()}
-                  </Text>
-                  <Text style={styles.earlyInsightsHook}>
-                    {String(earlyInsights?.hook || "").trim()}
-                  </Text>
-                </View>
-              ) : (
-                <View style={styles.loadingContainer}>
-                  <View style={styles.typingIndicatorContainer}>
-                    <View style={styles.typingDotsContainer}>
-                      {typingDotsAnim.map((dot, index) => (
-                        <Animated.View
-                          key={index}
-                          style={[
-                            styles.typingDot,
-                            {
-                              transform: [
-                                {
-                                  translateY: dot.interpolate({
-                                    inputRange: [0, 1],
-                                    outputRange: [0, -8],
-                                  }),
-                                },
-                              ],
-                              opacity: dot.interpolate({
-                                inputRange: [0, 1],
-                                outputRange: [0.4, 1],
-                              }),
-                            },
-                          ]}
-                        />
-                      ))}
-                    </View>
-                    <Text style={styles.loadingText}>
-                      Finny is reading 6 months…
-                    </Text>
-                  </View>
-                </View>
-              )}
+              <FirstReadCard
+                introLine={introLine}
+                typedIntro={firstReadTypedIntro}
+                orderedRevealLines={firstReadOrderedRevealLines}
+                revealedCount={firstReadRevealedCount}
+                isTyping={firstReadIsTyping}
+                showCaret={firstReadShowCaret}
+                isLoading={firstReadIsLoading}
+              />
 
-              {isLoadingInsights || showLoadingAnimation ? (
+              {isLoadingInsights || showLoadingAnimation || !showBreakdown ? (
                 <View style={styles.loadingContainer}>
                   <View style={styles.typingIndicatorContainer}>
                     <View style={styles.typingDotsContainer}>
@@ -1174,199 +1142,36 @@ export default function FinalScreen() {
                   </View>
                 </View>
               ) : (
-                <View style={styles.carouselContainer}>
-                  <ScrollView
-                    ref={carouselRef}
-                    horizontal
-                    pagingEnabled
-                    showsHorizontalScrollIndicator={false}
-                    nestedScrollEnabled
-                    onMomentumScrollEnd={(event) => {
-                      const slideIndex = Math.round(
-                        event.nativeEvent.contentOffset.x / width
-                      );
-                      setCurrentSlide(slideIndex);
-                      // Enable button only when user reaches slide 2, disable on slide 1
-                      setIsButtonEnabled(slideIndex === 1);
-                    }}
-                    scrollEventThrottle={16}
-                  >
-                  {/* Slide 1: Insight Cards */}
-                  <View style={styles.carouselSlide}>
-                    <View style={styles.insightsContent}>
-                      {insights.map((insight, index) =>
-                        renderInsightCard(insight, index)
-                      )}
-                    </View>
-                  </View>
-
-                  {/* Slide 2: Teaser + Feature + Achievement */}
-                  <View style={styles.carouselSlide}>
-                    <View style={styles.slide2Content}>
-                      {/* Teaser Card - More Insights Waiting */}
-                      {insights.length > 0 &&
-                        cardAnimations[insights.length] && (
-                          <Animated.View
-                            style={[
-                              styles.teaserCard,
-                              {
-                                opacity: cardAnimations[insights.length],
-                                transform: [
-                                  {
-                                    translateY: cardAnimations[
-                                      insights.length
-                                    ].interpolate({
-                                      inputRange: [0, 1],
-                                      outputRange: [20, 0],
-                                    }),
-                                  },
-                                ],
-                              },
-                            ]}
-                          >
-                            <View style={styles.teaserContent}>
-                              <View style={styles.teaserIconContainer}>
-                                <Ionicons
-                                  name="sparkles"
-                                  size={22}
-                                  color="#FFD700"
-                                />
-                              </View>
-                              <View style={styles.teaserTextContainer}>
-                                <Text style={styles.teaserTitle}>
-                                  {insights.length === 1
-                                    ? "3 more insights"
-                                    : "7+ more insights"}{" "}
-                                  waiting for you
-                                </Text>
-                                <Text style={styles.teaserSubtitle}>
-                                  Discover recurring subscriptions, spending
-                                  trends, and personalized recommendations
-                                </Text>
-                              </View>
-                            </View>
-                          </Animated.View>
-                        )}
-
-                      {/* Feature Preview Card */}
-                      {insights.length > 0 &&
-                        cardAnimations[insights.length + 1] && (
-                          <Animated.View
-                            style={[
-                              styles.featureCard,
-                              {
-                                opacity: cardAnimations[insights.length + 1],
-                                transform: [
-                                  {
-                                    translateY: cardAnimations[
-                                      insights.length + 1
-                                    ].interpolate({
-                                      inputRange: [0, 1],
-                                      outputRange: [20, 0],
-                                    }),
-                                  },
-                                ],
-                              },
-                            ]}
-                          >
-                            <View style={styles.featureContent}>
-                              <View style={styles.featureIconContainer}>
-                                <Ionicons
-                                  name="chatbubbles"
-                                  size={22}
-                                  color="#00D4AA"
-                                />
-                              </View>
-                              <View style={styles.featureTextContainer}>
-                                <Text style={styles.featureTitle}>
-                                  Chat with Finny, your AI Money Coach
-                                </Text>
-                                <View style={styles.featurePoints}>
-                                  <View style={styles.featurePoint}>
-                                    <Ionicons
-                                      name="checkmark-circle"
-                                      size={14}
-                                      color="#00D4AA"
-                                    />
-                                    <Text style={styles.featurePointText}>
-                                      Get personalized financial advice
-                                    </Text>
-                                  </View>
-                                  <View style={styles.featurePoint}>
-                                    <Ionicons
-                                      name="checkmark-circle"
-                                      size={14}
-                                      color="#00D4AA"
-                                    />
-                                    <Text style={styles.featurePointText}>
-                                      Track and achieve your goals
-                                    </Text>
-                                  </View>
-                                  <View style={styles.featurePoint}>
-                                    <Ionicons
-                                      name="checkmark-circle"
-                                      size={14}
-                                      color="#00D4AA"
-                                    />
-                                    <Text style={styles.featurePointText}>
-                                      Understand your spending patterns
-                                    </Text>
-                                  </View>
-                                  <View style={styles.featurePoint}>
-                                    <Ionicons
-                                      name="checkmark-circle"
-                                      size={14}
-                                      color="#00D4AA"
-                                    />
-                                    <Text style={styles.featurePointText}>
-                                      Get answers to money questions
-                                    </Text>
-                                  </View>
-                                  <View style={styles.featurePoint}>
-                                    <Ionicons
-                                      name="checkmark-circle"
-                                      size={14}
-                                      color="#00D4AA"
-                                    />
-                                    <Text style={styles.featurePointText}>
-                                      Ready to grow wealth?
-                                    </Text>
-                                  </View>
-                                </View>
-                              </View>
-                            </View>
-                          </Animated.View>
-                        )}
-                    </View>
-                  </View>
-                  </ScrollView>
-
-                  {/* Carousel Indicators */}
-                  <View style={styles.carouselIndicators}>
-                    <View
-                      style={[
-                        styles.carouselIndicator,
-                        currentSlide === 0 && styles.carouselIndicatorActive,
-                      ]}
-                    />
-                    <View
-                      style={[
-                        styles.carouselIndicator,
-                        currentSlide === 1 && styles.carouselIndicatorActive,
-                      ]}
-                    />
-                  </View>
+                <View style={styles.insightsContent}>
+                  {insights.map((insight, index) =>
+                    renderInsightCard(insight, index)
+                  )}
                 </View>
               )}
             </Animated.View>
           </ScrollView>
 
-          <View style={styles.footer}>
+          <Animated.View
+            style={[
+              styles.footer,
+              {
+                opacity: footerAnim,
+                transform: [
+                  {
+                    translateY: footerAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [16, 0],
+                    }),
+                  },
+                ],
+              },
+            ]}
+          >
             <Animated.View
               style={[
                 styles.buttonContainer,
                 {
-                  transform: [{ scale: buttonScale }, { scale: buttonPulse }],
+                  transform: [{ scale: buttonScale }],
                 },
               ]}
             >
@@ -1408,7 +1213,7 @@ export default function FinalScreen() {
                 </LinearGradient>
               </TouchableOpacity>
             </Animated.View>
-          </View>
+          </Animated.View>
         </SafeAreaView>
       </LinearGradient>
     </View>
@@ -1430,103 +1235,80 @@ const styles = StyleSheet.create({
   mainContent: {
     flex: 1,
     backgroundColor: "transparent",
-  },
-  scroll: {
-    flex: 1,
+    justifyContent: "flex-start",
   },
   scrollContent: {
-    paddingBottom: 140,
-  },
-  header: {
-    alignItems: "center",
-    marginBottom: 8,
-    paddingTop: Platform.OS === "ios" ? 40 : 36,
-  },
-  doneText: {
-    fontSize: width < 375 ? 18 : 20,
-    fontFamily: "ManropeExtraBold",
-    color: "#fff",
-    textAlign: "center",
-    paddingHorizontal: Math.max(20, width * 0.05),
-  },
-  subText: {
-    fontSize: 15,
-    color: "rgba(255,255,255,0.7)",
-    marginTop: 6,
-  },
-  finnyBox: {
-    backgroundColor: "rgba(255, 255, 255, 0.08)",
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.12)",
-    padding: 18,
-    marginHorizontal: Math.max(20, width * 0.05),
-    flexDirection: "row",
-    alignItems: "flex-start",
-    marginBottom: 16,
-    minHeight: 80,
-  },
-  mascot: {
-    width: 64,
-    height: 64,
-    marginRight: 12,
-    borderRadius: 18,
-  },
-  finnyText: {
-    fontSize: 15,
-    color: "#fff",
-    fontFamily: "ManropeSemiBold",
-    lineHeight: 22,
-    flex: 1,
-  },
-  headlineText: {
-    fontSize: width < 375 ? 22 : 24,
-    fontFamily: "ManropeExtraBold",
-    color: "#fff",
-    textAlign: "center",
-    paddingHorizontal: Math.max(20, width * 0.05),
-    marginTop: 4,
-    marginBottom: 10,
+    flexGrow: 1,
+    paddingBottom: 12,
   },
   cardsContainer: {
-    marginTop: 12,
+    marginTop: Platform.OS === "ios" ? 8 : 6,
+    paddingBottom: 0,
   },
-  earlyInsightsCard: {
-    backgroundColor: "rgba(255, 255, 255, 0.06)",
-    borderRadius: 18,
+  firstReadCard: {
+    backgroundColor: "rgba(255, 255, 255, 0.04)",
+    borderRadius: 20,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.12)",
+    borderColor: "rgba(255,255,255,0.10)",
     marginHorizontal: Math.max(20, width * 0.05),
-    padding: 18,
+    marginTop: 22,
+    padding: 16,
+    paddingTop: 28,
+    marginBottom: 15,
   },
-  earlyInsightsKicker: {
-    fontSize: 12,
-    letterSpacing: 0.8,
+  firstReadHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  firstReadMascot: {
+    width: 28,
+    height: 28,
+    marginRight: 1,
+    opacity: 0.95,
+  },
+  firstReadKicker: {
+    fontSize: 11,
+    letterSpacing: 1.6,
     textTransform: "uppercase",
     fontFamily: "ManropeSemiBold",
-    color: "rgba(255,255,255,0.6)",
-    marginBottom: 10,
+    color: "rgba(255,255,255,0.58)",
   },
-  earlyInsightsIntro: {
-    fontSize: 17,
-    fontFamily: "ManropeSemiBold",
-    color: "#fff",
-    lineHeight: 24,
-    marginBottom: 10,
-  },
-  earlyInsightsBody: {
+  firstReadHero: {
     fontSize: 15,
-    fontFamily: "Manrope",
-    color: "rgba(255,255,255,0.92)",
+    fontFamily: "ManropeBold",
+    color: "#fff",
     lineHeight: 22,
     marginBottom: 10,
   },
-  earlyInsightsHook: {
+  firstReadCaret: {
+    color: "rgba(255,255,255,0.9)",
+  },
+  firstReadMirror: {
+    fontSize: 13,
+    fontFamily: "ManropeBold",
+    color: "rgba(255,255,255,0.92)",
+    lineHeight: 20,
+    marginBottom: 14,
+  },
+  firstReadRule: {
+    borderLeftWidth: 2,
+    borderLeftColor: "rgba(255,255,255,0.15)",
+    paddingLeft: 10,
+  },
+  firstReadBody: {
+    fontSize: 13,
+    fontFamily: "Manrope",
+    color: "rgba(255,255,255,0.85)",
+    lineHeight: 19,
+    marginBottom: 10,
+  },
+  firstReadClose: {
     fontSize: 14,
     fontFamily: "ManropeMedium",
     color: "rgba(255,255,255,0.72)",
     lineHeight: 21,
-    marginTop: 2,
+    marginTop: 12,
   },
   sectionTitle: {
     fontSize: 16,
@@ -1536,45 +1318,16 @@ const styles = StyleSheet.create({
     marginLeft: Math.max(20, width * 0.05),
     marginRight: Math.max(20, width * 0.05),
   },
-  insightsScroll: {
-    flex: 1,
-  },
   insightsContent: {
     paddingHorizontal: Math.max(20, width * 0.05),
-    paddingBottom: 20,
-    flexGrow: 1,
-  },
-  carouselContainer: {
-    marginTop: 14,
-    minHeight: 520,
-  },
-  carouselSlide: {
-    width: width,
-    justifyContent: "flex-start",
-    minHeight: 520,
-  },
-  carouselIndicators: {
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-    gap: 8,
-    paddingVertical: 16,
-  },
-  carouselIndicator: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: "rgba(255, 255, 255, 0.3)",
-  },
-  carouselIndicatorActive: {
-    backgroundColor: "#4A90E2",
-    width: 24,
+    paddingBottom: 0,
+    marginTop: 32,
   },
   insightCard: {
     backgroundColor: "rgba(255, 255, 255, 0.08)",
     borderRadius: 16,
-    marginBottom: 16,
-    padding: 18,
+    marginBottom: 0,
+    padding: 14,
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.12)",
     shadowColor: "#000",
@@ -1582,6 +1335,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 8,
     elevation: 3,
+  },
+  patternInsightCard: {
+    maxHeight: SCREEN_HEIGHT * 0.25,
   },
   cardHeader: {
     flexDirection: "row",
@@ -1622,75 +1378,92 @@ const styles = StyleSheet.create({
   },
   patternCardHeader: {
     alignItems: "center",
-    marginBottom: 8,
+    marginBottom: 6,
   },
   patternCardTitle: {
     color: "#fff",
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: "700",
-    lineHeight: 22,
+    lineHeight: 20,
     textAlign: "center",
   },
   categoryBoxes: {
     flexDirection: "row",
-    justifyContent: "space-between",
-    marginTop: 8,
-    gap: 8,
-    paddingHorizontal: 4,
+    justifyContent: "center",
+    alignItems: "center",
+    width: "100%",
+    marginTop: 12,
+    // paddingHorizontal: 4,
+    gap: 12,
   },
   categoryBox: {
     alignItems: "center",
     flex: 1,
-    minWidth: 50,
-    maxWidth: 80,
-  },
-  categoryBoxFirst: {
-    marginLeft: 10,
-  },
-  categoryBoxLast: {
-    marginRight: 10,
+    maxWidth: width * 0.3,
   },
   categoryBoxContent: {
-    borderRadius: 12,
-    padding: 16,
-    paddingHorizontal: 10,
-    alignItems: "center",
+    borderRadius: 20,
+    padding: 12,
+    paddingVertical: 14,
     width: "100%",
-    minHeight: 100,
+    alignItems: "center",
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.15,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  categoryBoxIconContainer: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 6,
+  },
+  categoryBoxIconEmoji: {
+    fontSize: 16,
   },
   categoryBoxName: {
     fontSize: 11,
     fontWeight: "600",
     color: "#fff",
     textAlign: "center",
-    marginBottom: 6,
+    marginBottom: 4,
+    lineHeight: 14,
+    flexWrap: "wrap",
   },
   categoryBoxAmount: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: "700",
     color: "#fff",
-    marginBottom: 6,
+    marginBottom: 4,
   },
   categoryBoxPercentage: {
     backgroundColor: "rgba(255, 255, 255, 0.2)",
     paddingHorizontal: 6,
     paddingVertical: 3,
-    borderRadius: 8,
+    borderRadius: 10,
   },
   categoryBoxPercentageText: {
     fontSize: 10,
     fontWeight: "600",
     color: "#fff",
   },
+  insightsNudgeText: {
+    fontSize: 12,
+    fontWeight: "500",
+    color: "rgba(255, 255, 255, 0.45)",
+    textAlign: "center",
+    marginTop: 12,
+    fontStyle: "italic",
+  },
   loadingContainer: {
     justifyContent: "center",
     alignItems: "center",
-    paddingVertical: 40,
+    paddingVertical: 30,
+    marginTop: 16,
   },
   typingIndicatorContainer: {
     alignItems: "center",
@@ -1712,15 +1485,10 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontFamily: "ManropeMedium",
   },
-  slide2Content: {
-    paddingHorizontal: Math.max(20, width * 0.05),
-    paddingBottom: 20,
-    flexGrow: 1,
-    gap: 30,
-  },
   footer: {
     paddingHorizontal: Math.max(20, width * 0.05),
-    paddingBottom: Platform.OS === "ios" ? 16 : 12,
+    paddingTop: 16,
+    paddingBottom: Platform.OS === "ios" ? 20 : 16,
     backgroundColor: "transparent",
   },
   buttonContainer: {

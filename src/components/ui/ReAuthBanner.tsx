@@ -94,15 +94,14 @@ export default function ReAuthBanner({
 
 const styles = StyleSheet.create({
   container: {
-    marginHorizontal: 20,
+    marginHorizontal: 0,
     marginBottom: 12,
-    borderRadius: 14,
+    borderRadius: 0,
     overflow: "hidden",
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.06)",
   },
   gradient: {
-    padding: 14,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
   },
   content: {
     flexDirection: "row",
@@ -116,9 +115,9 @@ const styles = StyleSheet.create({
     marginRight: 12,
   },
   iconContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     alignItems: "center",
     justifyContent: "center",
     marginRight: 12,
@@ -130,14 +129,12 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "600",
     color: "#FFFFFF",
-    marginBottom: 3,
-    letterSpacing: -0.2,
+    marginBottom: 2,
   },
   subtitle: {
     fontSize: 13,
-    color: "#A0A0A0",
+    color: "#A5A5A5",
     lineHeight: 18,
-    letterSpacing: -0.1,
   },
   rightSection: {
     flexDirection: "row",
@@ -150,19 +147,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 20,
-    borderWidth: 1,
+    borderWidth: 0,
     gap: 5,
   },
   actionButtonText: {
     fontSize: 13,
     fontWeight: "600",
-    letterSpacing: -0.1,
   },
   dismissButton: {
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: "rgba(255, 255, 255, 0.05)",
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
     alignItems: "center",
     justifyContent: "center",
   },

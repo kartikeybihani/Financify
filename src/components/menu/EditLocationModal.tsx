@@ -12,12 +12,11 @@ import {
   ScrollView,
   TouchableWithoutFeedback,
 } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import IconButton from "@/src/components/shared/IconButton";
 
-interface EditOccupationModalProps {
+interface EditLocationModalProps {
   visible: boolean;
   value: string;
   onChange: (val: string) => void;
@@ -25,60 +24,58 @@ interface EditOccupationModalProps {
   onSave: (val: string) => Promise<void>;
 }
 
-export default function EditOccupationModal({
+export default function EditLocationModal({
   visible,
   value,
   onChange,
   onCancel,
   onSave,
-}: EditOccupationModalProps) {
+}: EditLocationModalProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [newOccupation, setNewOccupation] = useState("");
+  const [newLocation, setNewLocation] = useState("");
   const insets = useSafeAreaInsets();
+  const locationRef = useRef<TextInput>(null);
 
-  // Refs for auto-focus
-  const occupationRef = useRef<TextInput>(null);
-
-  // Auto-focus input when modal opens
   useEffect(() => {
-    if (visible && occupationRef.current) {
-      setTimeout(() => occupationRef.current?.focus(), 300);
+    if (visible && locationRef.current) {
+      setTimeout(() => locationRef.current?.focus(), 300);
     }
   }, [visible]);
 
-  // Update local state when value prop changes
   useEffect(() => {
     if (visible) {
-      setNewOccupation(value);
+      setNewLocation(value);
     }
   }, [visible, value]);
 
   const handleCancel = () => {
-    setNewOccupation("");
+    setNewLocation("");
     setError("");
     onCancel();
   };
 
   const handleSave = async () => {
-    if (!newOccupation.trim()) {
-      setError("Please enter your occupation.");
+    if (!newLocation.trim()) {
+      setError("Please enter your location.");
       return;
     }
-    if (newOccupation === value) {
-      setError("Please enter a different occupation.");
+    if (newLocation === value) {
+      setError("Please enter a different location.");
       return;
     }
-    if (newOccupation.length > 300) {
-      setError("Occupation must be 300 characters or less.");
+    if (newLocation.length > 120) {
+      setError("Location must be 120 characters or less.");
       return;
     }
     setLoading(true);
     setError("");
     try {
-      await onSave(newOccupation);
+      const trimmedLocation = newLocation.trim();
+      await onSave(trimmedLocation);
+      onChange(trimmedLocation);
     } catch (e: any) {
-      setError(e.message || "Error updating occupation");
+      setError(e.message || "Error updating location");
     } finally {
       setLoading(false);
     }
@@ -116,7 +113,7 @@ export default function EditOccupationModal({
                 nestedScrollEnabled={true}
               >
                 <View style={styles.headerRow}>
-                  <Text style={styles.title}>Edit Occupation</Text>
+                  <Text style={styles.title}>Edit Location</Text>
                   <IconButton
                     icon="close"
                     onPress={handleCancel}
@@ -125,27 +122,21 @@ export default function EditOccupationModal({
                     activeOpacity={loading ? 1 : 0.7}
                   />
                 </View>
-                <Text style={styles.subtitle}>
-                  Tell us a little about yourself and what do you profession
-                  Helps finny get to know you better!
-                </Text>
                 <TextInput
-                  ref={occupationRef}
-                  value={newOccupation}
-                  onChangeText={setNewOccupation}
-                  style={[styles.input, { minHeight: 50, maxHeight: 120 }]}
-                  placeholder="Enter your occupation"
+                  ref={locationRef}
+                  value={newLocation}
+                  onChangeText={setNewLocation}
+                  style={styles.input}
+                  placeholder="City, State"
                   placeholderTextColor="#B4B4B4"
                   autoCapitalize="words"
                   editable={!loading}
                   returnKeyType="done"
                   onSubmitEditing={handleSave}
-                  multiline
-                  textAlignVertical="top"
-                  maxLength={300}
+                  maxLength={120}
                 />
                 <Text style={styles.characterCount}>
-                  {newOccupation.length}/300 characters
+                  {newLocation.length}/120 characters
                 </Text>
                 {error ? <Text style={styles.error}>{error}</Text> : null}
                 <View style={styles.buttonRow}>
@@ -225,8 +216,8 @@ const styles = StyleSheet.create({
     position: "relative",
     justifyContent: "center",
     alignItems: "center",
-    marginBottom: 6,
-    minHeight: 24,
+    marginBottom: 40,
+    minHeight: 34,
   },
   closeIcon: {
     position: "absolute",
@@ -234,78 +225,56 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 22,
-    fontWeight: "700",
+    fontWeight: "600",
     color: "#fff",
     textAlign: "center",
-    letterSpacing: 0.2,
-  },
-  subtitle: {
-    fontSize: 14,
-    color: "#B4B4B4",
-    marginBottom: 22,
-    textAlign: "center",
-    lineHeight: 20,
   },
   input: {
     width: "100%",
-    backgroundColor: "rgba(255,255,255,0.08)",
     borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.1)",
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
     color: "#fff",
     fontSize: 16,
-    padding: 16,
-    marginBottom: 8,
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 1,
-    },
-    shadowOpacity: 0.2,
-    shadowRadius: 2,
-    elevation: 2,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.1)",
   },
   characterCount: {
+    marginTop: 8,
     fontSize: 12,
-    color: "#888",
+    color: "rgba(255, 255, 255, 0.6)",
     alignSelf: "flex-end",
-    marginBottom: 16,
   },
   error: {
-    color: "#ff4444",
-    marginBottom: 8,
+    color: "#ff6b6b",
+    marginTop: 8,
     textAlign: "center",
-    fontSize: 14,
   },
   buttonRow: {
     flexDirection: "row",
-    justifyContent: "space-between",
+    gap: 12,
+    marginTop: 24,
     width: "100%",
-    marginTop: "auto",
-    marginBottom: 10,
-    gap: 16,
   },
   button: {
     flex: 1,
-    borderRadius: 12,
-    overflow: "hidden",
   },
   glassButton: {
+    borderRadius: 14,
+    paddingVertical: 12,
     alignItems: "center",
-    justifyContent: "center",
-    padding: 14,
-    borderRadius: 12,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.2)",
+    borderColor: "rgba(255, 255, 255, 0.12)",
   },
   cancelButtonText: {
     color: "#fff",
-    fontWeight: "600",
-    fontSize: 16,
+    fontWeight: "500",
+    fontSize: 15,
   },
   saveButtonText: {
     color: "#fff",
     fontWeight: "600",
-    fontSize: 16,
+    fontSize: 15,
   },
 });
