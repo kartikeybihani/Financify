@@ -10,6 +10,7 @@ import {
   Easing,
 } from "react-native";
 import { useRouter } from "expo-router";
+import * as Linking from "expo-linking";
 import { supabase } from "@/src/lib/supabase/supabase";
 import logger from "@/src/utils/core/logger";
 import AuthTemplate from "@/src/components/auth/AuthTemplate";
@@ -146,7 +147,13 @@ export default function LoginScreen() {
     }
 
     setLoading(true);
-    const { error } = await supabase.auth.resetPasswordForEmail(resetEmail);
+    const redirectTo = Linking.createURL("reset-password", {
+      scheme: "finny",
+    });
+    console.log("redirectTo", redirectTo);
+    const { error } = await supabase.auth.resetPasswordForEmail(resetEmail, {
+      redirectTo,
+    });
     setLoading(false);
 
     if (error) {
@@ -154,7 +161,7 @@ export default function LoginScreen() {
     } else {
       Alert.alert(
         "Password Reset Email Sent",
-        "Check your email for password reset instructions.",
+        "Check your email inbox or spam folder for password reset instructions.",
         [{ text: "OK", onPress: () => animateTransition(false) }]
       );
     }
@@ -274,7 +281,7 @@ export default function LoginScreen() {
         ) : (
           <View style={{ marginTop: 10 }}>
             <AuthButton
-              title="Go Back"
+              title="Back to Login"
               variant="text"
               onPress={() => handleTransition(false)}
               icon="arrow-back"

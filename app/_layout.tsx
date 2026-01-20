@@ -6,6 +6,7 @@ import "react-native-get-random-values";
 import React from "react";
 import "react-native-reanimated";
 import { Stack } from "expo-router";
+import * as Linking from "expo-linking";
 
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
@@ -21,6 +22,7 @@ import logger from "@/src/utils/core/logger";
 import { ActionSheetProvider } from "@expo/react-native-action-sheet";
 import { setupGlobalErrorHandling } from "@/src/utils/core/errorBoundary";
 import { useNotificationSetup } from "@/src/hooks/useNotificationSetup";
+import { setLastDeepLink } from "@/src/utils/linking/linkingStore";
 
 SplashScreen.preventAutoHideAsync();
 setupGlobalErrorHandling();
@@ -84,6 +86,11 @@ export default function RootLayout() {
   });
 
   useEffect(() => {
+    const subscription = Linking.addEventListener("url", ({ url }) => {
+      logger.info("🔗 Global link event", { url });
+      setLastDeepLink(url);
+    });
+
     const initializeApp = async () => {
       if (loaded) {
         try {
@@ -99,6 +106,10 @@ export default function RootLayout() {
     };
 
     initializeApp();
+
+    return () => {
+      subscription.remove();
+    };
   }, [loaded]);
 
   if (!loaded) return null;

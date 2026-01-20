@@ -15,6 +15,7 @@ import {
   invalidateTokenCache,
   startTokenRefresh,
 } from "@/src/utils/auth/authToken";
+import { isRecoveryInProgress } from "@/src/utils/auth/recoveryState";
 
 // Constants
 const PROFILE_FETCH_TIMEOUT_MS = 8000; // 8 seconds timeout for profile fetch
@@ -317,6 +318,20 @@ export const AuthNavigationProvider: React.FC<AuthNavigationProviderProps> = ({
         setNavigationState(NavigationState.PRE_SIGNUP);
         setOnboardingStep(0);
         setOnboardingCompleted(false);
+        return;
+      }
+
+      if (isRecoveryInProgress()) {
+        const userId = currentSession.user.id;
+        const cachedProfile =
+          profileCache.current && profileCacheUserId.current === userId
+            ? profileCache.current
+            : null;
+        const newState = determineNavigationState(true, cachedProfile);
+        logger.info("[AUTH] Skipping profile fetch during password recovery");
+        setNavigationState(newState);
+        setOnboardingStep(cachedProfile?.onboarding_step || 0);
+        setOnboardingCompleted(cachedProfile?.onboarding_completed || false);
         return;
       }
 
