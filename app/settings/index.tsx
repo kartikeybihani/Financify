@@ -170,7 +170,7 @@ export default function SettingsScreen() {
   const handleShareApp = async () => {
     try {
       await Share.share({
-        message: "Check out Financify - Your personal finance companion!",
+        message: "Hey! This is Finny - Money Coach to guide you to right money decisions! https://usefinny.com",
       });
     } catch (error) {
       logger.error("Error sharing app:", error);
