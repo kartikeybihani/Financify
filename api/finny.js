@@ -4358,7 +4358,7 @@ async function createOptimizedFetchOperations(userId, needs, slots) {
         isMerchantQuery: true,
       });
     } else {
-      // Use merchant RPC directly
+      // Use get_transactions_by_merchant RPC for merchant-specific transaction queries
       const merchantTxnParams = {
         p_user_id: userId,
         p_merchant: slots.merchant,
@@ -4366,12 +4366,12 @@ async function createOptimizedFetchOperations(userId, needs, slots) {
         p_end: period.end,
       };
       logInfo(
-        `🔍 [MERCHANT_TXNS] Creating RPC call to get_spend_by_merchant with params:`,
+        `🔍 [MERCHANT_TXNS] Creating RPC call to get_transactions_by_merchant with params:`,
         JSON.stringify(merchantTxnParams, null, 2)
       );
       addOperation(cacheKey, {
         key: cacheKey,
-        type: "category_transactions", // Same type for processing
+        type: "category_transactions",
         userId,
         merchant: slots.merchant,
         period: period,
@@ -4382,7 +4382,7 @@ async function createOptimizedFetchOperations(userId, needs, slots) {
         fetchers: [
           {
             name: "merchant_transactions",
-            rpc: "get_spend_by_merchant",
+            rpc: "get_transactions_by_merchant",
             params: merchantTxnParams,
           },
         ],
@@ -4870,13 +4870,13 @@ function processCategoryTransactionsData(operation, results) {
     }
   );
 
-  // PHASE 2: Handle merchant queries (use merchant RPC result)
+  // PHASE 2: Handle merchant queries (get_transactions_by_merchant returns transactions directly)
   if (operation.isMerchantQuery) {
     const merchantRes =
       results.find((r) => r?.name === "merchant_transactions") ||
       results[results.length - 1];
 
-    if (!merchantRes?.data || merchantRes.data.length === 0) {
+    if (!merchantRes?.data || !Array.isArray(merchantRes.data) || merchantRes.data.length === 0) {
       logWarn(
         `⚠️ [MERCHANT_TXNS_PROCESS] No merchant transaction data found. merchantRes:`,
         merchantRes
@@ -4884,9 +4884,14 @@ function processCategoryTransactionsData(operation, results) {
       return null;
     }
 
-    // Merchant RPC returns transactions directly
+    // get_transactions_by_merchant already filters by merchant, so use data directly
+    // Calculate total spend (amounts are negative for expenses)
+    const totalSpend = Math.abs(
+      merchantRes.data.reduce((sum, txn) => sum + (Number(txn.amount) || 0), 0)
+    );
+
     const result = {
-      category: null, // No category for merchant queries
+      category: null, // No specific category for merchant queries
       merchant: operation.merchant,
       transactions: merchantRes.data.map((txn) => ({
         date: txn.date,
@@ -4895,6 +4900,8 @@ function processCategoryTransactionsData(operation, results) {
         merchant: txn.merchant_name || txn.name || operation.merchant,
         category: txn.category || null,
       })),
+      total_spend: totalSpend,
+      txn_count: merchantRes.data.length,
       period: `${operation.period.start} to ${operation.period.end}`,
     };
 
@@ -4904,6 +4911,7 @@ function processCategoryTransactionsData(operation, results) {
         merchant: result.merchant,
         period: result.period,
         transactionCount: result.transactions.length,
+        totalSpend: result.total_spend,
         sampleTransactions: result.transactions.slice(0, 5).map((t) => ({
           date: t.date,
           merchant: t.merchant,
