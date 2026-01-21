@@ -130,9 +130,7 @@ export default function LoginScreen() {
         logger.info("User logged in:", user.email);
       }
       // Auth listener will trigger navigation via context
-      // The context will redirect to /(tabs) which defaults to home
-      // Navigate to root so index.tsx can handle the redirect
-      router.replace("/" as any);
+      // AuthLayout will automatically redirect when navigationState updates
     }
   };
 

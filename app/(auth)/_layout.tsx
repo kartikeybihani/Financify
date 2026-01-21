@@ -18,7 +18,22 @@ export default function AuthLayout() {
       !hasRedirectedRef.current
     ) {
       hasRedirectedRef.current = true;
-      router.replace("/");
+      
+      // Determine target route based on navigation state
+      let targetRoute = "/";
+      if (navigationState === NavigationState.AUTHENTICATED) {
+        targetRoute = "/(tabs)";
+      } else if (navigationState === NavigationState.ONBOARDING_FINAL) {
+        targetRoute = "/(onboarding-complete)";
+      } else if (navigationState === NavigationState.ONBOARDING) {
+        // Will be handled by index.tsx based on onboardingStep
+        targetRoute = "/";
+      }
+      
+      // Use setTimeout to ensure state updates have propagated before navigation
+      setTimeout(() => {
+        router.replace(targetRoute as any);
+      }, 50);
     }
   }, [isLoading, navigationState, router]);
 
