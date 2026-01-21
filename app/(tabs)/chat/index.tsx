@@ -62,7 +62,14 @@ const responsiveHeight = (percentage: number) =>
 function ChatScreenContent() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const posthog = usePostHog();
+  // Safely get PostHog instance - won't crash if PostHog is unavailable
+  let posthog;
+  try {
+    posthog = usePostHog();
+  } catch (error) {
+    // PostHog not available, continue without analytics
+    posthog = null;
+  }
   const [userInput, setUserInput] = useState("");
   const [showScrollButton, setShowScrollButton] = useState(false);
   const [isTyping, setIsTyping] = useState(false);

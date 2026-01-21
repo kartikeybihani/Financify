@@ -3,7 +3,7 @@
 // Polyfill for crypto.getRandomValues (required for uuid package in React Native)
 import "react-native-get-random-values";
 
-import React from "react";
+import React, { useEffect, useState } from "react";
 import "react-native-reanimated";
 import { Stack } from "expo-router";
 import * as Linking from "expo-linking";
@@ -11,7 +11,6 @@ import * as Linking from "expo-linking";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import { useFonts } from "expo-font";
-import { useEffect } from "react";
 import AuthNavigationProvider, {
   useAuthNavigation,
 } from "@/src/contexts/AuthNavigationContext";
@@ -20,7 +19,7 @@ import { runStorageMigrationV2 } from "@/src/utils/core/migrate";
 import { runCacheMigration } from "@/src/shared/utils/cacheMigration";
 import logger from "@/src/utils/core/logger";
 import { ActionSheetProvider } from "@expo/react-native-action-sheet";
-import { PostHogProvider } from 'posthog-react-native';
+import { SafePostHogProvider } from '@/src/components/analytics/SafePostHogProvider';
 import PostHogScreenTracker from "@/src/components/analytics/PostHogScreenTracker";
 import { setupGlobalErrorHandling } from "@/src/utils/core/errorBoundary";
 import { useNotificationSetup } from "@/src/hooks/useNotificationSetup";
@@ -86,6 +85,7 @@ export default function RootLayout() {
     ManropeSemiBold: require("../assets/fonts/Manrope-SemiBold.ttf"),
     ManropeExtraLight: require("../assets/fonts/Manrope-ExtraLight.ttf"),
   });
+  const [postHogReady, setPostHogReady] = useState(false);
 
   useEffect(() => {
     const subscription = Linking.addEventListener("url", ({ url }) => {
@@ -103,6 +103,13 @@ export default function RootLayout() {
         } catch (error) {
           logger.error("Migration error:", error);
         }
+        
+        // Small delay to ensure React Native bridge is fully ready
+        // before initializing PostHog native module
+        setTimeout(() => {
+          setPostHogReady(true);
+        }, 100);
+        
         SplashScreen.hideAsync();
       }
     };
@@ -116,8 +123,26 @@ export default function RootLayout() {
 
   if (!loaded) return null;
 
+  // Render app structure first, then wrap with PostHog after bridge is ready
+  const appContent = (
+    <AuthNavigationProvider>
+      {postHogReady && <PostHogScreenTracker />}
+      <ActionSheetProvider>
+        <>
+          <RootLayoutNav />
+          <StatusBar style="light" backgroundColor="transparent" translucent />
+        </>
+      </ActionSheetProvider>
+    </AuthNavigationProvider>
+  );
+
+  // Only initialize PostHog after React Native bridge is ready
+  if (!postHogReady) {
+    return appContent;
+  }
+
   return (
-    <PostHogProvider
+    <SafePostHogProvider
       apiKey="phc_Tt3F486mn1ltHuaKW3csphOfXNAFQZ3oI69ZuPzedIT"
       options={{
         host: 'https://us.i.posthog.com',
@@ -125,15 +150,7 @@ export default function RootLayout() {
       }}
       autocapture
     >
-      <AuthNavigationProvider>
-        <PostHogScreenTracker />
-        <ActionSheetProvider>
-          <>
-            <RootLayoutNav />
-            <StatusBar style="light" backgroundColor="transparent" translucent />
-          </>
-        </ActionSheetProvider>
-      </AuthNavigationProvider>
-    </PostHogProvider>
+      {appContent}
+    </SafePostHogProvider>
   );
 }
