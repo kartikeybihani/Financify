@@ -2228,6 +2228,7 @@ async function handleAsk(
       category: packSelection.filters.category || keywordSlots.category,
       period: packSelection.filters.period || keywordSlots.period,
       useMerchantRPC: packSelection.useMerchantRPC, // Flag for merchant RPC usage
+      time_range: classificationResult?.data_requirements?.time_range || null, // Store time_range for default period creation
     };
     
     const needs = packSelection.needs;
@@ -4272,16 +4273,71 @@ async function createOptimizedFetchOperations(userId, needs, slots) {
     }, merchant: ${slots?.merchant}, period: ${slots?.period ? JSON.stringify(slots.period) : "undefined"}, useMerchantRPC: ${slots?.useMerchantRPC}`
   );
   
+  // Helper: Create default period if missing (for merchant/category queries without explicit period)
+  const createDefaultPeriod = (timeRange) => {
+    const now = new Date();
+    let startDate, endDate, months;
+    
+    switch (timeRange) {
+      case "1_month":
+        months = 1;
+        startDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+        endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        break;
+      case "3_months":
+        months = 3;
+        startDate = new Date(now.getFullYear(), now.getMonth() - 3, 1);
+        endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        break;
+      case "6_months":
+        months = 6;
+        startDate = new Date(now.getFullYear(), now.getMonth() - 6, 1);
+        endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        break;
+      case "1_year":
+        months = 12;
+        startDate = new Date(now.getFullYear() - 1, now.getMonth(), 1);
+        endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        break;
+      case "current":
+      default:
+        // Default to last 30 days for "current" or unknown time_range
+        months = 1;
+        const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+        startDate = new Date(thirtyDaysAgo.getFullYear(), thirtyDaysAgo.getMonth(), 1);
+        endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        break;
+    }
+    
+    return {
+      months,
+      start: startDate.toISOString().split("T")[0],
+      end: endDate.toISOString().split("T")[0],
+    };
+  };
+  
   // Check if we need merchant-specific transactions (use merchant RPC)
-  if (slots?.useMerchantRPC && slots?.merchant && slots?.period) {
-    const cacheKey = `merchant_transactions_${slots.merchant}_${slots.period.start}_${slots.period.end}`;
+  // If period is missing but merchant exists, create default period from time_range
+  if (slots?.useMerchantRPC && slots?.merchant) {
+    let period = slots.period;
+    
+    // If no period provided, create default based on time_range from slots or default to 30 days
+    if (!period) {
+      const timeRange = slots.time_range || "current";
+      period = createDefaultPeriod(timeRange);
+      logInfo(
+        `📅 [MERCHANT_TXNS] No period provided, creating default period from time_range '${timeRange}':`,
+        period
+      );
+    }
+    const cacheKey = `merchant_transactions_${slots.merchant}_${period.start}_${period.end}`;
     logInfo(`🔍 [MERCHANT_TXNS] Checking cache with key: ${cacheKey}`);
     const cachedMerchantTxns = await getCachedUserData(
       "category_transactions", // Use same cache type
       userId,
       {
         merchant: slots.merchant,
-        period: slots.period,
+        period: period,
       }
     );
     logInfo(
@@ -4294,7 +4350,7 @@ async function createOptimizedFetchOperations(userId, needs, slots) {
         type: "category_transactions", // Same type for processing
         userId,
         merchant: slots.merchant,
-        period: slots.period,
+        period: period,
         cached: true,
         data: cachedMerchantTxns,
         priority: 2,
@@ -4306,8 +4362,8 @@ async function createOptimizedFetchOperations(userId, needs, slots) {
       const merchantTxnParams = {
         p_user_id: userId,
         p_merchant: slots.merchant,
-        p_start: slots.period.start,
-        p_end: slots.period.end,
+        p_start: period.start,
+        p_end: period.end,
       };
       logInfo(
         `🔍 [MERCHANT_TXNS] Creating RPC call to get_spend_by_merchant with params:`,
@@ -4318,7 +4374,7 @@ async function createOptimizedFetchOperations(userId, needs, slots) {
         type: "category_transactions", // Same type for processing
         userId,
         merchant: slots.merchant,
-        period: slots.period,
+        period: period,
         cached: false,
         priority: 2,
         servesNeeds: ["category_details"],
@@ -4334,25 +4390,33 @@ async function createOptimizedFetchOperations(userId, needs, slots) {
     }
   }
   // Category transactions (existing logic)
-  else if (slots?.category && slots?.period) {
-    const cacheKey = `category_transactions_${slots.category}_${slots.period.start}_${slots.period.end}`;
+  // If period is missing but category exists, create default period from time_range
+  else if (slots?.category) {
+    let period = slots.period;
+    
+    // If no period provided, create default based on time_range from slots or default to 30 days
+    if (!period) {
+      const timeRange = slots.time_range || "current";
+      period = createDefaultPeriod(timeRange);
+      logInfo(
+        `📅 [CATEGORY_TXNS] No period provided, creating default period from time_range '${timeRange}':`,
+        period
+      );
+    }
+    
+    if (period) {
+      const cacheKey = `category_transactions_${slots.category}_${period.start}_${period.end}`;
     logInfo(`🔍 [CATEGORY_TXNS] Checking cache with key: ${cacheKey}`);
-    const cachedCategoryTxns = await getCachedUserData(
-      "category_transactions",
-      userId,
-      {
-        category: slots.category,
-        period: slots.period,
-      }
-    );
+      const cachedCategoryTxns = await getCachedUserData(
+        "category_transactions",
+        userId,
+        {
+          category: slots.category,
+          period: period,
+        }
+      );
     logInfo(
       `🔍 [CATEGORY_TXNS] Cache result: ${cachedCategoryTxns ? "HIT" : "MISS"}`
-    );
-
-    // Check if this is a multi-month query (use get_spend_by_category_periods for trends)
-    const isMultiMonthQuery = slots.period.months && slots.period.months > 1;
-    logInfo(
-      `🔍 [CATEGORY_TXNS] Is multi-month query: ${isMultiMonthQuery}, months: ${slots.period.months}`
     );
 
     if (cachedCategoryTxns) {
@@ -4362,7 +4426,7 @@ async function createOptimizedFetchOperations(userId, needs, slots) {
         type: "category_transactions",
         userId,
         category: slots.category,
-        period: slots.period,
+        period: period,
         cached: true,
         data: cachedCategoryTxns,
         priority: 2,
@@ -4373,6 +4437,12 @@ async function createOptimizedFetchOperations(userId, needs, slots) {
       // For single period queries, use get_transactions_by_category for detailed transactions
       const fetchers = [];
 
+      // Check if this is a multi-month query (use get_spend_by_category_periods for trends)
+      const isMultiMonthQuery = period.months && period.months > 1;
+      logInfo(
+        `🔍 [CATEGORY_TXNS] Is multi-month query: ${isMultiMonthQuery}, months: ${period.months}`
+      );
+
       if (isMultiMonthQuery) {
         // Add monthly breakdown for multi-month queries
         fetchers.push({
@@ -4380,7 +4450,7 @@ async function createOptimizedFetchOperations(userId, needs, slots) {
           rpc: "get_spend_by_category_periods",
           params: {
             p_user_id: userId,
-            p_months: slots.period.months,
+            p_months: period.months,
           },
         });
       }
@@ -4389,8 +4459,8 @@ async function createOptimizedFetchOperations(userId, needs, slots) {
       const categoryTxnParams = {
         p_user_id: userId,
         p_category: slots.category,
-        p_start: slots.period.start,
-        p_end: slots.period.end,
+        p_start: period.start,
+        p_end: period.end,
       };
       logInfo(
         `🔍 [CATEGORY_TXNS] Creating RPC call to get_transactions_by_category with params:`,
@@ -4407,12 +4477,13 @@ async function createOptimizedFetchOperations(userId, needs, slots) {
         type: "category_transactions",
         userId,
         category: slots.category,
-        period: slots.period,
+        period: period,
         cached: false,
         priority: 2,
         servesNeeds: ["category_details", "txns_by_category"],
         fetchers,
       });
+    }
     }
   }
 
@@ -5489,7 +5560,7 @@ async function handleClassify(message, context) {
       STANDARD_MODEL,
       TERTIARY_MODEL,
     ];
-    const timeoutMs = 6000; // 6 second timeout
+    const timeoutMs = 10000; // 10 second timeout
 
     let data = null;
     let usedModel = null;
