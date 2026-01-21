@@ -24,7 +24,7 @@ import { loadUserMemory, loadUserProfile } from "../lib/memoryUtils.js";
 
 // Test user context
 const TEST_USER_CONTEXT = {
-  user_id: "f948c4ab-dc68-41d5-89bf-1935653cca37",
+  user_id: "79952f35-b607-40d6-a32e-d81386882eb7",
   state: null,
 };
 

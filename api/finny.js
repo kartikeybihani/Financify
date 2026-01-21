@@ -3045,6 +3045,7 @@ async function handleAsk(
       categoryDetails: packs.categoryDetails, // Category transaction details for analysis
       transactions: packs.base?.recentTransactions || [],
       accounts: packs.base?.accounts || packs.accounts || [], // Include accounts for credit utilization detection
+      emptyMerchantQueries: packs.emptyMerchantQueries || [], // Empty merchant query results (explicitly queried but returned zero transactions)
     };
 
     logInfo(`🔍 [FINANCIAL_DATA] Building financialDataForState:`, {
@@ -4156,7 +4157,11 @@ async function buildContextPacks(userId, needs, slots) {
     logInfo(`✅ [FINNY] All fetch operations completed in ${fetchTime}ms`);
 
     // OPTIMIZED: Process results with better error handling and caching
-    processFetchResults(results, fetchOperations, packs, gaps);
+    const { emptyMerchantQueries } = processFetchResults(results, fetchOperations, packs, gaps);
+    // Store empty merchant queries in packs for prompt engine access
+    if (emptyMerchantQueries && emptyMerchantQueries.length > 0) {
+      packs.emptyMerchantQueries = emptyMerchantQueries;
+    }
   } catch (error) {
     logError("❌ [FINNY] Error building context packs:", error);
     // Add all needs as gaps if there's a critical error
@@ -4680,6 +4685,9 @@ async function executeFetchOperation(operation) {
 
 // OPTIMIZED: Process fetch results with better error handling and caching
 function processFetchResults(results, operations, packs, gaps) {
+  // Track empty merchant queries explicitly
+  const emptyMerchantQueries = [];
+  
   for (let i = 0; i < results.length; i++) {
     const result = results[i];
     const operation = operations[i];
@@ -4739,6 +4747,30 @@ function processFetchResults(results, operations, packs, gaps) {
         result.status === "rejected" ? result.reason : result.value?.error;
       console.error(`❌ [FINNY] Operation ${operation.key} failed:`, error);
 
+      // CRITICAL FIX: Track empty merchant queries explicitly
+      // When a merchant query returns empty (not an error, just no transactions found),
+      // we need to pass this info to the prompt so the LLM can respond appropriately
+      if (
+        operation.type === "category_transactions" &&
+        operation.isMerchantQuery &&
+        operation.merchant &&
+        operation.period &&
+        result.status === "fulfilled" &&
+        !result.value.success &&
+        result.value?.error === "No valid data returned"
+      ) {
+        // This is an empty merchant query result (not a system error)
+        // The query executed successfully but returned zero transactions
+        emptyMerchantQueries.push({
+          merchant: operation.merchant,
+          period: operation.period,
+          periodDisplay: `${operation.period.start} to ${operation.period.end}`,
+        });
+        logInfo(
+          `📝 [EMPTY_MERCHANT] Tracked empty merchant query: ${operation.merchant} (${operation.period.start} to ${operation.period.end})`
+        );
+      }
+
       // Add to gaps based on what needs this operation was serving
       if (operation.servesNeeds) {
         operation.servesNeeds.forEach((need) => {
@@ -4749,6 +4781,9 @@ function processFetchResults(results, operations, packs, gaps) {
       }
     }
   }
+  
+  // Return empty merchant queries (will be stored in packs by caller)
+  return { packs, gaps, emptyMerchantQueries };
 }
 
 // OPTIMIZED: Helper function to get date range
