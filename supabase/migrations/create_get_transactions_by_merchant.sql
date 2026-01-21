@@ -49,8 +49,11 @@ BEGIN
       (t.merchant_name IS NOT NULL AND LOWER(t.merchant_name) LIKE '%' || LOWER(TRIM(p_merchant)) || '%')
       OR (t.name IS NOT NULL AND LOWER(t.name) LIKE '%' || LOWER(TRIM(p_merchant)) || '%')
     )
-    -- Note: Amounts are stored as positive values for expenses in this database
-    -- If you need to filter expenses only, check transaction_type or remove this filter
+    -- IMPORTANT: Amount convention in this database:
+    -- - Positive amounts = money OUT (expenses, sent payments)
+    -- - Negative amounts = money IN (income, received payments)
+    -- For bidirectional merchants (Zelle, Venmo), positive = sent, negative = received
+    -- This matches Plaid's convention: positive = debit (outgoing), negative = credit (incoming)
   ORDER BY t.date DESC, t.amount ASC;
 END;
 $$;

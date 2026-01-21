@@ -4920,23 +4920,54 @@ function processCategoryTransactionsData(operation, results) {
     }
 
     // get_transactions_by_merchant already filters by merchant, so use data directly
-    // Calculate total spend (amounts are negative for expenses)
-    const totalSpend = Math.abs(
-      merchantRes.data.reduce((sum, txn) => sum + (Number(txn.amount) || 0), 0)
-    );
+    // CRITICAL FIX: Calculate totals separately for sent (positive) vs received (negative)
+    // Amount convention: Positive = sent (outgoing), Negative = received (incoming)
+    let totalSent = 0;
+    let totalReceived = 0;
+    let sentCount = 0;
+    let receivedCount = 0;
+
+    merchantRes.data.forEach((txn) => {
+      const amount = Number(txn.amount) || 0;
+      if (amount > 0) {
+        // Positive = sent (outgoing)
+        totalSent += amount;
+        sentCount++;
+      } else if (amount < 0) {
+        // Negative = received (incoming)
+        totalReceived += Math.abs(amount); // Store as positive for clarity
+        receivedCount++;
+      }
+      // amount === 0 is ignored (refunds/adjustments)
+    });
+
+    // Legacy total_spend for backward compatibility (all transactions)
+    // Note: This represents total activity (sent + received), not net flow
+    const totalSpend = totalSent + totalReceived;
+    
+    // CRITICAL: Always include sent/received totals even if one is zero
+    // This ensures bidirectional detection works correctly in prompt engine
 
     const result = {
       category: null, // No specific category for merchant queries
       merchant: operation.merchant,
-      transactions: merchantRes.data.map((txn) => ({
-        date: txn.date,
-        amount: txn.amount,
-        name: txn.name,
-        merchant: txn.merchant_name || txn.name || operation.merchant,
-        category: txn.category || null,
-      })),
-      total_spend: totalSpend,
+      transactions: merchantRes.data.map((txn) => {
+        const amount = Number(txn.amount) || 0;
+        return {
+          date: txn.date,
+          amount: txn.amount, // Preserve original sign
+          name: txn.name,
+          merchant: txn.merchant_name || txn.name || operation.merchant,
+          category: txn.category || null,
+          direction: amount > 0 ? "sent" : amount < 0 ? "received" : "neutral", // Add direction metadata
+        };
+      }),
+      total_spend: totalSpend, // Legacy: total of all transactions
+      total_sent: totalSent, // NEW: only sent transactions
+      total_received: totalReceived, // NEW: only received transactions
       txn_count: merchantRes.data.length,
+      sent_count: sentCount,
+      received_count: receivedCount,
       period: `${operation.period.start} to ${operation.period.end}`,
     };
 
@@ -4947,11 +4978,16 @@ function processCategoryTransactionsData(operation, results) {
         period: result.period,
         transactionCount: result.transactions.length,
         totalSpend: result.total_spend,
+        totalSent: result.total_sent,
+        totalReceived: result.total_received,
+        sentCount: result.sent_count,
+        receivedCount: result.received_count,
         sampleTransactions: result.transactions.slice(0, 5).map((t) => ({
           date: t.date,
           merchant: t.merchant,
           name: t.name,
           amount: t.amount,
+          direction: t.direction,
         })),
       }
     );
