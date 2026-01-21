@@ -9,7 +9,6 @@ import {
   fetchStockSnapshot,
   buildStockDataSummary,
   fetchJson,
-  detectStockCandidate,
 } from "../lib/stocks.js";
 import {
   getSessionState,
@@ -2482,7 +2481,7 @@ async function handleAsk(
       }
     }
 
-    // Check for stock candidate - prioritize classification result if available
+    // Check for stock candidate - rely solely on classification
     let stockCandidate = null;
     if (
       classificationResult?.intent === "stock_query" &&
@@ -2492,13 +2491,7 @@ async function handleAsk(
       const ticker = String(classificationResult.ticker).toUpperCase().trim();
 
       // Validate ticker format (1-5 uppercase letters)
-      if (!/^[A-Z]{1,5}$/.test(ticker)) {
-        logWarn(
-          `⚠️ [STOCK] Invalid ticker format from classification: ${ticker}, falling back to detection`
-        );
-        // Fall back to detection
-        stockCandidate = detectStockCandidate(message);
-      } else {
+      if (/^[A-Z]{1,5}$/.test(ticker)) {
         // Use classification result if it detected a stock query with ticker
         stockCandidate = {
           ticker: ticker,
@@ -2510,14 +2503,9 @@ async function handleAsk(
           "🔍 [STOCK] Using stock candidate from classification:",
           stockCandidate
         );
-      }
-    } else {
-      // Fallback to detectStockCandidate if classification didn't catch it
-      stockCandidate = detectStockCandidate(message);
-      if (stockCandidate) {
-        logDebug(
-          "🔍 [STOCK] Using stock candidate from detection:",
-          stockCandidate
+      } else {
+        logWarn(
+          `⚠️ [STOCK] Invalid ticker format from classification: ${ticker}, skipping stock candidate`
         );
       }
     }
@@ -2571,10 +2559,10 @@ async function handleAsk(
     // 3.5) Check if this is a stock query after building context packs
     // Also check if we have stock_override (user confirmed ticker) - that's definitely a stock query!
     const hasStockOverride = !!context?.stock_override?.ticker;
-    const isStockQuery = looksLikeStockQuery(message) || hasStockOverride;
+    const isStockQuery = looksLikeStockQuery(message, classificationResult) || hasStockOverride;
     logDebug("🔍 [STOCK_ROUTING] Stock query detection:", {
       message,
-      looksLikeStockQuery: looksLikeStockQuery(message),
+      looksLikeStockQuery: looksLikeStockQuery(message, classificationResult),
       hasStockOverride,
       isStockQuery,
     });
@@ -6650,8 +6638,9 @@ async function limitedBraveSearch(query) {
 }
 
 // === Stocks via Finnhub ===
-function looksLikeStockQuery(message) {
-  return !!detectStockCandidate(message);
+function looksLikeStockQuery(message, classificationResult = null) {
+  // Rely solely on classification - no rigid detection
+  return classificationResult?.intent === "stock_query";
 }
 
 function looksLikeStockDeepQuery(message) {

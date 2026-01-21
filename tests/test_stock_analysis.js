@@ -21,7 +21,6 @@ import {
   resolveTickerForQuery,
   fetchStockSnapshot,
   buildStockDataSummary,
-  detectStockCandidate,
 } from "../lib/stocks.js";
 
 dotenv.config();
@@ -220,30 +219,15 @@ async function testStockSnapshot(ticker) {
 }
 
 /**
- * Test stock candidate detection
+ * Test stock candidate detection (removed - now relies on classifier)
+ * This function is kept for compatibility but always returns null
  */
 function testStockDetection(query) {
   console.log(`\n🎯 Testing stock detection for: "${query}"`);
   console.log("─".repeat(80));
-
-  try {
-    const detection = detectStockCandidate(query);
-
-    if (detection) {
-      console.log(`✅ Stock detected:`);
-      console.log(`   Ticker: ${detection.ticker}`);
-      console.log(`   Entities: ${JSON.stringify(detection.entities || [])}`);
-      console.log(`   Confidence: ${detection.confidence}`);
-      console.log(`   Source: ${detection.source || "unknown"}`);
-      return { success: true, detection };
-    } else {
-      console.log(`❌ No stock detected`);
-      return { success: false, detection: null };
-    }
-  } catch (error) {
-    console.error(`❌ Error in stock detection:`, error.message);
-    return { success: false, error: error.message };
-  }
+  console.log(`ℹ️  Stock detection removed - classifier handles detection now`);
+  console.log(`   Detection is now handled by the classification system`);
+  return { success: null, detection: null, skipped: true };
 }
 
 /**
@@ -441,16 +425,12 @@ async function testSingleStock(query, options = {}) {
     fullQuery: null,
   };
 
-  // 1. Test stock detection
+  // 1. Test stock detection (skipped - now handled by classifier)
   results.detection = testStockDetection(query);
 
   // 2. Test ticker resolution
-  const ticker = results.detection.detection?.ticker;
-  if (ticker) {
-    results.resolution = await testTickerResolution(query, ticker);
-  } else {
-    results.resolution = await testTickerResolution(query);
-  }
+  // Note: Detection is now handled by classifier, so we always test resolution
+  results.resolution = await testTickerResolution(query);
 
   // 3. Test stock snapshot (if we have a ticker)
   const resolvedTicker = results.resolution.ticker;
@@ -477,9 +457,13 @@ async function testSingleStock(query, options = {}) {
   console.log("\n" + "═".repeat(80));
   console.log("📊 Test Summary");
   console.log("═".repeat(80));
-  console.log(
-    `✅ Stock Detection: ${results.detection.success ? "PASS" : "FAIL"}`
-  );
+  if (results.detection.skipped) {
+    console.log(`⏭️  Stock Detection: SKIPPED (handled by classifier)`);
+  } else {
+    console.log(
+      `✅ Stock Detection: ${results.detection.success ? "PASS" : "FAIL"}`
+    );
+  }
   console.log(
     `✅ Ticker Resolution: ${results.resolution.success ? "PASS" : "FAIL"}`
   );
@@ -538,7 +522,7 @@ async function runAllTests(options = {}) {
       testCase,
       result,
       allPassed:
-        result.detection.success &&
+        (result.detection.skipped || result.detection.success) &&
         result.resolution.success &&
         (result.snapshot?.success ?? true) &&
         (skipFullQuery ? true : result.fullQuery?.success),
@@ -679,7 +663,7 @@ export {
   testSingleStock,
   testTickerResolution,
   testStockSnapshot,
-  testStockDetection,
+  testStockDetection, // Note: Now returns skipped status
   testFullStockQuery,
   testFinnhubConnectivity,
   TEST_CASES,
