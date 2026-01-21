@@ -1,5 +1,5 @@
 // /api/refresh_financial_data.js
-import { client } from "../app/plaidClient.js";
+import { client } from "../lib/api/plaidClient.js";
 import { supabase } from "../lib/api/supabase.js";
 import { verifyItemOwnership } from "../lib/api/auth.js";
 import { refreshAndStoreRecurringForItem } from "../lib/plaid/recurringRefresh.js";

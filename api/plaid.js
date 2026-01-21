@@ -1,5 +1,5 @@
 // /api/plaid.js
-import { client } from "../app/plaidClient.js";
+import { client } from "../lib/api/plaidClient.js";
 import { supabase } from "../lib/api/supabase.js";
 import {
   snaptrade,

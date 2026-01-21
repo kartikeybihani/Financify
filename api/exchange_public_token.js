@@ -1,5 +1,5 @@
 // /api/exchange_public_token.js
-import { client } from "../app/plaidClient.js";
+import { client } from "../lib/api/plaidClient.js";
 import {
   supabase,
   supabaseUrl,

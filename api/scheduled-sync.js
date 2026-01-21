@@ -229,7 +229,7 @@ async function runWeeklyBalanceSync(plaidItems) {
     errorDetails: [],
   };
 
-  const { client } = await import("../app/plaidClient.js");
+  const { client } = await import("../lib/api/plaidClient.js");
 
   for (const item of plaidItems) {
     try {
@@ -304,7 +304,7 @@ async function syncItemTransactions(item_id, user_id) {
     }
 
     // Import the existing sync logic
-    const { client } = await import("../app/plaidClient.js");
+    const { client } = await import("../lib/api/plaidClient.js");
 
     // Get access token from Vault
     console.log(`🔑 Fetching access token from Vault for item ${item_id}...`);

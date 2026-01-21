@@ -4,7 +4,7 @@ import {
   supabaseUrl,
   supabaseServiceKey,
 } from "../lib/api/supabase.js";
-import { client as plaidClient } from "../app/plaidClient.js";
+import { client as plaidClient } from "../lib/api/plaidClient.js";
 import { refreshAndStoreRecurringForItem } from "../lib/plaid/recurringRefresh.js";
 
 export default async function handler(req, res) {
