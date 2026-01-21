@@ -245,83 +245,97 @@ Update the JSON schema in the prompt:
 
 ## Implementation Plan
 
-### Phase 1: Extend Classification (Week 1)
+### Phase 1: Extend Classification ✅ COMPLETE
 
-1. **Update Classification Prompt** (`lib/prompt_engine.js`)
+1. **Update Classification Prompt** (`lib/prompt_engine.js`) ✅
    - Add data requirements section to `getClassificationPrompt()`
    - Update JSON schema examples
    - Add examples for common queries
 
-2. **Update Classification Handler** (`api/finny.js`)
+2. **Update Classification Handler** (`api/finny.js`) ✅
    - Parse `data_requirements` from classification result
    - Add backward compatibility (default to empty if missing)
    - Log data requirements for debugging
+   - **Added date recalculation** to fix LLM training data dates
 
-3. **Test Classification**
-   - Test with example queries:
-     - "How much have I spent on Chipotle for the last six months?"
-     - "Can I afford a $1500 trip?"
-     - "What's my net worth?"
+3. **Test Classification** ✅
+   - Test with example queries (10 test questions provided)
    - Verify JSON parsing and structure
+   - Dates now correctly calculated from current date
 
-### Phase 2: Implement Pack Selector (Week 1-2)
+### Phase 2: Implement Pack Selector ✅ COMPLETE
 
-1. **Create `selectDataPacksFromClassification` function**
+1. **Create `selectDataPacksFromClassification` function** ✅
    - Map classification packs to internal needs
    - Handle filters (merchant, category, period)
    - Preserve backward compatibility with keyword fallback
+   - Determine when to use merchant RPC vs category RPC
 
-2. **Update `handleAsk` function**
-   - Replace `planNeeds(extractSlots(message), message)` with:
-     ```javascript
-     const packSelection = selectDataPacksFromClassification(
-       classificationResult, 
-       message
-     );
-     const needs = packSelection.needs;
-     const slots = {
-       ...extractSlots(message), // Keep for backward compat
-       ...packSelection.filters   // Override with classification filters
-     };
-     ```
+2. **Update `handleAsk` function** ✅
+   - Replaced `planNeeds(extractSlots(message), message)` with classification-based selection
+   - Classification filters ALWAYS override keyword-based slots
+   - Maintains backward compatibility
 
-3. **Update `buildContextPacks`**
+3. **Update `buildContextPacks` / `createOptimizedFetchOperations`** ✅
    - Use filters from classification when fetching category_details
+   - **Added merchant RPC support** (`get_spend_by_merchant`) for merchant queries
    - Pass period filters to spend_total fetcher
-   - Optimize: Skip fetching if filters don't match cached data
+   - Updated cache key generation to include merchant/category filters
 
-### Phase 3: Optimize Data Fetching (Week 2)
+4. **Update `processCategoryTransactionsData`** ✅
+   - Handle merchant RPC results separately
+   - Process merchant transactions with proper structure
 
-1. **Smart Caching**
-   - Cache key includes filters (merchant, category, period)
-   - Check cache before fetching
-   - Invalidate cache when new transactions arrive
+### Phase 3: Optimize Data Fetching ✅ COMPLETE
 
-2. **Parallel Fetching**
-   - Keep existing parallel fetch logic
-   - Add filter-aware fetching for category_details
+1. **Smart Caching** ✅
+   - Cache key includes filters (merchant, category, period) - **DONE**
+   - Check cache before fetching - **Already existed**
+   - Cache invalidation on new transactions - **Deferred** (TTL-based caching is sufficient for now)
 
-3. **Error Handling**
-   - Fallback to keyword-based if classification fails
-   - Log when fallback is used
-   - Monitor classification accuracy
+2. **Parallel Fetching** ✅
+   - Keep existing parallel fetch logic - **Already existed**
+   - Add filter-aware fetching for category_details - **DONE**
 
-### Phase 4: Testing & Refinement (Week 2-3)
+3. **Error Handling** ✅
+   - Fallback to keyword-based if classification fails - **DONE**
+   - Log when fallback is used - **DONE** (logs at line 3715-3717)
+   - Monitor classification accuracy - **Basic logging in place**, advanced metrics deferred
 
-1. **Unit Tests**
+### Phase 4: Testing & Refinement 🔄 READY FOR TESTING
+
+1. **Unit Tests** (User will test)
    - Test `selectDataPacksFromClassification` with various classification results
    - Test filter application
    - Test backward compatibility
 
-2. **Integration Tests**
+2. **Integration Tests** (User will test)
    - Test end-to-end with real queries
    - Measure performance (should be same or better)
    - Verify data accuracy
 
-3. **Monitoring**
-   - Log classification → pack selection mapping
-   - Track cache hit rates
-   - Monitor LLM classification accuracy
+3. **Monitoring** (Basic logging in place)
+   - Log classification → pack selection mapping ✅ (logs at line 3777-3783)
+   - Track cache hit rates (existing cache logging)
+   - Monitor LLM classification accuracy (basic logging, advanced metrics deferred)
+
+---
+
+## ✅ Implementation Summary
+
+**Phases 1-3: COMPLETE**
+
+All core functionality has been implemented:
+- ✅ Classification outputs `data_requirements` with proper structure
+- ✅ Date recalculation fixes LLM training data issues
+- ✅ Pack selection uses classification (with keyword fallback)
+- ✅ Merchant RPC (`get_spend_by_merchant`) used for merchant queries
+- ✅ Category RPC (`get_transactions_by_category`) used for category queries
+- ✅ Classification filters override keyword-based slots
+- ✅ Smart caching with filter-aware cache keys
+- ✅ Proper error handling and fallback logging
+
+**Ready for Phase 4: Testing**
 
 ---
 

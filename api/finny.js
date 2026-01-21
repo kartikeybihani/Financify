@@ -2200,13 +2200,40 @@ async function handleAsk(
       };
     }
 
-    // 2) NEW: Use deterministic context planner
-    logDebug("🎯 [FINNY] Using deterministic context planner");
-    const slots = extractSlots(message);
-    const needs = planNeeds(slots, message);
+    // 2) NEW: Use classification-based pack selection (Phase 2)
+    logDebug("🎯 [FINNY] Using classification-based pack selection");
+    
+    // Get classification result if not already available
+    if (!classificationResult) {
+      const cachedClassification = getCachedClassification(message);
+      if (cachedClassification) {
+        console.log("✅ [FINNY] Retrieved classification from cache");
+        classificationResult = cachedClassification;
+      }
+    }
 
-    logInfo("🎯 [SLOTS] Extracted slots:", JSON.stringify(slots, null, 2));
-    logInfo("🎯 [FINNY] Planned needs:", needs);
+    // Select data packs from classification (with keyword fallback)
+    const packSelection = selectDataPacksFromClassification(
+      classificationResult,
+      message
+    );
+    
+    // Extract keyword-based slots for backward compatibility
+    const keywordSlots = extractSlots(message);
+    
+    // Classification filters ALWAYS override keyword-based slots
+    const slots = {
+      ...keywordSlots, // Keep for backward compat
+      merchant: packSelection.filters.merchant || keywordSlots.merchant,
+      category: packSelection.filters.category || keywordSlots.category,
+      period: packSelection.filters.period || keywordSlots.period,
+      useMerchantRPC: packSelection.useMerchantRPC, // Flag for merchant RPC usage
+    };
+    
+    const needs = packSelection.needs;
+
+    logInfo("🎯 [SLOTS] Final slots (classification overrides keyword):", JSON.stringify(slots, null, 2));
+    logInfo("🎯 [FINNY] Selected needs from classification:", needs);
 
     // 2.1) Check if web search is needed
     let webResults = [];
@@ -3673,6 +3700,95 @@ function detectWebSearchNeeded(message) {
 // === CONTEXT PLANNER ===
 // Deterministic context planning to fix "sometimes it works" issue
 
+/**
+ * Selects data packs from classification result (Phase 2)
+ * Maps classification data_requirements to internal needs and filters
+ * Returns: { needs: string[], filters: object, useMerchantRPC: boolean }
+ */
+function selectDataPacksFromClassification(classificationResult, message) {
+  // Fallback to keyword-based if no data_requirements
+  if (
+    !classificationResult ||
+    !classificationResult.data_requirements ||
+    classificationResult.needs_user_data === false
+  ) {
+    logInfo(
+      "⚠️ [PACK_SELECTOR] No data_requirements, falling back to keyword-based selection"
+    );
+    const slots = extractSlots(message);
+    const needs = planNeeds(slots, message);
+    return {
+      needs,
+      filters: {
+        merchant: slots.merchant || null,
+        category: slots.category || null,
+        period: slots.period || null,
+      },
+      useMerchantRPC: !!slots.merchant,
+    };
+  }
+
+  const dr = classificationResult.data_requirements;
+  const needs = [];
+  const filters = {
+    merchant: dr.filters?.merchant || null,
+    category: dr.filters?.category || null,
+    period: dr.filters?.period || null,
+  };
+
+  // Map classification pack names to internal needs
+  const packMapping = {
+    summary_min: "summary_min",
+    spend_total: "spend_total",
+    category_details: "category_details",
+    merchant_breakdown: "category_details", // Same pack, different filter
+    invest_holdings: "invest_holdings",
+    goals_overview: "goals_overview",
+    cashflow_monthly: "cashflow_monthly",
+  };
+
+  // Add required packs
+  if (Array.isArray(dr.required_packs)) {
+    dr.required_packs.forEach((pack) => {
+      const need = packMapping[pack] || pack;
+      if (!needs.includes(need)) {
+        needs.push(need);
+      }
+    });
+  }
+
+  // Add optional packs (only if not already included)
+  if (Array.isArray(dr.optional_packs)) {
+    dr.optional_packs.forEach((pack) => {
+      const need = packMapping[pack] || pack;
+      if (!needs.includes(need)) {
+        needs.push(need);
+      }
+    });
+  }
+
+  // Determine if we should use merchant RPC directly
+  // Use merchant RPC if: category_details is needed AND merchant filter exists
+  const useMerchantRPC =
+    needs.includes("category_details") &&
+    filters.merchant &&
+    !filters.category; // Only use merchant RPC if no category filter
+
+  logInfo("📦 [PACK_SELECTOR] Selected packs from classification:", {
+    needs,
+    filters,
+    useMerchantRPC,
+    required_packs: dr.required_packs,
+    optional_packs: dr.optional_packs,
+  });
+
+  return {
+    needs,
+    filters,
+    useMerchantRPC,
+  };
+}
+
 function planNeeds(slots, message) {
   const needs = ["summary_min"];
 
@@ -3951,8 +4067,15 @@ async function buildContextPacks(userId, needs, slots) {
       // Build cache params based on need type and slots
       let cacheParams = {};
       if (need === "txns_by_category" || need === "category_details") {
-        // For category transactions, include category and period in cache key
-        if (slots?.category && slots?.period) {
+        // For category/merchant transactions, include category/merchant and period in cache key
+        if (slots?.merchant && slots?.period && slots?.useMerchantRPC) {
+          // Merchant query
+          cacheParams = {
+            merchant: slots.merchant,
+            period: slots.period,
+          };
+        } else if (slots?.category && slots?.period) {
+          // Category query
           cacheParams = {
             category: slots.category,
             period: slots.period,
@@ -4141,13 +4264,77 @@ async function createOptimizedFetchOperations(userId, needs, slots) {
     }
   }
 
-  // 3. Category transactions operation (OPTIMIZED: Combine category_details and txns_by_category)
+  // 3. Category/Merchant transactions operation (OPTIMIZED: Combine category_details and txns_by_category)
+  // PHASE 2: Support merchant RPC when merchant filter exists
   logInfo(
     `🔍 [CATEGORY_TXNS] Checking if operation needed - category: ${
       slots?.category
-    }, period: ${slots?.period ? JSON.stringify(slots.period) : "undefined"}`
+    }, merchant: ${slots?.merchant}, period: ${slots?.period ? JSON.stringify(slots.period) : "undefined"}, useMerchantRPC: ${slots?.useMerchantRPC}`
   );
-  if (slots?.category && slots?.period) {
+  
+  // Check if we need merchant-specific transactions (use merchant RPC)
+  if (slots?.useMerchantRPC && slots?.merchant && slots?.period) {
+    const cacheKey = `merchant_transactions_${slots.merchant}_${slots.period.start}_${slots.period.end}`;
+    logInfo(`🔍 [MERCHANT_TXNS] Checking cache with key: ${cacheKey}`);
+    const cachedMerchantTxns = await getCachedUserData(
+      "category_transactions", // Use same cache type
+      userId,
+      {
+        merchant: slots.merchant,
+        period: slots.period,
+      }
+    );
+    logInfo(
+      `🔍 [MERCHANT_TXNS] Cache result: ${cachedMerchantTxns ? "HIT" : "MISS"}`
+    );
+
+    if (cachedMerchantTxns) {
+      addOperation(cacheKey, {
+        key: cacheKey,
+        type: "category_transactions", // Same type for processing
+        userId,
+        merchant: slots.merchant,
+        period: slots.period,
+        cached: true,
+        data: cachedMerchantTxns,
+        priority: 2,
+        servesNeeds: ["category_details"],
+        isMerchantQuery: true,
+      });
+    } else {
+      // Use merchant RPC directly
+      const merchantTxnParams = {
+        p_user_id: userId,
+        p_merchant: slots.merchant,
+        p_start: slots.period.start,
+        p_end: slots.period.end,
+      };
+      logInfo(
+        `🔍 [MERCHANT_TXNS] Creating RPC call to get_spend_by_merchant with params:`,
+        JSON.stringify(merchantTxnParams, null, 2)
+      );
+      addOperation(cacheKey, {
+        key: cacheKey,
+        type: "category_transactions", // Same type for processing
+        userId,
+        merchant: slots.merchant,
+        period: slots.period,
+        cached: false,
+        priority: 2,
+        servesNeeds: ["category_details"],
+        isMerchantQuery: true,
+        fetchers: [
+          {
+            name: "merchant_transactions",
+            rpc: "get_spend_by_merchant",
+            params: merchantTxnParams,
+          },
+        ],
+      });
+    }
+  }
+  // Category transactions (existing logic)
+  else if (slots?.category && slots?.period) {
     const cacheKey = `category_transactions_${slots.category}_${slots.period.start}_${slots.period.end}`;
     logInfo(`🔍 [CATEGORY_TXNS] Checking cache with key: ${cacheKey}`);
     const cachedCategoryTxns = await getCachedUserData(
@@ -4605,10 +4792,58 @@ function processCategoryTransactionsData(operation, results) {
     {
       key: operation.key,
       category: operation.category,
+      merchant: operation.merchant,
       period: operation.period,
       resultsCount: results.length,
+      isMerchantQuery: operation.isMerchantQuery || false,
     }
   );
+
+  // PHASE 2: Handle merchant queries (use merchant RPC result)
+  if (operation.isMerchantQuery) {
+    const merchantRes =
+      results.find((r) => r?.name === "merchant_transactions") ||
+      results[results.length - 1];
+
+    if (!merchantRes?.data || merchantRes.data.length === 0) {
+      logWarn(
+        `⚠️ [MERCHANT_TXNS_PROCESS] No merchant transaction data found. merchantRes:`,
+        merchantRes
+      );
+      return null;
+    }
+
+    // Merchant RPC returns transactions directly
+    const result = {
+      category: null, // No category for merchant queries
+      merchant: operation.merchant,
+      transactions: merchantRes.data.map((txn) => ({
+        date: txn.date,
+        amount: txn.amount,
+        name: txn.name,
+        merchant: txn.merchant_name || txn.name || operation.merchant,
+        category: txn.category || null,
+      })),
+      period: `${operation.period.start} to ${operation.period.end}`,
+    };
+
+    logInfo(
+      `🔍 [MERCHANT_TXNS_PROCESS] Processed ${result.transactions.length} merchant transactions:`,
+      {
+        merchant: result.merchant,
+        period: result.period,
+        transactionCount: result.transactions.length,
+        sampleTransactions: result.transactions.slice(0, 5).map((t) => ({
+          date: t.date,
+          merchant: t.merchant,
+          name: t.name,
+          amount: t.amount,
+        })),
+      }
+    );
+
+    return result;
+  }
 
   // Results can contain: [category_spend_by_periods, category_transactions] for multi-month queries
   // Or just: [category_transactions] for single period queries
@@ -5416,6 +5651,58 @@ async function handleClassify(message, context) {
             );
             dr.required_packs.unshift("summary_min");
           }
+
+          // CRITICAL: Recalculate period dates from current date (not LLM training data)
+          // LLM may generate dates from training data (e.g., 2024), but we need current dates
+          if (dr.filters?.period && dr.filters.period.months) {
+            const now = new Date();
+            const monthsAgo = dr.filters.period.months;
+            const startDate = new Date(now.getFullYear(), now.getMonth() - monthsAgo, 1);
+            const endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            
+            dr.filters.period.start = startDate.toISOString().split("T")[0];
+            dr.filters.period.end = endDate.toISOString().split("T")[0];
+            
+            console.log(
+              `📅 [FINNY] Recalculated period dates: ${dr.filters.period.start} to ${dr.filters.period.end} (${monthsAgo} months from today)`
+            );
+          } else if (dr.filters?.period && (dr.filters.period.start || dr.filters.period.end)) {
+            // If period has dates but they look old (before 2025), recalculate based on time_range
+            const periodStart = dr.filters.period.start ? new Date(dr.filters.period.start) : null;
+            const periodEnd = dr.filters.period.end ? new Date(dr.filters.period.end) : null;
+            const now = new Date();
+            const year2025 = new Date("2025-01-01");
+            
+            // If dates are before 2025, they're likely from LLM training data - recalculate
+            if (
+              (periodStart && periodStart < year2025) ||
+              (periodEnd && periodEnd < year2025)
+            ) {
+              console.log(
+                `📅 [FINNY] Detected old dates in period, recalculating from time_range: ${dr.time_range}`
+              );
+              
+              let monthsAgo = 1; // default
+              if (dr.time_range === "3_months") monthsAgo = 3;
+              else if (dr.time_range === "6_months") monthsAgo = 6;
+              else if (dr.time_range === "1_year") monthsAgo = 12;
+              else if (dr.time_range === "1_month") monthsAgo = 1;
+              else if (dr.time_range === "current") monthsAgo = 0;
+              
+              if (monthsAgo > 0) {
+                const startDate = new Date(now.getFullYear(), now.getMonth() - monthsAgo, 1);
+                const endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+                
+                dr.filters.period.start = startDate.toISOString().split("T")[0];
+                dr.filters.period.end = endDate.toISOString().split("T")[0];
+                dr.filters.period.months = monthsAgo;
+                
+                console.log(
+                  `📅 [FINNY] Recalculated period: ${dr.filters.period.start} to ${dr.filters.period.end} (${monthsAgo} months)`
+                );
+              }
+            }
+          }
         }
       } else {
         // If needs_user_data is false, data_requirements should be null
@@ -5543,6 +5830,48 @@ async function handleClassify(message, context) {
       };
     } else if (out.needs_user_data === false) {
       out.data_requirements = null;
+    }
+
+    // Final date recalculation pass (ensure all dates are current)
+    if (out.data_requirements?.filters?.period) {
+      const period = out.data_requirements.filters.period;
+      if (period.months) {
+        const now = new Date();
+        const monthsAgo = period.months;
+        const startDate = new Date(now.getFullYear(), now.getMonth() - monthsAgo, 1);
+        const endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        
+        period.start = startDate.toISOString().split("T")[0];
+        period.end = endDate.toISOString().split("T")[0];
+      } else if (period.start || period.end) {
+        // Check if dates are old (before 2025)
+        const periodStart = period.start ? new Date(period.start) : null;
+        const periodEnd = period.end ? new Date(period.end) : null;
+        const year2025 = new Date("2025-01-01");
+        
+        if (
+          (periodStart && periodStart < year2025) ||
+          (periodEnd && periodEnd < year2025)
+        ) {
+          const timeRange = out.data_requirements.time_range;
+          let monthsAgo = 1;
+          if (timeRange === "3_months") monthsAgo = 3;
+          else if (timeRange === "6_months") monthsAgo = 6;
+          else if (timeRange === "1_year") monthsAgo = 12;
+          else if (timeRange === "1_month") monthsAgo = 1;
+          else if (timeRange === "current") monthsAgo = 0;
+          
+          if (monthsAgo > 0) {
+            const now = new Date();
+            const startDate = new Date(now.getFullYear(), now.getMonth() - monthsAgo, 1);
+            const endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            
+            period.start = startDate.toISOString().split("T")[0];
+            period.end = endDate.toISOString().split("T")[0];
+            period.months = monthsAgo;
+          }
+        }
+      }
     }
 
     // Log data_requirements for debugging
