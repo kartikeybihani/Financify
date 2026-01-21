@@ -2245,6 +2245,28 @@ async function handleAsk(
     if (classificationResult && !classificationResult.decision_risk) {
       classificationResult.decision_risk = "unknown";
     }
+    // Backward compatibility: Add data_requirements if missing (Phase 1)
+    if (
+      classificationResult &&
+      classificationResult.needs_user_data === true &&
+      !classificationResult.data_requirements
+    ) {
+      console.log(
+        "⚠️ [FINNY] Classification result missing data_requirements, adding default"
+      );
+      classificationResult.data_requirements = {
+        required_packs: ["summary_min"],
+        optional_packs: [],
+        filters: {},
+        granularity: "summary_level",
+        time_range: "current",
+      };
+    } else if (
+      classificationResult &&
+      classificationResult.needs_user_data === false
+    ) {
+      classificationResult.data_requirements = null;
+    }
 
     const userRefused = detectRefusalToAnswer(message);
     const ambiguousIntent = detectAmbiguousIntent(message);
@@ -5058,6 +5080,13 @@ async function handleClassify(message, context) {
       ticker: null,
       confidence: 0.1,
       fallback: true,
+      data_requirements: {
+        required_packs: ["summary_min"],
+        optional_packs: [],
+        filters: {},
+        granularity: "summary_level",
+        time_range: "current",
+      },
     };
   }
 
@@ -5131,6 +5160,21 @@ async function handleClassify(message, context) {
           cachedResult.entities.length === 0
         ) {
           cachedResult.entities = [cachedResult.ticker];
+        }
+        // Backward compatibility: Add data_requirements if missing (Phase 1)
+        if (cachedResult.needs_user_data === true && !cachedResult.data_requirements) {
+          console.log(
+            "⚠️ [FINNY] Cached classification missing data_requirements, adding default"
+          );
+          cachedResult.data_requirements = {
+            required_packs: ["summary_min"],
+            optional_packs: [],
+            filters: {},
+            granularity: "summary_level",
+            time_range: "current",
+          };
+        } else if (cachedResult.needs_user_data === false) {
+          cachedResult.data_requirements = null;
         }
         // ABSOLUTE FINAL CHECK: Never return heuristic results
         if (
@@ -5310,6 +5354,73 @@ async function handleClassify(message, context) {
       if (!out.info_sufficiency) out.info_sufficiency = "unknown";
       if (!Array.isArray(out.missing_fields)) out.missing_fields = [];
       if (!out.decision_risk) out.decision_risk = "unknown";
+
+      // Parse and validate data_requirements (NEW - Phase 1)
+      if (out.needs_user_data === true) {
+        // If needs_user_data is true, ensure data_requirements exists
+        if (!out.data_requirements || typeof out.data_requirements !== "object") {
+          console.log(
+            "⚠️ [FINNY] Missing data_requirements for needs_user_data=true, creating default"
+          );
+          out.data_requirements = {
+            required_packs: ["summary_min"],
+            optional_packs: [],
+            filters: {},
+            granularity: "summary_level",
+            time_range: "current",
+          };
+        } else {
+          // Validate data_requirements structure
+          const dr = out.data_requirements;
+          if (!Array.isArray(dr.required_packs)) {
+            console.log(
+              "⚠️ [FINNY] Invalid required_packs, defaulting to ['summary_min']"
+            );
+            dr.required_packs = ["summary_min"];
+          }
+          if (!Array.isArray(dr.optional_packs)) {
+            dr.optional_packs = [];
+          }
+          if (!dr.filters || typeof dr.filters !== "object") {
+            dr.filters = {};
+          }
+          const allowedGranularity = new Set([
+            "summary_level",
+            "transaction_level",
+            "category_level",
+          ]);
+          if (!allowedGranularity.has(dr.granularity)) {
+            console.log(
+              "⚠️ [FINNY] Invalid granularity, defaulting to 'summary_level'"
+            );
+            dr.granularity = "summary_level";
+          }
+          const allowedTimeRange = new Set([
+            "current",
+            "1_month",
+            "3_months",
+            "6_months",
+            "1_year",
+            "all_time",
+          ]);
+          if (!allowedTimeRange.has(dr.time_range)) {
+            console.log(
+              "⚠️ [FINNY] Invalid time_range, defaulting to 'current'"
+            );
+            dr.time_range = "current";
+          }
+          // Ensure summary_min is in required_packs if needs_user_data is true
+          if (!dr.required_packs.includes("summary_min")) {
+            console.log(
+              "⚠️ [FINNY] Adding 'summary_min' to required_packs (always needed for context)"
+            );
+            dr.required_packs.unshift("summary_min");
+          }
+        }
+      } else {
+        // If needs_user_data is false, data_requirements should be null
+        out.data_requirements = null;
+      }
     } catch (parseError) {
       console.log(
         "❌ [FINNY] JSON parse/validation error, using fallback classification"
@@ -5333,6 +5444,13 @@ async function handleClassify(message, context) {
         ticker: null,
         confidence: 0.8,
         fallback: true,
+        data_requirements: {
+          required_packs: ["summary_min"],
+          optional_packs: [],
+          filters: {},
+          granularity: "summary_level",
+          time_range: "current",
+        },
       };
     }
     // Strict trigger: only treat as goal_conversation when user explicitly wants to create/set/add a goal.
@@ -5409,6 +5527,30 @@ async function handleClassify(message, context) {
       out.entities.length === 0
     ) {
       out.entities = [out.ticker];
+    }
+
+    // Final validation for data_requirements (backward compatibility)
+    if (out.needs_user_data === true && !out.data_requirements) {
+      console.log(
+        "⚠️ [FINNY] Missing data_requirements for needs_user_data=true, creating default"
+      );
+      out.data_requirements = {
+        required_packs: ["summary_min"],
+        optional_packs: [],
+        filters: {},
+        granularity: "summary_level",
+        time_range: "current",
+      };
+    } else if (out.needs_user_data === false) {
+      out.data_requirements = null;
+    }
+
+    // Log data_requirements for debugging
+    if (out.data_requirements) {
+      console.log(
+        "📦 [FINNY] Data requirements:",
+        JSON.stringify(out.data_requirements, null, 2)
+      );
     }
 
     // Log the classification
