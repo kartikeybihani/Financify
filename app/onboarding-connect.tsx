@@ -18,7 +18,7 @@ import { fetchLinkToken, handlePlaidConnect } from "@/src/utils/plaid/plaid";
 import { BlurView } from "expo-blur";
 import logger from "@/src/utils/core/logger";
 import { logOnboardingEvent } from "@/src/utils/auth/onboarding";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AppStorage from "@/src/utils/storage/storage";
 
 interface ConnectedAccount {
   account_id: string;
@@ -137,7 +137,7 @@ export default function AccountConnectionScreen() {
     itemId?: string
   ) => {
     const key = getTxPreviewKey(userId, itemId);
-    const alreadyLogged = await AsyncStorage.getItem(key);
+    const alreadyLogged = AppStorage.getItemSync(key);
     if (alreadyLogged) return;
 
     await pollForTransactionsSync(userId);
@@ -155,7 +155,7 @@ export default function AccountConnectionScreen() {
       logger.info(
         "🧾 Transactions preview: no transactions found in last 30 days"
       );
-      await AsyncStorage.setItem(key, "1");
+      AppStorage.setItemSync(key, "1");
       return;
     }
 
@@ -176,7 +176,7 @@ export default function AccountConnectionScreen() {
       preview: lines,
     });
 
-    await AsyncStorage.setItem(key, "1");
+    AppStorage.setItemSync(key, "1");
   };
 
   useEffect(() => {

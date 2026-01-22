@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { AppState, DeviceEventEmitter } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import AppStorage from '@/src/utils/storage/storage';
 import { ChatMessage, Goal } from '@/src/types/finny';
 import finnyConstants from '@/src/constants/finny';
 import logger from '@/src/utils/core/logger';
@@ -150,36 +150,36 @@ export const useChat = (userName?: string | null) => {
       }
 
       // Check if stored chat belongs to current user
-      const storedUserId = await AsyncStorage.getItem("currentChatUserId");
+      const storedUserId = AppStorage.getItemSync("currentChatUserId");
       if (storedUserId && storedUserId !== currentUserId) {
         // Different user detected - clear old chat data
         console.log("🔄 [SECURITY] User changed, clearing previous user's chat data");
-        await AsyncStorage.removeItem("chatMessages");
-        await AsyncStorage.removeItem("chatId");
-        await AsyncStorage.removeItem("currentChatUserId");
+        AppStorage.removeItemSync("chatMessages");
+        AppStorage.removeItemSync("chatId");
+        AppStorage.removeItemSync("currentChatUserId");
         setChatMessages(finnyConstants.getInitialChatMessages(userName));
         setShowNudges(true);
         // Generate new chatId for new user
         const newChatId = `chat_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
         setChatId(newChatId);
-        await AsyncStorage.setItem("currentChatUserId", currentUserId);
+        AppStorage.setItemSync("currentChatUserId", currentUserId);
         return;
       }
 
       // Load stored chatId or generate new one
-      const storedChatId = await AsyncStorage.getItem("chatId");
+      const storedChatId = AppStorage.getItemSync("chatId");
       if (storedChatId) {
         setChatId(storedChatId);
       } else {
         const newChatId = `chat_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
         setChatId(newChatId);
-        await AsyncStorage.setItem("chatId", newChatId);
+        AppStorage.setItemSync("chatId", newChatId);
       }
       
       // Store current user ID for future verification
-      await AsyncStorage.setItem("currentChatUserId", currentUserId);
+      AppStorage.setItemSync("currentChatUserId", currentUserId);
 
-      const savedMessages = await AsyncStorage.getItem("chatMessages");
+      const savedMessages = AppStorage.getItemSync("chatMessages");
       if (savedMessages) {
         const parsedMessages = JSON.parse(savedMessages);
         if (parsedMessages.length > 1) {
@@ -211,7 +211,7 @@ export const useChat = (userName?: string | null) => {
         return;
       }
 
-      const storedUserId = await AsyncStorage.getItem("currentChatUserId");
+      const storedUserId = AppStorage.getItemSync("currentChatUserId");
       if (storedUserId && storedUserId !== currentUserId) {
         // User changed - don't save messages for wrong user
         console.log("⚠️ [SECURITY] User mismatch detected, not saving chat messages");
@@ -236,9 +236,9 @@ export const useChat = (userName?: string | null) => {
         // Still save, but log the issue for debugging
       }
 
-      await AsyncStorage.setItem("chatMessages", JSON.stringify(chatMessages));
-      await AsyncStorage.setItem("chatId", chatId);
-      await AsyncStorage.setItem("currentChatUserId", currentUserId);
+      AppStorage.setItemSync("chatMessages", JSON.stringify(chatMessages));
+      AppStorage.setItemSync("chatId", chatId);
+      AppStorage.setItemSync("currentChatUserId", currentUserId);
     } catch (error) {
       logger.error("Error saving chat messages:", error);
     }
@@ -249,7 +249,7 @@ export const useChat = (userName?: string | null) => {
       console.log("🧹 [CLEAR_CHAT] Clearing all chat data and context");
       
       // Clear UI immediately for smooth UX
-      await AsyncStorage.removeItem("chatMessages");
+      AppStorage.removeItemSync("chatMessages");
       setChatMessages(finnyConstants.getInitialChatMessages(userName));
       setCurrentSessionId(null);
       setIsNewSession(true);
@@ -262,12 +262,12 @@ export const useChat = (userName?: string | null) => {
       // Generate new chat_id for fresh conversation (backend uses this to clear context)
       const newChatId = `chat_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
       setChatId(newChatId);
-      await AsyncStorage.setItem("chatId", newChatId);
+      AppStorage.setItemSync("chatId", newChatId);
       
       // Store current user ID for verification
       const { data: { user } } = await supabase.auth.getUser();
       if (user?.id) {
-        await AsyncStorage.setItem("currentChatUserId", user.id);
+        AppStorage.setItemSync("currentChatUserId", user.id);
       }
       
       console.log("🆕 [CLEAR_CHAT] New chat ID generated:", newChatId);
@@ -389,7 +389,7 @@ export const useChat = (userName?: string | null) => {
       console.log("🆕 [NEW_SESSION] Starting new session");
       
       await saveCurrentSession();
-      await AsyncStorage.removeItem('chatMessages');
+      AppStorage.removeItemSync('chatMessages');
       setChatMessages(finnyConstants.getInitialChatMessages(userName));
       setCurrentSessionId(null);
       setIsNewSession(true);
@@ -402,12 +402,12 @@ export const useChat = (userName?: string | null) => {
       // Generate new chat_id for fresh conversation
       const newChatId = `chat_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
       setChatId(newChatId);
-      await AsyncStorage.setItem("chatId", newChatId);
+      AppStorage.setItemSync("chatId", newChatId);
       
       // Store current user ID for verification
       const { data: { user } } = await supabase.auth.getUser();
       if (user?.id) {
-        await AsyncStorage.setItem("currentChatUserId", user.id);
+        AppStorage.setItemSync("currentChatUserId", user.id);
       }
       
       console.log("🆕 [NEW_SESSION] New chat ID generated:", newChatId);
@@ -487,7 +487,7 @@ export const useChat = (userName?: string | null) => {
       setChatMessages(sortedMessages);
       setCurrentSessionId(sessionId);
       setIsNewSession(false);
-      await AsyncStorage.setItem('chatMessages', JSON.stringify(sortedMessages));
+      AppStorage.setItemSync('chatMessages', JSON.stringify(sortedMessages));
       setShowNudges(sortedMessages.length <= 1);
       
       // Clear goal flow when loading old session (old sessions don't have active goal flows)
@@ -497,7 +497,7 @@ export const useChat = (userName?: string | null) => {
       // The backend uses chatId for conversation context, so we need a fresh one
       const newChatId = `chat_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
       setChatId(newChatId);
-      await AsyncStorage.setItem("chatId", newChatId);
+      AppStorage.setItemSync("chatId", newChatId);
       logger.info("[LOAD_SESSION] Generated new chatId for loaded session:", newChatId);
       
       logger.info("[LOAD_SESSION] ✅ Session restored successfully");

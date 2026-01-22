@@ -1,15 +1,15 @@
 // app/utils/cache.ts
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AppStorage from "@/src/utils/storage/storage";
 
 type Envelope<T> = { v: T; exp: number };
 
 export async function cacheGet<T>(key: string): Promise<T | null> {
-  const raw = await AsyncStorage.getItem(key);
+  const raw = AppStorage.getItemSync(key);
   if (!raw) return null;
   try {
     const { v, exp } = JSON.parse(raw) as Envelope<T>;
     if (exp && Date.now() > exp) {
-      await AsyncStorage.removeItem(key);
+      AppStorage.removeItemSync(key);
       return null;
     }
     return v;
@@ -20,11 +20,11 @@ export async function cacheGet<T>(key: string): Promise<T | null> {
 
 export async function cacheSet<T>(key: string, value: T, ttlMs: number) {
   const env: Envelope<T> = { v: value, exp: Date.now() + ttlMs };
-  await AsyncStorage.setItem(key, JSON.stringify(env));
+  AppStorage.setItemSync(key, JSON.stringify(env));
 }
 
 export async function cacheRemove(key: string) {
-  await AsyncStorage.removeItem(key);
+  AppStorage.removeItemSync(key);
 }
 
 // Cache key helpers

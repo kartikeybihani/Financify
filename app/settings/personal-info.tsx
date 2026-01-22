@@ -11,7 +11,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import IconButton from "@/src/components/shared/IconButton";
 import { supabase } from "@/src/lib/supabase/supabase";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AppStorage from "@/src/utils/storage/storage";
 import EditEmailModal from "@/src/components/menu/EditEmailModal";
 import EditOccupationModal from "@/src/components/menu/EditOccupationModal";
 import EditLocationModal from "@/src/components/menu/EditLocationModal";
@@ -37,7 +37,7 @@ export default function PersonalInfoScreen() {
   useEffect(() => {
     const fetchAndSetUserData = async () => {
       try {
-        const storedUserData = await AsyncStorage.getItem("userData");
+        const storedUserData = AppStorage.getItemSync("userData");
         if (storedUserData) {
           setUserData(JSON.parse(storedUserData));
         }
@@ -47,7 +47,7 @@ export default function PersonalInfoScreen() {
         } = await supabase.auth.getUser();
         if (user) {
           setUserData(user);
-          await AsyncStorage.setItem("userData", JSON.stringify(user));
+          AppStorage.setItemSync("userData", JSON.stringify(user));
           logger.info("[PersonalInfo] Current user email:", user.email);
 
           // Fetch occupation (and age) from profiles
@@ -296,7 +296,7 @@ export default function PersonalInfoScreen() {
             } = await supabase.auth.getUser();
             if (user) {
               setUserData(user);
-              await AsyncStorage.setItem("userData", JSON.stringify(user));
+              AppStorage.setItemSync("userData", JSON.stringify(user));
               logger.info(
                 "[PersonalInfo] User data refreshed after email verification"
               );

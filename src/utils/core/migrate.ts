@@ -1,8 +1,8 @@
 // app/utils/migrate.ts
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AppStorage from "@/src/utils/storage/storage";
 
 export async function runStorageMigrationV2() {
-  const done = await AsyncStorage.getItem("migration_v2_done");
+  const done = AppStorage.getItemSync("migration_v2_done");
   if (done) return;
 
   console.log("🧹 Running storage migration v2...");
@@ -37,13 +37,14 @@ export async function runStorageMigrationV2() {
   ];
 
   try {
-    await AsyncStorage.multiRemove(nukes);
+    // Use synchronous operations
+    AppStorage.multiRemoveSync(nukes);
     console.log(`✅ Cleared ${nukes.length} legacy keys`);
   } catch (error) {
     console.error("⚠️ Error during migration:", error);
     // Continue anyway - migration shouldn't block app
   } finally {
-    await AsyncStorage.setItem("migration_v2_done", "1");
+    AppStorage.setItemSync("migration_v2_done", "1");
     console.log("✅ Migration v2 complete");
   }
 }
@@ -51,7 +52,7 @@ export async function runStorageMigrationV2() {
 // Cleanup orphaned cache entries for disconnected accounts
 export async function cleanupOrphanedCache(userId: string, activeItemIds: string[]) {
   try {
-    const allKeys = await AsyncStorage.getAllKeys();
+    const allKeys = AppStorage.getAllKeysSync();
     const cacheKeys = allKeys.filter(key => 
       key.includes("tx_preview::") || 
       key.includes("balances::") || 
@@ -76,7 +77,7 @@ export async function cleanupOrphanedCache(userId: string, activeItemIds: string
     }
 
     if (orphanedKeys.length > 0) {
-      await AsyncStorage.multiRemove(orphanedKeys);
+      AppStorage.multiRemoveSync(orphanedKeys);
       console.log(`🧹 Cleaned up ${orphanedKeys.length} orphaned cache entries`);
     }
   } catch (error) {

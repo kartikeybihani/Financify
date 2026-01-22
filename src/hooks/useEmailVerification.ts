@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { supabase } from "@/src/lib/supabase/supabase";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AppStorage from "@/src/utils/storage/storage";
 
 const VERIFICATION_STORAGE_KEY = "email_verification_pending";
 const MAX_VERIFICATION_TIME = 5 * 60 * 1000; // 5 minutes in milliseconds
@@ -26,7 +26,7 @@ export function useEmailVerification() {
   useEffect(() => {
     const loadPersistedState = async () => {
       try {
-        const stored = await AsyncStorage.getItem(VERIFICATION_STORAGE_KEY);
+        const stored = AppStorage.getItemSync(VERIFICATION_STORAGE_KEY);
         if (stored) {
           const state: VerificationState = JSON.parse(stored);
           const elapsed = Date.now() - state.startTime;
@@ -39,7 +39,7 @@ export function useEmailVerification() {
             startPolling(state.email, elapsed);
           } else {
             // Timeout - clear persisted state
-            await AsyncStorage.removeItem(VERIFICATION_STORAGE_KEY);
+            AppStorage.removeItemSync(VERIFICATION_STORAGE_KEY);
             setStatus("timeout");
           }
         }
@@ -131,7 +131,7 @@ export function useEmailVerification() {
       if (isVerified) {
         // Clear AsyncStorage userData cache to force refresh
         try {
-          await AsyncStorage.removeItem("userData");
+          AppStorage.removeItemSync("userData");
           console.log("[EmailVerification] Cleared userData cache");
         } catch (cacheError) {
           console.warn("[EmailVerification] Failed to clear userData cache:", cacheError);
@@ -169,7 +169,7 @@ export function useEmailVerification() {
           clearTimeout(intervalRef.current);
           intervalRef.current = null;
         }
-        await AsyncStorage.removeItem(VERIFICATION_STORAGE_KEY);
+        AppStorage.removeItemSync(VERIFICATION_STORAGE_KEY);
         setStatus("timeout");
         return;
       }
@@ -183,7 +183,7 @@ export function useEmailVerification() {
           clearTimeout(intervalRef.current);
           intervalRef.current = null;
         }
-        await AsyncStorage.removeItem(VERIFICATION_STORAGE_KEY);
+        AppStorage.removeItemSync(VERIFICATION_STORAGE_KEY);
         setStatus("verified");
         setPendingEmail(null);
         startTimeRef.current = null;
@@ -216,7 +216,7 @@ export function useEmailVerification() {
         email,
         startTime: Date.now(),
       };
-      await AsyncStorage.setItem(VERIFICATION_STORAGE_KEY, JSON.stringify(state));
+      AppStorage.setItemSync(VERIFICATION_STORAGE_KEY, JSON.stringify(state));
 
       setPendingEmail(email);
       setStatus("verifying");
@@ -235,7 +235,7 @@ export function useEmailVerification() {
       intervalRef.current = null;
     }
     
-    await AsyncStorage.removeItem(VERIFICATION_STORAGE_KEY);
+    AppStorage.removeItemSync(VERIFICATION_STORAGE_KEY);
     setStatus("idle");
     setPendingEmail(null);
     setErrorMessage("");
@@ -276,7 +276,7 @@ export function useEmailVerification() {
           clearTimeout(intervalRef.current);
           intervalRef.current = null;
         }
-        await AsyncStorage.removeItem(VERIFICATION_STORAGE_KEY);
+        AppStorage.removeItemSync(VERIFICATION_STORAGE_KEY);
         setStatus("verified");
         setPendingEmail(null);
         startTimeRef.current = null;

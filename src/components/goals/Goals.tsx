@@ -32,7 +32,7 @@ import { GoalsProps, GoalsState } from "@/src/types/goalsTypes";
 import { useRouter } from "expo-router";
 import logger from "@/src/utils/core/logger";
 import { supabase } from "@/src/lib/supabase/supabase";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AppStorage from "@/src/utils/storage/storage";
 
 const Goals: React.FC<GoalsProps> = ({
   deleteGoal,
@@ -409,7 +409,7 @@ const Goals: React.FC<GoalsProps> = ({
               style={styles.talkToFinnyButton}
               activeOpacity={0.8}
               onPress={async () => {
-                await AsyncStorage.setItem("initialChatMessage", "");
+                AppStorage.setItemSync("initialChatMessage", "");
                 router.push("/chat");
               }}
             >
@@ -436,7 +436,7 @@ const Goals: React.FC<GoalsProps> = ({
                     style={styles.suggestionChip}
                     activeOpacity={0.7}
                     onPress={async () => {
-                      await AsyncStorage.setItem("initialChatMessage", prompt);
+                      AppStorage.setItemSync("initialChatMessage", prompt);
                       router.push("/chat");
                     }}
                   >

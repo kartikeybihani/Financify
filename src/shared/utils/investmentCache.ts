@@ -1,5 +1,5 @@
 // app/_shared/utils/investmentCache.ts
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AppStorage from "@/src/utils/storage/storage";
 import logger from "@/src/utils/core/logger";
 import { CACHE_CONFIG } from "../constants/cacheConfig";
 
@@ -35,10 +35,9 @@ export const saveInvestmentToCache = async (userId: string, data: Omit<CachedInv
     const cacheKey = getInvestmentCacheKey(userId);
     const timestampKey = getInvestmentCacheTimestampKey(userId);
 
-    await Promise.all([
-      AsyncStorage.setItem(cacheKey, JSON.stringify(cacheData)),
-      AsyncStorage.setItem(timestampKey, timestamp)
-    ]);
+    // Use synchronous operations for better performance
+    AppStorage.setItemSync(cacheKey, JSON.stringify(cacheData));
+    AppStorage.setItemSync(timestampKey, timestamp);
     logger.info("💾 [INVESTMENT CACHE] Data saved to cache for user:", userId.substring(0, 8), {
       holdings: data.holdings.length,
       options: data.options.length,
@@ -64,10 +63,9 @@ export const loadInvestmentFromCache = async (userId: string): Promise<CachedInv
     const cacheKey = getInvestmentCacheKey(userId);
     const timestampKey = getInvestmentCacheTimestampKey(userId);
 
-    const [cachedData, timestampStr] = await Promise.all([
-      AsyncStorage.getItem(cacheKey),
-      AsyncStorage.getItem(timestampKey)
-    ]);
+    // Use synchronous reads for instant cache access (MMKV advantage)
+    const cachedData = AppStorage.getItemSync(cacheKey);
+    const timestampStr = AppStorage.getItemSync(timestampKey);
 
     if (!cachedData || !timestampStr) {
       logger.info("📦 [INVESTMENT CACHE] No cached data found for user:", userId.substring(0, 8));
@@ -120,21 +118,20 @@ export const clearInvestmentCache = async (userId?: string): Promise<void> => {
       // Clear specific user's cache
       const cacheKey = getInvestmentCacheKey(userId);
       const timestampKey = getInvestmentCacheTimestampKey(userId);
-      await Promise.all([
-        AsyncStorage.removeItem(cacheKey),
-        AsyncStorage.removeItem(timestampKey)
-      ]);
+      // Use synchronous operations
+      AppStorage.removeItemSync(cacheKey);
+      AppStorage.removeItemSync(timestampKey);
       logger.info("🗑️ [INVESTMENT CACHE] Cache cleared for user:", userId.substring(0, 8));
     } else {
       // Clear all user caches (for migration/logout)
-      // Get all AsyncStorage keys and filter for investment cache keys
-      const allKeys = await AsyncStorage.getAllKeys();
+      // Get all keys and filter for investment cache keys
+      const allKeys = AppStorage.getAllKeysSync();
       const investmentKeys = allKeys.filter(key => 
         key.startsWith(CACHE_CONFIG.KEYS.INVESTMENT_DATA) ||
         key.startsWith(CACHE_CONFIG.KEYS.INVESTMENT_DATA_TIMESTAMP)
       );
       if (investmentKeys.length > 0) {
-        await AsyncStorage.multiRemove(investmentKeys);
+        AppStorage.multiRemoveSync(investmentKeys);
         logger.info("🗑️ [INVESTMENT CACHE] Cleared all user caches:", investmentKeys.length, "keys");
       }
     }
@@ -151,7 +148,7 @@ export const hasValidInvestmentCache = async (userId: string): Promise<boolean> 
     if (!userId) return false;
 
     const timestampKey = getInvestmentCacheTimestampKey(userId);
-    const timestampStr = await AsyncStorage.getItem(timestampKey);
+    const timestampStr = AppStorage.getItemSync(timestampKey);
     if (!timestampStr) return false;
 
     const timestamp = parseInt(timestampStr);

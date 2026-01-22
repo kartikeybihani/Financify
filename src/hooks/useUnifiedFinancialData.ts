@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { DeviceEventEmitter } from "react-native";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AppStorage from "@/src/utils/storage/storage";
 import { Account } from "@/src/types/plaid";
 import { Goal } from "@/src/types/finny";
 import { getAllUserAccounts } from "@/src/utils/plaid/plaid";
@@ -22,6 +22,7 @@ interface CachedFinancialData {
   accounts: Account[];
   goals: Goal[];
   cashEntries: CashEntry[];
+  investmentBalances: any[];
   timestamp: number;
 }
 
@@ -73,37 +74,64 @@ export interface UnifiedFinancialData {
  * with smart caching for optimal performance
  */
 export function useUnifiedFinancialData(): UnifiedFinancialData {
-  const [accounts, setAccounts] = useState<Account[]>([]);
-  const [goals, setGoals] = useState<Goal[]>([]);
-  const [cashEntries, setCashEntries] = useState<CashEntry[]>([]);
-  const [investmentBalances, setInvestmentBalances] = useState<any[]>([]);
+  // Load cache synchronously before first render (MMKV advantage)
+  const initialCache = (() => {
+    try {
+      const cacheString = AppStorage.getItemSync(UNIFIED_CACHE_KEY);
+      const timestampString = AppStorage.getItemSync(UNIFIED_CACHE_TIMESTAMP_KEY);
+      
+      if (!cacheString || !timestampString) {
+        return null;
+      }
+
+      const timestamp = parseInt(timestampString, 10);
+      const now = Date.now();
+      const cacheAge = now - timestamp;
+
+      if (cacheAge > CACHE_DURATION) {
+        return null;
+      }
+
+      return JSON.parse(cacheString) as CachedFinancialData;
+    } catch (error) {
+      return null;
+    }
+  })();
+
+  // Initialize state with cached data if available (instant UI)
+  const [accounts, setAccounts] = useState<Account[]>(initialCache?.accounts || []);
+  const [goals, setGoals] = useState<Goal[]>(initialCache?.goals || []);
+  const [cashEntries, setCashEntries] = useState<CashEntry[]>(initialCache?.cashEntries || []);
+  const [investmentBalances, setInvestmentBalances] = useState<any[]>(initialCache?.investmentBalances || []);
   const [loading, setLoading] = useState(false);
-  const [isInitialLoad, setIsInitialLoad] = useState(true);
+  const [isInitialLoad, setIsInitialLoad] = useState(!initialCache); // If we have cache, not initial load
 
   // Cache management
-  const saveToCache = useCallback(async (data: { accounts: Account[]; goals: Goal[]; cashEntries: CashEntry[] }): Promise<void> => {
+  const saveToCache = useCallback(async (data: { accounts: Account[]; goals: Goal[]; cashEntries: CashEntry[]; investmentBalances?: any[] }): Promise<void> => {
     try {
       const cacheData: CachedFinancialData = {
-        ...data,
+        accounts: data.accounts,
+        goals: data.goals,
+        cashEntries: data.cashEntries,
+        investmentBalances: data.investmentBalances || [],
         timestamp: Date.now(),
       };
       
-      await Promise.all([
-        AsyncStorage.setItem(UNIFIED_CACHE_KEY, JSON.stringify(cacheData)),
-        AsyncStorage.setItem(UNIFIED_CACHE_TIMESTAMP_KEY, cacheData.timestamp.toString())
-      ]);
+      // Use synchronous operations for better performance
+      AppStorage.setItemSync(UNIFIED_CACHE_KEY, JSON.stringify(cacheData));
+      AppStorage.setItemSync(UNIFIED_CACHE_TIMESTAMP_KEY, cacheData.timestamp.toString());
       logger.info("💾 [UNIFIED CACHE] Saved financial data to cache");
     } catch (error) {
       logger.error("❌ [UNIFIED CACHE] Failed to save to cache:", error);
     }
   }, []);
 
-  const loadFromCache = useCallback(async (): Promise<CachedFinancialData | null> => {
+  // Synchronous cache load - can be called before render for instant data
+  const loadFromCacheSync = useCallback((): CachedFinancialData | null => {
     try {
-      const [cacheString, timestampString] = await Promise.all([
-        AsyncStorage.getItem(UNIFIED_CACHE_KEY),
-        AsyncStorage.getItem(UNIFIED_CACHE_TIMESTAMP_KEY)
-      ]);
+      // Use synchronous reads for instant cache access (MMKV advantage)
+      const cacheString = AppStorage.getItemSync(UNIFIED_CACHE_KEY);
+      const timestampString = AppStorage.getItemSync(UNIFIED_CACHE_TIMESTAMP_KEY);
 
       if (!cacheString || !timestampString) {
         return null;
@@ -125,6 +153,11 @@ export function useUnifiedFinancialData(): UnifiedFinancialData {
       return null;
     }
   }, []);
+
+  // Async version for compatibility
+  const loadFromCache = useCallback(async (): Promise<CachedFinancialData | null> => {
+    return Promise.resolve(loadFromCacheSync());
+  }, [loadFromCacheSync]);
 
   // Parallel data fetching
   const fetchAllData = useCallback(async (hasCache: boolean = false): Promise<void> => {
@@ -189,11 +222,12 @@ export function useUnifiedFinancialData(): UnifiedFinancialData {
 
       logger.info(`✅ [UNIFIED] Loaded ${accountsData?.length || 0} accounts, ${goalsData?.length || 0} goals, ${cashData?.length || 0} cash entries`);
 
-      // Save to cache
+      // Save to cache (including investment balances)
       await saveToCache({
         accounts: accountsData || [],
         goals: goalsData || [],
         cashEntries: cashData || [],
+        investmentBalances: balancesData || [],
       });
     } catch (error) {
       logger.error("❌ [UNIFIED] Error fetching financial data:", error);
@@ -203,17 +237,18 @@ export function useUnifiedFinancialData(): UnifiedFinancialData {
     }
   }, [saveToCache]);
 
-  // Load data with cache
+  // Load data with cache - synchronous cache read for instant UI
   const loadDataWithCache = useCallback(async (): Promise<void> => {
     try {
-      // Load from cache first
-      const cachedData = await loadFromCache();
+      // Load from cache synchronously (MMKV advantage - instant read)
+      const cachedData = loadFromCacheSync();
       
       if (cachedData) {
         logger.info("⚡ [UNIFIED] Using cached data for immediate display");
         setAccounts(cachedData.accounts);
         setGoals(cachedData.goals);
         setCashEntries(cachedData.cashEntries);
+        setInvestmentBalances(cachedData.investmentBalances || []);
         setIsInitialLoad(false);
       }
 
@@ -223,11 +258,23 @@ export function useUnifiedFinancialData(): UnifiedFinancialData {
       logger.error("❌ [UNIFIED] Error in loadDataWithCache:", error);
       await fetchAllData(false);
     }
-  }, [loadFromCache, fetchAllData]);
+  }, [loadFromCacheSync, fetchAllData]);
 
   // Initialize on mount
   useEffect(() => {
-    loadDataWithCache();
+    // Cache is already loaded synchronously before render (lines 78-99)
+    // So we only need to fetch fresh data in background
+    if (initialCache) {
+      // We have cache - fetch fresh data in background (non-blocking)
+      logger.info("⚡ [UNIFIED] Cache available, fetching fresh data in background");
+      fetchAllData(true).catch((error) => {
+        logger.error("❌ [UNIFIED] Background data fetch failed:", error);
+      });
+    } else {
+      // No cache - fetch immediately (first load or cache expired)
+      logger.info("🔄 [UNIFIED] No cache available, fetching data immediately");
+      fetchAllData(false);
+    }
 
     // Listen for financial data updates
     const financialSubscription = DeviceEventEmitter.addListener(
@@ -254,7 +301,7 @@ export function useUnifiedFinancialData(): UnifiedFinancialData {
         if (data && data.event === "TOKEN_REFRESHED" && data.validated) {
           logger.info("🔄 [UNIFIED] Token refreshed, reloading data...");
           setTimeout(async () => {
-            await loadDataWithCache();
+            await fetchAllData(false);
           }, 200);
         }
       }
@@ -265,7 +312,7 @@ export function useUnifiedFinancialData(): UnifiedFinancialData {
       goalsSubscription.remove();
       authSubscription.remove();
     };
-  }, []);
+  }, [fetchAllData]);
 
   // Memoized categorized data
   const categorizedLiabilities = useMemo(
@@ -325,10 +372,9 @@ export function useUnifiedFinancialData(): UnifiedFinancialData {
 
   const clearCache = useCallback(async (): Promise<void> => {
     try {
-      await Promise.all([
-        AsyncStorage.removeItem(UNIFIED_CACHE_KEY),
-        AsyncStorage.removeItem(UNIFIED_CACHE_TIMESTAMP_KEY)
-      ]);
+      // Use synchronous operations
+      AppStorage.removeItemSync(UNIFIED_CACHE_KEY);
+      AppStorage.removeItemSync(UNIFIED_CACHE_TIMESTAMP_KEY);
       logger.info("🗑️ [UNIFIED CACHE] Cache cleared");
     } catch (error) {
       logger.error("❌ [UNIFIED CACHE] Failed to clear cache:", error);

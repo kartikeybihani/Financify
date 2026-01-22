@@ -7,7 +7,7 @@ import React, {
   ReactNode,
 } from "react";
 import { Session } from "@supabase/supabase-js";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AppStorage from "@/src/utils/storage/storage";
 import { DeviceEventEmitter } from "react-native";
 import { supabase } from "@/src/lib/supabase/supabase";
 import logger from "@/src/utils/core/logger";
@@ -268,7 +268,7 @@ export const AuthNavigationProvider: React.FC<AuthNavigationProviderProps> = ({
     try {
       if (!userId) {
         // Don't cache if no user (PRE_SIGNUP state)
-        await AsyncStorage.removeItem(NAV_STATE_CACHE_KEY);
+        AppStorage.removeItemSync(NAV_STATE_CACHE_KEY);
         return;
       }
 
@@ -279,7 +279,7 @@ export const AuthNavigationProvider: React.FC<AuthNavigationProviderProps> = ({
         onboardingCompleted: completed,
         timestamp: Date.now(),
       };
-      await AsyncStorage.setItem(
+      AppStorage.setItemSync(
         NAV_STATE_CACHE_KEY,
         JSON.stringify(cacheData)
       );
@@ -301,7 +301,8 @@ export const AuthNavigationProvider: React.FC<AuthNavigationProviderProps> = ({
     onboardingCompleted: boolean;
   } | null> => {
     try {
-      const cached = await AsyncStorage.getItem(NAV_STATE_CACHE_KEY);
+      // Use synchronous read for instant navigation (MMKV advantage)
+      const cached = AppStorage.getItemSync(NAV_STATE_CACHE_KEY);
       if (!cached) {
         return null;
       }
@@ -504,8 +505,8 @@ export const AuthNavigationProvider: React.FC<AuthNavigationProviderProps> = ({
       );
       await clearProfileCache();
 
-      // Clear other app-specific cache keys
-      await AsyncStorage.multiRemove([
+      // Clear other app-specific cache keys (synchronous operations)
+      const keysToRemove = [
         "onboarding_complete",
         "user_authenticated",
         "userData",
@@ -528,7 +529,8 @@ export const AuthNavigationProvider: React.FC<AuthNavigationProviderProps> = ({
         "cached_spending_breakdown_timestamp",
         "cached_goals",
         "cached_goals_timestamp",
-      ]);
+      ];
+      AppStorage.multiRemoveSync(keysToRemove);
 
       profileCache.current = null;
       profileCacheUserId.current = null;

@@ -1,16 +1,16 @@
 // app/utils/lastUsedItem.ts
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AppStorage from "@/src/utils/storage/storage";
 
 const LAST_USED_KEY = "last_used_item_id";
 
 export async function setLastUsedItemId(itemId: string) {
-  await AsyncStorage.setItem(LAST_USED_KEY, itemId);
+  AppStorage.setItemSync(LAST_USED_KEY, itemId);
 }
 
 export async function getLastUsedItemId(): Promise<string | null> {
-  return AsyncStorage.getItem(LAST_USED_KEY);
+  return Promise.resolve(AppStorage.getItemSync(LAST_USED_KEY));
 }
 
 export async function clearLastUsedItemId() {
-  await AsyncStorage.removeItem(LAST_USED_KEY);
+  AppStorage.removeItemSync(LAST_USED_KEY);
 }

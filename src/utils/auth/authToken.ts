@@ -7,7 +7,7 @@
 
 import { supabase } from "@/src/lib/supabase/supabase";
 import logger from "@/src/utils/core/logger";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AppStorage from "@/src/utils/storage/storage";
 
 /**
  * In-memory token cache to avoid redundant getSession() calls.
@@ -242,7 +242,7 @@ export const getFreshAccessToken = async (): Promise<string | null> => {
                   const projectRef = host.split(".")[0];
                   const primaryKey = `sb-${projectRef}-auth-token`;
 
-                  const stored = await AsyncStorage.getItem(primaryKey);
+                  const stored = AppStorage.getItemSync(primaryKey);
                   if (stored) {
                     const parsed = JSON.parse(stored);
 

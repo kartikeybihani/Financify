@@ -1,5 +1,5 @@
 // app/_shared/utils/transactionCache.ts
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AppStorage from "@/src/utils/storage/storage";
 import logger from "@/src/utils/core/logger";
 import { CACHE_CONFIG } from "../constants/cacheConfig";
 import { Transaction } from "@/src/types/plaid";
@@ -35,10 +35,9 @@ export const saveTransactionsToCache = async (userId: string, transactions: Tran
     const cacheKey = getTransactionsCacheKey(userId);
     const timestampKey = getTransactionsCacheTimestampKey(userId);
 
-    await Promise.all([
-      AsyncStorage.setItem(cacheKey, JSON.stringify(cacheData)),
-      AsyncStorage.setItem(timestampKey, timestamp)
-    ]);
+    // Use synchronous operations for better performance
+    AppStorage.setItemSync(cacheKey, JSON.stringify(cacheData));
+    AppStorage.setItemSync(timestampKey, timestamp);
     logger.info("💾 [TRANSACTIONS CACHE] Saved", transactions.length, "transactions to cache for user:", userId.substring(0, 8));
   } catch (error) {
     logger.error("❌ [TRANSACTIONS CACHE] Failed to save to cache:", error);
@@ -59,10 +58,9 @@ export const loadTransactionsFromCache = async (userId: string): Promise<Transac
     const cacheKey = getTransactionsCacheKey(userId);
     const timestampKey = getTransactionsCacheTimestampKey(userId);
 
-    const [cachedDataStr, timestampStr] = await Promise.all([
-      AsyncStorage.getItem(cacheKey),
-      AsyncStorage.getItem(timestampKey)
-    ]);
+    // Use synchronous reads for instant cache access (MMKV advantage)
+    const cachedDataStr = AppStorage.getItemSync(cacheKey);
+    const timestampStr = AppStorage.getItemSync(timestampKey);
 
     if (!cachedDataStr || !timestampStr) {
       logger.info("📦 [TRANSACTIONS CACHE] No cached data found for user:", userId.substring(0, 8));
@@ -125,20 +123,19 @@ export const clearTransactionsCache = async (userId?: string): Promise<void> => 
       // Clear specific user's cache
       const cacheKey = getTransactionsCacheKey(userId);
       const timestampKey = getTransactionsCacheTimestampKey(userId);
-      await Promise.all([
-        AsyncStorage.removeItem(cacheKey),
-        AsyncStorage.removeItem(timestampKey)
-      ]);
+      // Use synchronous operations
+      AppStorage.removeItemSync(cacheKey);
+      AppStorage.removeItemSync(timestampKey);
       logger.info("🗑️ [TRANSACTIONS CACHE] Cache cleared for user:", userId.substring(0, 8));
     } else {
       // Clear all user caches (for migration/logout)
-      const allKeys = await AsyncStorage.getAllKeys();
+      const allKeys = AppStorage.getAllKeysSync();
       const transactionKeys = allKeys.filter(key => 
         key.startsWith(CACHE_CONFIG.KEYS.TRANSACTIONS) ||
         key.startsWith(CACHE_CONFIG.KEYS.TRANSACTIONS_TIMESTAMP)
       );
       if (transactionKeys.length > 0) {
-        await AsyncStorage.multiRemove(transactionKeys);
+        AppStorage.multiRemoveSync(transactionKeys);
         logger.info("🗑️ [TRANSACTIONS CACHE] Cleared all user caches:", transactionKeys.length, "keys");
       }
     }
@@ -155,7 +152,7 @@ export const hasValidTransactionsCache = async (userId: string): Promise<boolean
     if (!userId) return false;
 
     const timestampKey = getTransactionsCacheTimestampKey(userId);
-    const timestampStr = await AsyncStorage.getItem(timestampKey);
+    const timestampStr = AppStorage.getItemSync(timestampKey);
     if (!timestampStr) return false;
 
     const timestamp = parseInt(timestampStr);

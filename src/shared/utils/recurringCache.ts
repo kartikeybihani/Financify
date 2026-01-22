@@ -1,5 +1,5 @@
 // app/_shared/utils/recurringCache.ts
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AppStorage from "@/src/utils/storage/storage";
 import logger from "@/src/utils/core/logger";
 import { CACHE_CONFIG } from "../constants/cacheConfig";
 
@@ -42,10 +42,9 @@ export const saveRecurringToCache = async (userId: string, data: Omit<CachedRecu
     const cacheKey = getRecurringCacheKey(userId);
     const timestampKey = getRecurringCacheTimestampKey(userId);
 
-    await Promise.all([
-      AsyncStorage.setItem(cacheKey, JSON.stringify(cacheData)),
-      AsyncStorage.setItem(timestampKey, timestamp)
-    ]);
+    // Use synchronous operations for better performance
+    AppStorage.setItemSync(cacheKey, JSON.stringify(cacheData));
+    AppStorage.setItemSync(timestampKey, timestamp);
     logger.info("💾 [RECURRING CACHE] Data saved to cache for user:", userId.substring(0, 8), data.summary);
   } catch (error) {
     logger.error("❌ [RECURRING CACHE] Failed to save to cache:", error);
@@ -66,10 +65,9 @@ export const loadRecurringFromCache = async (userId: string): Promise<CachedRecu
     const cacheKey = getRecurringCacheKey(userId);
     const timestampKey = getRecurringCacheTimestampKey(userId);
 
-    const [cachedData, timestampStr] = await Promise.all([
-      AsyncStorage.getItem(cacheKey),
-      AsyncStorage.getItem(timestampKey)
-    ]);
+    // Use synchronous reads for instant cache access (MMKV advantage)
+    const cachedData = AppStorage.getItemSync(cacheKey);
+    const timestampStr = AppStorage.getItemSync(timestampKey);
 
     if (!cachedData || !timestampStr) {
       logger.info("📦 [RECURRING CACHE] No cached data found for user:", userId.substring(0, 8));
@@ -117,20 +115,19 @@ export const clearRecurringCache = async (userId?: string): Promise<void> => {
       // Clear specific user's cache
       const cacheKey = getRecurringCacheKey(userId);
       const timestampKey = getRecurringCacheTimestampKey(userId);
-      await Promise.all([
-        AsyncStorage.removeItem(cacheKey),
-        AsyncStorage.removeItem(timestampKey)
-      ]);
+      // Use synchronous operations
+      AppStorage.removeItemSync(cacheKey);
+      AppStorage.removeItemSync(timestampKey);
       logger.info("🗑️ [RECURRING CACHE] Cache cleared for user:", userId.substring(0, 8));
     } else {
       // Clear all user caches (for migration/logout)
-      const allKeys = await AsyncStorage.getAllKeys();
+      const allKeys = AppStorage.getAllKeysSync();
       const recurringKeys = allKeys.filter(key => 
         key.startsWith(CACHE_CONFIG.KEYS.RECURRING_TRANSACTIONS) ||
         key.startsWith(CACHE_CONFIG.KEYS.RECURRING_TRANSACTIONS_TIMESTAMP)
       );
       if (recurringKeys.length > 0) {
-        await AsyncStorage.multiRemove(recurringKeys);
+        AppStorage.multiRemoveSync(recurringKeys);
         logger.info("🗑️ [RECURRING CACHE] Cleared all user caches:", recurringKeys.length, "keys");
       }
     }
@@ -147,7 +144,7 @@ export const hasValidRecurringCache = async (userId: string): Promise<boolean> =
     if (!userId) return false;
 
     const timestampKey = getRecurringCacheTimestampKey(userId);
-    const timestampStr = await AsyncStorage.getItem(timestampKey);
+    const timestampStr = AppStorage.getItemSync(timestampKey);
     if (!timestampStr) return false;
 
     const timestamp = parseInt(timestampStr);

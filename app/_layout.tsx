@@ -23,6 +23,7 @@ import PostHogScreenTracker from "@/src/components/analytics/PostHogScreenTracke
 import { setupGlobalErrorHandling } from "@/src/utils/core/errorBoundary";
 import { useNotificationSetup } from "@/src/hooks/useNotificationSetup";
 import { setLastDeepLink } from "@/src/utils/linking/linkingStore";
+import { migrateAsyncStorageToMMKV } from "@/src/utils/storage/storage";
 
 // Component to track when navigation is ready
 function NavigationReadyTracker({ onReady }: { onReady: () => void }) {
@@ -103,6 +104,8 @@ export default function RootLayout() {
     const initializeApp = async () => {
       if (loaded) {
         try {
+          // Migrate AsyncStorage to MMKV first (critical for performance)
+          await migrateAsyncStorageToMMKV();
           // Run storage migration before anything else
           await runStorageMigrationV2();
           // Run cache migration to clear old global cache keys

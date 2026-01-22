@@ -1,4 +1,4 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import AppStorage from '@/src/utils/storage/storage';
 import { CACHE_CONFIG, getCacheDuration, getCacheKey } from '../constants/cacheConfig';
 import logger from '@/src/utils/core/logger';
 
@@ -24,10 +24,9 @@ export class CacheManager {
         timestamp: Date.now(),
       };
       
-      await Promise.all([
-        AsyncStorage.setItem(cacheKey, JSON.stringify(cacheData)),
-        AsyncStorage.setItem(timestampKey, cacheData.timestamp.toString())
-      ]);
+      // Use synchronous operations for better performance
+      AppStorage.setItemSync(cacheKey, JSON.stringify(cacheData));
+      AppStorage.setItemSync(timestampKey, cacheData.timestamp.toString());
       
       logger.info(`💾 [CACHE] Saved ${dataType}:`, Array.isArray(data) ? `${data.length} items` : '1 item');
     } catch (error) {
@@ -45,10 +44,9 @@ export class CacheManager {
       const cacheKey = getCacheKey(dataType);
       const timestampKey = getCacheKey(`${dataType}_TIMESTAMP` as keyof typeof CACHE_CONFIG.KEYS);
       
-      const [cachedDataString, timestampString] = await Promise.all([
-        AsyncStorage.getItem(cacheKey),
-        AsyncStorage.getItem(timestampKey)
-      ]);
+      // Use synchronous reads for instant cache access (MMKV advantage)
+      const cachedDataString = AppStorage.getItemSync(cacheKey);
+      const timestampString = AppStorage.getItemSync(timestampKey);
 
       if (!cachedDataString || !timestampString) {
         logger.info(`📭 [CACHE] No cached data found for ${dataType}`);
@@ -82,7 +80,7 @@ export class CacheManager {
   static async isValid(dataType: keyof typeof CACHE_CONFIG.STRATEGIES): Promise<boolean> {
     try {
       const timestampKey = getCacheKey(`${dataType}_TIMESTAMP` as keyof typeof CACHE_CONFIG.KEYS);
-      const timestampString = await AsyncStorage.getItem(timestampKey);
+      const timestampString = AppStorage.getItemSync(timestampKey);
       
       if (!timestampString) return false;
 
@@ -106,10 +104,9 @@ export class CacheManager {
       const cacheKey = getCacheKey(dataType);
       const timestampKey = getCacheKey(`${dataType}_TIMESTAMP` as keyof typeof CACHE_CONFIG.KEYS);
       
-      await Promise.all([
-        AsyncStorage.removeItem(cacheKey),
-        AsyncStorage.removeItem(timestampKey)
-      ]);
+      // Use synchronous operations
+      AppStorage.removeItemSync(cacheKey);
+      AppStorage.removeItemSync(timestampKey);
       
       logger.info(`🗑️ [CACHE] Cleared ${dataType} cache`);
     } catch (error) {
@@ -123,7 +120,7 @@ export class CacheManager {
   static async clearAll(): Promise<void> {
     try {
       const keys = Object.values(CACHE_CONFIG.KEYS);
-      await AsyncStorage.multiRemove(keys);
+      AppStorage.multiRemoveSync(keys);
       logger.info(`🗑️ [CACHE] Cleared all caches`);
     } catch (error) {
       logger.error(`❌ [CACHE] Failed to clear all caches:`, error);
@@ -139,7 +136,7 @@ export class CacheManager {
     for (const [key, dataType] of Object.entries(CACHE_CONFIG.STRATEGIES)) {
       try {
         const timestampKey = getCacheKey(`${key.toUpperCase()}_TIMESTAMP` as keyof typeof CACHE_CONFIG.KEYS);
-        const timestampString = await AsyncStorage.getItem(timestampKey);
+        const timestampString = AppStorage.getItemSync(timestampKey);
         
         if (timestampString) {
           const timestamp = parseInt(timestampString, 10);

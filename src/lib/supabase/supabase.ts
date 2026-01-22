@@ -1,5 +1,5 @@
 // app/lib/supabase.ts
-import AsyncStorage from '@react-native-async-storage/async-storage'
+import AppStorage from '@/src/utils/storage/storage'
 import { createClient } from '@supabase/supabase-js'
 import Constants from 'expo-constants'
 
@@ -13,7 +13,7 @@ if (!supabaseUrl || !supabaseAnonKey) {
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
-    storage: AsyncStorage,
+    storage: AppStorage, // AppStorage provides AsyncStorage-compatible async API
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: false,

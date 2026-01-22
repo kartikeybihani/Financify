@@ -4,7 +4,7 @@ import IntentQuestionScreen, {
 } from "@/src/components/onboarding/IntentQuestionScreen";
 import logger from "@/src/utils/core/logger";
 import { authenticatedFetch } from "@/src/utils/auth/authToken";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AppStorage from "@/src/utils/storage/storage";
 
 const OPTIONS: IntentOption[] = [
   {
@@ -32,9 +32,9 @@ export default function IntentQuestion3Screen() {
   const handleBeforeNavigate = async (selectedId: string) => {
     // Store onboarding memory in Supermemory (fire-and-forget, don't block navigation)
     try {
-      const profileDataStr = await AsyncStorage.getItem("pending_profile_data");
+      const profileDataStr = AppStorage.getItemSync("pending_profile_data");
       const profileData = profileDataStr ? JSON.parse(profileDataStr) : null;
-      const intentAnswersStr = await AsyncStorage.getItem(
+      const intentAnswersStr = AppStorage.getItemSync(
         "pending_intent_answers"
       );
       const intentAnswers = intentAnswersStr

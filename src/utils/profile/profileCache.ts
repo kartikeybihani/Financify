@@ -1,4 +1,4 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AppStorage from "@/src/utils/storage/storage";
 import logger from "@/src/utils/core/logger";
 
 const PROFILE_STYLE_KEY = "cached_finny_style";
@@ -20,10 +20,9 @@ export const initializeProfileCache = async (): Promise<void> => {
   if (memoryCacheInitialized) return;
 
   try {
-    const [style, checkin] = await Promise.all([
-      AsyncStorage.getItem(PROFILE_STYLE_KEY),
-      AsyncStorage.getItem(PROFILE_CHECKIN_KEY),
-    ]);
+    // Use synchronous reads (no Promise.all needed)
+    const style = AppStorage.getItemSync(PROFILE_STYLE_KEY);
+    const checkin = AppStorage.getItemSync(PROFILE_CHECKIN_KEY);
 
     if (style && ["conversational", "direct", "witty"].includes(style)) {
       memoryStyleCache = style as FinnyStyle;
@@ -66,7 +65,7 @@ export const cacheFinnyStyle = async (style: FinnyStyle): Promise<void> => {
 
   // Persist to AsyncStorage (async, fire and forget)
   try {
-    await AsyncStorage.setItem(PROFILE_STYLE_KEY, style);
+    AppStorage.setItemSync(PROFILE_STYLE_KEY, style);
     logger.info(`[ProfileCache] Cached finny_style: ${style}`);
   } catch (error) {
     logger.error("[ProfileCache] Error caching finny_style:", error);
@@ -84,7 +83,7 @@ export const cacheCheckinFrequency = async (
 
   // Persist to AsyncStorage (async, fire and forget)
   try {
-    await AsyncStorage.setItem(PROFILE_CHECKIN_KEY, frequency);
+    AppStorage.setItemSync(PROFILE_CHECKIN_KEY, frequency);
     logger.info(`[ProfileCache] Cached checkin_frequency: ${frequency}`);
   } catch (error) {
     logger.error("[ProfileCache] Error caching checkin_frequency:", error);
@@ -102,7 +101,7 @@ export const clearProfileCache = async (): Promise<void> => {
 
   // Clear AsyncStorage (async)
   try {
-    await AsyncStorage.multiRemove([PROFILE_STYLE_KEY, PROFILE_CHECKIN_KEY]);
+    AppStorage.multiRemoveSync([PROFILE_STYLE_KEY, PROFILE_CHECKIN_KEY]);
     logger.info("[ProfileCache] Cleared all profile caches");
   } catch (error) {
     logger.error("[ProfileCache] Error clearing profile cache:", error);

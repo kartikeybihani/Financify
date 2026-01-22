@@ -1,7 +1,7 @@
 // Migration utility to clear old global cache keys on first launch after update
 // This ensures old cache data (without user_id) is cleared to prevent data leakage
 
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AppStorage from "@/src/utils/storage/storage";
 import logger from "@/src/utils/core/logger";
 import { CACHE_CONFIG } from "../constants/cacheConfig";
 
@@ -38,7 +38,7 @@ const OLD_GLOBAL_CACHE_KEYS = [
 export const runCacheMigration = async (): Promise<void> => {
   try {
     // Check if migration has already been completed
-    const migrationComplete = await AsyncStorage.getItem(MIGRATION_COMPLETE_KEY);
+    const migrationComplete = AppStorage.getItemSync(MIGRATION_COMPLETE_KEY);
     if (migrationComplete === "true") {
       logger.info("✅ [CACHE MIGRATION] Migration already completed, skipping");
       return;
@@ -46,15 +46,16 @@ export const runCacheMigration = async (): Promise<void> => {
 
     logger.info("🔄 [CACHE MIGRATION] Starting cache migration to clear old global cache keys...");
 
-    // Get all AsyncStorage keys
-    const allKeys = await AsyncStorage.getAllKeys();
+    // Get all keys from MMKV
+    const allKeys = AppStorage.getAllKeysSync();
     
     // Find old global cache keys that exist
     const keysToRemove = OLD_GLOBAL_CACHE_KEYS.filter(key => allKeys.includes(key));
 
     if (keysToRemove.length > 0) {
       logger.info(`🗑️ [CACHE MIGRATION] Found ${keysToRemove.length} old global cache keys to remove:`, keysToRemove);
-      await AsyncStorage.multiRemove(keysToRemove);
+      // Remove from MMKV
+      AppStorage.multiRemoveSync(keysToRemove);
       logger.info("✅ [CACHE MIGRATION] Old global cache keys cleared successfully");
     } else {
       logger.info("ℹ️ [CACHE MIGRATION] No old global cache keys found");
@@ -88,11 +89,12 @@ export const runCacheMigration = async (): Promise<void> => {
 
     if (oldPatternKeys.length > 0) {
       logger.info(`🗑️ [CACHE MIGRATION] Found ${oldPatternKeys.length} additional old cache keys to remove:`, oldPatternKeys);
-      await AsyncStorage.multiRemove(oldPatternKeys);
+      // Remove from MMKV
+      AppStorage.multiRemoveSync(oldPatternKeys);
     }
 
     // Mark migration as complete
-    await AsyncStorage.setItem(MIGRATION_COMPLETE_KEY, "true");
+    AppStorage.setItemSync(MIGRATION_COMPLETE_KEY, "true");
     logger.info("✅ [CACHE MIGRATION] Migration completed successfully");
   } catch (error) {
     logger.error("❌ [CACHE MIGRATION] Failed to run cache migration:", error);
@@ -105,7 +107,7 @@ export const runCacheMigration = async (): Promise<void> => {
  */
 export const isCacheMigrationComplete = async (): Promise<boolean> => {
   try {
-    const migrationComplete = await AsyncStorage.getItem(MIGRATION_COMPLETE_KEY);
+    const migrationComplete = AppStorage.getItemSync(MIGRATION_COMPLETE_KEY);
     return migrationComplete === "true";
   } catch (error) {
     logger.error("❌ [CACHE MIGRATION] Failed to check migration status:", error);

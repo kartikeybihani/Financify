@@ -36,7 +36,7 @@ import ReportModal from "@/src/components/modals/ReportModal";
 import StockTickerEditModal from "@/src/components/modals/StockTickerEditModal";
 import FeedbackNotification from "@/src/components/chat/FeedbackNotification";
 import { submitLoveIt } from "@/src/utils/analytics/reports";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AppStorage from "@/src/utils/storage/storage";
 
 interface Suggestion {
   text: string;
@@ -169,10 +169,10 @@ function ChatScreenContent() {
       // Pre-fill the input box instead of auto-sending
       (async () => {
         try {
-          const initialMessage = await AsyncStorage.getItem("initialChatMessage");
+          const initialMessage = AppStorage.getItemSync("initialChatMessage");
           if (initialMessage !== null) {
             // Clear the stored message
-            await AsyncStorage.removeItem("initialChatMessage");
+            AppStorage.removeItemSync("initialChatMessage");
             // Small delay to ensure screen is fully loaded
             setTimeout(() => {
               if (initialMessage) {

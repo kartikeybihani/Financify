@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AppStorage from "@/src/utils/storage/storage";
 import { supabase } from "@/src/lib/supabase/supabase";
 import logger from "@/src/utils/core/logger";
 
@@ -37,10 +37,9 @@ export function useCashEntries() {
         timestamp: Date.now(),
       };
       
-      await Promise.all([
-        AsyncStorage.setItem(CASH_CACHE_KEY, JSON.stringify(cacheData)),
-        AsyncStorage.setItem(CASH_CACHE_TIMESTAMP_KEY, cacheData.timestamp.toString())
-      ]);
+      // Use synchronous operations for better performance
+      AppStorage.setItemSync(CASH_CACHE_KEY, JSON.stringify(cacheData));
+      AppStorage.setItemSync(CASH_CACHE_TIMESTAMP_KEY, cacheData.timestamp.toString());
       logger.info("💾 [CASH CACHE] Cash entries saved to cache:", entries.length, "entries");
     } catch (error) {
       logger.error("❌ [CASH CACHE] Failed to save cash to cache:", error);
@@ -49,10 +48,9 @@ export function useCashEntries() {
 
   const loadCashFromCache = async (): Promise<CashEntry[] | null> => {
     try {
-      const [cachedCashString, timestampString] = await Promise.all([
-        AsyncStorage.getItem(CASH_CACHE_KEY),
-        AsyncStorage.getItem(CASH_CACHE_TIMESTAMP_KEY)
-      ]);
+      // Use synchronous reads for instant cache access (MMKV advantage)
+      const cachedCashString = AppStorage.getItemSync(CASH_CACHE_KEY);
+      const timestampString = AppStorage.getItemSync(CASH_CACHE_TIMESTAMP_KEY);
 
       if (!cachedCashString || !timestampString) {
         logger.info("📭 [CASH CACHE] No cached cash entries found");
@@ -76,7 +74,7 @@ export function useCashEntries() {
 
   const isCacheValid = async (): Promise<boolean> => {
     try {
-      const timestampString = await AsyncStorage.getItem(CASH_CACHE_TIMESTAMP_KEY);
+      const timestampString = AppStorage.getItemSync(CASH_CACHE_TIMESTAMP_KEY);
       if (!timestampString) return false;
 
       const timestamp = parseInt(timestampString, 10);
@@ -230,10 +228,9 @@ export function useCashEntries() {
 
   const clearCashCache = async (): Promise<void> => {
     try {
-      await Promise.all([
-        AsyncStorage.removeItem(CASH_CACHE_KEY),
-        AsyncStorage.removeItem(CASH_CACHE_TIMESTAMP_KEY)
-      ]);
+      // Use synchronous operations
+      AppStorage.removeItemSync(CASH_CACHE_KEY);
+      AppStorage.removeItemSync(CASH_CACHE_TIMESTAMP_KEY);
       logger.info("🗑️ [CASH CACHE] Cache cleared");
     } catch (error) {
       logger.error("❌ [CASH CACHE] Failed to clear cache:", error);

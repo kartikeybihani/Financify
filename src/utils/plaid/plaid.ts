@@ -1,5 +1,5 @@
 // /app/utils/plaid.ts
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AppStorage from "@/src/utils/storage/storage";
 import { open, create, LinkSuccess, LinkEvent, LinkExit } from "react-native-plaid-link-sdk";
 import {supabase} from "@/src/lib/supabase/supabase";
 import { authenticatedFetch } from "@/src/utils/auth/authToken";
@@ -749,7 +749,7 @@ export const clearOldPlaidData = async () => {
     ];
     
     await Promise.all(keysToRemove.map(key => 
-      AsyncStorage.removeItem(key).catch(err => 
+      AppStorage.removeItemSync(key); 
         logger.info(`Could not remove ${key}:`, err)
       )
     ));

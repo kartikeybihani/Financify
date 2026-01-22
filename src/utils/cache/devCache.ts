@@ -1,5 +1,5 @@
 // Development cache utilities for hot reload persistence
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AppStorage from "@/src/utils/storage/storage";
 
 /**
  * Clear all app-related cache from AsyncStorage
@@ -16,7 +16,7 @@ export const clearAppCache = async () => {
       'last_sync_timestamp'
     ];
     
-    await AsyncStorage.multiRemove(keys);
+    AppStorage.multiRemoveSync(keys);
     console.log("🗑️ Cleared all app cache from AsyncStorage");
     return true;
   } catch (error) {
@@ -30,11 +30,9 @@ export const clearAppCache = async () => {
  */
 export const setDevFlags = async (userId: string) => {
   try {
-    await AsyncStorage.multiSet([
-      ['onboarding_complete', 'true'],
-      ['user_authenticated', 'true'],
-      ['dev_user_id', userId]
-    ]);
+    AppStorage.setItemSync('onboarding_complete', 'true');
+    AppStorage.setItemSync('user_authenticated', 'true');
+    AppStorage.setItemSync('dev_user_id', userId);
     console.log("✅ Set development flags for user:", userId);
   } catch (error) {
     console.error("❌ Error setting dev flags:", error);
@@ -46,11 +44,10 @@ export const setDevFlags = async (userId: string) => {
  */
 export const getDevStatus = async () => {
   try {
-    const [onboardingComplete, userAuth, devUserId] = await AsyncStorage.multiGet([
-      'onboarding_complete',
-      'user_authenticated', 
-      'dev_user_id'
-    ]);
+    // Use synchronous reads
+    const onboardingComplete = ['onboarding_complete', AppStorage.getItemSync('onboarding_complete')];
+    const userAuth = ['user_authenticated', AppStorage.getItemSync('user_authenticated')];
+    const devUserId = ['dev_user_id', AppStorage.getItemSync('dev_user_id')];
     
     return {
       onboardingComplete: onboardingComplete[1] === 'true',

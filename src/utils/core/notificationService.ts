@@ -1,6 +1,6 @@
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import AppStorage from '@/src/utils/storage/storage';
 import * as Device from 'expo-device';
 import { supabase } from '@/src/lib/supabase/supabase';
 
@@ -76,7 +76,7 @@ export class NotificationService {
    */
   async savePreferences(preferences: NotificationPreferences): Promise<void> {
     try {
-      await AsyncStorage.setItem('notificationPreferences', JSON.stringify(preferences));
+      AppStorage.setItemSync('notificationPreferences', JSON.stringify(preferences));
     } catch (error) {
       console.error('Error saving notification preferences:', error);
     }
@@ -87,7 +87,7 @@ export class NotificationService {
    */
   async loadPreferences(): Promise<NotificationPreferences> {
     try {
-      const stored = await AsyncStorage.getItem('notificationPreferences');
+      const stored = AppStorage.getItemSync('notificationPreferences');
       if (stored) {
         return JSON.parse(stored);
       }
@@ -323,12 +323,12 @@ export class NotificationService {
 
       // Generate or get device ID
       const deviceIdKey = 'device_id';
-      let deviceId = await AsyncStorage.getItem(deviceIdKey);
+      let deviceId = AppStorage.getItemSync(deviceIdKey);
       if (!deviceId) {
         // Generate a simple device identifier
         const deviceInfo = `${Platform.OS}-${Device.modelName || 'unknown'}-${Device.osVersion || 'unknown'}`;
         deviceId = deviceInfo;
-        await AsyncStorage.setItem(deviceIdKey, deviceId);
+        AppStorage.setItemSync(deviceIdKey, deviceId);
       }
 
       // Upsert push token in database

@@ -20,7 +20,6 @@ import { LinearGradient } from "expo-linear-gradient";
 import { supabase } from "@/src/lib/supabase/supabase";
 import { useRouter } from "expo-router";
 // NavigationContext will handle routing automatically based on onboarding status
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import logger from "@/src/utils/core/logger";
 import * as WebBrowser from "expo-web-browser";
 import * as Linking from "expo-linking";

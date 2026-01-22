@@ -1,5 +1,5 @@
 // app/utils/snaptrade.ts
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import AppStorage from '@/src/utils/storage/storage';
 import { supabase } from '@/src/lib/supabase/supabase';
 import logger from '@/src/utils/core/logger';
 import { authenticatedFetch } from '@/src/utils/auth/authToken';
@@ -14,7 +14,7 @@ const SNAPTRADE_CREDENTIALS_VALIDITY_KEY = 'snaptrade_credentials_validity';
 // === Storage Helper Functions ===
 const getSnaptradeCredentials = async () => {
   try {
-    const credentials = await AsyncStorage.getItem(SNAPTRADE_CREDENTIALS_KEY);
+    const credentials = AppStorage.getItemSync(SNAPTRADE_CREDENTIALS_KEY);
     return credentials ? JSON.parse(credentials) : null;
   } catch (error) {
     logger.error('Error getting SnapTrade credentials:', error);
@@ -31,10 +31,10 @@ const setSnaptradeCredentials = async (credentials: any) => {
       // DO NOT store userSecret in AsyncStorage - it's stored securely in Vault
     };
     
-    await AsyncStorage.setItem(SNAPTRADE_CREDENTIALS_KEY, JSON.stringify(safeCredentials));
+    AppStorage.setItemSync(SNAPTRADE_CREDENTIALS_KEY, JSON.stringify(safeCredentials));
     // Set validity timestamp (24 hours from now)
     const validityTimestamp = Date.now() + (24 * 60 * 60 * 1000);
-    await AsyncStorage.setItem(SNAPTRADE_CREDENTIALS_VALIDITY_KEY, validityTimestamp.toString());
+    AppStorage.setItemSync(SNAPTRADE_CREDENTIALS_VALIDITY_KEY, validityTimestamp.toString());
     
     logger.info("🔄 Storing SnapTrade credentials (userSecret excluded for security):", safeCredentials);
   } catch (error) {
@@ -44,8 +44,8 @@ const setSnaptradeCredentials = async (credentials: any) => {
 
 const clearSnaptradeCredentials = async () => {
   try {
-    await AsyncStorage.removeItem(SNAPTRADE_CREDENTIALS_KEY);
-    await AsyncStorage.removeItem(SNAPTRADE_CREDENTIALS_VALIDITY_KEY);
+    AppStorage.removeItemSync(SNAPTRADE_CREDENTIALS_KEY);
+    AppStorage.removeItemSync(SNAPTRADE_CREDENTIALS_VALIDITY_KEY);
   } catch (error) {
     logger.error('Error clearing SnapTrade credentials:', error);
   }
@@ -63,7 +63,7 @@ const hasSnaptradeCredentials = async (): Promise<boolean> => {
 
 const areSnaptradeCredentialsValid = async (): Promise<boolean> => {
   try {
-    const validityTimestamp = await AsyncStorage.getItem(SNAPTRADE_CREDENTIALS_VALIDITY_KEY);
+    const validityTimestamp = AppStorage.getItemSync(SNAPTRADE_CREDENTIALS_VALIDITY_KEY);
     if (!validityTimestamp) return false;
     
     const validity = parseInt(validityTimestamp);

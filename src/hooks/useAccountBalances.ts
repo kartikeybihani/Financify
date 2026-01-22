@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { DeviceEventEmitter } from "react-native";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AppStorage from "@/src/utils/storage/storage";
 import { Account } from "@/src/types/plaid";
 import { getAllUserAccounts } from "@/src/utils/plaid/plaid";
 import { supabase } from "@/src/lib/supabase/supabase";
@@ -48,10 +48,9 @@ export function useAccountBalances() {
       const cacheKey = getBalancesCacheKey(userId);
       const timestampKey = getBalancesCacheTimestampKey(userId);
       
-      await Promise.all([
-        AsyncStorage.setItem(cacheKey, JSON.stringify(cacheData)),
-        AsyncStorage.setItem(timestampKey, cacheData.timestamp.toString())
-      ]);
+      // Use synchronous operations for better performance
+      AppStorage.setItemSync(cacheKey, JSON.stringify(cacheData));
+      AppStorage.setItemSync(timestampKey, cacheData.timestamp.toString());
       logger.info("💾 [BALANCES CACHE] Account balances saved to cache for user:", userId.substring(0, 8), accounts.length, "accounts");
     } catch (error) {
       logger.error("❌ [BALANCES CACHE] Failed to save balances to cache:", error);
@@ -68,10 +67,9 @@ export function useAccountBalances() {
       const cacheKey = getBalancesCacheKey(userId);
       const timestampKey = getBalancesCacheTimestampKey(userId);
 
-      const [cachedBalancesString, timestampString] = await Promise.all([
-        AsyncStorage.getItem(cacheKey),
-        AsyncStorage.getItem(timestampKey)
-      ]);
+      // Use synchronous reads for instant cache access (MMKV advantage)
+      const cachedBalancesString = AppStorage.getItemSync(cacheKey);
+      const timestampString = AppStorage.getItemSync(timestampKey);
 
       if (!cachedBalancesString || !timestampString) {
         logger.info("📭 [BALANCES CACHE] No cached balances found for user:", userId.substring(0, 8));
@@ -109,7 +107,7 @@ export function useAccountBalances() {
       if (!userId) return false;
 
       const timestampKey = getBalancesCacheTimestampKey(userId);
-      const timestampString = await AsyncStorage.getItem(timestampKey);
+      const timestampString = AppStorage.getItemSync(timestampKey);
       if (!timestampString) return false;
 
       const timestamp = parseInt(timestampString, 10);
@@ -208,20 +206,19 @@ export function useAccountBalances() {
         // Clear specific user's cache
         const cacheKey = getBalancesCacheKey(userId);
         const timestampKey = getBalancesCacheTimestampKey(userId);
-        await Promise.all([
-          AsyncStorage.removeItem(cacheKey),
-          AsyncStorage.removeItem(timestampKey)
-        ]);
+        // Use synchronous operations
+        AppStorage.removeItemSync(cacheKey);
+        AppStorage.removeItemSync(timestampKey);
         logger.info("🗑️ [BALANCES CACHE] Cache cleared for user:", userId.substring(0, 8));
       } else {
         // Clear all user caches (for migration/logout)
-        const allKeys = await AsyncStorage.getAllKeys();
+        const allKeys = AppStorage.getAllKeysSync();
         const balanceKeys = allKeys.filter(key => 
           key.startsWith(CACHE_CONFIG.KEYS.ACCOUNT_BALANCES) ||
           key.startsWith(CACHE_CONFIG.KEYS.ACCOUNT_BALANCES_TIMESTAMP)
         );
         if (balanceKeys.length > 0) {
-          await AsyncStorage.multiRemove(balanceKeys);
+          AppStorage.multiRemoveSync(balanceKeys);
           logger.info("🗑️ [BALANCES CACHE] Cleared all user caches:", balanceKeys.length, "keys");
         }
       }

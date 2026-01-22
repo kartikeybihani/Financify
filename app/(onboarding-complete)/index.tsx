@@ -14,7 +14,7 @@ import {
   Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AppStorage from "@/src/utils/storage/storage";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -946,10 +946,9 @@ export default function FinalScreen() {
 
       // Clean up AsyncStorage after completion
       try {
-        await AsyncStorage.multiRemove([
-          "pending_profile_data",
-          "pending_intent_answers",
-        ]);
+        // Use synchronous operations
+        AppStorage.removeItemSync("pending_profile_data");
+        AppStorage.removeItemSync("pending_intent_answers");
         logger.info("✅ Cleaned up onboarding AsyncStorage");
       } catch (storageError) {
         logger.error("Error cleaning up AsyncStorage:", storageError);

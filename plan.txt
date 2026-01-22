@@ -1,0 +1,207 @@
+# AsyncStorage → MMKV Migration Plan
+
+## Overview
+Replace all AsyncStorage usage with AppStorage (MMKV wrapper) for synchronous, high-performance storage.
+
+## Migration Pattern
+- Import: `import AsyncStorage from "@react-native-async-storage/async-storage"` → `import AppStorage from "@/src/utils/storage/storage"`
+- Methods:
+  - `AsyncStorage.getItem()` → `AppStorage.getItemSync()` (synchronous)
+  - `AsyncStorage.setItem()` → `AppStorage.setItemSync()` (synchronous)
+  - `AsyncStorage.removeItem()` → `AppStorage.removeItemSync()` (synchronous)
+  - `AsyncStorage.multiGet([...])` → `Promise.all([...].map(key => [key, AppStorage.getItemSync(key)]))`
+  - `AsyncStorage.multiSet([...])` → `[...].forEach(([k,v]) => AppStorage.setItemSync(k,v))`
+  - `AsyncStorage.multiRemove([...])` → `[...].forEach(key => AppStorage.removeItemSync(key))`
+  - `AsyncStorage.getAllKeys()` → `AppStorage.getAllKeysSync()` (synchronous)
+  - `AsyncStorage.clear()` → `AppStorage.clearSync()` (synchronous)
+- Remove `await` and `Promise.all()` where using sync methods
+
+## Files to Migrate (35 files)
+
+### ✅ Already Completed (4 files)
+1. src/utils/storage/storage.ts - Storage wrapper (uses AsyncStorage for migration only)
+2. src/hooks/useUnifiedFinancialData.ts - ✅ Done
+3. src/contexts/AuthNavigationContext.tsx - ✅ Done
+4. src/shared/utils/cacheUtils.ts - ✅ Done
+5. src/shared/utils/transactionCache.ts - ✅ Done
+
+### 🔄 Cache Files (4 files) - HIGH PRIORITY
+6. src/shared/utils/spendingCache.ts
+   - Replace: import AsyncStorage
+   - Replace: AsyncStorage.getItem/setItem/removeItem (9 calls)
+   - Pattern: Same as transactionCache.ts
+
+7. src/shared/utils/recurringCache.ts
+   - Replace: import AsyncStorage
+   - Replace: AsyncStorage.getItem/setItem/removeItem (9 calls)
+   - Pattern: Same as transactionCache.ts
+
+8. src/shared/utils/investmentCache.ts
+   - Replace: import AsyncStorage
+   - Replace: AsyncStorage.getItem/setItem/removeItem (9 calls)
+   - Pattern: Same as transactionCache.ts
+
+9. src/shared/utils/cacheMigration.ts
+   - Replace: import AsyncStorage
+   - Replace: AsyncStorage calls (6 calls)
+   - Note: Migration utility - may need AsyncStorage for reading old data
+
+### 🔄 Hooks (5 files) - HIGH PRIORITY
+10. src/hooks/useAccountBalances.ts
+    - Replace: import AsyncStorage
+    - Replace: AsyncStorage calls (9 calls)
+    - Pattern: Cache operations
+
+11. src/hooks/useCashEntries.ts
+    - Replace: import AsyncStorage
+    - Replace: AsyncStorage calls (7 calls)
+    - Pattern: Cache operations
+
+12. src/hooks/useGoals.ts
+    - Replace: import AsyncStorage
+    - Replace: AsyncStorage calls (7 calls)
+    - Pattern: Cache operations
+
+13. src/hooks/useChat.ts
+    - Replace: import AsyncStorage
+    - Replace: AsyncStorage calls (21 calls)
+    - Pattern: Chat messages, session data
+
+14. src/hooks/useEmailVerification.ts
+    - Replace: import AsyncStorage
+    - Replace: AsyncStorage calls (8 calls)
+    - Pattern: Email verification state
+
+### 🔄 Utils (8 files) - MEDIUM PRIORITY
+15. src/utils/profile/profileCache.ts
+    - Replace: import AsyncStorage
+    - Replace: AsyncStorage calls (5 calls)
+    - Pattern: Profile cache
+
+16. src/utils/auth/authToken.ts
+    - Replace: import AsyncStorage
+    - Replace: AsyncStorage calls (1 call)
+    - Pattern: Token cache
+
+17. src/utils/plaid/plaid.ts
+    - Replace: import AsyncStorage
+    - Replace: AsyncStorage calls (1 call)
+    - Pattern: Plaid state
+
+18. src/utils/integrations/snaptrade.ts
+    - Replace: import AsyncStorage
+    - Replace: AsyncStorage calls (6 calls)
+    - Pattern: Snaptrade state
+
+19. src/utils/core/notificationService.ts
+    - Replace: import AsyncStorage
+    - Replace: AsyncStorage calls (4 calls)
+    - Pattern: Notification preferences
+
+20. src/utils/cache/cache.ts
+    - Replace: import AsyncStorage
+    - Replace: AsyncStorage calls (4 calls)
+    - Pattern: Generic cache
+
+21. src/utils/cache/lastUsedItem.ts
+    - Replace: import AsyncStorage
+    - Replace: AsyncStorage calls (3 calls)
+    - Pattern: Last used item tracking
+
+22. src/utils/cache/devCache.ts
+    - Replace: import AsyncStorage
+    - Replace: AsyncStorage calls (3 calls)
+    - Pattern: Dev cache
+
+### 🔄 Core/Migration (2 files) - MEDIUM PRIORITY
+23. src/utils/core/migrate.ts
+    - Replace: import AsyncStorage
+    - Replace: AsyncStorage calls (5 calls)
+    - Note: Migration utility - may need AsyncStorage for reading old data
+
+24. src/lib/supabase/supabase.ts
+    - Replace: import AsyncStorage (if present)
+    - Check: AsyncStorage usage
+
+### 🔄 App Screens (11 files) - LOW PRIORITY (UI state, not critical for performance)
+25. app/settings/index.tsx
+    - Replace: import AsyncStorage
+    - Replace: AsyncStorage calls
+    - Pattern: Logout cache clearing
+
+26. app/settings/personal-info.tsx
+    - Replace: import AsyncStorage
+    - Replace: AsyncStorage calls
+    - Pattern: User data
+
+27. app/(auth)/signup.tsx
+    - Replace: import AsyncStorage
+    - Replace: AsyncStorage calls
+    - Pattern: Signup state
+
+28. app/(tabs)/chat/index.tsx
+    - Replace: import AsyncStorage
+    - Replace: AsyncStorage calls
+    - Pattern: Chat state
+
+29. app/(tabs)/insights/index.tsx
+    - Replace: import AsyncStorage (if present)
+    - Check: AsyncStorage usage
+
+30. app/(onboarding-complete)/index.tsx
+    - Replace: import AsyncStorage
+    - Replace: AsyncStorage calls
+    - Pattern: Onboarding state
+
+31. app/onboarding-connect.tsx
+    - Replace: import AsyncStorage
+    - Replace: AsyncStorage calls
+    - Pattern: Onboarding state
+
+32. app/onboarding-intent3.tsx
+    - Replace: import AsyncStorage
+    - Replace: AsyncStorage calls
+    - Pattern: Onboarding state
+
+33. app/onboarding-profile.tsx
+    - Replace: import AsyncStorage
+    - Replace: AsyncStorage calls
+    - Pattern: Onboarding state
+
+### 🔄 Components (3 files) - LOW PRIORITY
+34. src/components/goals/Goals.tsx
+    - Replace: import AsyncStorage
+    - Replace: AsyncStorage calls
+    - Pattern: Goals state
+
+35. src/components/onboarding/IntentQuestionScreen.tsx
+    - Replace: import AsyncStorage
+    - Replace: AsyncStorage calls
+    - Pattern: Onboarding state
+
+36. src/components/onboarding/FinanceFact.tsx
+    - Replace: import AsyncStorage
+    - Replace: AsyncStorage calls
+    - Pattern: Onboarding state
+
+## Execution Order
+1. Cache files (6-9) - Critical for performance
+2. Hooks (10-14) - Critical for data loading
+3. Utils (15-22) - Important for app functionality
+4. Core/Migration (23-24) - May need special handling
+5. App screens (25-33) - UI state, less critical
+6. Components (34-36) - UI state, less critical
+
+## Special Considerations
+- cacheMigration.ts and migrate.ts: May need to keep AsyncStorage for reading old data during migration
+- All sync methods can be called without await
+- Remove Promise.all() wrappers where using sync methods
+- Test each file after migration
+
+## Testing Checklist
+- [ ] App starts without errors
+- [ ] Cache loads synchronously (no zero flash)
+- [ ] Navigation works correctly
+- [ ] Data persists across app restarts
+- [ ] Logout clears cache properly
+- [ ] Migration from AsyncStorage works

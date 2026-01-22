@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { DeviceEventEmitter } from "react-native";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AppStorage from "@/src/utils/storage/storage";
 import { Goal } from "@/src/types/finny";
 import { GoalInput } from "@/src/types/addGoalModalTypes";
 import { supabase } from "@/src/lib/supabase/supabase";
@@ -49,10 +49,9 @@ export function useGoals(pushChat: (sender: "user" | "finny", message: string) =
   const saveGoalsToCache = async (goals: Goal[]): Promise<void> => {
     try {
       const timestamp = Date.now().toString();
-      await Promise.all([
-        AsyncStorage.setItem(GOALS_CACHE_KEY, JSON.stringify(goals)),
-        AsyncStorage.setItem(GOALS_CACHE_TIMESTAMP_KEY, timestamp)
-      ]);
+      // Use synchronous operations for better performance
+      AppStorage.setItemSync(GOALS_CACHE_KEY, JSON.stringify(goals));
+      AppStorage.setItemSync(GOALS_CACHE_TIMESTAMP_KEY, timestamp);
     } catch (error) {
       logger.error("❌ [GOALS CACHE] Failed to save goals to cache:", error);
     }
@@ -60,10 +59,9 @@ export function useGoals(pushChat: (sender: "user" | "finny", message: string) =
 
   const loadGoalsFromCache = async (): Promise<Goal[] | null> => {
     try {
-      const [cachedGoalsString, timestampString] = await Promise.all([
-        AsyncStorage.getItem(GOALS_CACHE_KEY),
-        AsyncStorage.getItem(GOALS_CACHE_TIMESTAMP_KEY)
-      ]);
+      // Use synchronous reads for instant cache access (MMKV advantage)
+      const cachedGoalsString = AppStorage.getItemSync(GOALS_CACHE_KEY);
+      const timestampString = AppStorage.getItemSync(GOALS_CACHE_TIMESTAMP_KEY);
 
       if (!cachedGoalsString || !timestampString) {
         return null;
@@ -83,7 +81,7 @@ export function useGoals(pushChat: (sender: "user" | "finny", message: string) =
 
   const isCacheValid = async (): Promise<boolean> => {
     try {
-      const timestampString = await AsyncStorage.getItem(GOALS_CACHE_TIMESTAMP_KEY);
+      const timestampString = AppStorage.getItemSync(GOALS_CACHE_TIMESTAMP_KEY);
       if (!timestampString) return false;
 
       const timestamp = parseInt(timestampString, 10);
@@ -414,8 +412,8 @@ export function useGoals(pushChat: (sender: "user" | "finny", message: string) =
   const clearGoalsCache = async (): Promise<void> => {
     try {
       await Promise.all([
-        AsyncStorage.removeItem(GOALS_CACHE_KEY),
-        AsyncStorage.removeItem(GOALS_CACHE_TIMESTAMP_KEY)
+        AppStorage.removeItemSync(GOALS_CACHE_KEY);
+        AppStorage.removeItemSync(GOALS_CACHE_TIMESTAMP_KEY)
       ]);
     } catch (error) {
       logger.error("❌ [GOALS CACHE] Failed to clear cache:", error);

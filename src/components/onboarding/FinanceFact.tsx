@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { View, Text, TouchableOpacity, StyleSheet, Image } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AppStorage from "@/src/utils/storage/storage";
 
 const FINANCE_FACTS = [
   "73% of Gen Z wish they started investing earlier - that's crazy!",
@@ -47,7 +47,7 @@ export default function FinanceFact({
     const checkVisibility = async () => {
       try {
         setIsLoading(true);
-        const dismissedData = await AsyncStorage.getItem(storageKey);
+        const dismissedData = AppStorage.getItemSync(storageKey);
 
         if (!dismissedData) {
           // Never dismissed, show it
@@ -94,7 +94,7 @@ export default function FinanceFact({
         cooldownDays: cooldownDays,
       };
 
-      await AsyncStorage.setItem(storageKey, JSON.stringify(dismissedData));
+      AppStorage.setItemSync(storageKey, JSON.stringify(dismissedData));
       setIsVisible(false);
     } catch (error) {
       console.error("Error saving finance fact dismissal:", error);

@@ -22,7 +22,7 @@ import { useRouter } from "expo-router";
 import { supabase } from "@/src/lib/supabase/supabase";
 import { logOnboardingEvent } from "@/src/utils/auth/onboarding";
 import logger from "@/src/utils/core/logger";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AppStorage from "@/src/utils/storage/storage";
 
 const REFERRAL_OPTIONS = [
   {
@@ -121,7 +121,7 @@ export default function AboutYouScreen() {
       );
 
       // Save profile data to AsyncStorage for next screen
-      await AsyncStorage.setItem(
+      AppStorage.setItemSync(
         "pending_profile_data",
         JSON.stringify(profileData)
       );

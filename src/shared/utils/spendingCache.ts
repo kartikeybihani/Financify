@@ -1,5 +1,5 @@
 // app/_shared/utils/spendingCache.ts
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AppStorage from "@/src/utils/storage/storage";
 import logger from "@/src/utils/core/logger";
 import { CACHE_CONFIG } from "../constants/cacheConfig";
 
@@ -52,10 +52,9 @@ export const saveSpendingToCache = async (userId: string, data: {
     const cacheKey = getSpendingCacheKey(userId);
     const timestampKey = getSpendingCacheTimestampKey(userId);
 
-    await Promise.all([
-      AsyncStorage.setItem(cacheKey, JSON.stringify(cacheData)),
-      AsyncStorage.setItem(timestampKey, timestamp)
-    ]);
+    // Use synchronous operations for better performance
+    AppStorage.setItemSync(cacheKey, JSON.stringify(cacheData));
+    AppStorage.setItemSync(timestampKey, timestamp);
     logger.info("💾 [SPENDING CACHE] Saved spending breakdown with", data.categoryBreakdown.length, "categories for user:", userId.substring(0, 8));
   } catch (error) {
     logger.error("❌ [SPENDING CACHE] Failed to save to cache:", error);
@@ -76,10 +75,9 @@ export const loadSpendingFromCache = async (userId: string): Promise<CachedSpend
     const cacheKey = getSpendingCacheKey(userId);
     const timestampKey = getSpendingCacheTimestampKey(userId);
 
-    const [cachedData, timestampStr] = await Promise.all([
-      AsyncStorage.getItem(cacheKey),
-      AsyncStorage.getItem(timestampKey)
-    ]);
+    // Use synchronous reads for instant cache access (MMKV advantage)
+    const cachedData = AppStorage.getItemSync(cacheKey);
+    const timestampStr = AppStorage.getItemSync(timestampKey);
 
     if (!cachedData || !timestampStr) {
       logger.info("📦 [SPENDING CACHE] No cached data found for user:", userId.substring(0, 8));
@@ -127,20 +125,19 @@ export const clearSpendingCache = async (userId?: string): Promise<void> => {
       // Clear specific user's cache
       const cacheKey = getSpendingCacheKey(userId);
       const timestampKey = getSpendingCacheTimestampKey(userId);
-      await Promise.all([
-        AsyncStorage.removeItem(cacheKey),
-        AsyncStorage.removeItem(timestampKey)
-      ]);
+      // Use synchronous operations
+      AppStorage.removeItemSync(cacheKey);
+      AppStorage.removeItemSync(timestampKey);
       logger.info("🗑️ [SPENDING CACHE] Cache cleared for user:", userId.substring(0, 8));
     } else {
       // Clear all user caches (for migration/logout)
-      const allKeys = await AsyncStorage.getAllKeys();
+      const allKeys = AppStorage.getAllKeysSync();
       const spendingKeys = allKeys.filter(key => 
         key.startsWith(CACHE_CONFIG.KEYS.SPENDING_BREAKDOWN) ||
         key.startsWith(CACHE_CONFIG.KEYS.SPENDING_BREAKDOWN_TIMESTAMP)
       );
       if (spendingKeys.length > 0) {
-        await AsyncStorage.multiRemove(spendingKeys);
+        AppStorage.multiRemoveSync(spendingKeys);
         logger.info("🗑️ [SPENDING CACHE] Cleared all user caches:", spendingKeys.length, "keys");
       }
     }
@@ -157,7 +154,7 @@ export const hasValidSpendingCache = async (userId: string): Promise<boolean> =>
     if (!userId) return false;
 
     const timestampKey = getSpendingCacheTimestampKey(userId);
-    const timestampStr = await AsyncStorage.getItem(timestampKey);
+    const timestampStr = AppStorage.getItemSync(timestampKey);
     if (!timestampStr) return false;
 
     const timestamp = parseInt(timestampStr);

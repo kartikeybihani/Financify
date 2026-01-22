@@ -12,7 +12,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AppStorage from "@/src/utils/storage/storage";
 import logger from "@/src/utils/core/logger";
 import { logOnboardingEvent } from "@/src/utils/auth/onboarding";
 import { supabase } from "@/src/lib/supabase/supabase";
@@ -89,13 +89,13 @@ export default function IntentQuestionScreen({
   const handleContinue = async (selectedId: string) => {
     try {
       // Get existing answers and update
-      const existingAnswers = await AsyncStorage.getItem(
+      const existingAnswers = AppStorage.getItemSync(
         "pending_intent_answers"
       );
       const answers = existingAnswers ? JSON.parse(existingAnswers) : {};
       answers[storageKey] = selectedId;
 
-      await AsyncStorage.setItem(
+      AppStorage.setItemSync(
         "pending_intent_answers",
         JSON.stringify(answers)
       );

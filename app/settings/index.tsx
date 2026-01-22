@@ -13,7 +13,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AppStorage from "@/src/utils/storage/storage";
 import IconButton from "@/src/components/shared/IconButton";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { supabase } from "@/src/lib/supabase/supabase";
@@ -38,7 +38,7 @@ export default function SettingsScreen() {
   useEffect(() => {
     const fetchAndSetUserData = async () => {
       try {
-        const storedUserData = await AsyncStorage.getItem("userData");
+        const storedUserData = AppStorage.getItemSync("userData");
         if (storedUserData) {
           setUserData(JSON.parse(storedUserData));
         }
@@ -48,7 +48,7 @@ export default function SettingsScreen() {
         } = await supabase.auth.getUser();
         if (user) {
           setUserData(user);
-          await AsyncStorage.setItem("userData", JSON.stringify(user));
+          AppStorage.setItemSync("userData", JSON.stringify(user));
           logger.info(
             "[SettingsIndex] Current user email:",
             user.user_metadata.full_name + " - " + user.email
@@ -143,13 +143,14 @@ export default function SettingsScreen() {
           }
 
           // Clear AsyncStorage cache on logout
-          await AsyncStorage.removeItem("onboarding_complete");
-          await AsyncStorage.removeItem("user_authenticated");
-          await AsyncStorage.removeItem("userData");
+          // Use synchronous operations
+          AppStorage.removeItemSync("onboarding_complete");
+          AppStorage.removeItemSync("user_authenticated");
+          AppStorage.removeItemSync("userData");
           // CRITICAL: Clear chat messages to prevent cross-user data leakage
-          await AsyncStorage.removeItem("chatMessages");
-          await AsyncStorage.removeItem("chatId");
-          await AsyncStorage.removeItem("currentChatUserId");
+          AppStorage.removeItemSync("chatMessages");
+          AppStorage.removeItemSync("chatId");
+          AppStorage.removeItemSync("currentChatUserId");
 
           // Sign out first (context will update state)
           await supabase.auth.signOut();
