@@ -23,6 +23,8 @@ const TOKEN_REFRESH_RETRY_DELAY_MS = 200;
 const TOKEN_REFRESH_MAX_RETRIES = 3;
 const INITIALIZATION_BUFFER_MS = 100; // Buffer for initialization completion
 const PENDING_REFRESH_STALE_MS = 30000; // 30 seconds - ignore stale queued refreshes
+const NAV_STATE_CACHE_KEY = "cached_nav_state";
+const NAV_STATE_CACHE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 // Navigation states - the 4 main stages
 export enum NavigationState {
@@ -254,6 +256,84 @@ export const AuthNavigationProvider: React.FC<AuthNavigationProviderProps> = ({
   };
 
   /**
+   * Caches navigation state to AsyncStorage for fast app startup.
+   * Stores state, userId, onboardingStep, and timestamp.
+   */
+  const cacheNavigationState = async (
+    state: NavigationState,
+    userId: string | null,
+    step: number,
+    completed: boolean
+  ) => {
+    try {
+      if (!userId) {
+        // Don't cache if no user (PRE_SIGNUP state)
+        await AsyncStorage.removeItem(NAV_STATE_CACHE_KEY);
+        return;
+      }
+
+      const cacheData = {
+        state,
+        userId,
+        onboardingStep: step,
+        onboardingCompleted: completed,
+        timestamp: Date.now(),
+      };
+      await AsyncStorage.setItem(
+        NAV_STATE_CACHE_KEY,
+        JSON.stringify(cacheData)
+      );
+      logger.info(`[AUTH] Cached navigation state: ${state} for user ${userId.substring(0, 8)}...`);
+    } catch (error) {
+      logger.error("[AUTH] Error caching navigation state:", error);
+    }
+  };
+
+  /**
+   * Loads cached navigation state from AsyncStorage.
+   * Returns null if cache is missing, stale, or for different user.
+   */
+  const loadCachedNavigationState = async (
+    currentUserId: string | null
+  ): Promise<{
+    state: NavigationState;
+    onboardingStep: number;
+    onboardingCompleted: boolean;
+  } | null> => {
+    try {
+      const cached = await AsyncStorage.getItem(NAV_STATE_CACHE_KEY);
+      if (!cached) {
+        return null;
+      }
+
+      const cacheData = JSON.parse(cached);
+      const age = Date.now() - (cacheData.timestamp || 0);
+
+      // Validate cache
+      if (
+        age > NAV_STATE_CACHE_MAX_AGE_MS ||
+        cacheData.userId !== currentUserId ||
+        !cacheData.state
+      ) {
+        logger.info("[AUTH] Navigation cache invalid or stale, ignoring");
+        return null;
+      }
+
+      logger.info(
+        `[AUTH] Loaded cached navigation state: ${cacheData.state} (age: ${Math.round(age / 1000)}s)`
+      );
+      return {
+        state: cacheData.state as NavigationState,
+        onboardingStep: cacheData.onboardingStep || 0,
+        onboardingCompleted: cacheData.onboardingCompleted || false,
+      };
+    } catch (error) {
+      logger.error("[AUTH] Error loading cached navigation state:", error);
+      return null;
+    }
+  };
+
+  /**
    * Determines the appropriate navigation state based on session and profile data.
    *
    * This is a pure function that maps authentication and onboarding status to one of
@@ -318,6 +398,7 @@ export const AuthNavigationProvider: React.FC<AuthNavigationProviderProps> = ({
         setNavigationState(NavigationState.PRE_SIGNUP);
         setOnboardingStep(0);
         setOnboardingCompleted(false);
+        await cacheNavigationState(NavigationState.PRE_SIGNUP, null, 0, false);
         return;
       }
 
@@ -354,6 +435,14 @@ export const AuthNavigationProvider: React.FC<AuthNavigationProviderProps> = ({
       setNavigationState(newState);
       setOnboardingStep(finalProfile?.onboarding_step || 0);
       setOnboardingCompleted(finalProfile?.onboarding_completed || false);
+
+      // Cache the navigation state for fast app startup
+      await cacheNavigationState(
+        newState,
+        currentSession.user.id,
+        finalProfile?.onboarding_step || 0,
+        finalProfile?.onboarding_completed || false
+      );
     } catch (error) {
       logger.error("[AUTH] Error in updateNavigationState:", error);
       // On error, try to use cached profile if available
@@ -365,6 +454,13 @@ export const AuthNavigationProvider: React.FC<AuthNavigationProviderProps> = ({
           setNavigationState(newState);
           setOnboardingStep(cachedProfile?.onboarding_step || 0);
           setOnboardingCompleted(cachedProfile?.onboarding_completed || false);
+          // Cache the fallback state
+          await cacheNavigationState(
+            newState,
+            userId,
+            cachedProfile?.onboarding_step || 0,
+            cachedProfile?.onboarding_completed || false
+          );
         }
       }
     } finally {
@@ -414,6 +510,7 @@ export const AuthNavigationProvider: React.FC<AuthNavigationProviderProps> = ({
         "user_authenticated",
         "userData",
         "onboarding_started",
+        NAV_STATE_CACHE_KEY, // Clear navigation state cache
         // CRITICAL: Clear chat data to prevent cross-user data leakage
         "chatMessages",
         "chatId",
@@ -631,14 +728,36 @@ export const AuthNavigationProvider: React.FC<AuthNavigationProviderProps> = ({
           }
 
           setSession(initialSession);
-          await updateNavigationState(initialSession);
+
+          // OPTIMISTIC NAVIGATION: Load cached state immediately for instant navigation
+          const cachedState = await loadCachedNavigationState(user.id);
+          if (cachedState) {
+            logger.info("[AUTH] Using cached navigation state for instant navigation");
+            setNavigationState(cachedState.state);
+            setOnboardingStep(cachedState.onboardingStep);
+            setOnboardingCompleted(cachedState.onboardingCompleted);
+            // Set loading to false immediately so navigation can proceed
+            setIsAuthLoading(false);
+            isInitializedRef.current = true;
+            
+            // Fetch fresh data in background (non-blocking)
+            // This ensures we have the latest state, but doesn't block navigation
+            updateNavigationState(initialSession).catch((error) => {
+              logger.error("[AUTH] Background navigation state update failed:", error);
+            });
+          } else {
+            // No cache available, fetch fresh data (this will take longer)
+            await updateNavigationState(initialSession);
+            setIsAuthLoading(false);
+            isInitializedRef.current = true;
+          }
         } else {
           setSession(null);
           setNavigationState(NavigationState.PRE_SIGNUP);
+          await cacheNavigationState(NavigationState.PRE_SIGNUP, null, 0, false);
+          setIsAuthLoading(false);
+          isInitializedRef.current = true;
         }
-
-        setIsAuthLoading(false);
-        isInitializedRef.current = true;
 
         // Process any pending token refresh that occurred during initialization
         // Small delay to ensure all state updates are complete

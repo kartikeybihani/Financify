@@ -14,7 +14,6 @@ import { useFonts } from "expo-font";
 import AuthNavigationProvider, {
   useAuthNavigation,
 } from "@/src/contexts/AuthNavigationContext";
-import NavigationLoadingScreen from "@/src/components/shared/NavigationLoadingScreen";
 import { runStorageMigrationV2 } from "@/src/utils/core/migrate";
 import { runCacheMigration } from "@/src/shared/utils/cacheMigration";
 import logger from "@/src/utils/core/logger";
@@ -25,19 +24,26 @@ import { setupGlobalErrorHandling } from "@/src/utils/core/errorBoundary";
 import { useNotificationSetup } from "@/src/hooks/useNotificationSetup";
 import { setLastDeepLink } from "@/src/utils/linking/linkingStore";
 
+// Component to track when navigation is ready
+function NavigationReadyTracker({ onReady }: { onReady: () => void }) {
+  const { isLoading } = useAuthNavigation();
+  
+  useEffect(() => {
+    if (!isLoading) {
+      // Navigation is ready - notify parent to hide splash
+      onReady();
+    }
+  }, [isLoading, onReady]);
+  
+  return null;
+}
+
 SplashScreen.preventAutoHideAsync();
 setupGlobalErrorHandling();
 
 function RootLayoutNav() {
-  const { isLoading } = useAuthNavigation();
-
   // Initialize notifications
   useNotificationSetup();
-
-  // Show loading screen only during initial auth check
-  if (isLoading) {
-    return <NavigationLoadingScreen message="Getting ready..." />;
-  }
 
   return (
     <Stack screenOptions={{ headerShown: false }}>
@@ -86,6 +92,7 @@ export default function RootLayout() {
     ManropeExtraLight: require("../assets/fonts/Manrope-ExtraLight.ttf"),
   });
   const [postHogReady, setPostHogReady] = useState(false);
+  const [navigationReady, setNavigationReady] = useState(false);
 
   useEffect(() => {
     const subscription = Linking.addEventListener("url", ({ url }) => {
@@ -109,8 +116,6 @@ export default function RootLayout() {
         setTimeout(() => {
           setPostHogReady(true);
         }, 100);
-        
-        SplashScreen.hideAsync();
       }
     };
 
@@ -121,12 +126,23 @@ export default function RootLayout() {
     };
   }, [loaded]);
 
+  // Wait for navigation to be ready before hiding splash
+  useEffect(() => {
+    if (loaded && navigationReady && postHogReady) {
+      // Small delay to ensure smooth transition
+      setTimeout(() => {
+        SplashScreen.hideAsync();
+      }, 50);
+    }
+  }, [loaded, navigationReady, postHogReady]);
+
   if (!loaded) return null;
 
   // Render app structure first, then wrap with PostHog after bridge is ready
   const appContent = (
     <AuthNavigationProvider>
       {postHogReady && <PostHogScreenTracker />}
+      <NavigationReadyTracker onReady={() => setNavigationReady(true)} />
       <ActionSheetProvider>
         <>
           <RootLayoutNav />

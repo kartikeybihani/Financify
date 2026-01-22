@@ -11,9 +11,9 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   userInterfaceStyle: "automatic",
   newArchEnabled: true,
   splash: {
-    image: "./assets/images/splash-icon.png",
+    image: "./assets/images/main1.png",
     resizeMode: "contain",
-    backgroundColor: "#ffffff"
+    backgroundColor: "#0A0E14"
   },
   assetBundlePatterns: [
     "**/*"
@@ -65,10 +65,10 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     [
       "expo-splash-screen",
       {
-        image: "./assets/images/splash-icon.png",
+        image: "./assets/images/main1.png",
         imageWidth: 200,
         resizeMode: "contain",
-        backgroundColor: "#ffffff"
+        backgroundColor: "#0A0E14"
       }
     ],
     [
