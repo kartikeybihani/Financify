@@ -411,10 +411,8 @@ export function useGoals(pushChat: (sender: "user" | "finny", message: string) =
 
   const clearGoalsCache = async (): Promise<void> => {
     try {
-      await Promise.all([
         AppStorage.removeItemSync(GOALS_CACHE_KEY);
         AppStorage.removeItemSync(GOALS_CACHE_TIMESTAMP_KEY)
-      ]);
     } catch (error) {
       logger.error("❌ [GOALS CACHE] Failed to clear cache:", error);
     }

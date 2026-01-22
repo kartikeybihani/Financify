@@ -27,10 +27,19 @@ export const GoalNotification: React.FC<GoalNotificationProps> = ({
   const notificationBottom = 100;
   const notificationTop = 60; // Position from top when modal is open
   const initialPosition = isTopPosition ? -notificationTop : notificationBottom;
-  const translateY = new Animated.Value(initialPosition);
-  const opacity = new Animated.Value(0);
+  
+  // CRITICAL FIX: Create fresh animation values on every mount
+  // Since we use a key prop in parent to force remount when notification changes,
+  // these values will be fresh for each new notification
+  const [translateY] = React.useState(() => new Animated.Value(initialPosition));
+  const [opacity] = React.useState(() => new Animated.Value(0));
 
+  // CRITICAL FIX: Reset and animate whenever component mounts or key props change
   useEffect(() => {
+    // Reset to initial position
+    translateY.setValue(initialPosition);
+    opacity.setValue(0);
+
     // Slide in from bottom or top - faster animation
     Animated.parallel([
       Animated.timing(translateY, {
@@ -45,7 +54,7 @@ export const GoalNotification: React.FC<GoalNotificationProps> = ({
       }),
     ]).start();
 
-    // Auto close after 3 seconds
+    // Auto close after 3.5 seconds (matches deletion timeout in Goals.tsx)
     const timer = setTimeout(() => {
       Animated.parallel([
         Animated.timing(translateY, {
@@ -59,10 +68,15 @@ export const GoalNotification: React.FC<GoalNotificationProps> = ({
           useNativeDriver: true,
         }),
       ]).start(() => onClose());
-    }, 3000);
+    }, 3500);
 
-    return () => clearTimeout(timer);
-  }, [isTopPosition]);
+    return () => {
+      clearTimeout(timer);
+      // Stop any ongoing animations
+      translateY.stopAnimation();
+      opacity.stopAnimation();
+    };
+  }, [message, action, goalId, isTopPosition, initialPosition, notificationBottom, notificationTop, onClose, translateY, opacity]);
 
   const handleUndo = () => {
     if (onUndo && goalId) {

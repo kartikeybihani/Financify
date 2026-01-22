@@ -748,11 +748,8 @@ export const clearOldPlaidData = async () => {
       'last_sync_time'
     ];
     
-    await Promise.all(keysToRemove.map(key => 
-      AppStorage.removeItemSync(key); 
-        logger.info(`Could not remove ${key}:`, err)
-      )
-    ));
+    
+    AppStorage.multiRemoveSync(keysToRemove);
     
     logger.info("✅ Old data cleared");
   } catch (error) {

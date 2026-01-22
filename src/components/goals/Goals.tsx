@@ -203,13 +203,13 @@ const Goals: React.FC<GoalsProps> = ({
   };
 
   const handleDeleteGoal = async (goalToDelete: Goal) => {
-    // Store deleted goal for potential undo
+    // CRITICAL: Store deleted goal for potential undo BEFORE any UI changes
     setDeletedGoal(goalToDelete);
 
-    // Optimistic removal from UI
+    // CRITICAL: Optimistic removal from UI - user sees immediate feedback
     setLocalGoalsData((prev) => prev.filter((g) => g.id !== goalToDelete.id));
 
-    // Show notification immediately for instant feedback
+    // CRITICAL: Show notification immediately - this MUST render before deletion happens
     setState((prev: GoalsState) => ({
       ...prev,
       notification: {
@@ -220,14 +220,23 @@ const Goals: React.FC<GoalsProps> = ({
       },
     }));
 
-    // Clear any existing timeout
+    // CRITICAL: Clear any existing timeout to prevent race conditions
     if (deleteTimeoutRef.current) {
       clearTimeout(deleteTimeoutRef.current);
+      deleteTimeoutRef.current = null;
     }
 
-    // Schedule deletion from server after notification auto-closes (3 seconds)
-    // This gives user time to undo
+    // CRITICAL: Schedule deletion from server AFTER notification auto-closes (3.5 seconds)
+    // Using 3.5s instead of 3s to ensure notification animation completes first
+    // This gives user time to undo via the notification
     deleteTimeoutRef.current = setTimeout(async () => {
+      // Double-check that undo wasn't called (deletedGoal should be null if undo was used)
+      if (!deletedGoal || deletedGoal.id !== goalToDelete.id) {
+        // Undo was called, don't delete
+        deleteTimeoutRef.current = null;
+        return;
+      }
+
       try {
         await deleteGoal(goalToDelete.id);
         // Sync with server to ensure consistency and cache update
@@ -250,10 +259,11 @@ const Goals: React.FC<GoalsProps> = ({
           notification: {
             visible: true,
             message: "Failed to delete goal",
+            action: "update",
           },
         }));
       }
-    }, 3000); // Match notification auto-close duration
+    }, 3500); // 3.5 seconds to ensure notification has time to display and auto-close
   };
 
   const handleOptimisticUpdate = (updatedGoal: Goal) => {
@@ -314,19 +324,30 @@ const Goals: React.FC<GoalsProps> = ({
   };
 
   const handleUndoDelete = async (goalId: string) => {
-    // Clear the scheduled deletion timeout
+    // CRITICAL: Clear the scheduled deletion timeout FIRST
     if (deleteTimeoutRef.current) {
       clearTimeout(deleteTimeoutRef.current);
       deleteTimeoutRef.current = null;
     }
 
-    if (deletedGoal) {
-      // Restore the goal to local data (it was never deleted from server)
-      setLocalGoalsData((prev) => [...prev, deletedGoal]);
+    // CRITICAL: Restore the goal to local data (it was never deleted from server)
+    if (deletedGoal && deletedGoal.id === goalId) {
+      setLocalGoalsData((prev) => {
+        // Check if goal already exists (prevent duplicates)
+        const exists = prev.some((g) => g.id === goalId);
+        if (exists) return prev;
+        return [...prev, deletedGoal];
+      });
 
       // Clear the stored deleted goal
       setDeletedGoal(null);
     }
+
+    // Hide notification
+    setState((prev: GoalsState) => ({
+      ...prev,
+      notification: { visible: false, message: "" },
+    }));
   };
 
   const onRefresh = async () => {
@@ -348,6 +369,7 @@ const Goals: React.FC<GoalsProps> = ({
     <View style={styles.goalsContainer}>
       {state.notification.visible && (
         <GoalNotification
+          key={`${state.notification.message}-${state.notification.action}-${state.notification.goalId}`}
           message={state.notification.message}
           action={state.notification.action}
           goalId={state.notification.goalId}
@@ -357,8 +379,10 @@ const Goals: React.FC<GoalsProps> = ({
               ...prev,
               notification: { visible: false, message: "" },
             }));
-            // If notification closes without undo, the timeout will still handle deletion
-            // No need to do anything here as deletion is already scheduled
+            // CRITICAL FIX: Only proceed with deletion if notification closed naturally (not via undo)
+            // The timeout will handle the actual deletion, but we need to ensure it's still scheduled
+            // If user clicked undo, handleUndoDelete already cleared the timeout
+            // If notification auto-closed, the timeout will execute the deletion
           }}
           onUndo={handleUndoDelete}
         />
