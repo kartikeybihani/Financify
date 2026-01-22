@@ -16,7 +16,7 @@ export default function TabLayout() {
 
   // Debug logging
   console.log(
-    `Platform: ${Platform.OS}, iOS Version: ${iosVersion}, Should use NativeTabs: ${shouldUseNativeTabs}`
+    `Platform: ${Platform.OS}, iOS Version: ${iosVersion}, Should use NativeTabs: ${shouldUseNativeTabs}`,
   );
 
   const tabs = [
@@ -80,6 +80,7 @@ export default function TabLayout() {
         headerShown: false,
         tabBarActiveTintColor: "#4A90E2",
         tabBarLabelStyle: { fontSize: 13 },
+        contentStyle: { backgroundColor: "#121212" }, // Dark background to match app theme
       }}
     >
       {tabs.map((tab) => (
@@ -93,8 +94,8 @@ export default function TabLayout() {
                 tab.iconCategory === "Ionicons"
                   ? Ionicons
                   : tab.iconCategory === "MaterialCommunityIcons"
-                  ? MaterialCommunityIcons
-                  : FontAwesome;
+                    ? MaterialCommunityIcons
+                    : FontAwesome;
               return (
                 <IconComponent
                   name={tab.icon as any}

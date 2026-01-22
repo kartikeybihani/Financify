@@ -18,7 +18,7 @@ export default function AuthLayout() {
       !hasRedirectedRef.current
     ) {
       hasRedirectedRef.current = true;
-      
+
       // Determine target route based on navigation state
       let targetRoute = "/";
       if (navigationState === NavigationState.AUTHENTICATED) {
@@ -29,7 +29,7 @@ export default function AuthLayout() {
         // Will be handled by index.tsx based on onboardingStep
         targetRoute = "/";
       }
-      
+
       // Use setTimeout to ensure state updates have propagated before navigation
       setTimeout(() => {
         router.replace(targetRoute as any);
@@ -42,6 +42,7 @@ export default function AuthLayout() {
       screenOptions={{
         headerShown: false,
         animation: "slide_from_right",
+        contentStyle: { backgroundColor: "#121212" }, // Dark background to match app theme
       }}
     >
       <Stack.Screen name="welcome" options={{ headerShown: false }} />

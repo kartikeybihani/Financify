@@ -81,6 +81,7 @@ export function useUnifiedFinancialData(): UnifiedFinancialData {
       const timestampString = AppStorage.getItemSync(UNIFIED_CACHE_TIMESTAMP_KEY);
       
       if (!cacheString || !timestampString) {
+        logger.info("📦 [UNIFIED CACHE] No cache found on initial load");
         return null;
       }
 
@@ -89,11 +90,15 @@ export function useUnifiedFinancialData(): UnifiedFinancialData {
       const cacheAge = now - timestamp;
 
       if (cacheAge > CACHE_DURATION) {
+        logger.info(`⏰ [UNIFIED CACHE] Cache expired on initial load (age: ${Math.round(cacheAge / 1000)}s)`);
         return null;
       }
 
-      return JSON.parse(cacheString) as CachedFinancialData;
+      const cachedData = JSON.parse(cacheString) as CachedFinancialData;
+      logger.info(`✅ [UNIFIED CACHE] Loaded from cache on initial load (age: ${Math.round(cacheAge / 1000)}s) - ${cachedData.accounts?.length || 0} accounts, ${cachedData.goals?.length || 0} goals, ${cachedData.investmentBalances?.length || 0} investment balances`);
+      return cachedData;
     } catch (error) {
+      logger.error("❌ [UNIFIED CACHE] Error loading cache on initial load:", error);
       return null;
     }
   })();

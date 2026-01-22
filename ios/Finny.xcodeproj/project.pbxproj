@@ -17,7 +17,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		0725AAFC86C657F485E8D131 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; name = PrivacyInfo.xcprivacy; path = Finny/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		0725AAFC86C657F485E8D131 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xml; name = PrivacyInfo.xcprivacy; path = Finny/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		13B07F961A680F5B00A75B9A /* Finny.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Finny.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		13B07FB51A68108700A75B9A /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Images.xcassets; path = Finny/Images.xcassets; sourceTree = "<group>"; };
 		13B07FB61A68108700A75B9A /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = Info.plist; path = Finny/Info.plist; sourceTree = "<group>"; };
@@ -120,7 +120,6 @@
 				5236370D978543A3255CD651 /* Pods-Finny.debug.xcconfig */,
 				B21098D1BE83FF3988304DD7 /* Pods-Finny.release.xcconfig */,
 			);
-			name = Pods;
 			path = Pods;
 			sourceTree = "<group>";
 		};
@@ -166,8 +165,8 @@
 				LastUpgradeCheck = 1130;
 				TargetAttributes = {
 					13B07F861A680F5B00A75B9A = {
+						DevelopmentTeam = 8R384P5K54;
 						LastSwiftMigration = 1250;
-						DevelopmentTeam = "8R384P5K54";
 						ProvisioningStyle = Automatic;
 					};
 				};
@@ -360,7 +359,10 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = Finny/Finny.entitlements;
-				CURRENT_PROJECT_VERSION = 1;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 2;
+				DEVELOPMENT_TEAM = 8R384P5K54;
 				ENABLE_BITCODE = NO;
 				GCC_PREPROCESSOR_DEFINITIONS = (
 					"$(inherited)",
@@ -372,7 +374,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.0.0;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-ObjC",
@@ -386,9 +388,6 @@
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				VERSIONING_SYSTEM = "apple-generic";
-				DEVELOPMENT_TEAM = "8R384P5K54";
-				CODE_SIGN_IDENTITY = "Apple Development";
-				CODE_SIGN_STYLE = Automatic;
 			};
 			name = Debug;
 		};
@@ -399,14 +398,17 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = Finny/Finny.entitlements;
-				CURRENT_PROJECT_VERSION = 1;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 2;
+				DEVELOPMENT_TEAM = 8R384P5K54;
 				INFOPLIST_FILE = Finny/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.0.0;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-ObjC",
@@ -419,9 +421,6 @@
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				VERSIONING_SYSTEM = "apple-generic";
-				DEVELOPMENT_TEAM = "8R384P5K54";
-				CODE_SIGN_IDENTITY = "Apple Development";
-				CODE_SIGN_STYLE = Automatic;
 			};
 			name = Release;
 		};

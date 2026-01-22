@@ -18,7 +18,7 @@ import { runStorageMigrationV2 } from "@/src/utils/core/migrate";
 import { runCacheMigration } from "@/src/shared/utils/cacheMigration";
 import logger from "@/src/utils/core/logger";
 import { ActionSheetProvider } from "@expo/react-native-action-sheet";
-import { SafePostHogProvider } from '@/src/components/analytics/SafePostHogProvider';
+import { SafePostHogProvider } from "@/src/components/analytics/SafePostHogProvider";
 import PostHogScreenTracker from "@/src/components/analytics/PostHogScreenTracker";
 import { setupGlobalErrorHandling } from "@/src/utils/core/errorBoundary";
 import { useNotificationSetup } from "@/src/hooks/useNotificationSetup";
@@ -28,14 +28,14 @@ import { migrateAsyncStorageToMMKV } from "@/src/utils/storage/storage";
 // Component to track when navigation is ready
 function NavigationReadyTracker({ onReady }: { onReady: () => void }) {
   const { isLoading } = useAuthNavigation();
-  
+
   useEffect(() => {
     if (!isLoading) {
       // Navigation is ready - notify parent to hide splash
       onReady();
     }
   }, [isLoading, onReady]);
-  
+
   return null;
 }
 
@@ -47,7 +47,12 @@ function RootLayoutNav() {
   useNotificationSetup();
 
   return (
-    <Stack screenOptions={{ headerShown: false }}>
+    <Stack
+      screenOptions={{
+        headerShown: false,
+        contentStyle: { backgroundColor: "#121212" }, // Dark background to match app theme
+      }}
+    >
       <Stack.Screen name="(auth)" />
       <Stack.Screen name="onboarding-intent1" />
       <Stack.Screen name="onboarding-intent2" />
@@ -55,7 +60,13 @@ function RootLayoutNav() {
       <Stack.Screen name="onboarding-profile" />
       <Stack.Screen name="onboarding-connect" />
       <Stack.Screen name="(onboarding-complete)" />
-      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+      <Stack.Screen
+        name="(tabs)"
+        options={{
+          headerShown: false,
+          animation: "none", // No animation for initial navigation (smooth transition from splash)
+        }}
+      />
       <Stack.Screen
         name="investments"
         options={{
@@ -113,7 +124,7 @@ export default function RootLayout() {
         } catch (error) {
           logger.error("Migration error:", error);
         }
-        
+
         // Small delay to ensure React Native bridge is fully ready
         // before initializing PostHog native module
         setTimeout(() => {
@@ -132,10 +143,9 @@ export default function RootLayout() {
   // Wait for navigation to be ready before hiding splash
   useEffect(() => {
     if (loaded && navigationReady && postHogReady) {
-      // Small delay to ensure smooth transition
-      setTimeout(() => {
-        SplashScreen.hideAsync();
-      }, 50);
+      // Hide splash immediately - home screen is already rendered behind it
+      // No delay needed since we're using cached data and dark background
+      SplashScreen.hideAsync();
     }
   }, [loaded, navigationReady, postHogReady]);
 
@@ -164,7 +174,7 @@ export default function RootLayout() {
     <SafePostHogProvider
       apiKey="phc_Tt3F486mn1ltHuaKW3csphOfXNAFQZ3oI69ZuPzedIT"
       options={{
-        host: 'https://us.i.posthog.com',
+        host: "https://us.i.posthog.com",
         enableSessionReplay: false,
       }}
       autocapture

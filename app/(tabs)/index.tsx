@@ -104,7 +104,7 @@ export default function HomeScreen() {
 
   // Account Detail Modal state
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(
-    null
+    null,
   );
   const [selectedAccountData, setSelectedAccountData] = useState<any>(null);
   const [selectedAccountPerformance, setSelectedAccountPerformance] =
@@ -124,7 +124,7 @@ export default function HomeScreen() {
   const formatCurrency = (
     amount: number,
     currency = "USD",
-    options = { decimals: 1, useKM: true }
+    options = { decimals: 1, useKM: true },
   ) => {
     const cacheKey = `${currency}-${options.decimals}-${options.useKM}`;
 
@@ -154,7 +154,7 @@ export default function HomeScreen() {
   // Cash entry management functions
   const addCashEntry = async (
     amount: number,
-    description?: string
+    description?: string,
   ): Promise<void> => {
     try {
       const {
@@ -256,7 +256,7 @@ export default function HomeScreen() {
       if (connectionError || !connection) {
         console.log(
           "No Snaptrade connection found for account:",
-          account.account_id
+          account.account_id,
         );
         return null;
       }
@@ -265,7 +265,7 @@ export default function HomeScreen() {
       const { data: balanceData, error: balanceError } = await supabase
         .from("investment_balances")
         .select(
-          "day_change, day_change_percent, total_change, total_change_percent, total_value"
+          "day_change, day_change_percent, total_change, total_change_percent, total_value",
         )
         .eq("user_id", userData?.id)
         .eq("snaptrade_user_id", connection.snaptrade_user_id)
@@ -276,7 +276,7 @@ export default function HomeScreen() {
       if (balanceError || !balanceData) {
         console.log(
           "No investment balance data found for account:",
-          account.account_id
+          account.account_id,
         );
         return null;
       }
@@ -451,7 +451,7 @@ export default function HomeScreen() {
       (data) => {
         // Accounts are now managed by useUnifiedFinancialData hook
         logger.info("Financial data refreshed event received");
-      }
+      },
     );
 
     // Set up event listener for goals updates
@@ -467,7 +467,7 @@ export default function HomeScreen() {
           logger.info("Goals updated event received:", data.action);
           // Unified hook automatically refreshes on goalsUpdated event
         }
-      }
+      },
     );
 
     // Set up event listener for auth state changes (token refresh)
@@ -476,14 +476,14 @@ export default function HomeScreen() {
       async (data) => {
         if (data && data.event === "TOKEN_REFRESHED" && data.validated) {
           logger.info(
-            "🔄 [HOME] Token refreshed and validated, reinitializing app..."
+            "🔄 [HOME] Token refreshed and validated, reinitializing app...",
           );
           // Add small delay to ensure session is fully propagated
           setTimeout(async () => {
             await initializeApp();
           }, 200);
         }
-      }
+      },
     );
 
     return () => {
@@ -509,25 +509,28 @@ export default function HomeScreen() {
 
     const now = new Date();
 
-    return activeGoals.reduce((closest, goal) => {
-      const goalDate = new Date(goal.target_date);
-      const closestDate = closest ? new Date(closest.target_date) : null;
+    return activeGoals.reduce(
+      (closest, goal) => {
+        const goalDate = new Date(goal.target_date);
+        const closestDate = closest ? new Date(closest.target_date) : null;
 
-      // If the goal is in the past, ignore it
-      if (goalDate < now) return closest;
+        // If the goal is in the past, ignore it
+        if (goalDate < now) return closest;
 
-      // If we don't have a closest yet, use this goal
-      if (!closest) return goal;
+        // If we don't have a closest yet, use this goal
+        if (!closest) return goal;
 
-      // If the current closest is in the past, use this goal
-      if (closestDate && closestDate < now) return goal;
+        // If the current closest is in the past, use this goal
+        if (closestDate && closestDate < now) return goal;
 
-      // Compare the time difference
-      const goalDiff = Math.abs(goalDate.getTime() - now.getTime());
-      const closestDiff = Math.abs(closestDate!.getTime() - now.getTime());
+        // Compare the time difference
+        const goalDiff = Math.abs(goalDate.getTime() - now.getTime());
+        const closestDiff = Math.abs(closestDate!.getTime() - now.getTime());
 
-      return goalDiff < closestDiff ? goal : closest;
-    }, null as Goal | null);
+        return goalDiff < closestDiff ? goal : closest;
+      },
+      null as Goal | null,
+    );
   };
 
   // Memoized closest goal calculation - use unified goals data
@@ -537,21 +540,22 @@ export default function HomeScreen() {
   const checkingsSavingsTotal = useMemo(() => {
     return categorizedDeposits.reduce(
       (sum, account) => sum + (account.balances?.current || 0),
-      0
+      0,
     );
   }, [categorizedDeposits]);
 
   const investmentsCategoryTotal = useMemo(() => {
     return categorizedInvestments.reduce(
       (sum, account) => sum + (account.balances?.current || 0),
-      0
+      0,
     );
   }, [categorizedInvestments]);
 
   const creditCardsTotal = useMemo(() => {
     return categorizedLiabilities
       .filter(
-        (acc) => acc.type === "credit" || (acc as any).subtype === "credit card"
+        (acc) =>
+          acc.type === "credit" || (acc as any).subtype === "credit card",
       )
       .reduce((sum, account) => sum + (account.balances?.current || 0), 0);
   }, [categorizedLiabilities]);
@@ -559,7 +563,7 @@ export default function HomeScreen() {
   const loansTotal = useMemo(() => {
     return categorizedLiabilities
       .filter(
-        (acc) => acc.type === "loan" || (acc as any).subtype?.includes("loan")
+        (acc) => acc.type === "loan" || (acc as any).subtype?.includes("loan"),
       )
       .reduce((sum, account) => sum + (account.balances?.current || 0), 0);
   }, [categorizedLiabilities]);
@@ -640,6 +644,9 @@ export default function HomeScreen() {
               netWorthChange: spendingData.netWorthChange,
             }}
             formatCurrency={formatCurrency}
+            isLoading={
+              financialLoading || financialInitialLoad || spendingLoading
+            }
           />
 
           {/* Summary Cards */}
@@ -648,12 +655,13 @@ export default function HomeScreen() {
             investmentsTotal={investmentsTotal}
             liabilitiesTotal={liabilitiesTotal}
             formatCurrency={formatCurrency}
+            isLoading={financialLoading || financialInitialLoad}
             onCardPress={(cardType) => {
               openModal("accounts", {
                 initialExpandedCategory: cardType,
                 onAccountAdded: async () => {
                   logger.info(
-                    "New account added, refreshing financial data..."
+                    "New account added, refreshing financial data...",
                   );
                   await fetchFreshData();
                   logger.info("Financial data refreshed after new account");
@@ -711,7 +719,7 @@ export default function HomeScreen() {
                     balance={formatCurrency(
                       account.balances?.current || 0,
                       "USD",
-                      { decimals: 0, useKM: false }
+                      { decimals: 0, useKM: false },
                     )}
                     icon="wallet-outline"
                     bankName={account.institution_name || "Unknown Bank"}
@@ -734,7 +742,7 @@ export default function HomeScreen() {
                     balance={formatCurrency(
                       account.balances?.current || 0,
                       "USD",
-                      { decimals: 0, useKM: false }
+                      { decimals: 0, useKM: false },
                     )}
                     icon="trending-up"
                     bankName={account.institution_name || "Investment Broker"}
@@ -753,7 +761,7 @@ export default function HomeScreen() {
                   .filter(
                     (acc) =>
                       acc.type === "credit" ||
-                      (acc as any).subtype === "credit card"
+                      (acc as any).subtype === "credit card",
                   )
                   .map((account, index) => (
                     <AccountItem
@@ -763,7 +771,7 @@ export default function HomeScreen() {
                       balance={formatCurrency(
                         account.balances?.current || 0,
                         "USD",
-                        { decimals: 0, useKM: false }
+                        { decimals: 0, useKM: false },
                       )}
                       icon="card-outline"
                       bankName={account.institution_name || "Unknown Bank"}
@@ -782,7 +790,7 @@ export default function HomeScreen() {
                   .filter(
                     (acc) =>
                       acc.type === "loan" ||
-                      (acc as any).subtype?.includes("loan")
+                      (acc as any).subtype?.includes("loan"),
                   )
                   .map((account, index) => (
                     <AccountItem
@@ -792,7 +800,7 @@ export default function HomeScreen() {
                       balance={formatCurrency(
                         account.balances?.current || 0,
                         "USD",
-                        { decimals: 0, useKM: false }
+                        { decimals: 0, useKM: false },
                       )}
                       icon="receipt-outline"
                       bankName={account.institution_name || "Unknown Bank"}
@@ -842,28 +850,28 @@ export default function HomeScreen() {
                                 await deleteCashEntry(entry.id);
                                 logger.info(
                                   "✅ Cash entry deleted successfully:",
-                                  entry.id
+                                  entry.id,
                                 );
 
                                 // Refresh all financial data to update UI and net worth
                                 await fetchFreshData();
                                 logger.info(
-                                  "🔄 Financial data refreshed after cash deletion"
+                                  "🔄 Financial data refreshed after cash deletion",
                                 );
                               } catch (error) {
                                 logger.error(
                                   "❌ Failed to delete cash entry:",
-                                  error
+                                  error,
                                 );
                                 Alert.alert(
                                   "Error",
                                   "Failed to delete cash entry. Please try again.",
-                                  [{ text: "OK" }]
+                                  [{ text: "OK" }],
                                 );
                               }
                             },
                           },
-                        ]
+                        ],
                       );
                     }}
                   />
@@ -910,13 +918,13 @@ export default function HomeScreen() {
                     async (itemId) => {
                       logger.info(
                         "Successfully added new cash account:",
-                        itemId
+                        itemId,
                       );
                       await fetchFreshData();
                     },
                     (error) => {
                       logger.error("Failed to add new cash account:", error);
-                    }
+                    },
                   );
                 } else {
                   // Use standard bank account addition flow
@@ -924,13 +932,13 @@ export default function HomeScreen() {
                     async (itemId) => {
                       logger.info(
                         "Successfully added new cash account:",
-                        itemId
+                        itemId,
                       );
                       await fetchFreshData();
                     },
                     (error) => {
                       logger.error("Failed to add new cash account:", error);
-                    }
+                    },
                   );
                 }
               } catch (error) {
@@ -950,16 +958,16 @@ export default function HomeScreen() {
                   async (itemId) => {
                     logger.info(
                       "Successfully added new credit card account:",
-                      itemId
+                      itemId,
                     );
                     await fetchFreshData();
                   },
                   (error) => {
                     logger.error(
                       "Failed to add new credit card account:",
-                      error
+                      error,
                     );
-                  }
+                  },
                 );
               } catch (error) {
                 logger.error("Error adding credit card account:", error);

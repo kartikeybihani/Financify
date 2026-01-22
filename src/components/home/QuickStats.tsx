@@ -3,6 +3,7 @@
 import React, { useState, useMemo } from "react";
 import { View, Text, ScrollView, Dimensions } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { QuickStatsSkeleton } from "@/src/components/home/LoadingSkeletons";
 import { styles } from "@/src/styles/homeStyles";
 
 interface QuickStatsProps {
@@ -15,10 +16,21 @@ interface QuickStatsProps {
     netWorthChange: number;
   };
   formatCurrency: (amount: number, currency?: string, options?: any) => string;
+  isLoading?: boolean; // Show skeleton when loading and no cached data
 }
 
 export const QuickStats: React.FC<QuickStatsProps> = React.memo(
-  ({ totalBalance, spendingData, formatCurrency }) => {
+  ({ totalBalance, spendingData, formatCurrency, isLoading = false }) => {
+    // Show skeleton if loading AND balance is zero (no cached data)
+    const hasNoData =
+      totalBalance === 0 &&
+      spendingData.lastMonth === 0 &&
+      spendingData.threeMonths === 0;
+    const shouldShowSkeleton = isLoading && hasNoData;
+
+    if (shouldShowSkeleton) {
+      return <QuickStatsSkeleton />;
+    }
     const [activeSlide, setActiveSlide] = useState(0);
     const screenWidth = Dimensions.get("window").width;
 
@@ -35,7 +47,7 @@ export const QuickStats: React.FC<QuickStatsProps> = React.memo(
 
     const handleScroll = (event: any) => {
       const slideIndex = Math.round(
-        event.nativeEvent.contentOffset.x / screenWidth
+        event.nativeEvent.contentOffset.x / screenWidth,
       );
       setActiveSlide(slideIndex);
     };
@@ -185,7 +197,7 @@ export const QuickStats: React.FC<QuickStatsProps> = React.memo(
         </View>
       </View>
     );
-  }
+  },
 );
 
 QuickStats.displayName = "QuickStats";

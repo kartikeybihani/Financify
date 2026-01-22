@@ -10,6 +10,9 @@ import {
   ScrollView,
   Easing,
   Alert,
+  LayoutAnimation,
+  Platform,
+  UIManager,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -27,6 +30,29 @@ import { getTransactionsForCategory } from "@/src/types/budget";
 import CategoryTransactionsModal from "@/src/components/modals/CategoryTransactionsModal";
 import CategoryEditModal from "@/src/components/modals/CategoryEditModal";
 import logger from "@/src/utils/core/logger";
+
+// Enable LayoutAnimation on Android
+if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
+
+// Custom animation configuration for smooth position changes
+const positionChangeAnimation = {
+  duration: 300,
+  create: {
+    type: LayoutAnimation.Types.easeInEaseOut,
+    property: LayoutAnimation.Properties.opacity,
+  },
+  update: {
+    type: LayoutAnimation.Types.easeInEaseOut,
+    property: LayoutAnimation.Properties.scaleXY,
+    springDamping: 0.7,
+  },
+  delete: {
+    type: LayoutAnimation.Types.easeInEaseOut,
+    property: LayoutAnimation.Properties.opacity,
+  },
+};
 
 const BudgetView: React.FC<BudgetViewProps> = ({
   categoryBreakdown,
@@ -49,6 +75,14 @@ const BudgetView: React.FC<BudgetViewProps> = ({
     BudgetData[] | null
   >(null);
 
+  // Position preservation: track recently edited categories to keep them in place
+  const [recentlyEditedCategories, setRecentlyEditedCategories] = useState<
+    Map<string, { originalIndex: number; timestamp: number; originalBudget: number }>
+  >(new Map());
+  
+  // Track previous budget order to enable smooth transitions
+  const previousOrderRef = useRef<Map<string, number>>(new Map());
+
   // Use provided totals if available (from real budget data), otherwise calculate from categoryBreakdown
   const totalSpent =
     providedTotalSpent !== undefined
@@ -56,32 +90,173 @@ const BudgetView: React.FC<BudgetViewProps> = ({
       : categoryBreakdown.reduce((sum, [_, data]) => sum + data.amount, 0);
 
   // Use optimistic budgets if available, otherwise use provided budgets
-  let finalBudgets: BudgetData[] =
-    optimisticBudgets || (budgets.length > 0 ? budgets : []);
+  // Use useMemo to ensure stable calculation and prevent weird intermediate states
+  const finalBudgets = useMemo(() => {
+    let budgetsToUse: BudgetData[] =
+      optimisticBudgets || (budgets.length > 0 ? budgets : []);
 
-  if (finalBudgets.length === 0) {
-    // Build a fallback budget list from spending breakdown if no budgets are set
-    const budgetMap = new Map<string, BudgetData>();
-    categoryBreakdown.forEach(([category, data]) => {
-      budgetMap.set(category, {
-        category,
-        spent: data.amount,
-        budget: Math.round(data.amount * 1.2),
-        color: data.color,
+    if (budgetsToUse.length === 0) {
+      // Build a fallback budget list from spending breakdown if no budgets are set
+      const budgetMap = new Map<string, BudgetData>();
+      categoryBreakdown.forEach(([category, data]) => {
+        budgetMap.set(category, {
+          category,
+          spent: data.amount,
+          budget: Math.round(data.amount * 1.2),
+          color: data.color,
+        });
       });
-    });
-    finalBudgets = Array.from(budgetMap.values());
-  }
+      budgetsToUse = Array.from(budgetMap.values());
+    }
+
+    return budgetsToUse;
+  }, [optimisticBudgets, budgets, categoryBreakdown]);
 
   // Calculate total budget: prefer provided total, otherwise sum of entries (roots include their children totals)
   // If using optimistic budgets, recalculate total from them
-  const totalBudget =
-    providedTotalBudget !== undefined && optimisticBudgets === null
-      ? providedTotalBudget
-      : finalBudgets.reduce((sum, b) => sum + b.budget, 0);
+  // Use useMemo to ensure stable calculation and smooth updates
+  // CRITICAL: Always sum from finalBudgets to ensure accuracy, even when providedTotalBudget exists
+  // This prevents weird intermediate states during optimistic updates
+  // IMPORTANT: Only sum root budgets (not children) since parent budgets already include children totals
+  const totalBudget = useMemo(() => {
+    // When using optimistic budgets, always calculate from them (don't trust providedTotalBudget)
+    // This ensures we show the correct total immediately during optimistic updates
+    if (optimisticBudgets && optimisticBudgets.length > 0) {
+      // Sum only root budgets (parent budgets already include their children)
+      const calculated = optimisticBudgets.reduce((sum, b) => {
+        const budgetValue = typeof b.budget === 'number' && !isNaN(b.budget) ? b.budget : 0;
+        return sum + budgetValue;
+      }, 0);
+      
+      // Ensure we have a valid number
+      if (isNaN(calculated) || !isFinite(calculated)) {
+        // Fallback to provided total if calculation fails
+        return providedTotalBudget && providedTotalBudget > 0 ? providedTotalBudget : 0;
+      }
+      
+      return calculated;
+    }
+    
+    // When not using optimistic budgets, prefer provided total if available
+    if (providedTotalBudget !== undefined && providedTotalBudget !== null && providedTotalBudget > 0) {
+      return providedTotalBudget;
+    }
+    
+    // Fallback: calculate from finalBudgets
+    // Sum only root budgets (parent budgets already include their children totals)
+    const calculated = finalBudgets.reduce((sum, b) => {
+      const budgetValue = typeof b.budget === 'number' && !isNaN(b.budget) ? b.budget : 0;
+      return sum + budgetValue;
+    }, 0);
+    
+    // Ensure we have a valid number
+    if (isNaN(calculated) || !isFinite(calculated)) {
+      return 0;
+    }
+    
+    return calculated;
+  }, [providedTotalBudget, optimisticBudgets, finalBudgets]);
 
   const remaining = totalBudget - totalSpent;
   const budgetProgress = totalBudget > 0 ? (totalSpent / totalBudget) * 100 : 0;
+
+  // Animated values for smooth transitions
+  const animatedTotalBudget = useRef(new Animated.Value(totalBudget)).current;
+  const animatedRemaining = useRef(new Animated.Value(remaining)).current;
+  const animatedProgress = useRef(new Animated.Value(budgetProgress)).current;
+  const animatedStatusColor = useRef(new Animated.Value(0)).current;
+
+  // State to track displayed values for text rendering
+  const [displayedTotalBudget, setDisplayedTotalBudget] = useState(totalBudget);
+  const [displayedRemaining, setDisplayedRemaining] = useState(remaining);
+
+  // Initialize animated values on mount
+  useEffect(() => {
+    animatedTotalBudget.setValue(totalBudget);
+    animatedRemaining.setValue(remaining);
+    animatedProgress.setValue(budgetProgress);
+    setDisplayedTotalBudget(totalBudget);
+    setDisplayedRemaining(remaining);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Only run on mount - intentionally ignore deps to set initial values once
+
+  // Animate values when they change
+  useEffect(() => {
+    const anim1 = Animated.timing(animatedTotalBudget, {
+      toValue: totalBudget,
+      duration: 400,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    });
+
+    const anim2 = Animated.timing(animatedRemaining, {
+      toValue: remaining,
+      duration: 400,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    });
+
+    const anim3 = Animated.timing(animatedProgress, {
+      toValue: Math.min(budgetProgress, 100),
+      duration: 400,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    });
+
+    // Update displayed values during animation
+    const listener1 = animatedTotalBudget.addListener(({ value }) => {
+      setDisplayedTotalBudget(Math.round(value));
+    });
+    const listener2 = animatedRemaining.addListener(({ value }) => {
+      setDisplayedRemaining(Math.round(value));
+    });
+
+    Animated.parallel([anim1, anim2, anim3]).start();
+
+    return () => {
+      animatedTotalBudget.removeListener(listener1);
+      animatedRemaining.removeListener(listener2);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [totalBudget, remaining, budgetProgress]); // Animated values are stable refs, don't need to be in deps
+
+  // Animate status color changes smoothly
+  useEffect(() => {
+    let targetValue = 0;
+    if (budgetProgress < 70) targetValue = 0; // Green
+    else if (budgetProgress < 90) targetValue = 1; // Yellow
+    else if (budgetProgress < 100) targetValue = 2; // Orange
+    else targetValue = 3; // Red
+
+    Animated.timing(animatedStatusColor, {
+      toValue: targetValue,
+      duration: 300,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    }).start();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [budgetProgress]); // animatedStatusColor is a stable ref
+
+  // Clean up expired position preservation entries
+  useEffect(() => {
+    const PRESERVE_POSITION_DURATION = 3000;
+    const interval = setInterval(() => {
+      const now = Date.now();
+      setRecentlyEditedCategories((prev) => {
+        const next = new Map(prev);
+        let hasChanges = false;
+        prev.forEach((value, key) => {
+          if (now - value.timestamp > PRESERVE_POSITION_DURATION) {
+            next.delete(key);
+            hasChanges = true;
+          }
+        });
+        return hasChanges ? next : prev; // Only update if there are changes
+      });
+    }, 1000); // Check every second
+
+    return () => clearInterval(interval);
+  }, []);
 
   // Get status color based on progress
   const getStatusColor = (progress: number) => {
@@ -105,12 +280,110 @@ const BudgetView: React.FC<BudgetViewProps> = ({
     return "Over Budget";
   };
 
+  // Get interpolated status color for smooth transitions
+  const interpolatedStatusColor = animatedStatusColor.interpolate({
+    inputRange: [0, 1, 2, 3],
+    outputRange: ["#4ECDC4", "#FFB84D", "#FF9500", "#FF6B6B"],
+  });
+
+  // Get interpolated background color for status badge
+  const interpolatedStatusBgColor = animatedStatusColor.interpolate({
+    inputRange: [0, 1, 2, 3],
+    outputRange: [
+      "rgba(78, 205, 196, 0.15)",
+      "rgba(255, 184, 77, 0.15)",
+      "rgba(255, 149, 0, 0.15)",
+      "rgba(255, 107, 107, 0.15)",
+    ],
+  });
+
+  // Get current status values (for emoji and text, these can update instantly)
   const statusColor = getStatusColor(budgetProgress);
   const statusEmoji = getStatusEmoji(budgetProgress);
   const statusText = getStatusText(budgetProgress);
 
-  // Sort categories by budget amount (highest first)
-  const sortedBudgets = [...finalBudgets].sort((a, b) => b.budget - a.budget);
+  // Smart sorting with position preservation for recently edited categories
+  const sortedBudgets = useMemo(() => {
+
+    // Create a copy for sorting
+    const budgetsToSort = [...finalBudgets];
+    
+    // Track if order changed to trigger animation
+    let orderChanged = false;
+    
+    // Stable sort: preserve position for recently edited categories, otherwise sort by budget
+    budgetsToSort.sort((a, b) => {
+      const aKey = a.categoryId || a.category;
+      const bKey = b.categoryId || b.category;
+      const aEdited = recentlyEditedCategories.get(aKey);
+      const bEdited = recentlyEditedCategories.get(bKey);
+      
+      // If both are recently edited, maintain their relative order
+      if (aEdited && bEdited) {
+        return aEdited.originalIndex - bEdited.originalIndex;
+      }
+      
+      // For non-edited items or when preservation expired, sort by budget (descending)
+      if (!aEdited && !bEdited) {
+        // Stable sort: if budgets are equal, maintain original order
+        if (b.budget === a.budget) {
+          // Use previous order if available, otherwise maintain array order
+          const aPrevIndex = previousOrderRef.current.get(aKey) ?? 0;
+          const bPrevIndex = previousOrderRef.current.get(bKey) ?? 0;
+          if (aPrevIndex !== bPrevIndex) {
+            return aPrevIndex - bPrevIndex;
+          }
+          // If still equal, sort by spent amount
+          return b.spent - a.spent;
+        }
+        return b.budget - a.budget;
+      }
+      
+      // One is edited, one is not: edited items maintain their position
+      if (aEdited) {
+        // Keep 'a' in its original position
+        const otherIndex = bEdited ? bEdited.originalIndex : budgetsToSort.length;
+        if (aEdited.originalIndex !== otherIndex) {
+          orderChanged = true;
+        }
+        return aEdited.originalIndex - otherIndex;
+      }
+      // bEdited must be truthy here (TypeScript knows this from the if checks above)
+      if (bEdited) {
+        const otherIndex = -1;
+        if (bEdited.originalIndex !== otherIndex) {
+          orderChanged = true;
+        }
+        return otherIndex - bEdited.originalIndex;
+      }
+      
+      return b.budget - a.budget;
+    });
+    
+    // Check if order actually changed by comparing with previous order
+    const currentOrder = new Map<string, number>();
+    budgetsToSort.forEach((budget, index) => {
+      const key = budget.categoryId || budget.category;
+      currentOrder.set(key, index);
+      const prevIndex = previousOrderRef.current.get(key);
+      if (prevIndex !== undefined && prevIndex !== index) {
+        orderChanged = true;
+      }
+    });
+    
+    // Trigger smooth animation if order changed (but not for initial load)
+    if (orderChanged && previousOrderRef.current.size > 0) {
+      // Use requestAnimationFrame to ensure state updates are complete before animating
+      requestAnimationFrame(() => {
+        LayoutAnimation.configureNext(positionChangeAnimation);
+      });
+    }
+    
+    // Update previous order for next render
+    previousOrderRef.current = currentOrder;
+    
+    return budgetsToSort;
+  }, [finalBudgets, recentlyEditedCategories]);
 
   const actionOptions: BudgetData[] = [];
   finalBudgets.forEach((item) => {
@@ -279,20 +552,27 @@ const BudgetView: React.FC<BudgetViewProps> = ({
           <View style={styles.summaryLeft}>
             <Text style={styles.summaryLabel}>Monthly Budget</Text>
             <Text style={styles.summaryAmount}>
-              ${totalBudget.toLocaleString()}
+              ${displayedTotalBudget.toLocaleString()}
             </Text>
           </View>
-          <View
+          <Animated.View
             style={[
               styles.statusBadge,
-              { backgroundColor: `${statusColor}15` },
+              {
+                backgroundColor: interpolatedStatusBgColor,
+              },
             ]}
           >
             <Text style={styles.statusEmoji}>{statusEmoji}</Text>
-            <Text style={[styles.statusText, { color: statusColor }]}>
+            <Animated.Text
+              style={[
+                styles.statusText,
+                { color: interpolatedStatusColor },
+              ]}
+            >
               {statusText}
-            </Text>
-          </View>
+            </Animated.Text>
+          </Animated.View>
         </View>
 
         {/* Compact Progress Bar */}
@@ -302,8 +582,11 @@ const BudgetView: React.FC<BudgetViewProps> = ({
               style={[
                 styles.progressBarFill,
                 {
-                  width: `${Math.min(budgetProgress, 100)}%`,
-                  backgroundColor: statusColor,
+                  width: animatedProgress.interpolate({
+                    inputRange: [0, 100],
+                    outputRange: ["0%", "100%"],
+                  }),
+                  backgroundColor: interpolatedStatusColor,
                 },
               ]}
             />
@@ -312,15 +595,20 @@ const BudgetView: React.FC<BudgetViewProps> = ({
             <Text style={styles.progressLabel}>
               ${totalSpent.toLocaleString()} spent
             </Text>
-            <Text
+            <Animated.Text
               style={[
                 styles.progressRemaining,
-                { color: remaining >= 0 ? "#4ECDC4" : "#FF6B6B" },
+                {
+                  color: animatedRemaining.interpolate({
+                    inputRange: [-1000000, 0, 1000000],
+                    outputRange: ["#FF9500", "#FF9500", "#4ECDC4"], // Orange when over, green when left
+                  }),
+                },
               ]}
             >
-              ${Math.abs(remaining).toLocaleString()}{" "}
-              {remaining >= 0 ? "left" : "over"}
-            </Text>
+              ${Math.abs(displayedRemaining).toLocaleString()}{" "}
+              {displayedRemaining >= 0 ? "left" : "over"}
+            </Animated.Text>
           </View>
         </View>
       </View>
@@ -355,11 +643,9 @@ const BudgetView: React.FC<BudgetViewProps> = ({
               const children = budget.children || [];
               const isLoadingCard = isCategoryLoading(cardCategoryId, cardEntryId);
 
-              // CRITICAL: Always include index to ensure uniqueness, even when categoryId exists
-              // This prevents duplicate keys when multiple budgets share the same categoryId
-              const uniqueKey = cardCategoryId
-                ? `${cardCategoryId}-${index}`
-                : `${budget.category}-${index}`;
+              // Use stable key based on categoryId (or category name as fallback)
+              // This ensures React can properly track components during re-sorts
+              const uniqueKey = cardCategoryId || budget.category;
 
               return (
                 <View key={uniqueKey}>
@@ -406,11 +692,11 @@ const BudgetView: React.FC<BudgetViewProps> = ({
                             const childStatusColor =
                               getStatusColor(childProgress);
                             const isLoadingChild = isCategoryLoading(child.categoryId, child.entryId);
-                            // CRITICAL: Always include childIndex to ensure uniqueness, even when categoryId exists
-                            // This prevents duplicate keys when multiple children share the same categoryId
+                            // Use stable key based on categoryId (or category name as fallback)
+                            // Include parent categoryId to ensure uniqueness for children
                             const childUniqueKey = child.categoryId
-                              ? `${child.categoryId}-${index}-${childIndex}`
-                              : `${budget.category}-${child.category}-${index}-${childIndex}`;
+                              ? `${cardCategoryId || budget.category}-${child.categoryId}`
+                              : `${budget.category}-${child.category}`;
                             return (
                               <SubcategoryRow
                                 key={childUniqueKey}
@@ -591,11 +877,20 @@ const BudgetView: React.FC<BudgetViewProps> = ({
         onSave={async (amount) => {
           if (!editTarget || !onUpdateBudget) return false;
 
+          // Find the current index of the edited category in the sorted list
+          const categoryKey = editTarget.categoryId || editTarget.category;
+          const currentIndex = sortedBudgets.findIndex(
+            (b) => (b.categoryId || b.category) === categoryKey
+          );
+          const originalBudget = editTarget.budget;
+
           // Set loading state for this category
           setCategoryLoading(editTarget.categoryId, editTarget.entryId, true);
 
           // OPTIMISTIC UPDATE: Update UI immediately
-          const updatedBudgets = finalBudgets.map((budget) => {
+          // Use the current finalBudgets to ensure we have the latest data
+          const currentBudgets = optimisticBudgets || finalBudgets;
+          const updatedBudgets = currentBudgets.map((budget) => {
             // Match by categoryId or category name
             const matches =
               (editTarget.categoryId &&
@@ -608,7 +903,7 @@ const BudgetView: React.FC<BudgetViewProps> = ({
             }
 
             // Also update parent budgets if this is a child category
-            if (budget.children) {
+            if (budget.children && budget.children.length > 0) {
               const updatedChildren = budget.children.map((child) => {
                 const childMatches =
                   (editTarget.categoryId &&
@@ -623,11 +918,16 @@ const BudgetView: React.FC<BudgetViewProps> = ({
               });
 
               // Recalculate parent budget from children
+              // Note: Parent budgets should only include their own budget, not children's
+              // Children are shown separately, so we don't double-count
               const childrenTotal = updatedChildren.reduce(
-                (sum, child) => sum + child.budget,
+                (sum, child) => sum + (child.budget || 0),
                 0
               );
 
+              // Get the parent's own budget (if it has one, separate from children)
+              // For now, we'll use the children total as the parent budget
+              // This matches the behavior where parent budgets are the sum of children
               return {
                 ...budget,
                 children: updatedChildren,
@@ -640,6 +940,19 @@ const BudgetView: React.FC<BudgetViewProps> = ({
 
           // Set optimistic state immediately
           setOptimisticBudgets(updatedBudgets);
+
+          // Preserve position: track this category as recently edited
+          if (currentIndex >= 0) {
+            setRecentlyEditedCategories((prev) => {
+              const next = new Map(prev);
+              next.set(categoryKey, {
+                originalIndex: currentIndex,
+                timestamp: Date.now(),
+                originalBudget: originalBudget,
+              });
+              return next;
+            });
+          }
 
           // Close modal immediately for instant feedback
           closeEdit();
@@ -655,21 +968,34 @@ const BudgetView: React.FC<BudgetViewProps> = ({
               );
 
               if (!success) {
-                // Rollback on failure - revert to original budgets
+                // Rollback on failure - revert to original budgets and clear position preservation
                 setOptimisticBudgets(null);
+                setRecentlyEditedCategories((prev) => {
+                  const next = new Map(prev);
+                  next.delete(categoryKey);
+                  return next;
+                });
               } else {
-                // Clear optimistic state after successful DB update
-                // The refreshBudget will update with real data
+                // Clear optimistic state after successful DB update, but keep position preservation
+                // The refreshBudget will update with real data, and position will be preserved for 3 seconds
                 setTimeout(() => {
                   setOptimisticBudgets(null);
+                  // Position preservation will expire naturally after 3 seconds
                 }, 500);
               }
             } catch (error) {
               // Rollback on error
               setOptimisticBudgets(null);
+              setRecentlyEditedCategories((prev) => {
+                const next = new Map(prev);
+                next.delete(categoryKey);
+                return next;
+              });
             } finally {
-              // Clear loading state
-              setCategoryLoading(editTarget.categoryId, editTarget.entryId, false);
+              // Clear loading state after a short delay to show the update was successful
+              setTimeout(() => {
+                setCategoryLoading(editTarget.categoryId, editTarget.entryId, false);
+              }, 300);
             }
           })();
 
@@ -682,6 +1008,8 @@ const BudgetView: React.FC<BudgetViewProps> = ({
           if (!editTarget || !onDeleteCategory || !editTarget.categoryId) {
             return;
           }
+          
+          const categoryKey = editTarget.categoryId;
           
           // Set loading state for this category immediately
           setCategoryLoading(editTarget.categoryId, editTarget.entryId, true);
@@ -697,6 +1025,12 @@ const BudgetView: React.FC<BudgetViewProps> = ({
                 editTarget.entryId || null
               );
               if (success) {
+                // Remove from position preservation if it exists
+                setRecentlyEditedCategories((prev) => {
+                  const next = new Map(prev);
+                  next.delete(categoryKey);
+                  return next;
+                });
                 setOptimisticBudgets(null);
                 if (refreshBudget) {
                   await refreshBudget();

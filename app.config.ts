@@ -8,7 +8,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   orientation: "portrait",
   icon: "./assets/images/appicon.png",
   scheme: ["finny", "financify"],
-  userInterfaceStyle: "automatic",
+  userInterfaceStyle: "dark",
   newArchEnabled: true,
   splash: {
     image: "./assets/images/main1.png",
