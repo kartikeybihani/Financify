@@ -188,22 +188,59 @@ async function runScheduledSync(plaidItems, snaptradeItems) {
         throw new Error(`SnapTrade connection inactive for account ${accountId}`);
       }
 
-      const response = await fetch(`${supabaseUrl}/functions/v1/sync-investments`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${supabaseServiceKey}`,
-        },
-        body: JSON.stringify({
-          user_id: item.user_id,
-          snaptrade_user_id: connection.snaptrade_user_id,
-          account_id: connection.account_id,
-        }),
-      });
+      // Retry logic for SnapTrade sync (handles transient 503 errors)
+      let lastError = null;
+      const maxRetries = 3;
+      let response = null;
+      let syncSuccessful = false;
+      
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+          response = await fetch(`${supabaseUrl}/functions/v1/sync-investments`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${supabaseServiceKey}`,
+            },
+            body: JSON.stringify({
+              user_id: item.user_id,
+              snaptrade_user_id: connection.snaptrade_user_id,
+              account_id: connection.account_id,
+            }),
+          });
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`SnapTrade sync failed (${response.status}): ${errorText}`);
+          if (response.ok) {
+            syncSuccessful = true;
+            break; // Success, exit retry loop
+          }
+          
+          const errorText = await response.text();
+          lastError = new Error(`SnapTrade sync failed (${response.status}): ${errorText}`);
+          
+          // If it's a 503 (service unavailable) and we have retries left, wait and retry
+          if (response.status === 503 && attempt < maxRetries) {
+            const waitTime = attempt * 2000; // Exponential backoff: 2s, 4s, 6s
+            console.log(`⚠️ SnapTrade sync returned 503, retrying in ${waitTime}ms (attempt ${attempt}/${maxRetries})...`);
+            await new Promise((resolve) => setTimeout(resolve, waitTime));
+            continue;
+          }
+          
+          // For non-503 errors or final attempt, throw immediately
+          throw lastError;
+        } catch (error) {
+          lastError = error;
+          if (attempt === maxRetries) {
+            throw error;
+          }
+          // For network errors, retry with exponential backoff
+          const waitTime = attempt * 2000;
+          console.log(`⚠️ SnapTrade sync error, retrying in ${waitTime}ms (attempt ${attempt}/${maxRetries})...`);
+          await new Promise((resolve) => setTimeout(resolve, waitTime));
+        }
+      }
+      
+      if (!syncSuccessful) {
+        throw lastError || new Error("SnapTrade sync failed after retries");
       }
 
       results.synced++;
@@ -458,6 +495,9 @@ async function syncItemTransactions(item_id, user_id) {
       });
     }
 
+    // Initialize existingTxs outside the if block to prevent scope issues
+    let existingTxs = [];
+
     // Process and store transactions
     if (added.length || modified.length) {
       const rows = [...added, ...modified].map((txn) => {
@@ -563,15 +603,41 @@ async function syncItemTransactions(item_id, user_id) {
       // CRITICAL: If we can't fetch existing transactions, we MUST NOT set new_category
       //           to avoid overwriting user overrides
 
-    // First, get existing transactions to check which ones already have new_category, category_id, and if_recurring
-    const plaidTxIds = rows.map((r) => r.plaid_transaction_id);
-    const { data: existingTxs, error: fetchErr } = await supabase
-      .from("transactions")
+      // First, get existing transactions to check which ones already have new_category, category_id, and if_recurring
+      const plaidTxIds = rows.map((r) => r.plaid_transaction_id);
+      
+      // CRITICAL: Validate account_ids exist before processing transactions
+      const accountIds = [...new Set(rows.map((r) => r.account_id).filter(Boolean))];
+      if (accountIds.length > 0) {
+        const { data: existingAccounts, error: accountsErr } = await supabase
+          .from("accounts")
+          .select("account_id")
+          .in("account_id", accountIds)
+          .eq("item_id", item_id);
+        
+        if (accountsErr) {
+          throw new Error(`Failed to validate accounts: ${accountsErr.message}`);
+        }
+        
+        const validAccountIds = new Set(existingAccounts?.map((a) => a.account_id) || []);
+        const invalidRows = rows.filter((r) => !validAccountIds.has(r.account_id));
+        
+        if (invalidRows.length > 0) {
+          const invalidAccountIds = [...new Set(invalidRows.map((r) => r.account_id))];
+          console.error(`❌ CRITICAL: Found ${invalidRows.length} transactions with invalid account_ids:`, invalidAccountIds);
+          throw new Error(`Transactions reference non-existent accounts: ${invalidAccountIds.join(", ")}`);
+        }
+      }
+      
+      const { data: fetchedExistingTxs, error: fetchErr } = await supabase
+        .from("transactions")
         .select(
           "plaid_transaction_id, new_category, category_id, if_recurring, recurring_stream_id, amount, account_id, pending"
         )
-      .eq("user_id", user_id)
-      .in("plaid_transaction_id", plaidTxIds);
+        .eq("user_id", user_id)
+        .in("plaid_transaction_id", plaidTxIds);
+      
+      existingTxs = fetchedExistingTxs || [];
 
       // CRITICAL FIX: If fetch fails, we cannot safely set new_category or if_recurring
       // because we don't know which transactions have user overrides or manual recurring flags.
@@ -763,7 +829,7 @@ async function syncItemTransactions(item_id, user_id) {
       added,
       modified,
       removed,
-      existingTxs || [],
+      existingTxs, // Now always defined (initialized as empty array if no added/modified)
       removedExisting
     );
 

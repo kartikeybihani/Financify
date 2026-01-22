@@ -361,6 +361,29 @@ serve(async (req: Request) => {
       // CRITICAL: If we can't fetch existing transactions, we MUST NOT set new_category
       //           to avoid overwriting user overrides
 
+      // CRITICAL: Validate account_ids exist before processing transactions
+      const accountIds = [...new Set(rows.map((r) => r.account_id).filter(Boolean))];
+      if (accountIds.length > 0) {
+        const { data: existingAccounts, error: accountsErr } = await supabase
+          .from("accounts")
+          .select("account_id")
+          .in("account_id", accountIds);
+        
+        if (accountsErr) {
+          console.error("❌ Failed to validate accounts:", accountsErr);
+          throw new Error(`Failed to validate accounts: ${accountsErr.message}`);
+        }
+        
+        const validAccountIds = new Set(existingAccounts?.map((a) => a.account_id) || []);
+        const invalidRows = rows.filter((r) => !validAccountIds.has(r.account_id));
+        
+        if (invalidRows.length > 0) {
+          const invalidAccountIds = [...new Set(invalidRows.map((r) => r.account_id))];
+          console.error(`❌ CRITICAL: Found ${invalidRows.length} transactions with invalid account_ids:`, invalidAccountIds);
+          throw new Error(`Transactions reference non-existent accounts: ${invalidAccountIds.join(", ")}`);
+        }
+      }
+
       // First, get existing transactions to check which ones already have new_category, category_id, and if_recurring
       const plaidTxIds = rows.map((r) => r.plaid_transaction_id);
       const { data: existingTxs, error: fetchErr } = await supabase
