@@ -412,7 +412,7 @@ export default function SettingsScreen() {
 
         <View style={styles.footer}>
           <Text style={styles.version}>Version 1.0.0</Text>
-          <Text style={styles.copyright}>© 2025 Financify</Text>
+          <Text style={styles.copyright}>© 2025 Finny</Text>
         </View>
       </ScrollView>
 

@@ -610,7 +610,7 @@ export default function SignupScreen() {
 
   const handlePrivacyPolicy = async () => {
     const url =
-      "https://www.notion.so/Privacy-Policy-for-Financify-20d42b8a2179800682afdf5dc000fcdd?pvs=4";
+      "https://www.notion.so/Privacy-Policy-for-Finny-20d42b8a2179800682afdf5dc000fcdd";
     try {
       await WebBrowser.openBrowserAsync(url, {
         presentationStyle: WebBrowser.WebBrowserPresentationStyle.FORM_SHEET,
@@ -625,7 +625,7 @@ export default function SignupScreen() {
 
   const handleTermsConditions = async () => {
     const url =
-      "https://www.notion.so/Terms-Conditions-for-Financify-20d42b8a217980cea19ceda310df47c1?pvs=4";
+      "https://www.notion.so/Terms-Conditions-for-Finny-20d42b8a217980cea19ceda310df47c1";
     try {
       await WebBrowser.openBrowserAsync(url, {
         presentationStyle: WebBrowser.WebBrowserPresentationStyle.FORM_SHEET,

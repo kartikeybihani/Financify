@@ -2,8 +2,8 @@ import { ConfigContext, ExpoConfig } from 'expo/config';
 
 export default ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
-  name: "Financify",
-  slug: "financify",
+  name: "Finny",
+  slug: "finny",
   version: "1.0.0",
   orientation: "portrait",
   icon: "./assets/images/appicon.png",
