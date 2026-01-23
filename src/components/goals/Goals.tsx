@@ -33,6 +33,7 @@ import { useRouter } from "expo-router";
 import logger from "@/src/utils/core/logger";
 import { supabase } from "@/src/lib/supabase/supabase";
 import AppStorage from "@/src/utils/storage/storage";
+import { getAccountBalance } from "@/src/utils/accountBalance";
 
 const Goals: React.FC<GoalsProps> = ({
   deleteGoal,
@@ -92,7 +93,7 @@ const Goals: React.FC<GoalsProps> = ({
       // Get total balance from all accounts
       const { data: accounts, error: accountsError } = await supabase
         .from("accounts")
-        .select("current_balance")
+        .select("current_balance, available_balance, type")
         .in(
           "item_id",
           userItems.map((item) => item.item_id)
@@ -104,7 +105,7 @@ const Goals: React.FC<GoalsProps> = ({
       }
 
       const totalBalance = accounts.reduce(
-        (sum, account) => sum + (account.current_balance || 0),
+        (sum, account) => sum + getAccountBalance(account),
         0
       );
 

@@ -24,6 +24,7 @@ import {
   Account,
   AccountDetailModalProps,
 } from "@/src/types/plaid";
+import { getAccountBalance } from "@/src/utils/accountBalance";
 
 const formatCurrency = (amount: number) => {
   return new Intl.NumberFormat("en-US", {
@@ -54,7 +55,7 @@ export default function AccountDetailModal({
   const { session } = useAuthNavigation();
   const [account, setAccount] = useState<Account | null>(null);
   const [recentTransactions, setRecentTransactions] = useState<Transaction[]>(
-    []
+    [],
   );
   const [loading, setLoading] = useState(true);
   const [transactionsLoading, setTransactionsLoading] = useState(false);
@@ -94,7 +95,7 @@ export default function AccountDetailModal({
             user_items:item_id (
               institution_name
             )
-          `
+          `,
           )
           .eq("account_id", accountId)
           .single();
@@ -193,7 +194,7 @@ export default function AccountDetailModal({
       console.error("Error deleting account:", error);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       alert(
-        error instanceof Error ? error.message : "Failed to delete account"
+        error instanceof Error ? error.message : "Failed to delete account",
       );
     } finally {
       setDeleting(false);
@@ -209,12 +210,19 @@ export default function AccountDetailModal({
     account?.type?.toLowerCase().includes("credit") ||
     account?.subtype?.toLowerCase().includes("credit");
 
+  // For depository accounts, use available_balance; for others, use current_balance
+  const displayBalance = getAccountBalance(account || {});
   const currentBalance =
     account?.current_balance || account?.balances?.current || 0;
   const availableBalance =
     account?.available_balance || account?.balances?.available || 0;
-  const creditLimit = isCreditCard ? currentBalance + availableBalance : 0;
-  const availableCredit = isCreditCard ? availableBalance : 0;
+
+  // For credit cards: current_balance = debt, available_balance = credit limit
+  // So credit limit is available_balance, and remaining credit is credit limit - debt
+  const creditLimit = isCreditCard ? availableBalance : 0;
+  const availableCredit = isCreditCard
+    ? availableBalance - Math.abs(currentBalance)
+    : 0;
 
   if (!visible) return null;
 
@@ -313,14 +321,14 @@ export default function AccountDetailModal({
                           { color: isCreditCard ? "#4f94e8" : "#4ade80" },
                         ]}
                       >
-                        {formatCurrency(Math.abs(currentBalance))}
+                        {formatCurrency(Math.abs(displayBalance))}
                       </Text>
                       <Text style={styles.mainBalanceLabel}>
                         {isCreditCard
                           ? "Current Balance"
                           : account?.type === "investment"
-                          ? "Portfolio Value"
-                          : "Available Balance"}
+                            ? "Portfolio Value"
+                            : "Available Balance"}
                       </Text>
 
                       {isCreditCard && (
@@ -373,7 +381,7 @@ export default function AccountDetailModal({
                                     : ""}
                                   {formatCurrency(
                                     investmentPerformance.todayPerformance
-                                      .amount
+                                      .amount,
                                   )}
                                 </Text>
                                 <Text
@@ -393,7 +401,7 @@ export default function AccountDetailModal({
                                     ? "+"
                                     : ""}
                                   {investmentPerformance.todayPerformance.percentage.toFixed(
-                                    2
+                                    2,
                                   )}
                                   %
                                 </Text>
@@ -422,7 +430,7 @@ export default function AccountDetailModal({
                                     : ""}
                                   {formatCurrency(
                                     investmentPerformance.totalPerformance
-                                      .amount
+                                      .amount,
                                   )}
                                 </Text>
                                 <Text
@@ -442,7 +450,7 @@ export default function AccountDetailModal({
                                     ? "+"
                                     : ""}
                                   {investmentPerformance.totalPerformance.percentage.toFixed(
-                                    2
+                                    2,
                                   )}
                                   %
                                 </Text>
@@ -519,10 +527,10 @@ export default function AccountDetailModal({
                                   >
                                     {transaction.amount < 0
                                       ? `+$${Math.abs(
-                                          transaction.amount
+                                          transaction.amount,
                                         ).toFixed(2)}`
                                       : `-$${Math.abs(
-                                          transaction.amount
+                                          transaction.amount,
                                         ).toFixed(2)}`}
                                   </Text>
                                 </View>

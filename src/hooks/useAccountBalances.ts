@@ -10,6 +10,7 @@ import { useCashEntries } from "./useCashEntries";
 import logger from "@/src/utils/core/logger";
 import { getAuthenticatedUser } from "@/src/utils/auth/auth";
 import { CACHE_CONFIG } from "@/src/shared/constants/cacheConfig";
+import { getAccountBalance } from "@/src/utils/accountBalance";
 
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes in milliseconds
 
@@ -270,7 +271,7 @@ export function useAccountBalances() {
 
   // Memoized financial totals
   const accountsTotal = useCallback(() => 
-    categorizedDeposits().reduce((acc, a) => acc + (a.balances?.current || 0), 0),
+    categorizedDeposits().reduce((acc, a) => acc + getAccountBalance(a), 0),
     [categorizedDeposits]
   );
 

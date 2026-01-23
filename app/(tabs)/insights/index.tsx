@@ -95,6 +95,8 @@ import {
   clearTransactionsCache,
   hasValidTransactionsCache,
 } from "@/src/shared/utils/transactionCache";
+import AppStorage from "@/src/utils/storage/storage";
+import { CACHE_CONFIG } from "@/src/shared/constants/cacheConfig";
 import {
   loadSpendingFromCache,
   saveSpendingToCache,
@@ -105,7 +107,7 @@ import {
   LoadingIndicator,
   ErrorState,
   EmptyState,
-  RefreshStatus,
+  RefreshStatus as RefreshStatusComponent,
 } from "@/src/shared/components/LoadingStates";
 import {
   Transaction,
@@ -113,23 +115,70 @@ import {
   CategoryBreakdown,
   Insight,
 } from "@/src/types/plaid";
-import { LinearGradient } from "expo-linear-gradient";
 import {
-  FAB_GRADIENT_COLORS,
-  FAB_BUTTON_GRADIENT_COLORS,
-} from "@/src/components/insights/components/AddCategoryModal";
-
-// Define types
-
-// Add some nice colors for categories
-// Removed hardcoded category colors and formatCategoryName - now using database via useCategories hook
+  InsightsSection,
+  ReAuthItem,
+  RecurringData,
+  RefreshStatus,
+  SyncStatus,
+  CategoryDetailData,
+  InitialCache,
+} from "@/src/types/insights";
+import {
+  getUserIdSync,
+  loadInitialCache,
+  parseTransactionDate,
+  formatDate,
+  formatTransactionDate,
+  getTransactionDisplayDate,
+  generateAvailableMonths,
+  filterTransactionsByMonth,
+  getFilterDescription,
+  handleRefreshLatestData,
+  handleApiReAuthError,
+  checkForReAuthNeeds,
+  handleReAuth,
+  dismissReAuthBanner,
+} from "@/src/utils/insights";
+import InsightsHeader from "@/src/components/insights/InsightsHeader";
+import InsightsFAB from "@/src/components/insights/InsightsFAB";
 
 export default function InsightsScreen() {
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [realInsights, setRealInsights] = useState<Insight[]>([]);
-  const [userId, setUserId] = useState<string | undefined>(undefined);
+  // Get userId synchronously for initial cache load
+  const initialUserId = getUserIdSync();
 
-  // Fetch user ID on mount
+  // Load cache synchronously before first render (like unified hook does)
+  const initialCache = loadInitialCache(initialUserId);
+
+  const [transactions, setTransactions] = useState<Transaction[]>(
+    initialCache.transactions,
+  );
+  const [realInsights, setRealInsights] = useState<Insight[]>([]);
+  const [userId, setUserId] = useState<string | undefined>(
+    initialUserId || undefined,
+  );
+
+  // Get userId asynchronously (for validation and fallback)
+  const getUserId = useCallback(async (): Promise<string | null> => {
+    if (userIdRef.current) {
+      return userIdRef.current;
+    }
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (user) {
+        userIdRef.current = user.id;
+        return user.id;
+      }
+      return null;
+    } catch (error) {
+      logger.error("Error getting user ID:", error);
+      return null;
+    }
+  }, []);
+
+  // Fetch user ID on mount (for validation and fallback)
   useEffect(() => {
     const fetchUserId = async () => {
       try {
@@ -138,12 +187,30 @@ export default function InsightsScreen() {
         } = await supabase.auth.getUser();
         if (user?.id) {
           setUserId(user.id);
+
+          // If we loaded cache with a different userId, clear it
+          if (initialUserId && initialUserId !== user.id) {
+            logger.warn("🔒 [INSIGHTS] Cache userId mismatch, clearing cache");
+            setTransactions([]);
+            hasCachedData.current = false;
+          } else if (initialCache.hasCache && !hasCachedData.current) {
+            // Cache was loaded, mark it
+            hasCachedData.current = true;
+            hasData.current = true;
+          }
         }
       } catch (error) {
         console.error("Error fetching user ID:", error);
       }
     };
-    fetchUserId();
+
+    // Only fetch if we don't have userId from sync
+    if (!initialUserId) {
+      fetchUserId();
+    } else {
+      // Validate the sync userId is correct
+      fetchUserId();
+    }
   }, []);
 
   // Use the categories hook for database-driven categories
@@ -163,18 +230,17 @@ export default function InsightsScreen() {
         percentage: number;
         color: string;
         hasRecurringTransactions: boolean;
-      }
+      },
     ][]
   >([]);
-  const [isInitialLoad, setIsInitialLoad] = useState(true);
+  // If we loaded cache synchronously, we're not in initial load state
+  const [isInitialLoad, setIsInitialLoad] = useState(!initialCache.hasCache);
   const [isLoading, setIsLoading] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState("All Categories");
   const [showFilterModal, setShowFilterModal] = useState(false);
   const [showCategoryDetail, setShowCategoryDetail] = useState(false);
-  const [selectedCategoryDetail, setSelectedCategoryDetail] = useState<{
-    category: string;
-    data: { amount: number; percentage: number; color: string };
-  } | null>(null);
+  const [selectedCategoryDetail, setSelectedCategoryDetail] =
+    useState<CategoryDetailData | null>(null);
   const [currentMonthTransactions, setCurrentMonthTransactions] = useState<
     Transaction[]
   >([]);
@@ -182,10 +248,10 @@ export default function InsightsScreen() {
 
   // Month selection state
   const [selectedMonth, setSelectedMonth] = useState<number>(
-    new Date().getMonth()
+    new Date().getMonth(),
   );
   const [selectedYear, setSelectedYear] = useState<number>(
-    new Date().getFullYear()
+    new Date().getFullYear(),
   );
   const [availableMonths, setAvailableMonths] = useState<MonthOption[]>([]);
 
@@ -195,39 +261,22 @@ export default function InsightsScreen() {
   const [isSyncing, setIsSyncing] = useState(false);
 
   // Re-auth banner state (handles both re-auth and new accounts)
-  const [reAuthItems, setReAuthItems] = useState<
-    Array<{
-      item_id: string;
-      institution_name: string;
-      dismissed: boolean;
-      type?: "re_auth" | "new_accounts";
-    }>
-  >([]);
+  const [reAuthItems, setReAuthItems] = useState<ReAuthItem[]>([]);
 
   // Recurring transactions state
-  const [recurringData, setRecurringData] = useState<{
-    subscriptions: RecurringStream[];
-    income: RecurringStream[];
-    bills: RecurringStream[];
-    other: RecurringStream[];
-    summary: {
-      subscriptions: number;
-      income: number;
-      bills: number;
-      other: number;
-      total: number;
-    };
-  } | null>(null);
+  const [recurringData, setRecurringData] = useState<RecurringData | null>(
+    null,
+  );
   const [recurringLoading, setRecurringLoading] = useState(false);
-  const [refreshStatus, setRefreshStatus] = useState<{
-    type: "cloud" | null;
-    message: string;
-  }>({ type: null, message: "" });
-  const [syncStatus, setSyncStatus] = useState<{
-    lastSync: string | null;
-    nextSync: string | null;
-    isAutomated: boolean;
-  }>({ lastSync: null, nextSync: null, isAutomated: false });
+  const [refreshStatus, setRefreshStatus] = useState<RefreshStatus>({
+    type: null,
+    message: "",
+  });
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>({
+    lastSync: null,
+    nextSync: null,
+    isAutomated: false,
+  });
 
   // Enhanced filtering state
   const [showEnhancedFilterModal, setShowEnhancedFilterModal] = useState(false);
@@ -288,9 +337,7 @@ export default function InsightsScreen() {
   const [investmentConnections, setInvestmentConnections] = useState<any[]>([]);
 
   // Top bar section state
-  const [activeSection, setActiveSection] = useState<
-    "investments" | "spending" | "transactions" | "recurring" | "cashflow"
-  >("spending");
+  const [activeSection, setActiveSection] = useState<InsightsSection>("spending");
 
   // Animation values for smooth transitions
   const fadeAnim = useRef(new Animated.Value(1)).current;
@@ -338,19 +385,6 @@ export default function InsightsScreen() {
 
   // Cached userId to avoid repeated supabase.auth.getUser() calls
   const userIdRef = useRef<string | null>(null);
-  const getUserId = useCallback(async (): Promise<string | null> => {
-    if (userIdRef.current) return userIdRef.current;
-    const {
-      data: { user },
-      error,
-    } = await supabase.auth.getUser();
-    if (error) {
-      logger.error("Auth error:", error.message);
-      return null;
-    }
-    userIdRef.current = user?.id || null;
-    return userIdRef.current;
-  }, []);
 
   // Track user behavior for smart preloading
   const [userBehavior, setUserBehavior] = useState<{
@@ -377,7 +411,7 @@ export default function InsightsScreen() {
 
   // Use ref to store latest loadRecurringTransactions function to avoid re-subscription
   const loadRecurringTransactionsRef = useRef<(() => Promise<void>) | null>(
-    null
+    null,
   );
 
   // Listen for transaction category updates - clear cache and refresh smoothly
@@ -391,7 +425,7 @@ export default function InsightsScreen() {
         // Clear caches since categories have changed
         await Promise.all([clearTransactionsCache(), clearSpendingCache()]);
         logger.info(
-          "🗑️ Cleared transactions and spending cache after category update"
+          "🗑️ Cleared transactions and spending cache after category update",
         );
 
         // Handle targeted transaction updates
@@ -413,13 +447,13 @@ export default function InsightsScreen() {
               updatedTransactions = OptimisticUpdateManager.applyCategoryChange(
                 updatedTransactions,
                 affectedTx.transactionId,
-                data.newCategory
+                data.newCategory,
               );
             });
 
             console.log(
               "📊 Updated transactions count:",
-              updatedTransactions.length
+              updatedTransactions.length,
             );
             return updatedTransactions;
           });
@@ -432,7 +466,7 @@ export default function InsightsScreen() {
               updatedTransactions = OptimisticUpdateManager.applyCategoryChange(
                 updatedTransactions,
                 affectedTx.transactionId,
-                data.newCategory
+                data.newCategory,
               );
             });
 
@@ -448,12 +482,12 @@ export default function InsightsScreen() {
           });
         } else {
           console.log(
-            "⚠️ No affected transactions found, falling back to full refresh"
+            "⚠️ No affected transactions found, falling back to full refresh",
           );
           // Fallback: refresh all data if no specific transactions provided
           await loadData();
         }
-      }
+      },
     );
 
     return () => subscription.remove();
@@ -482,16 +516,14 @@ export default function InsightsScreen() {
         activeSectionRef.current === "recurring" ||
         recurringDataRef.current !== null
       ) {
-        logger.info(
-          "🔄 Refreshing recurring transactions after status update"
-        );
+        logger.info("🔄 Refreshing recurring transactions after status update");
         if (loadRecurringTransactionsRef.current) {
           await loadRecurringTransactionsRef.current();
         }
       } else {
         // If not on recurring section, just clear cache - will load fresh when user navigates
         logger.info(
-          "📦 Cleared recurring cache (will load fresh when user navigates to recurring section)"
+          "📦 Cleared recurring cache (will load fresh when user navigates to recurring section)",
         );
       }
     };
@@ -501,15 +533,17 @@ export default function InsightsScreen() {
       async (data) => {
         console.log("🔄 Transaction recurring status updated:", data);
         await handleRecurringUpdate();
-      }
+      },
     );
 
     const bulkUpdateSubscription = DeviceEventEmitter.addListener(
       "recurringBulkUpdate",
       async (data) => {
-        console.log(`🔄 Bulk recurring update: ${data.count} transactions updated`);
+        console.log(
+          `🔄 Bulk recurring update: ${data.count} transactions updated`,
+        );
         await handleRecurringUpdate();
-      }
+      },
     );
 
     return () => {
@@ -578,9 +612,21 @@ export default function InsightsScreen() {
   }, []);
 
   // Load cached data immediately on mount to prevent flinching and show instant UI
+  // Skip if we already loaded from initial synchronous cache
   useEffect(() => {
     const loadCachedData = async () => {
       try {
+        // If we already loaded cache synchronously, skip this
+        if (initialCache.hasCache && transactions.length > 0) {
+          hasData.current = true;
+          hasCachedData.current = true;
+          // Still need to process transactions for spending breakdown
+          if (processTransactionsDataRef.current) {
+            processTransactionsDataRef.current(transactions);
+          }
+          return;
+        }
+
         // Wait for userId to be available
         if (!userId) {
           logger.info("⏳ Waiting for userId before loading cache...");
@@ -599,7 +645,7 @@ export default function InsightsScreen() {
         if (cachedTransactions && cachedTransactions.length > 0) {
           logger.info(
             "📦 Loading cached transactions on mount:",
-            cachedTransactions.length
+            cachedTransactions.length,
           );
           setTransactions(cachedTransactions);
           hasData.current = true;
@@ -655,7 +701,7 @@ export default function InsightsScreen() {
             logger.error("Prefetch failed silently:", error);
           }
         }
-      }
+      },
     );
 
     return () => {
@@ -669,6 +715,21 @@ export default function InsightsScreen() {
       let isCancelled = false;
 
       const initializeScreen = async () => {
+        // If we already have cached data from synchronous load, skip initial load state
+        if (initialCache.hasCache && transactions.length > 0) {
+          hasCachedData.current = true;
+          hasData.current = true;
+          setIsInitialLoad(false);
+
+          // Refresh fresh data silently in background
+          fetchFreshData().catch((error) => {
+            if (!isCancelled) {
+              logger.error("Background refresh failed:", error);
+            }
+          });
+          return;
+        }
+
         // Only show initial load if we don't have cached data
         if (!hasCachedData.current) {
           setIsInitialLoad(true);
@@ -706,16 +767,25 @@ export default function InsightsScreen() {
         }
       };
 
-      // Small delay to ensure cached data is loaded first
-      const timer = setTimeout(() => {
+      // No delay needed if we have initial cache - execute immediately
+      let timer: ReturnType<typeof setTimeout> | null = null;
+      
+      if (initialCache.hasCache && transactions.length > 0) {
         initializeScreen();
-      }, 50);
+      } else {
+        // Small delay to ensure cached data is loaded first
+        timer = setTimeout(() => {
+          initializeScreen();
+        }, 50);
+      }
 
       return () => {
         isCancelled = true;
-        clearTimeout(timer);
+        if (timer) {
+          clearTimeout(timer);
+        }
       };
-    }, [getUserId])
+    }, [getUserId]),
   );
 
   // Auto-refresh stale investment data (>24 hours old)
@@ -764,7 +834,7 @@ export default function InsightsScreen() {
   // Post-first-frame: check re-auth needs without blocking initial render
   useEffect(() => {
     const task = InteractionManager.runAfterInteractions(() => {
-      checkForReAuthNeeds();
+      checkForReAuthNeedsWrapper();
     });
     return () => {
       // @ts-ignore cancel may not exist in some RN versions
@@ -807,7 +877,7 @@ export default function InsightsScreen() {
       setFilteredTransactions(cachedSearch.transactions);
       setTotalFilteredCount(cachedSearch.count);
       setHasMoreTransactions(
-        cachedSearch.transactions.length < cachedSearch.count
+        cachedSearch.transactions.length < cachedSearch.count,
       );
       setIsSearching(false);
       return;
@@ -889,7 +959,7 @@ export default function InsightsScreen() {
           setMightHaveTransactions(hasCache);
           if (hasCache) {
             logger.info(
-              "📦 Cache exists, showing loading state instead of empty state"
+              "📦 Cache exists, showing loading state instead of empty state",
             );
           }
         }
@@ -959,7 +1029,7 @@ export default function InsightsScreen() {
       if (cachedTransactions && cachedTransactions.length > 0) {
         logger.info(
           "Insights: Using cached transactions:",
-          cachedTransactions.length
+          cachedTransactions.length,
         );
         setTransactions(cachedTransactions);
         processTransactionsData(cachedTransactions);
@@ -975,7 +1045,7 @@ export default function InsightsScreen() {
 
       if (transactions && transactions.length > 0) {
         logger.info(
-          `Insights: Loaded ${transactions.length} transactions from Supabase`
+          `Insights: Loaded ${transactions.length} transactions from Supabase`,
         );
 
         setTransactions(transactions);
@@ -1015,7 +1085,7 @@ export default function InsightsScreen() {
 
       if (transactions && transactions.length > 0) {
         logger.info(
-          `Insights: Loaded ${transactions.length} fresh transactions`
+          `Insights: Loaded ${transactions.length} fresh transactions`,
         );
         setTransactions(transactions);
         processTransactionsData(transactions);
@@ -1082,13 +1152,13 @@ export default function InsightsScreen() {
 
       if (debug) {
         logger.debug(
-          `Loaded ${userAccounts.length} user accounts for filtering:`
+          `Loaded ${userAccounts.length} user accounts for filtering:`,
         );
         userAccounts.forEach((acc, idx) => {
           logger.debug(
             `  ${idx + 1}. ${acc.institution_name} - ${acc.name} (${
               acc.subtype
-            }) [Account ID: ${acc.account_id}]`
+            }) [Account ID: ${acc.account_id}]`,
           );
         });
 
@@ -1100,7 +1170,7 @@ export default function InsightsScreen() {
         // Check which accounts belong to which institution
         uniqueInstitutions.forEach((institution) => {
           const accountsForInstitution = userAccounts.filter(
-            (acc) => acc.institution_name === institution
+            (acc) => acc.institution_name === institution,
           );
           accountsForInstitution.forEach((acc) => {
             logger.debug(`    - ${acc.name} (${acc.subtype})`);
@@ -1136,7 +1206,7 @@ export default function InsightsScreen() {
   const setCachedData = (
     cacheKey: string,
     transactions: Transaction[],
-    count: number
+    count: number,
   ) => {
     filterCache.current.set(cacheKey, {
       transactions,
@@ -1154,7 +1224,7 @@ export default function InsightsScreen() {
   const loadFilteredTransactions = async (
     filters: FilterOptions,
     reset: boolean = false,
-    search: string = ""
+    search: string = "",
   ) => {
     try {
       const userId = await getUserId();
@@ -1169,7 +1239,7 @@ export default function InsightsScreen() {
       // Check search cache first for instant results
       if (reset && search.trim()) {
         const searchCacheKey = `${search.trim().toLowerCase()}_${JSON.stringify(
-          filters
+          filters,
         )}`;
         const cachedSearch = searchCache.current.get(searchCacheKey);
         if (
@@ -1180,7 +1250,7 @@ export default function InsightsScreen() {
           setFilteredTransactions(cachedSearch.transactions);
           setTotalFilteredCount(cachedSearch.count);
           setHasMoreTransactions(
-            cachedSearch.transactions.length < cachedSearch.count
+            cachedSearch.transactions.length < cachedSearch.count,
           );
           setIsSearching(false);
           return;
@@ -1245,7 +1315,7 @@ export default function InsightsScreen() {
       // Use a Map to track unique transactions (latest version wins if duplicates exist)
       const uniqueTransactionsMap = new Map<string, Transaction>();
       const transactionsWithoutId: Transaction[] = []; // Track transactions without IDs
-      
+
       const addTransaction = (tx: Transaction) => {
         const key = tx.plaid_transaction_id || tx.id;
         if (key) {
@@ -1255,7 +1325,7 @@ export default function InsightsScreen() {
           transactionsWithoutId.push(tx);
         }
       };
-      
+
       if (reset) {
         // Reset: only use new transactions, but still deduplicate them
         newTransactions.forEach(addTransaction);
@@ -1264,13 +1334,13 @@ export default function InsightsScreen() {
         filteredTransactions.forEach(addTransaction);
         newTransactions.forEach(addTransaction);
       }
-      
+
       // Combine deduplicated transactions with transactions without IDs
       const updatedTransactions = [
         ...Array.from(uniqueTransactionsMap.values()),
-        ...transactionsWithoutId
+        ...transactionsWithoutId,
       ];
-      
+
       // Sort by date descending to maintain correct order (newest first)
       // Note: Database already sorts, but re-sorting ensures consistency after deduplication
       updatedTransactions.sort((a, b) => {
@@ -1293,7 +1363,7 @@ export default function InsightsScreen() {
           setCachedData(
             getCacheKey(filters, 0),
             updatedTransactions,
-            totalCount
+            totalCount,
           );
         } else {
           // Cache search results for instant repeat searches
@@ -1320,7 +1390,7 @@ export default function InsightsScreen() {
       logger.info(
         `📊 Loaded ${newTransactions.length} filtered transactions (${
           updatedTransactions.length
-        }/${totalCount})${search.trim() ? ` for search: "${search}"` : ""}`
+        }/${totalCount})${search.trim() ? ` for search: "${search}"` : ""}`,
       );
     } catch (error) {
       logger.error("❌ Error loading filtered transactions:", error);
@@ -1357,10 +1427,10 @@ export default function InsightsScreen() {
           const currentAccountIds = filterOptions.accountIds || [];
           if (currentAccountIds.includes(deletedAccountId)) {
             const updatedAccountIds = currentAccountIds.filter(
-              (id) => id !== deletedAccountId
+              (id) => id !== deletedAccountId,
             );
             logger.info(
-              `🧹 Removed deleted account from filter options. Remaining: ${updatedAccountIds.length}`
+              `🧹 Removed deleted account from filter options. Remaining: ${updatedAccountIds.length}`,
             );
             updatedFilterOptions = {
               ...filterOptions,
@@ -1398,7 +1468,7 @@ export default function InsightsScreen() {
           // Also reload investment data if financial data changes
           await loadInvestmentData();
         }
-      }
+      },
     );
 
     return () => {
@@ -1416,91 +1486,12 @@ export default function InsightsScreen() {
     };
   }, []);
 
-  // Helper function to parse transaction date as local date (not UTC)
-  // Uses authorized_date if available (when user actually made transaction),
-  // otherwise uses posted date (date)
-  const parseTransactionDate = useCallback(
-    (tx: Transaction): { year: number; month: number } => {
-      // Use authorized_date if available (when user actually made the transaction)
-      // Fallback to date (posted date) if authorized_date is not available
-      const dateStr = tx.authorized_date || tx.date;
-      // Parse date string directly: "2024-11-30" -> year=2024, month=10 (0-indexed)
-      const parts = dateStr.split("-");
-      const year = parseInt(parts[0], 10);
-      const month = parseInt(parts[1], 10) - 1; // Convert 1-12 to 0-11
-      return { year, month };
-    },
-    []
-  );
-
-  // Generate available months from transactions (last 24 months max)
-  const generateAvailableMonths = useCallback(
-    (transactionsData: Transaction[]): MonthOption[] => {
-      // Filter out INTERNAL_TRANSFER transactions
-      const expenses = transactionsData.filter(
-        (tx) => tx.amount > 0 && tx.new_category !== "INTERNAL_TRANSFER"
-      );
-
-      // Create a map of month-year to total spent
-      const monthMap = new Map<
-        string,
-        { month: number; year: number; total: number }
-      >();
-
-      expenses.forEach((tx) => {
-        const { year, month } = parseTransactionDate(tx);
-        const key = `${year}-${month}`;
-
-        if (!monthMap.has(key)) {
-          monthMap.set(key, { month, year, total: 0 });
-        }
-        monthMap.get(key)!.total += tx.amount;
-      });
-
-      // Convert to array and sort by date (most recent first)
-      const monthsArray: MonthOption[] = Array.from(monthMap.values())
-        .sort((a, b) => {
-          if (a.year !== b.year) return b.year - a.year;
-          return b.month - a.month;
-        })
-        .slice(0, 24) // Limit to last 24 months
-        .map(({ month, year, total }) => ({
-          month,
-          year,
-          totalSpent: total,
-        }));
-
-      return monthsArray;
-    },
-    [parseTransactionDate]
-  );
-
-  // Filter transactions by selected month/year
-  const filterTransactionsByMonth = useCallback(
-    (
-      transactionsData: Transaction[],
-      month: number,
-      year: number
-    ): Transaction[] => {
-      return transactionsData.filter((tx) => {
-        const { year: txYear, month: txMonth } = parseTransactionDate(tx);
-        return (
-          txMonth === month &&
-          txYear === year &&
-          tx.amount > 0 &&
-          tx.new_category !== "INTERNAL_TRANSFER"
-        );
-      });
-    },
-    [parseTransactionDate]
-  );
-
   // Memoized transaction processing to prevent expensive recomputations
   const processTransactionsData = useCallback(
     (
       transactionsData: Transaction[],
       targetMonth?: number,
-      targetYear?: number
+      targetYear?: number,
     ) => {
       // Use selected month/year or default to current month
       const monthToUse =
@@ -1509,14 +1500,14 @@ export default function InsightsScreen() {
 
       // Filter out INTERNAL_TRANSFER transactions - they should not be counted in spending
       const expenses = transactionsData.filter(
-        (tx) => tx.amount > 0 && tx.new_category !== "INTERNAL_TRANSFER"
+        (tx) => tx.amount > 0 && tx.new_category !== "INTERNAL_TRANSFER",
       );
 
       // Filter for selected month
       let currentMonthExpenses = filterTransactionsByMonth(
         expenses,
         monthToUse,
-        yearToUse
+        yearToUse,
       );
 
       // If no data for selected month, try to find the most recent month with data
@@ -1534,7 +1525,7 @@ export default function InsightsScreen() {
         currentMonthExpenses = filterTransactionsByMonth(
           expenses,
           mostRecentMonth,
-          mostRecentYear
+          mostRecentYear,
         );
 
         // Update selected month/year to match most recent month with data
@@ -1546,7 +1537,7 @@ export default function InsightsScreen() {
 
       const totalSpent = currentMonthExpenses.reduce(
         (acc, tx) => acc + tx.amount,
-        0
+        0,
       );
 
       const categoriesObj: CategoryBreakdown = {};
@@ -1579,12 +1570,12 @@ export default function InsightsScreen() {
       });
 
       const sortedCategories = Object.entries(categoriesObj).sort(
-        (a, b) => b[1].amount - a[1].amount
+        (a, b) => b[1].amount - a[1].amount,
       );
 
       // Filter out Internal Transfer categories
       const filteredCategories = sortedCategories.filter(
-        ([category]) => category !== "INTERNAL_TRANSFER"
+        ([category]) => category !== "INTERNAL_TRANSFER",
       );
 
       setCategoryBreakdown(filteredCategories);
@@ -1596,7 +1587,7 @@ export default function InsightsScreen() {
         "All Categories",
         ...new Set(currentMonthExpenses.map((tx) => getDisplayCategory(tx))),
       ].map((cat) =>
-        cat === "All Categories" ? cat : formatCategoryFromHook(cat)
+        cat === "All Categories" ? cat : formatCategoryFromHook(cat),
       );
 
       setCategories(uniqueCategories);
@@ -1620,7 +1611,7 @@ export default function InsightsScreen() {
             : "Building your spending insights...",
           details: topCategory
             ? `You've spent the most on ${formatCategoryFromHook(
-                topCategory[0]
+                topCategory[0],
               )} — $${topCategory[1].amount.toLocaleString("en-US", {
                 minimumFractionDigits: 2,
                 maximumFractionDigits: 2,
@@ -1647,11 +1638,9 @@ export default function InsightsScreen() {
     [
       selectedMonth,
       selectedYear,
-      filterTransactionsByMonth,
-      parseTransactionDate,
       getCategoryColor,
       formatCategoryFromHook,
-    ]
+    ],
   );
 
   // Keep ref updated with latest processTransactionsData function
@@ -1669,7 +1658,7 @@ export default function InsightsScreen() {
       // If current selected month is not in available months, default to most recent month
       if (months.length > 0) {
         const currentSelectedExists = months.some(
-          (m) => m.month === selectedMonth && m.year === selectedYear
+          (m) => m.month === selectedMonth && m.year === selectedYear,
         );
         if (!currentSelectedExists) {
           // Default to most recent month (first in array)
@@ -1678,7 +1667,7 @@ export default function InsightsScreen() {
         }
       }
     }
-  }, [transactions, generateAvailableMonths, selectedMonth, selectedYear]);
+  }, [transactions, selectedMonth, selectedYear]);
 
   // Handle month selection
   const handleMonthSelect = useCallback((month: number, year: number) => {
@@ -1693,102 +1682,10 @@ export default function InsightsScreen() {
     }
   }, [selectedMonth, selectedYear, transactions, processTransactionsData]);
 
-  // Helper to get display date from transaction (uses authorized_date if available)
-  const getTransactionDisplayDate = (tx: Transaction): string => {
-    return tx.authorized_date || tx.date;
-  };
-
-  const formatDate = (dateStr: string) => {
-    // Parse date string directly to avoid timezone shifts
-    // dateStr format: "YYYY-MM-DD"
-    const parts = dateStr.split("-");
-    const year = parseInt(parts[0], 10);
-    const month = parseInt(parts[1], 10) - 1; // 0-indexed
-    const day = parseInt(parts[2], 10);
-
-    // Create date in local timezone
-    const date = new Date(year, month, day);
-
-    const options: Intl.DateTimeFormatOptions = {
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-    };
-    return date.toLocaleDateString("en-US", options);
-  };
-
-  // Format transaction date using display date (authorized_date if available)
-  const formatTransactionDate = (tx: Transaction): string => {
-    return formatDate(getTransactionDisplayDate(tx));
-  };
-
   // Helper function to get filter description
-  const getFilterDescription = () => {
-    const accountIds = filterOptions.accountIds || [];
-    const accountName =
-      accountIds.length === 0
-        ? "All Accounts"
-        : accountIds.length === 1
-        ? accounts.find((acc) => acc.account_id === accountIds[0])
-            ?.institution_name || "Selected Account"
-        : `${accountIds.length} accounts`;
-
-    // Helper function to format month-year period IDs
-    const formatTimePeriodName = (timePeriod: string): string => {
-      const quickPeriods: { [key: string]: string } = {
-        all: "All",
-        "7days": "7 days",
-        "30days": "30 days",
-        "3months": "3 months",
-        "6months": "6 months",
-        "12months": "12 months",
-      };
-
-      if (quickPeriods[timePeriod]) {
-        return quickPeriods[timePeriod];
-      }
-
-      // Handle month-year format (e.g., "january2024" -> "Jan 2024")
-      const monthYearMatch = timePeriod.match(
-        /^(january|february|march|april|may|june|july|august|september|october|november|december)(\d{4})$/i
-      );
-      if (monthYearMatch) {
-        const monthName = monthYearMatch[1].toLowerCase();
-        const year = monthYearMatch[2];
-
-        const monthAbbrev: { [key: string]: string } = {
-          january: "Jan",
-          february: "Feb",
-          march: "Mar",
-          april: "Apr",
-          may: "May",
-          june: "Jun",
-          july: "Jul",
-          august: "Aug",
-          september: "Sep",
-          october: "Oct",
-          november: "Nov",
-          december: "Dec",
-        };
-
-        return `${monthAbbrev[monthName] || monthName} ${year}`;
-      }
-
-      return "7 days"; // Default fallback
-    };
-
-    const timePeriodName = formatTimePeriodName(filterOptions.timePeriod);
-
-    const categoryIds = filterOptions.categoryIds || [];
-    const categoryName =
-      categoryIds.length === 0
-        ? "All Categories"
-        : categoryIds.length === 1
-        ? "1 category"
-        : `${categoryIds.length} categories`;
-
-    return `${accountName} • ${timePeriodName} • ${categoryName}`;
-  };
+  const getFilterDescriptionMemo = useCallback(() => {
+    return getFilterDescription(filterOptions, accounts);
+  }, [filterOptions, accounts]);
 
   const onRefresh = async () => {
     if (!hasData.current) return;
@@ -1799,12 +1696,12 @@ export default function InsightsScreen() {
       await clearTransactionsCache();
       await clearSpendingCache();
       await fetchFreshData();
-      
+
       // Refresh budget data if in budget mode
       if (isBudgetMode && refreshBudgetRef.current) {
         await refreshBudgetRef.current();
       }
-      
+
       // Only reload filtered transactions if on Transactions section
       if (activeSection === "transactions") {
         await loadFilteredTransactions(filterOptions, true, searchQuery);
@@ -1818,9 +1715,12 @@ export default function InsightsScreen() {
 
   const handleCategoryPress = (
     category: string,
-    data: { amount: number; percentage: number; color: string }
+    data: { amount: number; percentage: number; color: string },
   ) => {
-    setSelectedCategoryDetail({ category, data });
+    setSelectedCategoryDetail({
+      category,
+      data: { ...data, hasRecurringTransactions: false },
+    });
     setShowCategoryDetail(true);
   };
 
@@ -1832,7 +1732,7 @@ export default function InsightsScreen() {
 
   // Handle smooth section transitions
   const handleSectionChange = (
-    newSection: "cashflow" | "spending" | "transactions" | "recurring"
+    newSection: "cashflow" | "spending" | "transactions" | "recurring",
   ) => {
     if (newSection === activeSection) return;
 
@@ -1890,7 +1790,7 @@ export default function InsightsScreen() {
         // Load fresh data in background and update cache (no loading state)
         // But don't await it - let it update the state when it completes
         loadInvestmentDataFromDB().catch((err) =>
-          logger.error("Background investment data refresh failed:", err)
+          logger.error("Background investment data refresh failed:", err),
         );
         return true;
       }
@@ -1940,7 +1840,7 @@ export default function InsightsScreen() {
             holdings?.length || 0
           }, Options: ${options?.length || 0}, Balances: ${
             balances?.length || 0
-          }, Connections: ${connections?.length || 0}`
+          }, Connections: ${connections?.length || 0}`,
         );
         setInvestmentHoldings(investmentData.holdings);
         setInvestmentOptions(investmentData.options);
@@ -1974,56 +1874,10 @@ export default function InsightsScreen() {
   };
 
   // Check for re-auth needs (both database flags and API errors)
-  const checkForReAuthNeeds = async () => {
-    try {
-      const userId = await getUserId();
-      if (!userId) return;
-
-      const { data: userItems, error } = await supabase
-        .from("user_items")
-        .select(
-          "item_id, has_new_accounts, requires_update_mode, institution_name"
-        )
-        .eq("user_id", userId);
-
-      if (error) {
-        logger.error("Error checking update flags:", error);
-        return;
-      }
-
-      const reAuthNeeded: Array<{
-        item_id: string;
-        institution_name: string;
-        dismissed: boolean;
-        type?: "re_auth" | "new_accounts";
-      }> = [];
-
-      // Check for items requiring re-auth or new accounts
-      for (const item of userItems || []) {
-        if (item.requires_update_mode) {
-          reAuthNeeded.push({
-            item_id: item.item_id,
-            institution_name: item.institution_name || "Unknown Bank",
-            dismissed: false,
-            type: "re_auth",
-          });
-        }
-
-        // Handle new accounts via banner
-        if (item.has_new_accounts) {
-          reAuthNeeded.push({
-            item_id: item.item_id,
-            institution_name: item.institution_name || "Unknown Bank",
-            dismissed: false,
-            type: "new_accounts",
-          });
-        }
-      }
-
-      setReAuthItems(reAuthNeeded);
-    } catch (error) {
-      logger.error("Error checking re-auth needs:", error);
-    }
+  const checkForReAuthNeedsWrapper = async () => {
+    const currentUserId = await getUserId();
+    if (!currentUserId) return;
+    await checkForReAuthNeeds(currentUserId, setReAuthItems);
   };
 
   // Debug function to diagnose database state
@@ -2053,7 +1907,7 @@ export default function InsightsScreen() {
         if (accountsError) {
           logger.error(
             `❌ Error fetching accounts for ${item.institution_name}:`,
-            accountsError
+            accountsError,
           );
           continue;
         }
@@ -2122,12 +1976,12 @@ export default function InsightsScreen() {
 
       logger.info(
         "✅ Recurring transactions loaded from database:",
-        data.summary
+        data.summary,
       );
     } catch (error) {
       logger.error(
         "❌ Error loading recurring transactions from database:",
-        error
+        error,
       );
     }
   };
@@ -2138,334 +1992,58 @@ export default function InsightsScreen() {
     loadRecurringTransactionsRef.current = loadRecurringTransactions;
   }, [loadRecurringTransactions]);
 
-  // Handle re-auth banner actions - Complete flow: Re-auth → Sync → Update UI
-  const handleReAuth = async (item_id: string) => {
-    try {
-      logger.info(
-        "🔐 RE-AUTH FLOW: Starting re-authentication for item:",
-        item_id
-      );
-
-      // Step 1: Re-authenticate with Plaid
-      const linkToken = await getUpdateLinkToken(item_id);
-      await openPlaidLink(linkToken);
-      logger.info("✅ Re-authentication successful");
-
-      // Step 2: Clear re-auth and new accounts flags in database
-      await supabase
-        .from("user_items")
-        .update({
-          requires_update_mode: false,
-          has_new_accounts: false,
-          last_synced_at: new Date().toISOString(),
-        })
-        .eq("item_id", item_id);
-
-      // Step 3: Remove from banner list (optimistic update)
-      setReAuthItems((prev) => prev.filter((item) => item.item_id !== item_id));
-
-      logger.info("🔄 POST RE-AUTH: Comprehensive data refresh...");
-
-      // Step 4: Comprehensive data refresh
-      // 4a. Refresh both balances and transactions from Plaid
-      await refreshBothBalancesAndTransactions(item_id);
-
-      // 4b. Sync all transactions
-      await syncAllUserTransactions();
-
-      // Step 5: Refresh UI from database (the single source of truth)
-      await fetchFreshData();
-      await loadFilteredTransactions(filterOptions, true);
-      await loadRecurringTransactions();
-      await loadInvestmentData();
-
-      logger.info(
-        "✅ RE-AUTH COMPLETE: All data synced and UI updated from database"
-      );
-    } catch (error) {
-      logger.error("❌ Re-auth flow failed:", error);
-
-      // On error, try to at least refresh UI from existing database data
-      try {
-        await fetchFreshData();
-        await loadFilteredTransactions(filterOptions, true, searchQuery);
-        await loadInvestmentData();
-      } catch (fallbackError) {
-        logger.error("❌ Fallback data refresh also failed:", fallbackError);
-      }
-    }
-  };
+  // Handle re-auth banner actions
+  const handleReAuthWrapper = useCallback(
+    async (item_id: string) => {
+      await handleReAuth(item_id, filterOptions, {
+        fetchFreshData,
+        loadFilteredTransactions,
+        loadRecurringTransactions,
+        loadInvestmentData: async () => {
+          await loadInvestmentData();
+        },
+        setReAuthItems,
+        searchQuery,
+      });
+    },
+    [filterOptions, searchQuery, fetchFreshData, loadFilteredTransactions, loadRecurringTransactions, loadInvestmentData, setReAuthItems],
+  );
 
   // Dismiss re-auth banner
-  const dismissReAuthBanner = (item_id: string) => {
-    setReAuthItems((prev) =>
-      prev.map((item) =>
-        item.item_id === item_id ? { ...item, dismissed: true } : item
-      )
-    );
-  };
+  const dismissReAuthBannerWrapper = useCallback(
+    (item_id: string) => {
+      dismissReAuthBanner(item_id, setReAuthItems);
+    },
+    [setReAuthItems],
+  );
 
-  // Handle API errors that indicate re-auth needed
-  const handleApiReAuthError = async (item_id: string, institution_name: string) => {
-    try {
-      // Update database flag so checkForReAuthNeeds will pick it up
-      const { error: updateError } = await supabase
-        .from("user_items")
-        .update({ requires_update_mode: true })
-        .eq("item_id", item_id);
-
-      if (updateError) {
-        logger.error(`Failed to update requires_update_mode for ${item_id}:`, updateError);
-      } else {
-        logger.info(`✅ Set requires_update_mode flag for ${item_id} (${institution_name})`);
-      }
-    } catch (error) {
-      logger.error("Error updating requires_update_mode flag:", error);
-    }
-
-    // Show re-auth banner immediately
-    setReAuthItems((prev) => {
-      const exists = prev.find((item) => item.item_id === item_id);
-      if (exists) return prev;
-
-      return [
-        ...prev,
-        {
-          item_id,
-          institution_name: institution_name || "Unknown Bank",
-          dismissed: false,
-          type: "re_auth" as const,
-        },
-      ];
-    });
-  };
-
-  // 🌟 CLOUD REFRESH: The primary data refresh flow (Plaid → Supabase → UI)
-  const handleRefreshLatestData = async () => {
+  // Cloud refresh handler
+  const handleRefreshLatestDataWrapper = useCallback(async () => {
     if (isSyncing) return;
-
-    setIsSyncing(true);
-    setRefreshStatus({
-      type: "cloud",
-      message: "Requesting latest data from banks...",
-    });
-
-    try {
-      logger.info("☁️ CLOUD REFRESH: Starting comprehensive data refresh...");
-
-      // Step 1: Refresh both balances and transactions from Plaid
-      setRefreshStatus({
-        type: "cloud",
-        message: "Refreshing balances and transactions...",
-      });
-      logger.info("🔄 Step 1: Calling refreshBothBalancesAndTransactions()...");
-      const result = await refreshBothBalancesAndTransactions();
-      logger.info("📦 refreshBothBalancesAndTransactions result:", result);
-
-      // Step 2: Check for re-auth errors and handle them
-      if (result.results) {
-        const reAuthPromises: Promise<void>[] = [];
-        result.results.forEach((res: any) => {
-          if (!res.success) {
-            const isLoginRequired = 
-              res.requires_update_mode === true ||
-              res.error_code === "ITEM_LOGIN_REQUIRED" ||
-              res.error?.includes("ITEM_LOGIN_REQUIRED") ||
-              res.error?.includes("login details of this item have changed") ||
-              res.error?.includes("OAuth connection") ||
-              res.error?.includes("re-authentication") ||
-              res.error?.includes("use Link's update mode");
-            
-            if (isLoginRequired && res.item_id) {
-              reAuthPromises.push(
-                handleApiReAuthError(res.item_id, res.institution_name || "Unknown Bank")
-              );
-            }
-          }
-        });
-        // Wait for all re-auth error handlers to complete
-        if (reAuthPromises.length > 0) {
-          await Promise.all(reAuthPromises);
-        }
-      }
-
-      logger.info("✅ Combined refresh completed:", result.message);
-
-      // Step 3: Sync transactions to Supabase
-      setRefreshStatus({
-        type: "cloud",
-        message: "Syncing transactions to database...",
-      });
-      logger.info("🔄 Step 3: Calling syncAllUserTransactions()...");
-      const syncResult = await syncAllUserTransactions();
-      logger.info("📦 syncAllUserTransactions result:", syncResult);
-      
-      // Check for re-auth errors in sync results
-      if (syncResult.results) {
-        const reAuthPromises: Promise<void>[] = [];
-        syncResult.results.forEach((res: any) => {
-          if (res.error) {
-            const isLoginRequired = 
-              res.requires_update_mode === true ||
-              res.error_code === "ITEM_LOGIN_REQUIRED" ||
-              res.error?.includes("ITEM_LOGIN_REQUIRED") ||
-              res.error?.includes("login details of this item have changed") ||
-              res.error?.includes("OAuth connection") ||
-              res.error?.includes("re-authentication") ||
-              res.error?.includes("use Link's update mode");
-            
-            if (isLoginRequired && res.item_id) {
-              reAuthPromises.push(
-                handleApiReAuthError(res.item_id, res.institution_name || "Unknown Bank")
-              );
-            }
-          }
-        });
-        // Wait for all re-auth error handlers to complete
-        if (reAuthPromises.length > 0) {
-          await Promise.all(reAuthPromises);
-        }
-      }
-
-      // Step 4: Refresh recurring transactions
-      setRefreshStatus({
-        type: "cloud",
-        message: "Analyzing recurring transactions...",
-      });
-      logger.info("🔄 Step 4: Calling refreshRecurringTransactions()...");
-      const recurringResult = await refreshRecurringTransactions();
-      logger.info("📦 refreshRecurringTransactions result:", recurringResult);
-      
-      // Check for re-auth errors in recurring refresh results
-      if (recurringResult.results) {
-        const reAuthPromises: Promise<void>[] = [];
-        recurringResult.results.forEach((res: any) => {
-          if (!res.success) {
-            const isLoginRequired = 
-              res.requires_update_mode === true ||
-              res.error_code === "ITEM_LOGIN_REQUIRED" ||
-              res.error?.includes("ITEM_LOGIN_REQUIRED") ||
-              res.error?.includes("login details of this item have changed") ||
-              res.error?.includes("OAuth connection") ||
-              res.error?.includes("re-authentication") ||
-              res.error?.includes("use Link's update mode");
-            
-            if (isLoginRequired && res.item_id) {
-              reAuthPromises.push(
-                handleApiReAuthError(res.item_id, res.institution_name || "Unknown Bank")
-              );
-            }
-          }
-        });
-        // Wait for all re-auth error handlers to complete
-        if (reAuthPromises.length > 0) {
-          await Promise.all(reAuthPromises);
-        }
-      }
-
-      // Clear caches since we have fresh data
-      await clearRecurringCache();
-      await clearInvestmentCache();
-      await clearTransactionsCache();
-      await clearSpendingCache();
-
-      // Step 5: Refresh UI from Supabase (single source of truth)
-      setRefreshStatus({ type: "cloud", message: "Updating interface..." });
-      await fetchFreshData();
-      await loadFilteredTransactions(filterOptions, true);
-      await loadRecurringTransactions();
-      await loadInvestmentData();
-
-      setRefreshStatus({
-        type: "cloud",
-        message: "Data refreshed successfully!",
-      });
-      logger.info("✅ CLOUD REFRESH COMPLETE: Fresh data → Supabase → UI");
-
-      // Clear success message after 3 seconds
-      setTimeout(() => {
-        setRefreshStatus({ type: null, message: "" });
-      }, 3000);
-    } catch (error) {
-      logger.error("❌ Cloud refresh failed:", error);
-      setRefreshStatus({
-        type: "cloud",
-        message: "Refresh failed, loading cached data...",
-      });
-
-      // Fallback: reload current data from Supabase
-      try {
-        await fetchFreshData();
-        await loadFilteredTransactions(filterOptions, true, searchQuery);
-        await loadRecurringTransactions();
-        await loadInvestmentData();
-      } catch (fallbackError) {
-        logger.error("❌ Fallback refresh failed:", fallbackError);
-        setRefreshStatus({ type: "cloud", message: "Unable to refresh data" });
-      }
-
-      // Clear error message after 5 seconds
-      setTimeout(() => {
-        setRefreshStatus({ type: null, message: "" });
-      }, 5000);
-    } finally {
-      setIsSyncing(false);
-    }
-  };
-
+    await handleRefreshLatestData(
+      setIsSyncing,
+      setRefreshStatus,
+      setReAuthItems,
+      filterOptions,
+      {
+        fetchFreshData,
+        loadFilteredTransactions,
+        loadRecurringTransactions,
+        loadInvestmentData: async () => {
+          await loadInvestmentData();
+        },
+        searchQuery,
+      },
+    );
+  }, [isSyncing, filterOptions, searchQuery, fetchFreshData, loadFilteredTransactions, loadRecurringTransactions, loadInvestmentData, setReAuthItems]);
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <View style={styles.headerContainer}>
-        <View style={styles.titleContainer}>
-          <View style={styles.iconContainer}>
-            <Ionicons name="stats-chart" size={24} color="#4A90E2" />
-          </View>
-          <View>
-            <Text style={styles.headerTitle}>Insights</Text>
-            <Text style={styles.headerSubtitle}>Your Financial Analytics</Text>
-          </View>
-        </View>
-
-        {/* Header Refresh Icons */}
-        <View style={headerRefreshStyles.container}>
-          <TouchableOpacity
-            style={[
-              headerRefreshStyles.iconButton,
-              isSyncing && headerRefreshStyles.iconButtonDisabled,
-            ]}
-            onPress={handleRefreshLatestData}
-            disabled={isSyncing}
-          >
-            <MaterialIcons
-              name={isSyncing ? "hourglass-empty" : "sync"}
-              size={18}
-              color="#4A90E2"
-            />
-          </TouchableOpacity>
-
-          {/* Sync Status Indicator */}
-          {syncStatus.lastSync && (
-            <TouchableOpacity
-              style={headerRefreshStyles.syncStatusButton}
-              onPress={() => {
-                // Show sync status details
-                Alert.alert(
-                  "Sync Status",
-                  `Last sync: ${syncStatus.lastSync}\nNext sync: ${syncStatus.nextSync}\n\nData syncs automatically every day at 8 AM ET.`,
-                  [{ text: "OK" }]
-                );
-              }}
-            >
-              <Ionicons
-                name={syncStatus.isAutomated ? "time-outline" : "sync-outline"}
-                size={16}
-                color="#4CAF50"
-              />
-            </TouchableOpacity>
-          )}
-        </View>
-      </View>
+      <InsightsHeader
+        isSyncing={isSyncing}
+        syncStatus={syncStatus}
+        onRefresh={handleRefreshLatestDataWrapper}
+      />
 
       {/* Render chips immediately so first paint is instant */}
       <TopChips
@@ -2536,7 +2114,10 @@ export default function InsightsScreen() {
             <>
               {/* Refresh Status Indicator */}
               {refreshStatus.type && (
-                <RefreshStatus message={refreshStatus.message} type="loading" />
+                <RefreshStatusComponent
+                  message={refreshStatus.message}
+                  type="loading"
+                />
               )}
 
               {/* Re-auth and new accounts banners */}
@@ -2546,8 +2127,8 @@ export default function InsightsScreen() {
                   <ReAuthBanner
                     key={item.item_id}
                     institutionName={item.institution_name}
-                    onReAuth={() => handleReAuth(item.item_id)}
-                    onDismiss={() => dismissReAuthBanner(item.item_id)}
+                    onReAuth={() => handleReAuthWrapper(item.item_id)}
+                    onDismiss={() => dismissReAuthBannerWrapper(item.item_id)}
                     type={item.type || "re_auth"}
                   />
                 ))}
@@ -2561,7 +2142,7 @@ export default function InsightsScreen() {
                       opacity: fadeAnim,
                       ...(sectionAnimations?.cashflow
                         ? InsightsAnimationManager.getInterpolatedStyles(
-                            sectionAnimations.cashflow
+                            sectionAnimations.cashflow,
                           )
                         : {}),
                     },
@@ -2580,7 +2161,7 @@ export default function InsightsScreen() {
                       opacity: fadeAnim,
                       ...(sectionAnimations?.spending
                         ? InsightsAnimationManager.getInterpolatedStyles(
-                            sectionAnimations.spending
+                            sectionAnimations.spending,
                           )
                         : {}),
                     },
@@ -2615,7 +2196,7 @@ export default function InsightsScreen() {
                       opacity: fadeAnim,
                       ...(sectionAnimations?.transactions
                         ? InsightsAnimationManager.getInterpolatedStyles(
-                            sectionAnimations.transactions
+                            sectionAnimations.transactions,
                           )
                         : {}),
                     },
@@ -2642,7 +2223,7 @@ export default function InsightsScreen() {
                     onPressLoadMore={loadMoreTransactions}
                     onPressRefreshAccounts={() => loadUserAccounts(true)}
                     onPressOpenFilter={() => setShowEnhancedFilterModal(true)}
-                    getFilterDescription={getFilterDescription}
+                    getFilterDescription={getFilterDescriptionMemo}
                     onPressTransaction={handleTransactionPress}
                     showTransactionDetail={(transactionId: string) => {
                       // Modal is handled internally by TransactionsSection
@@ -2673,7 +2254,7 @@ export default function InsightsScreen() {
                       opacity: fadeAnim,
                       ...(sectionAnimations?.recurring
                         ? InsightsAnimationManager.getInterpolatedStyles(
-                            sectionAnimations.recurring
+                            sectionAnimations.recurring,
                           )
                         : {}),
                     },
@@ -2696,7 +2277,7 @@ export default function InsightsScreen() {
                       opacity: fadeAnim,
                       ...(sectionAnimations?.investments
                         ? InsightsAnimationManager.getInterpolatedStyles(
-                            sectionAnimations.investments
+                            sectionAnimations.investments,
                           )
                         : {}),
                     },
@@ -2773,12 +2354,12 @@ export default function InsightsScreen() {
                     await loadFilteredTransactions(
                       filterOptions,
                       true,
-                      searchQuery
+                      searchQuery,
                     );
                   },
                   (error) => {
                     logger.error("Failed to add new cash account:", error);
-                  }
+                  },
                 );
               } catch (error) {
                 logger.error("Error adding cash account:", error);
@@ -2797,21 +2378,21 @@ export default function InsightsScreen() {
                   async (itemId) => {
                     logger.info(
                       "Successfully added new credit card account:",
-                      itemId
+                      itemId,
                     );
                     await fetchFreshData();
                     await loadFilteredTransactions(
                       filterOptions,
                       true,
-                      searchQuery
+                      searchQuery,
                     );
                   },
                   (error) => {
                     logger.error(
                       "Failed to add new credit card account:",
-                      error
+                      error,
                     );
-                  }
+                  },
                 );
               } catch (error) {
                 logger.error("Error adding credit card account:", error);
@@ -2836,24 +2417,8 @@ export default function InsightsScreen() {
       {isBudgetMode &&
         activeSection === "spending" &&
         hasOpenAddCategoryModal && (
-          <View style={fabStyles.container}>
-            <TouchableOpacity
-              onPress={openAddCategoryModal}
-              style={fabStyles.button}
-              activeOpacity={0.85}
-            >
-              <LinearGradient
-                colors={FAB_BUTTON_GRADIENT_COLORS}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={fabStyles.addButton}
-              >
-                <Ionicons name="add-outline" size={24} color="#fff" />
-              </LinearGradient>
-            </TouchableOpacity>
-          </View>
+          <InsightsFAB onPress={openAddCategoryModal} />
         )}
-
     </SafeAreaView>
   );
 }

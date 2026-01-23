@@ -16,6 +16,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { supabase } from "@/src/lib/supabase/supabase";
 import { getPrimaryItemId, addNewBankAccount } from "@/src/utils/plaid/plaid";
+import { getAccountBalance } from "@/src/utils/accountBalance";
 import { Goal } from "@/src/types/finny";
 import { useUnifiedFinancialData } from "@/src/hooks/useUnifiedFinancialData";
 import { useSpendingData } from "@/src/hooks/useSpendingData";
@@ -44,13 +45,51 @@ import AccountDetailModal from "@/src/components/modals/AccountDetailModal";
 import CashInputModal from "@/src/components/modals/CashInputModal";
 
 import { styles } from "@/src/styles/homeStyles";
+import AppStorage from "@/src/utils/storage/storage";
+import { CACHE_CONFIG } from "@/src/shared/constants/cacheConfig";
 
 if (Platform.OS === "android") {
   UIManager.setLayoutAnimationEnabledExperimental?.(true);
 }
 
+// Check for unified cache synchronously before first render (like insights tab)
+// This allows instant UI without loading skeleton when cache exists
+const checkUnifiedCacheSync = (): boolean => {
+  try {
+    const cacheString = AppStorage.getItemSync("unified_financial_data");
+    const timestampString = AppStorage.getItemSync("unified_financial_data_timestamp");
+    
+    if (!cacheString || !timestampString) {
+      return false;
+    }
+
+    const timestamp = parseInt(timestampString, 10);
+    const now = Date.now();
+    const cacheAge = now - timestamp;
+    
+    // Cache duration is 5 minutes (300000ms) - same as CACHE_CONFIG.DURATIONS.MEDIUM
+    if (cacheAge > 300000) {
+      return false;
+    }
+
+    const cachedData = JSON.parse(cacheString);
+    // Check if we have any meaningful data
+    const hasData = 
+      (cachedData.accounts && cachedData.accounts.length > 0) ||
+      (cachedData.goals && cachedData.goals.length > 0) ||
+      (cachedData.cashEntries && cachedData.cashEntries.length > 0);
+    
+    return hasData;
+  } catch (error) {
+    return false;
+  }
+};
+
 export default function HomeScreen() {
   const router = useRouter();
+
+  // Check cache synchronously before first render
+  const hasInitialCache = checkUnifiedCacheSync();
 
   // Unified financial data hook - replaces 3 separate hooks
   const {
@@ -82,10 +121,11 @@ export default function HomeScreen() {
   // Modal management with lazy loading
   const { activeModal, modalProps, openModal, closeModal } = useModalManager();
 
-  // Core states
+  // Core states - initialize based on cache availability for instant UI
   const [accessToken, setAccessToken] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isInitialLoad, setIsInitialLoad] = useState(true);
+  // If we have cache, start with loading states as false (no skeleton needed)
+  const [isLoading, setIsLoading] = useState(!hasInitialCache);
+  const [isInitialLoad, setIsInitialLoad] = useState(!hasInitialCache);
   const [refreshing, setRefreshing] = useState(false);
   const [showUpdateBanner, setShowUpdateBanner] = useState(false);
   const [updateToken, setUpdateToken] = useState<string | null>(null);
@@ -366,6 +406,15 @@ export default function HomeScreen() {
       setLoadingError(false);
       setHasTriedLoading(true);
 
+      // If we have initial cache, we can show UI immediately
+      // Still need to get user data, but don't block UI
+      if (hasInitialCache) {
+        // Set loading states to false immediately if we have cache
+        // This allows UI to render instantly while we fetch user data in background
+        setIsInitialLoad(false);
+        setIsLoading(false);
+      }
+
       const {
         data: { user },
       } = await supabase.auth.getUser();
@@ -380,7 +429,7 @@ export default function HomeScreen() {
         return;
       }
 
-      // Fetch first name from profiles table
+      // Fetch first name from profiles table (non-blocking)
       try {
         const { data: profile } = await supabase
           .from("profiles")
@@ -398,11 +447,14 @@ export default function HomeScreen() {
       logger.info("Home screen initialized with cached data");
 
       // Set access token based on whether we have any accounts (from cache or fresh)
+      // The hook loads cache synchronously before first render, so accounts should be available
+      // But we'll also set up a watcher to update when hook finishes loading
       if (accounts.length > 0) {
         setAccessToken("connected");
         logger.info("User has connected accounts");
       } else {
-        logger.warn("No accounts found - user needs to connect a bank");
+        // Don't warn yet - wait for hook to finish initial load
+        // This prevents false warnings when checking before cache is loaded
         setAccessToken(null);
       }
 
@@ -413,10 +465,29 @@ export default function HomeScreen() {
       setLoadingError(true);
       setAccessToken(null);
     } finally {
-      setIsInitialLoad(false);
-      setIsLoading(false);
+      // Only set to false if we haven't already (for cache case)
+      if (!hasInitialCache) {
+        setIsInitialLoad(false);
+        setIsLoading(false);
+      }
     }
   };
+
+  // Watch for when financial hook finishes loading to set access token correctly
+  // This prevents false "No accounts found" warnings when cache is still loading
+  useEffect(() => {
+    // Only check accounts after hook has finished initial load
+    if (!financialInitialLoad) {
+      if (accounts.length > 0) {
+        setAccessToken("connected");
+        logger.info("User has connected accounts (from hook)");
+      } else {
+        // Only warn after hook has confirmed no accounts exist
+        logger.warn("No accounts found - user needs to connect a bank");
+        setAccessToken(null);
+      }
+    }
+  }, [financialInitialLoad, accounts.length]);
 
   useEffect(() => {
     initializeApp();
@@ -539,14 +610,14 @@ export default function HomeScreen() {
   // Calculate category totals
   const checkingsSavingsTotal = useMemo(() => {
     return categorizedDeposits.reduce(
-      (sum, account) => sum + (account.balances?.current || 0),
+      (sum, account) => sum + getAccountBalance(account),
       0,
     );
   }, [categorizedDeposits]);
 
   const investmentsCategoryTotal = useMemo(() => {
     return categorizedInvestments.reduce(
-      (sum, account) => sum + (account.balances?.current || 0),
+      (sum, account) => sum + getAccountBalance(account),
       0,
     );
   }, [categorizedInvestments]);
@@ -557,7 +628,7 @@ export default function HomeScreen() {
         (acc) =>
           acc.type === "credit" || (acc as any).subtype === "credit card",
       )
-      .reduce((sum, account) => sum + (account.balances?.current || 0), 0);
+      .reduce((sum, account) => sum + getAccountBalance(account), 0);
   }, [categorizedLiabilities]);
 
   const loansTotal = useMemo(() => {
@@ -565,7 +636,7 @@ export default function HomeScreen() {
       .filter(
         (acc) => acc.type === "loan" || (acc as any).subtype?.includes("loan"),
       )
-      .reduce((sum, account) => sum + (account.balances?.current || 0), 0);
+      .reduce((sum, account) => sum + getAccountBalance(account), 0);
   }, [categorizedLiabilities]);
 
   const cashTotal = useMemo(() => {
@@ -574,8 +645,11 @@ export default function HomeScreen() {
 
   // Show loading skeleton only during initial authentication check (very brief)
   // Only show skeleton if we have no cached data AND no user data
+  // Use both initial cache check and current data to determine if we should show skeleton
   const hasCachedData =
-    accounts.length > 0 || goals.length > 0 || cashEntries.length > 0;
+    hasInitialCache || accounts.length > 0 || goals.length > 0 || cashEntries.length > 0;
+  
+  // Skip skeleton if we have cached data (instant UI)
   if (isInitialLoad && !userData && !hasCachedData) {
     return <HomeScreenSkeleton showError={false} />;
   }
@@ -717,7 +791,7 @@ export default function HomeScreen() {
                     name={account.name}
                     type={account.type}
                     balance={formatCurrency(
-                      account.balances?.current || 0,
+                      getAccountBalance(account),
                       "USD",
                       { decimals: 0, useKM: false },
                     )}
@@ -740,7 +814,7 @@ export default function HomeScreen() {
                     name={account.name}
                     type={account.type}
                     balance={formatCurrency(
-                      account.balances?.current || 0,
+                      getAccountBalance(account),
                       "USD",
                       { decimals: 0, useKM: false },
                     )}
@@ -769,7 +843,7 @@ export default function HomeScreen() {
                       name={account.name}
                       type={account.type}
                       balance={formatCurrency(
-                        account.balances?.current || 0,
+                        getAccountBalance(account),
                         "USD",
                         { decimals: 0, useKM: false },
                       )}
@@ -798,7 +872,7 @@ export default function HomeScreen() {
                       name={account.name}
                       type={account.type}
                       balance={formatCurrency(
-                        account.balances?.current || 0,
+                        getAccountBalance(account),
                         "USD",
                         { decimals: 0, useKM: false },
                       )}

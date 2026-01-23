@@ -11,6 +11,7 @@ import logger from "@/src/utils/core/logger";
 import { getAuthenticatedUser } from "@/src/utils/auth/auth";
 import { CACHE_CONFIG } from "@/src/shared/constants/cacheConfig";
 import { getSnaptradeBalancesFromDB } from "@/src/utils/integrations/snaptrade";
+import { getAccountBalance } from "@/src/utils/accountBalance";
 
 // Cache keys
 const UNIFIED_CACHE_KEY = "unified_financial_data";
@@ -337,7 +338,7 @@ export function useUnifiedFinancialData(): UnifiedFinancialData {
 
   // Memoized totals
   const accountsTotal = useMemo(
-    () => categorizedDeposits.reduce((acc, a) => acc + (a.balances?.current || 0), 0),
+    () => categorizedDeposits.reduce((acc, a) => acc + getAccountBalance(a), 0),
     [categorizedDeposits]
   );
 
