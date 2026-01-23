@@ -624,8 +624,9 @@ async function syncItemTransactions(item_id, user_id) {
         
         if (invalidRows.length > 0) {
           const invalidAccountIds = [...new Set(invalidRows.map((r) => r.account_id))];
-          console.error(`❌ CRITICAL: Found ${invalidRows.length} transactions with invalid account_ids:`, invalidAccountIds);
-          throw new Error(`Transactions reference non-existent accounts: ${invalidAccountIds.join(", ")}`);
+          console.warn(`⚠️ Skipping ${invalidRows.length} transactions for deleted accounts (account_ids: ${invalidAccountIds.join(", ")})`);
+          // Filter out transactions with invalid account_ids instead of throwing error
+          rows = rows.filter((r) => validAccountIds.has(r.account_id));
         }
       }
       

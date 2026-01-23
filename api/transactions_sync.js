@@ -336,6 +336,97 @@ export default async function handler(req, res) {
         };
       });
 
+      // CRITICAL: Validate account_ids exist before processing transactions
+      // Filter out transactions for deleted accounts to prevent foreign key errors
+      const accountIds = [...new Set(rows.map((r) => r.account_id).filter(Boolean))];
+      if (accountIds.length > 0) {
+        const { data: existingAccounts, error: accountsErr } = await supabase
+          .from("accounts")
+          .select("account_id")
+          .in("account_id", accountIds)
+          .eq("item_id", item_id);
+        
+        if (accountsErr) {
+          console.error("❌ Failed to validate accounts:", accountsErr);
+          // Don't throw - try to continue with what we have
+        } else {
+          const validAccountIds = new Set(existingAccounts?.map((a) => a.account_id) || []);
+          const invalidRows = rows.filter((r) => !validAccountIds.has(r.account_id));
+          
+          if (invalidRows.length > 0) {
+            const invalidAccountIds = [...new Set(invalidRows.map((r) => r.account_id))];
+            console.warn(`⚠️ Skipping ${invalidRows.length} transactions for missing accounts (account_ids: ${invalidAccountIds.join(", ")})`);
+            
+            // Attempt to re-sync accounts from Plaid in case they were added/changed
+            try {
+              console.log(`🔄 Attempting to re-sync accounts for item ${item_id} to restore missing accounts...`);
+              
+              // Get access token (we already verified item ownership)
+              const { data: access_token, error: tokenError } = await supabase.rpc(
+                "secure_get_plaid_token",
+                { p_item_id: item_id, p_user_id: userId }
+              );
+              
+              if (!tokenError && access_token) {
+                // Fetch accounts directly from Plaid
+                const accountsResponse = await client.accountsGet({ access_token });
+                const accounts = accountsResponse.data.accounts || [];
+                
+                if (accounts.length > 0) {
+                  const accountsToStore = accounts.map((account) => ({
+                    account_id: account.account_id,
+                    item_id: item_id,
+                    name: account.name,
+                    mask: account.mask,
+                    type: account.type,
+                    subtype: account.subtype,
+                    official_name: account.official_name,
+                    current_balance: account.balances.current,
+                    available_balance: account.balances.available,
+                  }));
+                  
+                  const { error: accountsError } = await supabase
+                    .from("accounts")
+                    .upsert(accountsToStore, {
+                      onConflict: "account_id",
+                      ignoreDuplicates: false,
+                    });
+                  
+                  if (!accountsError) {
+                    console.log(`✅ Re-synced ${accounts.length} accounts from Plaid`);
+                    
+                    // Re-check if missing accounts now exist
+                    const { data: recheckAccounts } = await supabase
+                      .from("accounts")
+                      .select("account_id")
+                      .in("account_id", invalidAccountIds)
+                      .eq("item_id", item_id);
+                    
+                    const recheckValidIds = new Set(recheckAccounts?.map((a) => a.account_id) || []);
+                    const restoredCount = invalidAccountIds.filter(id => recheckValidIds.has(id)).length;
+                    
+                    if (restoredCount > 0) {
+                      console.log(`✅ Restored ${restoredCount} missing account(s) after re-sync`);
+                      // Update validAccountIds to include newly synced accounts
+                      recheckValidIds.forEach(id => validAccountIds.add(id));
+                    }
+                  } else {
+                    console.error("⚠️ Failed to store re-synced accounts:", accountsError.message);
+                  }
+                }
+              } else {
+                console.error("⚠️ Could not get access token for account re-sync:", tokenError?.message);
+              }
+            } catch (reSyncError) {
+              console.error("⚠️ Failed to re-sync accounts (non-critical):", reSyncError.message);
+            }
+            
+            // Filter out transactions with invalid account_ids (after potential re-sync)
+            rows = rows.filter((r) => validAccountIds.has(r.account_id));
+          }
+        }
+      }
+
       // IMPORTANT: We use a custom upsert strategy to protect user overrides
       // Strategy: For new transactions, set new_category from stream
       //           For existing transactions, only update if new_category is NULL
