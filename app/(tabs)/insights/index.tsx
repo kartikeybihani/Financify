@@ -1241,9 +1241,43 @@ export default function InsightsScreen() {
         });
       }
 
-      const updatedTransactions = reset
-        ? newTransactions
-        : [...filteredTransactions, ...newTransactions];
+      // Deduplicate transactions by plaid_transaction_id to prevent duplicate keys in FlatList
+      // Use a Map to track unique transactions (latest version wins if duplicates exist)
+      const uniqueTransactionsMap = new Map<string, Transaction>();
+      const transactionsWithoutId: Transaction[] = []; // Track transactions without IDs
+      
+      const addTransaction = (tx: Transaction) => {
+        const key = tx.plaid_transaction_id || tx.id;
+        if (key) {
+          uniqueTransactionsMap.set(key, tx);
+        } else {
+          // Transactions without IDs are rare but possible - include them but can't deduplicate
+          transactionsWithoutId.push(tx);
+        }
+      };
+      
+      if (reset) {
+        // Reset: only use new transactions, but still deduplicate them
+        newTransactions.forEach(addTransaction);
+      } else {
+        // Append: add existing transactions first, then new ones (new ones overwrite if duplicate)
+        filteredTransactions.forEach(addTransaction);
+        newTransactions.forEach(addTransaction);
+      }
+      
+      // Combine deduplicated transactions with transactions without IDs
+      const updatedTransactions = [
+        ...Array.from(uniqueTransactionsMap.values()),
+        ...transactionsWithoutId
+      ];
+      
+      // Sort by date descending to maintain correct order (newest first)
+      // Note: Database already sorts, but re-sorting ensures consistency after deduplication
+      updatedTransactions.sort((a, b) => {
+        const dateA = new Date(a.date).getTime();
+        const dateB = new Date(b.date).getTime();
+        return dateB - dateA;
+      });
 
       if (reset) {
         setFilteredTransactions(updatedTransactions);

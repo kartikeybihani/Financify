@@ -172,7 +172,7 @@ function TransactionsSection(props: Props) {
         onSearchQueryChange(text);
       }
     },
-    [onSearchQueryChange]
+    [onSearchQueryChange],
   );
 
   // Transactions are already filtered by the database, so just use filteredTransactions directly
@@ -225,7 +225,7 @@ function TransactionsSection(props: Props) {
               >
                 {getSelectedAccounts(
                   filterOptions.accountIds || [],
-                  accounts
+                  accounts,
                 ).map((account) => (
                   <View
                     key={account.account_id}
@@ -271,7 +271,7 @@ function TransactionsSection(props: Props) {
 
                     // Handle month-year format (e.g., "january2024" -> "Jan 2024")
                     const monthYearMatch = timePeriod.match(
-                      /^(january|february|march|april|may|june|july|august|september|october|november|december)(\d{4})$/i
+                      /^(january|february|march|april|may|june|july|august|september|october|november|december)(\d{4})$/i,
                     );
                     if (monthYearMatch) {
                       const monthName = monthYearMatch[1].toLowerCase();
@@ -299,15 +299,15 @@ function TransactionsSection(props: Props) {
                   };
 
                   const timePeriodName = formatTimePeriodName(
-                    filterOptions?.timePeriod || "7days"
+                    filterOptions?.timePeriod || "7days",
                   );
                   const categoryIds = filterOptions?.categoryIds || [];
                   const categoryName =
                     categoryIds.length === 0
                       ? "All Categories"
                       : categoryIds.length === 1
-                      ? "1 category"
-                      : `${categoryIds.length} categories`;
+                        ? "1 category"
+                        : `${categoryIds.length} categories`;
                   return (
                     <Text
                       style={[filterButtonTextStyle, { marginLeft: 4 }]}
@@ -420,9 +420,15 @@ function TransactionsSection(props: Props) {
         // Don't show loading if there's an active search query - we've already searched
         <View style={styles.loadingStateContainer}>
           <View style={styles.loadingStateContent}>
-            <View style={styles.loadingStateIconContainer}>
-              <ActivityIndicator size="large" color="#4A90E2" />
-            </View>
+            <Image
+              source={require("@/assets/images/finnylap3.png")}
+              style={{
+                width: 150,
+                height: 140,
+                borderRadius: 80,
+              }}
+              resizeMode="cover"
+            />
             <Text style={styles.loadingStateTitle}>
               Pulling up your transactions now
             </Text>
@@ -499,9 +505,12 @@ function TransactionsSection(props: Props) {
         <FlatList
           data={displayedTransactions}
           scrollEnabled={false}
-          keyExtractor={(item, index) =>
-            `${item.plaid_transaction_id || item.id || index}`
-          }
+          keyExtractor={(item, index) => {
+            // Ensure unique keys: use plaid_transaction_id with index fallback
+            // This prevents duplicate key errors even if duplicates somehow slip through
+            const baseKey = item.plaid_transaction_id || item.id;
+            return baseKey ? `${baseKey}_${index}` : `tx_${index}`;
+          }}
           renderItem={({ item: tx }) => {
             const amount = Math.abs(tx.amount);
             const isIncome = tx.amount < 0;
@@ -632,7 +641,7 @@ function TransactionsSection(props: Props) {
         transaction={
           selectedTransactionId
             ? displayedTransactions.find(
-                (tx) => tx.id === selectedTransactionId
+                (tx) => tx.id === selectedTransactionId,
               ) || null
             : null
         }

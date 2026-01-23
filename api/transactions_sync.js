@@ -202,7 +202,7 @@ export default async function handler(req, res) {
     if (added.length || modified.length) {
       const addedIds = new Set(added.map((txn) => txn.transaction_id));
       const streamUpdates = new Map();
-      const rows = [...added, ...modified].map((txn) => {
+      let rows = [...added, ...modified].map((txn) => {
         // Extract Plaid categories with proper fallback hierarchy
         const primary = txn.personal_finance_category?.primary || null;
         const detailed = txn.personal_finance_category?.detailed || null;
