@@ -75,9 +75,12 @@ export async function fetchAccountBalances(itemId: string) {
     name: account.name,
     type: account.type,
     subtype: account.subtype,
+    // Convert string balances to numbers, preserve null values
+    current_balance: account.current_balance != null ? Number(account.current_balance) : null,
+    available_balance: account.available_balance != null ? Number(account.available_balance) : null,
     balances: {
-      current: account.current_balance || 0,
-      available: account.available_balance || 0,
+      current: account.current_balance != null ? Number(account.current_balance) : null,
+      available: account.available_balance != null ? Number(account.available_balance) : null,
     },
     balance_as_of: account.balance_as_of,
   }));
@@ -145,9 +148,12 @@ export async function fetchAllUserAccounts(userId: string) {
     const userItem = userItems.find(item => item.item_id === account.item_id);
     return {
       ...account,
+      // Convert string balances to numbers, preserve null values
+      current_balance: account.current_balance != null ? Number(account.current_balance) : null,
+      available_balance: account.available_balance != null ? Number(account.available_balance) : null,
       balances: {
-        current: account.current_balance || 0,
-        available: account.available_balance || 0,
+        current: account.current_balance != null ? Number(account.current_balance) : null,
+        available: account.available_balance != null ? Number(account.available_balance) : null,
       },
       institution_name: userItem?.institution_name || "Unknown Institution",
     };
