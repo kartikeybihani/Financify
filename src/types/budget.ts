@@ -714,16 +714,15 @@ export async function getTransactionsForCategory(
       categoryIndex
     );
 
-
-    // Query ALL transactions (with basic filters) and filter by resolved category key in JavaScript
-    // This ensures we catch all category name variations and don't miss transactions due to exact string matching
+    // Date range: look back 24 months
     const today = new Date();
     const twoYearsAgo = new Date(today);
     twoYearsAgo.setMonth(twoYearsAgo.getMonth() - 24);
     const startDateStr = formatLocalDate(twoYearsAgo);
 
-    // Build base query - fetch all transactions (excluding transfers and internal transfers)
-    // Include category join to get category name from categories table via category_id
+    // Build base query
+    // When category_id is available, filter by it at DB level to avoid limit issues
+    // This ensures we get ALL transactions for the category, not just the first 1000 across all categories
     let query = supabase
       .from("transactions")
       .select(
@@ -737,15 +736,26 @@ export async function getTransactionsForCategory(
         )`
       )
       .eq("user_id", userId)
-      .gt("amount", 0)
       .neq("transaction_type", "transfer")
-      .gte("date", startDateStr)
-      .order("authorized_date", { ascending: false, nullsFirst: false })
-      .order("date", { ascending: false })
-      .limit(1000);
+      .gte("date", startDateStr);
 
-    // Don't filter by category name at database level - we'll filter by resolved key in JavaScript
-    // This catches all variations: "Transportation", "Transport", "Travel", etc. that resolve to the same key
+    // Filter by category_id at DB level when available (most efficient and avoids limit issues)
+    if (targetCategoryId) {
+      query = query.eq("category_id", targetCategoryId);
+    }
+
+    // Order by effective date (authorized_date if available, otherwise date)
+    // Use COALESCE in ordering to handle null authorized_date properly
+    // Order by date descending, then by authorized_date descending (nulls last)
+    query = query
+      .order("date", { ascending: false })
+      .order("authorized_date", { ascending: false, nullsFirst: false });
+
+    // Only apply limit when NOT filtering by category_id (to avoid fetching too many unrelated transactions)
+    // When filtering by category_id, we want all matching transactions
+    if (!targetCategoryId) {
+      query = query.limit(1000);
+    }
 
     const { data, error } = await query;
 
@@ -758,7 +768,6 @@ export async function getTransactionsForCategory(
       return [];
     }
 
-
     // Filter transactions by category_id first (more reliable), then fall back to resolved category key
     // This matches the same logic used in getActualsForBudgetPeriod and spending breakdown
     const results: CategoryTransaction[] = [];
@@ -769,7 +778,7 @@ export async function getTransactionsForCategory(
         if (tx.category_id === targetCategoryId) {
           // Valid match by category_id - add to results
           const amount = Math.abs(Number(tx.amount || 0));
-          if (!Number.isFinite(amount)) {
+          if (!Number.isFinite(amount) || amount === 0) {
             return;
           }
 
@@ -814,7 +823,7 @@ export async function getTransactionsForCategory(
 
       // Valid match - add to results
       const amount = Math.abs(Number(tx.amount || 0));
-      if (!Number.isFinite(amount)) {
+      if (!Number.isFinite(amount) || amount === 0) {
         return;
       }
 
@@ -830,8 +839,7 @@ export async function getTransactionsForCategory(
       });
     });
 
-
-    // Results are already sorted by database query, but ensure consistency
+    // Sort by effective date (authorized_date if available, otherwise date)
     results.sort((a, b) => {
       const aDate = a.authorized_date || a.date;
       const bDate = b.authorized_date || b.date;

@@ -1,10 +1,13 @@
 // components/home/FinnyMessage.tsx
 
 import React, { useMemo } from "react";
-import { View, Text, Image } from "react-native";
+import { View, Text, Image, TouchableOpacity } from "react-native";
+import { useRouter } from "expo-router";
 import { styles } from "@/src/styles/homeStyles";
 import { Goal } from "@/src/types/finny";
 import { SpendingData } from "@/src/hooks/useSpendingData";
+import { useHomeInsights } from "@/src/hooks/useHomeInsights";
+import AppStorage from "@/src/utils/storage/storage";
 
 interface FinnyMessageProps {
   goals?: Goal[];
@@ -24,34 +27,43 @@ export const FinnyMessage: React.FC<FinnyMessageProps> = React.memo(
     liabilitiesTotal = 0,
     netWorthChange = 0,
   }) => {
-    // Generate context-aware, compelling tips
-    const getContextualTip = useMemo(() => {
+    const router = useRouter();
+    const { insight } = useHomeInsights();
+
+    // Generate context-aware questions that create curiosity
+    const getContextualQuestion = useMemo(() => {
       const activeGoals = goals.filter(
         (goal) =>
           goal.status !== "completed" &&
           !(goal.target_amount > 0 && goal.current_amount >= goal.target_amount)
       );
 
-      // Net worth is growing significantly
-      if (netWorthChange > 5) {
-        return `Net worth up ${netWorthChange.toFixed(1)}% this month! 🚀`;
+      // Priority 1: Budget progress questions
+      if (insight?.type === "budget_progress") {
+        const { percentage, remaining, daysLeft } = insight.budgetProgress!;
+        if (percentage > 100) {
+          return `You've overspent by ${Math.abs(remaining).toFixed(0)}%. What should you cut?`;
+        }
+        if (percentage > 80) {
+          return `You've spent ${percentage.toFixed(0)}% of your budget with ${daysLeft} days left. Want to adjust?`;
+        }
+        if (percentage > 50) {
+          return `You're ${percentage.toFixed(0)}% through your budget. On track?`;
+        }
       }
 
-      // Spending decreased significantly
-      if (spendingData && spendingData.lastMonthChange < -10) {
-        return `Spent ${Math.abs(spendingData.lastMonthChange).toFixed(
-          0
-        )}% less last month. Smart moves!`;
+      // Priority 2: Category alert questions
+      if (insight?.type === "category_alert") {
+        const { category, percentage } = insight.categoryAlert!;
+        return `You're spending ${percentage.toFixed(0)}% on ${category}. Is that normal for you?`;
       }
 
-      // Spending increased significantly
+      // Priority 3: Spending spike questions
       if (spendingData && spendingData.lastMonthChange > 15) {
-        return `Spending up ${spendingData.lastMonthChange.toFixed(
-          0
-        )}% - time to review subscriptions? 📊`;
+        return `Your spending is up ${spendingData.lastMonthChange.toFixed(0)}% this month. What changed?`;
       }
 
-      // Has active goals with good progress
+      // Priority 4: Goal progress questions
       if (activeGoals.length > 0) {
         const closestGoal = activeGoals.reduce((closest, goal) => {
           if (!closest) return goal;
@@ -72,46 +84,42 @@ export const FinnyMessage: React.FC<FinnyMessageProps> = React.memo(
               ? (closestGoal.current_amount / closestGoal.target_amount) * 100
               : 0;
           if (progress > 50 && progress < 90) {
-            return `You're ${progress.toFixed(
-              0
-            )}% to your goal! Almost there 🎯`;
+            return `You're ${progress.toFixed(0)}% to your goal. Want to accelerate it?`;
           }
         }
       }
 
-      // Has investments
+      // Priority 5: Investment questions
       if (investmentsTotal > 0 && investmentsTotal > totalBalance * 0.2) {
-        return `Your investments are working for you. Compound magic! ✨`;
+        return `Your investments are ${((investmentsTotal / totalBalance) * 100).toFixed(0)}% of net worth. Optimized?`;
       }
 
-      // Has high liabilities
+      // Priority 6: Debt questions
       if (liabilitiesTotal > 0 && liabilitiesTotal > totalBalance * 0.3) {
-        return `Paying down debt builds wealth faster than you think 💪`;
+        return `Your debt is ${((liabilitiesTotal / totalBalance) * 100).toFixed(0)}% of net worth. Want a payoff plan?`;
       }
 
-      // Net worth positive but small change
-      if (netWorthChange > 0 && netWorthChange < 5) {
-        return `Steady growth beats quick wins. Keep it up! 📈`;
+      // Priority 7: Net worth growth questions
+      if (netWorthChange > 5) {
+        return `Net worth up ${netWorthChange.toFixed(1)}% this month! What's driving it?`;
       }
 
-      // No goals set
+      // Priority 8: No goals questions
       if (goals.length === 0 && totalBalance > 0) {
-        return `Set a goal and watch your money grow faster 🎯`;
+        return `What's your biggest financial goal right now?`;
       }
 
-      // Default compelling tips
-      const defaultTips = [
-        `Every dollar saved today is $2 tomorrow 🕐`,
-        `Small consistent actions > big sporadic ones 📊`,
-        `Your future self is watching. Make them proud 👀`,
-        `Compound interest is the 8th wonder. Use it! 🧮`,
-        `Track it, optimize it, own it 💎`,
-        `Financial freedom isn't free, but it's worth it 🗽`,
-        `Progress > perfection. Keep moving forward 🚶`,
-        `Your net worth = your network + your habits 🌐`,
+      // Default curiosity-driven questions
+      const defaultQuestions = [
+        `Where did most of your money go this month?`,
+        `What's your biggest spending category?`,
+        `Are you on track with your financial goals?`,
+        `What's one thing you could optimize today?`,
+        `How does your spending compare to last month?`,
+        `What's your biggest financial opportunity?`,
       ];
 
-      return defaultTips[Math.floor(Math.random() * defaultTips.length)];
+      return defaultQuestions[Math.floor(Math.random() * defaultQuestions.length)];
     }, [
       goals,
       spendingData,
@@ -119,11 +127,23 @@ export const FinnyMessage: React.FC<FinnyMessageProps> = React.memo(
       investmentsTotal,
       liabilitiesTotal,
       netWorthChange,
+      insight,
     ]);
+
+    const handlePress = () => {
+      // Set initial message based on current insight/question
+      const question = getContextualQuestion;
+      AppStorage.setItemSync("initialChatMessage", question);
+      router.push("/chat");
+    };
 
     return (
       <View style={styles.finnyMessageContainer}>
-        <View style={styles.finnyMessage}>
+        <TouchableOpacity
+          style={styles.finnyMessage}
+          activeOpacity={0.8}
+          onPress={handlePress}
+        >
           <View style={styles.finnyIconContainer}>
             <Image
               source={require("../../../assets/images/finny2.png")}
@@ -136,10 +156,10 @@ export const FinnyMessage: React.FC<FinnyMessageProps> = React.memo(
             />
           </View>
           <View style={styles.finnyMessageContent}>
-            <Text style={styles.finnyMessageTitle}>Daily Progress</Text>
-            <Text style={styles.finnyMessageText}>{getContextualTip}</Text>
+            <Text style={styles.finnyMessageTitle}>Ask Finny</Text>
+            <Text style={styles.finnyMessageText}>{getContextualQuestion}</Text>
           </View>
-        </View>
+        </TouchableOpacity>
       </View>
     );
   }
