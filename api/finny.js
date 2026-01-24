@@ -4839,6 +4839,7 @@ function processSummaryData(results) {
   const budget = compositeData.budget || null;
 
   // Log raw data for debugging
+  const hasNewFields = Array.isArray(spendByCategoryCurrentMonth) && spendByCategoryCurrentMonth.length > 0;
   console.log("📊 [SUMMARY_DATA] Raw composite data from RPC:", {
     net_worth: netWorth.net_worth,
     liquid_assets: netWorth.liquid_assets,
@@ -4849,8 +4850,17 @@ function processSummaryData(results) {
     spend_categories_count: spendByCategory.length,
     spend_categories_current_month_count: Array.isArray(spendByCategoryCurrentMonth) ? spendByCategoryCurrentMonth.length : 0,
     spend_categories_last_month_count: Array.isArray(spendByCategoryLastMonth) ? spendByCategoryLastMonth.length : 0,
+    has_new_monthly_fields: hasNewFields,
     has_budget: !!budget,
   });
+  
+  // Warn if new fields are missing (likely old cache or migration not run)
+  if (!hasNewFields && spendByCategory.length > 0) {
+    console.log("⚠️ [SUMMARY_DATA] New monthly spending fields are missing! This could mean:");
+    console.log("   1. SQL migration hasn't been run yet");
+    console.log("   2. Cache contains old data - clear cache or wait for expiration");
+    console.log("   3. Database function doesn't have the new fields");
+  }
 
   return {
     netWorth: Number(netWorth.net_worth || 0),

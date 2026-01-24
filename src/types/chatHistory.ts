@@ -3,7 +3,7 @@ export interface ChatSession {
   session_title: string;
   first_message: string;
   created_at: string;
-  message_count: number;
+  message_count?: number; // Optional - not always loaded for performance
   messages?: any[]; // ChatMessage[] from finny.ts
 }
 

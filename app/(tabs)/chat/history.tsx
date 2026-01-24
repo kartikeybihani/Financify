@@ -194,34 +194,13 @@ interface HistoryCardProps {
 }
 
 const HistoryCard: React.FC<HistoryCardProps> = ({ session, onPress }) => {
-  // Get the last Finny message for preview
-  const getLastFinnyMessage = (messages: any[]) => {
-    if (!messages || !Array.isArray(messages)) {
-      console.log("No messages array found in session:", session);
-      return "";
-    }
-
-    for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].sender === "finny") {
-        return messages[i].text;
-      }
-    }
-    return "";
-  };
-
-  const lastFinnyMessage = getLastFinnyMessage(session.messages || []);
-  console.log("Session data:", {
-    id: session.id,
-    hasMessages: !!session.messages,
-    messagesLength: session.messages?.length,
-    lastFinnyMessage: lastFinnyMessage?.substring(0, 30) + "...",
-  });
-
-  const previewText = lastFinnyMessage
-    ? `${lastFinnyMessage.substring(0, 60)}${
-        lastFinnyMessage.length > 60 ? "..." : ""
+  // Use first_message as preview (messages not loaded for performance)
+  // Full messages will be loaded when user opens the session
+  const previewText = session.first_message
+    ? `${session.first_message.substring(0, 60)}${
+        session.first_message.length > 60 ? "..." : ""
       }`
-    : session.first_message;
+    : "No preview available";
 
   return (
     <TouchableOpacity
@@ -277,31 +256,36 @@ export default function ChatHistoryScreen({
 
       console.log("[History] Fetching sessions for user:", session.user.id);
 
-      // Add timeout to prevent infinite hanging
-      const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => reject(new Error("Request timeout")), 10000); // 10 second timeout
-      });
-
-      const rpcPromise = supabase.rpc("get_user_chat_sessions", {
-        p_user_id: session.user.id,
-      });
-
-      const { data, error: fetchError } = await Promise.race([
-        rpcPromise,
-        timeoutPromise,
-      ]) as any;
+      // Query directly from table - don't load messages JSONB for list view (too slow)
+      // Messages will be loaded when user opens a specific session
+      const { data, error: fetchError } = await supabase
+        .from("chat_sessions")
+        .select("id, session_title, first_message, created_at")
+        .eq("user_id", session.user.id)
+        .order("created_at", { ascending: false })
+        .limit(5);
 
       if (fetchError) {
-        console.error("[History] RPC error:", fetchError);
+        console.error("[History] Error fetching sessions:", fetchError);
         throw fetchError;
       }
 
-      console.log("[History] Raw data from get_user_chat_sessions:", data);
-      setSessions(data || []);
+      console.log("[History] Fetched sessions:", data?.length || 0);
+      // Map to ChatSession type (message_count not needed for list view)
+      const mappedSessions: ChatSession[] = (data || []).map(
+        (session: any) => ({
+          id: session.id,
+          session_title: session.session_title,
+          first_message: session.first_message,
+          created_at: session.created_at,
+        }),
+      );
+      setSessions(mappedSessions);
       setError(null);
     } catch (err: any) {
       console.error("[History] Error fetching sessions:", err);
-      const errorMessage = err?.message || err?.error_description || "Failed to load chat history";
+      const errorMessage =
+        err?.message || err?.error_description || "Failed to load chat history";
       setError(errorMessage);
       setSessions([]); // Clear sessions on error
     } finally {
