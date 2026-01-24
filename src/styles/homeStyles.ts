@@ -169,7 +169,7 @@ export const styles = StyleSheet.create({
   summaryRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    marginBottom: 40,
+    marginBottom: 20,
     gap: 12,
   },
   summaryCard: {

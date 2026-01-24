@@ -94,9 +94,9 @@ const styles = StyleSheet.create({
     width: "100%",
   },
   glassChip: {
-    paddingVertical: 12,
-    paddingHorizontal: 18,
-    borderRadius: 16,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 14,
     overflow: "hidden",
     width: "100%",
   },
@@ -104,8 +104,9 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(30, 30, 35, 0.9)",
   },
   text: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: "600",
+    fontFamily: "Manrope",
     color: "#C7C7CC",
     letterSpacing: 0.2,
     textAlign: "center",
