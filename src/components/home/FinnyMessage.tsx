@@ -35,7 +35,9 @@ export const FinnyMessage: React.FC<FinnyMessageProps> = React.memo(
       const activeGoals = goals.filter(
         (goal) =>
           goal.status !== "completed" &&
-          !(goal.target_amount > 0 && goal.current_amount >= goal.target_amount)
+          !(
+            goal.target_amount > 0 && goal.current_amount >= goal.target_amount
+          ),
       );
 
       // Priority 1: Budget progress questions
@@ -65,18 +67,21 @@ export const FinnyMessage: React.FC<FinnyMessageProps> = React.memo(
 
       // Priority 4: Goal progress questions
       if (activeGoals.length > 0) {
-        const closestGoal = activeGoals.reduce((closest, goal) => {
-          if (!closest) return goal;
-          const closestProgress =
-            closest.target_amount > 0
-              ? closest.current_amount / closest.target_amount
-              : 0;
-          const goalProgress =
-            goal.target_amount > 0
-              ? goal.current_amount / goal.target_amount
-              : 0;
-          return goalProgress > closestProgress ? goal : closest;
-        }, null as Goal | null);
+        const closestGoal = activeGoals.reduce(
+          (closest, goal) => {
+            if (!closest) return goal;
+            const closestProgress =
+              closest.target_amount > 0
+                ? closest.current_amount / closest.target_amount
+                : 0;
+            const goalProgress =
+              goal.target_amount > 0
+                ? goal.current_amount / goal.target_amount
+                : 0;
+            return goalProgress > closestProgress ? goal : closest;
+          },
+          null as Goal | null,
+        );
 
         if (closestGoal) {
           const progress =
@@ -119,7 +124,9 @@ export const FinnyMessage: React.FC<FinnyMessageProps> = React.memo(
         `What's your biggest financial opportunity?`,
       ];
 
-      return defaultQuestions[Math.floor(Math.random() * defaultQuestions.length)];
+      return defaultQuestions[
+        Math.floor(Math.random() * defaultQuestions.length)
+      ];
     }, [
       goals,
       spendingData,
@@ -148,8 +155,8 @@ export const FinnyMessage: React.FC<FinnyMessageProps> = React.memo(
             <Image
               source={require("../../../assets/images/finny2.png")}
               style={{
-                width: 55,
-                height: 70,
+                width: 65,
+                height: 80,
                 borderRadius: 20,
                 resizeMode: "contain",
               }}
@@ -162,7 +169,7 @@ export const FinnyMessage: React.FC<FinnyMessageProps> = React.memo(
         </TouchableOpacity>
       </View>
     );
-  }
+  },
 );
 
 FinnyMessage.displayName = "FinnyMessage";

@@ -170,7 +170,7 @@ export const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     marginBottom: 40,
-    gap: 10,
+    gap: 12,
   },
   summaryCard: {
     flex: 1,
@@ -355,11 +355,11 @@ export const styles = StyleSheet.create({
   },
   finnyMessageTitle: {
     color: "#4A90E2",
-    fontSize: FONTS.xs,
-    fontWeight: "600",
+    fontSize: FONTS.xs+1,
     textTransform: "uppercase",
-    letterSpacing: 0.8,
+    letterSpacing: 1.2,
     marginBottom: 4,
+    fontFamily: "ManropeExtraBold",
   },
   finnyMessageText: {
     color: "#fff",
@@ -395,8 +395,8 @@ export const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#4A90E2",
     letterSpacing: 0.3,
-    fontFamily: Platform.OS === "ios" ? "System" : "sans-serif",
-    paddingHorizontal: 5,
+    fontFamily: "ManropeBold",
+    // paddingHorizontal: 5,
   },
   viewAllButton: {
     backgroundColor: "#1f1f1f",

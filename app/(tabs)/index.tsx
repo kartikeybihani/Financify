@@ -29,6 +29,7 @@ import { FinancialCards } from "@/src/components/home/FinancialCards";
 import { GoalsSection } from "@/src/components/home/GoalsSection";
 import { ActionButtons } from "@/src/components/home/ActionButtons";
 import { FinnyMessage } from "@/src/components/home/FinnyMessage";
+import { FinnyNudge } from "@/src/components/home/FinnyNudge";
 import { HomeScreenSkeleton } from "@/src/components/home/LoadingSkeletons";
 import { useModalManager } from "@/src/components/modals/ModalFactory";
 
@@ -752,6 +753,8 @@ export default function HomeScreen() {
               });
             }}
           />
+
+          <FinnyNudge />
 
           {/* Goals Progress */}
           <GoalsSection

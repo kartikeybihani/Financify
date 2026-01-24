@@ -76,7 +76,7 @@ async function withTimeout(
   promise,
   ms,
   onTimeoutValue = null,
-  onTimeout = null
+  onTimeout = null,
 ) {
   let timeoutId;
   const timeoutPromise = new Promise((resolve) => {
@@ -113,7 +113,7 @@ function responseHasVisibleContent(response) {
 function detectRefusalToAnswer(text) {
   if (!text || typeof text !== "string") return false;
   return /\b(just tell me|no questions|don't ask|dont ask|stop asking|whatever just answer|idk just answer)\b/i.test(
-    text
+    text,
   );
 }
 
@@ -179,7 +179,7 @@ async function callWithFallback(models, callFn, timeoutMs, label = "LLM") {
         callPromise,
         timeoutMs,
         { __timeout: true },
-        () => controller.abort()
+        () => controller.abort(),
       );
       if (result && (result.__timeout || result.__aborted)) {
         throw new Error(`${label} timeout after ${timeoutMs}ms`);
@@ -223,7 +223,7 @@ function redactPII(text) {
         return `#### ${addrChar}`;
       }
       return match;
-    }
+    },
   );
 }
 
@@ -287,7 +287,7 @@ async function getPersistentCache(dataType, userId, params = {}) {
     if (error) {
       logError(
         `❌ [PERSISTENT_CACHE] Database error for ${dataType}:`,
-        error.message
+        error.message,
       );
       return null;
     }
@@ -304,7 +304,7 @@ async function getPersistentCache(dataType, userId, params = {}) {
     console.log(
       `🔍 [PERSISTENT_CACHE] Checking expiration for ${dataType}: now=${now}, expires=${
         cacheEntry.expires_at
-      }, expired=${now > cacheEntry.expires_at}`
+      }, expired=${now > cacheEntry.expires_at}`,
     );
 
     if (now > cacheEntry.expires_at) {
@@ -321,7 +321,7 @@ async function getPersistentCache(dataType, userId, params = {}) {
     // If there are duplicates, clean them up in the background
     if (data.length > 1) {
       console.log(
-        `🧹 [PERSISTENT_CACHE] Found ${data.length} duplicate entries, cleaning up...`
+        `🧹 [PERSISTENT_CACHE] Found ${data.length} duplicate entries, cleaning up...`,
       );
       setImmediate(() => {
         cleanupDuplicateCacheEntries(key, userId).catch((error) => {
@@ -335,7 +335,7 @@ async function getPersistentCache(dataType, userId, params = {}) {
   } catch (error) {
     logError(
       `❌ [PERSISTENT_CACHE] Error getting cache for ${dataType}:`,
-      error
+      error,
     );
     return null;
   }
@@ -349,8 +349,8 @@ async function setPersistentCache(dataType, userId, data, params = {}) {
 
     logDebug(
       `💾 [PERSISTENT_CACHE] Setting cache for ${dataType} with key: ${key}, expires: ${new Date(
-        expires_at
-      ).toISOString()}, TTL: ${ttl}ms`
+        expires_at,
+      ).toISOString()}, TTL: ${ttl}ms`,
     );
 
     // First, delete any existing entries with the same cache_key and user_id (best-effort)
@@ -376,12 +376,12 @@ async function setPersistentCache(dataType, userId, data, params = {}) {
 
     if (insertResult === null) {
       logWarn(
-        `⏰ [PERSISTENT_CACHE] Timeout setting cache for ${dataType} (${key})`
+        `⏰ [PERSISTENT_CACHE] Timeout setting cache for ${dataType} (${key})`,
       );
     } else if (error) {
       logError(
         `❌ [PERSISTENT_CACHE] Error setting cache for ${dataType}:`,
-        error
+        error,
       );
     } else {
       console.log(`✅ [PERSISTENT_CACHE] Cache SET for ${dataType} (${key})`);
@@ -389,7 +389,7 @@ async function setPersistentCache(dataType, userId, data, params = {}) {
   } catch (error) {
     logError(
       `❌ [PERSISTENT_CACHE] Error setting cache for ${dataType}:`,
-      error
+      error,
     );
   }
 }
@@ -512,8 +512,8 @@ function getCachedClassification(message) {
     console.log(
       `✅ [CACHE] Classification cache HIT for: "${message.substring(
         0,
-        50
-      )}..."`
+        50,
+      )}..."`,
     );
     return cached.result;
   }
@@ -522,8 +522,8 @@ function getCachedClassification(message) {
     console.log(
       `⏰ [CACHE] Classification cache EXPIRED for: "${message.substring(
         0,
-        50
-      )}..."`
+        50,
+      )}..."`,
     );
     classificationCache.delete(key);
   }
@@ -552,8 +552,8 @@ function setCachedClassification(message, result) {
   logDebug(
     `💾 [CACHE] Classification cached for: "${message.substring(
       0,
-      50
-    )}..." (expires in 1 hour)`
+      50,
+    )}..." (expires in 1 hour)`,
   );
 
   // Clean up expired entries periodically (every 100 cache writes)
@@ -593,8 +593,8 @@ function getCachedMemory(userId, query) {
     logDebug(
       `✅ [MEMORY_CACHE] Cache HIT for user ${userId}, query: "${query.substring(
         0,
-        50
-      )}..."`
+        50,
+      )}..."`,
     );
     return cached.result;
   }
@@ -603,8 +603,8 @@ function getCachedMemory(userId, query) {
     logDebug(
       `⏰ [MEMORY_CACHE] Cache EXPIRED for user ${userId}, query: "${query.substring(
         0,
-        50
-      )}..."`
+        50,
+      )}..."`,
     );
     memoryCache.delete(key);
   }
@@ -629,8 +629,8 @@ function setCachedMemory(userId, query, result) {
   logDebug(
     `💾 [MEMORY_CACHE] Cached memory result for user ${userId}, query: "${query.substring(
       0,
-      50
-    )}..."`
+      50,
+    )}..."`,
   );
 
   // Clean up expired entries periodically (every 100 cache writes)
@@ -666,14 +666,21 @@ function generateDataCacheKey(dataType, userId, params = {}) {
 }
 
 // Get cached user data
-async function getCachedUserData(dataType, userId, params = {}, silent = false) {
+async function getCachedUserData(
+  dataType,
+  userId,
+  params = {},
+  silent = false,
+) {
   const key = generateDataCacheKey(dataType, userId, params);
 
   // First check in-memory cache
   const cached = dataCache.get(key);
   if (cached && Date.now() < cached.expires_at) {
     if (!silent) {
-      console.log(`✅ [DATA_CACHE] In-memory cache HIT for ${dataType} (${key})`);
+      console.log(
+        `✅ [DATA_CACHE] In-memory cache HIT for ${dataType} (${key})`,
+      );
     }
     return cached.data;
   }
@@ -681,7 +688,7 @@ async function getCachedUserData(dataType, userId, params = {}, silent = false) 
   if (cached) {
     if (!silent) {
       logDebug(
-        `⏰ [DATA_CACHE] In-memory cache EXPIRED for ${dataType} (${key})`
+        `⏰ [DATA_CACHE] In-memory cache EXPIRED for ${dataType} (${key})`,
       );
     }
     dataCache.delete(key);
@@ -690,7 +697,7 @@ async function getCachedUserData(dataType, userId, params = {}, silent = false) 
   // Fallback to persistent cache
   if (!silent) {
     console.log(
-      `🔍 [DATA_CACHE] Checking persistent cache for ${dataType} (${key})`
+      `🔍 [DATA_CACHE] Checking persistent cache for ${dataType} (${key})`,
     );
   }
   const persistentData = await getPersistentCache(dataType, userId, params);
@@ -732,14 +739,14 @@ async function setCachedUserData(dataType, userId, data, params = {}) {
     setPersistentCache(dataType, userId, data, params).catch((error) => {
       logError(
         `❌ [PERSISTENT_CACHE] Background set failed for ${dataType} (${key}):`,
-        error
+        error,
       );
     });
   });
 
   const ttlMinutes = Math.round(ttl / (60 * 1000));
   logDebug(
-    `💾 [DATA_CACHE] Cached ${dataType} (${key}) - expires in ${ttlMinutes} minutes`
+    `💾 [DATA_CACHE] Cached ${dataType} (${key}) - expires in ${ttlMinutes} minutes`,
   );
 
   // Trigger cleanup if cache is getting large
@@ -761,11 +768,11 @@ async function cleanupDuplicateCacheEntries(cacheKey, userId) {
       !userId ||
       typeof userId !== "string" ||
       !userId.match(
-        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
       )
     ) {
       logWarn(
-        `⚠️ [CACHE] Invalid userId format in cleanupDuplicateCacheEntries: ${userId}`
+        `⚠️ [CACHE] Invalid userId format in cleanupDuplicateCacheEntries: ${userId}`,
       );
       return;
     }
@@ -802,7 +809,7 @@ async function cleanupDuplicateCacheEntries(cacheKey, userId) {
         logError("❌ [CACHE] Error deleting duplicate entries:", deleteError);
       } else {
         logDebug(
-          `🧹 [CACHE] Cleaned up ${entriesToDelete.length} duplicate cache entries for key: ${cacheKey}`
+          `🧹 [CACHE] Cleaned up ${entriesToDelete.length} duplicate cache entries for key: ${cacheKey}`,
         );
       }
     }
@@ -847,7 +854,7 @@ async function cleanupSupabaseCache() {
     }
 
     logDebug(
-      `🧹 [CACHE] Cleaned up ${count || 0} expired Supabase cache entries`
+      `🧹 [CACHE] Cleaned up ${count || 0} expired Supabase cache entries`,
     );
     return count || 0;
   } catch (error) {
@@ -950,7 +957,7 @@ async function prePopulateUserCache(userId) {
         results.success++;
       } else {
         logDebug(
-          `⚠️ [CACHE] Failed to pre-populate ${need} for user ${userId}`
+          `⚠️ [CACHE] Failed to pre-populate ${need} for user ${userId}`,
         );
         results.failed++;
       }
@@ -961,7 +968,7 @@ async function prePopulateUserCache(userId) {
   }
 
   logDebug(
-    `📊 [CACHE] Pre-population complete - Success: ${results.success}, Failed: ${results.failed}`
+    `📊 [CACHE] Pre-population complete - Success: ${results.success}, Failed: ${results.failed}`,
   );
   return results;
 }
@@ -995,12 +1002,12 @@ async function cleanupExistingDuplicates() {
 
     // Find entries with duplicates
     const duplicateKeys = Object.keys(duplicates).filter(
-      (key) => duplicates[key].length > 1
+      (key) => duplicates[key].length > 1,
     );
 
     if (duplicateKeys.length > 0) {
       console.log(
-        `🧹 [CACHE] Found ${duplicateKeys.length} cache keys with duplicates`
+        `🧹 [CACHE] Found ${duplicateKeys.length} cache keys with duplicates`,
       );
 
       // Clean up each duplicate set
@@ -1015,7 +1022,7 @@ async function cleanupExistingDuplicates() {
           userId &&
           typeof userId === "string" &&
           userId.match(
-            /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+            /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
           )
         ) {
           await cleanupDuplicateCacheEntries(cacheKey, userId);
@@ -1096,7 +1103,7 @@ async function logConversation(conversationData) {
 
       const insertResult = await withTimeout(
         supabase.from("conversation_logs").insert([baseRow]),
-        5000 // 5 second timeout
+        5000, // 5 second timeout
       );
 
       if (!insertResult) {
@@ -1109,12 +1116,14 @@ async function logConversation(conversationData) {
         const msg = (error?.message || "").toLowerCase();
         const missingCols =
           msg.includes("column") &&
-          (msg.includes("metrics") || msg.includes("request_id") || msg.includes("chat_id"));
+          (msg.includes("metrics") ||
+            msg.includes("request_id") ||
+            msg.includes("chat_id"));
         if (missingCols) {
           const { metrics, request_id, chat_id, ...fallbackRow } = baseRow;
           const retry = await withTimeout(
             supabase.from("conversation_logs").insert([fallbackRow]),
-            5000
+            5000,
           );
           if (!retry) {
             throw new Error("Fallback insert timed out");
@@ -1135,7 +1144,7 @@ async function logConversation(conversationData) {
           // Non-retryable: log and bail to avoid noisy retries
           console.error(
             "❌ [CONVERSATION_LOG] Non-retryable error:",
-            error.message
+            error.message,
           );
           return;
         }
@@ -1145,7 +1154,7 @@ async function logConversation(conversationData) {
     } catch (error) {
       logError(
         `❌ [CONVERSATION_LOG] Attempt ${attempt}/${maxRetries} failed:`,
-        error.message
+        error.message,
       );
 
       if (attempt === maxRetries) {
@@ -1179,7 +1188,7 @@ export default async function handler(req, res) {
   };
 
   const { action, message, context, classification, ...otherParams } = req.body;
-  
+
   // For prebuild_context, we'll check if all contexts are cached after we have userId
   // and suppress logs if they are. For now, we'll log normally and check later.
   let shouldSuppressLogs = false;
@@ -1233,9 +1242,8 @@ export default async function handler(req, res) {
         ? authHeader.slice("Bearer ".length)
         : null;
     if (token) {
-      const { data: authData, error: authError } = await supabase.auth.getUser(
-        token
-      );
+      const { data: authData, error: authError } =
+        await supabase.auth.getUser(token);
       if (!authError && authData?.user?.id) {
         serverUserId = authData.user.id;
         // Try to enrich profile from auth metadata
@@ -1294,7 +1302,7 @@ export default async function handler(req, res) {
       sendStreamEvent(
         res,
         "complete",
-        buildStreamFallbackResponse(authMessage)
+        buildStreamFallbackResponse(authMessage),
       );
       res.end();
       return;
@@ -1308,8 +1316,8 @@ export default async function handler(req, res) {
     action === "classify"
       ? { limit: 90, windowMs: 60 * 1000 }
       : action === "goal_conversation"
-      ? { limit: 30, windowMs: 60 * 1000 }
-      : { limit: 20, windowMs: 60 * 1000 };
+        ? { limit: 30, windowMs: 60 * 1000 }
+        : { limit: 20, windowMs: 60 * 1000 };
 
   const finnyRateLimit = await checkRateLimit(req, {
     scope: `finny:${action}`,
@@ -1378,8 +1386,8 @@ export default async function handler(req, res) {
           logInfo(
             `⚡ [MEMORY_CACHE] Using cached memories for message: "${message.substring(
               0,
-              50
-            )}..."`
+              50,
+            )}..."`,
           );
           return cachedMemory;
         } else {
@@ -1421,7 +1429,7 @@ export default async function handler(req, res) {
           patterns: {},
           deepInsights: [],
         };
-      }
+      },
     );
 
     // Execute all three in parallel
@@ -1439,7 +1447,7 @@ export default async function handler(req, res) {
     timings.memory_loading_ms = prepTime; // Combined time for parallel operations
     timings.profile_loading_ms = prepTime; // Combined time for parallel operations
     logInfo(
-      `⚡ [PARALLEL_PREP] Loaded memory, profile, and feedback in ${prepTime}ms (parallel)`
+      `⚡ [PARALLEL_PREP] Loaded memory, profile, and feedback in ${prepTime}ms (parallel)`,
     );
   } else {
     // For classify and prebuild_context: Skip memory and feedback patterns
@@ -1472,7 +1480,7 @@ export default async function handler(req, res) {
     userProfile.age !== userProfileData.age
   ) {
     logWarn(
-      `⚠️ [PROFILE] Age mismatch: user_metadata.age=${userProfile.age}, profiles.age=${userProfileData.age} (using profiles.age)`
+      `⚠️ [PROFILE] Age mismatch: user_metadata.age=${userProfile.age}, profiles.age=${userProfileData.age} (using profiles.age)`,
     );
   }
 
@@ -1494,7 +1502,7 @@ export default async function handler(req, res) {
     // Invalidate profile cache for the authenticated user
     invalidateProfileCache(finalUserId);
     console.log(
-      `✅ [CACHE] Profile cache invalidated for user: ${finalUserId}`
+      `✅ [CACHE] Profile cache invalidated for user: ${finalUserId}`,
     );
     return res.status(200).json({ success: true });
   }
@@ -1506,7 +1514,7 @@ export default async function handler(req, res) {
     (!lastChatId || (typeof lastChatId === "string" && lastChatId !== chatId));
   if (lastChatId && chatId && lastChatId !== chatId) {
     console.log(
-      `🆕 [SESSION] New chat detected (old: ${lastChatId}, new: ${chatId}) - clearing session state`
+      `🆕 [SESSION] New chat detected (old: ${lastChatId}, new: ${chatId}) - clearing session state`,
     );
     // Clear session state for fresh conversation
     setSessionState(finalUserId, { last_chat_id: chatId });
@@ -1522,7 +1530,7 @@ export default async function handler(req, res) {
   // Keep chat start-up optimization by pre-populating the cache ONCE per chat.
   if (shouldPrePopulateCache) {
     logDebug(
-      "🚀 [CACHE] Pre-populating cache for new chat session (conversation context disabled)"
+      "🚀 [CACHE] Pre-populating cache for new chat session (conversation context disabled)",
     );
     setImmediate(() => {
       prePopulateUserCache(finalUserId).catch((error) => {
@@ -1536,7 +1544,7 @@ export default async function handler(req, res) {
   let finalAction = action; // Create mutable copy
   if (action === "classify" && activeGoalFlow && activeGoalFlow.active) {
     console.log(
-      `🎯 [FLOW] Active goal flow detected - bypassing classification`
+      `🎯 [FLOW] Active goal flow detected - bypassing classification`,
     );
     // Override action to go directly to goal_conversation
     finalAction = "goal_conversation";
@@ -1561,11 +1569,11 @@ export default async function handler(req, res) {
             response.heuristic === 1)
         ) {
           console.log(
-            "🚨 [FINNY] CRITICAL: Response has heuristic flag! Blocking return and forcing fresh LLM classification."
+            "🚨 [FINNY] CRITICAL: Response has heuristic flag! Blocking return and forcing fresh LLM classification.",
           );
           console.log(
             "🚨 [FINNY] Response was:",
-            JSON.stringify(response, null, 2)
+            JSON.stringify(response, null, 2),
           );
 
           // Clear cache for this specific message to force fresh classification
@@ -1583,7 +1591,7 @@ export default async function handler(req, res) {
             response.heuristic
           ) {
             console.log(
-              "🚨 [FINNY] CRITICAL ERROR: LLM returned heuristic! This should never happen. Removing flag."
+              "🚨 [FINNY] CRITICAL ERROR: LLM returned heuristic! This should never happen. Removing flag.",
             );
             delete response.heuristic;
           }
@@ -1602,7 +1610,7 @@ export default async function handler(req, res) {
           classification,
           timings, // Pass timings object to track web search and context packs
           wantsStreaming, // Pass streaming preference
-          wantsStreaming ? res : null // Pass response object for progress updates if streaming
+          wantsStreaming ? res : null, // Pass response object for progress updates if streaming
         );
         break;
       }
@@ -1614,7 +1622,7 @@ export default async function handler(req, res) {
           classification,
           timings, // Pass timings object to track web search and context packs
           wantsStreaming, // Pass streaming preference
-          wantsStreaming ? res : null // Pass response object for progress updates if streaming
+          wantsStreaming ? res : null, // Pass response object for progress updates if streaming
         );
         break;
       }
@@ -1623,7 +1631,7 @@ export default async function handler(req, res) {
           message,
           safeContext,
           wantsStreaming, // Pass streaming preference
-          wantsStreaming ? res : null // Pass response object for progress updates if streaming
+          wantsStreaming ? res : null, // Pass response object for progress updates if streaming
         );
         break;
       }
@@ -1656,7 +1664,7 @@ export default async function handler(req, res) {
                 ...safeContext,
                 goal_flow: { ...currentFlow, slots: updatedSlots },
               },
-              message
+              message,
             );
           } else {
             response = {
@@ -1676,7 +1684,7 @@ export default async function handler(req, res) {
               currentFlow.slots,
               safeContext,
               currentFlow.analysis,
-              false
+              false,
             );
           } else {
             response = {
@@ -1768,7 +1776,7 @@ export default async function handler(req, res) {
               null,
               timings,
               wantsStreaming,
-              wantsStreaming ? res : null // Pass response object for progress updates if streaming
+              wantsStreaming ? res : null, // Pass response object for progress updates if streaming
             );
 
             // Hide action buttons and show feedback buttons after confirmation
@@ -1777,7 +1785,7 @@ export default async function handler(req, res) {
               `🔍 [CONFIRM_STOCK] Response received from handleAsk:`,
               typeof response,
               response?.hideActions,
-              response?.hideFeedback
+              response?.hideFeedback,
             );
 
             if (response && typeof response === "object") {
@@ -1787,7 +1795,7 @@ export default async function handler(req, res) {
               response.actions = []; // Clear any actions
 
               console.log(
-                `✅ [CONFIRM_STOCK] Response flags set - hideActions: ${response.hideActions}, hideFeedback: ${response.hideFeedback}`
+                `✅ [CONFIRM_STOCK] Response flags set - hideActions: ${response.hideActions}, hideFeedback: ${response.hideFeedback}`,
               );
             } else {
               // If response is not an object, wrap it
@@ -1799,7 +1807,7 @@ export default async function handler(req, res) {
                 actions: [],
               };
               console.log(
-                `✅ [CONFIRM_STOCK] Wrapped response with flags - hideActions: ${response.hideActions}, hideFeedback: ${response.hideFeedback}`
+                `✅ [CONFIRM_STOCK] Wrapped response with flags - hideActions: ${response.hideActions}, hideFeedback: ${response.hideFeedback}`,
               );
             }
 
@@ -1911,7 +1919,10 @@ export default async function handler(req, res) {
         // Set flag to suppress memory storage warnings during prebuild_context
         setPrebuildContextActive(finalUserId);
         try {
-          response = await handlePrebuildContext(finalUserId, shouldSuppressLogs);
+          response = await handlePrebuildContext(
+            finalUserId,
+            shouldSuppressLogs,
+          );
         } finally {
           // Always clear the flag, even if there's an error
           clearPrebuildContextActive(finalUserId);
@@ -1934,10 +1945,10 @@ export default async function handler(req, res) {
       console.log(`\n⏱️  [TIMING] Total: ${formatTime(timings.total_ms)}s`);
       console.log(
         `   └─ Handler: ${formatTime(timings.handler_ms)}s | LLM: ${formatTime(
-          timings.llm_ms || 0
+          timings.llm_ms || 0,
         )}s | Memory: ${formatTime(
-          timings.memory_loading_ms
-        )}s | Profile: ${formatTime(timings.profile_loading_ms)}s`
+          timings.memory_loading_ms,
+        )}s | Profile: ${formatTime(timings.profile_loading_ms)}s`,
       );
     }
 
@@ -1945,8 +1956,8 @@ export default async function handler(req, res) {
     logDebug("⏱️  [TIMING] Detailed breakdown:");
     logDebug(
       `   Auth: ${formatTime(timings.auth_ms)}s | Context: ${formatTime(
-        timings.context_loading_ms
-      )}s`
+        timings.context_loading_ms,
+      )}s`,
     );
     if (timings.classification_ms > 0) {
       logDebug(`   Classification: ${formatTime(timings.classification_ms)}s`);
@@ -1996,11 +2007,11 @@ export default async function handler(req, res) {
           console.log(
             `🔄 [STREAMING] Starting stream (${(
               timeToFirstChunk / 1000
-            ).toFixed(3)}s to first chunk)`
+            ).toFixed(3)}s to first chunk)`,
           );
           console.log(
             "🔄 [STREAMING] Streaming text:",
-            textToStream.substring(0, 100) + "..."
+            textToStream.substring(0, 100) + "...",
           );
           sendStreamEvent(res, "progress", {
             status: "Generating response...",
@@ -2009,7 +2020,7 @@ export default async function handler(req, res) {
         } else {
           console.log(
             "⚠️ [STREAMING] No text to stream in response:",
-            Object.keys(response)
+            Object.keys(response),
           );
         }
 
@@ -2027,8 +2038,8 @@ export default async function handler(req, res) {
             res,
             "complete",
             buildStreamFallbackResponse(
-              "Sorry — something went wrong while streaming. Please try again."
-            )
+              "Sorry — something went wrong while streaming. Please try again.",
+            ),
           );
           res.end();
         }
@@ -2052,8 +2063,8 @@ export default async function handler(req, res) {
         res,
         "complete",
         buildStreamFallbackResponse(
-          "Sorry — something went wrong. Please try again."
-        )
+          "Sorry — something went wrong. Please try again.",
+        ),
       );
       res.end();
       return;
@@ -2086,7 +2097,7 @@ async function enhanceSearchQuery(message, context) {
     }
 
     console.log(
-      "🔍 [ENHANCE] Detected personal investment query, fetching user holdings..."
+      "🔍 [ENHANCE] Detected personal investment query, fetching user holdings...",
     );
 
     // Fetch user's investment holdings
@@ -2094,7 +2105,7 @@ async function enhanceSearchQuery(message, context) {
       supabase.rpc("get_investment_holdings_detailed", {
         p_user_id: context.user_id,
       }),
-      3000 // 3 second timeout
+      3000, // 3 second timeout
     );
 
     if (error || !holdings || holdings.length === 0) {
@@ -2116,18 +2127,18 @@ async function enhanceSearchQuery(message, context) {
     console.log(
       `✅ [ENHANCE] Selected top ${topHoldings.length} holdings by value:`,
       topHoldings.map(
-        (h) => `${h.symbol} ($${h.market_value?.toFixed(2) || "0"})`
-      )
+        (h) => `${h.symbol} ($${h.market_value?.toFixed(2) || "0"})`,
+      ),
     );
 
     // Create multiple targeted search queries
     const searchQueries = topHoldings.map(
-      (holding) => `${holding.symbol} latest news`
+      (holding) => `${holding.symbol} latest news`,
     );
 
     console.log(
       `🔍 [ENHANCE] Generated ${searchQueries.length} targeted queries:`,
-      searchQueries
+      searchQueries,
     );
 
     // Get all available holdings for user prompt
@@ -2155,7 +2166,7 @@ async function handleAsk(
   classificationResult = null,
   requestTimings = null, // Optional: parent request timings object
   wantsStreaming = false, // Whether client wants streaming response
-  res = null // Response object for sending progress updates (optional)
+  res = null, // Response object for sending progress updates (optional)
 ) {
   logInfo("🔍 [FINNY] Starting ask handler for message:", message);
   const startTime = Date.now();
@@ -2181,7 +2192,7 @@ async function handleAsk(
           userId,
           context.chat_id,
           message,
-          assistantText
+          assistantText,
         );
       } catch (e) {
         // Non-fatal; never break the ask flow for history.
@@ -2193,7 +2204,7 @@ async function handleAsk(
       logWarn("❌ [FINNY] No user_id provided in context");
       return {
         message: cleanResponseFormatting(
-          "I need to know who you are to provide personalized advice. Please try again."
+          "I need to know who you are to provide personalized advice. Please try again.",
         ),
         type: "assistant",
       };
@@ -2201,7 +2212,7 @@ async function handleAsk(
 
     // 2) NEW: Use classification-based pack selection (Phase 2)
     logDebug("🎯 [FINNY] Using classification-based pack selection");
-    
+
     // Get classification result if not already available
     if (!classificationResult) {
       const cachedClassification = getCachedClassification(message);
@@ -2214,12 +2225,12 @@ async function handleAsk(
     // Select data packs from classification (with keyword fallback)
     const packSelection = selectDataPacksFromClassification(
       classificationResult,
-      message
+      message,
     );
-    
+
     // Extract keyword-based slots for backward compatibility
     const keywordSlots = extractSlots(message);
-    
+
     // Classification filters ALWAYS override keyword-based slots
     const slots = {
       ...keywordSlots, // Keep for backward compat
@@ -2229,10 +2240,13 @@ async function handleAsk(
       useMerchantRPC: packSelection.useMerchantRPC, // Flag for merchant RPC usage
       time_range: classificationResult?.data_requirements?.time_range || null, // Store time_range for default period creation
     };
-    
+
     const needs = packSelection.needs;
 
-    logInfo("🎯 [SLOTS] Final slots (classification overrides keyword):", JSON.stringify(slots, null, 2));
+    logInfo(
+      "🎯 [SLOTS] Final slots (classification overrides keyword):",
+      JSON.stringify(slots, null, 2),
+    );
     logInfo("🎯 [FINNY] Selected needs from classification:", needs);
 
     // 2.1) Check if web search is needed
@@ -2248,7 +2262,7 @@ async function handleAsk(
         classificationResult = cachedClassification;
       } else {
         console.log(
-          "⚠️ [FINNY] No classification result passed and not in cache, using keyword fallback"
+          "⚠️ [FINNY] No classification result passed and not in cache, using keyword fallback",
         );
       }
     }
@@ -2279,7 +2293,7 @@ async function handleAsk(
       !classificationResult.data_requirements
     ) {
       console.log(
-        "⚠️ [FINNY] Classification result missing data_requirements, adding default"
+        "⚠️ [FINNY] Classification result missing data_requirements, adding default",
       );
       classificationResult.data_requirements = {
         required_packs: ["summary_min"],
@@ -2329,11 +2343,11 @@ async function handleAsk(
           const symbols = enhancedData.queries.map((q) => q.split(" ")[0]);
           logDebug(
             `🔍 [FINNY] Performing ${enhancedData.queries.length} parallel searches for:`,
-            symbols
+            symbols,
           );
 
           const searchPromises = enhancedData.queries.map((query) =>
-            limitedBraveSearch(query)
+            limitedBraveSearch(query),
           );
           const searchResults = await Promise.all(searchPromises);
 
@@ -2342,11 +2356,11 @@ async function handleAsk(
             .flat()
             .filter(
               (result, index, self) =>
-                index === self.findIndex((r) => r.url === result.url)
+                index === self.findIndex((r) => r.url === result.url),
             );
 
           logInfo(
-            `✅ [FINNY] Combined ${searchResults.length} searches into ${webResults.length} unique results`
+            `✅ [FINNY] Combined ${searchResults.length} searches into ${webResults.length} unique results`,
           );
 
           // Add user prompt to context for AI response
@@ -2354,7 +2368,7 @@ async function handleAsk(
             context.userPrompt = enhancedData.userPrompt;
             logDebug(
               "🔍 [FINNY] Added user prompt to context:",
-              enhancedData.userPrompt
+              enhancedData.userPrompt,
             );
           }
         } else {
@@ -2374,7 +2388,7 @@ async function handleAsk(
             .join("\n\n");
 
           console.log(
-            `✅ [FINNY] Web search completed: ${webResults.length} results`
+            `✅ [FINNY] Web search completed: ${webResults.length} results`,
           );
           logDebug("📄 [FINNY] Web summary for prompt:", webSummary);
           toolsUsed.push("brave-search");
@@ -2409,7 +2423,7 @@ async function handleAsk(
     const { packs, gaps, contextHeader } = await buildContextPacks(
       userId,
       needs,
-      slots
+      slots,
     );
     const contextPacksTime = Date.now() - contextPacksStartTime;
 
@@ -2457,14 +2471,14 @@ async function handleAsk(
         : 0;
       logInfo(
         `📊 [USER_DATA] Summary data: netWorth=$${netWorth.toFixed(
-          2
+          2,
         )}, liquidAssets=$${liquidAssets.toFixed(
-          2
+          2,
         )}, investmentsTotal=$${investmentsTotal.toFixed(
-          2
+          2,
         )}, liabilities=$${totalLiabilities.toFixed(
-          2
-        )}, accounts=${accountsCount} (${investmentAccounts} investment)`
+          2,
+        )}, accounts=${accountsCount} (${investmentAccounts} investment)`,
       );
       if (Array.isArray(baseData.accounts) && baseData.accounts.length > 0) {
         const accountSummary = baseData.accounts
@@ -2474,7 +2488,7 @@ async function handleAsk(
                 acc.current_balance ||
                 acc.balance ||
                 0
-              ).toFixed(2)} (${acc.type}/${acc.subtype || "N/A"})`
+              ).toFixed(2)} (${acc.type}/${acc.subtype || "N/A"})`,
           )
           .join(" | ");
         logInfo(`📊 [USER_DATA] Accounts: ${accountSummary}`);
@@ -2501,11 +2515,11 @@ async function handleAsk(
         };
         logDebug(
           "🔍 [STOCK] Using stock candidate from classification:",
-          stockCandidate
+          stockCandidate,
         );
       } else {
         logWarn(
-          `⚠️ [STOCK] Invalid ticker format from classification: ${ticker}, skipping stock candidate`
+          `⚠️ [STOCK] Invalid ticker format from classification: ${ticker}, skipping stock candidate`,
         );
       }
     }
@@ -2559,7 +2573,8 @@ async function handleAsk(
     // 3.5) Check if this is a stock query after building context packs
     // Also check if we have stock_override (user confirmed ticker) - that's definitely a stock query!
     const hasStockOverride = !!context?.stock_override?.ticker;
-    const isStockQuery = looksLikeStockQuery(message, classificationResult) || hasStockOverride;
+    const isStockQuery =
+      looksLikeStockQuery(message, classificationResult) || hasStockOverride;
     logDebug("🔍 [STOCK_ROUTING] Stock query detection:", {
       message,
       looksLikeStockQuery: looksLikeStockQuery(message, classificationResult),
@@ -2584,7 +2599,7 @@ async function handleAsk(
           packs[NEED_CONFIG.invest_holdings.packKey] ||
           (await getCachedUserData(
             NEED_CONFIG.invest_holdings.cacheType,
-            userId
+            userId,
           ));
 
         let stockData = null;
@@ -2619,7 +2634,7 @@ async function handleAsk(
           // This avoids unnecessary API calls and prevents hangs
           if (stockOverride) {
             console.log(
-              `🔵 [STOCK] Skipping planStockRequest - using stockOverride ticker: ${stockOverride}`
+              `🔵 [STOCK] Skipping planStockRequest - using stockOverride ticker: ${stockOverride}`,
             );
             // Create a comprehensive plan with all available data types
             stockPlan = {
@@ -2639,12 +2654,12 @@ async function handleAsk(
               needs_web: false,
             };
             console.log(
-              `🔵 [STOCK] Created plan directly with ticker: ${stockOverride}`
+              `🔵 [STOCK] Created plan directly with ticker: ${stockOverride}`,
             );
           } else {
             // Only call planStockRequest if we don't have a confirmed ticker
             console.log(
-              `🔵 [STOCK] No stockOverride, calling planStockRequest to determine ticker`
+              `🔵 [STOCK] No stockOverride, calling planStockRequest to determine ticker`,
             );
             stockPlan = await planStockRequest(message);
             logDebug("🔍 [STOCK] Stock plan result:", stockPlan);
@@ -2655,7 +2670,7 @@ async function handleAsk(
             stockPlan || {},
             message,
             res,
-            wantsStreaming
+            wantsStreaming,
           );
           logDebug("🔍 [STOCK] Execute result:", exec);
 
@@ -2663,7 +2678,7 @@ async function handleAsk(
           if (exec.error) {
             console.log(
               `⚠️ [STOCK] executeStockPlan returned error:`,
-              exec.error
+              exec.error,
             );
           } else if (!exec.data) {
             console.log(`⚠️ [STOCK] executeStockPlan has no data field`);
@@ -2685,7 +2700,7 @@ async function handleAsk(
                 hasRecommendations: !!exec.data.recommendations,
                 ticker: exec.ticker,
                 reason: reason,
-              }
+              },
             );
           }
 
@@ -2702,28 +2717,28 @@ async function handleAsk(
               ? "prevClose (market closed)"
               : "current";
             console.log(
-              `✅ [STOCK] Using stockData from executeStockPlan (price: ${exec.data.current}, source: ${priceSource})`
+              `✅ [STOCK] Using stockData from executeStockPlan (price: ${exec.data.current}, source: ${priceSource})`,
             );
           } else {
             const reason = exec.error
               ? `Error: ${exec.error}`
               : !exec.data
-              ? "No data field"
-              : exec.data.current == null
-              ? "Current price is null (market may be closed or data unavailable)"
-              : "Unknown reason";
+                ? "No data field"
+                : exec.data.current == null
+                  ? "Current price is null (market may be closed or data unavailable)"
+                  : "Unknown reason";
             console.log(
-              `🔄 [STOCK] Stock plan check failed (${reason}), falling back to simple query or fallback`
+              `🔄 [STOCK] Stock plan check failed (${reason}), falling back to simple query or fallback`,
             );
           }
         } else if (stockOverride && !looksLikeStockDeepQuery(message)) {
           // Only use fast path if we have stockOverride AND it's not a deep query
           // Deep queries should always use the planning path above
           console.log(
-            `\n🟢 [STOCK] STOCK OVERRIDE PATH (simple query): Fetching directly (ticker: ${stockOverride})`
+            `\n🟢 [STOCK] STOCK OVERRIDE PATH (simple query): Fetching directly (ticker: ${stockOverride})`,
           );
           logDebug(
-            "🔍 [STOCK] Using stockOverride, skipping planStockRequest for faster response"
+            "🔍 [STOCK] Using stockOverride, skipping planStockRequest for faster response",
           );
           const snapshot = await fetchStockSnapshot(stockOverride);
           if (snapshot && !snapshot.error && snapshot.current != null) {
@@ -2732,24 +2747,24 @@ async function handleAsk(
               ticker: stockOverride,
             };
             console.log(
-              `✅ [STOCK] Using stockData from stockOverride (price: ${snapshot.current})`
+              `✅ [STOCK] Using stockData from stockOverride (price: ${snapshot.current})`,
             );
             console.log(
               `📊 [STOCK] Snapshot summary: price=$${
                 snapshot.current
               }, hasProfile=${!!snapshot.profile}, hasMetrics=${!!snapshot.metrics}, recsCount=${
                 snapshot.recommendations?.length || 0
-              }, newsCount=${snapshot.news?.length || 0}`
+              }, newsCount=${snapshot.news?.length || 0}`,
             );
           } else {
             console.log(
-              `⚠️ [STOCK] Stock snapshot failed for override ticker ${stockOverride}, will try simple query path`
+              `⚠️ [STOCK] Stock snapshot failed for override ticker ${stockOverride}, will try simple query path`,
             );
           }
         } else {
           // Simple stock query
           console.log(
-            `\n🟡 [STOCK] SIMPLE QUERY PATH: Using cached data with fallback`
+            `\n🟡 [STOCK] SIMPLE QUERY PATH: Using cached data with fallback`,
           );
           const stockResponse = await getCachedDataWithFallback(
             "stock_snapshot",
@@ -2765,9 +2780,8 @@ async function handleAsk(
                   queryUsed: stockOverride,
                 };
               }
-              const { ticker, queryUsed } = await resolveTickerForQuery(
-                message
-              );
+              const { ticker, queryUsed } =
+                await resolveTickerForQuery(message);
               if (!ticker) {
                 return {
                   error: "Could not resolve ticker from query",
@@ -2777,7 +2791,7 @@ async function handleAsk(
               const snapshot = await fetchStockSnapshot(ticker);
               return { ...snapshot, ticker, queryUsed };
             },
-            false
+            false,
           );
 
           const data = stockResponse?.data || stockResponse;
@@ -2808,7 +2822,7 @@ async function handleAsk(
           sendStockProgress(
             res,
             "🤖 Generating comprehensive analysis...",
-            wantsStreaming
+            wantsStreaming,
           );
           // Show another finance fact while generating analysis
           if (wantsStreaming && res) {
@@ -2824,7 +2838,7 @@ async function handleAsk(
               userProfile,
               userMemory,
               investmentHoldings,
-              stockPlan
+              stockPlan,
             );
 
           // Ensure comprehensive analysis was generated (not just summary)
@@ -2834,7 +2848,7 @@ async function handleAsk(
             console.warn(
               `⚠️ [STOCK] Response appears to be summary (${
                 conversationalResponse?.length || 0
-              } chars), not comprehensive analysis`
+              } chars), not comprehensive analysis`,
             );
           }
 
@@ -2856,7 +2870,7 @@ async function handleAsk(
               user_id: context?.user_id || "unknown",
               intent: "ask_personalized",
               entities: [stockData.ticker, stockData.profile?.name].filter(
-                Boolean
+                Boolean,
               ),
               confidence: 0.95,
               response_time_ms: Date.now() - startTime,
@@ -2897,7 +2911,7 @@ async function handleAsk(
                 tokens: null,
                 result: "success",
               },
-            })
+            }),
           );
 
           // Store conversation memory AFTER response is sent (non-blocking)
@@ -2913,7 +2927,7 @@ async function handleAsk(
               }).catch((error) => {
                 console.error(
                   "❌ [FINNY] Failed to store stock conversation memory:",
-                  error
+                  error,
                 );
                 // Non-fatal, don't break conversation flow
               });
@@ -2934,13 +2948,13 @@ async function handleAsk(
             ? "Stock data exists but current price is null (market may be closed)"
             : "Stock APIs failed or returned no data";
           console.log(
-            `🔄 [FALLBACK] ${fallbackReason}, using fallback analysis`
+            `🔄 [FALLBACK] ${fallbackReason}, using fallback analysis`,
           );
           const fallbackResponse = await generateFallbackStockAnalysis(
             stockOverride,
             message,
             userProfile,
-            userMemory
+            userMemory,
           );
 
           const response = {
@@ -2982,7 +2996,7 @@ async function handleAsk(
                 investment_holdings: investmentHoldings ? "loaded" : "none",
               },
               fallback_used: true,
-            })
+            }),
           );
 
           // Store conversation memory AFTER response is sent (non-blocking)
@@ -2998,7 +3012,7 @@ async function handleAsk(
               }).catch((error) => {
                 console.error(
                   "❌ [FINNY] Failed to store fallback conversation memory:",
-                  error
+                  error,
                 );
                 // Non-fatal, don't break conversation flow
               });
@@ -3017,7 +3031,7 @@ async function handleAsk(
       } catch (e) {
         console.log(
           "ℹ️ [FINNY] Conversational stock handler failed, falling back:",
-          e?.message
+          e?.message,
         );
       }
     }
@@ -3046,7 +3060,7 @@ async function handleAsk(
     const userState = detectUserState(
       message,
       financialDataForState,
-      classificationResult
+      classificationResult,
     );
 
     // Consolidated user state log with better formatting
@@ -3055,16 +3069,16 @@ async function handleAsk(
       `   └─ Emotional: ${
         userState.emotionalState
       } (confidence: ${userState.confidence.emotional.toFixed(
-        2
+        2,
       )}) | Financial: ${userState.financialState} | Urgency: ${
         userState.urgency
-      }`
+      }`,
     );
     if (classificationResult) {
       console.log(
         `   └─ Classification: ${classificationResult.intent} (${
           classificationResult.intent_type || "none"
-        }) | Confidence: ${classificationResult.confidence.toFixed(2)}`
+        }) | Confidence: ${classificationResult.confidence.toFixed(2)}`,
       );
     }
     if (userState.needs.length > 0) {
@@ -3087,7 +3101,7 @@ async function handleAsk(
             ? preferences.map((pref, idx) => `${idx + 1}. ${pref}`).join(" | ")
             : "none";
         console.log(
-          `\n📋 [ADAPTATION] Feedback Context Added: ${preferences.length} preferences, ${deepInsights.length} deep insights | ${prefList}`
+          `\n📋 [ADAPTATION] Feedback Context Added: ${preferences.length} preferences, ${deepInsights.length} deep insights | ${prefList}`,
         );
       }
     }
@@ -3107,7 +3121,7 @@ async function handleAsk(
         infoSufficiency === "unknown") &&
       deterministicChance(
         `${userId}:${context?.chat_id || ""}:${message}`,
-        0.5
+        0.5,
       );
 
     const coachingRuntimeFlags = [
@@ -3128,7 +3142,7 @@ async function handleAsk(
         }\n- decision_risk: ${
           classificationResult.decision_risk
         }\n- missing_fields: ${JSON.stringify(
-          classificationResult.missing_fields || []
+          classificationResult.missing_fields || [],
         )}`
       : null;
 
@@ -3142,11 +3156,15 @@ async function handleAsk(
 
     // Short-term conversation continuity: include recent turns (no extra LLM calls)
     // Now uses database for persistence across serverless instances
-    const recentTurns = await getRecentConversationTurns(userId, context?.chat_id, {
-      maxMessages: 8,
-      maxChars: 6000,
-    });
-    
+    const recentTurns = await getRecentConversationTurns(
+      userId,
+      context?.chat_id,
+      {
+        maxMessages: 8,
+        maxChars: 6000,
+      },
+    );
+
     // Debug logging for recent turns
     if (!context?.chat_id) {
       console.log("⚠️ [RECENT_TURNS] chat_id is missing:", {
@@ -3174,7 +3192,7 @@ async function handleAsk(
       classificationResult, // Pass classification result for intent-first architecture
       webSummary, // Web context
       runtimeHeader, // Context header (+ classification)
-      recentTurns // Recent conversation turns for context
+      recentTurns, // Recent conversation turns for context
     );
 
     // 5) Parallel processing: Main response + Memory extraction
@@ -3192,7 +3210,7 @@ async function handleAsk(
     if (intent === "ask_personalized") {
       console.log("\n" + "=".repeat(100));
       console.log(
-        "📋 [PROMPT_ENGINE] COMPLETE SYSTEM PROMPT SENT TO LLM (ask_personalized)"
+        "📋 [PROMPT_ENGINE] COMPLETE SYSTEM PROMPT SENT TO LLM (ask_personalized)",
       );
       console.log("=".repeat(100));
       console.log(system);
@@ -3235,7 +3253,7 @@ async function handleAsk(
               },
             ],
           }),
-        }
+        },
       );
 
       if (!resp.ok) {
@@ -3259,7 +3277,7 @@ async function handleAsk(
         llmModels,
         callMainLLM,
         20000,
-        "LLM"
+        "LLM",
       );
       resp = llmResult.result;
       usedModel = llmResult.model;
@@ -3267,7 +3285,7 @@ async function handleAsk(
       logError("❌ [FINNY] All LLM attempts failed:", llmError?.message);
       return {
         message: cleanResponseFormatting(
-          "Sorry — I'm having trouble reaching the model right now. Please try again."
+          "Sorry — I'm having trouble reaching the model right now. Please try again.",
         ),
         type: "assistant",
         hideActions: true,
@@ -3297,7 +3315,7 @@ async function handleAsk(
         const errorData = JSON.parse(errorText);
         logError(
           "❌ [FINNY] Parsed error:",
-          JSON.stringify(errorData, null, 2)
+          JSON.stringify(errorData, null, 2),
         );
       } catch (e) {
         logError("❌ [FINNY] Could not parse error response");
@@ -3340,7 +3358,7 @@ async function handleAsk(
       logWarn("⚠️ [LLM] Using fallback response!");
       if (finishReason === "length") {
         logWarn(
-          "⚠️ [LLM] Response was cut off - consider using a non-reasoning model or increasing max_tokens further"
+          "⚠️ [LLM] Response was cut off - consider using a non-reasoning model or increasing max_tokens further",
         );
       }
     }
@@ -3365,7 +3383,7 @@ async function handleAsk(
 
       if (!hasIntentKeywords && classificationResult.confidence > 0.8) {
         validationIssues.push(
-          `Low intent match for ${classificationResult.intent}`
+          `Low intent match for ${classificationResult.intent}`,
         );
       }
     }
@@ -3381,11 +3399,11 @@ async function handleAsk(
       userState.confidence.emotional > 0.8
     ) {
       const hasLongTermTerms = /retirement|invest|long.term|future|years/.test(
-        cleanText.toLowerCase()
+        cleanText.toLowerCase(),
       );
       if (hasLongTermTerms) {
         validationIssues.push(
-          "Crisis mode: Response mentions long-term planning (should be immediate only)"
+          "Crisis mode: Response mentions long-term planning (should be immediate only)",
         );
       }
     }
@@ -3404,7 +3422,7 @@ async function handleAsk(
     const cleanedMessage = cleanResponseFormatting(
       gaps.length > 0
         ? `${cleanText}\n\n(Using available data - some data may be incomplete.)`
-        : cleanText
+        : cleanText,
     );
 
     // Frontend handles all message splitting with sophisticated algorithm
@@ -3475,7 +3493,7 @@ async function handleAsk(
         }).catch((error) => {
           console.error(
             "❌ [FINNY] Failed to store conversation memory:",
-            error
+            error,
           );
           // Non-fatal, don't break conversation flow
         });
@@ -3505,7 +3523,7 @@ async function handleAsk(
     }
     return {
       message: cleanResponseFormatting(
-        "I'm having some technical difficulties right now. Please try again in a moment."
+        "I'm having some technical difficulties right now. Please try again in a moment.",
       ),
       type: "assistant",
     };
@@ -3571,7 +3589,7 @@ function cleanResponseFormatting(response) {
   // Remove markdown headers with emojis (### 1️⃣ Header)
   cleaned = cleaned.replace(
     /^#{1,6}\s*[\d\w]*[\u{1F300}-\u{1F9FF}]+\s*/gmu,
-    ""
+    "",
   );
 
   // Remove double underscore bold markdown (__text__) but keep double asterisks for your chat system
@@ -3703,7 +3721,7 @@ function selectDataPacksFromClassification(classificationResult, message) {
     classificationResult.needs_user_data === false
   ) {
     logInfo(
-      "⚠️ [PACK_SELECTOR] No data_requirements, falling back to keyword-based selection"
+      "⚠️ [PACK_SELECTOR] No data_requirements, falling back to keyword-based selection",
     );
     const slots = extractSlots(message);
     const needs = planNeeds(slots, message);
@@ -3760,9 +3778,7 @@ function selectDataPacksFromClassification(classificationResult, message) {
   // Determine if we should use merchant RPC directly
   // Use merchant RPC if: category_details is needed AND merchant filter exists
   const useMerchantRPC =
-    needs.includes("category_details") &&
-    filters.merchant &&
-    !filters.category; // Only use merchant RPC if no category filter
+    needs.includes("category_details") && filters.merchant && !filters.category; // Only use merchant RPC if no category filter
 
   logInfo("📦 [PACK_SELECTOR] Selected packs from classification:", {
     needs,
@@ -3950,14 +3966,14 @@ function extractSlots(message) {
 
   // Multi-month patterns (e.g., "last 6 months", "past 3 months")
   const multiMonthMatch = lowerMessage.match(
-    /(?:last|past|previous)\s+(\d+)\s+months?/
+    /(?:last|past|previous)\s+(\d+)\s+months?/,
   );
   if (multiMonthMatch) {
     monthsCount = parseInt(multiMonthMatch[1], 10);
     const startDate = new Date(
       now.getFullYear(),
       now.getMonth() - monthsCount,
-      1
+      1,
     );
     period = {
       start: startDate.toISOString().split("T")[0],
@@ -3973,7 +3989,7 @@ function extractSlots(message) {
   ) {
     // Check for "last 1 year" or "past 1 year" explicitly
     const yearMatch = lowerMessage.match(
-      /(?:last|past|previous)\s+(\d+)\s+years?/
+      /(?:last|past|previous)\s+(\d+)\s+years?/,
     );
     if (yearMatch) {
       const yearsCount = parseInt(yearMatch[1], 10);
@@ -3985,7 +4001,7 @@ function extractSlots(message) {
     const startDate = new Date(
       now.getFullYear(),
       now.getMonth() - monthsCount,
-      1
+      1,
     );
     period = {
       start: startDate.toISOString().split("T")[0],
@@ -4083,7 +4099,7 @@ async function buildContextPacks(userId, needs, slots) {
       const cachedData = await getCachedUserData(
         cacheType,
         userId,
-        cacheParams
+        cacheParams,
       );
       if (cachedData) {
         logInfo(`✅ [FINNY] Using pre-built context for: ${need}`);
@@ -4109,22 +4125,22 @@ async function buildContextPacks(userId, needs, slots) {
         packs,
         gaps,
         contextHeader: `CONTEXT_PACKS_INCLUDED: [${needs.join(
-          ", "
+          ", ",
         )}]\nDATA_GAPS: []`,
       };
     }
 
     logInfo(
       `🚀 [FINNY] Building context packs for remaining needs: [${remainingNeeds.join(
-        ", "
-      )}]`
+        ", ",
+      )}]`,
     );
 
     // OPTIMIZED: Create optimized fetch operations with better batching
     const fetchOperations = await createOptimizedFetchOperations(
       userId,
       remainingNeeds,
-      slots
+      slots,
     );
 
     if (fetchOperations.length === 0) {
@@ -4138,14 +4154,19 @@ async function buildContextPacks(userId, needs, slots) {
 
     // OPTIMIZED: Execute all operations in parallel with better error handling
     const results = await Promise.allSettled(
-      fetchOperations.map((op) => executeFetchOperation(op))
+      fetchOperations.map((op) => executeFetchOperation(op)),
     );
 
     const fetchTime = Date.now() - startTime;
     logInfo(`✅ [FINNY] All fetch operations completed in ${fetchTime}ms`);
 
     // OPTIMIZED: Process results with better error handling and caching
-    const { emptyMerchantQueries } = processFetchResults(results, fetchOperations, packs, gaps);
+    const { emptyMerchantQueries } = processFetchResults(
+      results,
+      fetchOperations,
+      packs,
+      gaps,
+    );
     // Store empty merchant queries in packs for prompt engine access
     if (emptyMerchantQueries && emptyMerchantQueries.length > 0) {
       packs.emptyMerchantQueries = emptyMerchantQueries;
@@ -4263,14 +4284,14 @@ async function createOptimizedFetchOperations(userId, needs, slots) {
   logInfo(
     `🔍 [CATEGORY_TXNS] Checking if operation needed - category: ${
       slots?.category
-    }, merchant: ${slots?.merchant}, period: ${slots?.period ? JSON.stringify(slots.period) : "undefined"}, useMerchantRPC: ${slots?.useMerchantRPC}`
+    }, merchant: ${slots?.merchant}, period: ${slots?.period ? JSON.stringify(slots.period) : "undefined"}, useMerchantRPC: ${slots?.useMerchantRPC}`,
   );
-  
+
   // Helper: Create default period if missing (for merchant/category queries without explicit period)
   const createDefaultPeriod = (timeRange) => {
     const now = new Date();
     let startDate, endDate, months;
-    
+
     switch (timeRange) {
       case "1_month":
         months = 1;
@@ -4296,31 +4317,37 @@ async function createOptimizedFetchOperations(userId, needs, slots) {
       default:
         // Default to last 30 days for "current" or unknown time_range
         months = 1;
-        const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-        startDate = new Date(thirtyDaysAgo.getFullYear(), thirtyDaysAgo.getMonth(), 1);
+        const thirtyDaysAgo = new Date(
+          now.getTime() - 30 * 24 * 60 * 60 * 1000,
+        );
+        startDate = new Date(
+          thirtyDaysAgo.getFullYear(),
+          thirtyDaysAgo.getMonth(),
+          1,
+        );
         endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
         break;
     }
-    
+
     return {
       months,
       start: startDate.toISOString().split("T")[0],
       end: endDate.toISOString().split("T")[0],
     };
   };
-  
+
   // Check if we need merchant-specific transactions (use merchant RPC)
   // If period is missing but merchant exists, create default period from time_range
   if (slots?.useMerchantRPC && slots?.merchant) {
     let period = slots.period;
-    
+
     // If no period provided, create default based on time_range from slots or default to 30 days
     if (!period) {
       const timeRange = slots.time_range || "current";
       period = createDefaultPeriod(timeRange);
       logInfo(
         `📅 [MERCHANT_TXNS] No period provided, creating default period from time_range '${timeRange}':`,
-        period
+        period,
       );
     }
     const cacheKey = `merchant_transactions_${slots.merchant}_${period.start}_${period.end}`;
@@ -4331,10 +4358,10 @@ async function createOptimizedFetchOperations(userId, needs, slots) {
       {
         merchant: slots.merchant,
         period: period,
-      }
+      },
     );
     logInfo(
-      `🔍 [MERCHANT_TXNS] Cache result: ${cachedMerchantTxns ? "HIT" : "MISS"}`
+      `🔍 [MERCHANT_TXNS] Cache result: ${cachedMerchantTxns ? "HIT" : "MISS"}`,
     );
 
     if (cachedMerchantTxns) {
@@ -4360,7 +4387,7 @@ async function createOptimizedFetchOperations(userId, needs, slots) {
       };
       logInfo(
         `🔍 [MERCHANT_TXNS] Creating RPC call to get_transactions_by_merchant with params:`,
-        JSON.stringify(merchantTxnParams, null, 2)
+        JSON.stringify(merchantTxnParams, null, 2),
       );
       addOperation(cacheKey, {
         key: cacheKey,
@@ -4386,97 +4413,97 @@ async function createOptimizedFetchOperations(userId, needs, slots) {
   // If period is missing but category exists, create default period from time_range
   else if (slots?.category) {
     let period = slots.period;
-    
+
     // If no period provided, create default based on time_range from slots or default to 30 days
     if (!period) {
       const timeRange = slots.time_range || "current";
       period = createDefaultPeriod(timeRange);
       logInfo(
         `📅 [CATEGORY_TXNS] No period provided, creating default period from time_range '${timeRange}':`,
-        period
+        period,
       );
     }
-    
+
     if (period) {
       const cacheKey = `category_transactions_${slots.category}_${period.start}_${period.end}`;
-    logInfo(`🔍 [CATEGORY_TXNS] Checking cache with key: ${cacheKey}`);
+      logInfo(`🔍 [CATEGORY_TXNS] Checking cache with key: ${cacheKey}`);
       const cachedCategoryTxns = await getCachedUserData(
         "category_transactions",
         userId,
         {
           category: slots.category,
           period: period,
-        }
+        },
       );
-    logInfo(
-      `🔍 [CATEGORY_TXNS] Cache result: ${cachedCategoryTxns ? "HIT" : "MISS"}`
-    );
-
-    if (cachedCategoryTxns) {
-      // Use cached data for both category_details and txns_by_category needs
-      addOperation(cacheKey, {
-        key: cacheKey,
-        type: "category_transactions",
-        userId,
-        category: slots.category,
-        period: period,
-        cached: true,
-        data: cachedCategoryTxns,
-        priority: 2,
-        servesNeeds: ["category_details", "txns_by_category"], // This operation serves both needs
-      });
-    } else {
-      // For multi-month queries, use get_spend_by_category_periods for monthly breakdown
-      // For single period queries, use get_transactions_by_category for detailed transactions
-      const fetchers = [];
-
-      // Check if this is a multi-month query (use get_spend_by_category_periods for trends)
-      const isMultiMonthQuery = period.months && period.months > 1;
       logInfo(
-        `🔍 [CATEGORY_TXNS] Is multi-month query: ${isMultiMonthQuery}, months: ${period.months}`
+        `🔍 [CATEGORY_TXNS] Cache result: ${cachedCategoryTxns ? "HIT" : "MISS"}`,
       );
 
-      if (isMultiMonthQuery) {
-        // Add monthly breakdown for multi-month queries
+      if (cachedCategoryTxns) {
+        // Use cached data for both category_details and txns_by_category needs
+        addOperation(cacheKey, {
+          key: cacheKey,
+          type: "category_transactions",
+          userId,
+          category: slots.category,
+          period: period,
+          cached: true,
+          data: cachedCategoryTxns,
+          priority: 2,
+          servesNeeds: ["category_details", "txns_by_category"], // This operation serves both needs
+        });
+      } else {
+        // For multi-month queries, use get_spend_by_category_periods for monthly breakdown
+        // For single period queries, use get_transactions_by_category for detailed transactions
+        const fetchers = [];
+
+        // Check if this is a multi-month query (use get_spend_by_category_periods for trends)
+        const isMultiMonthQuery = period.months && period.months > 1;
+        logInfo(
+          `🔍 [CATEGORY_TXNS] Is multi-month query: ${isMultiMonthQuery}, months: ${period.months}`,
+        );
+
+        if (isMultiMonthQuery) {
+          // Add monthly breakdown for multi-month queries
+          fetchers.push({
+            name: "category_spend_by_periods",
+            rpc: "get_spend_by_category_periods",
+            params: {
+              p_user_id: userId,
+              p_months: period.months,
+            },
+          });
+        }
+
+        // Always fetch detailed transactions for the period
+        const categoryTxnParams = {
+          p_user_id: userId,
+          p_category: slots.category,
+          p_start: period.start,
+          p_end: period.end,
+        };
+        logInfo(
+          `🔍 [CATEGORY_TXNS] Creating RPC call to get_transactions_by_category with params:`,
+          JSON.stringify(categoryTxnParams, null, 2),
+        );
         fetchers.push({
-          name: "category_spend_by_periods",
-          rpc: "get_spend_by_category_periods",
-          params: {
-            p_user_id: userId,
-            p_months: period.months,
-          },
+          name: "category_transactions",
+          rpc: "get_transactions_by_category",
+          params: categoryTxnParams,
+        });
+
+        addOperation(cacheKey, {
+          key: cacheKey,
+          type: "category_transactions",
+          userId,
+          category: slots.category,
+          period: period,
+          cached: false,
+          priority: 2,
+          servesNeeds: ["category_details", "txns_by_category"],
+          fetchers,
         });
       }
-
-      // Always fetch detailed transactions for the period
-      const categoryTxnParams = {
-        p_user_id: userId,
-        p_category: slots.category,
-        p_start: period.start,
-        p_end: period.end,
-      };
-      logInfo(
-        `🔍 [CATEGORY_TXNS] Creating RPC call to get_transactions_by_category with params:`,
-        JSON.stringify(categoryTxnParams, null, 2)
-      );
-      fetchers.push({
-        name: "category_transactions",
-        rpc: "get_transactions_by_category",
-        params: categoryTxnParams,
-      });
-
-      addOperation(cacheKey, {
-        key: cacheKey,
-        type: "category_transactions",
-        userId,
-        category: slots.category,
-        period: period,
-        cached: false,
-        priority: 2,
-        servesNeeds: ["category_details", "txns_by_category"],
-        fetchers,
-      });
-    }
     }
   }
 
@@ -4590,12 +4617,12 @@ async function executeFetchOperation(operation) {
   try {
     // Execute all fetchers for this operation in parallel
     logInfo(
-      `🔍 [RPC] Executing ${operation.fetchers.length} fetchers for operation: ${operation.key} (type: ${operation.type})`
+      `🔍 [RPC] Executing ${operation.fetchers.length} fetchers for operation: ${operation.key} (type: ${operation.type})`,
     );
     const fetcherPromises = operation.fetchers.map((fetcher) => {
       logInfo(
         `🔍 [RPC] Calling ${fetcher.rpc} with params:`,
-        JSON.stringify(fetcher.params, null, 2)
+        JSON.stringify(fetcher.params, null, 2),
       );
       return withTimeout(supabase.rpc(fetcher.rpc, fetcher.params), 2000, null)
         .then((result) => {
@@ -4605,7 +4632,7 @@ async function executeFetchOperation(operation) {
         .catch((error) => {
           logError(
             `❌ [RPC] ${fetcher.name} (${fetcher.rpc}) fetch failed:`,
-            error
+            error,
           );
           logError(`❌ [RPC] Error details:`, {
             message: error?.message,
@@ -4626,12 +4653,12 @@ async function executeFetchOperation(operation) {
         hasData: !!r?.data,
         dataLength: Array.isArray(r?.data) ? r.data.length : r?.data ? 1 : 0,
         error: r?.error || null,
-      }))
+      })),
     );
 
     // Process results based on operation type
     logInfo(
-      `🔍 [PROCESS] Processing operation ${operation.key} (type: ${operation.type}) with ${results.length} results`
+      `🔍 [PROCESS] Processing operation ${operation.key} (type: ${operation.type}) with ${results.length} results`,
     );
     const processedData = processOperationData(operation, results);
     logInfo(
@@ -4651,7 +4678,7 @@ async function executeFetchOperation(operation) {
                   }
                 : "See full data",
           }
-        : "NULL - No data processed"
+        : "NULL - No data processed",
     );
 
     if (processedData) {
@@ -4661,7 +4688,7 @@ async function executeFetchOperation(operation) {
     } else {
       logWarn(
         `⚠️ [PROCESS] Operation ${operation.key} returned no valid data. Results were:`,
-        results
+        results,
       );
       return { success: false, error: "No valid data returned" };
     }
@@ -4675,7 +4702,7 @@ async function executeFetchOperation(operation) {
 function processFetchResults(results, operations, packs, gaps) {
   // Track empty merchant queries explicitly
   const emptyMerchantQueries = [];
-  
+
   for (let i = 0; i < results.length; i++) {
     const result = results[i];
     const operation = operations[i];
@@ -4690,7 +4717,7 @@ function processFetchResults(results, operations, packs, gaps) {
           logInfo(
             `🔍 [PACKS] Setting categoryDetails pack with ${
               data?.transactions?.length || 0
-            } transactions`
+            } transactions`,
           );
           if (operation.servesNeeds?.includes("category_details")) {
             packs.categoryDetails = data;
@@ -4703,7 +4730,7 @@ function processFetchResults(results, operations, packs, gaps) {
             if (!packs.categoryDetails) {
               packs.categoryDetails = data;
               logInfo(
-                `✅ [PACKS] categoryDetails set (serves txns_by_category)`
+                `✅ [PACKS] categoryDetails set (serves txns_by_category)`,
               );
             }
           }
@@ -4714,7 +4741,7 @@ function processFetchResults(results, operations, packs, gaps) {
               ? packs.categoryDetails.transactions.length
               : 0,
             sampleTransactionNames: Array.isArray(
-              packs.categoryDetails?.transactions
+              packs.categoryDetails?.transactions,
             )
               ? packs.categoryDetails.transactions
                   .slice(0, 3)
@@ -4755,7 +4782,7 @@ function processFetchResults(results, operations, packs, gaps) {
           periodDisplay: `${operation.period.start} to ${operation.period.end}`,
         });
         logInfo(
-          `📝 [EMPTY_MERCHANT] Tracked empty merchant query: ${operation.merchant} (${operation.period.start} to ${operation.period.end})`
+          `📝 [EMPTY_MERCHANT] Tracked empty merchant query: ${operation.merchant} (${operation.period.start} to ${operation.period.end})`,
         );
       }
 
@@ -4769,7 +4796,7 @@ function processFetchResults(results, operations, packs, gaps) {
       }
     }
   }
-  
+
   // Return empty merchant queries (will be stored in packs by caller)
   return { packs, gaps, emptyMerchantQueries };
 }
@@ -4834,12 +4861,16 @@ function processSummaryData(results) {
   const recentTransactions = compositeData.recent_transactions || [];
   const spendByCategory = compositeData.spend_by_category || [];
   // New fields for monthly breakdown (backward compatible - will be empty array if not present)
-  const spendByCategoryCurrentMonth = compositeData.spend_by_category_current_month || [];
-  const spendByCategoryLastMonth = compositeData.spend_by_category_last_month || [];
+  const spendByCategoryCurrentMonth =
+    compositeData.spend_by_category_current_month || [];
+  const spendByCategoryLastMonth =
+    compositeData.spend_by_category_last_month || [];
   const budget = compositeData.budget || null;
 
   // Log raw data for debugging
-  const hasNewFields = Array.isArray(spendByCategoryCurrentMonth) && spendByCategoryCurrentMonth.length > 0;
+  const hasNewFields =
+    Array.isArray(spendByCategoryCurrentMonth) &&
+    spendByCategoryCurrentMonth.length > 0;
   console.log("📊 [SUMMARY_DATA] Raw composite data from RPC:", {
     net_worth: netWorth.net_worth,
     liquid_assets: netWorth.liquid_assets,
@@ -4848,17 +4879,27 @@ function processSummaryData(results) {
     bank_accounts_count: netWorth.bank_accounts_count || 0,
     recent_transactions_count: recentTransactions.length,
     spend_categories_count: spendByCategory.length,
-    spend_categories_current_month_count: Array.isArray(spendByCategoryCurrentMonth) ? spendByCategoryCurrentMonth.length : 0,
-    spend_categories_last_month_count: Array.isArray(spendByCategoryLastMonth) ? spendByCategoryLastMonth.length : 0,
+    spend_categories_current_month_count: Array.isArray(
+      spendByCategoryCurrentMonth,
+    )
+      ? spendByCategoryCurrentMonth.length
+      : 0,
+    spend_categories_last_month_count: Array.isArray(spendByCategoryLastMonth)
+      ? spendByCategoryLastMonth.length
+      : 0,
     has_new_monthly_fields: hasNewFields,
     has_budget: !!budget,
   });
-  
+
   // Warn if new fields are missing (likely old cache or migration not run)
   if (!hasNewFields && spendByCategory.length > 0) {
-    console.log("⚠️ [SUMMARY_DATA] New monthly spending fields are missing! This could mean:");
+    console.log(
+      "⚠️ [SUMMARY_DATA] New monthly spending fields are missing! This could mean:",
+    );
     console.log("   1. SQL migration hasn't been run yet");
-    console.log("   2. Cache contains old data - clear cache or wait for expiration");
+    console.log(
+      "   2. Cache contains old data - clear cache or wait for expiration",
+    );
     console.log("   3. Database function doesn't have the new fields");
   }
 
@@ -4875,8 +4916,12 @@ function processSummaryData(results) {
         }))
       : [],
     spendByCategory: Array.isArray(spendByCategory) ? spendByCategory : [],
-    spendByCategoryCurrentMonth: Array.isArray(spendByCategoryCurrentMonth) ? spendByCategoryCurrentMonth : [],
-    spendByCategoryLastMonth: Array.isArray(spendByCategoryLastMonth) ? spendByCategoryLastMonth : [],
+    spendByCategoryCurrentMonth: Array.isArray(spendByCategoryCurrentMonth)
+      ? spendByCategoryCurrentMonth
+      : [],
+    spendByCategoryLastMonth: Array.isArray(spendByCategoryLastMonth)
+      ? spendByCategoryLastMonth
+      : [],
     accounts: Array.isArray(netWorth.bank_accounts)
       ? netWorth.bank_accounts
       : [],
@@ -4907,7 +4952,7 @@ function processCategoryTransactionsData(operation, results) {
       period: operation.period,
       resultsCount: results.length,
       isMerchantQuery: operation.isMerchantQuery || false,
-    }
+    },
   );
 
   // PHASE 2: Handle merchant queries (get_transactions_by_merchant returns transactions directly)
@@ -4916,10 +4961,14 @@ function processCategoryTransactionsData(operation, results) {
       results.find((r) => r?.name === "merchant_transactions") ||
       results[results.length - 1];
 
-    if (!merchantRes?.data || !Array.isArray(merchantRes.data) || merchantRes.data.length === 0) {
+    if (
+      !merchantRes?.data ||
+      !Array.isArray(merchantRes.data) ||
+      merchantRes.data.length === 0
+    ) {
       logWarn(
         `⚠️ [MERCHANT_TXNS_PROCESS] No merchant transaction data found. merchantRes:`,
-        merchantRes
+        merchantRes,
       );
       return null;
     }
@@ -4949,7 +4998,7 @@ function processCategoryTransactionsData(operation, results) {
     // Legacy total_spend for backward compatibility (all transactions)
     // Note: This represents total activity (sent + received), not net flow
     const totalSpend = totalSent + totalReceived;
-    
+
     // CRITICAL: Always include sent/received totals even if one is zero
     // This ensures bidirectional detection works correctly in prompt engine
 
@@ -4994,7 +5043,7 @@ function processCategoryTransactionsData(operation, results) {
           amount: t.amount,
           direction: t.direction,
         })),
-      }
+      },
     );
 
     return result;
@@ -5006,7 +5055,7 @@ function processCategoryTransactionsData(operation, results) {
     results.find((r) => r?.name === "category_transactions") ||
     results[results.length - 1];
   const periodsRes = results.find(
-    (r) => r?.name === "category_spend_by_periods"
+    (r) => r?.name === "category_spend_by_periods",
   );
 
   logInfo(`🔍 [CATEGORY_TXNS_PROCESS] Found transaction result:`, {
@@ -5015,8 +5064,8 @@ function processCategoryTransactionsData(operation, results) {
     dataLength: Array.isArray(txnRes?.data)
       ? txnRes.data.length
       : txnRes?.data
-      ? 1
-      : 0,
+        ? 1
+        : 0,
     dataType: txnRes?.data ? typeof txnRes.data : "undefined",
     firstItem:
       Array.isArray(txnRes?.data) && txnRes.data.length > 0
@@ -5027,7 +5076,7 @@ function processCategoryTransactionsData(operation, results) {
   if (!txnRes?.data || txnRes.data.length === 0) {
     logWarn(
       `⚠️ [CATEGORY_TXNS_PROCESS] No transaction data found. txnRes:`,
-      txnRes
+      txnRes,
     );
     return null;
   }
@@ -5059,7 +5108,7 @@ function processCategoryTransactionsData(operation, results) {
       allMerchants: [
         ...new Set(result.transactions.map((t) => t.merchant)),
       ].slice(0, 10),
-    }
+    },
   );
 
   // If we have monthly breakdown data, filter it for this category and add it
@@ -5068,7 +5117,7 @@ function processCategoryTransactionsData(operation, results) {
       .filter(
         (item) =>
           item.category &&
-          item.category.toLowerCase() === operation.category.toLowerCase()
+          item.category.toLowerCase() === operation.category.toLowerCase(),
       )
       .map((item) => ({
         month: item.month,
@@ -5215,7 +5264,7 @@ async function handlePrebuildContext(userId, silent = false) {
       const totalTime = Date.now() - startTime;
       if (!silent) {
         logInfo(
-          `⚡ [PREBUILD] All contexts already cached and fresh (checked in ${totalTime}ms)`
+          `⚡ [PREBUILD] All contexts already cached and fresh (checked in ${totalTime}ms)`,
         );
       }
       return {
@@ -5233,7 +5282,7 @@ async function handlePrebuildContext(userId, silent = false) {
         Object.keys(cachedContexts)
           .filter((k) => cachedContexts[k])
           .join(", ") || "none"
-      })`
+      })`,
     );
 
     // Build base context pack first (highest priority) - only if not cached
@@ -5257,7 +5306,7 @@ async function handlePrebuildContext(userId, silent = false) {
           basePack,
           {
             ttl: 50 * 60 * 1000,
-          }
+          },
         );
         logInfo("✅ [PREBUILD] Base context cached successfully");
         logInfo("🔍 [PREBUILD] Base context data:", {
@@ -5285,7 +5334,7 @@ async function handlePrebuildContext(userId, silent = false) {
         const investContext = await buildContextPacks(
           userId,
           ["invest_holdings"],
-          {}
+          {},
         );
         const investPack =
           investContext?.packs?.[NEED_CONFIG.invest_holdings.packKey] || null;
@@ -5294,7 +5343,7 @@ async function handlePrebuildContext(userId, silent = false) {
             NEED_CONFIG.invest_holdings.cacheType,
             userId,
             investPack,
-            { ttl: 50 * 60 * 1000 }
+            { ttl: 50 * 60 * 1000 },
           );
           logInfo("✅ [PREBUILD] Investment context cached");
           logInfo("🔍 [PREBUILD] Investment context data:", {
@@ -5309,7 +5358,7 @@ async function handlePrebuildContext(userId, silent = false) {
       }
     } else {
       logInfo(
-        "✅ [PREBUILD] Investment context already cached, skipping build"
+        "✅ [PREBUILD] Investment context already cached, skipping build",
       );
     }
 
@@ -5319,7 +5368,7 @@ async function handlePrebuildContext(userId, silent = false) {
         const goalsContext = await buildContextPacks(
           userId,
           ["goals_overview"],
-          {}
+          {},
         );
         const goalsPack =
           goalsContext?.packs?.[NEED_CONFIG.goals_overview.packKey] || null;
@@ -5328,7 +5377,7 @@ async function handlePrebuildContext(userId, silent = false) {
             NEED_CONFIG.goals_overview.cacheType,
             userId,
             goalsPack,
-            { ttl: 50 * 60 * 1000 }
+            { ttl: 50 * 60 * 1000 },
           );
           logInfo("✅ [PREBUILD] Goals context cached");
           logInfo("🔍 [PREBUILD] Goals context data:", {
@@ -5351,7 +5400,7 @@ async function handlePrebuildContext(userId, silent = false) {
         const cashflowContext = await buildContextPacks(
           userId,
           ["cashflow_monthly"],
-          {}
+          {},
         );
         const cashflowPack =
           cashflowContext?.packs?.[NEED_CONFIG.cashflow_monthly.packKey] ||
@@ -5361,7 +5410,7 @@ async function handlePrebuildContext(userId, silent = false) {
             NEED_CONFIG.cashflow_monthly.cacheType,
             userId,
             cashflowPack,
-            { ttl: 50 * 60 * 1000 }
+            { ttl: 50 * 60 * 1000 },
           );
           logInfo("✅ [PREBUILD] Cashflow context cached");
           logInfo("🔍 [PREBUILD] Cashflow context data:", {
@@ -5396,7 +5445,7 @@ async function handlePrebuildContext(userId, silent = false) {
             spendPack,
             {
               ttl: 50 * 60 * 1000,
-            }
+            },
           );
           logInfo("✅ [PREBUILD] Spend context cached");
           logInfo("🔍 [PREBUILD] Spend context data:", {
@@ -5445,7 +5494,7 @@ async function handlePrebuildContext(userId, silent = false) {
 async function handleClassify(message, context) {
   console.log(
     "🔍 [FINNY] Starting classification in handleClassify for message:",
-    message
+    message,
   );
   const startTime = Date.now();
 
@@ -5552,9 +5601,12 @@ async function handleClassify(message, context) {
           cachedResult.entities = [cachedResult.ticker];
         }
         // Backward compatibility: Add data_requirements if missing (Phase 1)
-        if (cachedResult.needs_user_data === true && !cachedResult.data_requirements) {
+        if (
+          cachedResult.needs_user_data === true &&
+          !cachedResult.data_requirements
+        ) {
           console.log(
-            "⚠️ [FINNY] Cached classification missing data_requirements, adding default"
+            "⚠️ [FINNY] Cached classification missing data_requirements, adding default",
           );
           cachedResult.data_requirements = {
             required_packs: ["summary_min"],
@@ -5574,7 +5626,7 @@ async function handleClassify(message, context) {
             cachedResult.heuristic === 1)
         ) {
           console.log(
-            "🚨 [FINNY] CRITICAL ERROR: About to return heuristic result! Blocking return."
+            "🚨 [FINNY] CRITICAL ERROR: About to return heuristic result! Blocking return.",
           );
           const key = generateClassificationCacheKey(text);
           classificationCache.delete(key);
@@ -5627,7 +5679,7 @@ async function handleClassify(message, context) {
           },
           signal: options.signal,
           body: JSON.stringify(requestBody),
-        }
+        },
       );
 
       const r = await fetchPromise;
@@ -5654,7 +5706,7 @@ async function handleClassify(message, context) {
         llmModels,
         callLLM,
         timeoutMs,
-        "Classification"
+        "Classification",
       );
       data = llmResult.result;
       usedModel = llmResult.model;
@@ -5663,19 +5715,19 @@ async function handleClassify(message, context) {
       console.error(
         `❌ [FINNY] All classification models failed: ${
           llmError?.message || "unknown error"
-        }`
+        }`,
       );
       throw new Error(
         `Classification failed: all models failed - ${
           llmError?.message || "unknown"
-        }`
+        }`,
       );
     }
 
     // Ensure we have valid data before proceeding
     if (!data || !usedModel) {
       throw new Error(
-        "Classification failed: no valid response from any model"
+        "Classification failed: no valid response from any model",
       );
     }
 
@@ -5694,6 +5746,17 @@ async function handleClassify(message, context) {
     if (cleanContent.startsWith("```json")) {
       cleanContent = cleanContent.slice(7).trim();
     }
+    // Handle case where LLM returns "json\n{...}" (word "json" followed by newline and JSON)
+    if (
+      cleanContent.startsWith("json\n") ||
+      cleanContent.startsWith("json\r\n")
+    ) {
+      cleanContent = cleanContent.replace(/^json[\r\n]+/, "").trim();
+    }
+    // Also handle case where it's just "json" followed by whitespace and then JSON
+    if (/^json\s+/.test(cleanContent)) {
+      cleanContent = cleanContent.replace(/^json\s+/, "").trim();
+    }
 
     // Handle incomplete JSON responses
     let out;
@@ -5704,7 +5767,7 @@ async function handleClassify(message, context) {
       // If 'intent' field is missing or has wrong type, treat as malformed
       if (!out.intent || typeof out.intent !== "string") {
         console.log(
-          "❌ [FINNY] Malformed classification result - missing or invalid 'intent' field"
+          "❌ [FINNY] Malformed classification result - missing or invalid 'intent' field",
         );
         console.log("❌ [FINNY] Malformed structure:", out);
         throw new Error("Invalid classification structure");
@@ -5713,7 +5776,7 @@ async function handleClassify(message, context) {
       // Check if required fields exist
       if (out.needs_web === undefined || out.needs_user_data === undefined) {
         console.log(
-          "❌ [FINNY] Malformed classification result - missing required fields"
+          "❌ [FINNY] Malformed classification result - missing required fields",
         );
         console.log("❌ [FINNY] Malformed structure:", out);
         throw new Error("Missing required classification fields");
@@ -5733,7 +5796,7 @@ async function handleClassify(message, context) {
 
       if (!out.emotional_state) {
         console.log(
-          "⚠️ [FINNY] Missing emotional_state, defaulting to neutral"
+          "⚠️ [FINNY] Missing emotional_state, defaulting to neutral",
         );
         out.emotional_state = "neutral";
       }
@@ -5748,9 +5811,12 @@ async function handleClassify(message, context) {
       // Parse and validate data_requirements (NEW - Phase 1)
       if (out.needs_user_data === true) {
         // If needs_user_data is true, ensure data_requirements exists
-        if (!out.data_requirements || typeof out.data_requirements !== "object") {
+        if (
+          !out.data_requirements ||
+          typeof out.data_requirements !== "object"
+        ) {
           console.log(
-            "⚠️ [FINNY] Missing data_requirements for needs_user_data=true, creating default"
+            "⚠️ [FINNY] Missing data_requirements for needs_user_data=true, creating default",
           );
           out.data_requirements = {
             required_packs: ["summary_min"],
@@ -5764,7 +5830,7 @@ async function handleClassify(message, context) {
           const dr = out.data_requirements;
           if (!Array.isArray(dr.required_packs)) {
             console.log(
-              "⚠️ [FINNY] Invalid required_packs, defaulting to ['summary_min']"
+              "⚠️ [FINNY] Invalid required_packs, defaulting to ['summary_min']",
             );
             dr.required_packs = ["summary_min"];
           }
@@ -5781,7 +5847,7 @@ async function handleClassify(message, context) {
           ]);
           if (!allowedGranularity.has(dr.granularity)) {
             console.log(
-              "⚠️ [FINNY] Invalid granularity, defaulting to 'summary_level'"
+              "⚠️ [FINNY] Invalid granularity, defaulting to 'summary_level'",
             );
             dr.granularity = "summary_level";
           }
@@ -5795,14 +5861,14 @@ async function handleClassify(message, context) {
           ]);
           if (!allowedTimeRange.has(dr.time_range)) {
             console.log(
-              "⚠️ [FINNY] Invalid time_range, defaulting to 'current'"
+              "⚠️ [FINNY] Invalid time_range, defaulting to 'current'",
             );
             dr.time_range = "current";
           }
           // Ensure summary_min is in required_packs if needs_user_data is true
           if (!dr.required_packs.includes("summary_min")) {
             console.log(
-              "⚠️ [FINNY] Adding 'summary_min' to required_packs (always needed for context)"
+              "⚠️ [FINNY] Adding 'summary_min' to required_packs (always needed for context)",
             );
             dr.required_packs.unshift("summary_min");
           }
@@ -5812,48 +5878,71 @@ async function handleClassify(message, context) {
           if (dr.filters?.period && dr.filters.period.months) {
             const now = new Date();
             const monthsAgo = dr.filters.period.months;
-            const startDate = new Date(now.getFullYear(), now.getMonth() - monthsAgo, 1);
-            const endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-            
+            const startDate = new Date(
+              now.getFullYear(),
+              now.getMonth() - monthsAgo,
+              1,
+            );
+            const endDate = new Date(
+              now.getFullYear(),
+              now.getMonth(),
+              now.getDate(),
+            );
+
             dr.filters.period.start = startDate.toISOString().split("T")[0];
             dr.filters.period.end = endDate.toISOString().split("T")[0];
-            
+
             console.log(
-              `📅 [FINNY] Recalculated period dates: ${dr.filters.period.start} to ${dr.filters.period.end} (${monthsAgo} months from today)`
+              `📅 [FINNY] Recalculated period dates: ${dr.filters.period.start} to ${dr.filters.period.end} (${monthsAgo} months from today)`,
             );
-          } else if (dr.filters?.period && (dr.filters.period.start || dr.filters.period.end)) {
+          } else if (
+            dr.filters?.period &&
+            (dr.filters.period.start || dr.filters.period.end)
+          ) {
             // If period has dates but they look old (before 2025), recalculate based on time_range
-            const periodStart = dr.filters.period.start ? new Date(dr.filters.period.start) : null;
-            const periodEnd = dr.filters.period.end ? new Date(dr.filters.period.end) : null;
+            const periodStart = dr.filters.period.start
+              ? new Date(dr.filters.period.start)
+              : null;
+            const periodEnd = dr.filters.period.end
+              ? new Date(dr.filters.period.end)
+              : null;
             const now = new Date();
             const year2025 = new Date("2025-01-01");
-            
+
             // If dates are before 2025, they're likely from LLM training data - recalculate
             if (
               (periodStart && periodStart < year2025) ||
               (periodEnd && periodEnd < year2025)
             ) {
               console.log(
-                `📅 [FINNY] Detected old dates in period, recalculating from time_range: ${dr.time_range}`
+                `📅 [FINNY] Detected old dates in period, recalculating from time_range: ${dr.time_range}`,
               );
-              
+
               let monthsAgo = 1; // default
               if (dr.time_range === "3_months") monthsAgo = 3;
               else if (dr.time_range === "6_months") monthsAgo = 6;
               else if (dr.time_range === "1_year") monthsAgo = 12;
               else if (dr.time_range === "1_month") monthsAgo = 1;
               else if (dr.time_range === "current") monthsAgo = 0;
-              
+
               if (monthsAgo > 0) {
-                const startDate = new Date(now.getFullYear(), now.getMonth() - monthsAgo, 1);
-                const endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-                
+                const startDate = new Date(
+                  now.getFullYear(),
+                  now.getMonth() - monthsAgo,
+                  1,
+                );
+                const endDate = new Date(
+                  now.getFullYear(),
+                  now.getMonth(),
+                  now.getDate(),
+                );
+
                 dr.filters.period.start = startDate.toISOString().split("T")[0];
                 dr.filters.period.end = endDate.toISOString().split("T")[0];
                 dr.filters.period.months = monthsAgo;
-                
+
                 console.log(
-                  `📅 [FINNY] Recalculated period: ${dr.filters.period.start} to ${dr.filters.period.end} (${monthsAgo} months)`
+                  `📅 [FINNY] Recalculated period: ${dr.filters.period.start} to ${dr.filters.period.end} (${monthsAgo} months)`,
                 );
               }
             }
@@ -5865,7 +5954,7 @@ async function handleClassify(message, context) {
       }
     } catch (parseError) {
       console.log(
-        "❌ [FINNY] JSON parse/validation error, using fallback classification"
+        "❌ [FINNY] JSON parse/validation error, using fallback classification",
       );
       console.log("❌ [FINNY] Error:", parseError.message);
       console.log("❌ [FINNY] Raw content was:", cleanContent);
@@ -5931,7 +6020,7 @@ async function handleClassify(message, context) {
       : "unknown";
     if (!Array.isArray(out.missing_fields)) out.missing_fields = [];
     out.missing_fields = Array.from(
-      new Set(out.missing_fields.filter((f) => allowedMissingFields.has(f)))
+      new Set(out.missing_fields.filter((f) => allowedMissingFields.has(f))),
     ).slice(0, 5);
 
     // Confidence clamp
@@ -5974,7 +6063,7 @@ async function handleClassify(message, context) {
     // Final validation for data_requirements (backward compatibility)
     if (out.needs_user_data === true && !out.data_requirements) {
       console.log(
-        "⚠️ [FINNY] Missing data_requirements for needs_user_data=true, creating default"
+        "⚠️ [FINNY] Missing data_requirements for needs_user_data=true, creating default",
       );
       out.data_requirements = {
         required_packs: ["summary_min"],
@@ -5993,9 +6082,17 @@ async function handleClassify(message, context) {
       if (period.months) {
         const now = new Date();
         const monthsAgo = period.months;
-        const startDate = new Date(now.getFullYear(), now.getMonth() - monthsAgo, 1);
-        const endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-        
+        const startDate = new Date(
+          now.getFullYear(),
+          now.getMonth() - monthsAgo,
+          1,
+        );
+        const endDate = new Date(
+          now.getFullYear(),
+          now.getMonth(),
+          now.getDate(),
+        );
+
         period.start = startDate.toISOString().split("T")[0];
         period.end = endDate.toISOString().split("T")[0];
       } else if (period.start || period.end) {
@@ -6003,7 +6100,7 @@ async function handleClassify(message, context) {
         const periodStart = period.start ? new Date(period.start) : null;
         const periodEnd = period.end ? new Date(period.end) : null;
         const year2025 = new Date("2025-01-01");
-        
+
         if (
           (periodStart && periodStart < year2025) ||
           (periodEnd && periodEnd < year2025)
@@ -6015,12 +6112,20 @@ async function handleClassify(message, context) {
           else if (timeRange === "1_year") monthsAgo = 12;
           else if (timeRange === "1_month") monthsAgo = 1;
           else if (timeRange === "current") monthsAgo = 0;
-          
+
           if (monthsAgo > 0) {
             const now = new Date();
-            const startDate = new Date(now.getFullYear(), now.getMonth() - monthsAgo, 1);
-            const endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-            
+            const startDate = new Date(
+              now.getFullYear(),
+              now.getMonth() - monthsAgo,
+              1,
+            );
+            const endDate = new Date(
+              now.getFullYear(),
+              now.getMonth(),
+              now.getDate(),
+            );
+
             period.start = startDate.toISOString().split("T")[0];
             period.end = endDate.toISOString().split("T")[0];
             period.months = monthsAgo;
@@ -6033,7 +6138,7 @@ async function handleClassify(message, context) {
     if (out.data_requirements) {
       console.log(
         "📦 [FINNY] Data requirements:",
-        JSON.stringify(out.data_requirements, null, 2)
+        JSON.stringify(out.data_requirements, null, 2),
       );
     }
 
@@ -6055,7 +6160,7 @@ async function handleClassify(message, context) {
     // CRITICAL: Never cache heuristic results - ensure out doesn't have heuristic flag
     if (out.hasOwnProperty("heuristic")) {
       console.log(
-        "⚠️ [FINNY] Removing heuristic flag from LLM result before caching"
+        "⚠️ [FINNY] Removing heuristic flag from LLM result before caching",
       );
       delete out.heuristic;
     }
@@ -6069,7 +6174,7 @@ async function handleClassify(message, context) {
     // Final safety check before returning
     if (out.hasOwnProperty("heuristic") && out.heuristic) {
       console.log(
-        "🚨 [FINNY] CRITICAL: LLM returned heuristic result! Removing flag."
+        "🚨 [FINNY] CRITICAL: LLM returned heuristic result! Removing flag.",
       );
       delete out.heuristic;
     }
@@ -6081,7 +6186,7 @@ async function handleClassify(message, context) {
     // Handle timeout specifically
     if (e?.message?.includes("timeout")) {
       console.log(
-        "⏰ [FINNY] Classification timed out after 8 seconds, using fallback"
+        "⏰ [FINNY] Classification timed out after 8 seconds, using fallback",
       );
     }
 
@@ -6112,7 +6217,7 @@ async function handleOffTopic(
   message,
   context,
   wantsStreaming = false,
-  res = null
+  res = null,
 ) {
   console.log("🚫 [FINNY] Handling off-topic query:", message);
   const startTime = Date.now();
@@ -6137,7 +6242,7 @@ async function handleOffTopic(
   const hasVenting = ventingPatterns.some((pattern) => pattern.test(lower));
   const hasFinancialContext =
     /\b(money|finance|financial|budget|debt|spend|save|invest|income|salary|bill|payment|rent|mortgage|credit|loan)\b/i.test(
-      lower
+      lower,
     );
   const isVenting = hasVenting && !hasFinancialContext;
 
@@ -6157,7 +6262,7 @@ async function handleOffTopic(
     } catch (error) {
       console.log(
         "⚠️ [OFF_TOPIC] Could not load net worth data:",
-        error?.message
+        error?.message,
       );
     }
   }
@@ -6228,7 +6333,7 @@ async function handleOffTopic(
       try {
         console.log(
           "🧠 [OFF_TOPIC] Loading user memories and profile in parallel for user:",
-          userId
+          userId,
         );
 
         // Load memory and profile in parallel
@@ -6240,7 +6345,7 @@ async function handleOffTopic(
           fetchSupermemoryProfile(userId).catch((error) => {
             console.log(
               "⚠️ [OFF_TOPIC] Error loading profile:",
-              error?.message
+              error?.message,
             );
             return null;
           }),
@@ -6340,7 +6445,7 @@ async function handleOffTopic(
               },
             ],
           }),
-        }
+        },
       );
 
       if (!resp.ok) {
@@ -6363,14 +6468,14 @@ async function handleOffTopic(
         llmModels,
         callMainLLM,
         20000,
-        "LLM"
+        "LLM",
       );
       resp = llmResult.result;
       usedModel = llmResult.model;
     } catch (llmError) {
       console.error(
         "❌ [FINNY] All LLM attempts failed for off-topic:",
-        llmError?.message
+        llmError?.message,
       );
       return {
         text: "I'm a finance coach. What financial questions can I help you with?",
@@ -6397,7 +6502,7 @@ async function handleOffTopic(
         }).catch((error) => {
           console.error(
             "❌ [OFF_TOPIC] Failed to store conversation memory:",
-            error
+            error,
           );
         });
       };
@@ -6424,7 +6529,7 @@ async function handleOffTopic(
         sources_used: [],
         cached: false,
         category: category,
-      })
+      }),
     );
 
     return {
@@ -6497,7 +6602,7 @@ function buildStreamFallbackResponse(message) {
   return {
     message: cleanResponseFormatting(
       message ||
-        "Sorry — something stalled on my side. Please try again in a moment."
+        "Sorry — something stalled on my side. Please try again in a moment.",
     ),
     type: "assistant",
     hideActions: true,
@@ -6524,8 +6629,8 @@ function startStreamWatchdog(res, { timeoutMs = 30000, pingMs = 8000 } = {}) {
         res,
         "complete",
         buildStreamFallbackResponse(
-          "Sorry — the response took too long. Please try again."
-        )
+          "Sorry — the response took too long. Please try again.",
+        ),
       );
       res.end();
       clearInterval(intervalId);
@@ -6630,7 +6735,7 @@ async function limitedBraveSearch(query) {
         const controller = new AbortController();
         const p = braveSearch(query, { signal: controller.signal });
         const res = await withTimeout(p, RATE_LIMITS.timeout, null, () =>
-          controller.abort()
+          controller.abort(),
         );
         if (res === null) throw new Error("braveSearch timeout");
         return res;
@@ -6672,14 +6777,14 @@ async function planStockRequest(message) {
     console.log("🔍 [STOCK_PLANNER] Using model:", PRIMARY_OPENROUTER_MODEL);
     console.log(
       "🔍 [STOCK_PLANNER] API key present:",
-      !!process.env.OPENROUTER_API_KEY
+      !!process.env.OPENROUTER_API_KEY,
     );
 
     // Add timeout to prevent hangs
     const timeoutPromise = new Promise((_, reject) => {
       setTimeout(
         () => reject(new Error("Stock planner timeout after 10 seconds")),
-        10000
+        10000,
       );
     });
 
@@ -6756,7 +6861,7 @@ async function planStockRequest(message) {
             },
           },
         }),
-      }
+      },
     );
 
     // Race between fetch and timeout
@@ -6765,7 +6870,7 @@ async function planStockRequest(message) {
     if (!r.ok) {
       const errorText = await r.text();
       console.error(
-        `❌ [STOCK_PLANNER] HTTP Error: ${r.status} ${r.statusText}`
+        `❌ [STOCK_PLANNER] HTTP Error: ${r.status} ${r.statusText}`,
       );
       console.error(`❌ [STOCK_PLANNER] Error details:`, errorText);
       return null;
@@ -6807,7 +6912,7 @@ async function executeStockPlan(
   plan,
   message,
   res = null,
-  wantsStreaming = false
+  wantsStreaming = false,
 ) {
   console.log("🔍 [EXECUTE_STOCK] Plan:", plan);
   const wants = plan?.wants || [];
@@ -6829,7 +6934,7 @@ async function executeStockPlan(
   sendStockProgress(
     res,
     `📈 Fetching current price and market data for ${ticker}...`,
-    wantsStreaming
+    wantsStreaming,
   );
   console.log(`[FINNHUB] Fetching base snapshot for ticker: ${ticker}`);
   const base = await fetchStockSnapshot(ticker);
@@ -6846,12 +6951,12 @@ async function executeStockPlan(
     sendStockProgress(res, `📊 Analyzing earnings data...`, wantsStreaming);
     console.log(`[FINNHUB] Fetching earnings for ${ticker}`);
     extra.earnings = await fetchJson(
-      `https://finnhub.io/api/v1/stock/earnings?symbol=${ticker}&token=${apiKey}`
+      `https://finnhub.io/api/v1/stock/earnings?symbol=${ticker}&token=${apiKey}`,
     );
     console.log(
       `[FINNHUB] Earnings ${
         extra.earnings ? "fetched" : "failed"
-      } for ${ticker}`
+      } for ${ticker}`,
     );
   }
   // Filings
@@ -6859,10 +6964,10 @@ async function executeStockPlan(
     sendStockProgress(res, `📄 Gathering company filings...`, wantsStreaming);
     console.log(`[FINNHUB] Fetching filings for ${ticker}`);
     extra.filings = await fetchJson(
-      `https://finnhub.io/api/v1/filings?symbol=${ticker}&token=${apiKey}`
+      `https://finnhub.io/api/v1/filings?symbol=${ticker}&token=${apiKey}`,
     );
     console.log(
-      `[FINNHUB] Filings ${extra.filings ? "fetched" : "failed"} for ${ticker}`
+      `[FINNHUB] Filings ${extra.filings ? "fetched" : "failed"} for ${ticker}`,
     );
   }
   // Insider
@@ -6870,16 +6975,16 @@ async function executeStockPlan(
     sendStockProgress(
       res,
       `👥 Checking insider transactions...`,
-      wantsStreaming
+      wantsStreaming,
     );
     console.log(`[FINNHUB] Fetching insider transactions for ${ticker}`);
     extra.insider = await fetchJson(
-      `https://finnhub.io/api/v1/stock/insider-transactions?symbol=${ticker}&token=${apiKey}`
+      `https://finnhub.io/api/v1/stock/insider-transactions?symbol=${ticker}&token=${apiKey}`,
     );
     console.log(
       `[FINNHUB] Insider transactions ${
         extra.insider ? "fetched" : "failed"
-      } for ${ticker}`
+      } for ${ticker}`,
     );
   }
 
@@ -6892,18 +6997,18 @@ async function generateConversationalStockResponse(
   userProfile,
   userMemory,
   investmentHoldings,
-  stockPlan = null
+  stockPlan = null,
 ) {
   // Always generate comprehensive analysis using LLM for all stock queries
   console.log(`\n🔍 [STOCK_ANALYSIS] ========================================`);
   console.log(
-    `🔍 [STOCK_ANALYSIS] Generating comprehensive analysis for ${stockData.ticker}`
+    `🔍 [STOCK_ANALYSIS] Generating comprehensive analysis for ${stockData.ticker}`,
   );
   console.log(`🔍 [STOCK_ANALYSIS] User message: "${userMessage}"`);
   console.log(
     `🔍 [STOCK_ANALYSIS] Stock data available: current=${
       stockData.current
-    }, hasProfile=${!!stockData.profile}, hasMetrics=${!!stockData.metrics}`
+    }, hasProfile=${!!stockData.profile}, hasMetrics=${!!stockData.metrics}`,
   );
 
   // Build the base summary with all available data
@@ -6951,9 +7056,9 @@ async function generateConversationalStockResponse(
         console.log(
           `[STOCK_ANALYSIS] News item "${n.headline.substring(
             0,
-            50
+            50,
           )}..." has no valid article URL. Available fields:`,
-          Object.keys(n)
+          Object.keys(n),
         );
       }
 
@@ -7096,10 +7201,10 @@ CRITICAL FORMATTING REQUIREMENTS:
     // Check if API key is available
     if (!process.env.OPENROUTER_API_KEY) {
       console.error(
-        "❌ [STOCK_ANALYSIS] OPENROUTER_API_KEY not found, falling back to summary"
+        "❌ [STOCK_ANALYSIS] OPENROUTER_API_KEY not found, falling back to summary",
       );
       console.log(
-        `⚠️ [STOCK_ANALYSIS] Falling back to base summary (no API key)`
+        `⚠️ [STOCK_ANALYSIS] Falling back to base summary (no API key)`,
       );
       return baseSummary;
     }
@@ -7107,7 +7212,7 @@ CRITICAL FORMATTING REQUIREMENTS:
     const STOCK_ANALYSIS_MODEL = STANDARD_MODEL;
 
     console.log(
-      `🔍 [STOCK_ANALYSIS] Calling LLM API with model: ${STOCK_ANALYSIS_MODEL}`
+      `🔍 [STOCK_ANALYSIS] Calling LLM API with model: ${STOCK_ANALYSIS_MODEL}`,
     );
     const llmStartTime = Date.now();
 
@@ -7132,12 +7237,12 @@ CRITICAL FORMATTING REQUIREMENTS:
             { role: "user", content: analysisPrompt },
           ],
         }),
-      }
+      },
     );
 
     const llmDuration = Date.now() - llmStartTime;
     console.log(
-      `🔍 [STOCK_ANALYSIS] LLM API response received in ${llmDuration}ms (status: ${response.status})`
+      `🔍 [STOCK_ANALYSIS] LLM API response received in ${llmDuration}ms (status: ${response.status})`,
     );
 
     if (response.ok) {
@@ -7148,19 +7253,19 @@ CRITICAL FORMATTING REQUIREMENTS:
       // Check if response was truncated
       if (finishReason === "length") {
         console.warn(
-          "⚠️ [STOCK_ANALYSIS] Comprehensive analysis response was truncated due to token limit"
+          "⚠️ [STOCK_ANALYSIS] Comprehensive analysis response was truncated due to token limit",
         );
       }
 
       if (content && content.trim()) {
         console.log(
-          `✅ [STOCK_ANALYSIS] Generated comprehensive analysis (length: ${content.length} chars, duration: ${llmDuration}ms)`
+          `✅ [STOCK_ANALYSIS] Generated comprehensive analysis (length: ${content.length} chars, duration: ${llmDuration}ms)`,
         );
         return content;
       } else {
         console.error(
           "❌ [STOCK_ANALYSIS] LLM returned empty content. Response data:",
-          JSON.stringify(data, null, 2).substring(0, 500)
+          JSON.stringify(data, null, 2).substring(0, 500),
         );
       }
     } else {
@@ -7168,10 +7273,10 @@ CRITICAL FORMATTING REQUIREMENTS:
         .text()
         .catch(() => "Unable to read error");
       console.error(
-        `❌ [STOCK_ANALYSIS] LLM API request failed: ${response.status} ${response.statusText}`
+        `❌ [STOCK_ANALYSIS] LLM API request failed: ${response.status} ${response.statusText}`,
       );
       console.error(
-        `❌ [STOCK_ANALYSIS] Error details: ${errorText.substring(0, 500)}`
+        `❌ [STOCK_ANALYSIS] Error details: ${errorText.substring(0, 500)}`,
       );
     }
   } catch (error) {
@@ -7189,7 +7294,7 @@ async function generateFallbackStockAnalysis(
   ticker,
   userMessage,
   userProfile,
-  userMemory
+  userMemory,
 ) {
   console.log(`🔄 [FALLBACK] Generating fallback analysis for ${ticker}`);
 
@@ -7206,7 +7311,7 @@ async function generateFallbackStockAnalysis(
 
     if (webResults && webResults.length > 0) {
       console.log(
-        `✅ [FALLBACK] Brave search returned ${webResults.length} results:`
+        `✅ [FALLBACK] Brave search returned ${webResults.length} results:`,
       );
       webResults.forEach((result, idx) => {
         console.log(`   ${idx + 1}. ${result.title || "No title"}`);
@@ -7216,19 +7321,19 @@ async function generateFallbackStockAnalysis(
             result.snippet ||
             result.content ||
             "No snippet"
-          ).substring(0, 100)}...`
+          ).substring(0, 100)}...`,
         );
       });
 
       const analysis = await generateStockAnalysisFromWebData(
         extractedTicker,
         webResults,
-        userMessage
+        userMessage,
       );
       console.log(
         `✅ [FALLBACK] Generated analysis from web data (length: ${
           analysis?.length || 0
-        } chars)`
+        } chars)`,
       );
       return analysis;
     } else {
@@ -7245,7 +7350,7 @@ async function generateFallbackStockAnalysis(
 async function generateStockAnalysisFromWebData(
   ticker,
   webResults,
-  userMessage
+  userMessage,
 ) {
   const context = webResults
     .slice(0, 3)
@@ -7288,7 +7393,7 @@ Provide a detailed analysis including:
             { role: "user", content: analysisPrompt },
           ],
         }),
-      }
+      },
     );
 
     if (response.ok) {
@@ -7299,7 +7404,7 @@ Provide a detailed analysis including:
       // Check if response was truncated
       if (finishReason === "length") {
         console.warn(
-          "⚠️ [FALLBACK] Stock analysis response was truncated due to token limit"
+          "⚠️ [FALLBACK] Stock analysis response was truncated due to token limit",
         );
       }
 
@@ -7313,7 +7418,7 @@ Provide a detailed analysis including:
       console.error(
         "❌ [FALLBACK] API request failed:",
         response.status,
-        response.statusText
+        response.statusText,
       );
     }
   } catch (error) {
@@ -7515,7 +7620,7 @@ async function setCachedData(type, identifier, data, userSpecific = false) {
     }
 
     console.log(
-      `✅ [CACHE] Cached data for ${cacheKey}, size: ${dataSize} bytes`
+      `✅ [CACHE] Cached data for ${cacheKey}, size: ${dataSize} bytes`,
     );
     return true;
   } catch (error) {
@@ -7528,7 +7633,7 @@ async function getCachedDataWithFallback(
   type,
   identifier,
   fallbackFn,
-  userSpecific = false
+  userSpecific = false,
 ) {
   const cached = await getCachedData(type, identifier, userSpecific);
   if (cached) {
@@ -7536,7 +7641,7 @@ async function getCachedDataWithFallback(
   }
 
   console.log(
-    `🔄 [CACHE] Cache miss for ${type}_${identifier}, calling fallback`
+    `🔄 [CACHE] Cache miss for ${type}_${identifier}, calling fallback`,
   );
   try {
     const freshData = await fallbackFn();
@@ -7625,7 +7730,7 @@ async function getNetWorthData(userId) {
     const { data: netWorthData, error } = await withTimeout(
       supabase.rpc("get_net_worth", { p_user_id: userId }),
       3000, // 3 second timeout
-      null
+      null,
     );
 
     if (error) {
@@ -7664,10 +7769,10 @@ async function getNetWorthData(userId) {
       formatted: {
         liquid_assets: formatNetWorthCurrency(netWorth.liquid_assets || 0),
         investments_total: formatNetWorthCurrency(
-          netWorth.investments_total || 0
+          netWorth.investments_total || 0,
         ),
         total_liabilities: formatNetWorthCurrency(
-          netWorth.total_liabilities || 0
+          netWorth.total_liabilities || 0,
         ),
         net_worth: formatNetWorthCurrency(netWorth.net_worth || 0),
       },

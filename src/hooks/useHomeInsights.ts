@@ -120,7 +120,7 @@ export function useHomeInsights(): HomeInsightsData {
   };
 
   // Helper to check if transaction is an expense
-  const isExpense = (tx: Transaction): boolean => {
+  const isExpense = (tx: Transaction & { transaction_type?: string }): boolean => {
     return (
       tx.amount > 0 &&
       tx.transaction_type !== "transfer" &&
@@ -143,7 +143,7 @@ export function useHomeInsights(): HomeInsightsData {
         const { data: transactions, error } = await supabase
           .from("transactions")
           .select(
-            "amount, date, authorized_date, transaction_type, new_category, top_category"
+            "amount, date, authorized_date, transaction_type, new_category, top_category, name"
           )
           .eq("user_id", userId)
           .gte("date", monthStartStr)
@@ -156,7 +156,7 @@ export function useHomeInsights(): HomeInsightsData {
           return { totalSpent: 0, categoryBreakdown: [] };
         }
 
-        const txList = (transactions || []) as Transaction[];
+        const txList = (transactions || []) as (Transaction & { transaction_type?: string })[];
 
         // Filter by effective date and calculate breakdown
         const categoryMap = new Map<string, { amount: number; count: number }>();

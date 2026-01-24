@@ -1,7 +1,13 @@
 // components/home/QuickStats.tsx
 
 import React, { useState } from "react";
-import { View, Text, ScrollView, Dimensions, TouchableOpacity } from "react-native";
+import {
+  View,
+  Text,
+  ScrollView,
+  Dimensions,
+  TouchableOpacity,
+} from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { QuickStatsSkeleton } from "@/src/components/home/LoadingSkeletons";
@@ -27,7 +33,7 @@ export const QuickStats: React.FC<QuickStatsProps> = React.memo(
     const { insight, loading: insightsLoading } = useHomeInsights();
     const [activeSlide, setActiveSlide] = useState(0);
     const screenWidth = Dimensions.get("window").width;
-    
+
     // Show skeleton if loading AND balance is zero (no cached data)
     const hasNoData =
       totalBalance === 0 &&
@@ -70,7 +76,9 @@ export const QuickStats: React.FC<QuickStatsProps> = React.memo(
                 useKM: true,
               })}
             </Text>
-            <Text style={[styles.netWorthTrendText, { marginTop: 8, fontSize: 12 }]}>
+            <Text
+              style={[styles.netWorthTrendText, { marginTop: 8, fontSize: 12 }]}
+            >
               Where did it go?
             </Text>
           </View>
@@ -83,94 +91,178 @@ export const QuickStats: React.FC<QuickStatsProps> = React.memo(
             insight.budgetProgress!;
           const isOverBudget = percentage > 100;
           const isWarning = percentage > 80;
+          const statusColor = isOverBudget
+            ? "#FF6B6B"
+            : isWarning
+              ? "#FFB84D"
+              : "#4ECDC4";
 
           return (
             <TouchableOpacity
-              style={[styles.carouselSlide, { width: screenWidth - 40 }]}
+              style={[
+                styles.carouselSlide,
+                { width: screenWidth - 40, paddingTop: 5 },
+              ]}
               activeOpacity={0.8}
               onPress={() => router.push("/insights")}
             >
-              <Text style={styles.netWorthLabel}>BUDGET PROGRESS</Text>
-              <View style={{ marginTop: 8 }}>
-                <Text style={styles.spendingAmount}>
-                  {formatCurrency(spent, "USD", {
-                    decimals: 0,
-                    useKM: true,
-                  })}
-                  <Text style={{ fontSize: 18, color: "#888" }}>
-                    {" "}
-                    / {formatCurrency(total, "USD", { decimals: 0, useKM: true })}
+              {/* Title */}
+              <Text style={[styles.netWorthLabel, { marginBottom: 12 }]}>
+                BUDGET PROGRESS
+              </Text>
+
+              {/* Main Amount - Centered */}
+              <View style={{ marginBottom: 10, alignItems: "center" }}>
+                <View
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "baseline",
+                    justifyContent: "center",
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontSize: 23,
+                      fontWeight: "700",
+                      color: "#fff",
+                      letterSpacing: -0.8,
+                    }}
+                  >
+                    {formatCurrency(spent, "USD", {
+                      decimals: 0,
+                      useKM: false,
+                    })}
                   </Text>
-                </Text>
-                <View style={{ marginTop: 12 }}>
-                  {/* Progress bar */}
-                  <View
+                  <Text
                     style={{
-                      height: 6,
-                      backgroundColor: "rgba(255, 255, 255, 0.1)",
-                      borderRadius: 3,
-                      overflow: "hidden",
+                      fontSize: 20,
+                      fontWeight: "500",
+                      color: "#888",
+                      marginLeft: 8,
                     }}
                   >
-                    <View
-                      style={{
-                        height: "100%",
-                        width: `${Math.min(percentage, 100)}%`,
-                        backgroundColor: isOverBudget
-                          ? "#FF6B6B"
-                          : isWarning
-                          ? "#FFB84D"
-                          : "#4ECDC4",
-                        borderRadius: 3,
-                      }}
-                    />
-                  </View>
-                  <View
-                    style={{
-                      flexDirection: "row",
-                      justifyContent: "space-between",
-                      marginTop: 8,
-                    }}
-                  >
-                    <Text
-                      style={[
-                        styles.netWorthTrendText,
-                        {
-                          color: isOverBudget
-                            ? "#FF6B6B"
-                            : isWarning
-                            ? "#FFB84D"
-                            : "#4ECDC4",
-                          fontSize: 14,
-                          fontWeight: "600",
-                        },
-                      ]}
-                    >
-                      {formatPercentage(percentage)}% spent
-                    </Text>
-                    {remaining > 0 && (
-                      <Text
-                        style={[
-                          styles.netWorthTrendText,
-                          { fontSize: 12, color: "#888" },
-                        ]}
-                      >
-                        {formatCurrency(remaining, "USD", {
-                          decimals: 0,
-                          useKM: true,
-                        })}{" "}
-                        left • {daysLeft} days
-                      </Text>
-                    )}
-                  </View>
+                    /{" "}
+                    {formatCurrency(total, "USD", {
+                      decimals: 0,
+                      useKM: false,
+                    })}
+                  </Text>
                 </View>
+              </View>
+
+              {/* Progress Bar - Full Width, Prominent */}
+              <View
+                style={{
+                  marginBottom: 10,
+                  width: "100%",
+                  paddingHorizontal: 10,
+                }}
+              >
+                <View
+                  style={{
+                    height: 6,
+                    backgroundColor: "rgba(255, 255, 255, 0.1)",
+                    borderRadius: 3,
+                    overflow: "hidden",
+                    width: "100%",
+                  }}
+                >
+                  <View
+                    style={{
+                      height: "100%",
+                      width: `${Math.min(percentage, 100)}%`,
+                      backgroundColor: statusColor,
+                      borderRadius: 3,
+                    }}
+                  />
+                </View>
+              </View>
+
+              {/* Bottom Info - Clean, Unified Row */}
+              <View
+                style={{
+                  flexDirection: "row",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  width: "100%",
+                  paddingHorizontal: 0,
+                }}
+              >
+                {/* Left: Percentage - No Box, Just Text */}
+                <Text
+                  style={{
+                    color: statusColor,
+                    fontSize: 15,
+                    fontWeight: "600",
+                    letterSpacing: 0.3,
+                    paddingLeft: 10,
+                  }}
+                >
+                  {formatPercentage(percentage)}% spent
+                </Text>
+
+                {/* Right: Remaining Info */}
+                {remaining > 0 ? (
+                  <View style={{ alignItems: "flex-end", paddingRight: 10 }}>
+                    <Text
+                      style={{
+                        color: "#fff",
+                        fontSize: 15,
+                        fontWeight: "600",
+                        marginBottom: 2,
+                      }}
+                    >
+                      {formatCurrency(remaining, "USD", {
+                        decimals: 0,
+                        useKM: false,
+                      })}{" "}
+                      left
+                    </Text>
+                    <Text
+                      style={{
+                        color: "#888",
+                        fontSize: 12,
+                        fontWeight: "400",
+                      }}
+                    >
+                      {daysLeft} days
+                    </Text>
+                  </View>
+                ) : (
+                  <View style={{ alignItems: "flex-end" }}>
+                    <Text
+                      style={{
+                        color: "#FF6B6B",
+                        fontSize: 15,
+                        fontWeight: "600",
+                        marginBottom: 2,
+                      }}
+                    >
+                      Over by{" "}
+                      {formatCurrency(Math.abs(remaining), "USD", {
+                        decimals: 0,
+                        useKM: false,
+                      })}
+                    </Text>
+                    <Text
+                      style={{
+                        color: "#888",
+                        fontSize: 12,
+                        fontWeight: "400",
+                      }}
+                    >
+                      {daysLeft} days left
+                    </Text>
+                  </View>
+                )}
               </View>
             </TouchableOpacity>
           );
         }
 
         case "category_alert": {
-          const { category, amount, percentage, color } = insight.categoryAlert!;
+          const { category, amount, percentage, color } =
+            insight.categoryAlert!;
 
           return (
             <TouchableOpacity
@@ -207,10 +299,7 @@ export const QuickStats: React.FC<QuickStatsProps> = React.memo(
                 >
                   <Ionicons name="alert-circle" size={16} color={color} />
                   <Text
-                    style={[
-                      styles.netWorthTrendText,
-                      { color, marginLeft: 6 },
-                    ]}
+                    style={[styles.netWorthTrendText, { color, marginLeft: 6 }]}
                   >
                     {formatPercentage(percentage)}% of spending
                   </Text>
@@ -223,8 +312,7 @@ export const QuickStats: React.FC<QuickStatsProps> = React.memo(
         case "spending_summary": {
           const { totalSpent, daysInMonth, currentDay } =
             insight.spendingSummary!;
-          const projectedSpending =
-            (totalSpent / currentDay) * daysInMonth;
+          const projectedSpending = (totalSpent / currentDay) * daysInMonth;
 
           return (
             <TouchableOpacity
@@ -287,7 +375,7 @@ export const QuickStats: React.FC<QuickStatsProps> = React.memo(
           <View
             style={[
               styles.carouselSlide,
-              { width: screenWidth - 40, paddingTop: 15 },
+              { width: screenWidth - 40, paddingTop: 5 },
             ]}
           >
             <Text style={styles.netWorthLabel}>TOTAL NET WORTH</Text>
