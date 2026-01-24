@@ -23,6 +23,7 @@ import AccountDetailModal from "@/src/components/modals/AccountDetailModal";
 import AccountCard from "@/src/components/shared/AccountCard";
 import TransactionActionAlert from "@/src/components/shared/TransactionActionAlert";
 import { Transaction, TransactionDetailModalProps } from "@/src/types/plaid";
+import { OptimisticUpdateManager } from "@/src/shared/utils/optimisticUpdates";
 import {
   getDisplayCategory as getDisplayCategoryUtil,
   shouldShowRecurringChip,
@@ -171,11 +172,13 @@ export default function TransactionDetailModal({
       // If we have transaction data passed as prop, use it immediately
       if (initialTransaction && initialTransaction.id === transactionId) {
         setLoading(false);
-        setTransaction(initialTransaction);
+        // Apply optimistic updates if any
+        const updatedTransaction = OptimisticUpdateManager.applyCategoryUpdateToTransaction(initialTransaction);
+        setTransaction(updatedTransaction);
         setIsInternalTransfer(
-          initialTransaction.new_category === "INTERNAL_TRANSFER"
+          updatedTransaction.new_category === "INTERNAL_TRANSFER"
         );
-        setIsRecurring(shouldShowRecurringChip(initialTransaction));
+        setIsRecurring(shouldShowRecurringChip(updatedTransaction));
         return;
       }
 
@@ -234,9 +237,11 @@ export default function TransactionDetailModal({
             goal_label: data.goal?.label || null,
           };
 
-          setTransaction(transformedTransaction);
-          setIsInternalTransfer(data.new_category === "INTERNAL_TRANSFER");
-          setIsRecurring(shouldShowRecurringChip(transformedTransaction));
+          // Apply optimistic updates if any
+          const updatedTransaction = OptimisticUpdateManager.applyCategoryUpdateToTransaction(transformedTransaction);
+          setTransaction(updatedTransaction);
+          setIsInternalTransfer(updatedTransaction.new_category === "INTERNAL_TRANSFER");
+          setIsRecurring(shouldShowRecurringChip(updatedTransaction));
         }
       } catch (error) {
         console.error("Error loading transaction:", error);
@@ -262,6 +267,15 @@ export default function TransactionDetailModal({
       (data) => {
         if (data.transactionId === transaction?.id) {
           setUpdatedCategory(data.newCategory);
+          
+          // Apply optimistic update to transaction object immediately
+          if (transaction) {
+            const optimisticUpdate = OptimisticUpdateManager.getCategoryUpdate(transaction.id);
+            if (optimisticUpdate) {
+              const updatedTransaction = OptimisticUpdateManager.applyCategoryUpdateToTransaction(transaction);
+              setTransaction(updatedTransaction);
+            }
+          }
         }
 
         // Handle targeted updates for similar transactions
@@ -271,8 +285,15 @@ export default function TransactionDetailModal({
             (affected: any) => affected.transactionId === transaction?.id
           );
 
-          if (affectedTx) {
+          if (affectedTx && transaction) {
             setUpdatedCategory(data.newCategory);
+            
+            // Apply optimistic update to transaction object immediately
+            const optimisticUpdate = OptimisticUpdateManager.getCategoryUpdate(transaction.id);
+            if (optimisticUpdate) {
+              const updatedTransaction = OptimisticUpdateManager.applyCategoryUpdateToTransaction(transaction);
+              setTransaction(updatedTransaction);
+            }
           }
         }
       }

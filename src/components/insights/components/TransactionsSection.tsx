@@ -25,6 +25,7 @@ import {
   shouldShowRecurringChip,
 } from "@/src/utils/categories/transactionCategory";
 import { supabase } from "@/src/lib/supabase/supabase";
+import { OptimisticUpdateManager } from "@/src/shared/utils/optimisticUpdates";
 
 import {
   Account,
@@ -512,8 +513,11 @@ function TransactionsSection(props: Props) {
             return baseKey ? `${baseKey}_${index}` : `tx_${index}`;
           }}
           renderItem={({ item: tx }) => {
-            const amount = Math.abs(tx.amount);
-            const isIncome = tx.amount < 0;
+            // Apply optimistic updates if any
+            const updatedTx = OptimisticUpdateManager.applyCategoryUpdateToTransaction(tx);
+            
+            const amount = Math.abs(updatedTx.amount);
+            const isIncome = updatedTx.amount < 0;
             // Psychology: use soft blue for expenses instead of red
             const amountColor = isIncome ? "#4CAF50" : "#4A90E2";
             const amountText = isIncome
@@ -542,12 +546,12 @@ function TransactionsSection(props: Props) {
                     setSelectedTransactionId(null);
                     // Use requestAnimationFrame to ensure state is reset before opening new modal
                     requestAnimationFrame(() => {
-                      setSelectedTransactionId(tx.id || null);
+                      setSelectedTransactionId(updatedTx.id || null);
                       setShowDetailModal(true);
                       setIsModalTransitioning(false);
                     });
                   } else {
-                    setSelectedTransactionId(tx.id || null);
+                    setSelectedTransactionId(updatedTx.id || null);
                     setShowDetailModal(true);
                     setIsModalTransitioning(false);
                   }
@@ -565,12 +569,12 @@ function TransactionsSection(props: Props) {
                       marginBottom: 2,
                     }}
                   >
-                    {tx.name}
+                    {updatedTx.name}
                   </Text>
                   <Text
                     style={{ color: "#888", fontSize: 11, marginBottom: 1 }}
                   >
-                    {formatDate(tx.authorized_date || tx.date)}
+                    {formatDate(updatedTx.authorized_date || updatedTx.date)}
                   </Text>
                   <Text
                     style={{
@@ -579,8 +583,8 @@ function TransactionsSection(props: Props) {
                       fontWeight: "500",
                     }}
                   >
-                    {formatCategoryFromHook(getDisplayCategory(tx))}{" "}
-                    {shouldShowRecurringChip(tx) ? "• Recurring" : ""}
+                    {formatCategoryFromHook(getDisplayCategory(updatedTx))}{" "}
+                    {shouldShowRecurringChip(updatedTx) ? "• Recurring" : ""}
                   </Text>
                 </View>
                 <View
@@ -640,9 +644,13 @@ function TransactionsSection(props: Props) {
         transactionId={selectedTransactionId}
         transaction={
           selectedTransactionId
-            ? displayedTransactions.find(
-                (tx) => tx.id === selectedTransactionId,
-              ) || null
+            ? (() => {
+                const tx = displayedTransactions.find(
+                  (tx) => tx.id === selectedTransactionId,
+                );
+                // Apply optimistic updates if any
+                return tx ? OptimisticUpdateManager.applyCategoryUpdateToTransaction(tx) : null;
+              })()
             : null
         }
         onClose={() => {

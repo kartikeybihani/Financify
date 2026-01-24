@@ -420,24 +420,10 @@ export default function InsightsScreen() {
     const subscription = DeviceEventEmitter.addListener(
       "transactionCategoryUpdated",
       async (data) => {
-        console.log("🔄 Transaction category updated:", data);
-
         // Clear caches since categories have changed
         await Promise.all([clearTransactionsCache(), clearSpendingCache()]);
-        logger.info(
-          "🗑️ Cleared transactions and spending cache after category update",
-        );
-
-        // Handle targeted transaction updates
-        console.log("🔄 Processing transaction category update:", {
-          updateType: data.updateType,
-          affectedTransactionsCount: data.affectedTransactions?.length || 0,
-          newCategory: data.newCategory,
-        });
 
         if (data.affectedTransactions && data.affectedTransactions.length > 0) {
-          console.log("📝 Updating filtered transactions with new categories");
-
           // Apply optimistic updates to filtered transactions
           setFilteredTransactions((prevTransactions) => {
             let updatedTransactions = prevTransactions;
@@ -451,10 +437,6 @@ export default function InsightsScreen() {
               );
             });
 
-            console.log(
-              "📊 Updated transactions count:",
-              updatedTransactions.length,
-            );
             return updatedTransactions;
           });
 
@@ -481,9 +463,6 @@ export default function InsightsScreen() {
             return updatedTransactions;
           });
         } else {
-          console.log(
-            "⚠️ No affected transactions found, falling back to full refresh",
-          );
           // Fallback: refresh all data if no specific transactions provided
           await loadData();
         }

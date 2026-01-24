@@ -18,6 +18,7 @@ import { useCategories } from "@/src/hooks/useCategories";
 import { supabase } from "@/src/lib/supabase/supabase";
 import { DeviceEventEmitter } from "react-native";
 import AddCategoryModal from "@/src/components/insights/components/AddCategoryModal";
+import { OptimisticUpdateManager } from "@/src/shared/utils/optimisticUpdates";
 
 interface CategorySelectorModalProps {
   visible: boolean;
@@ -96,7 +97,7 @@ export default function CategorySelectorModal({
           style: "destructive",
           onPress: () => handleDeleteCategory(categoryId),
         },
-      ]
+      ],
     );
   };
 
@@ -159,15 +160,49 @@ export default function CategorySelectorModal({
           text: "All Similar Transactions",
           onPress: () => handleUpdateOption("similar", categoryId),
         },
-      ]
+      ],
     );
   };
 
   const handleUpdateOption = async (
     updateType: "single" | "similar",
-    categoryId: string
+    categoryId: string,
   ) => {
     if (!transactionId) return;
+
+    // Handle "all" category - this should clear the category (set to null)
+    if (categoryId === "all") {
+      // Store optimistic update to clear category
+      OptimisticUpdateManager.storeCategoryUpdate(
+        transactionId,
+        "", // Empty string to indicate clearing
+        "All Categories"
+      );
+
+      const { error } = await supabase
+        .from("transactions")
+        .update({ category_id: null })
+        .eq("id", transactionId);
+
+      if (error) {
+        OptimisticUpdateManager.clearCategoryUpdate(transactionId);
+        throw error;
+      }
+
+      setTimeout(() => {
+        OptimisticUpdateManager.clearCategoryUpdate(transactionId);
+      }, 1000);
+
+      DeviceEventEmitter.emit("transactionCategoryUpdated", {
+        transactionId: transactionId,
+        newCategory: "All Categories",
+        updateType: "single",
+        affectedTransactions: [{ transactionId }],
+      });
+
+      handleClose();
+      return;
+    }
 
     const selectedCategory = categories.find((cat) => cat.id === categoryId);
     if (!selectedCategory) return;
@@ -184,16 +219,32 @@ export default function CategorySelectorModal({
       }> = [];
 
       if (updateType === "single") {
+        // Store optimistic update IMMEDIATELY for instant UI feedback
+        OptimisticUpdateManager.storeCategoryUpdate(
+          transactionId,
+          selectedCategory.id,
+          selectedCategory.name
+        );
+
         // Single transaction: Update ONLY category_id (not new_category)
         // Category name will be resolved via join with categories table
         const { error } = await supabase
           .from("transactions")
-          .update({ 
+          .update({
             category_id: selectedCategory.id, // Use ID only - name comes from categories table
           })
           .eq("id", transactionId);
 
-        if (error) throw error;
+        if (error) {
+          // Revert optimistic update on error
+          OptimisticUpdateManager.clearCategoryUpdate(transactionId);
+          throw error;
+        }
+
+        // Clear optimistic update after successful DB update (with small delay to ensure UI has updated)
+        setTimeout(() => {
+          OptimisticUpdateManager.clearCategoryUpdate(transactionId);
+        }, 1000);
 
         // For single transaction, we only have one affected transaction
         affectedTransactions = [
@@ -205,7 +256,7 @@ export default function CategorySelectorModal({
           },
         ];
 
-        Alert.alert("Success", `Category updated to ${selectedCategory.name}`);
+        // Alert.alert("Success", `Category updated to ${selectedCategory.name}`);
       } else {
         // Similar transactions: Update new_category for all similar + create rules
         const userResponse = await supabase.auth.getUser();
@@ -223,16 +274,42 @@ export default function CategorySelectorModal({
         if (!useMerchantName && !useTransactionName) {
           Alert.alert(
             "Error",
-            "Cannot update similar transactions without merchant name or transaction name"
+            "Cannot update similar transactions without merchant name or transaction name",
           );
           return;
+        }
+
+        // Store optimistic updates for all affected transactions IMMEDIATELY
+        // First, get the list of transactions that will be updated
+        let selectQueryForIds = supabase
+          .from("transactions")
+          .select("id")
+          .eq("user_id", userId);
+
+        if (useMerchantName && merchantName) {
+          selectQueryForIds = selectQueryForIds.eq("merchant_name", merchantName);
+        } else if (useTransactionName && transactionName) {
+          selectQueryForIds = selectQueryForIds.eq("name", transactionName);
+        }
+
+        const { data: transactionIds } = await selectQueryForIds;
+        
+        // Store optimistic updates for all affected transactions
+        if (transactionIds && transactionIds.length > 0) {
+          transactionIds.forEach((tx: any) => {
+            OptimisticUpdateManager.storeCategoryUpdate(
+              tx.id,
+              selectedCategory.id,
+              selectedCategory.name
+            );
+          });
         }
 
         // Build the query based on which field we're using
         // Update ONLY category_id (not new_category) - name comes from categories table
         let updateQuery = supabase
           .from("transactions")
-          .update({ 
+          .update({
             category_id: selectedCategory.id, // Use ID only - name comes from categories table
           })
           .eq("user_id", userId);
@@ -252,7 +329,14 @@ export default function CategorySelectorModal({
 
         const { data: updateResult, error } = await updateQuery.select("id");
 
-        if (error) throw error;
+        if (error) {
+          // Revert optimistic updates on error
+          if (transactionIds && transactionIds.length > 0) {
+            const ids = transactionIds.map((tx: any) => tx.id);
+            OptimisticUpdateManager.clearCategoryUpdates(ids);
+          }
+          throw error;
+        }
 
         const data = updateResult?.length || 0;
 
@@ -262,22 +346,9 @@ export default function CategorySelectorModal({
           ? merchantName || ""
           : transactionName || "";
 
-        console.log("🔍 Getting affected transactions for:", {
-          matchField,
-          matchValue,
-          newCategory: selectedCategory.name,
-          updatedCount: data,
-        });
-
         // Filter by category_id instead of new_category name
         const { data: affectedData, error: affectedError } =
           await selectQuery.eq("category_id", selectedCategory.id);
-
-        console.log("📊 Affected transactions result:", {
-          affectedData,
-          affectedError,
-          count: affectedData?.length || 0,
-        });
 
         if (!affectedError && affectedData) {
           affectedTransactions = affectedData.map((tx: any) => ({
@@ -286,15 +357,11 @@ export default function CategorySelectorModal({
             amount: tx.amount,
             date: tx.date,
           }));
-
-          console.log("✅ Mapped affected transactions:", affectedTransactions);
-        } else {
-          console.log("❌ No affected transactions found or error occurred");
         }
 
         Alert.alert(
           "Success",
-          `Updated ${data} similar transactions to ${selectedCategory.name}`
+          `Updated ${data} similar transactions to ${selectedCategory.name}`,
         );
 
         // Create or update category rule for future transactions
@@ -309,18 +376,24 @@ export default function CategorySelectorModal({
               p_match_field: matchField,
               p_match_value: matchValue,
               p_category_name: selectedCategory.name,
-            }
+            },
           );
 
           if (ruleError) {
             console.error("Error creating category rule:", ruleError);
             // Don't fail the whole operation if rule creation fails
-          } else {
-            console.log("✅ Category rule created/updated successfully");
           }
         } catch (ruleErr) {
           console.error("Exception creating category rule:", ruleErr);
           // Don't fail the whole operation
+        }
+
+        // Clear optimistic updates after successful DB update (with small delay)
+        if (transactionIds && transactionIds.length > 0) {
+          setTimeout(() => {
+            const ids = transactionIds.map((tx: any) => tx.id);
+            OptimisticUpdateManager.clearCategoryUpdates(ids);
+          }, 1000);
         }
       }
 
@@ -334,7 +407,6 @@ export default function CategorySelectorModal({
         transactionName: transactionName,
       };
 
-      console.log("📡 Emitting transactionCategoryUpdated event:", eventData);
       DeviceEventEmitter.emit("transactionCategoryUpdated", eventData);
 
       // Close the modal and return to transaction detail
@@ -505,7 +577,7 @@ export default function CategorySelectorModal({
                           styles.categoryChip,
                           {
                             backgroundColor: getCategoryBackgroundColor(
-                              category.name
+                              category.name,
                             ),
                             borderColor: isSelected
                               ? category.color
