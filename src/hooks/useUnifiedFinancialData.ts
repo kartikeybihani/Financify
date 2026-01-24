@@ -82,7 +82,6 @@ export function useUnifiedFinancialData(): UnifiedFinancialData {
       const timestampString = AppStorage.getItemSync(UNIFIED_CACHE_TIMESTAMP_KEY);
       
       if (!cacheString || !timestampString) {
-        logger.info("📦 [UNIFIED CACHE] No cache found on initial load");
         return null;
       }
 
@@ -91,12 +90,10 @@ export function useUnifiedFinancialData(): UnifiedFinancialData {
       const cacheAge = now - timestamp;
 
       if (cacheAge > CACHE_DURATION) {
-        logger.info(`⏰ [UNIFIED CACHE] Cache expired on initial load (age: ${Math.round(cacheAge / 1000)}s)`);
         return null;
       }
 
       const cachedData = JSON.parse(cacheString) as CachedFinancialData;
-      logger.info(`✅ [UNIFIED CACHE] Loaded from cache on initial load (age: ${Math.round(cacheAge / 1000)}s) - ${cachedData.accounts?.length || 0} accounts, ${cachedData.goals?.length || 0} goals, ${cachedData.investmentBalances?.length || 0} investment balances`);
       return cachedData;
     } catch (error) {
       logger.error("❌ [UNIFIED CACHE] Error loading cache on initial load:", error);
@@ -112,6 +109,8 @@ export function useUnifiedFinancialData(): UnifiedFinancialData {
   const [loading, setLoading] = useState(false);
   const [isInitialLoad, setIsInitialLoad] = useState(!initialCache); // If we have cache, not initial load
 
+  // Removed verbose initial state logging
+
   // Cache management
   const saveToCache = useCallback(async (data: { accounts: Account[]; goals: Goal[]; cashEntries: CashEntry[]; investmentBalances?: any[] }): Promise<void> => {
     try {
@@ -126,7 +125,6 @@ export function useUnifiedFinancialData(): UnifiedFinancialData {
       // Use synchronous operations for better performance
       AppStorage.setItemSync(UNIFIED_CACHE_KEY, JSON.stringify(cacheData));
       AppStorage.setItemSync(UNIFIED_CACHE_TIMESTAMP_KEY, cacheData.timestamp.toString());
-      logger.info("💾 [UNIFIED CACHE] Saved financial data to cache");
     } catch (error) {
       logger.error("❌ [UNIFIED CACHE] Failed to save to cache:", error);
     }
@@ -226,7 +224,10 @@ export function useUnifiedFinancialData(): UnifiedFinancialData {
       setCashEntries(cashData || []);
       setInvestmentBalances(balancesData || []);
 
-      logger.info(`✅ [UNIFIED] Loaded ${accountsData?.length || 0} accounts, ${goalsData?.length || 0} goals, ${cashData?.length || 0} cash entries`);
+      // Only log on first load or when cache is missing (reduced verbosity)
+      if (!hasCache) {
+        logger.info(`✅ [UNIFIED] Loaded ${accountsData?.length || 0} accounts, ${goalsData?.length || 0} goals, ${cashData?.length || 0} cash entries`);
+      }
 
       // Save to cache (including investment balances)
       await saveToCache({
@@ -268,19 +269,17 @@ export function useUnifiedFinancialData(): UnifiedFinancialData {
 
   // Initialize on mount
   useEffect(() => {
-    // Cache is already loaded synchronously before render (lines 78-99)
-    // So we only need to fetch fresh data in background
-    if (initialCache) {
-      // We have cache - fetch fresh data in background (non-blocking)
-      logger.info("⚡ [UNIFIED] Cache available, fetching fresh data in background");
-      fetchAllData(true).catch((error) => {
-        logger.error("❌ [UNIFIED] Background data fetch failed:", error);
-      });
-    } else {
-      // No cache - fetch immediately (first load or cache expired)
-      logger.info("🔄 [UNIFIED] No cache available, fetching data immediately");
-      fetchAllData(false);
-    }
+      // Cache is already loaded synchronously before render
+      // So we only need to fetch fresh data in background
+      if (initialCache) {
+        // We have cache - fetch fresh data in background (non-blocking)
+        fetchAllData(true).catch((error) => {
+          logger.error("❌ [UNIFIED] Background data fetch failed:", error);
+        });
+      } else {
+        // No cache - fetch immediately (first load or cache expired)
+        fetchAllData(false);
+      }
 
     // Listen for financial data updates
     const financialSubscription = DeviceEventEmitter.addListener(

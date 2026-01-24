@@ -5,6 +5,7 @@ import { View } from "react-native";
 import FinancialCard from "@/src/components/shared/FinancialCard";
 import { FinancialCardsSkeleton } from "@/src/components/home/LoadingSkeletons";
 import { styles } from "@/src/styles/homeStyles";
+import logger from "@/src/utils/core/logger";
 
 interface FinancialCardsProps {
   accountsTotal: number;
@@ -13,6 +14,7 @@ interface FinancialCardsProps {
   formatCurrency: (amount: number, currency?: string, options?: any) => string;
   onCardPress: (cardType: "accounts" | "investments" | "liabilities") => void;
   isLoading?: boolean; // Show skeleton when loading and no cached data
+  isInitialLoad?: boolean; // Prevent skeleton flash during initial load
 }
 
 export const FinancialCards: React.FC<FinancialCardsProps> = React.memo(
@@ -23,11 +25,13 @@ export const FinancialCards: React.FC<FinancialCardsProps> = React.memo(
     formatCurrency,
     onCardPress,
     isLoading = false,
+    isInitialLoad = false,
   }) => {
     // Show skeleton if loading AND all totals are zero (no cached data)
+    // BUT only if we're not still loading initial data (prevents flash)
     const hasNoData =
       accountsTotal === 0 && investmentsTotal === 0 && liabilitiesTotal === 0;
-    const shouldShowSkeleton = isLoading && hasNoData;
+    const shouldShowSkeleton = isLoading && hasNoData && !isInitialLoad;
 
     if (shouldShowSkeleton) {
       return <FinancialCardsSkeleton />;

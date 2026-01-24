@@ -1,5 +1,5 @@
--- Update get_summary_min_composite to include both current month and last complete month spending
--- This enables better pattern analysis by comparing current month vs last complete month
+-- Fix security check in get_summary_min_composite to allow service_role calls
+-- This fixes the "forbidden" error when calling from server-side
 
 CREATE OR REPLACE FUNCTION public.get_summary_min_composite(
   p_user_id uuid,

@@ -5,6 +5,13 @@ import { supabase } from "@/src/lib/supabase/supabase";
 import { Transaction } from "@/src/types/plaid";
 import logger from "@/src/utils/core/logger";
 import { getAuthenticatedUser } from "@/src/utils/auth/auth";
+import AppStorage from "@/src/utils/storage/storage";
+import { CACHE_CONFIG } from "@/src/shared/constants/cacheConfig";
+
+// Cache keys
+const SPENDING_CACHE_KEY = "spending_data";
+const SPENDING_CACHE_TIMESTAMP_KEY = "spending_data_timestamp";
+const CACHE_DURATION = CACHE_CONFIG.DURATIONS.MEDIUM; // 5 minutes
 
 export interface SpendingData {
   threeMonths: number; // Average spending over last 3 months
@@ -24,14 +31,46 @@ export function useSpendingData(
   loading: boolean;
   refresh: () => Promise<void>;
 } {
-  const [spendingData, setSpendingData] = useState<SpendingData>({
-    threeMonths: 0,
-    lastMonth: 0,
-    threeMonthsChange: 0,
-    lastMonthChange: 0,
-    netWorthChange: 0,
-  });
-  const [loading, setLoading] = useState(true);
+  // Load cache synchronously before first render (MMKV advantage)
+  const initialCache = (() => {
+    try {
+      const cacheString = AppStorage.getItemSync(SPENDING_CACHE_KEY);
+      const timestampString = AppStorage.getItemSync(SPENDING_CACHE_TIMESTAMP_KEY);
+      
+      if (!cacheString || !timestampString) {
+        logger.info("📦 [SPENDING CACHE] No cache found on initial load");
+        return null;
+      }
+
+      const timestamp = parseInt(timestampString, 10);
+      const now = Date.now();
+      const cacheAge = now - timestamp;
+
+      if (cacheAge > CACHE_DURATION) {
+        logger.info(`⏰ [SPENDING CACHE] Cache expired on initial load (age: ${Math.round(cacheAge / 1000)}s)`);
+        return null;
+      }
+
+      const cachedData = JSON.parse(cacheString) as SpendingData;
+      logger.info(`✅ [SPENDING CACHE] Loaded from cache on initial load (age: ${Math.round(cacheAge / 1000)}s)`);
+      return cachedData;
+    } catch (error) {
+      logger.error("❌ [SPENDING CACHE] Error loading cache on initial load:", error);
+      return null;
+    }
+  })();
+
+  // Initialize state with cached data if available (instant UI)
+  const [spendingData, setSpendingData] = useState<SpendingData>(
+    initialCache || {
+      threeMonths: 0,
+      lastMonth: 0,
+      threeMonthsChange: 0,
+      lastMonthChange: 0,
+      netWorthChange: 0,
+    }
+  );
+  const [loading, setLoading] = useState(!initialCache); // If we have cache, not loading
   const previousNetWorthRef = useRef<number | null>(null);
   const hasInitializedRef = useRef(false);
 
@@ -71,11 +110,25 @@ export function useSpendingData(
     []
   );
 
+  // Cache management
+  const saveToCache = useCallback(async (data: SpendingData): Promise<void> => {
+    try {
+      // Use synchronous operations for better performance
+      AppStorage.setItemSync(SPENDING_CACHE_KEY, JSON.stringify(data));
+      AppStorage.setItemSync(SPENDING_CACHE_TIMESTAMP_KEY, Date.now().toString());
+      logger.info("💾 [SPENDING CACHE] Saved spending data to cache");
+    } catch (error) {
+      logger.error("❌ [SPENDING CACHE] Failed to save to cache:", error);
+    }
+  }, []);
+
   // Fetch transactions and calculate spending data
   const calculateSpendingData = useCallback(
-    async (userId: string) => {
+    async (userId: string, hasCache: boolean = false) => {
       try {
-        setLoading(true);
+        if (!hasCache) {
+          setLoading(true);
+        }
 
         const now = new Date();
         const today = formatDate(now);
@@ -209,38 +262,52 @@ export function useSpendingData(
             ? ((lastMonthSpending - prevMonthSpending) / prevMonthSpending) * 100
             : 0;
 
-        setSpendingData((prev) => ({
-          threeMonths: lastThreeMonthsAverage,
-          lastMonth: lastMonthSpending,
-          threeMonthsChange,
-          lastMonthChange,
-          netWorthChange: prev.netWorthChange, // Keep existing value, updated by useEffect
-        }));
-
-        logger.info("✅ Spending data calculated:", {
-          threeMonths: lastThreeMonthsAverage,
-          lastMonth: lastMonthSpending,
-          threeMonthsChange,
-          lastMonthChange,
+        // Get current netWorthChange from state (preserve it)
+        // Update state and save to cache
+        setSpendingData((prev) => {
+          const newSpendingData: SpendingData = {
+            threeMonths: lastThreeMonthsAverage,
+            lastMonth: lastMonthSpending,
+            threeMonthsChange,
+            lastMonthChange,
+            netWorthChange: prev.netWorthChange, // Keep existing value, updated by useEffect
+          };
+          
+          // Save to cache (with current netWorthChange)
+          saveToCache(newSpendingData).catch((err) => {
+            logger.error("Failed to save spending data to cache:", err);
+          });
+          
+          return newSpendingData;
         });
+
+        // Log only on first load or when cache is missing (reduced verbosity)
+        if (!hasCache) {
+          logger.info("✅ Spending data calculated:", {
+            threeMonths: lastThreeMonthsAverage,
+            lastMonth: lastMonthSpending,
+            threeMonthsChange,
+            lastMonthChange,
+          });
+        }
       } catch (error) {
         logger.error("Error calculating spending data:", error);
       } finally {
         setLoading(false);
       }
     },
-    [calculateSpending, currentNetWorth]
+    [calculateSpending, saveToCache]
   );
 
   // Fetch and calculate spending data
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (hasCache: boolean = false) => {
     try {
       const authResult = await getAuthenticatedUser();
       if (!authResult?.user?.id) {
         logger.error("User not authenticated for spending data");
         return;
       }
-      await calculateSpendingData(authResult.user.id);
+      await calculateSpendingData(authResult.user.id, hasCache);
     } catch (error) {
       logger.error("Error refreshing spending data:", error);
     }
@@ -249,7 +316,15 @@ export function useSpendingData(
   // Initialize on mount
   useEffect(() => {
     if (!hasInitializedRef.current) {
-      refresh();
+      // Cache is already loaded synchronously before render
+      // So we only need to fetch fresh data in background
+      if (initialCache) {
+        // We have cache - fetch fresh data in background (non-blocking)
+        refresh(true);
+      } else {
+        // No cache - fetch immediately (first load or cache expired)
+        refresh(false);
+      }
       hasInitializedRef.current = true;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

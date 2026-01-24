@@ -8,19 +8,22 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { Goal } from "@/src/types/finny";
 import { styles } from "@/src/styles/homeStyles";
+import logger from "@/src/utils/core/logger";
 
 interface GoalsSectionProps {
   goals: Goal[];
   closestGoal: Goal | null;
   formatCurrency: (amount: number, currency?: string, options?: any) => string;
+  isInitialLoad?: boolean; // Prevent empty state flash during initial load
 }
 
 export const GoalsSection: React.FC<GoalsSectionProps> = React.memo(
-  ({ goals, closestGoal, formatCurrency }) => {
+  ({ goals, closestGoal, formatCurrency, isInitialLoad = false }) => {
     const router = useRouter();
 
     // Show empty state if no active goals or no closest goal
-    if (goals.length === 0 || !closestGoal) {
+    // BUT only if we're not still loading initial data (prevents flash)
+    if ((goals.length === 0 || !closestGoal) && !isInitialLoad) {
       return (
         <View style={styles.goalsSection}>
           <View style={styles.emptyGoalsContainer}>
@@ -47,7 +50,7 @@ export const GoalsSection: React.FC<GoalsSectionProps> = React.memo(
                   const iosVersion = isIOS
                     ? parseInt(
                         String(Platform.Version).split(".")[0] || "0",
-                        10
+                        10,
                       )
                     : 0;
                   const shouldUseLiquidGlass = isIOS && iosVersion >= 18;
@@ -150,7 +153,7 @@ export const GoalsSection: React.FC<GoalsSectionProps> = React.memo(
                             (closestGoal.current_amount /
                               closestGoal.target_amount) *
                               100,
-                            100
+                            100,
                           )
                         : 0
                     }%`,
@@ -171,7 +174,7 @@ export const GoalsSection: React.FC<GoalsSectionProps> = React.memo(
                 {closestGoal.target_amount > 0
                   ? Math.round(
                       (closestGoal.current_amount / closestGoal.target_amount) *
-                        100
+                        100,
                     )
                   : 0}
                 % Progress
@@ -181,7 +184,7 @@ export const GoalsSection: React.FC<GoalsSectionProps> = React.memo(
         )}
       </View>
     );
-  }
+  },
 );
 
 GoalsSection.displayName = "GoalsSection";

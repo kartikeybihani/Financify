@@ -90,6 +90,7 @@ export default function HomeScreen() {
 
   // Check cache synchronously before first render
   const hasInitialCache = checkUnifiedCacheSync();
+  logger.info(`🏠 [HOME] Initial cache check: ${hasInitialCache ? 'HIT' : 'MISS'}`);
 
   // Unified financial data hook - replaces 3 separate hooks
   const {
@@ -117,6 +118,8 @@ export default function HomeScreen() {
     // Actions
     refreshAll: refreshFinancialData,
   } = useUnifiedFinancialData();
+
+  // Removed verbose logging - only log on significant state changes
 
   // Modal management with lazy loading
   const { activeModal, modalProps, openModal, closeModal } = useModalManager();
@@ -156,6 +159,8 @@ export default function HomeScreen() {
     loading: spendingLoading,
     refresh: refreshSpendingData,
   } = useSpendingData(totalBalance);
+
+  // Removed verbose logging
 
   // Currency formatter cache
   const formatterCache = useRef(new Map<string, Intl.NumberFormat>());
@@ -730,6 +735,7 @@ export default function HomeScreen() {
             liabilitiesTotal={liabilitiesTotal}
             formatCurrency={formatCurrency}
             isLoading={financialLoading || financialInitialLoad}
+            isInitialLoad={financialInitialLoad}
             onCardPress={(cardType) => {
               openModal("accounts", {
                 initialExpandedCategory: cardType,
@@ -758,6 +764,7 @@ export default function HomeScreen() {
             })}
             closestGoal={closestGoal}
             formatCurrency={formatCurrency}
+            isInitialLoad={financialInitialLoad}
           />
 
           {/* Add Account Button */}

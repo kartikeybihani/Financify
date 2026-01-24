@@ -1,13 +1,20 @@
 // hooks/useHomeInsights.ts
 // Hook to get actionable insights for the home screen carousel
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { supabase } from "@/src/lib/supabase/supabase";
 import { getBudgetSummary, getCurrentBudgetPeriodIfExists } from "@/src/types/budget";
 import { getAuthenticatedUser } from "@/src/utils/auth/auth";
 import { getDisplayCategory } from "@/src/utils/categories/transactionCategory";
 import { Transaction } from "@/src/types/plaid";
 import logger from "@/src/utils/core/logger";
+import AppStorage from "@/src/utils/storage/storage";
+import { CACHE_CONFIG } from "@/src/shared/constants/cacheConfig";
+
+// Cache keys
+const INSIGHTS_CACHE_KEY = "home_insights";
+const INSIGHTS_CACHE_TIMESTAMP_KEY = "home_insights_timestamp";
+const CACHE_DURATION = CACHE_CONFIG.DURATIONS.MEDIUM; // 5 minutes
 
 // Helper to get category color (fallback mapping)
 const getCategoryColor = (categoryName: string): string => {
@@ -69,8 +76,35 @@ export interface HomeInsightsData {
  * Prioritizes: Budget progress > Category alert (>30%) > Spending summary
  */
 export function useHomeInsights(): HomeInsightsData {
-  const [insight, setInsight] = useState<HomeInsight | null>(null);
-  const [loading, setLoading] = useState(true);
+  // Load cache synchronously before first render (MMKV advantage)
+  const initialCache = (() => {
+    try {
+      const cacheString = AppStorage.getItemSync(INSIGHTS_CACHE_KEY);
+      const timestampString = AppStorage.getItemSync(INSIGHTS_CACHE_TIMESTAMP_KEY);
+      
+      if (!cacheString || !timestampString) {
+        return null;
+      }
+
+      const timestamp = parseInt(timestampString, 10);
+      const now = Date.now();
+      const cacheAge = now - timestamp;
+
+      if (cacheAge > CACHE_DURATION) {
+        return null;
+      }
+
+      const cachedData = JSON.parse(cacheString) as HomeInsight;
+      return cachedData;
+    } catch (error) {
+      return null;
+    }
+  })();
+
+  // Initialize state with cached data if available (instant UI)
+  const [insight, setInsight] = useState<HomeInsight | null>(initialCache);
+  const [loading, setLoading] = useState(!initialCache); // If we have cache, not loading
+  const isRefreshingRef = useRef(false); // Prevent multiple simultaneous refreshes
 
   // Helper to format date as YYYY-MM-DD
   const formatDate = (date: Date): string => {
@@ -166,10 +200,31 @@ export function useHomeInsights(): HomeInsightsData {
     []
   );
 
-  // Calculate insight
-  const calculateInsight = useCallback(async () => {
+  // Cache management
+  const saveToCache = useCallback(async (data: HomeInsight | null): Promise<void> => {
     try {
-      setLoading(true);
+      if (data) {
+        // Use synchronous operations for better performance
+        AppStorage.setItemSync(INSIGHTS_CACHE_KEY, JSON.stringify(data));
+        AppStorage.setItemSync(INSIGHTS_CACHE_TIMESTAMP_KEY, Date.now().toString());
+      }
+    } catch (error) {
+      logger.error("❌ [INSIGHTS CACHE] Failed to save to cache:", error);
+    }
+  }, []);
+
+  // Calculate insight
+  const calculateInsight = useCallback(async (hasCache: boolean = false) => {
+    // Prevent multiple simultaneous refreshes
+    if (isRefreshingRef.current) {
+      return;
+    }
+    
+    try {
+      isRefreshingRef.current = true;
+      if (!hasCache) {
+        setLoading(true);
+      }
 
       const authResult = await getAuthenticatedUser();
       if (!authResult?.user?.id) {
@@ -211,7 +266,7 @@ export function useHomeInsights(): HomeInsightsData {
             const percentage = (totalSpent / totalBudget) * 100;
             const remaining = totalBudget - totalSpent;
 
-            setInsight({
+            const budgetInsight: HomeInsight = {
               type: "budget_progress",
               budgetProgress: {
                 spent: totalSpent,
@@ -220,7 +275,9 @@ export function useHomeInsights(): HomeInsightsData {
                 remaining,
                 daysLeft,
               },
-            });
+            };
+            setInsight(budgetInsight);
+            await saveToCache(budgetInsight);
             setLoading(false);
             return;
           }
@@ -258,7 +315,7 @@ export function useHomeInsights(): HomeInsightsData {
             categoryColor = getCategoryColor(topCategory.category);
           }
 
-          setInsight({
+          const categoryInsight: HomeInsight = {
             type: "category_alert",
             categoryAlert: {
               category: topCategory.category,
@@ -266,7 +323,9 @@ export function useHomeInsights(): HomeInsightsData {
               percentage: topCategory.percentage,
               color: categoryColor,
             },
-          });
+          };
+          setInsight(categoryInsight);
+          await saveToCache(categoryInsight);
           setLoading(false);
           return;
         }
@@ -274,35 +333,56 @@ export function useHomeInsights(): HomeInsightsData {
 
       // Priority 3: Fallback to spending summary
       if (totalSpent > 0) {
-        setInsight({
+        const spendingInsight: HomeInsight = {
           type: "spending_summary",
           spendingSummary: {
             totalSpent,
             daysInMonth,
             currentDay,
           },
-        });
+        };
+        setInsight(spendingInsight);
+        await saveToCache(spendingInsight);
       } else {
         setInsight(null);
+        await saveToCache(null);
       }
 
       setLoading(false);
     } catch (error) {
       logger.error("Error calculating home insights:", error);
       setInsight(null);
+      await saveToCache(null);
       setLoading(false);
+    } finally {
+      isRefreshingRef.current = false;
     }
-  }, [getCurrentMonthCategoryBreakdown]);
+  }, [getCurrentMonthCategoryBreakdown, saveToCache]);
 
   // Refresh function
-  const refresh = useCallback(async () => {
-    await calculateInsight();
+  const refresh = useCallback(async (hasCache: boolean = false) => {
+    await calculateInsight(hasCache);
   }, [calculateInsight]);
 
-  // Initialize on mount
+  // Initialize on mount - only run once
+  const hasInitializedRef = useRef(false);
   useEffect(() => {
-    calculateInsight();
-  }, [calculateInsight]);
+    // Prevent multiple initializations
+    if (hasInitializedRef.current) {
+      return;
+    }
+    hasInitializedRef.current = true;
+
+    // Cache is already loaded synchronously before render
+    // So we only need to fetch fresh data in background
+    if (initialCache) {
+      // We have cache - fetch fresh data in background (non-blocking)
+      calculateInsight(true);
+    } else {
+      // No cache - fetch immediately (first load or cache expired)
+      calculateInsight(false);
+    }
+  }, [calculateInsight, initialCache]);
 
   return {
     insight,
