@@ -16,7 +16,7 @@ export const styles = StyleSheet.create({
     backgroundColor: "#121212",
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
-    height: "88%",
+    height: "75%",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: -8 },
     shadowOpacity: 0.4,
@@ -140,14 +140,15 @@ export const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingBottom: 24,
+    paddingBottom: 12,
   },
   section: {
-    marginBottom: 27,
+    marginBottom: 22,
   },
   sectionHeader: {
     paddingHorizontal: 24,
     marginBottom: 6,
+    marginTop: 6,
   },
   sectionTitle: {
     fontSize: 18,
@@ -165,8 +166,8 @@ export const styles = StyleSheet.create({
   // Filter Status Section
   filterStatusSection: {
     paddingHorizontal: 24,
-    marginBottom: 20,
-    marginTop: 20,
+    marginBottom: 14,
+    marginTop: 16,
   },
   filterStatusBar: {
     backgroundColor: "rgba(255,255,255,0.03)",
@@ -214,7 +215,7 @@ export const styles = StyleSheet.create({
   horizontalSectionsContainer: {
     flexDirection: "row",
     gap: 12,
-    marginBottom: 13,
+    marginBottom: 2,
     paddingHorizontal: 16,
   },
   halfSection: {
@@ -941,7 +942,7 @@ export const styles = StyleSheet.create({
   // Footer
   footer: {
     paddingHorizontal: 24,
-    paddingTop: 20,
+    paddingTop: 16,
     paddingBottom: Platform.OS === "ios" ? 34 : 20,
     borderTopWidth: 1,
     borderTopColor: "rgba(255,255,255,0.06)",
@@ -961,11 +962,13 @@ export const styles = StyleSheet.create({
     paddingVertical: 14,
     borderRadius: 12,
     gap: 8,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.12)",
   },
   resetButtonText: {
     fontSize: 16,
     fontWeight: "600",
-    color: "#888",
+    color: "#aaa",
   },
   applyButton: {
     flex: 2,

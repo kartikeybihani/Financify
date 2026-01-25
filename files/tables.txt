@@ -160,7 +160,7 @@ CREATE TABLE public.goals (
 CREATE TABLE public.investment_balances (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL,
-  snaptrade_user_id text NOT NULL,
+  snaptrade_user_id text,
   account_id text NOT NULL,
   currency_code text NOT NULL DEFAULT 'USD'::text,
   cash numeric DEFAULT 0,
@@ -174,20 +174,19 @@ CREATE TABLE public.investment_balances (
   total_change_percent numeric DEFAULT 0,
   total_value numeric DEFAULT 0,
   previous_total_value numeric,
+  provider text,
+  item_id text,
+  plaid_account_id text,
   CONSTRAINT investment_balances_pkey PRIMARY KEY (id),
-  CONSTRAINT fk_ib_pair FOREIGN KEY (snaptrade_user_id) REFERENCES public.snaptrade_connections(snaptrade_user_id),
-  CONSTRAINT fk_ib_pair FOREIGN KEY (account_id) REFERENCES public.snaptrade_connections(snaptrade_user_id),
-  CONSTRAINT fk_ib_pair FOREIGN KEY (snaptrade_user_id) REFERENCES public.snaptrade_connections(account_id),
-  CONSTRAINT fk_ib_pair FOREIGN KEY (account_id) REFERENCES public.snaptrade_connections(account_id),
   CONSTRAINT investment_balances_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
 );
 CREATE TABLE public.investment_holdings (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL,
-  snaptrade_user_id text NOT NULL,
+  snaptrade_user_id text,
   account_id text NOT NULL,
-  symbol_id text NOT NULL,
-  symbol text NOT NULL,
+  symbol_id text,
+  symbol text,
   description text,
   currency_code text NOT NULL DEFAULT 'USD'::text,
   exchange_code text,
@@ -206,11 +205,13 @@ CREATE TABLE public.investment_holdings (
   created_at timestamp with time zone DEFAULT now(),
   total_percent_change numeric,
   previous_market_value numeric,
+  provider text,
+  item_id text,
+  plaid_account_id text,
+  security_id text,
+  sector text,
+  industry text,
   CONSTRAINT investment_holdings_pkey PRIMARY KEY (id),
-  CONSTRAINT fk_ih_pair FOREIGN KEY (snaptrade_user_id) REFERENCES public.snaptrade_connections(snaptrade_user_id),
-  CONSTRAINT fk_ih_pair FOREIGN KEY (account_id) REFERENCES public.snaptrade_connections(snaptrade_user_id),
-  CONSTRAINT fk_ih_pair FOREIGN KEY (snaptrade_user_id) REFERENCES public.snaptrade_connections(account_id),
-  CONSTRAINT fk_ih_pair FOREIGN KEY (account_id) REFERENCES public.snaptrade_connections(account_id),
   CONSTRAINT investment_holdings_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
 );
 CREATE TABLE public.investment_options (

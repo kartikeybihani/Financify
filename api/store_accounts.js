@@ -229,7 +229,7 @@ export default async function handler(req, res) {
       storedData.institution = "Unknown";
     }
 
-    // 4. Fetch INVESTMENTS (optional - may not exist for all accounts)
+    // 4. Fetch and Store INVESTMENTS (optional - may not exist for all accounts)
     try {
       console.log("📈 Fetching investments...");
       const holdingsResponse = await client.investmentsHoldingsGet({
@@ -241,17 +241,327 @@ export default async function handler(req, res) {
         end_date: new Date().toISOString().split("T")[0],
       });
 
+      const holdings = holdingsResponse.data.holdings || [];
+      const securities = holdingsResponse.data.securities || [];
+      const accounts = holdingsResponse.data.accounts || [];
+
+      // Create a map of security_id -> security for quick lookup
+      const securitiesMap = new Map();
+      securities.forEach((security) => {
+        securitiesMap.set(security.security_id, security);
+      });
+
+      // Create a map of account_id -> account for quick lookup
+      const accountsMap = new Map();
+      accounts.forEach((account) => {
+        accountsMap.set(account.account_id, account);
+      });
+
+      if (holdings.length > 0) {
+        console.log(
+          `📊 Processing ${holdings.length} Plaid investment holdings...`
+        );
+
+        // Get existing holdings to calculate day_change
+        const { data: existingHoldings } = await supabase
+          .from("investment_holdings")
+          .select("security_id, previous_market_value, market_value, plaid_account_id")
+          .eq("user_id", userId)
+          .eq("item_id", item_id)
+          .eq("provider", "plaid")
+          .eq("is_active", true);
+
+        // Process holdings and prepare for upsert
+        const holdingsRows = holdings
+          .map((holding) => {
+            const security = securitiesMap.get(holding.security_id);
+            const account = accountsMap.get(holding.account_id);
+
+            if (!security) {
+              console.warn(
+                `⚠️ Security not found for security_id: ${holding.security_id}`
+              );
+              return null;
+            }
+
+            // Find existing holding to get previous_market_value
+            const existingHolding = existingHoldings?.find(
+              (eh) =>
+                eh.security_id === holding.security_id &&
+                eh.plaid_account_id === holding.account_id
+            );
+
+            const previousMarketValue =
+              existingHolding?.previous_market_value ??
+              existingHolding?.market_value ??
+              null;
+
+            const currentMarketValue = holding.institution_value || 0;
+            const currentPrice = holding.institution_price || security.close_price || 0;
+            const quantity = holding.quantity || 0;
+            const costBasis = holding.cost_basis || 0;
+
+            // Calculate day_change and day_change_percent
+            let dayChange = null;
+            let dayChangePercent = null;
+            if (
+              previousMarketValue !== null &&
+              previousMarketValue !== undefined &&
+              currentMarketValue !== null
+            ) {
+              dayChange = currentMarketValue - previousMarketValue;
+              dayChangePercent =
+                previousMarketValue !== 0
+                  ? (dayChange / previousMarketValue) * 100
+                  : 0;
+            }
+
+            // Calculate unrealized P&L
+            const unrealizedPL = currentMarketValue - costBasis;
+
+            // Calculate total_percent_change (from cost basis)
+            const totalPercentChange =
+              costBasis !== 0 && costBasis !== null
+                ? ((currentMarketValue - costBasis) / costBasis) * 100
+                : null;
+
+            return {
+              user_id: userId,
+              provider: "plaid",
+              item_id: item_id,
+              plaid_account_id: holding.account_id,
+              security_id: holding.security_id,
+              symbol: security.ticker_symbol || security.name || null,
+              description: security.name || null,
+              currency_code: holding.iso_currency_code || security.iso_currency_code || "USD",
+              exchange_code: security.market_identifier_code || null,
+              exchange_name: null, // Plaid doesn't provide exchange name directly
+              security_type: security.type || null,
+              sector: security.sector || null,
+              industry: security.industry || null,
+              units: quantity,
+              price: currentPrice,
+              market_value: currentMarketValue,
+              previous_market_value: currentMarketValue, // Set for next sync
+              average_purchase_price: costBasis > 0 && quantity > 0 ? costBasis / quantity : null,
+              total_cost_basis: costBasis,
+              unrealized_pl: unrealizedPL,
+              day_change: dayChange,
+              day_change_percent: dayChangePercent,
+              total_percent_change: totalPercentChange,
+              is_active: true,
+              last_updated: new Date().toISOString(),
+              // SnapTrade fields (null for Plaid)
+              snaptrade_user_id: null,
+              account_id: null, // SnapTrade account_id
+              symbol_id: null, // SnapTrade symbol_id
+            };
+          })
+          .filter((h) => h !== null); // Remove null entries
+
+        if (holdingsRows.length > 0) {
+          // Upsert holdings (using the unique index columns)
+          const { error: holdingsError } = await supabase
+            .from("investment_holdings")
+            .upsert(holdingsRows, {
+              onConflict: "user_id,item_id,plaid_account_id,security_id",
+              ignoreDuplicates: false,
+            });
+
+          if (holdingsError) {
+            console.error("❌ Error upserting Plaid holdings:", holdingsError);
+          } else {
+            console.log(
+              `✅ Stored ${holdingsRows.length} Plaid investment holdings`
+            );
+
+            // Mark holdings as inactive if they're no longer in the Plaid response
+            // Wait a moment for upsert to fully commit
+            await new Promise((resolve) => setTimeout(resolve, 500));
+
+            const activeSecurityIds = new Set(
+              holdingsRows
+                .map((h) => h.security_id)
+                .filter((id) => id !== null && id !== undefined && id !== "")
+            );
+            const activeAccountIds = new Set(
+              holdingsRows
+                .map((h) => h.plaid_account_id)
+                .filter((id) => id !== null && id !== undefined && id !== "")
+            );
+
+            if (activeSecurityIds.size > 0 && activeAccountIds.size > 0) {
+              // Get all currently active holdings from database for this item
+              const { data: allActiveHoldings, error: fetchError } =
+                await supabase
+                  .from("investment_holdings")
+                  .select("security_id, plaid_account_id")
+                  .eq("user_id", userId)
+                  .eq("item_id", item_id)
+                  .eq("provider", "plaid")
+                  .eq("is_active", true);
+
+              if (!fetchError && allActiveHoldings && allActiveHoldings.length > 0) {
+                // Find holdings that are in DB but NOT in API response (sold/removed)
+                const removedHoldings = allActiveHoldings.filter((h) => {
+                  if (!h.security_id || !h.plaid_account_id) return false;
+                  // Check if holding exists in API by security_id AND account_id
+                  const exists =
+                    activeSecurityIds.has(h.security_id) &&
+                    activeAccountIds.has(h.plaid_account_id);
+                  return !exists;
+                });
+
+                if (removedHoldings.length > 0) {
+                  console.log(
+                    `🔴 Found ${removedHoldings.length} removed holdings to deactivate`
+                  );
+
+                  const removedSecurityIds = removedHoldings
+                    .map((h) => h.security_id)
+                    .filter((id) => id);
+                  const removedAccountIds = removedHoldings
+                    .map((h) => h.plaid_account_id)
+                    .filter((id) => id);
+
+                  // Mark as inactive
+                  const { error: deactivateError } = await supabase
+                    .from("investment_holdings")
+                    .update({
+                      is_active: false,
+                      last_updated: new Date().toISOString(),
+                    })
+                    .eq("user_id", userId)
+                    .eq("item_id", item_id)
+                    .eq("provider", "plaid")
+                    .in("security_id", removedSecurityIds)
+                    .in("plaid_account_id", removedAccountIds);
+
+                  if (deactivateError) {
+                    console.error(
+                      "❌ Error marking removed holdings as inactive:",
+                      deactivateError
+                    );
+                  } else {
+                    console.log(
+                      `✅ Successfully marked ${removedHoldings.length} removed holdings as inactive`
+                    );
+                  }
+                }
+              }
+            }
+          }
+        }
+
+        // Process account balances
+        const investmentAccounts = accounts.filter(
+          (account) => account.type === "investment"
+        );
+        const balanceRows = await Promise.all(
+          investmentAccounts.map(async (account) => {
+            // Calculate total value from holdings for this account
+            const accountHoldings = holdingsRows.filter(
+              (h) => h.plaid_account_id === account.account_id
+            );
+            const totalHoldingsValue = accountHoldings.reduce(
+              (sum, h) => sum + (h.market_value || 0),
+              0
+            );
+            const cashBalance = account.balances?.current || 0;
+            const totalValue = totalHoldingsValue + cashBalance;
+
+            // Get existing balance to calculate day_change
+            const { data: existingBalance } = await supabase
+              .from("investment_balances")
+              .select("previous_total_value, total_value")
+              .eq("user_id", userId)
+              .eq("item_id", item_id)
+              .eq("plaid_account_id", account.account_id)
+              .eq("provider", "plaid")
+              .eq("is_current", true)
+              .single();
+
+            const previousTotalValue =
+              existingBalance?.previous_total_value ??
+              existingBalance?.total_value ??
+              null;
+
+            // Calculate day_change
+            let dayChange = null;
+            let dayChangePercent = null;
+            if (previousTotalValue !== null && previousTotalValue !== undefined) {
+              dayChange = totalValue - previousTotalValue;
+              dayChangePercent =
+                previousTotalValue !== 0
+                  ? (dayChange / previousTotalValue) * 100
+                  : 0;
+            }
+
+            return {
+              user_id: userId,
+              provider: "plaid",
+              item_id: item_id,
+              plaid_account_id: account.account_id,
+              currency_code: account.balances?.iso_currency_code || "USD",
+              cash: cashBalance,
+              buying_power: 0, // Plaid doesn't provide buying_power
+              total_value: totalValue,
+              previous_total_value: totalValue, // Set for next sync
+              day_change: dayChange,
+              day_change_percent: dayChangePercent,
+              total_change: null, // Will be calculated from holdings
+              total_change_percent: null, // Will be calculated from holdings
+              is_current: true,
+              last_updated: new Date().toISOString(),
+              // SnapTrade fields (null for Plaid)
+              snaptrade_user_id: null,
+              account_id: null, // SnapTrade account_id
+            };
+          })
+        );
+
+        if (balanceRows.length > 0) {
+          // Mark previous balances as not current
+          await supabase
+            .from("investment_balances")
+            .update({ is_current: false })
+            .eq("user_id", userId)
+            .eq("item_id", item_id)
+            .eq("provider", "plaid");
+
+          // Upsert balances (using the unique index columns)
+          const { error: balancesError } = await supabase
+            .from("investment_balances")
+            .upsert(balanceRows, {
+              onConflict: "user_id,item_id,plaid_account_id,currency_code",
+              ignoreDuplicates: false,
+            });
+
+          if (balancesError) {
+            console.error("❌ Error upserting Plaid balances:", balancesError);
+          } else {
+            console.log(
+              `✅ Stored ${balanceRows.length} Plaid investment account balances`
+            );
+          }
+        }
+      }
+
       storedData.investments = {
-        holdings: holdingsResponse.data.holdings.length,
-        securities: holdingsResponse.data.securities.length,
+        holdings: holdings.length,
+        securities: securities.length,
         transactions: transactionsResponse.data.investment_transactions.length,
+        stored: holdings.length > 0,
       };
       console.log(
-        `✅ Found ${holdingsResponse.data.holdings.length} investment holdings`
+        `✅ Found ${holdings.length} investment holdings (${holdings.length > 0 ? "stored" : "none to store"})`
       );
     } catch (error) {
       console.log("ℹ️ No investments found (this is normal for most accounts)");
-      storedData.investments = { holdings: 0, securities: 0, transactions: 0 };
+      if (error.response?.data) {
+        console.error("Plaid investments error:", error.response.data);
+      }
+      storedData.investments = { holdings: 0, securities: 0, transactions: 0, stored: false };
     }
 
     // 5. Fetch LIABILITIES (optional - credit cards, loans)

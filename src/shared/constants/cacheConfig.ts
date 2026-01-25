@@ -23,8 +23,12 @@ export const CACHE_CONFIG = {
     INVESTMENT_DATA_TIMESTAMP: 'cached_investment_data_timestamp',
     CATEGORIES: 'cached_categories',
     CATEGORIES_TIMESTAMP: 'cached_categories_timestamp',
+    CATEGORY_GROUPINGS: 'cached_category_groupings',
+    CATEGORY_GROUPINGS_TIMESTAMP: 'cached_category_groupings_timestamp',
     SPENDING_BREAKDOWN: 'cached_spending_breakdown',
     SPENDING_BREAKDOWN_TIMESTAMP: 'cached_spending_breakdown_timestamp',
+    BUDGET_DATA: 'cached_budget_data',
+    BUDGET_DATA_TIMESTAMP: 'cached_budget_data_timestamp',
   },
   
   // Cache strategies for different data types
@@ -37,6 +41,7 @@ export const CACHE_CONFIG = {
     INVESTMENT_DATA: 'VERY_LONG',    // 1 day - investment data is stable for daily use
     CATEGORIES: 'VERY_LONG',         // 1 hour - categories rarely change
     SPENDING_BREAKDOWN: 'VERY_LONG', // 1 day - spending breakdown cached for smooth UX (invalidated on category updates)
+    BUDGET_DATA: 'VERY_LONG', // 1 day - budget data is stable
   }
 } as const;
 

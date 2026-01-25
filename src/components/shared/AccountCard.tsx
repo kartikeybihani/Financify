@@ -55,7 +55,7 @@ export default function AccountCard({
   const gradient = getAccountGradientColors(
     account.subtype,
     account.type,
-    account.name
+    account.name,
   );
   const iconName = getAccountIcon(account.type);
 
@@ -120,7 +120,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   accountCard: {
-    borderRadius: 16,
+    borderRadius: 10,
     overflow: "hidden",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 4 },

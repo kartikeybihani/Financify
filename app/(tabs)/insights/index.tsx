@@ -38,6 +38,7 @@ import EnhancedFilterModal, {
 import ReAuthBanner from "@/src/components/ui/ReAuthBanner";
 import InsightsLoadingSkeleton from "@/src/components/insights/InsightsLoadingSkeleton";
 import SpendingSection from "@/src/components/insights/components/SpendingSection";
+import BudgetSection from "@/src/components/insights/components/BudgetSection";
 import { MonthOption } from "@/src/components/insights/components/MonthSelector";
 import IconButton from "@/src/components/shared/IconButton";
 import TransactionsSection from "@/src/components/insights/components/TransactionsSection";
@@ -103,6 +104,7 @@ import {
   clearSpendingCache,
   CachedSpendingData,
 } from "@/src/shared/utils/spendingCache";
+import { clearBudgetCache } from "@/src/shared/utils/budgetCache";
 import {
   LoadingIndicator,
   ErrorState,
@@ -301,7 +303,6 @@ export default function InsightsScreen() {
   const [mightHaveTransactions, setMightHaveTransactions] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const scrollViewRef = useRef<ScrollView>(null);
-  const [isBudgetMode, setIsBudgetMode] = useState(false);
   const openAddCategoryModalRef = useRef<(() => void) | null>(null);
   const [hasOpenAddCategoryModal, setHasOpenAddCategoryModal] = useState(false);
   const refreshBudgetRef = useRef<(() => Promise<void>) | null>(null);
@@ -337,7 +338,8 @@ export default function InsightsScreen() {
   const [investmentConnections, setInvestmentConnections] = useState<any[]>([]);
 
   // Top bar section state
-  const [activeSection, setActiveSection] = useState<InsightsSection>("spending");
+  const [activeSection, setActiveSection] =
+    useState<InsightsSection>("spending");
 
   // Animation values for smooth transitions
   const fadeAnim = useRef(new Animated.Value(1)).current;
@@ -345,6 +347,7 @@ export default function InsightsScreen() {
   // Section entrance animations
   const [sectionAnimations, setSectionAnimations] = useState<{
     spending: Animated.Value;
+    budget: Animated.Value;
     transactions: Animated.Value;
     recurring: Animated.Value;
     investments: Animated.Value;
@@ -405,7 +408,12 @@ export default function InsightsScreen() {
 
   // Use refs to track current section and recurring data state for event listeners
   const activeSectionRef = useRef<
-    "investments" | "spending" | "transactions" | "recurring" | "cashflow"
+    | "investments"
+    | "spending"
+    | "budget"
+    | "transactions"
+    | "recurring"
+    | "cashflow"
   >("spending");
   const recurringDataRef = useRef<typeof recurringData>(null);
 
@@ -421,7 +429,11 @@ export default function InsightsScreen() {
       "transactionCategoryUpdated",
       async (data) => {
         // Clear caches since categories have changed
-        await Promise.all([clearTransactionsCache(), clearSpendingCache()]);
+        await Promise.all([
+          clearTransactionsCache(),
+          clearSpendingCache(),
+          clearBudgetCache(),
+        ]);
 
         if (data.affectedTransactions && data.affectedTransactions.length > 0) {
           // Apply optimistic updates to filtered transactions
@@ -535,6 +547,7 @@ export default function InsightsScreen() {
   useEffect(() => {
     setSectionAnimations({
       spending: InsightsAnimationManager.createSectionFadeIn(0),
+      budget: InsightsAnimationManager.createSectionFadeIn(50),
       transactions: InsightsAnimationManager.createSectionFadeIn(100),
       recurring: InsightsAnimationManager.createSectionFadeIn(200),
       investments: InsightsAnimationManager.createSectionFadeIn(300),
@@ -748,7 +761,7 @@ export default function InsightsScreen() {
 
       // No delay needed if we have initial cache - execute immediately
       let timer: ReturnType<typeof setTimeout> | null = null;
-      
+
       if (initialCache.hasCache && transactions.length > 0) {
         initializeScreen();
       } else {
@@ -1442,6 +1455,7 @@ export default function InsightsScreen() {
           await clearInvestmentCache();
           await clearTransactionsCache();
           await clearSpendingCache();
+          await clearBudgetCache();
           // Also reload recurring transactions from database when data changes
           await loadRecurringTransactions();
           // Also reload investment data if financial data changes
@@ -1614,12 +1628,7 @@ export default function InsightsScreen() {
         });
       }
     },
-    [
-      selectedMonth,
-      selectedYear,
-      getCategoryColor,
-      formatCategoryFromHook,
-    ],
+    [selectedMonth, selectedYear, getCategoryColor, formatCategoryFromHook],
   );
 
   // Keep ref updated with latest processTransactionsData function
@@ -1674,10 +1683,11 @@ export default function InsightsScreen() {
       clearCache();
       await clearTransactionsCache();
       await clearSpendingCache();
+      await clearBudgetCache();
       await fetchFreshData();
 
-      // Refresh budget data if in budget mode
-      if (isBudgetMode && refreshBudgetRef.current) {
+      // Refresh budget data if on budget section
+      if (activeSection === "budget" && refreshBudgetRef.current) {
         await refreshBudgetRef.current();
       }
 
@@ -1711,7 +1721,13 @@ export default function InsightsScreen() {
 
   // Handle smooth section transitions
   const handleSectionChange = (
-    newSection: "cashflow" | "spending" | "transactions" | "recurring",
+    newSection:
+      | "cashflow"
+      | "spending"
+      | "budget"
+      | "transactions"
+      | "recurring"
+      | "investments",
   ) => {
     if (newSection === activeSection) return;
 
@@ -1985,7 +2001,15 @@ export default function InsightsScreen() {
         searchQuery,
       });
     },
-    [filterOptions, searchQuery, fetchFreshData, loadFilteredTransactions, loadRecurringTransactions, loadInvestmentData, setReAuthItems],
+    [
+      filterOptions,
+      searchQuery,
+      fetchFreshData,
+      loadFilteredTransactions,
+      loadRecurringTransactions,
+      loadInvestmentData,
+      setReAuthItems,
+    ],
   );
 
   // Dismiss re-auth banner
@@ -2014,7 +2038,16 @@ export default function InsightsScreen() {
         searchQuery,
       },
     );
-  }, [isSyncing, filterOptions, searchQuery, fetchFreshData, loadFilteredTransactions, loadRecurringTransactions, loadInvestmentData, setReAuthItems]);
+  }, [
+    isSyncing,
+    filterOptions,
+    searchQuery,
+    fetchFreshData,
+    loadFilteredTransactions,
+    loadRecurringTransactions,
+    loadInvestmentData,
+    setReAuthItems,
+  ]);
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -2156,7 +2189,30 @@ export default function InsightsScreen() {
                     selectedMonth={selectedMonth}
                     selectedYear={selectedYear}
                     onMonthSelect={handleMonthSelect}
-                    onBudgetModeChange={setIsBudgetMode}
+                  />
+                </Animated.View>
+              )}
+
+              {/* Budget Section */}
+              {activeSection === "budget" && (
+                <Animated.View
+                  style={[
+                    sectionContentStyles.container,
+                    {
+                      opacity: fadeAnim,
+                      ...(sectionAnimations?.budget
+                        ? InsightsAnimationManager.getInterpolatedStyles(
+                            sectionAnimations.budget,
+                          )
+                        : {}),
+                    },
+                  ]}
+                >
+                  <BudgetSection
+                    titleStyle={styles.sectionLabel}
+                    categoryBreakdown={categoryBreakdown}
+                    onCategoryPress={handleCategoryPress}
+                    formatCategoryName={formatCategoryFromHook}
                     onOpenAddCategoryModalRef={handleOpenAddCategoryModalRef}
                     onRefreshBudgetRef={(refreshFn) => {
                       refreshBudgetRef.current = refreshFn;
@@ -2392,12 +2448,10 @@ export default function InsightsScreen() {
         </ScrollView>
       )}
 
-      {/* Floating Action Button for Adding Category - Fixed to screen, only visible in budget mode */}
-      {isBudgetMode &&
-        activeSection === "spending" &&
-        hasOpenAddCategoryModal && (
-          <InsightsFAB onPress={openAddCategoryModal} />
-        )}
+      {/* Floating Action Button for Adding Category - Fixed to screen, only visible in budget section */}
+      {activeSection === "budget" && hasOpenAddCategoryModal && (
+        <InsightsFAB onPress={openAddCategoryModal} />
+      )}
     </SafeAreaView>
   );
 }

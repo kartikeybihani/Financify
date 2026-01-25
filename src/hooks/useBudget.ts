@@ -25,6 +25,17 @@ import {
 import { getAuthenticatedUser } from "@/src/utils/auth/auth";
 import logger from "@/src/utils/core/logger";
 import { supabase } from "@/src/lib/supabase/supabase";
+import {
+  loadCategoriesFromCache,
+  saveCategoriesToCache,
+  loadGroupingsFromCache,
+  saveGroupingsToCache,
+} from "@/src/shared/utils/categoryCache";
+import {
+  saveBudgetToCache,
+  loadBudgetFromCache,
+} from "@/src/shared/utils/budgetCache";
+import { getUserIdSync } from "@/src/utils/insights/cacheUtils";
 
 export interface UseBudgetReturn {
   // Data
@@ -67,21 +78,28 @@ type CategoryBreakdown = [
 
 export function useBudget(categoryBreakdown?: CategoryBreakdown): UseBudgetReturn {
   const toKey = (name?: string | null) => (name || "").trim().toLowerCase();
+  
+  // Get userId synchronously for cache loading
+  const initialUserId = getUserIdSync();
+  
+  // Load cached budget data synchronously on mount for instant UI
+  // Show stale data immediately, refresh in background
+  const initialCachedBudget = useMemo(() => {
+    if (!initialUserId) return null;
+    return loadBudgetFromCache(initialUserId);
+  }, [initialUserId]);
+  
   const [budgetSummary, setBudgetSummary] = useState<BudgetSummary | null>(
-    null
+    initialCachedBudget?.budgetSummary || null
   );
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // Track if we've done the initial load - only show loading spinner on initial load, not refreshes
-  const hasInitiallyLoadedRef = useRef(false);
+  // Track if we've done the initial load - mark as loaded if we have cache
+  const hasInitiallyLoadedRef = useRef(!!initialCachedBudget);
 
-  // Load budget data
-  const loadBudget = useCallback(async (isRefresh: boolean = false) => {
+  // Load budget data from database
+  const loadBudgetFromDB = useCallback(async () => {
     try {
-      // Only set loading state on initial load, not on refreshes
-      if (!isRefresh && !hasInitiallyLoadedRef.current) {
-        setLoading(true);
-      }
       setError(null);
 
       const authResult = await getAuthenticatedUser();
@@ -97,6 +115,8 @@ export function useBudget(categoryBreakdown?: CategoryBreakdown): UseBudgetRetur
       const summary = await getBudgetSummary(authResult.user.id);
       setBudgetSummary(summary);
       hasInitiallyLoadedRef.current = true;
+      
+      // Note: budgetData will be computed and cached in useEffect below
     } catch (err) {
       logger.error("❌ [BUDGET] Error loading budget:", err);
       setError(err instanceof Error ? err.message : "Failed to load budget");
@@ -104,6 +124,24 @@ export function useBudget(categoryBreakdown?: CategoryBreakdown): UseBudgetRetur
       setLoading(false);
     }
   }, []);
+
+  // Load budget data - show cache immediately, refresh in background
+  const loadBudget = useCallback(async (isRefresh: boolean = false) => {
+    // If we have cached data and this is not a manual refresh, show cache and refresh in background
+    if (initialCachedBudget && !isRefresh) {
+      // Show cached data immediately (already set in state initialization)
+      hasInitiallyLoadedRef.current = true;
+      
+      // Refresh in background without blocking UI
+      loadBudgetFromDB().catch((err) =>
+        logger.error("Background budget refresh failed:", err)
+      );
+      return;
+    }
+
+    // No cache or manual refresh - load from database
+    await loadBudgetFromDB();
+  }, [initialCachedBudget, loadBudgetFromDB]);
 
   // Initialize on mount
   useEffect(() => {
@@ -128,21 +166,51 @@ export function useBudget(categoryBreakdown?: CategoryBreakdown): UseBudgetRetur
     };
   }, [loadBudget]);
 
+  // Load cached categories and groupings synchronously on mount for instant UI
+  const initialCachedCategories = useMemo(() => {
+    if (!initialUserId) return null;
+    return loadCategoriesFromCache(initialUserId);
+  }, [initialUserId]);
+  
+  const initialCachedGroupings = useMemo(() => {
+    if (!initialUserId) return null;
+    return loadGroupingsFromCache(initialUserId);
+  }, [initialUserId]);
+
   // State for historical averages and categories
-  const [historicalAverages, setHistoricalAverages] = useState<Map<string, { averageMonthly: number; totalSpent: number; months: number }>>(new Map());
-  const [allCategories, setAllCategories] = useState<CategoryRecord[]>([]);
-  const [categoryGroupings, setCategoryGroupings] = useState<CategoryGrouping[]>([]);
-  const [hiddenCategoryKeys, setHiddenCategoryKeys] = useState<Set<string>>(new Set());
+  // Initialize historical averages from cache if available
+  const [historicalAverages, setHistoricalAverages] = useState<Map<string, { averageMonthly: number; totalSpent: number; months: number }>>(
+    initialCachedBudget?.historicalAverages || new Map()
+  );
+  const [allCategories, setAllCategories] = useState<CategoryRecord[]>(
+    initialCachedCategories?.categories || []
+  );
+  const [categoryGroupings, setCategoryGroupings] = useState<CategoryGrouping[]>(
+    initialCachedGroupings || []
+  );
+  const [hiddenCategoryKeys, setHiddenCategoryKeys] = useState<Set<string>>(
+    initialCachedCategories?.hiddenCategoryKeys || new Set()
+  );
+  // Track if categories/groupings have been fetched to prevent incorrect initial render
+  // Mark as fetched if we have cached data
+  const categoriesFetchedRef = useRef(!!(initialCachedCategories && initialCachedGroupings));
 
   // Fetch historical averages and categories
+  // Only fetch historical averages if we don't have them cached (optimization)
   const fetchHistoricalData = useCallback(async () => {
     try {
       const authResult = await getAuthenticatedUser();
       if (!authResult?.user?.id) return;
 
-      // Fetch historical averages
-      const averages = await getHistoricalCategoryAverages(authResult.user.id, 12);
-      setHistoricalAverages(averages);
+      // Only fetch historical averages if we don't have them cached
+      // Check both cached budget data and current state to avoid expensive recalculation
+      const cachedAveragesSize = initialCachedBudget?.historicalAverages?.size ?? 0;
+      const hasCachedAverages = cachedAveragesSize > 0 || historicalAverages.size > 0;
+      
+      if (!hasCachedAverages) {
+        const averages = await getHistoricalCategoryAverages(authResult.user.id, 12);
+        setHistoricalAverages(averages);
+      }
 
       // Fetch all categories from categories table (user-specific only)
       const { data: categories } = await supabase
@@ -174,39 +242,58 @@ export function useBudget(categoryBreakdown?: CategoryBreakdown): UseBudgetRetur
               addKeys(cat).forEach((k) => byKey.set(k, cat));
             });
 
-          setAllCategories(Array.from(byKey.values()));
+          const categoriesArray = Array.from(byKey.values());
+          setAllCategories(categoriesArray);
           setHiddenCategoryKeys(hiddenKeys);
+          
+          // Save to cache after fetching
+          await saveCategoriesToCache(authResult.user.id, categoriesArray, hiddenKeys);
         }
 
       const groupings = await getCategoryGroupings(authResult.user.id);
       setCategoryGroupings(groupings);
+      
+      // Save to cache after fetching
+      await saveGroupingsToCache(authResult.user.id, groupings);
+      
+      // Mark as fetched after both categories and groupings are loaded
+      categoriesFetchedRef.current = true;
     } catch (err) {
       logger.error("❌ [BUDGET] Error fetching historical data:", err);
+      // Still mark as fetched even on error to prevent infinite waiting
+      categoriesFetchedRef.current = true;
     }
-  }, []);
+  }, [historicalAverages]);
 
+  // Load categories and groupings immediately on mount, not waiting for budgetSummary
+  // This ensures they're ready when budgetSummary loads, preventing incorrect initial render
   useEffect(() => {
-    if (budgetSummary) {
-      fetchHistoricalData();
-    }
-  }, [budgetSummary, fetchHistoricalData]);
+    fetchHistoricalData();
+  }, [fetchHistoricalData]);
 
   // Convert budget summary to BudgetData array for BudgetView
   // Include ALL categories that have had transactions in the past OR exist in categories table
-  // Use categoryBreakdown as source of truth for spent amounts (most accurate)
-  const budgetData: BudgetData[] = useMemo(() => {
+  // CRITICAL: Use actuals from budgetSummary for spent amounts (not categoryBreakdown prop)
+  // This ensures cached data doesn't depend on changing props
+  // CRITICAL: Don't apply grouping until categories/groupings have been fetched to prevent incorrect grouping/flashing
+  const computedBudgetData: BudgetData[] = useMemo(() => {
     if (!budgetSummary) return [];
     
     return (() => {
-        // Build map from categoryBreakdown (source of truth for spent amounts)
+      // CRITICAL: If categories/groupings haven't been fetched yet, skip grouping logic
+      // This prevents "one category with all items" bug while still showing ungrouped data immediately
+      const shouldApplyGrouping = categoriesFetchedRef.current;
+        
+        // Build map from categoryBreakdown ONLY for color (not spent amounts)
+        // Spent amounts come from budgetSummary.actuals (database source of truth)
         const breakdownByKey = new Map<string, { amount: number; label: string; color: string }>();
         if (categoryBreakdown) {
           categoryBreakdown.forEach(([categoryName, data]) => {
             const key = toKey(categoryName);
             breakdownByKey.set(key, {
-              amount: data.amount,
+              amount: data.amount, // Keep for fallback, but prefer actuals
               label: categoryName,
-              color: data.color,
+              color: data.color, // Use color from breakdown
             });
           });
         }
@@ -343,7 +430,9 @@ export function useBudget(categoryBreakdown?: CategoryBreakdown): UseBudgetRetur
           }
         });
 
-        // Process categoryBreakdown, actuals, and historical - use categoryId keys only
+        // Process categoryBreakdown ONLY for color mapping (not for spent amounts or keys)
+        // Spent amounts come from actuals (database source), not categoryBreakdown prop
+        // This ensures cached data doesn't depend on changing props
         if (categoryBreakdown) {
           breakdownByKey.forEach((_, key) => {
             const matchingCategory = findCategoryByName(key);
@@ -354,10 +443,8 @@ export function useBudget(categoryBreakdown?: CategoryBreakdown): UseBudgetRetur
                 categoryIdsSeen.add(matchingCategory.id);
               }
               nameToCategoryId.set(key, matchingCategory.id);
-            } else {
-              // No matching category - use name key (legacy/uncategorized)
-              allCategoryKeys.add(key);
             }
+            // Don't add name keys from categoryBreakdown - only use actuals and budget entries
           });
         }
         
@@ -474,16 +561,19 @@ export function useBudget(categoryBreakdown?: CategoryBreakdown): UseBudgetRetur
               categoryMeta = categoriesByKey.get(categoryKey);
             }
 
-            // Use categoryBreakdown as source of truth for spent amounts (most accurate)
-            // Fallback to actualsByKey if categoryBreakdown not available
-            const spent = breakdownData?.amount ?? actualData?.amount ?? 0;
+            // Use actuals from budgetSummary as source of truth for spent amounts (database source)
+            // This ensures cached data doesn't depend on categoryBreakdown prop which changes
+            // categoryBreakdown is only used for color fallback
+            const spent = actualData?.amount ?? breakdownData?.amount ?? 0;
             
             // Use display name from breakdown if available, otherwise use other sources
             const displayName = breakdownData?.label || categoryMeta?.name || entryInfo?.label || actualData?.label || categoryKey;
             
             // Use color from breakdown if available, otherwise use other sources
             const categoryColor = breakdownData?.color || entryInfo?.entry.category?.color || categoryMeta?.color || "#607D8B";
-            const categoryIcon = entryInfo?.entry.category?.icon || categoryMeta?.icon || null;
+            // CRITICAL: Always get icon from current categories (not cached) to ensure icons are up-to-date
+            // Icons can change when categories are updated, so we resolve them dynamically
+            const categoryIcon = categoryMeta?.icon || entryInfo?.entry.category?.icon || null;
             const categoryId = entryInfo?.entry.category?.id || categoryMeta?.id || null;
 
             // Calculate auto-budget if no budget entry exists
@@ -561,11 +651,15 @@ export function useBudget(categoryBreakdown?: CategoryBreakdown): UseBudgetRetur
         
 
         // Build grouping maps
+        // CRITICAL: Only apply grouping if categories/groupings have been fetched
+        // This prevents incorrect grouping when data is still loading
         const groupingByChild = new Map<string, string>();
-        categoryGroupings.forEach((g) => {
-          if (!g.active) return;
-          groupingByChild.set(g.child_category_id, g.parent_category_id);
-        });
+        if (shouldApplyGrouping) {
+          categoryGroupings.forEach((g) => {
+            if (!g.active) return;
+            groupingByChild.set(g.child_category_id, g.parent_category_id);
+          });
+        }
 
         // Index budgets by categoryId for grouping
         // CRITICAL: Deduplicate by categoryId first to prevent duplicates
@@ -618,8 +712,10 @@ export function useBudget(categoryBreakdown?: CategoryBreakdown): UseBudgetRetur
         
         // First pass: ensure all parent categories exist in budgetById
         // This handles cases where parent categories don't have transactions but have children
-        categoryGroupings.forEach((g) => {
-          if (!g.active) return;
+        // CRITICAL: Only run grouping logic if categories/groupings have been fetched
+        if (shouldApplyGrouping) {
+          categoryGroupings.forEach((g) => {
+            if (!g.active) return;
           const parentId = g.parent_category_id;
           
           // Check if parent already exists in budgetById
@@ -695,9 +791,12 @@ export function useBudget(categoryBreakdown?: CategoryBreakdown): UseBudgetRetur
             baseById.set(parentCat.name, parentBase);
             
           }
-        });
+          });
+        }
         
         // Second pass: attach children to parents and roll up totals
+        // CRITICAL: Only run if grouping should be applied
+        if (shouldApplyGrouping) {
         flatBudgets.forEach((item) => {
           if (!item.categoryId) return;
           const parentId = groupingByChild.get(item.categoryId);
@@ -730,9 +829,12 @@ export function useBudget(categoryBreakdown?: CategoryBreakdown): UseBudgetRetur
           childIds.add(item.categoryId);
           parentsWithChildren.add(parentId);
         });
+        }
 
         // Insert parent's own entry as first subcategory when it has children
-        parentsWithChildren.forEach((parentId) => {
+        // CRITICAL: Only run if grouping should be applied
+        if (shouldApplyGrouping) {
+          parentsWithChildren.forEach((parentId) => {
           const parent = budgetById.get(parentId);
           const base = baseById.get(parentId);
           if (parent && base) {
@@ -743,7 +845,8 @@ export function useBudget(categoryBreakdown?: CategoryBreakdown): UseBudgetRetur
             };
             parent.children = [selfChild, ...(parent.children || [])];
           }
-        });
+          });
+        }
 
         const roots: BudgetData[] = [];
         const addedRootIds = new Set<string>();
@@ -863,21 +966,133 @@ export function useBudget(categoryBreakdown?: CategoryBreakdown): UseBudgetRetur
 
         return sortedRoots;
       })();
-  }, [budgetSummary, historicalAverages, allCategories, categoryGroupings, hiddenCategoryKeys, categoryBreakdown]);
+  }, [budgetSummary, historicalAverages, allCategories, categoryGroupings, hiddenCategoryKeys]);
+  // NOTE: categoryBreakdown removed from dependencies - we use actuals from budgetSummary instead
+  // This ensures cached data doesn't become stale when categoryBreakdown prop changes
 
-  // Calculate totals
-  const totalBudget =
-    budgetSummary?.period.total_limit ||
-    budgetData.reduce((sum, b) => sum + b.budget, 0);
+  // Use cached budgetData immediately, fallback to computed when ready
+  // This ensures instant UI like spending/investment sections
+  // Track if we have fresh computed data ready
+  const hasFreshComputedData = computedBudgetData.length > 0 && budgetSummary !== null;
+  
+  // Always resolve icons dynamically from current categories (never use cached icons)
+  // This ensures icons are always correct, even when using cached budgetData
+  const budgetData: BudgetData[] = useMemo(() => {
+    // Get the base data (fresh computed or cached)
+    let baseData: BudgetData[] = [];
+    if (hasFreshComputedData) {
+      baseData = computedBudgetData;
+    } else if (initialCachedBudget) {
+      baseData = initialCachedBudget.budgetData;
+    } else {
+      return [];
+    }
+    
+    // If no categories loaded yet, return base data without icons (will resolve when categories load)
+    if (allCategories.length === 0) {
+      return baseData.map(item => ({ ...item, icon: null }));
+    }
+    
+    // Create a map of categories by ID for fast lookup
+    const categoriesById = new Map<string, CategoryRecord>();
+    allCategories.forEach(cat => {
+      if (cat.id) {
+        categoriesById.set(cat.id, cat);
+      }
+    });
+    
+    // Always resolve icons from current categories (never use cached icons)
+    return baseData.map(item => {
+      // Resolve icon from current categories using categoryId
+      let resolvedIcon: string | null = null;
+      if (item.categoryId) {
+        const freshCategory = categoriesById.get(item.categoryId);
+        if (freshCategory) {
+          resolvedIcon = freshCategory.icon || null;
+        }
+      }
+      
+      // Also resolve color from current categories (prefer fresh, fallback to cached)
+      let resolvedColor = item.color;
+      if (item.categoryId) {
+        const freshCategory = categoriesById.get(item.categoryId);
+        if (freshCategory?.color) {
+          resolvedColor = freshCategory.color;
+        }
+      }
+      
+      return {
+        ...item,
+        icon: resolvedIcon, // Always use resolved icon (never cached)
+        color: resolvedColor, // Prefer fresh color
+      };
+    });
+  }, [hasFreshComputedData, computedBudgetData, initialCachedBudget, allCategories]);
 
-  const totalSpent = budgetSummary?.actuals.overall || 0;
+  // Calculate totals - use cached if available, otherwise compute
+  // Always use exact values to prevent visual switching
+  const totalBudget = useMemo(() => {
+    // If we have fresh computed data, use it
+    if (hasFreshComputedData && budgetSummary) {
+      // Prefer exact value from period.total_limit if available
+      if (budgetSummary.period.total_limit !== null && budgetSummary.period.total_limit !== undefined) {
+        return budgetSummary.period.total_limit;
+      }
+      // Otherwise calculate from budgetData (preserve exact decimals)
+      return computedBudgetData.reduce((sum, b) => sum + b.budget, 0);
+    }
+    // Otherwise use cached total if available (exact value from cache)
+    if (initialCachedBudget) {
+      return initialCachedBudget.totalBudget;
+    }
+    return 0;
+  }, [hasFreshComputedData, budgetSummary, computedBudgetData, initialCachedBudget]);
+
+  const totalSpent = useMemo(() => {
+    // If we have fresh computed data, use it
+    if (hasFreshComputedData) {
+      return budgetSummary?.actuals.overall || 0;
+    }
+    // Otherwise use cached total if available
+    if (initialCachedBudget) {
+      return initialCachedBudget.totalSpent;
+    }
+    return 0;
+  }, [hasFreshComputedData, budgetSummary, initialCachedBudget]);
+
   const totalRemaining = totalBudget - totalSpent;
+
+  // Save computed budgetData to cache when it's ready
+  useEffect(() => {
+    if (computedBudgetData.length > 0 && budgetSummary && initialUserId && historicalAverages.size > 0) {
+      // Only save if we have fresh computed data
+      // Use exact same calculation method as totalBudget to ensure consistency
+      const computedTotalBudget = budgetSummary.period.total_limit !== null && budgetSummary.period.total_limit !== undefined
+        ? budgetSummary.period.total_limit
+        : computedBudgetData.reduce((sum, b) => sum + b.budget, 0);
+      const computedTotalSpent = budgetSummary.actuals.overall || 0;
+      saveBudgetToCache(
+        initialUserId,
+        computedBudgetData,
+        computedTotalBudget,
+        computedTotalSpent,
+        budgetSummary,
+        historicalAverages
+      );
+    }
+  }, [computedBudgetData, budgetSummary, initialUserId, historicalAverages]);
 
   // Actions
   const refreshBudget = useCallback(async () => {
-    // Pass isRefresh=true to prevent showing loading spinner on refresh
+    // Force refresh from database (isRefresh=true)
     await loadBudget(true);
     // Also refresh categories and historical data to ensure consistency
+    // Force refresh historical averages on manual refresh
+    const authResult = await getAuthenticatedUser();
+    if (authResult?.user?.id) {
+      const averages = await getHistoricalCategoryAverages(authResult.user.id, 12);
+      setHistoricalAverages(averages);
+    }
     await fetchHistoricalData();
   }, [loadBudget, fetchHistoricalData]);
 

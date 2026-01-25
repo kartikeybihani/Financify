@@ -33,7 +33,7 @@ export default function PersonalityBadge({
       onPress={onPress}
       activeOpacity={0.7}
     >
-      {/* Top Row: Mascot | Title & Subtitle | Percentage & Chevron */}
+      {/* Top Row: Mascot | Title & Subtitle | Chevron */}
       <View style={styles.topRow}>
         {/* Mascot Image - Left Side */}
         <View style={styles.mascotContainer}>
@@ -60,29 +60,17 @@ export default function PersonalityBadge({
           {showDetails && <Text style={styles.badge}>{personality.badge}</Text>}
         </View>
 
-        {/* Percentage & Chevron - Right Side */}
-        <View style={styles.rightSection}>
-          {showDetails && (
-            <View
-              style={[
-                styles.confidenceBadge,
-                { backgroundColor: `${personality.color}15` },
-              ]}
-            >
-              <Text style={[styles.confidence, { color: colors.primary }]}>
-                {personality.confidence}%
-              </Text>
-            </View>
-          )}
-          {onPress && (
+        {/* Chevron - Right Side */}
+        {onPress && (
+          <View style={styles.rightSection}>
             <Ionicons
               name="chevron-forward"
               size={14}
               color="rgba(255, 255, 255, 0.3)"
               style={styles.chevron}
             />
-          )}
-        </View>
+          </View>
+        )}
       </View>
 
       {/* Traits Below - Full Width */}
@@ -182,15 +170,6 @@ const styles = StyleSheet.create({
   chipText: {
     fontSize: 10,
     fontWeight: "500",
-  },
-  confidenceBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 10,
-  },
-  confidence: {
-    fontSize: 11,
-    fontWeight: "700",
   },
   chevron: {
     // No margin needed, gap handles spacing

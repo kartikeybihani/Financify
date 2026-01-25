@@ -5,6 +5,7 @@ import { MonthOption } from "@/src/components/insights/components/MonthSelector"
 export type InsightsSection =
   | "investments"
   | "spending"
+  | "budget"
   | "transactions"
   | "recurring"
   | "cashflow";
@@ -58,6 +59,7 @@ export interface InitialCache {
 
 export interface SectionAnimations {
   spending: any;
+  budget: any;
   transactions: any;
   recurring: any;
   investments: any;

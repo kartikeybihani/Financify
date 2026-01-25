@@ -122,6 +122,65 @@ export default async function handler(req, res) {
       }
     }
 
+    // --- HOLDINGS webhooks (Plaid investment holdings) ---
+    if (webhook_type === "HOLDINGS") {
+      if (webhook_code === "DEFAULT_UPDATE") {
+        console.log("📈 Plaid holdings update webhook received", {
+          item_id,
+          new_holdings: req.body.new_holdings || 0,
+          updated_holdings: req.body.updated_holdings || 0,
+        });
+
+        try {
+          // Look up user_id from item_id
+          const { data: userItem, error } = await supabase
+            .from("user_items")
+            .select("user_id")
+            .eq("item_id", item_id)
+            .single();
+
+          if (error || !userItem) {
+            console.error("Could not find user for item_id:", item_id, error);
+            return res.status(200).json({ ok: true, error: "user_not_found" });
+          }
+
+          // Get access token
+          const { data: access_token, error: tokenErr } = await supabase.rpc(
+            "secure_get_plaid_token",
+            {
+              p_item_id: item_id,
+              p_user_id: userItem.user_id,
+            }
+          );
+
+          if (tokenErr || !access_token) {
+            console.error("Could not get access token for holdings sync:", tokenErr);
+            return res.status(200).json({ ok: true, error: "token_not_found" });
+          }
+
+          // Fetch and store updated holdings
+          await syncPlaidHoldings({
+            access_token,
+            item_id,
+            user_id: userItem.user_id,
+          });
+
+          console.log("✅ Plaid holdings synced successfully from webhook");
+        } catch (e) {
+          console.error("Error syncing Plaid holdings from webhook:", e);
+        }
+
+        // Always ack quickly so Plaid doesn't retry
+        return res.status(200).json({
+          ok: true,
+          trigger_holdings_sync: true,
+        });
+      }
+
+      // Other HOLDINGS webhook codes can be handled here in the future
+      return res.status(200).json({ ok: true });
+    }
+
     // --- TRANSACTIONS webhooks ---
     if (webhook_type === "TRANSACTIONS") {
       const shouldSync =
@@ -532,5 +591,303 @@ async function handleAccountHoldingsUpdated(user_id, connection_id) {
     console.log("✅ Triggered sync after holdings update webhook");
   } catch (error) {
     console.error("❌ Error handling account holdings updated:", error);
+  }
+}
+
+// Sync Plaid investment holdings (called from webhook)
+async function syncPlaidHoldings({ access_token, item_id, user_id }) {
+  try {
+    console.log("📈 Syncing Plaid investment holdings...", {
+      item_id,
+      user_id: user_id?.substring(0, 8) + "...",
+    });
+
+    // Fetch holdings from Plaid
+    const holdingsResponse = await plaidClient.investmentsHoldingsGet({
+      access_token,
+    });
+
+    const holdings = holdingsResponse.data.holdings || [];
+    const securities = holdingsResponse.data.securities || [];
+    const accounts = holdingsResponse.data.accounts || [];
+
+    if (holdings.length === 0) {
+      console.log("ℹ️ No holdings found for this Plaid item");
+      return;
+    }
+
+    // Create maps for quick lookup
+    const securitiesMap = new Map();
+    securities.forEach((security) => {
+      securitiesMap.set(security.security_id, security);
+    });
+
+    const accountsMap = new Map();
+    accounts.forEach((account) => {
+      accountsMap.set(account.account_id, account);
+    });
+
+    // Get existing holdings to calculate day_change
+    const { data: existingHoldings } = await supabase
+      .from("investment_holdings")
+      .select("security_id, previous_market_value, market_value, plaid_account_id")
+      .eq("user_id", user_id)
+      .eq("item_id", item_id)
+      .eq("provider", "plaid")
+      .eq("is_active", true);
+
+    // Process holdings
+    const holdingsRows = holdings
+      .map((holding) => {
+        const security = securitiesMap.get(holding.security_id);
+        if (!security) {
+          console.warn(
+            `⚠️ Security not found for security_id: ${holding.security_id}`
+          );
+          return null;
+        }
+
+        // Find existing holding for day_change calculation
+        const existingHolding = existingHoldings?.find(
+          (eh) =>
+            eh.security_id === holding.security_id &&
+            eh.plaid_account_id === holding.account_id
+        );
+
+        const previousMarketValue =
+          existingHolding?.previous_market_value ??
+          existingHolding?.market_value ??
+          null;
+
+        const currentMarketValue = holding.institution_value || 0;
+        const currentPrice =
+          holding.institution_price || security.close_price || 0;
+        const quantity = holding.quantity || 0;
+        const costBasis = holding.cost_basis || 0;
+
+        // Calculate day_change
+        let dayChange = null;
+        let dayChangePercent = null;
+        if (
+          previousMarketValue !== null &&
+          previousMarketValue !== undefined &&
+          currentMarketValue !== null
+        ) {
+          dayChange = currentMarketValue - previousMarketValue;
+          dayChangePercent =
+            previousMarketValue !== 0
+              ? (dayChange / previousMarketValue) * 100
+              : 0;
+        }
+
+        // Calculate unrealized P&L and total_percent_change
+        const unrealizedPL = currentMarketValue - costBasis;
+        const totalPercentChange =
+          costBasis !== 0 && costBasis !== null
+            ? ((currentMarketValue - costBasis) / costBasis) * 100
+            : null;
+
+        return {
+          user_id,
+          provider: "plaid",
+          item_id,
+          plaid_account_id: holding.account_id,
+          security_id: holding.security_id,
+          symbol: security.ticker_symbol || security.name || null,
+          description: security.name || null,
+          currency_code:
+            holding.iso_currency_code || security.iso_currency_code || "USD",
+          exchange_code: security.market_identifier_code || null,
+          exchange_name: null,
+          security_type: security.type || null,
+          sector: security.sector || null,
+          industry: security.industry || null,
+          units: quantity,
+          price: currentPrice,
+          market_value: currentMarketValue,
+          previous_market_value: currentMarketValue,
+          average_purchase_price:
+            costBasis > 0 && quantity > 0 ? costBasis / quantity : null,
+          total_cost_basis: costBasis,
+          unrealized_pl: unrealizedPL,
+          day_change: dayChange,
+          day_change_percent: dayChangePercent,
+          total_percent_change: totalPercentChange,
+          is_active: true,
+          last_updated: new Date().toISOString(),
+          snaptrade_user_id: null,
+          account_id: null,
+          symbol_id: null,
+        };
+      })
+      .filter((h) => h !== null);
+
+    if (holdingsRows.length > 0) {
+      // Upsert holdings
+      const { error: holdingsError } = await supabase
+        .from("investment_holdings")
+        .upsert(holdingsRows, {
+          onConflict: "user_id,item_id,plaid_account_id,security_id",
+          ignoreDuplicates: false,
+        });
+
+      if (holdingsError) {
+        console.error("❌ Error upserting Plaid holdings:", holdingsError);
+        throw holdingsError;
+      }
+
+      console.log(`✅ Stored ${holdingsRows.length} Plaid investment holdings`);
+
+      // Mark removed holdings as inactive
+      await new Promise((resolve) => setTimeout(resolve, 500));
+
+      const activeSecurityIds = new Set(
+        holdingsRows
+          .map((h) => h.security_id)
+          .filter((id) => id !== null && id !== undefined && id !== "")
+      );
+      const activeAccountIds = new Set(
+        holdingsRows
+          .map((h) => h.plaid_account_id)
+          .filter((id) => id !== null && id !== undefined && id !== "")
+      );
+
+      if (activeSecurityIds.size > 0 && activeAccountIds.size > 0) {
+        const { data: allActiveHoldings, error: fetchError } = await supabase
+          .from("investment_holdings")
+          .select("security_id, plaid_account_id")
+          .eq("user_id", user_id)
+          .eq("item_id", item_id)
+          .eq("provider", "plaid")
+          .eq("is_active", true);
+
+        if (!fetchError && allActiveHoldings && allActiveHoldings.length > 0) {
+          const removedHoldings = allActiveHoldings.filter((h) => {
+            if (!h.security_id || !h.plaid_account_id) return false;
+            return (
+              !activeSecurityIds.has(h.security_id) ||
+              !activeAccountIds.has(h.plaid_account_id)
+            );
+          });
+
+          if (removedHoldings.length > 0) {
+            const removedSecurityIds = removedHoldings
+              .map((h) => h.security_id)
+              .filter((id) => id);
+            const removedAccountIds = removedHoldings
+              .map((h) => h.plaid_account_id)
+              .filter((id) => id);
+
+            await supabase
+              .from("investment_holdings")
+              .update({
+                is_active: false,
+                last_updated: new Date().toISOString(),
+              })
+              .eq("user_id", user_id)
+              .eq("item_id", item_id)
+              .eq("provider", "plaid")
+              .in("security_id", removedSecurityIds)
+              .in("plaid_account_id", removedAccountIds);
+
+            console.log(
+              `✅ Marked ${removedHoldings.length} removed holdings as inactive`
+            );
+          }
+        }
+      }
+    }
+
+    // Update account balances
+    const investmentAccounts = accounts.filter(
+      (account) => account.type === "investment"
+    );
+    const balanceRows = await Promise.all(
+      investmentAccounts.map(async (account) => {
+        const accountHoldings = holdingsRows.filter(
+          (h) => h.plaid_account_id === account.account_id
+        );
+        const totalHoldingsValue = accountHoldings.reduce(
+          (sum, h) => sum + (h.market_value || 0),
+          0
+        );
+        const cashBalance = account.balances?.current || 0;
+        const totalValue = totalHoldingsValue + cashBalance;
+
+        const { data: existingBalance } = await supabase
+          .from("investment_balances")
+          .select("previous_total_value, total_value")
+          .eq("user_id", user_id)
+          .eq("item_id", item_id)
+          .eq("plaid_account_id", account.account_id)
+          .eq("provider", "plaid")
+          .eq("is_current", true)
+          .single();
+
+        const previousTotalValue =
+          existingBalance?.previous_total_value ??
+          existingBalance?.total_value ??
+          null;
+
+        let dayChange = null;
+        let dayChangePercent = null;
+        if (previousTotalValue !== null && previousTotalValue !== undefined) {
+          dayChange = totalValue - previousTotalValue;
+          dayChangePercent =
+            previousTotalValue !== 0 ? (dayChange / previousTotalValue) * 100 : 0;
+        }
+
+        return {
+          user_id,
+          provider: "plaid",
+          item_id,
+          plaid_account_id: account.account_id,
+          currency_code: account.balances?.iso_currency_code || "USD",
+          cash: cashBalance,
+          buying_power: 0,
+          total_value: totalValue,
+          previous_total_value: totalValue,
+          day_change: dayChange,
+          day_change_percent: dayChangePercent,
+          total_change: null,
+          total_change_percent: null,
+          is_current: true,
+          last_updated: new Date().toISOString(),
+          snaptrade_user_id: null,
+          account_id: null,
+        };
+      })
+    );
+
+    if (balanceRows.length > 0) {
+      // Mark previous balances as not current
+      await supabase
+        .from("investment_balances")
+        .update({ is_current: false })
+        .eq("user_id", user_id)
+        .eq("item_id", item_id)
+        .eq("provider", "plaid");
+
+      // Upsert balances
+      const { error: balancesError } = await supabase
+        .from("investment_balances")
+        .upsert(balanceRows, {
+          onConflict: "user_id,item_id,plaid_account_id,currency_code",
+          ignoreDuplicates: false,
+        });
+
+      if (balancesError) {
+        console.error("❌ Error upserting Plaid balances:", balancesError);
+      } else {
+        console.log(
+          `✅ Stored ${balanceRows.length} Plaid investment account balances`
+        );
+      }
+    }
+
+    console.log("✅ Plaid holdings sync completed successfully");
+  } catch (error) {
+    console.error("❌ Error syncing Plaid holdings:", error);
+    throw error;
   }
 }

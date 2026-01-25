@@ -32,7 +32,10 @@ import CategoryEditModal from "@/src/components/modals/CategoryEditModal";
 import logger from "@/src/utils/core/logger";
 
 // Enable LayoutAnimation on Android
-if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
+if (
+  Platform.OS === "android" &&
+  UIManager.setLayoutAnimationEnabledExperimental
+) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
@@ -77,9 +80,12 @@ const BudgetView: React.FC<BudgetViewProps> = ({
 
   // Position preservation: track recently edited categories to keep them in place
   const [recentlyEditedCategories, setRecentlyEditedCategories] = useState<
-    Map<string, { originalIndex: number; timestamp: number; originalBudget: number }>
+    Map<
+      string,
+      { originalIndex: number; timestamp: number; originalBudget: number }
+    >
   >(new Map());
-  
+
   // Track previous budget order to enable smooth transitions
   const previousOrderRef = useRef<Map<string, number>>(new Map());
 
@@ -124,36 +130,44 @@ const BudgetView: React.FC<BudgetViewProps> = ({
     if (optimisticBudgets && optimisticBudgets.length > 0) {
       // Sum only root budgets (parent budgets already include their children)
       const calculated = optimisticBudgets.reduce((sum, b) => {
-        const budgetValue = typeof b.budget === 'number' && !isNaN(b.budget) ? b.budget : 0;
+        const budgetValue =
+          typeof b.budget === "number" && !isNaN(b.budget) ? b.budget : 0;
         return sum + budgetValue;
       }, 0);
-      
+
       // Ensure we have a valid number
       if (isNaN(calculated) || !isFinite(calculated)) {
         // Fallback to provided total if calculation fails
-        return providedTotalBudget && providedTotalBudget > 0 ? providedTotalBudget : 0;
+        return providedTotalBudget && providedTotalBudget > 0
+          ? providedTotalBudget
+          : 0;
       }
-      
+
       return calculated;
     }
-    
+
     // When not using optimistic budgets, prefer provided total if available
-    if (providedTotalBudget !== undefined && providedTotalBudget !== null && providedTotalBudget > 0) {
+    if (
+      providedTotalBudget !== undefined &&
+      providedTotalBudget !== null &&
+      providedTotalBudget > 0
+    ) {
       return providedTotalBudget;
     }
-    
+
     // Fallback: calculate from finalBudgets
     // Sum only root budgets (parent budgets already include their children totals)
     const calculated = finalBudgets.reduce((sum, b) => {
-      const budgetValue = typeof b.budget === 'number' && !isNaN(b.budget) ? b.budget : 0;
+      const budgetValue =
+        typeof b.budget === "number" && !isNaN(b.budget) ? b.budget : 0;
       return sum + budgetValue;
     }, 0);
-    
+
     // Ensure we have a valid number
     if (isNaN(calculated) || !isFinite(calculated)) {
       return 0;
     }
-    
+
     return calculated;
   }, [providedTotalBudget, optimisticBudgets, finalBudgets]);
 
@@ -167,30 +181,38 @@ const BudgetView: React.FC<BudgetViewProps> = ({
   const animatedStatusColor = useRef(new Animated.Value(0)).current;
 
   // State to track displayed values for text rendering
-  const [displayedTotalBudget, setDisplayedTotalBudget] = useState(totalBudget);
-  const [displayedRemaining, setDisplayedRemaining] = useState(remaining);
+  // Round initial values to whole numbers for consistent display (exact decimals stored in cache/calculations)
+  const [displayedTotalBudget, setDisplayedTotalBudget] = useState(Math.round(totalBudget));
+  const [displayedRemaining, setDisplayedRemaining] = useState(Math.round(remaining));
 
   // Initialize animated values on mount
+  // Round initial values to prevent visual glitching
   useEffect(() => {
-    animatedTotalBudget.setValue(totalBudget);
-    animatedRemaining.setValue(remaining);
+    const roundedTotal = Math.round(totalBudget);
+    const roundedRemaining = Math.round(remaining);
+    animatedTotalBudget.setValue(roundedTotal);
+    animatedRemaining.setValue(roundedRemaining);
     animatedProgress.setValue(budgetProgress);
-    setDisplayedTotalBudget(totalBudget);
-    setDisplayedRemaining(remaining);
+    setDisplayedTotalBudget(roundedTotal);
+    setDisplayedRemaining(roundedRemaining);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Only run on mount - intentionally ignore deps to set initial values once
 
   // Animate values when they change
+  // Round target values to whole numbers to prevent visual glitching
   useEffect(() => {
+    const roundedTotal = Math.round(totalBudget);
+    const roundedRemaining = Math.round(remaining);
+    
     const anim1 = Animated.timing(animatedTotalBudget, {
-      toValue: totalBudget,
+      toValue: roundedTotal,
       duration: 400,
       easing: Easing.out(Easing.cubic),
       useNativeDriver: false,
     });
 
     const anim2 = Animated.timing(animatedRemaining, {
-      toValue: remaining,
+      toValue: roundedRemaining,
       duration: 400,
       easing: Easing.out(Easing.cubic),
       useNativeDriver: false,
@@ -204,6 +226,7 @@ const BudgetView: React.FC<BudgetViewProps> = ({
     });
 
     // Update displayed values during animation
+    // Round to whole numbers for display (but keep exact decimals in calculations)
     const listener1 = animatedTotalBudget.addListener(({ value }) => {
       setDisplayedTotalBudget(Math.round(value));
     });
@@ -223,9 +246,12 @@ const BudgetView: React.FC<BudgetViewProps> = ({
   // Animate status color changes smoothly
   useEffect(() => {
     let targetValue = 0;
-    if (budgetProgress < 70) targetValue = 0; // Green
-    else if (budgetProgress < 90) targetValue = 1; // Yellow
-    else if (budgetProgress < 100) targetValue = 2; // Orange
+    if (budgetProgress < 70)
+      targetValue = 0; // Green
+    else if (budgetProgress < 90)
+      targetValue = 1; // Yellow
+    else if (budgetProgress < 100)
+      targetValue = 2; // Orange
     else targetValue = 3; // Red
 
     Animated.timing(animatedStatusColor, {
@@ -304,25 +330,24 @@ const BudgetView: React.FC<BudgetViewProps> = ({
 
   // Smart sorting with position preservation for recently edited categories
   const sortedBudgets = useMemo(() => {
-
     // Create a copy for sorting
     const budgetsToSort = [...finalBudgets];
-    
+
     // Track if order changed to trigger animation
     let orderChanged = false;
-    
+
     // Stable sort: preserve position for recently edited categories, otherwise sort by budget
     budgetsToSort.sort((a, b) => {
       const aKey = a.categoryId || a.category;
       const bKey = b.categoryId || b.category;
       const aEdited = recentlyEditedCategories.get(aKey);
       const bEdited = recentlyEditedCategories.get(bKey);
-      
+
       // If both are recently edited, maintain their relative order
       if (aEdited && bEdited) {
         return aEdited.originalIndex - bEdited.originalIndex;
       }
-      
+
       // For non-edited items or when preservation expired, sort by budget (descending)
       if (!aEdited && !bEdited) {
         // Stable sort: if budgets are equal, maintain original order
@@ -338,11 +363,13 @@ const BudgetView: React.FC<BudgetViewProps> = ({
         }
         return b.budget - a.budget;
       }
-      
+
       // One is edited, one is not: edited items maintain their position
       if (aEdited) {
         // Keep 'a' in its original position
-        const otherIndex = bEdited ? bEdited.originalIndex : budgetsToSort.length;
+        const otherIndex = bEdited
+          ? bEdited.originalIndex
+          : budgetsToSort.length;
         if (aEdited.originalIndex !== otherIndex) {
           orderChanged = true;
         }
@@ -356,10 +383,10 @@ const BudgetView: React.FC<BudgetViewProps> = ({
         }
         return otherIndex - bEdited.originalIndex;
       }
-      
+
       return b.budget - a.budget;
     });
-    
+
     // Check if order actually changed by comparing with previous order
     const currentOrder = new Map<string, number>();
     budgetsToSort.forEach((budget, index) => {
@@ -370,7 +397,7 @@ const BudgetView: React.FC<BudgetViewProps> = ({
         orderChanged = true;
       }
     });
-    
+
     // Trigger smooth animation if order changed (but not for initial load)
     if (orderChanged && previousOrderRef.current.size > 0) {
       // Use requestAnimationFrame to ensure state updates are complete before animating
@@ -378,10 +405,10 @@ const BudgetView: React.FC<BudgetViewProps> = ({
         LayoutAnimation.configureNext(positionChangeAnimation);
       });
     }
-    
+
     // Update previous order for next render
     previousOrderRef.current = currentOrder;
-    
+
     return budgetsToSort;
   }, [finalBudgets, recentlyEditedCategories]);
 
@@ -424,7 +451,7 @@ const BudgetView: React.FC<BudgetViewProps> = ({
     }
   }, [actionVisible]);
   const [collapsedParents, setCollapsedParents] = useState<Set<string>>(
-    new Set()
+    new Set(),
   );
   const [txModalVisible, setTxModalVisible] = useState(false);
   const [txLoading, setTxLoading] = useState(false);
@@ -439,7 +466,7 @@ const BudgetView: React.FC<BudgetViewProps> = ({
   const [editParentLabel, setEditParentLabel] = useState<string | null>(null);
   // Track which categories are currently loading (for per-row loading state)
   const [loadingCategories, setLoadingCategories] = useState<Set<string>>(
-    new Set()
+    new Set(),
   );
 
   const openActions = (item: BudgetData, parentLabel?: string | null) => {
@@ -467,7 +494,7 @@ const BudgetView: React.FC<BudgetViewProps> = ({
 
   const openTransactions = async (
     item: BudgetData,
-    parentLabel?: string | null
+    parentLabel?: string | null,
   ) => {
     setTxTarget({ item, parentLabel: parentLabel || null });
     setActionTarget({ item, parentLabel: parentLabel || null });
@@ -487,7 +514,7 @@ const BudgetView: React.FC<BudgetViewProps> = ({
       const txs = await getTransactionsForCategory(
         user.id,
         item.category,
-        item.categoryId || null
+        item.categoryId || null,
       );
       setTxList(txs);
     } catch (err) {
@@ -516,14 +543,21 @@ const BudgetView: React.FC<BudgetViewProps> = ({
   };
 
   // Helper to get loading key for a category (prefer categoryId, fallback to entryId)
-  const getLoadingKey = (categoryId: string | null | undefined, entryId?: string | null): string | null => {
+  const getLoadingKey = (
+    categoryId: string | null | undefined,
+    entryId?: string | null,
+  ): string | null => {
     if (categoryId) return `category_${categoryId}`;
     if (entryId) return `entry_${entryId}`;
     return null;
   };
 
   // Helper to set loading state for a category
-  const setCategoryLoading = (categoryId: string | null | undefined, entryId: string | null | undefined, isLoading: boolean) => {
+  const setCategoryLoading = (
+    categoryId: string | null | undefined,
+    entryId: string | null | undefined,
+    isLoading: boolean,
+  ) => {
     const key = getLoadingKey(categoryId, entryId);
     if (!key) return;
 
@@ -539,7 +573,10 @@ const BudgetView: React.FC<BudgetViewProps> = ({
   };
 
   // Helper to check if a category is loading
-  const isCategoryLoading = (categoryId: string | null | undefined, entryId?: string | null): boolean => {
+  const isCategoryLoading = (
+    categoryId: string | null | undefined,
+    entryId?: string | null,
+  ): boolean => {
     const key = getLoadingKey(categoryId, entryId);
     return key ? loadingCategories.has(key) : false;
   };
@@ -565,10 +602,7 @@ const BudgetView: React.FC<BudgetViewProps> = ({
           >
             <Text style={styles.statusEmoji}>{statusEmoji}</Text>
             <Animated.Text
-              style={[
-                styles.statusText,
-                { color: interpolatedStatusColor },
-              ]}
+              style={[styles.statusText, { color: interpolatedStatusColor }]}
             >
               {statusText}
             </Animated.Text>
@@ -631,17 +665,21 @@ const BudgetView: React.FC<BudgetViewProps> = ({
           </View>
           <View style={styles.categoriesList}>
             {sortedBudgets.map((budget, index) => {
-
               const categoryProgress =
                 budget.budget > 0 ? (budget.spent / budget.budget) * 100 : 0;
               const categoryStatusColor = getStatusColor(categoryProgress);
               const isOverBudget = categoryProgress >= 100;
 
-              const entryInfo = budget.categoryId ? categoryToEntry.get(budget.categoryId) : null;
+              const entryInfo = budget.categoryId
+                ? categoryToEntry.get(budget.categoryId)
+                : null;
               const cardEntryId = budget.entryId || entryInfo?.entryId;
               const cardCategoryId = budget.categoryId || null;
               const children = budget.children || [];
-              const isLoadingCard = isCategoryLoading(cardCategoryId, cardEntryId);
+              const isLoadingCard = isCategoryLoading(
+                cardCategoryId,
+                cardEntryId,
+              );
 
               // Use stable key based on categoryId (or category name as fallback)
               // This ensures React can properly track components during re-sorts
@@ -691,7 +729,10 @@ const BudgetView: React.FC<BudgetViewProps> = ({
                                 : 0;
                             const childStatusColor =
                               getStatusColor(childProgress);
-                            const isLoadingChild = isCategoryLoading(child.categoryId, child.entryId);
+                            const isLoadingChild = isCategoryLoading(
+                              child.categoryId,
+                              child.entryId,
+                            );
                             // Use stable key based on categoryId (or category name as fallback)
                             // Include parent categoryId to ensure uniqueness for children
                             const childUniqueKey = child.categoryId
@@ -775,14 +816,16 @@ const BudgetView: React.FC<BudgetViewProps> = ({
         refreshBudget={refreshBudget}
         onNameUpdate={async (categoryId: string, newName: string) => {
           if (!categoryId) return false;
-          
+
           try {
             // Check for duplicate category name (case-insensitive, excluding current category)
-            const { data: { user } } = await supabase.auth.getUser();
+            const {
+              data: { user },
+            } = await supabase.auth.getUser();
             if (!user?.id) {
               return false;
             }
-            
+
             const { data: existingCategory } = await supabase
               .from("categories")
               .select("id, name")
@@ -790,62 +833,62 @@ const BudgetView: React.FC<BudgetViewProps> = ({
               .eq("is_active", true)
               .neq("id", categoryId) // Exclude current category
               .ilike("name", newName.trim());
-            
+
             if (existingCategory && existingCategory.length > 0) {
               // Show error alert
               Alert.alert(
                 "Duplicate Category",
-                `A category named "${newName.trim()}" already exists. Please choose a different name.`
+                `A category named "${newName.trim()}" already exists. Please choose a different name.`,
               );
               return false;
             }
-            
+
             const baseSlug = newName
               .toLowerCase()
               .replace(/[^a-z0-9\s-]/g, "")
               .replace(/\s+/g, "-")
               .trim();
-            
+
             // Update category name and slug
             const { error: categoryError } = await supabase
               .from("categories")
-              .update({ 
+              .update({
                 name: newName.trim(),
                 slug: baseSlug,
               })
               .eq("id", categoryId);
-            
+
             if (categoryError) {
               return false;
             }
-            
+
             // Update label in all budget_entries for this category
             const { error: entriesError } = await supabase
               .from("budget_entries")
               .update({ label: newName })
               .eq("category_id", categoryId)
               .eq("scope_type", "category");
-            
+
             if (entriesError) {
               // Don't fail the whole operation
             }
-            
+
             // NOTE: Transactions don't need updating because they're linked via category_id.
             // The category_id foreign key maintains the relationship even when the name changes.
             // Queries should use category_id instead of name matching for better performance.
-            
+
             // Refresh categories hook so formatCategoryName uses updated names
             if (refreshCategories) {
               refreshCategories();
             }
-            
+
             // Refresh budget data to reflect changes
             // Small delay to ensure database updates are committed
             if (refreshBudget) {
-              await new Promise(resolve => setTimeout(resolve, 100));
+              await new Promise((resolve) => setTimeout(resolve, 100));
               await refreshBudget();
             }
-            
+
             return true;
           } catch (error) {
             return false;
@@ -853,22 +896,22 @@ const BudgetView: React.FC<BudgetViewProps> = ({
         }}
         onIconUpdate={async (categoryId: string, newIcon: string) => {
           if (!categoryId) return false;
-          
+
           try {
             const { error } = await supabase
               .from("categories")
               .update({ icon: newIcon })
               .eq("id", categoryId);
-            
+
             if (error) {
               return false;
             }
-            
+
             // Refresh budget data to reflect changes
             if (refreshBudget) {
               await refreshBudget();
             }
-            
+
             return true;
           } catch (error) {
             return false;
@@ -880,7 +923,7 @@ const BudgetView: React.FC<BudgetViewProps> = ({
           // Find the current index of the edited category in the sorted list
           const categoryKey = editTarget.categoryId || editTarget.category;
           const currentIndex = sortedBudgets.findIndex(
-            (b) => (b.categoryId || b.category) === categoryKey
+            (b) => (b.categoryId || b.category) === categoryKey,
           );
           const originalBudget = editTarget.budget;
 
@@ -922,7 +965,7 @@ const BudgetView: React.FC<BudgetViewProps> = ({
               // Children are shown separately, so we don't double-count
               const childrenTotal = updatedChildren.reduce(
                 (sum, child) => sum + (child.budget || 0),
-                0
+                0,
               );
 
               // Get the parent's own budget (if it has one, separate from children)
@@ -964,7 +1007,7 @@ const BudgetView: React.FC<BudgetViewProps> = ({
                 editTarget.categoryId || null,
                 editTarget.category,
                 amount,
-                editTarget.color
+                editTarget.color,
               );
 
               if (!success) {
@@ -994,7 +1037,11 @@ const BudgetView: React.FC<BudgetViewProps> = ({
             } finally {
               // Clear loading state after a short delay to show the update was successful
               setTimeout(() => {
-                setCategoryLoading(editTarget.categoryId, editTarget.entryId, false);
+                setCategoryLoading(
+                  editTarget.categoryId,
+                  editTarget.entryId,
+                  false,
+                );
               }, 300);
             }
           })();
@@ -1008,9 +1055,9 @@ const BudgetView: React.FC<BudgetViewProps> = ({
           if (!editTarget || !onDeleteCategory || !editTarget.categoryId) {
             return;
           }
-          
+
           const categoryKey = editTarget.categoryId;
-          
+
           // Set loading state for this category immediately
           setCategoryLoading(editTarget.categoryId, editTarget.entryId, true);
 
@@ -1022,7 +1069,7 @@ const BudgetView: React.FC<BudgetViewProps> = ({
             try {
               const success = await onDeleteCategory(
                 editTarget.categoryId!,
-                editTarget.entryId || null
+                editTarget.entryId || null,
               );
               if (success) {
                 // Remove from position preservation if it exists
@@ -1040,7 +1087,11 @@ const BudgetView: React.FC<BudgetViewProps> = ({
               // Error handled silently
             } finally {
               // Clear loading state when done
-              setCategoryLoading(editTarget.categoryId, editTarget.entryId, false);
+              setCategoryLoading(
+                editTarget.categoryId,
+                editTarget.entryId,
+                false,
+              );
             }
           })();
         }}
@@ -1200,16 +1251,135 @@ const SubcategoryRow: React.FC<SubcategoryRowProps> = ({
   onOpenActions,
   isLoading = false,
 }) => {
-  // Animate opacity when loading state changes
+  // Animated values for spent and budget amounts (similar to monthly budget animation)
+  const animatedSpent = useRef(new Animated.Value(item.spent)).current;
+  const animatedBudget = useRef(new Animated.Value(item.budget)).current;
+  const animatedProgress = useRef(
+    new Animated.Value(item.budget > 0 ? (item.spent / item.budget) * 100 : 0),
+  ).current;
+
+  // State to track displayed values for text rendering
+  // Round initial values to whole numbers for consistent display
+  const [displayedSpent, setDisplayedSpent] = useState(Math.round(item.spent));
+  const [displayedBudget, setDisplayedBudget] = useState(Math.round(item.budget));
+
+  // Initialize animated values on mount
+  // Round initial values to prevent visual glitching
+  useEffect(() => {
+    const roundedSpent = Math.round(item.spent);
+    const roundedBudget = Math.round(item.budget);
+    animatedSpent.setValue(roundedSpent);
+    animatedBudget.setValue(roundedBudget);
+    const progress = item.budget > 0 ? (item.spent / item.budget) * 100 : 0;
+    animatedProgress.setValue(progress);
+    setDisplayedSpent(roundedSpent);
+    setDisplayedBudget(roundedBudget);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Only run on mount
+
+  // Animate values when they change
+  // Round target values to whole numbers to prevent visual glitching
+  useEffect(() => {
+    const progress = item.budget > 0 ? (item.spent / item.budget) * 100 : 0;
+    const roundedSpent = Math.round(item.spent);
+    const roundedBudget = Math.round(item.budget);
+
+    const anim1 = Animated.timing(animatedSpent, {
+      toValue: roundedSpent,
+      duration: 400,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    });
+
+    const anim2 = Animated.timing(animatedBudget, {
+      toValue: roundedBudget,
+      duration: 400,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    });
+
+    const anim3 = Animated.timing(animatedProgress, {
+      toValue: Math.min(progress, 100),
+      duration: 400,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    });
+
+    // Update displayed values during animation
+    // Round to whole numbers for display (but keep exact decimals in calculations)
+    const listener1 = animatedSpent.addListener(({ value }) => {
+      setDisplayedSpent(Math.round(value));
+    });
+    const listener2 = animatedBudget.addListener(({ value }) => {
+      setDisplayedBudget(Math.round(value));
+    });
+
+    Animated.parallel([anim1, anim2, anim3]).start();
+
+    return () => {
+      animatedSpent.removeListener(listener1);
+      animatedBudget.removeListener(listener2);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [item.spent, item.budget]);
+
+  // Animate loading state with pulse effect instead of gray-out
+  const loadingScaleAnim = useRef(new Animated.Value(1)).current;
   const loadingOpacityAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
-    Animated.timing(loadingOpacityAnim, {
-      toValue: isLoading ? 0.5 : 1,
-      duration: 200,
-      useNativeDriver: true,
-    }).start();
-  }, [isLoading, loadingOpacityAnim]);
+    if (isLoading) {
+      // Pulse animation when loading
+      Animated.loop(
+        Animated.sequence([
+          Animated.parallel([
+            Animated.timing(loadingScaleAnim, {
+              toValue: 0.98,
+              duration: 600,
+              easing: Easing.inOut(Easing.ease),
+              useNativeDriver: true,
+            }),
+            Animated.timing(loadingOpacityAnim, {
+              toValue: 0.7,
+              duration: 600,
+              easing: Easing.inOut(Easing.ease),
+              useNativeDriver: true,
+            }),
+          ]),
+          Animated.parallel([
+            Animated.timing(loadingScaleAnim, {
+              toValue: 1,
+              duration: 600,
+              easing: Easing.inOut(Easing.ease),
+              useNativeDriver: true,
+            }),
+            Animated.timing(loadingOpacityAnim, {
+              toValue: 1,
+              duration: 600,
+              easing: Easing.inOut(Easing.ease),
+              useNativeDriver: true,
+            }),
+          ]),
+        ]),
+      ).start();
+    } else {
+      // Reset to normal when not loading
+      Animated.parallel([
+        Animated.timing(loadingScaleAnim, {
+          toValue: 1,
+          duration: 200,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        Animated.timing(loadingOpacityAnim, {
+          toValue: 1,
+          duration: 200,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+      ]).start();
+    }
+  }, [isLoading, loadingScaleAnim, loadingOpacityAnim]);
   const iconDisplay = (() => {
     if (item.icon) {
       const emojiRegex =
@@ -1225,66 +1395,68 @@ const SubcategoryRow: React.FC<SubcategoryRowProps> = ({
     return { type: "emoji" as const, value: "🔹" };
   })();
 
-  const progress = item.budget > 0 ? (item.spent / item.budget) * 100 : 0;
-
   return (
     <Animated.View
       style={[
         styles.subcategoryCard,
         {
           opacity: loadingOpacityAnim,
+          transform: [{ scale: loadingScaleAnim }],
         },
       ]}
     >
-    <TouchableOpacity
-      activeOpacity={0.85}
-      onPress={onOpenActions}
-      disabled={isLoading}
-    >
-      <View style={styles.subcategoryRow}>
-        <View style={styles.subcategorySpacer}>
-          <View
-            style={[
-              styles.subcategoryDot,
-              { backgroundColor: item.color || "#4A90E2" },
-            ]}
-          />
-        </View>
-        {iconDisplay.type === "emoji" ? (
-          <Text style={styles.subcategoryIconEmoji}>{iconDisplay.value}</Text>
-        ) : (
-          <Ionicons
-            name={iconDisplay.value}
-            size={16}
-            color={item.color}
-            style={styles.subcategoryIconIonicon}
-          />
-        )}
-        <Text style={styles.subcategoryName} numberOfLines={1}>
-          {formatCategoryName(item.category)}
-        </Text>
-        <View style={styles.spacer} />
-        <View style={styles.progressBarSection}>
-          <Text style={styles.progressAmountLeft}>
-            ${item.spent.toLocaleString()}
-          </Text>
-          <View style={styles.categoryProgressBarBackground}>
-            <Animated.View
+      <TouchableOpacity
+        activeOpacity={0.85}
+        onPress={onOpenActions}
+        disabled={isLoading}
+      >
+        <View style={styles.subcategoryRow}>
+          <View style={styles.subcategorySpacer}>
+            <View
               style={[
-                styles.categoryProgressBarFill,
-                {
-                  width: `${Math.min(progress, 100)}%`,
-                  backgroundColor: statusColor,
-                },
+                styles.subcategoryDot,
+                { backgroundColor: item.color || "#4A90E2" },
               ]}
             />
           </View>
-          <Text style={styles.progressAmountRight}>
-            ${item.budget.toLocaleString()}
+          {iconDisplay.type === "emoji" ? (
+            <Text style={styles.subcategoryIconEmoji}>{iconDisplay.value}</Text>
+          ) : (
+            <Ionicons
+              name={iconDisplay.value}
+              size={16}
+              color={item.color}
+              style={styles.subcategoryIconIonicon}
+            />
+          )}
+          <Text style={styles.subcategoryName} numberOfLines={1}>
+            {formatCategoryName(item.category)}
           </Text>
+          <View style={styles.spacer} />
+          <View style={styles.progressBarSection}>
+            <Animated.Text style={styles.progressAmountLeft}>
+              ${displayedSpent.toLocaleString()}
+            </Animated.Text>
+            <View style={styles.categoryProgressBarBackground}>
+              <Animated.View
+                style={[
+                  styles.categoryProgressBarFill,
+                  {
+                    width: animatedProgress.interpolate({
+                      inputRange: [0, 100],
+                      outputRange: ["0%", "100%"],
+                    }),
+                    backgroundColor: statusColor,
+                  },
+                ]}
+              />
+            </View>
+            <Animated.Text style={styles.progressAmountRight}>
+              ${displayedBudget.toLocaleString()}
+            </Animated.Text>
+          </View>
         </View>
-      </View>
-    </TouchableOpacity>
+      </TouchableOpacity>
     </Animated.View>
   );
 };
@@ -1650,7 +1822,7 @@ const CategoryBudgetCard: React.FC<CategoryBudgetCardProps> = ({
   // Use icon from database if available, otherwise fallback to emoji or default
   const getCategoryIconDisplay = (
     iconValue?: string | null,
-    defaultColor?: string
+    defaultColor?: string,
   ) => {
     if (iconValue) {
       // Check if it's an emoji (contains emoji unicode ranges)
@@ -1674,16 +1846,131 @@ const CategoryBudgetCard: React.FC<CategoryBudgetCardProps> = ({
   const remaining = budget - spent;
   const overspent = isOverBudget ? spent - budget : 0;
 
-  // Animate opacity when loading state changes
+  // Animated values for spent and budget amounts (similar to monthly budget animation)
+  const animatedSpent = useRef(new Animated.Value(spent)).current;
+  const animatedBudget = useRef(new Animated.Value(budget)).current;
+  const animatedProgress = useRef(new Animated.Value(progress)).current;
+
+  // State to track displayed values for text rendering
+  // Round initial values to whole numbers for consistent display
+  const [displayedSpent, setDisplayedSpent] = useState(Math.round(spent));
+  const [displayedBudget, setDisplayedBudget] = useState(Math.round(budget));
+
+  // Initialize animated values on mount
+  // Round initial values to prevent visual glitching
+  useEffect(() => {
+    const roundedSpent = Math.round(spent);
+    const roundedBudget = Math.round(budget);
+    animatedSpent.setValue(roundedSpent);
+    animatedBudget.setValue(roundedBudget);
+    animatedProgress.setValue(progress);
+    setDisplayedSpent(roundedSpent);
+    setDisplayedBudget(roundedBudget);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Only run on mount
+
+  // Animate values when they change
+  // Round target values to whole numbers to prevent visual glitching
+  useEffect(() => {
+    const roundedSpent = Math.round(spent);
+    const roundedBudget = Math.round(budget);
+    
+    const anim1 = Animated.timing(animatedSpent, {
+      toValue: roundedSpent,
+      duration: 400,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    });
+
+    const anim2 = Animated.timing(animatedBudget, {
+      toValue: roundedBudget,
+      duration: 400,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    });
+
+    const anim3 = Animated.timing(animatedProgress, {
+      toValue: Math.min(progress, 100),
+      duration: 400,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    });
+
+    // Update displayed values during animation
+    // Round to whole numbers for display (but keep exact decimals in calculations)
+    const listener1 = animatedSpent.addListener(({ value }) => {
+      setDisplayedSpent(Math.round(value));
+    });
+    const listener2 = animatedBudget.addListener(({ value }) => {
+      setDisplayedBudget(Math.round(value));
+    });
+
+    Animated.parallel([anim1, anim2, anim3]).start();
+
+    return () => {
+      animatedSpent.removeListener(listener1);
+      animatedBudget.removeListener(listener2);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [spent, budget, progress]);
+
+  // Animate loading state with pulse effect instead of gray-out
+  const loadingScaleAnim = useRef(new Animated.Value(1)).current;
   const loadingOpacityAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
-    Animated.timing(loadingOpacityAnim, {
-      toValue: isLoading ? 0.5 : 1,
-      duration: 200,
-      useNativeDriver: true,
-    }).start();
-  }, [isLoading, loadingOpacityAnim]);
+    if (isLoading) {
+      // Pulse animation when loading
+      Animated.loop(
+        Animated.sequence([
+          Animated.parallel([
+            Animated.timing(loadingScaleAnim, {
+              toValue: 0.98,
+              duration: 600,
+              easing: Easing.inOut(Easing.ease),
+              useNativeDriver: true,
+            }),
+            Animated.timing(loadingOpacityAnim, {
+              toValue: 0.7,
+              duration: 600,
+              easing: Easing.inOut(Easing.ease),
+              useNativeDriver: true,
+            }),
+          ]),
+          Animated.parallel([
+            Animated.timing(loadingScaleAnim, {
+              toValue: 1,
+              duration: 600,
+              easing: Easing.inOut(Easing.ease),
+              useNativeDriver: true,
+            }),
+            Animated.timing(loadingOpacityAnim, {
+              toValue: 1,
+              duration: 600,
+              easing: Easing.inOut(Easing.ease),
+              useNativeDriver: true,
+            }),
+          ]),
+        ]),
+      ).start();
+    } else {
+      // Reset to normal when not loading
+      Animated.parallel([
+        Animated.timing(loadingScaleAnim, {
+          toValue: 1,
+          duration: 200,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        Animated.timing(loadingOpacityAnim, {
+          toValue: 1,
+          duration: 200,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+      ]).start();
+    }
+  }, [isLoading, loadingScaleAnim, loadingOpacityAnim]);
 
   return (
     <Animated.View
@@ -1691,6 +1978,7 @@ const CategoryBudgetCard: React.FC<CategoryBudgetCardProps> = ({
         styles.categoryCard,
         {
           opacity: Animated.multiply(fadeAnim, loadingOpacityAnim),
+          transform: [{ scale: loadingScaleAnim }],
         },
       ]}
     >
@@ -1763,9 +2051,9 @@ const CategoryBudgetCard: React.FC<CategoryBudgetCardProps> = ({
               {/* Progress Bar Section - Fixed Width and Position (aligned from right) */}
               <View style={styles.progressBarSection}>
                 {/* Spent Amount on Left */}
-                <Text style={styles.progressAmountLeft}>
-                  ${spent.toLocaleString()}
-                </Text>
+                <Animated.Text style={styles.progressAmountLeft}>
+                  ${displayedSpent.toLocaleString()}
+                </Animated.Text>
 
                 {/* Progress Bar */}
                 <View style={styles.categoryProgressBarBackground}>
@@ -1773,7 +2061,10 @@ const CategoryBudgetCard: React.FC<CategoryBudgetCardProps> = ({
                     style={[
                       styles.categoryProgressBarFill,
                       {
-                        width: `${Math.min(progress, 100)}%`,
+                        width: animatedProgress.interpolate({
+                          inputRange: [0, 100],
+                          outputRange: ["0%", "100%"],
+                        }),
                         backgroundColor: statusColor,
                       },
                     ]}
@@ -1781,9 +2072,9 @@ const CategoryBudgetCard: React.FC<CategoryBudgetCardProps> = ({
                 </View>
 
                 {/* Budget Amount on Right */}
-                <Text style={styles.progressAmountRight}>
-                  ${budget.toLocaleString()}
-                </Text>
+                <Animated.Text style={styles.progressAmountRight}>
+                  ${displayedBudget.toLocaleString()}
+                </Animated.Text>
               </View>
             </View>
           </View>

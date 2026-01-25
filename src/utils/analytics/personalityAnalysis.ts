@@ -8,7 +8,6 @@ export interface SpendingPersonality {
   traits: string[];
   color: string;
   emoji: string;
-  confidence: number;
 }
 
 export interface CategoryData {
@@ -224,13 +223,10 @@ export function analyzeSpendingPersonality(
 
   // Find the highest scoring personality
   const topPersonality = Object.entries(scores).reduce((a, b) => scores[a[0] as keyof typeof scores] > scores[b[0] as keyof typeof scores] ? a : b);
-  const [personalityKey, score] = topPersonality;
+  const [personalityKey] = topPersonality;
   
   // Get personality details
   const personality = PERSONALITY_ARCHETYPES[personalityKey as keyof typeof PERSONALITY_ARCHETYPES];
-  
-  // Calculate confidence (how strongly this personality fits)
-  const confidence = Math.min(100, Math.max(60, score));
   
   return {
     archetype: personality.archetype,
@@ -238,8 +234,7 @@ export function analyzeSpendingPersonality(
     description: personality.description,
     traits: personality.traits,
     color: personality.color,
-    emoji: personality.emoji,
-    confidence: Math.round(confidence)
+    emoji: personality.emoji
   };
 }
 

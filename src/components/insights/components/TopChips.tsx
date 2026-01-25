@@ -13,6 +13,7 @@ import { LinearGradient } from "expo-linear-gradient";
 type SectionKey =
   | "investments"
   | "spending"
+  | "budget"
   | "transactions"
   | "recurring"
   | "cashflow";
@@ -26,6 +27,7 @@ const labels: { key: SectionKey; label: string }[] = [
   { key: "recurring", label: "Recurring" },
   { key: "transactions", label: "Transactions" },
   { key: "spending", label: "Spending" },
+  { key: "budget", label: "Budget" },
   { key: "investments", label: "Investments" },
   { key: "cashflow", label: "Cash Flow" },
 ];
@@ -58,7 +60,7 @@ export default function TopChips({ activeSection, onChange }: TopChipsProps) {
       // Aim for the middle of the content; clamp to scrollable range
       const targetX = Math.min(
         maxScrollableX,
-        Math.max(0, (contentWidth - viewportWidth) / 2)
+        Math.max(0, (contentWidth - viewportWidth) / 2),
       );
       scrollRef.current.scrollTo({ x: targetX, animated: false });
       hasAutoScrolledRef.current = true;
