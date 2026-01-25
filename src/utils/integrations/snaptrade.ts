@@ -945,6 +945,96 @@ export const getSnaptradeBalancesFromDB = async () => {
   }
 };
 
+// Get all investment connections (both Plaid and SnapTrade)
+export const getAllInvestmentConnectionsFromDB = async () => {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error("User not authenticated");
+
+    // Get SnapTrade connections
+    const { data: snaptradeConnections, error: snaptradeError } = await supabase
+      .from("snaptrade_connections")
+      .select("*")
+      .eq("user_id", user.id)
+      .order("last_synced_at", { ascending: false });
+
+    if (snaptradeError) {
+      logger.error("Error fetching SnapTrade connections:", snaptradeError);
+    }
+
+    // Get Plaid investment accounts (from user_items where there are investment accounts)
+    const { data: plaidItems, error: plaidError } = await supabase
+      .from("user_items")
+      .select("item_id, institution_name, last_synced_at")
+      .eq("user_id", user.id);
+
+    if (plaidError) {
+      logger.error("Error fetching Plaid items:", plaidError);
+    }
+
+    // Check which Plaid items have investment accounts
+    const plaidConnections: any[] = [];
+    if (plaidItems && plaidItems.length > 0) {
+      for (const item of plaidItems) {
+        // Check if this item has investment accounts
+        const { data: investmentAccounts } = await supabase
+          .from("accounts")
+          .select("account_id, name, type")
+          .eq("item_id", item.item_id)
+          .eq("type", "investment")
+          .limit(1);
+
+        if (investmentAccounts && investmentAccounts.length > 0) {
+          // Check if there are actual holdings for this item
+          const { data: holdings } = await supabase
+            .from("investment_holdings")
+            .select("id")
+            .eq("user_id", user.id)
+            .eq("item_id", item.item_id)
+            .eq("provider", "plaid")
+            .eq("is_active", true)
+            .limit(1);
+
+          if (holdings && holdings.length > 0) {
+            plaidConnections.push({
+              account_id: `plaid-${item.item_id}`, // Synthetic account_id for Plaid
+              brokerage_name: item.institution_name || "Plaid Institution",
+              account_name: `${item.institution_name || "Investment"} Account`,
+              last_synced_at: item.last_synced_at,
+              connection_status: "active",
+              is_active: true,
+              provider: "plaid",
+              item_id: item.item_id,
+            });
+          }
+        }
+      }
+    }
+
+    // Combine both providers
+    const allConnections = [
+      ...(snaptradeConnections?.map((c: any) => ({ ...c, provider: "snaptrade" })) || []),
+      ...plaidConnections,
+    ].sort((a, b) => {
+      // Sort by last_synced_at (most recent first)
+      const aTime = a.last_synced_at ? new Date(a.last_synced_at).getTime() : 0;
+      const bTime = b.last_synced_at ? new Date(b.last_synced_at).getTime() : 0;
+      return bTime - aTime;
+    });
+
+    logger.info("📊 All investment connections loaded:", {
+      snaptrade: snaptradeConnections?.length || 0,
+      plaid: plaidConnections.length,
+      total: allConnections.length,
+    });
+
+    return allConnections;
+  } catch (error) {
+    logger.error("❌ Failed to get all investment connections from DB:", error);
+    throw error;
+  }
+};
+
 export const getSnaptradeConnectionsFromDB = async () => {
   try {
     const { data: { user } } = await supabase.auth.getUser();
@@ -1057,6 +1147,7 @@ const snaptradeUtils = {
   getSnaptradeOptionsFromDB,
   getSnaptradeBalancesFromDB,
   getSnaptradeConnectionsFromDB,
+  getAllInvestmentConnectionsFromDB,
   populateInvestmentAccountsInDB,
 };
 

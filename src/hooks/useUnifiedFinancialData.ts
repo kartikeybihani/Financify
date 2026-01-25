@@ -342,10 +342,17 @@ export function useUnifiedFinancialData(): UnifiedFinancialData {
   );
 
   // Use total_value from investment_balances as single source of truth (same as investments screen)
+  // Sum ALL balances to include both Plaid and SnapTrade accounts
   const investmentsTotal = useMemo(() => {
-    // Use investment_balances.total_value which is calculated from active holdings + options
-    if (investmentBalances.length > 0 && investmentBalances[0].total_value !== null && investmentBalances[0].total_value !== undefined) {
-      return investmentBalances[0].total_value;
+    // Sum total_value from ALL investment_balances (both Plaid and SnapTrade)
+    if (investmentBalances.length > 0) {
+      const total = investmentBalances.reduce(
+        (sum, b) => sum + (b.total_value || 0),
+        0
+      );
+      if (total > 0) {
+        return total;
+      }
     }
     
     // Fallback to accounts table if no balances found (for backwards compatibility)

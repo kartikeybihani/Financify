@@ -24,6 +24,7 @@ import {
   getSnaptradeOptionsFromDB,
   getSnaptradeBalancesFromDB,
   getSnaptradeConnectionsFromDB,
+  getAllInvestmentConnectionsFromDB,
   getSnaptradeCredentialsWithFallback,
   syncSnaptradeInvestments,
   refreshSnaptradeInvestments,
@@ -244,10 +245,10 @@ export default function InvestmentsScreen({
       logger.info("Investments: Loading data from Supabase...");
 
       const [h, o, b, c] = await Promise.all([
-        getSnaptradeHoldingsFromDB(),
-        getSnaptradeOptionsFromDB(),
-        getSnaptradeBalancesFromDB(),
-        getSnaptradeConnectionsFromDB(),
+        getSnaptradeHoldingsFromDB(), // Gets ALL holdings (both Plaid and SnapTrade)
+        getSnaptradeOptionsFromDB(), // Gets ALL options (both Plaid and SnapTrade)
+        getSnaptradeBalancesFromDB(), // Gets ALL balances (both Plaid and SnapTrade)
+        getAllInvestmentConnectionsFromDB(), // Gets ALL connections (both Plaid and SnapTrade)
       ]);
 
       const hasAnyData =
@@ -1206,44 +1207,39 @@ export default function InvestmentsScreen({
     setShowSortModal(false);
   };
 
-  // Use total_value from investment_balances as single source of truth
-  // This is calculated from active holdings + options by the sync function
-  const totalPortfolioValue =
-    balances.length > 0 &&
-    balances[0].total_value !== null &&
-    balances[0].total_value !== undefined
-      ? balances[0].total_value
-      : 0;
+  // Calculate total portfolio value by summing ALL balances (both Plaid and SnapTrade)
+  // This ensures we include all investment accounts regardless of provider
+  const totalPortfolioValue = balances.reduce(
+    (sum, b) => sum + (b.total_value || 0),
+    0
+  );
 
   const totalCash = balances.reduce((sum, b) => sum + (b.cash || 0), 0);
 
   // Calculate total unrealized P&L using new investment_balances columns first, then fallback to holdings
   const calculateTotalUnrealizedPL = () => {
-    // First priority: Use pre-calculated values from investment_balances table
+    // First priority: Sum pre-calculated values from ALL investment_balances (both Plaid and SnapTrade)
     if (balances.length > 0) {
-      const balance = balances[0]; // Use the most recent balance record
+      // Sum total_change from all balances
+      const totalChangeSum = balances.reduce(
+        (sum, b) => sum + (b.total_change || 0),
+        0
+      );
 
-      // Check if we have valid total_change data in the balances table (not null, not undefined)
-      if (
-        balance.total_change !== null &&
-        balance.total_change !== undefined &&
-        !isNaN(balance.total_change)
-      ) {
+      // Check if we have valid total_change data
+      if (totalChangeSum !== 0 || balances.some(b => b.total_change !== null && b.total_change !== undefined)) {
         console.log(
-          `✅ Using pre-calculated total_change from investment_balances: $${balance.total_change}`
+          `✅ Using pre-calculated total_change from investment_balances: $${totalChangeSum} (sum of ${balances.length} accounts)`
         );
 
+        // Calculate percentage based on total portfolio value
         const percentage =
-          balance.total_change_percent !== null &&
-          balance.total_change_percent !== undefined &&
-          !isNaN(balance.total_change_percent)
-            ? balance.total_change_percent
-            : totalPortfolioValue > 0
-            ? (balance.total_change / totalPortfolioValue) * 100
+          totalPortfolioValue > 0
+            ? (totalChangeSum / totalPortfolioValue) * 100
             : 0;
 
         return {
-          amount: balance.total_change,
+          amount: totalChangeSum,
           percentage: percentage,
         };
       }
@@ -1292,29 +1288,31 @@ export default function InvestmentsScreen({
   const calculateTodayPerformance = () => {
     // First priority: Use pre-calculated values from investment_balances table
     if (balances.length > 0) {
-      const balance = balances[0]; // Use the most recent balance record
+      // Sum day_change from ALL balances (both Plaid and SnapTrade)
+      const dayChangeSum = balances.reduce(
+        (sum, b) => sum + (b.day_change || 0),
+        0
+      );
 
-      // Check if we have valid day_change data in the balances table (not null, not undefined)
-      if (
-        balance.day_change !== null &&
-        balance.day_change !== undefined &&
-        !isNaN(balance.day_change)
-      ) {
+      // Check if we have valid day_change data from any balance
+      const hasValidDayChange = balances.some(
+        (b) =>
+          b.day_change !== null &&
+          b.day_change !== undefined &&
+          !isNaN(b.day_change)
+      );
+
+      if (hasValidDayChange) {
         console.log(
-          `✅ Using pre-calculated day_change from investment_balances: $${balance.day_change}`
+          `✅ Using pre-calculated day_change from investment_balances: $${dayChangeSum} (sum of ${balances.length} accounts)`
         );
 
+        // Calculate percentage based on total portfolio value
         const percentage =
-          balance.day_change_percent !== null &&
-          balance.day_change_percent !== undefined &&
-          !isNaN(balance.day_change_percent)
-            ? balance.day_change_percent
-            : totalPortfolioValue > 0
-            ? (balance.day_change / totalPortfolioValue) * 100
-            : 0;
+          totalPortfolioValue > 0 ? (dayChangeSum / totalPortfolioValue) * 100 : 0;
 
         return {
-          amount: balance.day_change,
+          amount: dayChangeSum,
           percentage: percentage,
         };
       }
