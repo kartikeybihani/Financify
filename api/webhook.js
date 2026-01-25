@@ -131,44 +131,75 @@ export default async function handler(req, res) {
           updated_holdings: req.body.updated_holdings || 0,
         });
 
-        try {
-          // Look up user_id from item_id
-          const { data: userItem, error } = await supabase
-            .from("user_items")
-            .select("user_id")
-            .eq("item_id", item_id)
-            .single();
+        // Process webhook asynchronously (don't block response)
+        // This allows Plaid to get quick acknowledgment while we process in background
+        (async () => {
+          try {
+            // Look up user_id from item_id
+            const { data: userItem, error } = await supabase
+              .from("user_items")
+              .select("user_id")
+              .eq("item_id", item_id)
+              .single();
 
-          if (error || !userItem) {
-            console.error("Could not find user for item_id:", item_id, error);
-            return res.status(200).json({ ok: true, error: "user_not_found" });
-          }
-
-          // Get access token
-          const { data: access_token, error: tokenErr } = await supabase.rpc(
-            "secure_get_plaid_token",
-            {
-              p_item_id: item_id,
-              p_user_id: userItem.user_id,
+            if (error || !userItem) {
+              console.error("❌ Could not find user for item_id:", item_id, error);
+              // Log for monitoring/alerting
+              await logWebhookError(item_id, "user_not_found", error);
+              return;
             }
-          );
 
-          if (tokenErr || !access_token) {
-            console.error("Could not get access token for holdings sync:", tokenErr);
-            return res.status(200).json({ ok: true, error: "token_not_found" });
+            // Get access token with retry
+            const access_token = await retryOperation(
+              async () => {
+                const { data: token, error: tokenErr } = await supabase.rpc(
+                  "secure_get_plaid_token",
+                  {
+                    p_item_id: item_id,
+                    p_user_id: userItem.user_id,
+                  }
+                );
+                if (tokenErr || !token) {
+                  throw new Error(`Token fetch failed: ${tokenErr?.message || "No token returned"}`);
+                }
+                return token;
+              },
+              {
+                maxRetries: 3,
+                operationName: "get_plaid_token",
+                item_id,
+              }
+            );
+
+            if (!access_token) {
+              console.error("❌ Could not get access token for holdings sync after retries");
+              await logWebhookError(item_id, "token_not_found", null);
+              return;
+            }
+
+            // Fetch and store updated holdings with retry
+            await retryOperation(
+              async () => {
+                await syncPlaidHoldings({
+                  access_token,
+                  item_id,
+                  user_id: userItem.user_id,
+                });
+              },
+              {
+                maxRetries: 3,
+                operationName: "sync_plaid_holdings",
+                item_id,
+              }
+            );
+
+            console.log("✅ Plaid holdings synced successfully from webhook");
+          } catch (e) {
+            console.error("❌ Error syncing Plaid holdings from webhook:", e);
+            await logWebhookError(item_id, "sync_failed", e);
+            // Consider queueing for retry via a job queue system
           }
-
-          // Fetch and store updated holdings
-          await syncPlaidHoldings({
-            access_token,
-            item_id,
-            user_id: userItem.user_id,
-          });
-
-          console.log("✅ Plaid holdings synced successfully from webhook");
-        } catch (e) {
-          console.error("Error syncing Plaid holdings from webhook:", e);
-        }
+        })();
 
         // Always ack quickly so Plaid doesn't retry
         return res.status(200).json({
@@ -594,18 +625,108 @@ async function handleAccountHoldingsUpdated(user_id, connection_id) {
   }
 }
 
+// Retry utility with exponential backoff
+async function retryOperation(operation, options = {}) {
+  const {
+    maxRetries = 3,
+    initialDelay = 1000,
+    maxDelay = 10000,
+    backoffMultiplier = 2,
+    operationName = "operation",
+    item_id = null,
+  } = options;
+
+  let lastError;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error;
+      
+      // Don't retry on certain errors (e.g., authentication, validation)
+      if (error?.response?.status === 401 || error?.response?.status === 400) {
+        console.error(`❌ [${operationName}] Non-retryable error:`, error.message);
+        throw error;
+      }
+
+      if (attempt < maxRetries) {
+        const delay = Math.min(
+          initialDelay * Math.pow(backoffMultiplier, attempt),
+          maxDelay
+        );
+        console.warn(
+          `⚠️ [${operationName}] Attempt ${attempt + 1}/${maxRetries + 1} failed. Retrying in ${delay}ms...`,
+          { item_id, error: error.message }
+        );
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      } else {
+        console.error(
+          `❌ [${operationName}] All ${maxRetries + 1} attempts failed`,
+          { item_id, error: error.message }
+        );
+      }
+    }
+  }
+  throw lastError;
+}
+
+// Log webhook errors for monitoring
+async function logWebhookError(item_id, errorType, error) {
+  try {
+    // You can extend this to log to your error tracking service (e.g., Sentry, LogRocket)
+    console.error("🔴 Webhook Error Logged:", {
+      item_id,
+      errorType,
+      error: error?.message || error,
+      timestamp: new Date().toISOString(),
+    });
+
+    // Optional: Store in database for monitoring
+    // await supabase.from('webhook_errors').insert({
+    //   item_id,
+    //   error_type: errorType,
+    //   error_message: error?.message || String(error),
+    //   created_at: new Date().toISOString(),
+    // });
+  } catch (logError) {
+    console.error("❌ Failed to log webhook error:", logError);
+  }
+}
+
 // Sync Plaid investment holdings (called from webhook)
 async function syncPlaidHoldings({ access_token, item_id, user_id }) {
+  let previousBalancesBackup = null;
+  
   try {
     console.log("📈 Syncing Plaid investment holdings...", {
       item_id,
       user_id: user_id?.substring(0, 8) + "...",
     });
 
-    // Fetch holdings from Plaid
-    const holdingsResponse = await plaidClient.investmentsHoldingsGet({
-      access_token,
-    });
+    // Backup current balances before update (for rollback)
+    const { data: currentBalances } = await supabase
+      .from("investment_balances")
+      .select("*")
+      .eq("user_id", user_id)
+      .eq("item_id", item_id)
+      .eq("provider", "plaid")
+      .eq("is_current", true);
+    
+    previousBalancesBackup = currentBalances || [];
+
+    // Fetch holdings from Plaid with retry
+    const holdingsResponse = await retryOperation(
+      async () => {
+        return await plaidClient.investmentsHoldingsGet({
+          access_token,
+        });
+      },
+      {
+        maxRetries: 3,
+        operationName: "plaid_holdings_get",
+        item_id,
+      }
+    );
 
     const holdings = holdingsResponse.data.holdings || [];
     const securities = holdingsResponse.data.securities || [];
@@ -716,27 +837,66 @@ async function syncPlaidHoldings({ access_token, item_id, user_id }) {
           is_active: true,
           last_updated: new Date().toISOString(),
           snaptrade_user_id: null,
-          account_id: null,
+          account_id: holding.account_id, // Use plaid_account_id value for account_id (required field)
           symbol_id: null,
         };
       })
       .filter((h) => h !== null);
 
     if (holdingsRows.length > 0) {
-      // Upsert holdings
-      const { error: holdingsError } = await supabase
-        .from("investment_holdings")
-        .upsert(holdingsRows, {
-          onConflict: "user_id,item_id,plaid_account_id,security_id",
-          ignoreDuplicates: false,
-        });
+      // Upsert holdings with retry and fallback
+      let holdingsError = null;
+      
+      try {
+        const { error: upsertError } = await supabase
+          .from("investment_holdings")
+          .upsert(holdingsRows, {
+            onConflict: "user_id,item_id,plaid_account_id,security_id",
+            ignoreDuplicates: false,
+          });
 
-      if (holdingsError) {
-        console.error("❌ Error upserting Plaid holdings:", holdingsError);
-        throw holdingsError;
+        if (upsertError) {
+          holdingsError = upsertError;
+          console.error("❌ Error upserting Plaid holdings (batch):", upsertError);
+          
+          // Fallback: Try individual upserts
+          console.log("🔄 Attempting individual holdings upserts...");
+          let successCount = 0;
+          let failCount = 0;
+          
+          for (const holding of holdingsRows) {
+            try {
+              const { error: individualError } = await supabase
+                .from("investment_holdings")
+                .upsert(holding, {
+                  onConflict: "user_id,item_id,plaid_account_id,security_id",
+                  ignoreDuplicates: false,
+                });
+              
+              if (individualError) {
+                console.error(`❌ Failed to upsert holding ${holding.symbol || holding.security_id}:`, individualError);
+                failCount++;
+              } else {
+                successCount++;
+              }
+            } catch (err) {
+              console.error(`❌ Exception upserting holding ${holding.symbol || holding.security_id}:`, err);
+              failCount++;
+            }
+          }
+          
+          if (failCount > 0) {
+            console.warn(`⚠️ ${failCount} holdings failed to upsert, ${successCount} succeeded`);
+          } else {
+            console.log(`✅ All ${successCount} holdings upserted individually`);
+          }
+        } else {
+          console.log(`✅ Stored ${holdingsRows.length} Plaid investment holdings`);
+        }
+      } catch (err) {
+        console.error("❌ Exception during holdings upsert:", err);
+        throw err;
       }
-
-      console.log(`✅ Stored ${holdingsRows.length} Plaid investment holdings`);
 
       // Mark removed holdings as inactive
       await new Promise((resolve) => setTimeout(resolve, 500));
@@ -854,40 +1014,94 @@ async function syncPlaidHoldings({ access_token, item_id, user_id }) {
           is_current: true,
           last_updated: new Date().toISOString(),
           snaptrade_user_id: null,
-          account_id: null,
+          account_id: account.account_id, // Use plaid_account_id value for account_id (required field)
         };
       })
     );
 
     if (balanceRows.length > 0) {
-      // Mark previous balances as not current
-      await supabase
+      // Mark previous balances as not current (with error handling)
+      const { error: markError } = await supabase
         .from("investment_balances")
         .update({ is_current: false })
         .eq("user_id", user_id)
         .eq("item_id", item_id)
         .eq("provider", "plaid");
 
-      // Upsert balances
-      const { error: balancesError } = await supabase
-        .from("investment_balances")
-        .upsert(balanceRows, {
-          onConflict: "user_id,item_id,plaid_account_id,currency_code",
-          ignoreDuplicates: false,
-        });
+      if (markError) {
+        console.error("❌ Error marking previous balances as not current:", markError);
+        // Don't proceed with upsert if marking failed (data integrity)
+        throw new Error(`Failed to mark previous balances: ${markError.message}`);
+      }
 
-      if (balancesError) {
-        console.error("❌ Error upserting Plaid balances:", balancesError);
-      } else {
-        console.log(
-          `✅ Stored ${balanceRows.length} Plaid investment account balances`
-        );
+      // Upsert balances with retry and rollback capability
+      try {
+        const { error: balancesError } = await supabase
+          .from("investment_balances")
+          .upsert(balanceRows, {
+            onConflict: "user_id,item_id,plaid_account_id,currency_code",
+            ignoreDuplicates: false,
+          });
+
+        if (balancesError) {
+          console.error("❌ Error upserting Plaid balances:", balancesError);
+          
+          // Rollback: Restore previous balances as current
+          console.log("🔄 Rolling back balance updates...");
+          if (previousBalancesBackup && previousBalancesBackup.length > 0) {
+            const rollbackData = previousBalancesBackup.map(b => ({
+              ...b,
+              is_current: true,
+            }));
+            
+            const { error: rollbackError } = await supabase
+              .from("investment_balances")
+              .upsert(rollbackData, {
+                onConflict: "user_id,item_id,plaid_account_id,currency_code",
+              });
+            
+            if (rollbackError) {
+              console.error("❌ Critical: Failed to rollback balances:", rollbackError);
+            } else {
+              console.log("✅ Successfully rolled back balance updates");
+            }
+          }
+          
+          throw balancesError;
+        } else {
+          console.log(
+            `✅ Stored ${balanceRows.length} Plaid investment account balances`
+          );
+        }
+      } catch (err) {
+        // If upsert fails, attempt rollback
+        if (previousBalancesBackup && previousBalancesBackup.length > 0) {
+          try {
+            const rollbackData = previousBalancesBackup.map(b => ({
+              ...b,
+              is_current: true,
+            }));
+            await supabase
+              .from("investment_balances")
+              .upsert(rollbackData, {
+                onConflict: "user_id,item_id,plaid_account_id,currency_code",
+              });
+            console.log("✅ Rolled back balances after error");
+          } catch (rollbackErr) {
+            console.error("❌ Critical: Rollback failed:", rollbackErr);
+          }
+        }
+        throw err;
       }
     }
 
     console.log("✅ Plaid holdings sync completed successfully");
   } catch (error) {
     console.error("❌ Error syncing Plaid holdings:", error);
+    
+    // Log error details for monitoring
+    await logWebhookError(item_id, "sync_plaid_holdings_failed", error);
+    
     throw error;
   }
 }

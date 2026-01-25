@@ -10,6 +10,59 @@ import {
   formatRetryAfterSeconds,
 } from "../lib/api/rateLimiter.js";
 
+// Retry utility for Plaid API calls with exponential backoff
+async function retryPlaidOperation(operation, operationName, item_id = null, maxRetries = 3) {
+  const initialDelay = 1000;
+  const maxDelay = 10000;
+  const backoffMultiplier = 2;
+
+  let lastError;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error;
+      
+      // Don't retry on certain errors (authentication, invalid request)
+      const statusCode = error?.response?.status || error?.statusCode;
+      if (statusCode === 401 || statusCode === 400 || statusCode === 404) {
+        console.error(`❌ [${operationName}] Non-retryable error:`, error.message);
+        throw error;
+      }
+
+      // Don't retry on rate limit errors immediately (wait longer)
+      if (statusCode === 429) {
+        const retryAfter = error?.response?.headers?.['retry-after'] || 60;
+        const delay = Math.min(retryAfter * 1000, maxDelay * 10);
+        console.warn(
+          `⚠️ [${operationName}] Rate limited. Waiting ${delay}ms before retry...`,
+          { item_id }
+        );
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        continue;
+      }
+
+      if (attempt < maxRetries) {
+        const delay = Math.min(
+          initialDelay * Math.pow(backoffMultiplier, attempt),
+          maxDelay
+        );
+        console.warn(
+          `⚠️ [${operationName}] Attempt ${attempt + 1}/${maxRetries + 1} failed. Retrying in ${delay}ms...`,
+          { item_id, error: error.message }
+        );
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      } else {
+        console.error(
+          `❌ [${operationName}] All ${maxRetries + 1} attempts failed`,
+          { item_id, error: error.message }
+        );
+      }
+    }
+  }
+  throw lastError;
+}
+
 async function enforceStoreAccountsRateLimit(
   req,
   res,
@@ -232,14 +285,23 @@ export default async function handler(req, res) {
     // 4. Fetch and Store INVESTMENTS (optional - may not exist for all accounts)
     try {
       console.log("📈 Fetching investments...");
-      const holdingsResponse = await client.investmentsHoldingsGet({
-        access_token,
-      });
-      const transactionsResponse = await client.investmentsTransactionsGet({
-        access_token,
-        start_date: "2020-01-01",
-        end_date: new Date().toISOString().split("T")[0],
-      });
+      
+      // Retry Plaid API calls with exponential backoff
+      const holdingsResponse = await retryPlaidOperation(
+        () => client.investmentsHoldingsGet({ access_token }),
+        "investmentsHoldingsGet",
+        item_id
+      );
+      
+      const transactionsResponse = await retryPlaidOperation(
+        () => client.investmentsTransactionsGet({
+          access_token,
+          start_date: "2020-01-01",
+          end_date: new Date().toISOString().split("T")[0],
+        }),
+        "investmentsTransactionsGet",
+        item_id
+      );
 
       const holdings = holdingsResponse.data.holdings || [];
       const securities = holdingsResponse.data.securities || [];
@@ -353,31 +415,77 @@ export default async function handler(req, res) {
               last_updated: new Date().toISOString(),
               // SnapTrade fields (null for Plaid)
               snaptrade_user_id: null,
-              account_id: null, // SnapTrade account_id
+              account_id: holding.account_id, // Use plaid_account_id value for account_id (required field)
               symbol_id: null, // SnapTrade symbol_id
             };
           })
           .filter((h) => h !== null); // Remove null entries
 
         if (holdingsRows.length > 0) {
-          // Upsert holdings (using the unique index columns)
-          const { error: holdingsError } = await supabase
-            .from("investment_holdings")
-            .upsert(holdingsRows, {
-              onConflict: "user_id,item_id,plaid_account_id,security_id",
-              ignoreDuplicates: false,
-            });
+          // Upsert holdings (using the unique index columns) with fallback
+          let holdingsError = null;
+          
+          try {
+            const { error: upsertError } = await supabase
+              .from("investment_holdings")
+              .upsert(holdingsRows, {
+                onConflict: "user_id,item_id,plaid_account_id,security_id",
+                ignoreDuplicates: false,
+              });
 
-          if (holdingsError) {
-            console.error("❌ Error upserting Plaid holdings:", holdingsError);
-          } else {
-            console.log(
-              `✅ Stored ${holdingsRows.length} Plaid investment holdings`
-            );
+            if (upsertError) {
+              holdingsError = upsertError;
+              console.error("❌ Error upserting Plaid holdings (batch):", upsertError);
+              
+              // Fallback: Try individual upserts
+              console.log("🔄 Attempting individual holdings upserts...");
+              let successCount = 0;
+              let failCount = 0;
+              
+              for (const holding of holdingsRows) {
+                try {
+                  const { error: individualError } = await supabase
+                    .from("investment_holdings")
+                    .upsert(holding, {
+                      onConflict: "user_id,item_id,plaid_account_id,security_id",
+                      ignoreDuplicates: false,
+                    });
+                  
+                  if (individualError) {
+                    console.error(`❌ Failed to upsert holding ${holding.symbol || holding.security_id}:`, individualError);
+                    failCount++;
+                  } else {
+                    successCount++;
+                  }
+                } catch (err) {
+                  console.error(`❌ Exception upserting holding ${holding.symbol || holding.security_id}:`, err);
+                  failCount++;
+                }
+              }
+              
+              if (failCount > 0) {
+                console.warn(`⚠️ ${failCount} holdings failed to upsert, ${successCount} succeeded`);
+              } else {
+                console.log(`✅ All ${successCount} holdings upserted individually`);
+              }
+            } else {
+              console.log(
+                `✅ Stored ${holdingsRows.length} Plaid investment holdings`
+              );
+            }
+          } catch (err) {
+            console.error("❌ Exception during holdings upsert:", err);
+            holdingsError = err;
+          }
+          
+          if (holdingsError && holdingsRows.length > 0) {
+            // Log but don't throw - we want to continue with balance updates
+            console.error("❌ Some holdings failed to upsert, but continuing with balance updates");
+          }
 
-            // Mark holdings as inactive if they're no longer in the Plaid response
-            // Wait a moment for upsert to fully commit
-            await new Promise((resolve) => setTimeout(resolve, 500));
+          // Mark holdings as inactive if they're no longer in the Plaid response
+          // Wait a moment for upsert to fully commit
+          await new Promise((resolve) => setTimeout(resolve, 500));
 
             const activeSecurityIds = new Set(
               holdingsRows
@@ -451,9 +559,8 @@ export default async function handler(req, res) {
               }
             }
           }
-        }
 
-        // Process account balances
+          // Process account balances
         const investmentAccounts = accounts.filter(
           (account) => account.type === "investment"
         );
@@ -515,19 +622,34 @@ export default async function handler(req, res) {
               last_updated: new Date().toISOString(),
               // SnapTrade fields (null for Plaid)
               snaptrade_user_id: null,
-              account_id: null, // SnapTrade account_id
+              account_id: account.account_id, // Use plaid_account_id value for account_id (required field)
             };
           })
         );
 
         if (balanceRows.length > 0) {
-          // Mark previous balances as not current
-          await supabase
+          // Backup current balances before update (for rollback)
+          const { data: previousBalances } = await supabase
+            .from("investment_balances")
+            .select("*")
+            .eq("user_id", userId)
+            .eq("item_id", item_id)
+            .eq("provider", "plaid")
+            .eq("is_current", true);
+
+          // Mark previous balances as not current (with error handling)
+          const { error: markError } = await supabase
             .from("investment_balances")
             .update({ is_current: false })
             .eq("user_id", userId)
             .eq("item_id", item_id)
             .eq("provider", "plaid");
+
+          if (markError) {
+            console.error("❌ Error marking previous balances as not current:", markError);
+            // Don't proceed with upsert if marking failed (data integrity)
+            throw new Error(`Failed to mark previous balances: ${markError.message}`);
+          }
 
           // Upsert balances (using the unique index columns)
           const { error: balancesError } = await supabase
@@ -539,6 +661,29 @@ export default async function handler(req, res) {
 
           if (balancesError) {
             console.error("❌ Error upserting Plaid balances:", balancesError);
+            
+            // Rollback: Restore previous balances as current
+            if (previousBalances && previousBalances.length > 0) {
+              console.log("🔄 Rolling back balance updates...");
+              const rollbackData = previousBalances.map(b => ({
+                ...b,
+                is_current: true,
+              }));
+              
+              const { error: rollbackError } = await supabase
+                .from("investment_balances")
+                .upsert(rollbackData, {
+                  onConflict: "user_id,item_id,plaid_account_id,currency_code",
+                });
+              
+              if (rollbackError) {
+                console.error("❌ Critical: Failed to rollback balances:", rollbackError);
+              } else {
+                console.log("✅ Successfully rolled back balance updates");
+              }
+            }
+            
+            throw balancesError;
           } else {
             console.log(
               `✅ Stored ${balanceRows.length} Plaid investment account balances`
