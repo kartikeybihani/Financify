@@ -87,7 +87,7 @@ export default function AccountConnectionScreen() {
     const { data: transactions, error: txError } = await supabase
       .from("transactions")
       .select(
-        "date, amount, merchant_name, name, category, top_category, new_category"
+        "date, amount, merchant_name, name, category, top_category, new_category",
       )
       .eq("user_id", userId)
       .gte("date", startDateStr)
@@ -134,7 +134,7 @@ export default function AccountConnectionScreen() {
 
   const logLast30DaysTransactionsPreview = async (
     userId: string,
-    itemId?: string
+    itemId?: string,
   ) => {
     const key = getTxPreviewKey(userId, itemId);
     const alreadyLogged = AppStorage.getItemSync(key);
@@ -153,7 +153,7 @@ export default function AccountConnectionScreen() {
 
     if (transactions.length === 0) {
       logger.info(
-        "🧾 Transactions preview: no transactions found in last 30 days"
+        "🧾 Transactions preview: no transactions found in last 30 days",
       );
       AppStorage.setItemSync(key, "1");
       return;
@@ -190,7 +190,7 @@ export default function AccountConnectionScreen() {
         logger.error("Error fetching link token:", error);
         Alert.alert(
           "Connection Error",
-          "Unable to initialize bank connection. Please try again."
+          "Unable to initialize bank connection. Please try again.",
         );
       }
     };
@@ -217,7 +217,7 @@ export default function AccountConnectionScreen() {
   }, []);
 
   const fetchConnectedAccounts = async (
-    userId: string
+    userId: string,
   ): Promise<ConnectedAccount[]> => {
     try {
       const { data: accounts, error } = await supabase
@@ -233,7 +233,7 @@ export default function AccountConnectionScreen() {
           current_balance,
           available_balance,
           user_items!inner(institution_name, user_id)
-        `
+        `,
         )
         .eq("user_items.user_id", userId)
         .order("created_at", { ascending: false });
@@ -256,7 +256,7 @@ export default function AccountConnectionScreen() {
     if (!linkToken) {
       Alert.alert(
         "Not Ready",
-        "Please try again in 5 seconds while we prepare..."
+        "Please try again in 5 seconds while we prepare...",
       );
       return;
     }
@@ -295,7 +295,7 @@ export default function AccountConnectionScreen() {
           setIsClosingPlaid(false);
 
           logger.info(
-            "✅ AccountConnectionScreen: Successfully connected account"
+            "✅ AccountConnectionScreen: Successfully connected account",
           );
           logOnboardingEvent({ stage: "plaid", action: "success" });
 
@@ -330,21 +330,21 @@ export default function AccountConnectionScreen() {
                   text: "OK",
                   onPress: async () => setLinkToken(await fetchLinkToken()),
                 },
-              ]
+              ],
             );
           } else if (error?.message) {
             // This handles our token exchange errors
             Alert.alert(
               "Connection Failed",
               `Unable to connect your bank account: ${error.message}`,
-              [{ text: "Try Again" }]
+              [{ text: "Try Again" }],
             );
           } else if (error) {
             Alert.alert("Connection Cancelled", "You can try again anytime.", [
               { text: "OK" },
             ]);
           }
-        }
+        },
       );
     } catch (error) {
       logger.error("Error connecting bank:", error);
@@ -355,7 +355,7 @@ export default function AccountConnectionScreen() {
       });
       Alert.alert(
         "Connection Failed",
-        "Unable to connect your bank account. Please try again."
+        "Unable to connect your bank account. Please try again.",
       );
       setIsLoading(false);
     }
@@ -364,7 +364,7 @@ export default function AccountConnectionScreen() {
   const handleContinue = async () => {
     try {
       logger.info(
-        "🧭 AccountConnectionScreen: Moving to final onboarding stage"
+        "🧭 AccountConnectionScreen: Moving to final onboarding stage",
       );
 
       // Update profiles step -> 4 (final screen next)
@@ -381,12 +381,12 @@ export default function AccountConnectionScreen() {
       } catch (e) {
         logger.error(
           "❌ AccountConnectionScreen: profiles step update failed",
-          e
+          e,
         );
       }
 
       logger.info(
-        "✅ AccountConnectionScreen: Moved to final onboarding stage"
+        "✅ AccountConnectionScreen: Moved to final onboarding stage",
       );
       logOnboardingEvent({ stage: "plaid", action: "continue" });
 
@@ -397,7 +397,7 @@ export default function AccountConnectionScreen() {
       Alert.alert(
         "Could not continue",
         "We couldn't move to the next step. Please try again.",
-        [{ text: "OK" }]
+        [{ text: "OK" }],
       );
     }
   };
@@ -444,10 +444,10 @@ export default function AccountConnectionScreen() {
           >
             <View style={styles.header}>
               <Text style={styles.title}>Connect at least 1 account</Text>
-              <Text style={styles.subtitle}>Real growth needs real data</Text>
+              {/* <Text style={styles.subtitle}>Real growth needs real data</Text> */}
               <Text style={styles.description}>
-                Get personalized insights from your spending to track goals and
-                build wealth.
+                This helps finny understand your spending better and provide you
+                with personalized insights.
               </Text>
             </View>
 
@@ -631,8 +631,8 @@ export default function AccountConnectionScreen() {
                 {isClosingPlaid
                   ? "Closing Plaid..."
                   : isConnecting
-                  ? "Loading your accounts..."
-                  : "Working with Plaid..."}
+                    ? "Loading your accounts..."
+                    : "Working with Plaid..."}
               </Text>
             </View>
           </View>
@@ -676,10 +676,11 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   description: {
-    fontSize: 16,
+    fontSize: 14,
     color: "rgba(255, 255, 255, 0.8)",
     lineHeight: 24,
     textAlign: "left",
+    marginTop: 4,
   },
   trustSection: {
     gap: 16,
@@ -688,7 +689,8 @@ const styles = StyleSheet.create({
   trustCard: {
     backgroundColor: "rgba(255, 255, 255, 0.03)",
     borderRadius: 16,
-    padding: 20,
+    paddingHorizontal: 20,
+    paddingVertical: 20,
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.1)",
     flexDirection: "row",

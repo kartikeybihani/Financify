@@ -82,7 +82,10 @@ export default function AboutYouScreen() {
   }, []);
   const router = useRouter();
   const [age, setAge] = useState<string>("");
+  const [zipCode, setZipCode] = useState<string>("");
   const [location, setLocation] = useState<string>("");
+  const [locationLoading, setLocationLoading] = useState(false);
+  const [locationError, setLocationError] = useState<string>("");
   const [occupation, setOccupation] = useState<string>("");
   const [referralSource, setReferralSource] = useState<string>("");
   const [saving, setSaving] = useState(false);
@@ -97,6 +100,67 @@ export default function AboutYouScreen() {
 
   // Generate age options (18-80)
   const ageOptions = Array.from({ length: 63 }, (_, i) => (i + 18).toString());
+
+  const fetchLocation = async (zip: string) => {
+    if (!zip || zip.trim().length === 0) {
+      setLocation("");
+      setLocationError("");
+      return;
+    }
+
+    // Only fetch if ZIP is 5 digits
+    const cleanZip = zip.trim().replace(/\D/g, "");
+    if (cleanZip.length !== 5) {
+      setLocation("");
+      setLocationError("");
+      return;
+    }
+
+    setLocationLoading(true);
+    setLocationError("");
+    try {
+      const response = await fetch(`https://api.zippopotam.us/us/${cleanZip}`);
+      if (!response.ok) {
+        throw new Error("Invalid ZIP code");
+      }
+      const data = await response.json();
+      if (data.places && data.places.length > 0) {
+        const place = data.places[0];
+        const city = place["place name"];
+        const state = place["state abbreviation"];
+        const locationString = `${city}, ${state}`;
+        setLocation(locationString);
+        setLocationError("");
+        logger.info("✅ AboutYouScreen: Location fetched successfully", {
+          zip: cleanZip,
+          city,
+          state,
+        });
+      } else {
+        throw new Error("No location found for this ZIP code");
+      }
+    } catch (error) {
+      logger.error("❌ AboutYouScreen: Error fetching location:", error);
+      setLocation("");
+      setLocationError("Invalid ZIP code. Please try again.");
+    } finally {
+      setLocationLoading(false);
+    }
+  };
+
+  // Debounce ZIP code lookup
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (zipCode.trim().length > 0) {
+        fetchLocation(zipCode);
+      } else {
+        setLocation("");
+        setLocationError("");
+      }
+    }, 500); // 500ms debounce
+
+    return () => clearTimeout(timer);
+  }, [zipCode]);
 
   const persist = async () => {
     if (!canContinue || saving) return;
@@ -117,13 +181,13 @@ export default function AboutYouScreen() {
           location: profileData.location,
           occupation: profileData.occupation,
           referral: referralSource,
-        }
+        },
       );
 
       // Save profile data to AsyncStorage for next screen
       AppStorage.setItemSync(
         "pending_profile_data",
-        JSON.stringify(profileData)
+        JSON.stringify(profileData),
       );
 
       // Persist profile data and step -> 1 (intent questions)
@@ -146,7 +210,7 @@ export default function AboutYouScreen() {
           if (updateError) {
             logger.error(
               "❌ AboutYouScreen: Error updating profile:",
-              updateError
+              updateError,
             );
             throw updateError;
           }
@@ -158,7 +222,7 @@ export default function AboutYouScreen() {
       } catch (profileError) {
         logger.error(
           "❌ AboutYouScreen: Error saving profile data:",
-          profileError
+          profileError,
         );
         throw profileError;
       }
@@ -219,18 +283,36 @@ export default function AboutYouScreen() {
               <Text style={styles.labelSmall}>Location</Text>
               <View style={styles.inputWrapSmall}>
                 <TextInput
-                  value={location}
-                  onChangeText={(text) =>
-                    setLocation(text.charAt(0).toUpperCase() + text.slice(1))
-                  }
-                  placeholder="City, State"
+                  value={zipCode}
+                  onChangeText={(text) => {
+                    // Only allow digits, max 5
+                    const cleanText = text.replace(/\D/g, "").slice(0, 5);
+                    setZipCode(cleanText);
+                  }}
+                  placeholder="ZIP Code"
                   placeholderTextColor="rgba(255,255,255,0.5)"
                   style={styles.inputSmall}
-                  autoCapitalize="words"
+                  keyboardType="number-pad"
                   returnKeyType="done"
                   onSubmitEditing={() => Keyboard.dismiss()}
                 />
+                {locationLoading && (
+                  <Ionicons
+                    name="hourglass-outline"
+                    size={18}
+                    color="rgba(255,255,255,0.5)"
+                  />
+                )}
+                {!locationLoading && location && (
+                  <Ionicons name="checkmark-circle" size={18} color="#4A90E2" />
+                )}
               </View>
+              {location && (
+                <Text style={styles.locationDisplay}>{location}</Text>
+              )}
+              {locationError && (
+                <Text style={styles.locationError}>{locationError}</Text>
+              )}
             </View>
           </View>
 
@@ -243,8 +325,7 @@ export default function AboutYouScreen() {
               onChangeText={(text) =>
                 setOccupation(text.charAt(0).toUpperCase() + text.slice(1))
               }
-              placeholder="Tell us about yourself: your profession and whether you're a student    
-Examples:
+              placeholder="Examples:
 • Nurse
 • Software Engineer at Google
 • Student at MIT
@@ -479,12 +560,12 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 15,
     fontWeight: "600",
-    marginTop: 20,
+    marginTop: 10,
     marginBottom: 8,
     letterSpacing: 0.3,
   },
   occupationLabel: {
-    marginTop: 38,
+    marginTop: 20,
   },
   referralLabel: {
     marginTop: 28,
@@ -802,5 +883,19 @@ const styles = StyleSheet.create({
     position: "absolute",
     top: 8,
     right: 8,
+  },
+  locationDisplay: {
+    color: "#4A90E2",
+    fontSize: 12,
+    fontWeight: "500",
+    marginTop: 4,
+    marginLeft: 2,
+  },
+  locationError: {
+    color: "#FF6B6B",
+    fontSize: 12,
+    fontWeight: "400",
+    marginTop: 4,
+    marginLeft: 2,
   },
 });

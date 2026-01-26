@@ -89,16 +89,11 @@ export default function IntentQuestionScreen({
   const handleContinue = async (selectedId: string) => {
     try {
       // Get existing answers and update
-      const existingAnswers = AppStorage.getItemSync(
-        "pending_intent_answers"
-      );
+      const existingAnswers = AppStorage.getItemSync("pending_intent_answers");
       const answers = existingAnswers ? JSON.parse(existingAnswers) : {};
       answers[storageKey] = selectedId;
 
-      AppStorage.setItemSync(
-        "pending_intent_answers",
-        JSON.stringify(answers)
-      );
+      AppStorage.setItemSync("pending_intent_answers", JSON.stringify(answers));
 
       // Persist answer to profiles
       try {
@@ -117,7 +112,7 @@ export default function IntentQuestionScreen({
       } catch (error) {
         logger.error(
           `❌ [${screenKey.toUpperCase()}] Error updating profile:`,
-          error
+          error,
         );
       }
 
@@ -128,7 +123,7 @@ export default function IntentQuestionScreen({
         } catch (error) {
           logger.warn(
             `⚠️ [${screenKey.toUpperCase()}] Error in onBeforeNavigate:`,
-            error
+            error,
           );
         }
       }
@@ -225,6 +220,7 @@ const styles = StyleSheet.create({
   },
   optionsContainer: {
     gap: 15,
+    marginBottom: 30,
   },
   optionCard: {
     backgroundColor: "rgba(255, 255, 255, 0.05)",

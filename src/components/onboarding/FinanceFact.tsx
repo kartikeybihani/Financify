@@ -135,7 +135,7 @@ const styles = StyleSheet.create({
   },
   factCard: {
     backgroundColor: "rgba(255, 255, 255, 0.06)",
-    borderRadius: 20,
+    borderRadius: 50,
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.1)",
     padding: 14,
