@@ -959,19 +959,7 @@ export default async function handler(req, res) {
     // Runs after transactions have been written, so it can read from DB.
     // Stores raw JSON in `profiles.base_analysis`.
     // Only runs if base_analysis doesn't already exist (first account connection).
-    console.log("[TRANSACTIONS_SYNC] base_analysis: attempting to start", {
-      userId,
-      item_id,
-    });
-    
     try {
-      console.log("[TRANSACTIONS_SYNC] base_analysis: start", {
-        userId,
-        item_id,
-        added: added.length,
-        modified: modified.length,
-        removed: removed.length,
-      });
 
       const { data: profileForAnalysis, error: profileAnalysisErr } = await supabase
         .from("profiles")
@@ -1069,66 +1057,16 @@ export default async function handler(req, res) {
               { userId }
             );
 
-            console.log(
-              "[TRANSACTIONS_SYNC] base_analysis: calling OpenRouter LLM",
-              { userId, txCount: transactions.length }
-            );
-
-            let llmResult;
-            try {
-              llmResult = await callAccountCompletenessLLM({
-                openRouterApiKey,
-                fetchFn: fetch,
-                transactions,
-              });
-              console.log("[TRANSACTIONS_SYNC] base_analysis: LLM call completed", {
-                userId,
-                ok: !!llmResult?.ok,
-                hasJson: !!llmResult?.json,
-                hasRaw: !!llmResult?.raw,
-              });
-            } catch (llmCallError) {
-              console.error(
-                "[TRANSACTIONS_SYNC] base_analysis: LLM call threw error",
-                {
-                  userId,
-                  error: llmCallError?.message,
-                  stack: llmCallError?.stack,
-                }
-              );
-              // Store error marker
-              const { error: upsertErr } = await supabase
-                .from("profiles")
-                .upsert(
-                  {
-                    id: userId,
-                    base_analysis: {
-                      error: "LLM_CALL_ERROR",
-                      error_message: llmCallError?.message || "Unknown error",
-                    },
-                    updated_at: new Date().toISOString(),
-                  },
-                  { onConflict: "id" }
-                );
-              if (upsertErr) {
-                console.error(
-                  "[TRANSACTIONS_SYNC] base_analysis: error marker upsert failed",
-                  upsertErr
-                );
-              }
-              throw llmCallError; // Re-throw to be caught by outer catch
-            }
+            const llmResult = await callAccountCompletenessLLM({
+              openRouterApiKey,
+              fetchFn: fetch,
+              transactions,
+            });
 
             const analysisJson =
               llmResult?.ok && llmResult?.json
                 ? llmResult.json
                 : extractFirstJsonObjectFromText(llmResult?.raw);
-
-            console.log("[TRANSACTIONS_SYNC] base_analysis: parsing result", {
-              userId,
-              hasAnalysisJson: !!analysisJson,
-              analysisJsonKeys: analysisJson ? Object.keys(analysisJson) : [],
-            });
 
             if (!analysisJson) {
               console.warn(
@@ -1149,14 +1087,7 @@ export default async function handler(req, res) {
                 .upsert(
                   {
                     id: userId,
-                    base_analysis: {
-                      error: "LLM_NO_JSON",
-                      raw_preview: String(
-                        llmResult?.rawStripped || llmResult?.raw || ""
-                      )
-                        .slice(0, 500)
-                        .trim(),
-                    },
+                    base_analysis: { error: "LLM_FAILED" },
                     updated_at: new Date().toISOString(),
                   },
                   { onConflict: "id" }
@@ -1176,12 +1107,7 @@ export default async function handler(req, res) {
                 reasoning: analysisJson.reasoning || "Analysis complete",
               };
 
-              console.log("[TRANSACTIONS_SYNC] base_analysis: storing result", {
-                userId,
-                result,
-              });
-
-              const { error: upsertErr, data: upsertData } = await supabase
+              const { error: upsertErr } = await supabase
                 .from("profiles")
                 .upsert(
                   {
@@ -1195,21 +1121,12 @@ export default async function handler(req, res) {
               if (upsertErr) {
                 console.error(
                   "[TRANSACTIONS_SYNC] base_analysis: upsert failed",
-                  {
-                    userId,
-                    error: upsertErr,
-                    errorMessage: upsertErr.message,
-                    errorCode: upsertErr.code,
-                    errorDetails: upsertErr.details,
-                  }
+                  upsertErr
                 );
               } else {
                 console.log("✅ Stored profiles.base_analysis", {
                   userId,
                   should_ask: result.should_ask_for_more_accounts,
-                  hasMessage: !!result.message,
-                  reasoning: result.reasoning,
-                  upsertData,
                 });
               }
             }
@@ -1219,13 +1136,7 @@ export default async function handler(req, res) {
     } catch (err) {
       console.error(
         "[TRANSACTIONS_SYNC] base_analysis error (non-blocking)",
-        {
-          userId,
-          error: err,
-          errorMessage: err?.message,
-          errorStack: err?.stack,
-          errorName: err?.name,
-        }
+        err
       );
       // Store error marker on exception too
       try {
@@ -1234,11 +1145,7 @@ export default async function handler(req, res) {
           .upsert(
             {
               id: userId,
-              base_analysis: {
-                error: "EXCEPTION",
-                error_message: err?.message || "Unknown exception",
-                error_name: err?.name || "Error",
-              },
+              base_analysis: { error: "LLM_FAILED" },
               updated_at: new Date().toISOString(),
             },
             { onConflict: "id" }
@@ -1246,25 +1153,13 @@ export default async function handler(req, res) {
         if (upsertErr) {
           console.error(
             "[TRANSACTIONS_SYNC] base_analysis: error marker upsert failed (exception path)",
-            {
-              userId,
-              upsertError: upsertErr,
-              originalError: err?.message,
-            }
+            upsertErr
           );
-        } else {
-          console.log("[TRANSACTIONS_SYNC] base_analysis: stored error marker", {
-            userId,
-          });
         }
       } catch (markerErr) {
         console.error(
           "[TRANSACTIONS_SYNC] Failed to store error marker",
-          {
-            userId,
-            markerError: markerErr,
-            originalError: err?.message,
-          }
+          markerErr
         );
       }
     }

@@ -271,7 +271,6 @@ export default function AccountConnectionScreen() {
   const analyzeAccountCompleteness = async (userId: string) => {
     try {
       setIsAnalyzing(true);
-      logger.info("🔍 Analyzing account completeness for user:", userId);
 
       // Wait a bit for transactions to sync and analysis to complete
       // The analysis runs automatically in transactions_sync.js
@@ -294,17 +293,8 @@ export default function AccountConnectionScreen() {
         } else if (profile?.base_analysis) {
           const analysis = profile.base_analysis as any;
 
-          logger.info("📊 Found base_analysis:", {
-            analysis,
-            type: typeof analysis,
-            keys: analysis ? Object.keys(analysis) : [],
-            hasError: analysis?.error,
-          });
-
           // Check if it's an error marker
           if (analysis?.error) {
-            logger.warn("⚠️ base_analysis contains error:", analysis.error);
-            // Show error state in UI
             setAccountAnalysis({
               should_ask_for_more_accounts: false,
               message: null,
@@ -320,7 +310,6 @@ export default function AccountConnectionScreen() {
             typeof analysis === "object" &&
             typeof analysis.should_ask_for_more_accounts === "boolean"
           ) {
-            logger.info("✅ Account analysis complete:", analysis);
             setAccountAnalysis(analysis);
 
             // Animate Finny card in
@@ -330,13 +319,7 @@ export default function AccountConnectionScreen() {
               useNativeDriver: true,
             }).start();
             return;
-          } else {
-            logger.warn("⚠️ base_analysis has unexpected format:", analysis);
           }
-        } else {
-          logger.info(
-            `📊 Poll attempt ${attempts + 1}/${maxAttempts}: base_analysis not found yet`,
-          );
         }
 
         attempts++;
@@ -346,13 +329,11 @@ export default function AccountConnectionScreen() {
       }
 
       // If we didn't get a result, set a default
-      logger.warn("⚠️ Account analysis not available after polling");
       setAccountAnalysis({
         should_ask_for_more_accounts: false,
         message: null,
       });
     } catch (error) {
-      logger.error("❌ Error analyzing account completeness:", error);
       // Don't show error to user - just proceed without analysis
       setAccountAnalysis({
         should_ask_for_more_accounts: false,
@@ -406,8 +387,8 @@ export default function AccountConnectionScreen() {
             if (previousAccountCount === 0 && isFirstConnection) {
               setIsFirstConnection(false);
               // Run analysis in background (don't block UI)
-              analyzeAccountCompleteness(user.id).catch((e) => {
-                logger.warn("⚠️ Account analysis failed:", e);
+              analyzeAccountCompleteness(user.id).catch(() => {
+                // Silently fail - UI will handle gracefully
               });
             }
           }
