@@ -13,12 +13,14 @@ import {
 import fetch from "node-fetch";
 import {
   callOnboardingLLM,
+  callAccountCompletenessLLM,
   computePatterns,
   extractFirstJsonObjectFromText,
   getDateRangeLast6Months,
   getLast6MonthKeys,
   isLikelyInternalOrPayment,
   selectTopTwoPatternsForLLM,
+  formatDate,
 } from "../lib/early_insights.js";
 
 export default async function handler(req, res) {
@@ -950,6 +952,320 @@ export default async function handler(req, res) {
         }
       } catch (markerErr) {
         console.error("[TRANSACTIONS_SYNC] Failed to store error marker", markerErr);
+      }
+    }
+
+    // 7.6) Generate account completeness analysis (best-effort, does not block sync)
+    // Runs after transactions have been written, so it can read from DB.
+    // Stores raw JSON in `profiles.base_analysis`.
+    // Only runs if base_analysis doesn't already exist (first account connection).
+    console.log("[TRANSACTIONS_SYNC] base_analysis: attempting to start", {
+      userId,
+      item_id,
+    });
+    
+    try {
+      console.log("[TRANSACTIONS_SYNC] base_analysis: start", {
+        userId,
+        item_id,
+        added: added.length,
+        modified: modified.length,
+        removed: removed.length,
+      });
+
+      const { data: profileForAnalysis, error: profileAnalysisErr } = await supabase
+        .from("profiles")
+        .select("id, base_analysis")
+        .eq("id", userId)
+        .maybeSingle();
+
+      if (profileAnalysisErr) {
+        console.error(
+          "[TRANSACTIONS_SYNC] base_analysis: profile fetch failed",
+          profileAnalysisErr
+        );
+      }
+
+      const existingAnalysis = profileForAnalysis?.base_analysis;
+      const hasExistingAnalysis =
+        !!existingAnalysis &&
+        typeof existingAnalysis === "object" &&
+        typeof existingAnalysis.should_ask_for_more_accounts === "boolean";
+
+      if (hasExistingAnalysis) {
+        console.log("[TRANSACTIONS_SYNC] base_analysis: already present", {
+          userId,
+        });
+      } else {
+        const openRouterApiKeyRaw =
+          process.env.OPENROUTER_API_KEY || process.env.OPENROUTER_GROK_KEY;
+        const openRouterApiKey = String(openRouterApiKeyRaw || "").trim();
+
+        if (!openRouterApiKey) {
+          console.warn(
+            "[TRANSACTIONS_SYNC] base_analysis: missing OPENROUTER_API_KEY (skipping)"
+          );
+        } else {
+          // Fetch last 2-3 months of transactions (90 days)
+          const end = new Date();
+          const start = new Date();
+          start.setDate(end.getDate() - 90);
+
+          const startDateStr = formatDate(start);
+          const endDateStr = formatDate(end);
+
+          console.log("[TRANSACTIONS_SYNC] base_analysis: tx window", {
+            userId,
+            startDate: startDateStr,
+            endDate: endDateStr,
+          });
+
+          const { data: transactions, error: txError } = await supabase
+            .from("transactions")
+            .select(
+              "date, amount, merchant_name, name, category, top_category, new_category"
+            )
+            .eq("user_id", userId)
+            .gte("date", startDateStr)
+            .lte("date", endDateStr)
+            .order("date", { ascending: false })
+            .limit(500);
+
+          if (txError) {
+            console.error(
+              "[TRANSACTIONS_SYNC] base_analysis: error fetching transactions",
+              txError
+            );
+          } else if (!transactions || transactions.length === 0) {
+            console.log(
+              "[TRANSACTIONS_SYNC] base_analysis: no tx rows (skipping)",
+              { userId }
+            );
+            // Store result even when no transactions
+            const result = {
+              should_ask_for_more_accounts: false,
+              message: null,
+              reasoning: "No transactions found",
+            };
+            try {
+              await supabase
+                .from("profiles")
+                .update({ base_analysis: result })
+                .eq("id", userId);
+            } catch (storeError) {
+              console.error(
+                "[TRANSACTIONS_SYNC] base_analysis: error storing no-transactions result",
+                storeError
+              );
+            }
+          } else {
+            console.log("[TRANSACTIONS_SYNC] base_analysis: tx fetched", {
+              userId,
+              count: transactions.length,
+            });
+
+            console.log(
+              "[TRANSACTIONS_SYNC] base_analysis: calling OpenRouter",
+              { userId }
+            );
+
+            console.log(
+              "[TRANSACTIONS_SYNC] base_analysis: calling OpenRouter LLM",
+              { userId, txCount: transactions.length }
+            );
+
+            let llmResult;
+            try {
+              llmResult = await callAccountCompletenessLLM({
+                openRouterApiKey,
+                fetchFn: fetch,
+                transactions,
+              });
+              console.log("[TRANSACTIONS_SYNC] base_analysis: LLM call completed", {
+                userId,
+                ok: !!llmResult?.ok,
+                hasJson: !!llmResult?.json,
+                hasRaw: !!llmResult?.raw,
+              });
+            } catch (llmCallError) {
+              console.error(
+                "[TRANSACTIONS_SYNC] base_analysis: LLM call threw error",
+                {
+                  userId,
+                  error: llmCallError?.message,
+                  stack: llmCallError?.stack,
+                }
+              );
+              // Store error marker
+              const { error: upsertErr } = await supabase
+                .from("profiles")
+                .upsert(
+                  {
+                    id: userId,
+                    base_analysis: {
+                      error: "LLM_CALL_ERROR",
+                      error_message: llmCallError?.message || "Unknown error",
+                    },
+                    updated_at: new Date().toISOString(),
+                  },
+                  { onConflict: "id" }
+                );
+              if (upsertErr) {
+                console.error(
+                  "[TRANSACTIONS_SYNC] base_analysis: error marker upsert failed",
+                  upsertErr
+                );
+              }
+              throw llmCallError; // Re-throw to be caught by outer catch
+            }
+
+            const analysisJson =
+              llmResult?.ok && llmResult?.json
+                ? llmResult.json
+                : extractFirstJsonObjectFromText(llmResult?.raw);
+
+            console.log("[TRANSACTIONS_SYNC] base_analysis: parsing result", {
+              userId,
+              hasAnalysisJson: !!analysisJson,
+              analysisJsonKeys: analysisJson ? Object.keys(analysisJson) : [],
+            });
+
+            if (!analysisJson) {
+              console.warn(
+                "[TRANSACTIONS_SYNC] base_analysis: LLM returned no JSON",
+                {
+                  userId,
+                  ok: !!llmResult?.ok,
+                  rawPreview: String(
+                    llmResult?.rawStripped || llmResult?.raw || ""
+                  )
+                    .slice(0, 500)
+                    .trim(),
+                }
+              );
+              // Store error marker so frontend knows LLM failed
+              const { error: upsertErr } = await supabase
+                .from("profiles")
+                .upsert(
+                  {
+                    id: userId,
+                    base_analysis: {
+                      error: "LLM_NO_JSON",
+                      raw_preview: String(
+                        llmResult?.rawStripped || llmResult?.raw || ""
+                      )
+                        .slice(0, 500)
+                        .trim(),
+                    },
+                    updated_at: new Date().toISOString(),
+                  },
+                  { onConflict: "id" }
+                );
+              if (upsertErr) {
+                console.error(
+                  "[TRANSACTIONS_SYNC] base_analysis: error marker upsert failed",
+                  upsertErr
+                );
+              }
+            } else {
+              // Validate and structure the result
+              const result = {
+                should_ask_for_more_accounts:
+                  analysisJson.should_ask_for_more_accounts === true,
+                message: analysisJson.message || null,
+                reasoning: analysisJson.reasoning || "Analysis complete",
+              };
+
+              console.log("[TRANSACTIONS_SYNC] base_analysis: storing result", {
+                userId,
+                result,
+              });
+
+              const { error: upsertErr, data: upsertData } = await supabase
+                .from("profiles")
+                .upsert(
+                  {
+                    id: userId,
+                    base_analysis: result,
+                    updated_at: new Date().toISOString(),
+                  },
+                  { onConflict: "id" }
+                );
+
+              if (upsertErr) {
+                console.error(
+                  "[TRANSACTIONS_SYNC] base_analysis: upsert failed",
+                  {
+                    userId,
+                    error: upsertErr,
+                    errorMessage: upsertErr.message,
+                    errorCode: upsertErr.code,
+                    errorDetails: upsertErr.details,
+                  }
+                );
+              } else {
+                console.log("✅ Stored profiles.base_analysis", {
+                  userId,
+                  should_ask: result.should_ask_for_more_accounts,
+                  hasMessage: !!result.message,
+                  reasoning: result.reasoning,
+                  upsertData,
+                });
+              }
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.error(
+        "[TRANSACTIONS_SYNC] base_analysis error (non-blocking)",
+        {
+          userId,
+          error: err,
+          errorMessage: err?.message,
+          errorStack: err?.stack,
+          errorName: err?.name,
+        }
+      );
+      // Store error marker on exception too
+      try {
+        const { error: upsertErr } = await supabase
+          .from("profiles")
+          .upsert(
+            {
+              id: userId,
+              base_analysis: {
+                error: "EXCEPTION",
+                error_message: err?.message || "Unknown exception",
+                error_name: err?.name || "Error",
+              },
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: "id" }
+          );
+        if (upsertErr) {
+          console.error(
+            "[TRANSACTIONS_SYNC] base_analysis: error marker upsert failed (exception path)",
+            {
+              userId,
+              upsertError: upsertErr,
+              originalError: err?.message,
+            }
+          );
+        } else {
+          console.log("[TRANSACTIONS_SYNC] base_analysis: stored error marker", {
+            userId,
+          });
+        }
+      } catch (markerErr) {
+        console.error(
+          "[TRANSACTIONS_SYNC] Failed to store error marker",
+          {
+            userId,
+            markerError: markerErr,
+            originalError: err?.message,
+          }
+        );
       }
     }
 

@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   Platform,
   ScrollView,
+  Animated,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
@@ -42,6 +43,14 @@ type TransactionPreviewRow = {
   new_category: string | null;
 };
 
+interface AccountAnalysisResult {
+  should_ask_for_more_accounts: boolean;
+  message: string | null;
+  reasoning?: string;
+  error?: string;
+  error_message?: string;
+}
+
 export default function AccountConnectionScreen() {
   const params = useLocalSearchParams();
   const router = useRouter();
@@ -54,6 +63,11 @@ export default function AccountConnectionScreen() {
   const [connectedAccounts, setConnectedAccounts] = useState<
     ConnectedAccount[]
   >([]);
+  const [accountAnalysis, setAccountAnalysis] =
+    useState<AccountAnalysisResult | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [isFirstConnection, setIsFirstConnection] = useState(true);
+  const finnyCardOpacity = React.useRef(new Animated.Value(0)).current;
 
   const formatDate = (d: Date) => {
     const y = d.getFullYear();
@@ -206,6 +220,8 @@ export default function AccountConnectionScreen() {
         if (accounts.length > 0) {
           setHasConnectedBank(true);
           setConnectedAccounts(accounts);
+          // If accounts already exist, this is not the first connection
+          setIsFirstConnection(false);
         }
       } catch (error) {
         logger.error("Error checking existing accounts:", error);
@@ -252,6 +268,99 @@ export default function AccountConnectionScreen() {
     }
   };
 
+  const analyzeAccountCompleteness = async (userId: string) => {
+    try {
+      setIsAnalyzing(true);
+      logger.info("🔍 Analyzing account completeness for user:", userId);
+
+      // Wait a bit for transactions to sync and analysis to complete
+      // The analysis runs automatically in transactions_sync.js
+      await new Promise((resolve) => setTimeout(resolve, 5000));
+
+      // Poll for the analysis result from profiles.base_analysis
+      let attempts = 0;
+      const maxAttempts = 6; // 6 attempts = 30 seconds total
+      const pollInterval = 5000; // 5 seconds between attempts
+
+      while (attempts < maxAttempts) {
+        const { data: profile, error } = await supabase
+          .from("profiles")
+          .select("base_analysis")
+          .eq("id", userId)
+          .maybeSingle();
+
+        if (error) {
+          logger.warn("⚠️ Error fetching base_analysis:", error);
+        } else if (profile?.base_analysis) {
+          const analysis = profile.base_analysis as any;
+          
+          logger.info("📊 Found base_analysis:", {
+            analysis,
+            type: typeof analysis,
+            keys: analysis ? Object.keys(analysis) : [],
+            hasError: analysis?.error,
+          });
+
+          // Check if it's an error marker
+          if (analysis?.error) {
+            logger.warn("⚠️ base_analysis contains error:", analysis.error);
+            // Show error state in UI
+            setAccountAnalysis({
+              should_ask_for_more_accounts: false,
+              message: null,
+              error: analysis.error,
+              error_message: analysis.error_message,
+            });
+            setIsAnalyzing(false);
+            return;
+          }
+          
+          // Check if it's a valid result (not an error marker)
+          if (
+            typeof analysis === "object" &&
+            typeof analysis.should_ask_for_more_accounts === "boolean"
+          ) {
+            logger.info("✅ Account analysis complete:", analysis);
+            setAccountAnalysis(analysis);
+
+            // Animate Finny card in
+            Animated.timing(finnyCardOpacity, {
+              toValue: 1,
+              duration: 500,
+              useNativeDriver: true,
+            }).start();
+            return;
+          } else {
+            logger.warn("⚠️ base_analysis has unexpected format:", analysis);
+          }
+        } else {
+          logger.info(`📊 Poll attempt ${attempts + 1}/${maxAttempts}: base_analysis not found yet`);
+        }
+
+        attempts++;
+        if (attempts < maxAttempts) {
+          await new Promise((resolve) => setTimeout(resolve, pollInterval));
+        }
+      }
+
+      // If we didn't get a result, set a default
+      logger.warn("⚠️ Account analysis not available after polling");
+      setAccountAnalysis({
+        should_ask_for_more_accounts: false,
+        message: null,
+      });
+    } catch (error) {
+      logger.error("❌ Error analyzing account completeness:", error);
+      // Don't show error to user - just proceed without analysis
+      setAccountAnalysis({
+        should_ask_for_more_accounts: false,
+        message: null,
+      });
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
   const handleConnect = async () => {
     if (!linkToken) {
       Alert.alert(
@@ -279,6 +388,7 @@ export default function AccountConnectionScreen() {
           } = await supabase.auth.getUser();
           if (user?.id) {
             const accounts = await fetchConnectedAccounts(user.id);
+            const previousAccountCount = connectedAccounts.length;
             setConnectedAccounts(accounts);
             setHasConnectedBank(true);
 
@@ -288,6 +398,15 @@ export default function AccountConnectionScreen() {
               await logLast30DaysTransactionsPreview(user.id, itemId);
             } catch (e) {
               logger.warn("⚠️ Failed to log tx preview", e);
+            }
+
+            // Run account completeness analysis only on first account connection
+            if (previousAccountCount === 0 && isFirstConnection) {
+              setIsFirstConnection(false);
+              // Run analysis in background (don't block UI)
+              analyzeAccountCompleteness(user.id).catch((e) => {
+                logger.warn("⚠️ Account analysis failed:", e);
+              });
             }
           }
 
@@ -549,6 +668,88 @@ export default function AccountConnectionScreen() {
               contentContainerStyle={styles.accountsListContent}
               showsVerticalScrollIndicator={false}
             >
+              {/* Finny Analysis Card */}
+              {accountAnalysis &&
+                accountAnalysis.should_ask_for_more_accounts &&
+                accountAnalysis.message && (
+                  <Animated.View
+                    style={[
+                      styles.finnyCard,
+                      { opacity: finnyCardOpacity },
+                    ]}
+                  >
+                    <View style={styles.finnyCardHeader}>
+                      <View style={styles.finnyAvatar}>
+                        <Ionicons name="chatbubble-ellipses" size={20} color="#4A90E2" />
+                      </View>
+                      <Text style={styles.finnyLabel}>Finny</Text>
+                    </View>
+                    <Text style={styles.finnyMessage}>
+                      {accountAnalysis.message}
+                    </Text>
+                  </Animated.View>
+                )}
+
+              {/* Fixed question if account is complete */}
+              {accountAnalysis &&
+                !accountAnalysis.should_ask_for_more_accounts &&
+                !isAnalyzing && (
+                  <Animated.View
+                    style={[
+                      styles.finnyCard,
+                      { opacity: finnyCardOpacity },
+                    ]}
+                  >
+                    <View style={styles.finnyCardHeader}>
+                      <View style={styles.finnyAvatar}>
+                        <Ionicons name="chatbubble-ellipses" size={20} color="#4A90E2" />
+                      </View>
+                      <Text style={styles.finnyLabel}>Finny</Text>
+                    </View>
+                    <Text style={styles.finnyMessage}>
+                      Have you added all your accounts? We strongly recommend
+                      adding all accounts to help Finny understand better.
+                    </Text>
+                  </Animated.View>
+                )}
+
+              {/* Loading state for analysis */}
+              {isAnalyzing && (
+                <View style={styles.finnyCard}>
+                  <View style={styles.finnyCardHeader}>
+                    <View style={styles.finnyAvatar}>
+                      <ActivityIndicator size="small" color="#4A90E2" />
+                    </View>
+                    <Text style={styles.finnyLabel}>Finny</Text>
+                  </View>
+                  <Text style={styles.finnyMessage}>
+                    Analyzing your transactions...
+                  </Text>
+                </View>
+              )}
+
+              {/* Error state */}
+              {accountAnalysis?.error && (
+                <Animated.View
+                  style={[
+                    styles.finnyCard,
+                    styles.finnyCardError,
+                    { opacity: finnyCardOpacity },
+                  ]}
+                >
+                  <View style={styles.finnyCardHeader}>
+                    <View style={styles.finnyAvatar}>
+                      <Ionicons name="alert-circle" size={20} color="#FF6B6B" />
+                    </View>
+                    <Text style={styles.finnyLabel}>Finny</Text>
+                  </View>
+                  <Text style={styles.finnyMessage}>
+                    {accountAnalysis.error_message ||
+                      "Had trouble analyzing your account. You can continue anyway!"}
+                  </Text>
+                </Animated.View>
+              )}
+
               {connectedAccounts.map((account) => (
                 <View key={account.account_id} style={styles.accountCard}>
                   <View style={styles.cardHeader}>
@@ -896,5 +1097,54 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
     marginTop: 8,
+  },
+  finnyCard: {
+    backgroundColor: "rgba(74, 144, 226, 0.1)",
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 20,
+    borderWidth: 1.5,
+    borderColor: "rgba(74, 144, 226, 0.3)",
+    shadowColor: "#4A90E2",
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  finnyCardHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 14,
+    gap: 12,
+  },
+  finnyAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "rgba(74, 144, 226, 0.25)",
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "rgba(74, 144, 226, 0.4)",
+  },
+  finnyLabel: {
+    fontSize: 12,
+    fontFamily: "ManropeSemiBold",
+    color: "#4A90E2",
+    letterSpacing: 1,
+    textTransform: "uppercase",
+  },
+  finnyMessage: {
+    fontSize: 15,
+    fontFamily: "Manrope",
+    color: "rgba(255, 255, 255, 0.95)",
+    lineHeight: 23,
+  },
+  finnyCardError: {
+    backgroundColor: "rgba(255, 107, 107, 0.1)",
+    borderColor: "rgba(255, 107, 107, 0.3)",
   },
 });
