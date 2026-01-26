@@ -293,7 +293,7 @@ export default function AccountConnectionScreen() {
           logger.warn("⚠️ Error fetching base_analysis:", error);
         } else if (profile?.base_analysis) {
           const analysis = profile.base_analysis as any;
-          
+
           logger.info("📊 Found base_analysis:", {
             analysis,
             type: typeof analysis,
@@ -314,7 +314,7 @@ export default function AccountConnectionScreen() {
             setIsAnalyzing(false);
             return;
           }
-          
+
           // Check if it's a valid result (not an error marker)
           if (
             typeof analysis === "object" &&
@@ -334,7 +334,9 @@ export default function AccountConnectionScreen() {
             logger.warn("⚠️ base_analysis has unexpected format:", analysis);
           }
         } else {
-          logger.info(`📊 Poll attempt ${attempts + 1}/${maxAttempts}: base_analysis not found yet`);
+          logger.info(
+            `📊 Poll attempt ${attempts + 1}/${maxAttempts}: base_analysis not found yet`,
+          );
         }
 
         attempts++;
@@ -562,7 +564,7 @@ export default function AccountConnectionScreen() {
             ]}
           >
             <View style={styles.header}>
-              <Text style={styles.title}>Connect at least 1 account</Text>
+              <Text style={styles.title}>Connect your accounts</Text>
               {/* <Text style={styles.subtitle}>Real growth needs real data</Text> */}
               <Text style={styles.description}>
                 This helps finny understand your spending better and provide you
@@ -673,14 +675,15 @@ export default function AccountConnectionScreen() {
                 accountAnalysis.should_ask_for_more_accounts &&
                 accountAnalysis.message && (
                   <Animated.View
-                    style={[
-                      styles.finnyCard,
-                      { opacity: finnyCardOpacity },
-                    ]}
+                    style={[styles.finnyCard, { opacity: finnyCardOpacity }]}
                   >
                     <View style={styles.finnyCardHeader}>
                       <View style={styles.finnyAvatar}>
-                        <Ionicons name="chatbubble-ellipses" size={20} color="#4A90E2" />
+                        <Ionicons
+                          name="chatbubble-ellipses"
+                          size={20}
+                          color="#4A90E2"
+                        />
                       </View>
                       <Text style={styles.finnyLabel}>Finny</Text>
                     </View>
@@ -695,14 +698,15 @@ export default function AccountConnectionScreen() {
                 !accountAnalysis.should_ask_for_more_accounts &&
                 !isAnalyzing && (
                   <Animated.View
-                    style={[
-                      styles.finnyCard,
-                      { opacity: finnyCardOpacity },
-                    ]}
+                    style={[styles.finnyCard, { opacity: finnyCardOpacity }]}
                   >
                     <View style={styles.finnyCardHeader}>
                       <View style={styles.finnyAvatar}>
-                        <Ionicons name="chatbubble-ellipses" size={20} color="#4A90E2" />
+                        <Ionicons
+                          name="chatbubble-ellipses"
+                          size={20}
+                          color="#4A90E2"
+                        />
                       </View>
                       <Text style={styles.finnyLabel}>Finny</Text>
                     </View>
