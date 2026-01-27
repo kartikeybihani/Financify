@@ -208,13 +208,18 @@ async function callLLM(prompt) {
       }
 
       const data = await resp.json();
-      const content =
+      const rawContent =
         data.choices?.[0]?.message?.content || data.choices?.[0]?.text || "";
 
       // Extract JSON from response (handle cases where LLM adds extra text)
-      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      const jsonMatch = rawContent.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
-        return JSON.parse(jsonMatch[0]);
+        const parsedJson = JSON.parse(jsonMatch[0]);
+        // Return both parsed JSON and raw response
+        return {
+          categories: parsedJson.categories || [],
+          rawResponse: rawContent,
+        };
       }
 
       throw new Error("No valid JSON found in LLM response");
@@ -341,7 +346,7 @@ async function handleBudgetCreation(req, res, userId) {
         }
 
         // Update onboarding progress - mark budget_setup as complete
-        await supabase
+        const { error: onboardingError } = await supabase
           .from("onboarding_progress")
           .upsert(
             {
@@ -351,11 +356,12 @@ async function handleBudgetCreation(req, res, userId) {
             {
               onConflict: "user_id",
             },
-          )
-          .catch((error) => {
-            // Non-critical - log but don't fail
-            console.error("Error updating onboarding progress:", error);
-          });
+          );
+
+        if (onboardingError) {
+          // Non-critical - log but don't fail
+          console.error("Error updating onboarding progress:", onboardingError);
+        }
 
         return res.status(200).json({
           success: true,
@@ -418,6 +424,8 @@ async function handleBudgetCreation(req, res, userId) {
         throw new Error("Invalid response format from LLM");
       }
 
+      const rawResponse = llmResponse.rawResponse || "";
+
       // Save as draft budget
       try {
         // Check for existing draft period first
@@ -442,11 +450,17 @@ async function handleBudgetCreation(req, res, userId) {
         let period = null;
 
         if (existingDraft) {
-          // Delete old draft entries
+          // Delete old draft entries and update with new analysis
           await supabase
             .from("budget_entries")
             .delete()
             .eq("budget_period_id", existingDraft.id);
+
+          // Update budget_analysis
+          await supabase
+            .from("budget_periods")
+            .update({ budget_analysis: rawResponse })
+            .eq("id", existingDraft.id);
 
           period = existingDraft;
         } else {
@@ -477,6 +491,7 @@ async function handleBudgetCreation(req, res, userId) {
                 period_end: periodEndStr,
                 period_type: "monthly",
                 status: "draft",
+                budget_analysis: rawResponse,
               })
               .select()
               .single();
@@ -501,6 +516,7 @@ async function handleBudgetCreation(req, res, userId) {
                 period_end: periodEndStr,
                 period_type: "monthly",
                 status: "draft",
+                budget_analysis: rawResponse,
               })
               .select()
               .single();
@@ -657,7 +673,7 @@ export default async function handler(req, res) {
             name,
             icon
           )
-        `
+        `,
         )
         .eq("budget_period_id", draftPeriod.id);
 
@@ -681,6 +697,7 @@ export default async function handler(req, res) {
         success: true,
         hasDraft: true,
         categories,
+        budgetAnalysis: draftPeriod.budget_analysis || null,
       });
     } catch (error) {
       console.error("Error checking draft budget:", error);

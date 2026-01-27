@@ -45,6 +45,7 @@ CREATE TABLE public.budget_periods (
   status text NOT NULL DEFAULT 'active'::text CHECK (status = ANY (ARRAY['draft'::text, 'active'::text, 'archived'::text])),
   created_at timestamp with time zone DEFAULT now(),
   updated_at timestamp with time zone DEFAULT now(),
+  budget_analysis text,
   CONSTRAINT budget_periods_pkey PRIMARY KEY (id),
   CONSTRAINT budget_periods_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
 );
@@ -286,6 +287,19 @@ CREATE TABLE public.notification_triggers (
   CONSTRAINT notification_triggers_pkey PRIMARY KEY (id),
   CONSTRAINT notification_triggers_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
 );
+CREATE TABLE public.onboarding_progress (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL UNIQUE,
+  accounts_connected boolean NOT NULL DEFAULT false,
+  budget_setup boolean NOT NULL DEFAULT false,
+  finny_asked boolean NOT NULL DEFAULT false,
+  dismissed boolean NOT NULL DEFAULT false,
+  dismissed_at timestamp with time zone,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT onboarding_progress_pkey PRIMARY KEY (id),
+  CONSTRAINT onboarding_progress_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
+);
 CREATE TABLE public.plaid_link_events (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL,
@@ -324,6 +338,7 @@ CREATE TABLE public.profiles (
   checkin_frequency text NOT NULL DEFAULT 'daily'::text CHECK (checkin_frequency = ANY (ARRAY['daily'::text, '3times'::text, 'weekly'::text, 'never'::text])),
   location text,
   early_insights jsonb DEFAULT '[]'::jsonb,
+  base_analysis jsonb,
   CONSTRAINT profiles_pkey PRIMARY KEY (id),
   CONSTRAINT profiles_id_fkey FOREIGN KEY (id) REFERENCES auth.users(id)
 );

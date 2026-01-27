@@ -4,13 +4,11 @@ import {
   Text,
   StyleSheet,
   Modal,
+  Pressable,
   TouchableOpacity,
   TextInput,
   ScrollView,
-  ActivityIndicator,
-  Platform,
   Dimensions,
-  TouchableWithoutFeedback,
   Animated,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
@@ -353,17 +351,19 @@ export default function BudgetCreationModal({
         .maybeSingle();
 
       if (draftPeriod) {
-        // Delete entries first
+        // Clear budget_analysis and delete entries first
+        await supabase
+          .from("budget_periods")
+          .update({ budget_analysis: null })
+          .eq("id", draftPeriod.id);
+
         await supabase
           .from("budget_entries")
           .delete()
           .eq("budget_period_id", draftPeriod.id);
 
         // Delete period
-        await supabase
-          .from("budget_periods")
-          .delete()
-          .eq("id", draftPeriod.id);
+        await supabase.from("budget_periods").delete().eq("id", draftPeriod.id);
       }
     } catch (err) {
       logger.error("[BUDGET] Error deleting draft budget:", err);
@@ -397,15 +397,7 @@ export default function BudgetCreationModal({
       Math.max(380, SCREEN_HEIGHT * 0.55),
     );
 
-    const measuredTotal = (headerHeight || 0) + (scrollContentHeight || 0);
-
-    const target = Math.max(
-      minSheetHeight,
-      Math.min(
-        maxSheetHeight,
-        measuredTotal > 0 ? measuredTotal : minSheetHeight,
-      ),
-    );
+    const target = maxSheetHeight;
 
     if (!didInitSheetHeightRef.current) {
       didInitSheetHeightRef.current = true;
@@ -419,7 +411,7 @@ export default function BudgetCreationModal({
       mass: 1,
       useNativeDriver: false,
     }).start();
-  }, [visible, headerHeight, scrollContentHeight, insets.top, sheetHeightAnim]);
+  }, [visible, headerHeight, insets.top, sheetHeightAnim]);
 
   const incomeValue = parseFloat(income.trim());
   const isValidIncome = !isNaN(incomeValue) && incomeValue > 0;
@@ -440,411 +432,407 @@ export default function BudgetCreationModal({
       animationType="slide"
       onRequestClose={handleClose}
     >
-      <TouchableWithoutFeedback onPress={handleClose}>
-        <View style={styles.overlay}>
-          <TouchableWithoutFeedback onPress={(e) => e.stopPropagation()}>
-            <Animated.View
-              style={[
-                styles.contentWrapper,
-                {
-                  height: sheetHeightAnim,
-                  minHeight: minSheetHeight,
-                  maxHeight: maxSheetHeight,
-                },
-              ]}
-            >
-              <LinearGradient
-                colors={["rgba(31, 31, 31, 0.98)", "rgba(18, 18, 18, 0.99)"]}
-                style={styles.content}
-              >
-                <View style={styles.sheetHandleContainer}>
-                  <View style={styles.sheetHandle} />
-                </View>
+      <View style={styles.overlay}>
+        <Pressable
+          style={StyleSheet.absoluteFillObject}
+          onPress={handleClose}
+          accessibilityRole="button"
+          accessibilityLabel="Close budget creation modal"
+        />
+        <Animated.View
+          style={[
+            styles.contentWrapper,
+            {
+              height: sheetHeightAnim,
+              minHeight: minSheetHeight,
+              maxHeight: maxSheetHeight,
+            },
+          ]}
+        >
+          <LinearGradient
+            colors={["rgba(31, 31, 31, 0.98)", "rgba(18, 18, 18, 0.99)"]}
+            style={styles.content}
+          >
+            <View style={styles.sheetHandleContainer}>
+              <View style={styles.sheetHandle} />
+            </View>
 
-                {/* Header */}
-                <View
-                  style={styles.header}
-                  onLayout={(e) => setHeaderHeight(e.nativeEvent.layout.height)}
-                >
-                  <View style={styles.headerLeft}>
-                    <Text style={styles.title}>
-                      {step === 1
-                        ? "Create Budget with Finny"
-                        : step === 2
-                          ? "Finny is analyzing..."
-                          : "Review Your Budget"}
+            {/* Header */}
+            {step !== 3 && (
+              <View
+                style={styles.header}
+                onLayout={(e) => setHeaderHeight(e.nativeEvent.layout.height)}
+              >
+                <View style={styles.headerLeft}>
+                  <Text style={styles.title}>
+                    {step === 1
+                      ? "Create Budget with Finny"
+                      : "Finny is analyzing..."}
+                  </Text>
+                  {step === 1 && (
+                    <Text style={styles.subtitle}>
+                      Tell Finny about your income and savings goals
                     </Text>
-                    {step === 1 && (
-                      <Text style={styles.subtitle}>
-                        Tell Finny about your income and savings goals
-                      </Text>
-                    )}
-                  </View>
-                  {step !== 2 && (
-                    <TouchableOpacity
-                      onPress={handleClose}
-                      style={styles.closeButton}
-                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                    >
-                      <Ionicons name="close" size={20} color="#fff" />
-                    </TouchableOpacity>
                   )}
                 </View>
+                {step !== 2 && (
+                  <TouchableOpacity
+                    onPress={handleClose}
+                    style={styles.closeButton}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  >
+                    <Ionicons name="close" size={20} color="#fff" />
+                  </TouchableOpacity>
+                )}
+              </View>
+            )}
 
-                {/* Step 1: Input Form */}
-                {step === 1 && (
-                  <ScrollView
-                    style={styles.scrollView}
-                    contentContainerStyle={[
-                      styles.scrollContent,
+            {/* Step 1: Input Form */}
+            {step === 1 && (
+              <ScrollView
+                style={styles.scrollView}
+                contentContainerStyle={[styles.scrollContent, { flexGrow: 1 }]}
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                keyboardDismissMode="interactive"
+              >
+                <View style={styles.form}>
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.label}>Monthly Income *</Text>
+                    <View style={styles.inputContainer}>
+                      <Text style={styles.dollarSign}>$</Text>
+                      <TextInput
+                        style={styles.input}
+                        value={income}
+                        onChangeText={setIncome}
+                        placeholder="0"
+                        placeholderTextColor="rgba(255, 255, 255, 0.3)"
+                        keyboardType="number-pad"
+                        autoFocus
+                      />
+                    </View>
+                  </View>
+
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.label}>
+                      Monthly Savings{" "}
+                      <Text style={styles.optional}>(optional)</Text>
+                    </Text>
+                    <View style={styles.inputContainer}>
+                      <Text style={styles.dollarSign}>$</Text>
+                      <TextInput
+                        style={styles.input}
+                        value={savings}
+                        onChangeText={setSavings}
+                        placeholder="0"
+                        placeholderTextColor="rgba(255, 255, 255, 0.3)"
+                        keyboardType="decimal-pad"
+                      />
+                    </View>
+                    <Text style={styles.hint}>
+                      How much do you want to save each month?
+                    </Text>
+                  </View>
+
+                  {error && (
+                    <View style={styles.errorContainer}>
+                      <Ionicons name="alert-circle" size={20} color="#FF6B6B" />
+                      <Text style={styles.errorText}>{error}</Text>
+                    </View>
+                  )}
+
+                  <TouchableOpacity
+                    onPress={handleStart}
+                    style={[
+                      styles.continueButton,
+                      (!isValidIncome || loading) &&
+                        styles.continueButtonDisabled,
+                    ]}
+                    disabled={!isValidIncome || loading}
+                  >
+                    <LinearGradient
+                      colors={
+                        isValidIncome && !loading
+                          ? ["#4A90E2", "#5DA0F2"]
+                          : ["#666", "#888"]
+                      }
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 0 }}
+                      style={styles.continueButtonGradient}
+                    >
+                      <Text style={styles.continueButtonText}>Continue</Text>
+                    </LinearGradient>
+                  </TouchableOpacity>
+                </View>
+              </ScrollView>
+            )}
+
+            {/* Step 2: Loading State with Premium Animation */}
+            {step === 2 && (
+              <View style={styles.loadingContainer}>
+                <View style={styles.loadingAnimationContainer}>
+                  {/* Outer rotating ring */}
+                  <Animated.View
+                    style={[
+                      styles.loadingRing,
                       {
-                        paddingBottom: Math.max(
-                          20,
-                          (insets.bottom || 0) + SCREEN_HEIGHT * 0.02,
-                        ),
+                        transform: [
+                          {
+                            rotate: step2RotationAnim.interpolate({
+                              inputRange: [0, 1],
+                              outputRange: ["0deg", "360deg"],
+                            }),
+                          },
+                        ],
                       },
                     ]}
-                    showsVerticalScrollIndicator={false}
-                    keyboardShouldPersistTaps="handled"
-                    keyboardDismissMode="interactive"
-                    onContentSizeChange={(_, h) => setScrollContentHeight(h)}
                   >
-                    <View style={styles.form}>
-                      <View style={styles.inputGroup}>
-                        <Text style={styles.label}>Monthly Income *</Text>
-                        <View style={styles.inputContainer}>
-                          <Text style={styles.dollarSign}>$</Text>
-                          <TextInput
-                            style={styles.input}
-                            value={income}
-                            onChangeText={setIncome}
-                            placeholder="0"
-                            placeholderTextColor="rgba(255, 255, 255, 0.3)"
-                            keyboardType="number-pad"
-                            autoFocus
-                          />
-                        </View>
-                      </View>
+                    <View style={styles.loadingRingInner} />
+                  </Animated.View>
 
-                      <View style={styles.inputGroup}>
-                        <Text style={styles.label}>
-                          Monthly Savings{" "}
-                          <Text style={styles.optional}>(optional)</Text>
-                        </Text>
-                        <View style={styles.inputContainer}>
-                          <Text style={styles.dollarSign}>$</Text>
-                          <TextInput
-                            style={styles.input}
-                            value={savings}
-                            onChangeText={setSavings}
-                            placeholder="0"
-                            placeholderTextColor="rgba(255, 255, 255, 0.3)"
-                            keyboardType="decimal-pad"
-                          />
-                        </View>
-                        <Text style={styles.hint}>
-                          How much do you want to save each month?
-                        </Text>
-                      </View>
-
-                      {error && (
-                        <View style={styles.errorContainer}>
-                          <Ionicons
-                            name="alert-circle"
-                            size={20}
-                            color="#FF6B6B"
-                          />
-                          <Text style={styles.errorText}>{error}</Text>
-                        </View>
-                      )}
-
-                      <TouchableOpacity
-                        onPress={handleStart}
-                        style={[
-                          styles.continueButton,
-                          (!isValidIncome || loading) &&
-                            styles.continueButtonDisabled,
-                        ]}
-                        disabled={!isValidIncome || loading}
-                      >
-                        <LinearGradient
-                          colors={
-                            isValidIncome && !loading
-                              ? ["#4A90E2", "#5DA0F2"]
-                              : ["#666", "#888"]
-                          }
-                          start={{ x: 0, y: 0 }}
-                          end={{ x: 1, y: 0 }}
-                          style={styles.continueButtonGradient}
-                        >
-                          <Text style={styles.continueButtonText}>
-                            Continue
-                          </Text>
-                        </LinearGradient>
-                      </TouchableOpacity>
-                    </View>
-                  </ScrollView>
-                )}
-
-                {/* Step 2: Loading State with Premium Animation */}
-                {step === 2 && (
-                  <View style={styles.loadingContainer}>
-                    <View style={styles.loadingAnimationContainer}>
-                      {/* Outer rotating ring */}
-                      <Animated.View
-                        style={[
-                          styles.loadingRing,
+                  {/* Middle pulsing circle */}
+                  <Animated.View
+                    style={[
+                      styles.loadingCircle,
+                      {
+                        opacity: step2PulseAnim.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [0.3, 1],
+                        }),
+                        transform: [
                           {
-                            transform: [
-                              {
-                                rotate: step2RotationAnim.interpolate({
-                                  inputRange: [0, 1],
-                                  outputRange: ["0deg", "360deg"],
-                                }),
-                              },
-                            ],
+                            scale: step2ScaleAnim,
                           },
-                        ]}
-                      >
-                        <View style={styles.loadingRingInner} />
-                      </Animated.View>
+                        ],
+                      },
+                    ]}
+                  >
+                    <LinearGradient
+                      colors={["#4A90E2", "#5DA0F2"]}
+                      style={styles.loadingCircleGradient}
+                    />
+                  </Animated.View>
 
-                      {/* Middle pulsing circle */}
-                      <Animated.View
-                        style={[
-                          styles.loadingCircle,
-                          {
-                            opacity: step2PulseAnim.interpolate({
-                              inputRange: [0, 1],
-                              outputRange: [0.3, 1],
-                            }),
-                            transform: [
-                              {
-                                scale: step2ScaleAnim,
-                              },
-                            ],
-                          },
-                        ]}
-                      >
-                        <LinearGradient
-                          colors={["#4A90E2", "#5DA0F2"]}
-                          style={styles.loadingCircleGradient}
-                        />
-                      </Animated.View>
+                  {/* Inner icon */}
+                  <View style={styles.loadingIconContainer}>
+                    <Ionicons name="sparkles" size={32} color="#4A90E2" />
+                  </View>
+                </View>
 
-                      {/* Inner icon */}
-                      <View style={styles.loadingIconContainer}>
-                        <Ionicons name="sparkles" size={32} color="#4A90E2" />
-                      </View>
-                    </View>
+                <Animated.Text
+                  style={[
+                    styles.loadingText,
+                    {
+                      opacity: step2PulseAnim.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [0.7, 1],
+                      }),
+                    },
+                  ]}
+                >
+                  Finny is analyzing your spending patterns...
+                </Animated.Text>
+                <Text style={styles.loadingSubtext}>
+                  This may take a few moments
+                </Text>
 
-                    <Animated.Text
+                {/* Animated dots */}
+                <View style={styles.loadingDots}>
+                  {[0, 1, 2].map((index) => (
+                    <Animated.View
+                      key={index}
                       style={[
-                        styles.loadingText,
+                        styles.loadingDot,
                         {
                           opacity: step2PulseAnim.interpolate({
                             inputRange: [0, 1],
-                            outputRange: [0.7, 1],
+                            outputRange: [0.3, 1],
                           }),
+                          transform: [
+                            {
+                              scale: step2PulseAnim.interpolate({
+                                inputRange: [0, 1],
+                                outputRange: [0.8, 1.2],
+                              }),
+                            },
+                          ],
                         },
                       ]}
-                    >
-                      Finny is analyzing your spending patterns...
-                    </Animated.Text>
-                    <Text style={styles.loadingSubtext}>
-                      This may take a few moments
-                    </Text>
+                    />
+                  ))}
+                </View>
+              </View>
+            )}
 
-                    {/* Animated dots */}
-                    <View style={styles.loadingDots}>
-                      {[0, 1, 2].map((index) => (
+            {/* Step 3: Review & Confirm */}
+            {step === 3 && (
+              <View style={styles.step3Container}>
+                <ScrollView
+                  style={styles.scrollView}
+                  contentContainerStyle={[
+                    styles.scrollContent,
+                    {
+                      paddingBottom: Math.max(
+                        20,
+                        (insets.bottom || 0) + SCREEN_HEIGHT * 0.02,
+                      ),
+                    },
+                  ]}
+                  showsVerticalScrollIndicator={true}
+                  indicatorStyle="white"
+                  keyboardShouldPersistTaps="handled"
+                  keyboardDismissMode="interactive"
+                  nestedScrollEnabled={true}
+                  bounces={true}
+                  scrollEnabled={true}
+                  alwaysBounceVertical={false}
+                >
+                  <View style={styles.reviewHeader}>
+                    <View style={styles.reviewTitleRow}>
+                      <Text style={styles.reviewTitle}>
+                        Your personalized budget
+                      </Text>
+                      <TouchableOpacity
+                        onPress={handleClose}
+                        style={styles.closeButton}
+                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                      >
+                        <Ionicons name="close" size={20} color="#fff" />
+                      </TouchableOpacity>
+                    </View>
+                    <Text style={styles.reviewSubtitle}>
+                      Review and adjust if needed, then create your budget
+                    </Text>
+                  </View>
+
+                  <View style={styles.totalRow}>
+                    <Text style={styles.totalLabel}>Total</Text>
+                    <Text style={styles.totalAmount}>
+                      $
+                      {generatedCategories
+                        .reduce((sum, c) => sum + c.limit, 0)
+                        .toLocaleString()}
+                    </Text>
+                  </View>
+
+                  <View style={styles.categoriesList}>
+                    {generatedCategories.map((category, index) => {
+                      const anim =
+                        categoryAnimations[index] || new Animated.Value(1);
+                      return (
                         <Animated.View
                           key={index}
                           style={[
-                            styles.loadingDot,
+                            styles.categoryItem,
                             {
-                              opacity: step2PulseAnim.interpolate({
-                                inputRange: [0, 1],
-                                outputRange: [0.3, 1],
-                              }),
+                              opacity: anim,
                               transform: [
                                 {
-                                  scale: step2PulseAnim.interpolate({
+                                  translateY: anim.interpolate({
                                     inputRange: [0, 1],
-                                    outputRange: [0.8, 1.2],
+                                    outputRange: [20, 0],
+                                  }),
+                                },
+                                {
+                                  scale: anim.interpolate({
+                                    inputRange: [0, 1],
+                                    outputRange: [0.95, 1],
                                   }),
                                 },
                               ],
                             },
                           ]}
-                        />
-                      ))}
-                    </View>
-                  </View>
-                )}
-
-                {/* Step 3: Review & Confirm */}
-                {step === 3 && (
-                  <View style={styles.step3Container}>
-                    <ScrollView
-                      style={styles.scrollView}
-                      contentContainerStyle={[
-                        styles.scrollContent,
-                        {
-                          paddingBottom: Math.max(
-                            20,
-                            (insets.bottom || 0) + SCREEN_HEIGHT * 0.02,
-                          ),
-                        },
-                      ]}
-                      showsVerticalScrollIndicator={true}
-                      indicatorStyle="white"
-                      keyboardShouldPersistTaps="handled"
-                      keyboardDismissMode="interactive"
-                      onContentSizeChange={(_, h) => setScrollContentHeight(h)}
-                      nestedScrollEnabled={true}
-                    >
-                      <View style={styles.reviewHeader}>
-                        <View style={styles.reviewHeaderIcon}>
-                          <Ionicons
-                            name="checkmark-circle"
-                            size={32}
-                            color="#4A90E2"
-                          />
-                        </View>
-                        <Text style={styles.reviewTitle}>
-                          Finny created a personalized budget for you
-                        </Text>
-                        <Text style={styles.reviewSubtitle}>
-                          Review and adjust if needed, then create your budget
-                        </Text>
-                      </View>
-
-                      <View style={styles.categoriesList}>
-                        {generatedCategories.map((category, index) => {
-                          const anim =
-                            categoryAnimations[index] || new Animated.Value(1);
-                          return (
-                            <Animated.View
-                              key={index}
-                              style={[
-                                styles.categoryItem,
-                                {
-                                  opacity: anim,
-                                  transform: [
-                                    {
-                                      translateY: anim.interpolate({
-                                        inputRange: [0, 1],
-                                        outputRange: [20, 0],
-                                      }),
-                                    },
-                                    {
-                                      scale: anim.interpolate({
-                                        inputRange: [0, 1],
-                                        outputRange: [0.95, 1],
-                                      }),
-                                    },
-                                  ],
-                                },
-                              ]}
-                            >
-                              <LinearGradient
-                                colors={[
-                                  "rgba(74, 144, 226, 0.1)",
-                                  "rgba(93, 160, 242, 0.05)",
-                                ]}
-                                start={{ x: 0, y: 0 }}
-                                end={{ x: 1, y: 1 }}
-                                style={styles.categoryItemGradient}
-                              >
-                                <View style={styles.categoryLeft}>
-                                  <View style={styles.categoryIconContainer}>
-                                    <Text style={styles.categoryIcon}>
-                                      {category.icon}
-                                    </Text>
-                                  </View>
-                                  <View style={styles.categoryInfo}>
-                                    <Text style={styles.categoryName}>
-                                      {category.name}
-                                    </Text>
-                                    <Text style={styles.categoryLabel}>
-                                      Monthly Budget
-                                    </Text>
-                                  </View>
-                                </View>
-                                <View style={styles.categoryRight}>
-                                  <Text style={styles.categoryLimit}>
-                                    ${category.limit.toLocaleString()}
-                                  </Text>
-                                  <View style={styles.categoryLimitUnderline} />
-                                </View>
-                              </LinearGradient>
-                            </Animated.View>
-                          );
-                        })}
-                      </View>
-
-                      {error && (
-                        <View style={styles.errorContainer}>
-                          <Ionicons
-                            name="alert-circle"
-                            size={20}
-                            color="#FF6B6B"
-                          />
-                          <Text style={styles.errorText}>{error}</Text>
-                        </View>
-                      )}
-
-                      <View style={styles.step3Actions}>
-                        <TouchableOpacity
-                          onPress={handleStartOver}
-                          style={styles.startOverButton}
-                          disabled={loading}
-                        >
-                          <Ionicons name="refresh" size={18} color="rgba(255, 255, 255, 0.7)" />
-                          <Text style={styles.startOverButtonText}>
-                            Start Over
-                          </Text>
-                        </TouchableOpacity>
-
-                        <TouchableOpacity
-                          onPress={handleCreateBudget}
-                          style={[
-                            styles.createButton,
-                            loading && styles.createButtonDisabled,
-                          ]}
-                          disabled={loading}
                         >
                           <LinearGradient
-                            colors={
-                              loading
-                                ? ["#666", "#888"]
-                                : ["#4A90E2", "#5DA0F2", "#6BB0FF"]
-                            }
+                            colors={[
+                              "rgba(74, 144, 226, 0.06)",
+                              "rgba(93, 160, 242, 0.03)",
+                            ]}
                             start={{ x: 0, y: 0 }}
-                            end={{ x: 1, y: 0 }}
-                            style={styles.createButtonGradient}
+                            end={{ x: 1, y: 1 }}
+                            style={styles.categoryItemGradient}
                           >
-                            <Ionicons
-                              name="checkmark-circle"
-                              size={20}
-                              color="#fff"
-                              style={styles.createButtonIcon}
-                            />
-                            <Text style={styles.createButtonText}>
-                              {loading ? "Creating..." : "Create Budget"}
-                            </Text>
+                            <View style={styles.categoryLeft}>
+                              <View style={styles.categoryIconContainer}>
+                                <Text style={styles.categoryIcon}>
+                                  {category.icon}
+                                </Text>
+                              </View>
+                              <View style={styles.categoryInfo}>
+                                <Text style={styles.categoryName}>
+                                  {category.name}
+                                </Text>
+                              </View>
+                            </View>
+                            <View style={styles.categoryRight}>
+                              <Text style={styles.categoryLimit}>
+                                ${category.limit.toLocaleString()}
+                              </Text>
+                              <View style={styles.categoryLimitUnderline} />
+                            </View>
                           </LinearGradient>
-                        </TouchableOpacity>
-                      </View>
-                    </ScrollView>
+                        </Animated.View>
+                      );
+                    })}
                   </View>
-                )}
-              </LinearGradient>
-            </Animated.View>
-          </TouchableWithoutFeedback>
-        </View>
-      </TouchableWithoutFeedback>
+
+                  {error && (
+                    <View style={styles.errorContainer}>
+                      <Ionicons name="alert-circle" size={20} color="#FF6B6B" />
+                      <Text style={styles.errorText}>{error}</Text>
+                    </View>
+                  )}
+
+                  <View style={styles.step3Actions}>
+                    <TouchableOpacity
+                      onPress={handleStartOver}
+                      style={styles.startOverButton}
+                      disabled={loading}
+                    >
+                      <Ionicons
+                        name="refresh"
+                        size={18}
+                        color="rgba(255, 255, 255, 0.7)"
+                      />
+                      <Text style={styles.startOverButtonText}>Start Over</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      onPress={handleCreateBudget}
+                      style={[
+                        styles.createButton,
+                        loading && styles.createButtonDisabled,
+                      ]}
+                      disabled={loading}
+                    >
+                      <LinearGradient
+                        colors={
+                          loading
+                            ? ["#666", "#888"]
+                            : ["#4A90E2", "#5DA0F2", "#6BB0FF"]
+                        }
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 0 }}
+                        style={styles.createButtonGradient}
+                      >
+                        <Ionicons
+                          name="checkmark-circle"
+                          size={20}
+                          color="#fff"
+                          style={styles.createButtonIcon}
+                        />
+                        <Text style={styles.createButtonText}>
+                          {loading ? "Creating..." : "Create Budget"}
+                        </Text>
+                      </LinearGradient>
+                    </TouchableOpacity>
+                  </View>
+                </ScrollView>
+              </View>
+            )}
+          </LinearGradient>
+        </Animated.View>
+      </View>
     </Modal>
   );
 }
@@ -862,6 +850,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.35,
     shadowRadius: 24,
     elevation: 24,
+    minHeight: 0,
   },
   content: {
     borderTopLeftRadius: 24,
@@ -870,6 +859,7 @@ const styles = StyleSheet.create({
     flexDirection: "column" as const,
     overflow: "hidden",
     flex: 1,
+    minHeight: 0,
   },
   sheetHandleContainer: {
     paddingTop: 10,
@@ -920,6 +910,8 @@ const styles = StyleSheet.create({
   },
   scrollView: {
     flex: 1,
+    minHeight: 0,
+    flexShrink: 1,
   },
   scrollContent: {
     padding: Math.max(20, SCREEN_WIDTH * 0.05),
@@ -1097,105 +1089,120 @@ const styles = StyleSheet.create({
     marginBottom: 32,
     paddingTop: 8,
   },
-  reviewHeaderIcon: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: "rgba(74, 144, 226, 0.15)",
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 16,
-    borderWidth: 2,
-    borderColor: "rgba(74, 144, 226, 0.3)",
-  },
-  reviewTitle: {
-    fontSize: 22,
-    fontWeight: "700",
-    color: "#fff",
-    fontFamily: "Manrope",
-    marginBottom: 8,
-    textAlign: "center",
-    letterSpacing: -0.3,
-  },
-  reviewSubtitle: {
-    fontSize: 14,
-    color: "rgba(255, 255, 255, 0.6)",
-    fontFamily: "Manrope",
-    textAlign: "center",
-    lineHeight: 20,
-  },
-  categoriesList: {
-    gap: 16,
-    marginBottom: 32,
-  },
-  categoryItem: {
-    borderRadius: 16,
-    overflow: "hidden",
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.1)",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  categoryItemGradient: {
-    padding: 18,
+  reviewTitleRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    width: "100%",
+    marginBottom: 8,
+    paddingHorizontal: 4,
+  },
+  reviewTitle: {
+    flex: 1,
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#fff",
+    fontFamily: "Manrope",
+    letterSpacing: -0.3,
+    paddingRight: 8,
+  },
+  reviewSubtitle: {
+    fontSize: 13,
+    color: "rgba(255, 255, 255, 0.6)",
+    fontFamily: "Manrope",
+    lineHeight: 18,
+    alignSelf: "stretch",
+    textAlign: "left",
+  },
+  categoriesList: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginBottom: 16,
+  },
+  totalRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 12,
+    paddingHorizontal: 4,
+    marginBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255, 255, 255, 0.08)",
+  },
+  totalLabel: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "rgba(255, 255, 255, 0.85)",
+    fontFamily: "Manrope",
+  },
+  totalAmount: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#4A90E2",
+    fontFamily: "Manrope",
+    letterSpacing: -0.3,
+  },
+  categoryItem: {
+    flex: 1,
+    minWidth: "47%",
+    borderRadius: 10,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.15,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  categoryItemGradient: {
+    padding: 10,
+    flexDirection: "column",
+    alignItems: "flex-start",
+    gap: 6,
   },
   categoryLeft: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 14,
+    gap: 8,
     flex: 1,
   },
   categoryIconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: "rgba(74, 144, 226, 0.2)",
+    width: 28,
+    height: 28,
     alignItems: "center",
     justifyContent: "center",
-    borderWidth: 1,
-    borderColor: "rgba(74, 144, 226, 0.3)",
   },
   categoryIcon: {
-    fontSize: 24,
+    fontSize: 16,
   },
   categoryInfo: {
     flex: 1,
-    gap: 4,
   },
   categoryName: {
-    fontSize: 17,
+    fontSize: 14,
     fontWeight: "600",
     color: "#fff",
     fontFamily: "Manrope",
     letterSpacing: -0.2,
   },
-  categoryLabel: {
-    fontSize: 12,
-    color: "rgba(255, 255, 255, 0.5)",
-    fontFamily: "Manrope",
-    fontWeight: "500",
-  },
   categoryRight: {
-    alignItems: "flex-end",
+    alignItems: "flex-start",
+    width: "100%",
   },
   categoryLimit: {
-    fontSize: 20,
+    fontSize: 15,
     fontWeight: "700",
     color: "#4A90E2",
     fontFamily: "Manrope",
     letterSpacing: -0.3,
-    marginBottom: 4,
+    marginBottom: 2,
   },
   categoryLimitUnderline: {
-    width: 40,
-    height: 2,
-    backgroundColor: "rgba(74, 144, 226, 0.4)",
+    width: 28,
+    height: 1.5,
+    backgroundColor: "rgba(74, 144, 226, 0.3)",
     borderRadius: 1,
   },
   step3Actions: {
