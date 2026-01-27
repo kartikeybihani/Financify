@@ -241,15 +241,39 @@ async function handleBudgetCreation(req, res, userId) {
     // If categories are provided and save flag is true, save to database
     if (categories && Array.isArray(categories) && save) {
       try {
-        // Get or create budget period
-        let period = await getOrCreateCurrentBudgetPeriod(userId);
+        // Get or create budget period (prefer draft if exists)
+        const today = new Date();
+        const year = today.getFullYear();
+        const month = today.getMonth();
+        const periodStart = new Date(year, month, 1);
+        const periodEnd = new Date(year, month + 1, 0);
+
+        const periodStartStr = formatLocalDate(periodStart);
+        const periodEndStr = formatLocalDate(periodEnd);
+
+        // First, check for draft period
+        const { data: draftPeriod } = await supabase
+          .from("budget_periods")
+          .select("*")
+          .eq("user_id", userId)
+          .eq("period_start", periodStartStr)
+          .eq("period_end", periodEndStr)
+          .eq("status", "draft")
+          .maybeSingle();
+
+        let period = draftPeriod;
+
+        // If no draft, get or create active period
         if (!period) {
-          return res.status(500).json({
-            error: "Failed to create budget period",
-          });
+          period = await getOrCreateCurrentBudgetPeriod(userId);
+          if (!period) {
+            return res.status(500).json({
+              error: "Failed to create budget period",
+            });
+          }
         }
 
-        // Ensure period is set to active
+        // Ensure period is set to active (activate draft)
         if (period.status !== "active") {
           const { data: updatedPeriod, error: updateError } = await supabase
             .from("budget_periods")
@@ -394,6 +418,154 @@ async function handleBudgetCreation(req, res, userId) {
         throw new Error("Invalid response format from LLM");
       }
 
+      // Save as draft budget
+      try {
+        // Check for existing draft period first
+        const today = new Date();
+        const year = today.getFullYear();
+        const month = today.getMonth();
+        const periodStart = new Date(year, month, 1);
+        const periodEnd = new Date(year, month + 1, 0);
+
+        const periodStartStr = formatLocalDate(periodStart);
+        const periodEndStr = formatLocalDate(periodEnd);
+
+        const { data: existingDraft } = await supabase
+          .from("budget_periods")
+          .select("id")
+          .eq("user_id", userId)
+          .eq("period_start", periodStartStr)
+          .eq("period_end", periodEndStr)
+          .eq("status", "draft")
+          .maybeSingle();
+
+        let period = null;
+
+        if (existingDraft) {
+          // Delete old draft entries
+          await supabase
+            .from("budget_entries")
+            .delete()
+            .eq("budget_period_id", existingDraft.id);
+
+          period = existingDraft;
+        } else {
+          // Check if there's an active period - if so, create new draft
+          const { data: activePeriod } = await supabase
+            .from("budget_periods")
+            .select("*")
+            .eq("user_id", userId)
+            .eq("period_start", periodStartStr)
+            .eq("period_end", periodEndStr)
+            .eq("status", "active")
+            .maybeSingle();
+
+          if (activePeriod) {
+            // Create new draft period (user wants to regenerate)
+            const periodName =
+              periodStart.toLocaleDateString("en-US", {
+                month: "long",
+                year: "numeric",
+              }) + " Budget";
+
+            const { data: newPeriod, error: createError } = await supabase
+              .from("budget_periods")
+              .insert({
+                user_id: userId,
+                name: periodName,
+                period_start: periodStartStr,
+                period_end: periodEndStr,
+                period_type: "monthly",
+                status: "draft",
+              })
+              .select()
+              .single();
+
+            if (!createError && newPeriod) {
+              period = newPeriod;
+            }
+          } else {
+            // Create new draft period
+            const periodName =
+              periodStart.toLocaleDateString("en-US", {
+                month: "long",
+                year: "numeric",
+              }) + " Budget";
+
+            const { data: newPeriod, error: createError } = await supabase
+              .from("budget_periods")
+              .insert({
+                user_id: userId,
+                name: periodName,
+                period_start: periodStartStr,
+                period_end: periodEndStr,
+                period_type: "monthly",
+                status: "draft",
+              })
+              .select()
+              .single();
+
+            if (!createError && newPeriod) {
+              period = newPeriod;
+            }
+          }
+        }
+
+        // Save categories as draft entries
+        if (period) {
+          for (const cat of llmResponse.categories) {
+            // Check if category exists
+            const { data: existingCategory } = await supabase
+              .from("categories")
+              .select("id")
+              .eq("user_id", userId)
+              .eq("name", cat.name)
+              .maybeSingle();
+
+            let categoryId = existingCategory?.id;
+
+            if (!categoryId) {
+              // Create category
+              const newCategoryId = generateUUID();
+              const slug = cat.name
+                .toLowerCase()
+                .replace(/[^a-z0-9]+/g, "-")
+                .replace(/^-+|-+$/g, "");
+
+              const { error: categoryError } = await supabase
+                .from("categories")
+                .insert({
+                  id: newCategoryId,
+                  user_id: userId,
+                  name: cat.name,
+                  slug: slug,
+                  icon: cat.icon || "📦",
+                  color: "#4A90E2",
+                  rank: 0,
+                  is_active: true,
+                });
+
+              if (!categoryError) {
+                categoryId = newCategoryId;
+              }
+            }
+
+            // Create draft budget entry
+            if (categoryId) {
+              await upsertBudgetEntry(period.id, {
+                scope_type: "category",
+                category_id: categoryId,
+                label: cat.name,
+                limit_amount: cat.limit,
+              });
+            }
+          }
+        }
+      } catch (draftError) {
+        // Non-critical - log but don't fail the request
+        console.error("Error saving draft budget:", draftError);
+      }
+
       return res.status(200).json({
         success: true,
         categories: llmResponse.categories,
@@ -423,6 +595,102 @@ export default async function handler(req, res) {
 
   // Check if this is a budget creation request
   const { action } = req.body;
+  if (action === "check_draft_budget") {
+    try {
+      // Authenticate user
+      const authHeader =
+        req.headers["authorization"] || req.headers["Authorization"];
+      const token =
+        typeof authHeader === "string" && authHeader.startsWith("Bearer ")
+          ? authHeader.slice("Bearer ".length)
+          : null;
+
+      if (!token) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+
+      const {
+        data: { user },
+        error: authError,
+      } = await supabase.auth.getUser(token);
+
+      if (authError || !user?.id) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+
+      // Check for draft budget period for current month
+      const today = new Date();
+      const year = today.getFullYear();
+      const month = today.getMonth();
+      const periodStart = new Date(year, month, 1);
+      const periodEnd = new Date(year, month + 1, 0);
+
+      const periodStartStr = formatLocalDate(periodStart);
+      const periodEndStr = formatLocalDate(periodEnd);
+
+      const { data: draftPeriod } = await supabase
+        .from("budget_periods")
+        .select("*")
+        .eq("user_id", user.id)
+        .eq("period_start", periodStartStr)
+        .eq("period_end", periodEndStr)
+        .eq("status", "draft")
+        .maybeSingle();
+
+      if (!draftPeriod) {
+        return res.status(200).json({
+          success: true,
+          hasDraft: false,
+        });
+      }
+
+      // Fetch draft budget entries with categories
+      const { data: draftEntries, error: entriesError } = await supabase
+        .from("budget_entries")
+        .select(
+          `
+          id,
+          label,
+          limit_amount,
+          categories (
+            id,
+            name,
+            icon
+          )
+        `
+        )
+        .eq("budget_period_id", draftPeriod.id);
+
+      if (entriesError) {
+        console.error("Error fetching draft entries:", entriesError);
+        return res.status(200).json({
+          success: true,
+          hasDraft: false,
+        });
+      }
+
+      // Format categories for response
+      const categories =
+        draftEntries?.map((entry) => ({
+          name: entry.categories?.name || entry.label,
+          icon: entry.categories?.icon || "📦",
+          limit: entry.limit_amount,
+        })) || [];
+
+      return res.status(200).json({
+        success: true,
+        hasDraft: true,
+        categories,
+      });
+    } catch (error) {
+      console.error("Error checking draft budget:", error);
+      return res.status(500).json({
+        error: "Internal server error",
+        message: error.message,
+      });
+    }
+  }
+
   if (action === "create_budget") {
     try {
       // Authenticate user

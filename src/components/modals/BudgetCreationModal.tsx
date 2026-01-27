@@ -53,6 +53,90 @@ export default function BudgetCreationModal({
   const insets = useSafeAreaInsets();
   const sheetHeightAnim = useRef(new Animated.Value(0)).current;
   const didInitSheetHeightRef = useRef(false);
+  const step2PulseAnim = useRef(new Animated.Value(0)).current;
+  const step2RotationAnim = useRef(new Animated.Value(0)).current;
+  const step2ScaleAnim = useRef(new Animated.Value(1)).current;
+  const categoryAnimations = useRef<Animated.Value[]>([]).current;
+
+  // Initialize category animations when categories are set
+  useEffect(() => {
+    if (generatedCategories.length > 0) {
+      // Ensure we have enough animation values
+      while (categoryAnimations.length < generatedCategories.length) {
+        categoryAnimations.push(new Animated.Value(0));
+      }
+      // Reset and animate categories in sequence
+      categoryAnimations
+        .slice(0, generatedCategories.length)
+        .forEach((anim, index) => {
+          anim.setValue(0);
+          Animated.sequence([
+            Animated.delay(index * 100),
+            Animated.spring(anim, {
+              toValue: 1,
+              damping: 15,
+              stiffness: 200,
+              useNativeDriver: true,
+            }),
+          ]).start();
+        });
+    }
+  }, [generatedCategories]);
+
+  // Step 2 animation loop
+  useEffect(() => {
+    if (step === 2) {
+      // Reset animations
+      step2PulseAnim.setValue(0);
+      step2RotationAnim.setValue(0);
+      step2ScaleAnim.setValue(1);
+
+      // Pulse animation
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(step2PulseAnim, {
+            toValue: 1,
+            duration: 1500,
+            useNativeDriver: true,
+          }),
+          Animated.timing(step2PulseAnim, {
+            toValue: 0,
+            duration: 1500,
+            useNativeDriver: true,
+          }),
+        ]),
+      ).start();
+
+      // Rotation animation
+      Animated.loop(
+        Animated.timing(step2RotationAnim, {
+          toValue: 1,
+          duration: 3000,
+          useNativeDriver: true,
+        }),
+      ).start();
+
+      // Scale animation
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(step2ScaleAnim, {
+            toValue: 1.1,
+            duration: 1000,
+            useNativeDriver: true,
+          }),
+          Animated.timing(step2ScaleAnim, {
+            toValue: 1,
+            duration: 1000,
+            useNativeDriver: true,
+          }),
+        ]),
+      ).start();
+    } else {
+      step2PulseAnim.stopAnimation();
+      step2RotationAnim.stopAnimation();
+      step2ScaleAnim.stopAnimation();
+    }
+  }, [step]);
 
   const handleStart = async () => {
     const incomeValue = parseFloat(income.trim());
@@ -163,6 +247,126 @@ export default function BudgetCreationModal({
       );
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Check for draft budget when modal opens
+  useEffect(() => {
+    if (visible) {
+      checkForDraftBudget();
+    } else {
+      // Reset state when modal closes (but keep categories in case user reopens)
+      setStep(1);
+      setIncome("");
+      setSavings("");
+      setError(null);
+      setLoading(false);
+    }
+  }, [visible]);
+
+  const checkForDraftBudget = async () => {
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user?.id) {
+        return;
+      }
+
+      setLoading(true);
+      const response = await authenticatedFetch(
+        `${API_BASE_URL}/api/transactions_sync`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            action: "check_draft_budget",
+          }),
+        },
+      );
+
+      if (!response.ok) {
+        // No draft found or error - start fresh
+        setLoading(false);
+        return;
+      }
+
+      const data = await response.json();
+      if (data.hasDraft && data.categories && data.categories.length > 0) {
+        // Load draft and go to step 3
+        setGeneratedCategories(data.categories);
+        setStep(3);
+      }
+    } catch (err) {
+      logger.error("[BUDGET] Error checking draft budget:", err);
+      // Start fresh on error
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleStartOver = () => {
+    setStep(1);
+    setIncome("");
+    setSavings("");
+    setError(null);
+    setGeneratedCategories([]);
+    // Delete draft budget
+    deleteDraftBudget();
+  };
+
+  const deleteDraftBudget = async () => {
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user?.id) {
+        return;
+      }
+
+      // Find and delete draft period
+      const today = new Date();
+      const year = today.getFullYear();
+      const month = today.getMonth();
+      const periodStart = new Date(year, month, 1);
+      const periodEnd = new Date(year, month + 1, 0);
+
+      const formatLocalDate = (date: Date) => {
+        const y = date.getFullYear();
+        const m = String(date.getMonth() + 1).padStart(2, "0");
+        const d = String(date.getDate()).padStart(2, "0");
+        return `${y}-${m}-${d}`;
+      };
+
+      const periodStartStr = formatLocalDate(periodStart);
+      const periodEndStr = formatLocalDate(periodEnd);
+
+      const { data: draftPeriod } = await supabase
+        .from("budget_periods")
+        .select("id")
+        .eq("user_id", user.id)
+        .eq("period_start", periodStartStr)
+        .eq("period_end", periodEndStr)
+        .eq("status", "draft")
+        .maybeSingle();
+
+      if (draftPeriod) {
+        // Delete entries first
+        await supabase
+          .from("budget_entries")
+          .delete()
+          .eq("budget_period_id", draftPeriod.id);
+
+        // Delete period
+        await supabase
+          .from("budget_periods")
+          .delete()
+          .eq("id", draftPeriod.id);
+      }
+    } catch (err) {
+      logger.error("[BUDGET] Error deleting draft budget:", err);
     }
   };
 
@@ -316,7 +520,7 @@ export default function BudgetCreationModal({
                             onChangeText={setIncome}
                             placeholder="0"
                             placeholderTextColor="rgba(255, 255, 255, 0.3)"
-                            keyboardType="decimal-pad"
+                            keyboardType="number-pad"
                             autoFocus
                           />
                         </View>
@@ -382,95 +586,259 @@ export default function BudgetCreationModal({
                   </ScrollView>
                 )}
 
-                {/* Step 2: Loading State */}
+                {/* Step 2: Loading State with Premium Animation */}
                 {step === 2 && (
                   <View style={styles.loadingContainer}>
-                    <ActivityIndicator size="large" color="#4A90E2" />
-                    <Text style={styles.loadingText}>
+                    <View style={styles.loadingAnimationContainer}>
+                      {/* Outer rotating ring */}
+                      <Animated.View
+                        style={[
+                          styles.loadingRing,
+                          {
+                            transform: [
+                              {
+                                rotate: step2RotationAnim.interpolate({
+                                  inputRange: [0, 1],
+                                  outputRange: ["0deg", "360deg"],
+                                }),
+                              },
+                            ],
+                          },
+                        ]}
+                      >
+                        <View style={styles.loadingRingInner} />
+                      </Animated.View>
+
+                      {/* Middle pulsing circle */}
+                      <Animated.View
+                        style={[
+                          styles.loadingCircle,
+                          {
+                            opacity: step2PulseAnim.interpolate({
+                              inputRange: [0, 1],
+                              outputRange: [0.3, 1],
+                            }),
+                            transform: [
+                              {
+                                scale: step2ScaleAnim,
+                              },
+                            ],
+                          },
+                        ]}
+                      >
+                        <LinearGradient
+                          colors={["#4A90E2", "#5DA0F2"]}
+                          style={styles.loadingCircleGradient}
+                        />
+                      </Animated.View>
+
+                      {/* Inner icon */}
+                      <View style={styles.loadingIconContainer}>
+                        <Ionicons name="sparkles" size={32} color="#4A90E2" />
+                      </View>
+                    </View>
+
+                    <Animated.Text
+                      style={[
+                        styles.loadingText,
+                        {
+                          opacity: step2PulseAnim.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: [0.7, 1],
+                          }),
+                        },
+                      ]}
+                    >
                       Finny is analyzing your spending patterns...
-                    </Text>
+                    </Animated.Text>
                     <Text style={styles.loadingSubtext}>
                       This may take a few moments
                     </Text>
+
+                    {/* Animated dots */}
+                    <View style={styles.loadingDots}>
+                      {[0, 1, 2].map((index) => (
+                        <Animated.View
+                          key={index}
+                          style={[
+                            styles.loadingDot,
+                            {
+                              opacity: step2PulseAnim.interpolate({
+                                inputRange: [0, 1],
+                                outputRange: [0.3, 1],
+                              }),
+                              transform: [
+                                {
+                                  scale: step2PulseAnim.interpolate({
+                                    inputRange: [0, 1],
+                                    outputRange: [0.8, 1.2],
+                                  }),
+                                },
+                              ],
+                            },
+                          ]}
+                        />
+                      ))}
+                    </View>
                   </View>
                 )}
 
                 {/* Step 3: Review & Confirm */}
                 {step === 3 && (
-                  <ScrollView
-                    style={styles.scrollView}
-                    contentContainerStyle={[
-                      styles.scrollContent,
-                      {
-                        paddingBottom: Math.max(
-                          20,
-                          (insets.bottom || 0) + SCREEN_HEIGHT * 0.02,
-                        ),
-                      },
-                    ]}
-                    showsVerticalScrollIndicator={false}
-                    keyboardShouldPersistTaps="handled"
-                    keyboardDismissMode="interactive"
-                    onContentSizeChange={(_, h) => setScrollContentHeight(h)}
-                  >
-                    <Text style={styles.reviewTitle}>
-                      Finny created a personalized budget for you
-                    </Text>
-                    <Text style={styles.reviewSubtitle}>
-                      Review and adjust if needed, then create your budget
-                    </Text>
-
-                    <View style={styles.categoriesList}>
-                      {generatedCategories.map((category, index) => (
-                        <View key={index} style={styles.categoryItem}>
-                          <View style={styles.categoryLeft}>
-                            <Text style={styles.categoryIcon}>
-                              {category.icon}
-                            </Text>
-                            <Text style={styles.categoryName}>
-                              {category.name}
-                            </Text>
-                          </View>
-                          <Text style={styles.categoryLimit}>
-                            ${category.limit.toLocaleString()}
-                          </Text>
-                        </View>
-                      ))}
-                    </View>
-
-                    {error && (
-                      <View style={styles.errorContainer}>
-                        <Ionicons
-                          name="alert-circle"
-                          size={20}
-                          color="#FF6B6B"
-                        />
-                        <Text style={styles.errorText}>{error}</Text>
-                      </View>
-                    )}
-
-                    <TouchableOpacity
-                      onPress={handleCreateBudget}
-                      style={[
-                        styles.createButton,
-                        loading && styles.createButtonDisabled,
+                  <View style={styles.step3Container}>
+                    <ScrollView
+                      style={styles.scrollView}
+                      contentContainerStyle={[
+                        styles.scrollContent,
+                        {
+                          paddingBottom: Math.max(
+                            20,
+                            (insets.bottom || 0) + SCREEN_HEIGHT * 0.02,
+                          ),
+                        },
                       ]}
-                      disabled={loading}
+                      showsVerticalScrollIndicator={true}
+                      indicatorStyle="white"
+                      keyboardShouldPersistTaps="handled"
+                      keyboardDismissMode="interactive"
+                      onContentSizeChange={(_, h) => setScrollContentHeight(h)}
+                      nestedScrollEnabled={true}
                     >
-                      <LinearGradient
-                        colors={
-                          loading ? ["#666", "#888"] : ["#4A90E2", "#5DA0F2"]
-                        }
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 1, y: 0 }}
-                        style={styles.createButtonGradient}
-                      >
-                        <Text style={styles.createButtonText}>
-                          {loading ? "Creating..." : "Create Budget"}
+                      <View style={styles.reviewHeader}>
+                        <View style={styles.reviewHeaderIcon}>
+                          <Ionicons
+                            name="checkmark-circle"
+                            size={32}
+                            color="#4A90E2"
+                          />
+                        </View>
+                        <Text style={styles.reviewTitle}>
+                          Finny created a personalized budget for you
                         </Text>
-                      </LinearGradient>
-                    </TouchableOpacity>
-                  </ScrollView>
+                        <Text style={styles.reviewSubtitle}>
+                          Review and adjust if needed, then create your budget
+                        </Text>
+                      </View>
+
+                      <View style={styles.categoriesList}>
+                        {generatedCategories.map((category, index) => {
+                          const anim =
+                            categoryAnimations[index] || new Animated.Value(1);
+                          return (
+                            <Animated.View
+                              key={index}
+                              style={[
+                                styles.categoryItem,
+                                {
+                                  opacity: anim,
+                                  transform: [
+                                    {
+                                      translateY: anim.interpolate({
+                                        inputRange: [0, 1],
+                                        outputRange: [20, 0],
+                                      }),
+                                    },
+                                    {
+                                      scale: anim.interpolate({
+                                        inputRange: [0, 1],
+                                        outputRange: [0.95, 1],
+                                      }),
+                                    },
+                                  ],
+                                },
+                              ]}
+                            >
+                              <LinearGradient
+                                colors={[
+                                  "rgba(74, 144, 226, 0.1)",
+                                  "rgba(93, 160, 242, 0.05)",
+                                ]}
+                                start={{ x: 0, y: 0 }}
+                                end={{ x: 1, y: 1 }}
+                                style={styles.categoryItemGradient}
+                              >
+                                <View style={styles.categoryLeft}>
+                                  <View style={styles.categoryIconContainer}>
+                                    <Text style={styles.categoryIcon}>
+                                      {category.icon}
+                                    </Text>
+                                  </View>
+                                  <View style={styles.categoryInfo}>
+                                    <Text style={styles.categoryName}>
+                                      {category.name}
+                                    </Text>
+                                    <Text style={styles.categoryLabel}>
+                                      Monthly Budget
+                                    </Text>
+                                  </View>
+                                </View>
+                                <View style={styles.categoryRight}>
+                                  <Text style={styles.categoryLimit}>
+                                    ${category.limit.toLocaleString()}
+                                  </Text>
+                                  <View style={styles.categoryLimitUnderline} />
+                                </View>
+                              </LinearGradient>
+                            </Animated.View>
+                          );
+                        })}
+                      </View>
+
+                      {error && (
+                        <View style={styles.errorContainer}>
+                          <Ionicons
+                            name="alert-circle"
+                            size={20}
+                            color="#FF6B6B"
+                          />
+                          <Text style={styles.errorText}>{error}</Text>
+                        </View>
+                      )}
+
+                      <View style={styles.step3Actions}>
+                        <TouchableOpacity
+                          onPress={handleStartOver}
+                          style={styles.startOverButton}
+                          disabled={loading}
+                        >
+                          <Ionicons name="refresh" size={18} color="rgba(255, 255, 255, 0.7)" />
+                          <Text style={styles.startOverButtonText}>
+                            Start Over
+                          </Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          onPress={handleCreateBudget}
+                          style={[
+                            styles.createButton,
+                            loading && styles.createButtonDisabled,
+                          ]}
+                          disabled={loading}
+                        >
+                          <LinearGradient
+                            colors={
+                              loading
+                                ? ["#666", "#888"]
+                                : ["#4A90E2", "#5DA0F2", "#6BB0FF"]
+                            }
+                            start={{ x: 0, y: 0 }}
+                            end={{ x: 1, y: 0 }}
+                            style={styles.createButtonGradient}
+                          >
+                            <Ionicons
+                              name="checkmark-circle"
+                              size={20}
+                              color="#fff"
+                              style={styles.createButtonIcon}
+                            />
+                            <Text style={styles.createButtonText}>
+                              {loading ? "Creating..." : "Create Budget"}
+                            </Text>
+                          </LinearGradient>
+                        </TouchableOpacity>
+                      </View>
+                    </ScrollView>
+                  </View>
                 )}
               </LinearGradient>
             </Animated.View>
@@ -556,6 +924,10 @@ const styles = StyleSheet.create({
   scrollContent: {
     padding: Math.max(20, SCREEN_WIDTH * 0.05),
     flexGrow: 1,
+  },
+  step3Container: {
+    flex: 1,
+    minHeight: 0,
   },
   form: {
     gap: 20,
@@ -646,6 +1018,65 @@ const styles = StyleSheet.create({
     paddingHorizontal: Math.max(20, SCREEN_WIDTH * 0.05),
     minHeight: 200,
   },
+  loadingAnimationContainer: {
+    width: 120,
+    height: 120,
+    alignItems: "center",
+    justifyContent: "center",
+    position: "relative",
+    marginBottom: 8,
+  },
+  loadingRing: {
+    position: "absolute",
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    borderWidth: 3,
+    borderTopColor: "#4A90E2",
+    borderRightColor: "#5DA0F2",
+    borderBottomColor: "#6BB0FF",
+    borderLeftColor: "transparent",
+    opacity: 0.6,
+  },
+  loadingRingInner: {
+    width: "100%",
+    height: "100%",
+    borderRadius: 60,
+  },
+  loadingCircle: {
+    position: "absolute",
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+  },
+  loadingCircleGradient: {
+    width: "100%",
+    height: "100%",
+    borderRadius: 40,
+    opacity: 0.4,
+  },
+  loadingIconContainer: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: "rgba(74, 144, 226, 0.2)",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 2,
+    borderColor: "rgba(74, 144, 226, 0.3)",
+  },
+  loadingDots: {
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 24,
+    alignItems: "center",
+  },
+  loadingDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#4A90E2",
+  },
   loadingText: {
     fontSize: 18,
     fontWeight: "600",
@@ -661,67 +1092,159 @@ const styles = StyleSheet.create({
     marginTop: 8,
     textAlign: "center",
   },
+  reviewHeader: {
+    alignItems: "center",
+    marginBottom: 32,
+    paddingTop: 8,
+  },
+  reviewHeaderIcon: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: "rgba(74, 144, 226, 0.15)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 16,
+    borderWidth: 2,
+    borderColor: "rgba(74, 144, 226, 0.3)",
+  },
   reviewTitle: {
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: "700",
     color: "#fff",
     fontFamily: "Manrope",
     marginBottom: 8,
     textAlign: "center",
+    letterSpacing: -0.3,
   },
   reviewSubtitle: {
     fontSize: 14,
     color: "rgba(255, 255, 255, 0.6)",
     fontFamily: "Manrope",
-    marginBottom: 24,
     textAlign: "center",
+    lineHeight: 20,
   },
   categoriesList: {
-    gap: 12,
-    marginBottom: 24,
+    gap: 16,
+    marginBottom: 32,
   },
   categoryItem: {
+    borderRadius: 16,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.1)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  categoryItemGradient: {
+    padding: 18,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    backgroundColor: "rgba(255, 255, 255, 0.05)",
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.1)",
-    padding: 16,
   },
   categoryLeft: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
+    gap: 14,
     flex: 1,
+  },
+  categoryIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: "rgba(74, 144, 226, 0.2)",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "rgba(74, 144, 226, 0.3)",
   },
   categoryIcon: {
     fontSize: 24,
   },
+  categoryInfo: {
+    flex: 1,
+    gap: 4,
+  },
   categoryName: {
-    fontSize: 16,
+    fontSize: 17,
     fontWeight: "600",
     color: "#fff",
     fontFamily: "Manrope",
+    letterSpacing: -0.2,
+  },
+  categoryLabel: {
+    fontSize: 12,
+    color: "rgba(255, 255, 255, 0.5)",
+    fontFamily: "Manrope",
+    fontWeight: "500",
+  },
+  categoryRight: {
+    alignItems: "flex-end",
   },
   categoryLimit: {
-    fontSize: 16,
+    fontSize: 20,
     fontWeight: "700",
     color: "#4A90E2",
     fontFamily: "Manrope",
+    letterSpacing: -0.3,
+    marginBottom: 4,
+  },
+  categoryLimitUnderline: {
+    width: 40,
+    height: 2,
+    backgroundColor: "rgba(74, 144, 226, 0.4)",
+    borderRadius: 1,
+  },
+  step3Actions: {
+    flexDirection: "row",
+    gap: 12,
+    marginTop: 24,
+  },
+  startOverButton: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    borderRadius: 16,
+    backgroundColor: "rgba(255, 255, 255, 0.05)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.1)",
+  },
+  startOverButtonText: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "rgba(255, 255, 255, 0.7)",
+    fontFamily: "Manrope",
   },
   createButton: {
+    flex: 2,
     borderRadius: 16,
     overflow: "hidden",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
   },
   createButtonDisabled: {
     opacity: 0.5,
   },
   createButtonGradient: {
     paddingVertical: 16,
+    paddingHorizontal: 24,
     alignItems: "center",
     justifyContent: "center",
+    flexDirection: "row",
+    gap: 8,
+  },
+  createButtonIcon: {
+    marginRight: 4,
   },
   createButtonText: {
     fontSize: 16,
