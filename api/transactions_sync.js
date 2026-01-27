@@ -882,9 +882,34 @@ async function handleBudgetCreation(req, res, userId) {
         throw new Error("Invalid response format from LLM");
       }
 
-      // Validate and normalize budget total to match constraint exactly
+      // Ensure Savings category is included (should be first category)
+      const savingsAmountValue = savingsAmount || Math.round(income * 0.15);
+      const savingsCategoryIndex = llmResponse.categories.findIndex(
+        cat => cat.name.toLowerCase() === "savings"
+      );
+      
+      if (savingsCategoryIndex < 0) {
+        // Add Savings as the first category
+        llmResponse.categories.unshift({
+          name: "Savings",
+          icon: "💰",
+          limit: savingsAmountValue
+        });
+        console.log(`Added "Savings" category with limit $${savingsAmountValue}`);
+      } else {
+        // Ensure Savings has the correct amount and is first
+        llmResponse.categories[savingsCategoryIndex].limit = savingsAmountValue;
+        if (savingsCategoryIndex !== 0) {
+          // Move Savings to first position
+          const savingsCategory = llmResponse.categories.splice(savingsCategoryIndex, 1)[0];
+          llmResponse.categories.unshift(savingsCategory);
+          console.log(`Moved "Savings" category to first position`);
+        }
+      }
+
+      // Validate and normalize budget total to match constraint exactly (should equal full income)
       const totalBudget = llmResponse.categories.reduce((sum, cat) => sum + (cat.limit || 0), 0);
-      const expectedTotal = Math.round(income - (savingsAmount || income * 0.2));
+      const expectedTotal = Math.round(income); // Total should equal full income (includes savings as a category)
       const difference = expectedTotal - totalBudget;
       
       if (Math.abs(difference) > 1) {
@@ -896,7 +921,7 @@ async function handleBudgetCreation(req, res, userId) {
           llmResponse.categories.map(c => `${c.name}: $${c.limit}`).join(", ")
         );
         
-        // Normalize by adjusting the "Other" category if it exists, otherwise adjust the largest category
+        // Normalize by adjusting the "Other" category if it exists, otherwise adjust the largest category (but never adjust Savings)
         const otherCategoryIndex = llmResponse.categories.findIndex(
           cat => cat.name.toLowerCase() === "other"
         );
@@ -910,21 +935,30 @@ async function handleBudgetCreation(req, res, userId) {
             `Adjusted "Other" category to $${llmResponse.categories[otherCategoryIndex].limit} (was $${(llmResponse.categories[otherCategoryIndex].limit || 0) - difference})`
           );
         } else {
-          // Find the largest category and adjust it
-          let largestIndex = 0;
-          let largestAmount = llmResponse.categories[0]?.limit || 0;
-          for (let i = 1; i < llmResponse.categories.length; i++) {
-            if ((llmResponse.categories[i]?.limit || 0) > largestAmount) {
-              largestAmount = llmResponse.categories[i]?.limit || 0;
+          // Find the largest category (excluding Savings) and adjust it
+          let largestIndex = -1;
+          let largestAmount = -1;
+          for (let i = 0; i < llmResponse.categories.length; i++) {
+            const catName = llmResponse.categories[i]?.name?.toLowerCase() || "";
+            const catLimit = llmResponse.categories[i]?.limit || 0;
+            // Skip Savings category
+            if (catName === "savings") continue;
+            if (catLimit > largestAmount) {
+              largestAmount = catLimit;
               largestIndex = i;
             }
           }
-          llmResponse.categories[largestIndex].limit = Math.max(0, 
-            (llmResponse.categories[largestIndex].limit || 0) + difference
-          );
-          console.log(
-            `Adjusted "${llmResponse.categories[largestIndex].name}" category to $${llmResponse.categories[largestIndex].limit} (was $${(llmResponse.categories[largestIndex].limit || 0) - difference})`
-          );
+          
+          if (largestIndex >= 0) {
+            llmResponse.categories[largestIndex].limit = Math.max(0, 
+              (llmResponse.categories[largestIndex].limit || 0) + difference
+            );
+            console.log(
+              `Adjusted "${llmResponse.categories[largestIndex].name}" category to $${llmResponse.categories[largestIndex].limit} (was $${(llmResponse.categories[largestIndex].limit || 0) - difference})`
+            );
+          } else {
+            console.error("Could not find a category to adjust (excluding Savings)");
+          }
         }
         
         // Verify normalization worked
