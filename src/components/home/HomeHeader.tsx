@@ -50,8 +50,8 @@ export const HomeHeader: React.FC<HomeHeaderProps> = React.memo(
 
           {/* Centered text */}
           <View style={styles.headerTextContainer}>
-            <Text style={styles.greetingText}>Hi {userName || "there"}</Text>
-            <Text style={styles.subGreeting}>Welcome Back!</Text>
+            <Text style={styles.greetingText}>Hi {userName || "there"}!</Text>
+            <Text style={styles.subGreeting}>Welcome Back</Text>
           </View>
 
           {/* Right icon - absolutely positioned */}

@@ -942,6 +942,36 @@ export async function getOrCreateCurrentBudgetPeriod(
       }
     }
 
+    // Before creating a new period, archive any old active periods
+    // Find all active periods that have ended (period_end < current month start)
+    const { data: oldActivePeriods, error: archiveError } = await supabase
+      .from("budget_periods")
+      .select("id")
+      .eq("user_id", userId)
+      .eq("status", "active")
+      .lt("period_end", periodStartStr);
+
+    if (archiveError) {
+      logger.error("Error fetching old active periods for archiving:", archiveError);
+      // Continue anyway - don't block new period creation
+    } else if (oldActivePeriods && oldActivePeriods.length > 0) {
+      // Archive all old active periods
+      const oldPeriodIds = oldActivePeriods.map((p) => p.id);
+      const { error: updateStatusError } = await supabase
+        .from("budget_periods")
+        .update({ status: "archived" })
+        .in("id", oldPeriodIds);
+
+      if (updateStatusError) {
+        logger.error("Error archiving old active periods:", updateStatusError);
+        // Continue anyway - don't block new period creation
+      } else {
+        logger.info(
+          `Archived ${oldPeriodIds.length} old active budget period(s) for user ${userId}`
+        );
+      }
+    }
+
     // Create new period
     const periodName = periodStart.toLocaleDateString("en-US", {
       month: "long",
@@ -956,7 +986,7 @@ export async function getOrCreateCurrentBudgetPeriod(
         period_start: periodStartStr,
         period_end: periodEndStr,
         period_type: "monthly",
-        status: "draft", // Start as draft until user confirms
+        status: "active", // Create as active (old periods are archived above)
       })
       .select()
       .single();
@@ -964,6 +994,57 @@ export async function getOrCreateCurrentBudgetPeriod(
     if (createError) {
       logger.error("Error creating budget period:", createError);
       return null;
+    }
+
+    // Copy budget entries from the previous month's budget
+    // Find the most recent period (archived or active) that ended before current month
+    const { data: previousPeriod, error: prevPeriodError } = await supabase
+      .from("budget_periods")
+      .select("id")
+      .eq("user_id", userId)
+      .lt("period_end", periodStartStr)
+      .order("period_end", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (prevPeriodError && prevPeriodError.code !== "PGRST116") {
+      logger.error("Error fetching previous budget period:", prevPeriodError);
+      // Continue - new period created, just no entries copied
+    } else if (previousPeriod) {
+      // Get all budget entries from the previous period
+      const { data: previousEntries, error: entriesError } = await supabase
+        .from("budget_entries")
+        .select("*")
+        .eq("budget_period_id", previousPeriod.id);
+
+      if (entriesError) {
+        logger.error("Error fetching previous budget entries:", entriesError);
+        // Continue - new period created, just no entries copied
+      } else if (previousEntries && previousEntries.length > 0) {
+        // Copy all entries to the new period, keeping everything the same except budget_period_id
+        const newEntries = previousEntries.map((entry) => ({
+          budget_period_id: newPeriod.id,
+          scope_type: entry.scope_type,
+          category_id: entry.category_id,
+          group_key: entry.group_key,
+          label: entry.label,
+          limit_amount: entry.limit_amount,
+          is_flexible: entry.is_flexible ?? false,
+        }));
+
+        const { error: insertError } = await supabase
+          .from("budget_entries")
+          .insert(newEntries);
+
+        if (insertError) {
+          logger.error("Error copying budget entries from previous period:", insertError);
+          // Continue - new period created, just entries not copied
+        } else {
+          logger.info(
+            `Copied ${newEntries.length} budget entries from previous period to new period for user ${userId}`
+          );
+        }
+      }
     }
 
     return newPeriod as BudgetPeriod;

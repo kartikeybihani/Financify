@@ -5,7 +5,7 @@ export const CACHE_CONFIG = {
     SHORT: 2 * 60 * 1000,    // 2 minutes - for frequently changing data
     MEDIUM: 5 * 60 * 1000,   // 5 minutes - for moderately changing data (current default)
     LONG: 15 * 60 * 1000,    // 15 minutes - for stable data
-    VERY_LONG: 60 * 60 * 1000, // 1 hour - for rarely changing data
+    VERY_LONG: 7 * 24 * 60 * 60 * 1000, // 7 days - event-based invalidation (not time-based expiry)
   },
   
   // Cache keys for different data types

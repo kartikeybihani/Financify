@@ -22,7 +22,6 @@ import { ActionSheetProvider } from "@expo/react-native-action-sheet";
 import { SafePostHogProvider } from "@/src/components/analytics/SafePostHogProvider";
 import PostHogScreenTracker from "@/src/components/analytics/PostHogScreenTracker";
 import { setupGlobalErrorHandling } from "@/src/utils/core/errorBoundary";
-import { useNotificationSetup } from "@/src/hooks/useNotificationSetup";
 import { setLastDeepLink } from "@/src/utils/linking/linkingStore";
 import { migrateAsyncStorageToMMKV } from "@/src/utils/storage/storage";
 
@@ -44,9 +43,6 @@ SplashScreen.preventAutoHideAsync();
 setupGlobalErrorHandling();
 
 function RootLayoutNav() {
-  // Initialize notifications
-  useNotificationSetup();
-
   return (
     <Stack
       screenOptions={{
@@ -161,7 +157,11 @@ export default function RootLayout() {
         <ActionSheetProvider>
           <>
             <RootLayoutNav />
-            <StatusBar style="light" backgroundColor="transparent" translucent />
+            <StatusBar
+              style="light"
+              backgroundColor="transparent"
+              translucent
+            />
           </>
         </ActionSheetProvider>
       </AuthNavigationProvider>

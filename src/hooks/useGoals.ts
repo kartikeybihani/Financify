@@ -11,6 +11,7 @@ import { CACHE_CONFIG } from "@/src/shared/constants/cacheConfig";
 import { getAuthenticatedUser } from "@/src/utils/auth/auth";
 import { authenticatedFetch } from "@/src/utils/auth/authToken";
 import { API_BASE_URL } from "@/src/utils/core/apiUrl";
+import { invalidateGoalsCache } from "@/src/shared/utils/cacheInvalidation";
 
 const GOALS_CACHE_KEY = CACHE_CONFIG.KEYS.GOALS;
 const GOALS_CACHE_TIMESTAMP_KEY = CACHE_CONFIG.KEYS.GOALS_TIMESTAMP;
@@ -278,6 +279,11 @@ export function useGoals(pushChat: (sender: "user" | "finny", message: string) =
       // but still happens quickly enough
       Promise.resolve().then(async () => {
         try {
+          const authResult = await getAuthenticatedUser();
+          if (authResult?.user?.id) {
+            // Invalidate cache before refreshing
+            await invalidateGoalsCache(authResult.user.id);
+          }
           await clearGoalsCache();
           await refreshGoalsFromServer(false);
           // Emit event to notify other screens of new goal
@@ -359,6 +365,11 @@ export function useGoals(pushChat: (sender: "user" | "finny", message: string) =
         }, 0);
       }
 
+      // Invalidate cache before refreshing
+      const authResult = await getAuthenticatedUser();
+      if (authResult?.user?.id) {
+        await invalidateGoalsCache(authResult.user.id);
+      }
       // Clear cache first to ensure fresh data, then refresh from server
       await clearGoalsCache();
       await refreshGoalsFromServer(false);
@@ -390,6 +401,11 @@ export function useGoals(pushChat: (sender: "user" | "finny", message: string) =
         return;
       }
 
+      // Invalidate cache before refreshing
+      const authResult = await getAuthenticatedUser();
+      if (authResult?.user?.id) {
+        await invalidateGoalsCache(authResult.user.id);
+      }
       // Clear cache first to ensure fresh data, then refresh from server
       await clearGoalsCache();
       await refreshGoalsFromServer(false);

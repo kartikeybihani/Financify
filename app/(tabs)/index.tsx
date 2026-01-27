@@ -77,8 +77,10 @@ const checkUnifiedCacheSync = (): boolean => {
     const now = Date.now();
     const cacheAge = now - timestamp;
 
-    // Cache duration is 5 minutes (300000ms) - same as CACHE_CONFIG.DURATIONS.MEDIUM
-    if (cacheAge > 300000) {
+    // Cache duration is 7 days (event-based invalidation, not time-based expiry)
+    // Only expire if cache is older than 7 days (fallback safety)
+    const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000;
+    if (cacheAge > SEVEN_DAYS) {
       return false;
     }
 

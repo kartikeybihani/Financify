@@ -62,11 +62,12 @@ export const styles = StyleSheet.create({
     justifyContent: "center",
   },
   greetingText: {
-    fontSize: FONTS.lg,
+    fontSize: FONTS.xl-1,
     marginBottom: 2,
     fontWeight: "600",
     color: "#fff",
     fontFamily: Platform.OS === "ios" ? "System" : "sans-serif",
+    paddingTop: 8,
   },
   subGreeting: {
     fontSize: FONTS.sm,

@@ -19,10 +19,14 @@ import { useRouter, useLocalSearchParams } from "expo-router";
 import { supabase } from "@/src/lib/supabase/supabase";
 import FeedbackModal from "@/src/components/modals/FeedbackModal";
 import ContactModal from "@/src/components/modals/ContactModal";
-import { handleDisconnectAll, syncAllUserTransactions } from "@/src/utils/plaid/plaid";
+import {
+  handleDisconnectAll,
+  syncAllUserTransactions,
+} from "@/src/utils/plaid/plaid";
 import logger from "@/src/utils/core/logger";
 import { TEXT_STYLES } from "@/src/components/shared/modal-constants";
 import { ActivityIndicator } from "react-native";
+import { notificationService } from "@/src/utils/core/notificationService";
 
 export default function SettingsScreen() {
   const router = useRouter();
@@ -51,7 +55,7 @@ export default function SettingsScreen() {
           AppStorage.setItemSync("userData", JSON.stringify(user));
           logger.info(
             "[SettingsIndex] Current user email:",
-            user.user_metadata.full_name + " - " + user.email
+            user.user_metadata.full_name + " - " + user.email,
           );
         }
       } catch (error) {
@@ -59,6 +63,25 @@ export default function SettingsScreen() {
       }
     };
     fetchAndSetUserData();
+  }, []);
+
+  // Load notification preferences and permission status
+  useEffect(() => {
+    const loadNotificationSettings = async () => {
+      try {
+        // Check if permissions are granted
+        const hasPermissions = await notificationService.checkPermissions();
+
+        // Load preferences from storage
+        const preferences = await notificationService.loadPreferences();
+
+        // Set toggle state based on permissions and preferences
+        setNotificationsEnabled(hasPermissions && preferences.enabled);
+      } catch (error) {
+        logger.error("Error loading notification settings:", error);
+      }
+    };
+    loadNotificationSettings();
   }, []);
 
   const handleDisconnectBank = async () => {
@@ -87,7 +110,7 @@ export default function SettingsScreen() {
               if (total === 0) {
                 Alert.alert(
                   "No Account Found",
-                  "No connected bank accounts found to disconnect."
+                  "No connected bank accounts found to disconnect.",
                 );
                 return;
               }
@@ -104,27 +127,29 @@ export default function SettingsScreen() {
 
               if (failed > 0) {
                 Alert.alert(
-                  disconnected === 0 ? "Disconnect Failed" : "Partial Disconnect",
+                  disconnected === 0
+                    ? "Disconnect Failed"
+                    : "Partial Disconnect",
                   disconnected === 0
                     ? "Unable to disconnect any bank connections. Please try again."
-                    : `Disconnected ${disconnected}/${total} bank connection(s). Some connections could not be removed.`
+                    : `Disconnected ${disconnected}/${total} bank connection(s). Some connections could not be removed.`,
                 );
               } else {
                 Alert.alert(
                   "Success",
-                  `Disconnected ${disconnected} bank connection(s).`
+                  `Disconnected ${disconnected} bank connection(s).`,
                 );
               }
             } catch (error) {
               logger.error("Error disconnecting bank:", error);
               Alert.alert(
                 "Error",
-                "Failed to disconnect bank accounts. Please try again."
+                "Failed to disconnect bank accounts. Please try again.",
               );
             }
           },
         },
-      ]
+      ],
     );
   };
 
@@ -171,7 +196,8 @@ export default function SettingsScreen() {
   const handleShareApp = async () => {
     try {
       await Share.share({
-        message: "Hey! This is Finny - Money Coach to guide you to right money decisions! https://usefinny.com",
+        message:
+          "Hey! This is Finny - Money Coach to guide you to right money decisions! https://usefinny.com",
       });
     } catch (error) {
       logger.error("Error sharing app:", error);
@@ -189,7 +215,7 @@ export default function SettingsScreen() {
       const results = Array.isArray(result.results) ? result.results : [];
       const failed = results.filter((entry) => entry?.error).length;
       const requiresUpdateCount = results.filter(
-        (entry) => entry?.requires_update_mode
+        (entry) => entry?.requires_update_mode,
       ).length;
 
       logger.info("[SettingsIndex] Transaction sync results:", result);
@@ -197,7 +223,7 @@ export default function SettingsScreen() {
       if (total === 0) {
         Alert.alert(
           "No Account Found",
-          "Please connect a bank account first to sync transactions."
+          "Please connect a bank account first to sync transactions.",
         );
         return;
       }
@@ -222,19 +248,19 @@ export default function SettingsScreen() {
           synced === 0 ? "Sync Failed" : "Sync Partially Complete",
           synced === 0
             ? `Unable to sync any bank connections.${reauthMessage}`
-            : `Synced ${synced}/${total} bank connection(s).${reauthMessage}`
+            : `Synced ${synced}/${total} bank connection(s).${reauthMessage}`,
         );
       } else {
         Alert.alert(
           "Sync Complete",
-          `Synced ${synced}/${total} bank connection(s).`
+          `Synced ${synced}/${total} bank connection(s).`,
         );
       }
     } catch (error: any) {
       logger.error("[SettingsIndex] Error syncing transactions:", error);
       Alert.alert(
         "Sync Failed",
-        error?.message || "Failed to sync transactions. Please try again."
+        error?.message || "Failed to sync transactions. Please try again.",
       );
     } finally {
       setIsSyncingTransactions(false);
@@ -246,7 +272,7 @@ export default function SettingsScreen() {
     title: string,
     onPress: () => void,
     showBorder = true,
-    rightElement?: JSX.Element
+    rightElement?: JSX.Element,
   ) => (
     <TouchableOpacity
       style={[styles.settingsItem, showBorder && styles.settingsItemBorder]}
@@ -267,7 +293,7 @@ export default function SettingsScreen() {
     title: string,
     value: boolean,
     onValueChange: (value: boolean) => void,
-    showBorder = true
+    showBorder = true,
   ) => (
     <View
       style={[styles.settingsItem, showBorder && styles.settingsItemBorder]}
@@ -330,7 +356,7 @@ export default function SettingsScreen() {
                   pathname: "/settings/personal-info",
                   params: { userName },
                 }),
-              true
+              true,
             )}
             {renderSettingsItem(
               <Ionicons name="refresh-outline" size={24} color="#4A90E2" />,
@@ -341,7 +367,7 @@ export default function SettingsScreen() {
                 <ActivityIndicator size="small" color="#4A90E2" />
               ) : (
                 <MaterialIcons name="chevron-right" size={24} color="#666" />
-              )
+              ),
             )}
             {/* {renderSettingsItem(
               <Ionicons name="card-outline" size={24} color="#4A90E2" />,
@@ -357,7 +383,83 @@ export default function SettingsScreen() {
               />,
               "Push Notifications",
               notificationsEnabled,
-              setNotificationsEnabled
+              async (value: boolean) => {
+                if (value) {
+                  // User wants to enable notifications
+                  try {
+                    // Check if permissions are already granted
+                    const hasPermissions =
+                      await notificationService.checkPermissions();
+
+                    if (!hasPermissions) {
+                      // Request permissions if not granted
+                      const granted =
+                        await notificationService.requestPermissions();
+                      if (!granted) {
+                        // Permissions denied, keep toggle off
+                        setNotificationsEnabled(false);
+                        Alert.alert(
+                          "Permission Required",
+                          "Please enable notification permissions in your device settings to receive push notifications.",
+                        );
+                        return;
+                      }
+                    } else {
+                      // Permissions already granted, just register token to ensure it's up to date
+                      await notificationService.registerPushToken();
+                    }
+
+                    // Load current preferences and update
+                    const preferences =
+                      await notificationService.loadPreferences();
+                    const updatedPreferences = {
+                      ...preferences,
+                      enabled: true,
+                    };
+                    await notificationService.savePreferences(
+                      updatedPreferences,
+                    );
+                    await notificationService.scheduleNotifications(
+                      updatedPreferences,
+                    );
+                    await notificationService.syncPreferencesToDatabase();
+                    setNotificationsEnabled(true);
+                    logger.info("✅ Push notifications enabled");
+                  } catch (error) {
+                    logger.error("Error enabling notifications:", error);
+                    setNotificationsEnabled(false);
+                    Alert.alert(
+                      "Error",
+                      "Failed to enable notifications. Please try again.",
+                    );
+                  }
+                } else {
+                  // User wants to disable notifications
+                  try {
+                    // Update preferences but keep token registered (in case they re-enable)
+                    const preferences =
+                      await notificationService.loadPreferences();
+                    const updatedPreferences = {
+                      ...preferences,
+                      enabled: false,
+                    };
+                    await notificationService.savePreferences(
+                      updatedPreferences,
+                    );
+                    // Cancel scheduled notifications
+                    await notificationService.cancelAllNotifications();
+                    await notificationService.syncPreferencesToDatabase();
+                    setNotificationsEnabled(false);
+                    logger.info("ℹ️ Push notifications disabled");
+                  } catch (error) {
+                    logger.error("Error disabling notifications:", error);
+                    Alert.alert(
+                      "Error",
+                      "Failed to disable notifications. Please try again.",
+                    );
+                  }
+                }
+              },
             )}
             {/* {renderSwitchItem(
               <Ionicons name="finger-print" size={24} color="#4A90E2" />,
@@ -366,7 +468,7 @@ export default function SettingsScreen() {
               setBiometricsEnabled,
               false
             )} */}
-          </>
+          </>,
         )}
 
         {renderSettingsGroup(
@@ -376,21 +478,21 @@ export default function SettingsScreen() {
               <MaterialIcons name="feedback" size={24} color="#4A90E2" />,
               "Give Feedback",
               () => setShowFeedbackModal(true),
-              true
+              true,
             )}
             {renderSettingsItem(
               <Ionicons name="call-outline" size={24} color="#4A90E2" />,
               "Contact Us",
               handleCallUs,
-              true
+              true,
             )}
             {renderSettingsItem(
               <Ionicons name="share-outline" size={24} color="#4A90E2" />,
               "Share the App",
               handleShareApp,
-              false
+              false,
             )}
-          </>
+          </>,
         )}
 
         {renderSettingsGroup(
@@ -400,15 +502,15 @@ export default function SettingsScreen() {
               <Ionicons name="wallet-outline" size={24} color="#ff6b6b" />,
               "Disconnect & Clear Data",
               handleDisconnectBank,
-              true
+              true,
             )}
             {renderSettingsItem(
               <MaterialIcons name="logout" size={24} color="#ff6b6b" />,
               "Log Out",
               handleLogout,
-              false
+              false,
             )}
-          </>
+          </>,
         )}
 
         <View style={styles.footer}>

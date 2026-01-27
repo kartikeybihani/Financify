@@ -22,6 +22,8 @@ import { supabase } from "@/src/lib/supabase/supabase";
 import logger from "@/src/utils/core/logger";
 import { logOnboardingEvent } from "@/src/utils/auth/onboarding";
 import { useAuthNavigation } from "@/src/contexts/AuthNavigationContext";
+import NotificationPermissionModal from "@/src/components/modals/NotificationPermissionModal";
+import { notificationService } from "@/src/utils/core/notificationService";
 
 const { width, height: SCREEN_HEIGHT } = Dimensions.get("window");
 
@@ -65,6 +67,7 @@ export default function FinalScreen() {
   const [showBreakdown, setShowBreakdown] = useState(false);
   const [llmFailed, setLlmFailed] = useState(false);
   const [userFirstName, setUserFirstName] = useState<string | null>(null);
+  const [showNotificationModal, setShowNotificationModal] = useState(false);
 
   // Typing dots animation for loading
   const typingDotsAnim = useRef([
@@ -879,29 +882,7 @@ export default function FinalScreen() {
     };
   }, []);
 
-  const handleComplete = async () => {
-    if (!isButtonEnabled) return;
-
-    // Rocket lift-off animation
-    Animated.timing(rocketAnimation, {
-      toValue: -10,
-      duration: 200,
-      useNativeDriver: true,
-    }).start();
-
-    Animated.sequence([
-      Animated.timing(buttonScale, {
-        toValue: 0.95,
-        duration: 100,
-        useNativeDriver: true,
-      }),
-      Animated.spring(buttonScale, {
-        toValue: 1,
-        friction: 4,
-        useNativeDriver: true,
-      }),
-    ]).start();
-
+  const completeOnboarding = async () => {
     // Show Day 1 loading screen
     setIsLoading(true);
 
@@ -991,6 +972,59 @@ export default function FinalScreen() {
       setIsLoading(false);
       Alert.alert("Error", "Failed to complete onboarding. Please try again.");
     }
+  };
+
+  const handleComplete = async () => {
+    if (!isButtonEnabled) return;
+
+    // Rocket lift-off animation
+    Animated.timing(rocketAnimation, {
+      toValue: -10,
+      duration: 200,
+      useNativeDriver: true,
+    }).start();
+
+    Animated.sequence([
+      Animated.timing(buttonScale, {
+        toValue: 0.95,
+        duration: 100,
+        useNativeDriver: true,
+      }),
+      Animated.spring(buttonScale, {
+        toValue: 1,
+        friction: 4,
+        useNativeDriver: true,
+      }),
+    ]).start();
+
+    // Show notification permission modal
+    setShowNotificationModal(true);
+  };
+
+  const handleNotificationAllow = async () => {
+    setShowNotificationModal(false);
+
+    try {
+      // Request notification permissions
+      const granted = await notificationService.requestPermissions();
+      if (granted) {
+        logger.info("✅ Notification permissions granted");
+      } else {
+        logger.info("ℹ️ Notification permissions denied");
+      }
+    } catch (error) {
+      logger.error("Error requesting notification permissions:", error);
+    }
+
+    // Proceed with onboarding completion
+    await completeOnboarding();
+  };
+
+  const handleNotificationDontAllow = async () => {
+    setShowNotificationModal(false);
+
+    // Proceed with onboarding completion without requesting permissions
+    await completeOnboarding();
   };
 
   const renderInsightCard = (insight: InsightCard, index: number) => {
@@ -1298,6 +1332,12 @@ export default function FinalScreen() {
           </Animated.View>
         </SafeAreaView>
       </LinearGradient>
+
+      <NotificationPermissionModal
+        visible={showNotificationModal}
+        onAllow={handleNotificationAllow}
+        onDontAllow={handleNotificationDontAllow}
+      />
     </View>
   );
 }

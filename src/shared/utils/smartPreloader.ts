@@ -5,7 +5,6 @@ export interface PreloadTask {
   priority: 'high' | 'medium' | 'low';
   execute: () => Promise<any>;
   dependencies?: string[];
-  cacheKey?: string;
 }
 
 export class SmartPreloader {
@@ -42,7 +41,7 @@ export class SmartPreloader {
       return this.getCachedResult(taskId);
     }
 
-    // Check cache first
+    // Check preloader cache first
     const cached = this.getCachedResult(taskId);
     if (cached) {
       logger.info(`📦 [PRELOADER] Using cached result for: ${taskId}`);

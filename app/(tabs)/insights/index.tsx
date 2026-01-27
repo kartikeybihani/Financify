@@ -82,12 +82,14 @@ import {
   loadRecurringFromCache,
   saveRecurringToCache,
   clearRecurringCache,
+  hasValidRecurringCache,
   CachedRecurringData,
 } from "@/src/shared/utils/recurringCache";
 import {
   loadInvestmentFromCache,
   saveInvestmentToCache,
   clearInvestmentCache,
+  hasValidInvestmentCache,
   CachedInvestmentData,
 } from "@/src/shared/utils/investmentCache";
 import {
@@ -551,56 +553,84 @@ export default function InsightsScreen() {
 
   // Initialize preload tasks
   useEffect(() => {
-    // Register preload tasks for each section
-    SmartPreloader.registerTask({
-      id: "transactions",
-      priority: "high",
-      execute: async () => {
-        await loadFilteredTransactions(filterOptions, true, searchQuery);
-        return {
-          transactions: filteredTransactions,
-          count: totalFilteredCount,
-        };
-      },
-    });
+    const setupPreloaders = async () => {
+      const currentUserId = userId || (await getUserId());
+      if (!currentUserId) return;
 
-    SmartPreloader.registerTask({
-      id: "recurring",
-      priority: "medium",
-      execute: async () => {
-        await loadRecurringTransactions();
-        return { recurringData };
-      },
-    });
+      // Check caches before registering preloaders
+      const [hasTransactionsCache, hasRecurringCache, hasInvestmentCache] = await Promise.all([
+        hasValidTransactionsCache(currentUserId),
+        hasValidRecurringCache(currentUserId),
+        hasValidInvestmentCache(currentUserId),
+      ]);
 
-    SmartPreloader.registerTask({
-      id: "investments",
-      priority: "medium",
-      execute: async () => {
-        await loadInvestmentData();
-        return {
-          holdings: investmentHoldings,
-          options: investmentOptions,
-          balances: investmentBalances,
-          connections: investmentConnections,
-        };
-      },
-    });
+      // Register preload tasks for each section
+      // Only register if cache doesn't exist (to avoid unnecessary work)
+      if (!hasTransactionsCache) {
+        SmartPreloader.registerTask({
+          id: "transactions",
+          priority: "high",
+          execute: async () => {
+            await loadFilteredTransactions(filterOptions, true, searchQuery);
+            return {
+              transactions: filteredTransactions,
+              count: totalFilteredCount,
+            };
+          },
+        });
+      } else {
+        logger.info("⏭️ [PRELOADER] Skipping transactions preload - cache exists");
+      }
 
-    SmartPreloader.registerTask({
-      id: "accounts",
-      priority: "high",
-      execute: async () => {
-        await loadUserAccounts(false);
-        return { accounts };
-      },
-    });
+      if (!hasRecurringCache) {
+        SmartPreloader.registerTask({
+          id: "recurring",
+          priority: "medium",
+          execute: async () => {
+            await loadRecurringTransactions();
+            return { recurringData };
+          },
+        });
+      } else {
+        logger.info("⏭️ [PRELOADER] Skipping recurring preload - cache exists");
+      }
 
-    // Start preloading for current section
-    if (activeSectionKey) {
-      SmartPreloader.preloadForSection(activeSectionKey);
-    }
-  }, []);
+      if (!hasInvestmentCache) {
+        SmartPreloader.registerTask({
+          id: "investments",
+          priority: "medium",
+          execute: async () => {
+            await loadInvestmentData();
+            return {
+              holdings: investmentHoldings,
+              options: investmentOptions,
+              balances: investmentBalances,
+              connections: investmentConnections,
+            };
+          },
+        });
+      } else {
+        logger.info("⏭️ [PRELOADER] Skipping investments preload - cache exists");
+      }
+
+      // Accounts preload - always register (no cache check needed, uses unified cache)
+      SmartPreloader.registerTask({
+        id: "accounts",
+        priority: "high",
+        execute: async () => {
+          await loadUserAccounts(false);
+          return { accounts };
+        },
+      });
+
+      // Start preloading for current section (only if tasks were registered)
+      if (activeSectionKey) {
+        SmartPreloader.preloadForSection(activeSectionKey);
+      }
+    };
+
+    setupPreloaders();
+  }, [userId, activeSectionKey]);
 
   // Load cached data immediately on mount to prevent flinching and show instant UI
   // Skip if we already loaded from initial synchronous cache

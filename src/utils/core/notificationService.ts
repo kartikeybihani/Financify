@@ -34,6 +34,19 @@ export class NotificationService {
   }
 
   /**
+   * Check current notification permission status
+   */
+  async checkPermissions(): Promise<boolean> {
+    try {
+      const { status } = await Notifications.getPermissionsAsync();
+      return status === 'granted';
+    } catch (error) {
+      console.error('Error checking notification permissions:', error);
+      return false;
+    }
+  }
+
+  /**
    * Request notification permissions from the user
    */
   async requestPermissions(): Promise<boolean> {

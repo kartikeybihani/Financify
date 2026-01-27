@@ -16,7 +16,7 @@ import { getAccountBalance } from "@/src/utils/accountBalance";
 // Cache keys
 const UNIFIED_CACHE_KEY = "unified_financial_data";
 const UNIFIED_CACHE_TIMESTAMP_KEY = "unified_financial_data_timestamp";
-const CACHE_DURATION = CACHE_CONFIG.DURATIONS.MEDIUM; // 5 minutes
+const CACHE_DURATION = CACHE_CONFIG.DURATIONS.VERY_LONG; // 7 days - event-based invalidation
 
 // Interface for cache data
 interface CachedFinancialData {
@@ -181,12 +181,19 @@ export function useUnifiedFinancialData(): UnifiedFinancialData {
 
       logger.info("🔄 [UNIFIED] Fetching all financial data in parallel...");
       
-      // Fetch all data in parallel for optimal performance
-      const [accountsData, goalsData, cashData, balancesData] = await Promise.all([
-        getAllUserAccounts(user.id).catch(err => {
-          logger.error("❌ [UNIFIED] Failed to fetch accounts:", err);
-          return [];
-        }),
+      // Fetch accounts first to check if user has investment accounts
+      const accountsData = await getAllUserAccounts(user.id).catch(err => {
+        logger.error("❌ [UNIFIED] Failed to fetch accounts:", err);
+        return [];
+      });
+
+      // Check if user has investment accounts before fetching investment data
+      const hasInvestmentAccounts = (accountsData || []).some(
+        (acc: Account) => acc.type === "investment"
+      );
+
+      // Fetch remaining data in parallel (skip investment balances if no investment accounts)
+      const [goalsData, cashData, balancesData] = await Promise.all([
         supabase
           .from('goals')
           .select('*')
@@ -212,10 +219,13 @@ export function useUnifiedFinancialData(): UnifiedFinancialData {
             }
             return data || [];
           }),
-        getSnaptradeBalancesFromDB().catch(err => {
-          logger.error("❌ [UNIFIED] Failed to fetch investment balances:", err);
-          return [];
-        })
+        // Only fetch investment balances if user has investment accounts
+        hasInvestmentAccounts
+          ? getSnaptradeBalancesFromDB().catch(err => {
+              logger.error("❌ [UNIFIED] Failed to fetch investment balances:", err);
+              return [];
+            })
+          : Promise.resolve([])
       ]);
 
       // Update state
@@ -267,18 +277,64 @@ export function useUnifiedFinancialData(): UnifiedFinancialData {
     }
   }, [loadFromCacheSync, fetchAllData]);
 
+  // Background sync: Only sync if last sync was > 1 hour ago
+  // Rationale: Data changes happen:
+  // - Morning/evening: Scheduled transaction syncs (handled by backend)
+  // - User actions: Budget/goals/accounts (event-based invalidation)
+  // - Webhooks: Real-time updates (event-based invalidation)
+  // 1 hour balances freshness with efficiency
+  const shouldBackgroundSync = useCallback((): boolean => {
+    try {
+      const lastSyncKey = `${UNIFIED_CACHE_KEY}_last_sync`;
+      const lastSyncStr = AppStorage.getItemSync(lastSyncKey);
+      
+      if (!lastSyncStr) {
+        return true; // Never synced, should sync
+      }
+      
+      const lastSync = parseInt(lastSyncStr, 10);
+      const now = Date.now();
+      const timeSinceSync = now - lastSync;
+      const ONE_HOUR = 60 * 60 * 1000; // 1 hour
+      
+      return timeSinceSync > ONE_HOUR;
+    } catch (error) {
+      return true; // On error, sync to be safe
+    }
+  }, []);
+
+  // Save last sync time
+  const saveLastSyncTime = useCallback(() => {
+    try {
+      const lastSyncKey = `${UNIFIED_CACHE_KEY}_last_sync`;
+      AppStorage.setItemSync(lastSyncKey, Date.now().toString());
+    } catch (error) {
+      // Ignore errors
+    }
+  }, []);
+
   // Initialize on mount
   useEffect(() => {
       // Cache is already loaded synchronously before render
       // So we only need to fetch fresh data in background
       if (initialCache) {
-        // We have cache - fetch fresh data in background (non-blocking)
-        fetchAllData(true).catch((error) => {
-          logger.error("❌ [UNIFIED] Background data fetch failed:", error);
-        });
+        // We have cache - check if we need background sync
+        if (shouldBackgroundSync()) {
+          // Last sync was > 1 hour ago, sync in background
+          fetchAllData(true).then(() => {
+            saveLastSyncTime();
+          }).catch((error) => {
+            logger.error("❌ [UNIFIED] Background data fetch failed:", error);
+          });
+        } else {
+          // Recently synced, skip background sync
+          logger.info("✅ [UNIFIED] Recently synced, skipping background sync");
+        }
       } else {
         // No cache - fetch immediately (first load or cache expired)
-        fetchAllData(false);
+        fetchAllData(false).then(() => {
+          saveLastSyncTime();
+        });
       }
 
     // Listen for financial data updates
@@ -317,7 +373,7 @@ export function useUnifiedFinancialData(): UnifiedFinancialData {
       goalsSubscription.remove();
       authSubscription.remove();
     };
-  }, [fetchAllData]);
+  }, [fetchAllData, shouldBackgroundSync, saveLastSyncTime]);
 
   // Memoized categorized data
   const categorizedLiabilities = useMemo(

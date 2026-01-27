@@ -47,6 +47,7 @@ export async function getOnboardingProgress(
 
 /**
  * Create onboarding progress record for a new user
+ * If record already exists, returns the existing record instead of failing
  */
 export async function createOnboardingProgress(
   userId: string
@@ -65,12 +66,26 @@ export async function createOnboardingProgress(
       .single();
 
     if (error) {
+      // If it's a unique constraint violation (record already exists), fetch and return it
+      if (error.code === "23505") {
+        logger.info(
+          "Onboarding progress already exists, fetching existing record"
+        );
+        return await getOnboardingProgress(userId);
+      }
       logger.error("Error creating onboarding progress:", error);
       return null;
     }
 
     return data;
-  } catch (error) {
+  } catch (error: any) {
+    // Handle unique constraint violation in catch block as well
+    if (error?.code === "23505") {
+      logger.info(
+        "Onboarding progress already exists, fetching existing record"
+      );
+      return await getOnboardingProgress(userId);
+    }
     logger.error("Error in createOnboardingProgress:", error);
     return null;
   }
