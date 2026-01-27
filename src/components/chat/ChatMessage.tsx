@@ -58,7 +58,7 @@ const extractDomainName = (url: string): string => {
     // Remove common subdomain prefixes
     const cleanDomain = domain.replace(
       /^(www\.|api\.|app\.|blog\.|mail\.|mobile\.)/,
-      ""
+      "",
     );
 
     // Split by dots and get the main domain part (before TLD)
@@ -440,11 +440,11 @@ export const ChatMessageComponent = memo(
     const isUser = useMemo(() => message.sender === "user", [message.sender]);
     const isFirstInGroup = useMemo(
       () => prevSender !== message.sender,
-      [prevSender, message.sender]
+      [prevSender, message.sender],
     );
     const isLastInGroup = useMemo(
       () => nextSender !== message.sender,
-      [nextSender, message.sender]
+      [nextSender, message.sender],
     );
     const isSingleLine = useMemo(() => lineCount <= 1, [lineCount]);
 
@@ -456,14 +456,14 @@ export const ChatMessageComponent = memo(
           isLastInGroup,
           isSingleLine,
         }),
-      [message.sender, isFirstInGroup, isLastInGroup, isSingleLine]
+      [message.sender, isFirstInGroup, isLastInGroup, isSingleLine],
     );
 
     // Memoize gradient colors
     const userGradient = useMemo(() => ["#2A3A4A", "#1A2A3A"] as const, []);
     const finnyGradient = useMemo(
       () => ["#1A3A5A", "#2E5A8A", "#4A90E2"] as const,
-      []
+      [],
     );
 
     const onTextLayout = useCallback((e: any) => {
@@ -596,7 +596,7 @@ export const ChatMessageComponent = memo(
                                 <Text key={idx} style={styles.boldText}>
                                   {parseTextWithLinks(
                                     chunk.slice(2, -2),
-                                    styles.boldText
+                                    styles.boldText,
                                   )}
                                 </Text>
                               );
@@ -738,7 +738,7 @@ export const ChatMessageComponent = memo(
                               <Text key={idx} style={styles.boldText}>
                                 {parseTextWithLinks(
                                   chunk.slice(2, -2),
-                                  styles.boldText
+                                  styles.boldText,
                                 )}
                               </Text>
                             );
@@ -783,7 +783,7 @@ export const ChatMessageComponent = memo(
         </Animated.View>
       </Animated.View>
     );
-  }
+  },
 );
 
 const styles = StyleSheet.create({
@@ -829,6 +829,7 @@ const styles = StyleSheet.create({
   bubbleWrapper: {
     position: "relative",
     overflow: "visible",
+    maxWidth: responsiveWidth(90),
   },
   finnyMessageBubble: {
     paddingHorizontal: responsivePadding(12),
