@@ -171,29 +171,32 @@ async function callLLM(prompt) {
 
   for (const model of models) {
     try {
-      const resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
+      const resp = await fetch(
+        "https://openrouter.ai/api/v1/chat/completions",
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model,
+            temperature: 0.7,
+            max_tokens: 2000,
+            messages: [
+              {
+                role: "system",
+                content:
+                  "You are a financial coach assistant. Always return valid JSON only, no other text.",
+              },
+              {
+                role: "user",
+                content: prompt,
+              },
+            ],
+          }),
         },
-        body: JSON.stringify({
-          model,
-          temperature: 0.7,
-          max_tokens: 2000,
-          messages: [
-            {
-              role: "system",
-              content:
-                "You are a financial coach assistant. Always return valid JSON only, no other text.",
-            },
-            {
-              role: "user",
-              content: prompt,
-            },
-          ],
-        }),
-      });
+      );
 
       if (!resp.ok) {
         const errorText = await resp.text();
@@ -206,9 +209,7 @@ async function callLLM(prompt) {
 
       const data = await resp.json();
       const content =
-        data.choices?.[0]?.message?.content ||
-        data.choices?.[0]?.text ||
-        "";
+        data.choices?.[0]?.message?.content || data.choices?.[0]?.text || "";
 
       // Extract JSON from response (handle cases where LLM adds extra text)
       const jsonMatch = content.match(/\{[\s\S]*\}/);
@@ -325,7 +326,7 @@ async function handleBudgetCreation(req, res, userId) {
             },
             {
               onConflict: "user_id",
-            }
+            },
           )
           .catch((error) => {
             // Non-critical - log but don't fail
@@ -355,14 +356,16 @@ async function handleBudgetCreation(req, res, userId) {
         .eq("id", userId)
         .maybeSingle();
 
-      // Fetch last 6 months of transactions
-      const sixMonthsAgo = new Date();
-      sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
-      const startDate = sixMonthsAgo.toISOString().split("T")[0];
+      // Fetch last 3 months of transactions
+      const threeMonthsAgo = new Date();
+      threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+      const startDate = threeMonthsAgo.toISOString().split("T")[0];
 
       const { data: transactions, error: txError } = await supabase
         .from("transactions")
-        .select("date, amount, merchant_name, name, category, top_category, new_category")
+        .select(
+          "date, amount, merchant_name, name, category, top_category, new_category",
+        )
         .eq("user_id", userId)
         .gte("date", startDate)
         .gt("amount", 0) // Only expenses
@@ -381,6 +384,8 @@ async function handleBudgetCreation(req, res, userId) {
         income,
         savingsAmount: savingsAmount || null,
       });
+
+      console.log("Complete prompt sent to Finny:", prompt);
 
       // Call LLM
       const llmResponse = await callLLM(prompt);
@@ -507,7 +512,7 @@ export default async function handler(req, res) {
       {
         p_item_id: item_id,
         p_user_id: userId,
-      }
+      },
     );
 
     if (tokenErr || !access_token) {
@@ -566,7 +571,7 @@ export default async function handler(req, res) {
     const { data: recurringStreams, error: streamsError } = await supabase
       .from("recurring_streams")
       .select(
-        "stream_id, stream_type, transaction_ids, description, average_amount, last_date, last_amount"
+        "stream_id, stream_type, transaction_ids, description, average_amount, last_date, last_amount",
       )
       .eq("user_id", userId)
       .eq("is_active", true);
@@ -603,7 +608,10 @@ export default async function handler(req, res) {
             const incomingDate = stream.last_date
               ? new Date(stream.last_date)
               : null;
-            if (incomingDate && (!existingDate || incomingDate > existingDate)) {
+            if (
+              incomingDate &&
+              (!existingDate || incomingDate > existingDate)
+            ) {
               nameToStreamMap.set(streamName, stream);
             }
           }
@@ -640,7 +648,7 @@ export default async function handler(req, res) {
           detailed,
           txn.name || null,
           txn.merchant_name || null,
-          txn.original_description || null
+          txn.original_description || null,
         );
 
         // Apply comprehensive category mapping using both primary and detailed
@@ -681,9 +689,12 @@ export default async function handler(req, res) {
           // Set category based on stream type (will be used as new_category)
           // Note: This will only be set if the transaction doesn't already have new_category
           const categoryFromStream = getCategoryFromStreamType(
-            effectiveStreamData.streamType
+            effectiveStreamData.streamType,
           );
-          if (categoryFromStream && effectiveStreamData.streamType !== "other") {
+          if (
+            categoryFromStream &&
+            effectiveStreamData.streamType !== "other"
+          ) {
             newCategory = categoryFromStream;
           }
         }
@@ -713,10 +724,20 @@ export default async function handler(req, res) {
         let categoryId = null;
         if (newCategory && newCategory !== "INTERNAL_TRANSFER") {
           // Look up category_id for user-set category (from stream or override)
-          categoryId = categoryIdMap.get(newCategory) || categoryIdMap.get(newCategory.toLowerCase()) || null;
-        } else if (!newCategory && mappedCategory.top && mappedCategory.top !== "INTERNAL_TRANSFER") {
+          categoryId =
+            categoryIdMap.get(newCategory) ||
+            categoryIdMap.get(newCategory.toLowerCase()) ||
+            null;
+        } else if (
+          !newCategory &&
+          mappedCategory.top &&
+          mappedCategory.top !== "INTERNAL_TRANSFER"
+        ) {
           // Look up category_id for top_category (Plaid mapped category)
-          categoryId = categoryIdMap.get(mappedCategory.top) || categoryIdMap.get(mappedCategory.top.toLowerCase()) || null;
+          categoryId =
+            categoryIdMap.get(mappedCategory.top) ||
+            categoryIdMap.get(mappedCategory.top.toLowerCase()) ||
+            null;
         }
         // For INTERNAL_TRANSFER, categoryId stays null (not a real category)
 
@@ -734,7 +755,7 @@ export default async function handler(req, res) {
               newCategory || mappedCategory.top
             }" → category_id: ${categoryId || "null"} ${
               recurringStreamId ? `🔄 RECURRING (${streamData.streamType})` : ""
-            }`
+            }`,
           );
         }
 
@@ -762,40 +783,55 @@ export default async function handler(req, res) {
 
       // CRITICAL: Validate account_ids exist before processing transactions
       // Filter out transactions for deleted accounts to prevent foreign key errors
-      const accountIds = [...new Set(rows.map((r) => r.account_id).filter(Boolean))];
+      const accountIds = [
+        ...new Set(rows.map((r) => r.account_id).filter(Boolean)),
+      ];
       if (accountIds.length > 0) {
         const { data: existingAccounts, error: accountsErr } = await supabase
           .from("accounts")
           .select("account_id")
           .in("account_id", accountIds)
           .eq("item_id", item_id);
-        
+
         if (accountsErr) {
           console.error("❌ Failed to validate accounts:", accountsErr);
           // Don't throw - try to continue with what we have
         } else {
-          const validAccountIds = new Set(existingAccounts?.map((a) => a.account_id) || []);
-          const invalidRows = rows.filter((r) => !validAccountIds.has(r.account_id));
-          
+          const validAccountIds = new Set(
+            existingAccounts?.map((a) => a.account_id) || [],
+          );
+          const invalidRows = rows.filter(
+            (r) => !validAccountIds.has(r.account_id),
+          );
+
           if (invalidRows.length > 0) {
-            const invalidAccountIds = [...new Set(invalidRows.map((r) => r.account_id))];
-            console.warn(`⚠️ Skipping ${invalidRows.length} transactions for missing accounts (account_ids: ${invalidAccountIds.join(", ")})`);
-            
+            const invalidAccountIds = [
+              ...new Set(invalidRows.map((r) => r.account_id)),
+            ];
+            console.warn(
+              `⚠️ Skipping ${invalidRows.length} transactions for missing accounts (account_ids: ${invalidAccountIds.join(", ")})`,
+            );
+
             // Attempt to re-sync accounts from Plaid in case they were added/changed
             try {
-              console.log(`🔄 Attempting to re-sync accounts for item ${item_id} to restore missing accounts...`);
-              
-              // Get access token (we already verified item ownership)
-              const { data: access_token, error: tokenError } = await supabase.rpc(
-                "secure_get_plaid_token",
-                { p_item_id: item_id, p_user_id: userId }
+              console.log(
+                `🔄 Attempting to re-sync accounts for item ${item_id} to restore missing accounts...`,
               );
-              
+
+              // Get access token (we already verified item ownership)
+              const { data: access_token, error: tokenError } =
+                await supabase.rpc("secure_get_plaid_token", {
+                  p_item_id: item_id,
+                  p_user_id: userId,
+                });
+
               if (!tokenError && access_token) {
                 // Fetch accounts directly from Plaid
-                const accountsResponse = await client.accountsGet({ access_token });
+                const accountsResponse = await client.accountsGet({
+                  access_token,
+                });
                 const accounts = accountsResponse.data.accounts || [];
-                
+
                 if (accounts.length > 0) {
                   const accountsToStore = accounts.map((account) => ({
                     account_id: account.account_id,
@@ -808,43 +844,60 @@ export default async function handler(req, res) {
                     current_balance: account.balances.current,
                     available_balance: account.balances.available,
                   }));
-                  
+
                   const { error: accountsError } = await supabase
                     .from("accounts")
                     .upsert(accountsToStore, {
                       onConflict: "account_id",
                       ignoreDuplicates: false,
                     });
-                  
+
                   if (!accountsError) {
-                    console.log(`✅ Re-synced ${accounts.length} accounts from Plaid`);
-                    
+                    console.log(
+                      `✅ Re-synced ${accounts.length} accounts from Plaid`,
+                    );
+
                     // Re-check if missing accounts now exist
                     const { data: recheckAccounts } = await supabase
                       .from("accounts")
                       .select("account_id")
                       .in("account_id", invalidAccountIds)
                       .eq("item_id", item_id);
-                    
-                    const recheckValidIds = new Set(recheckAccounts?.map((a) => a.account_id) || []);
-                    const restoredCount = invalidAccountIds.filter(id => recheckValidIds.has(id)).length;
-                    
+
+                    const recheckValidIds = new Set(
+                      recheckAccounts?.map((a) => a.account_id) || [],
+                    );
+                    const restoredCount = invalidAccountIds.filter((id) =>
+                      recheckValidIds.has(id),
+                    ).length;
+
                     if (restoredCount > 0) {
-                      console.log(`✅ Restored ${restoredCount} missing account(s) after re-sync`);
+                      console.log(
+                        `✅ Restored ${restoredCount} missing account(s) after re-sync`,
+                      );
                       // Update validAccountIds to include newly synced accounts
-                      recheckValidIds.forEach(id => validAccountIds.add(id));
+                      recheckValidIds.forEach((id) => validAccountIds.add(id));
                     }
                   } else {
-                    console.error("⚠️ Failed to store re-synced accounts:", accountsError.message);
+                    console.error(
+                      "⚠️ Failed to store re-synced accounts:",
+                      accountsError.message,
+                    );
                   }
                 }
               } else {
-                console.error("⚠️ Could not get access token for account re-sync:", tokenError?.message);
+                console.error(
+                  "⚠️ Could not get access token for account re-sync:",
+                  tokenError?.message,
+                );
               }
             } catch (reSyncError) {
-              console.error("⚠️ Failed to re-sync accounts (non-critical):", reSyncError.message);
+              console.error(
+                "⚠️ Failed to re-sync accounts (non-critical):",
+                reSyncError.message,
+              );
             }
-            
+
             // Filter out transactions with invalid account_ids (after potential re-sync)
             rows = rows.filter((r) => validAccountIds.has(r.account_id));
           }
@@ -860,7 +913,9 @@ export default async function handler(req, res) {
       // First, get existing transactions to check which ones already have new_category, category_id, and if_recurring.
       // IMPORTANT: This can be a large list (thousands) on first sync.
       // Supabase/PostgREST can choke on a huge `.in(...)` list, so we batch.
-      const plaidTxIds = rows.map((r) => r.plaid_transaction_id).filter(Boolean);
+      const plaidTxIds = rows
+        .map((r) => r.plaid_transaction_id)
+        .filter(Boolean);
 
       const existingTxs = [];
       let fetchErr = null;
@@ -877,7 +932,7 @@ export default async function handler(req, res) {
           const { data, error } = await supabase
             .from("transactions")
             .select(
-              "plaid_transaction_id, new_category, category_id, if_recurring, recurring_stream_id"
+              "plaid_transaction_id, new_category, category_id, if_recurring, recurring_stream_id",
             )
             .eq("user_id", userId)
             .in("plaid_transaction_id", batch);
@@ -915,10 +970,10 @@ export default async function handler(req, res) {
       if (fetchErr) {
         console.error(
           "⚠️ CRITICAL: Error fetching existing transactions to preserve user overrides:",
-          fetchErr
+          fetchErr,
         );
         console.error(
-          "⚠️ Skipping new_category and if_recurring updates from streams to protect user data integrity"
+          "⚠️ Skipping new_category and if_recurring updates from streams to protect user data integrity",
         );
       }
 
@@ -966,10 +1021,10 @@ export default async function handler(req, res) {
 
         // Preserve user overrides for existing transactions
         const existingCategory = existingCategoryMap.get(
-          row.plaid_transaction_id
+          row.plaid_transaction_id,
         );
         const existingRecurring = existingRecurringMap.get(
-          row.plaid_transaction_id
+          row.plaid_transaction_id,
         );
 
         const updatedRow = { ...row };
@@ -981,8 +1036,10 @@ export default async function handler(req, res) {
         }
 
         // Existing transaction - preserve user overrides
-        const existingCategoryId = existingCategoryIdMap.get(row.plaid_transaction_id);
-        
+        const existingCategoryId = existingCategoryIdMap.get(
+          row.plaid_transaction_id,
+        );
+
         if (existingCategoryId) {
           // User has set category_id - preserve it (highest priority)
           updatedRow.category_id = existingCategoryId;
@@ -999,7 +1056,10 @@ export default async function handler(req, res) {
           updatedRow.new_category = existingCategory;
           if (existingCategory !== "INTERNAL_TRANSFER") {
             // Try to look up category_id for the existing category name
-            updatedRow.category_id = categoryIdMap.get(existingCategory) || categoryIdMap.get(existingCategory.toLowerCase()) || null;
+            updatedRow.category_id =
+              categoryIdMap.get(existingCategory) ||
+              categoryIdMap.get(existingCategory.toLowerCase()) ||
+              null;
           } else {
             updatedRow.category_id = null; // INTERNAL_TRANSFER doesn't have a category_id
           }
@@ -1096,7 +1156,7 @@ export default async function handler(req, res) {
                 last_synced_at: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
               })
-              .eq("stream_id", streamId)
+              .eq("stream_id", streamId),
           );
         });
 
@@ -1105,7 +1165,7 @@ export default async function handler(req, res) {
         if (updateErrors.length > 0) {
           console.error(
             "Recurring stream update errors:",
-            updateErrors.map((r) => r.error)
+            updateErrors.map((r) => r.error),
           );
         }
       }
@@ -1118,7 +1178,7 @@ export default async function handler(req, res) {
         .delete()
         .in(
           "plaid_transaction_id",
-          removed.map((r) => r.transaction_id)
+          removed.map((r) => r.transaction_id),
         );
     }
 
@@ -1147,14 +1207,16 @@ export default async function handler(req, res) {
 
       const { data: profile, error: profileErr } = await supabase
         .from("profiles")
-        .select("id, first_name, age, occupation, location, finny_style, early_insights")
+        .select(
+          "id, first_name, age, occupation, location, finny_style, early_insights",
+        )
         .eq("id", userId)
         .maybeSingle();
 
       if (profileErr) {
         console.error(
           "[TRANSACTIONS_SYNC] early_insights: profile fetch failed",
-          profileErr
+          profileErr,
         );
       }
 
@@ -1193,7 +1255,7 @@ export default async function handler(req, res) {
 
         if (!openRouterApiKey) {
           console.warn(
-            "[TRANSACTIONS_SYNC] early_insights: missing OPENROUTER_API_KEY (skipping)"
+            "[TRANSACTIONS_SYNC] early_insights: missing OPENROUTER_API_KEY (skipping)",
           );
         } else {
           const { startDate, endDate } = getDateRangeLast6Months();
@@ -1228,7 +1290,7 @@ export default async function handler(req, res) {
                   "plaid_transaction_id",
                   "if_recurring",
                   "recurring_stream_id",
-                ].join(",")
+                ].join(","),
               )
               .eq("user_id", userId)
               .gte("date", startDate)
@@ -1250,11 +1312,13 @@ export default async function handler(req, res) {
           if (rows.length === 0) {
             console.log(
               "[TRANSACTIONS_SYNC] early_insights: no tx rows (skipping)",
-              { userId }
+              { userId },
             );
           } else {
             const months = getLast6MonthKeys();
-            const filtered = rows.filter((tx) => !isLikelyInternalOrPayment(tx));
+            const filtered = rows.filter(
+              (tx) => !isLikelyInternalOrPayment(tx),
+            );
             const patternPayload = computePatterns({
               transactions: filtered,
               months,
@@ -1275,12 +1339,12 @@ export default async function handler(req, res) {
             if (topTwoPatterns.length === 0) {
               console.log(
                 "[TRANSACTIONS_SYNC] early_insights: no patterns (skipping)",
-                { userId }
+                { userId },
               );
             } else {
               console.log(
                 "[TRANSACTIONS_SYNC] early_insights: calling OpenRouter",
-                { userId }
+                { userId },
               );
 
               const llmResult = await callOnboardingLLM({
@@ -1302,10 +1366,12 @@ export default async function handler(req, res) {
                   {
                     userId,
                     ok: !!llmResult?.ok,
-                    rawPreview: String(llmResult?.rawStripped || llmResult?.raw || "")
+                    rawPreview: String(
+                      llmResult?.rawStripped || llmResult?.raw || "",
+                    )
                       .slice(0, 160)
                       .trim(),
-                  }
+                  },
                 );
                 // Store error marker so frontend knows LLM failed
                 const { error: upsertErr } = await supabase
@@ -1316,12 +1382,12 @@ export default async function handler(req, res) {
                       early_insights: { error: "LLM_FAILED" },
                       updated_at: new Date().toISOString(),
                     },
-                    { onConflict: "id" }
+                    { onConflict: "id" },
                   );
                 if (upsertErr) {
                   console.error(
                     "[TRANSACTIONS_SYNC] early_insights: error marker upsert failed",
-                    upsertErr
+                    upsertErr,
                   );
                 }
               } else {
@@ -1333,13 +1399,13 @@ export default async function handler(req, res) {
                       early_insights: insightsJson,
                       updated_at: new Date().toISOString(),
                     },
-                    { onConflict: "id" }
+                    { onConflict: "id" },
                   );
 
                 if (upsertErr) {
                   console.error(
                     "[TRANSACTIONS_SYNC] early_insights: upsert failed",
-                    upsertErr
+                    upsertErr,
                   );
                 } else {
                   console.log("✅ Stored profiles.early_insights", {
@@ -1353,27 +1419,31 @@ export default async function handler(req, res) {
         }
       }
     } catch (err) {
-      console.error("[TRANSACTIONS_SYNC] early_insights error (non-blocking)", err);
+      console.error(
+        "[TRANSACTIONS_SYNC] early_insights error (non-blocking)",
+        err,
+      );
       // Store error marker on exception too
       try {
-        const { error: upsertErr } = await supabase
-          .from("profiles")
-          .upsert(
-            {
-              id: userId,
-              early_insights: { error: "LLM_FAILED" },
-              updated_at: new Date().toISOString(),
-            },
-            { onConflict: "id" }
-          );
+        const { error: upsertErr } = await supabase.from("profiles").upsert(
+          {
+            id: userId,
+            early_insights: { error: "LLM_FAILED" },
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "id" },
+        );
         if (upsertErr) {
           console.error(
             "[TRANSACTIONS_SYNC] early_insights: error marker upsert failed (exception path)",
-            upsertErr
+            upsertErr,
           );
         }
       } catch (markerErr) {
-        console.error("[TRANSACTIONS_SYNC] Failed to store error marker", markerErr);
+        console.error(
+          "[TRANSACTIONS_SYNC] Failed to store error marker",
+          markerErr,
+        );
       }
     }
 
@@ -1382,17 +1452,17 @@ export default async function handler(req, res) {
     // Stores raw JSON in `profiles.base_analysis`.
     // Only runs if base_analysis doesn't already exist (first account connection).
     try {
-
-      const { data: profileForAnalysis, error: profileAnalysisErr } = await supabase
-        .from("profiles")
-        .select("id, base_analysis")
-        .eq("id", userId)
-        .maybeSingle();
+      const { data: profileForAnalysis, error: profileAnalysisErr } =
+        await supabase
+          .from("profiles")
+          .select("id, base_analysis")
+          .eq("id", userId)
+          .maybeSingle();
 
       if (profileAnalysisErr) {
         console.error(
           "[TRANSACTIONS_SYNC] base_analysis: profile fetch failed",
-          profileAnalysisErr
+          profileAnalysisErr,
         );
       }
 
@@ -1413,7 +1483,7 @@ export default async function handler(req, res) {
 
         if (!openRouterApiKey) {
           console.warn(
-            "[TRANSACTIONS_SYNC] base_analysis: missing OPENROUTER_API_KEY (skipping)"
+            "[TRANSACTIONS_SYNC] base_analysis: missing OPENROUTER_API_KEY (skipping)",
           );
         } else {
           // Fetch last 2-3 months of transactions (90 days)
@@ -1433,7 +1503,7 @@ export default async function handler(req, res) {
           const { data: transactions, error: txError } = await supabase
             .from("transactions")
             .select(
-              "date, amount, merchant_name, name, category, top_category, new_category"
+              "date, amount, merchant_name, name, category, top_category, new_category",
             )
             .eq("user_id", userId)
             .gte("date", startDateStr)
@@ -1444,12 +1514,12 @@ export default async function handler(req, res) {
           if (txError) {
             console.error(
               "[TRANSACTIONS_SYNC] base_analysis: error fetching transactions",
-              txError
+              txError,
             );
           } else if (!transactions || transactions.length === 0) {
             console.log(
               "[TRANSACTIONS_SYNC] base_analysis: no tx rows (skipping)",
-              { userId }
+              { userId },
             );
             // Store result even when no transactions
             const result = {
@@ -1465,7 +1535,7 @@ export default async function handler(req, res) {
             } catch (storeError) {
               console.error(
                 "[TRANSACTIONS_SYNC] base_analysis: error storing no-transactions result",
-                storeError
+                storeError,
               );
             }
           } else {
@@ -1476,7 +1546,7 @@ export default async function handler(req, res) {
 
             console.log(
               "[TRANSACTIONS_SYNC] base_analysis: calling OpenRouter",
-              { userId }
+              { userId },
             );
 
             const llmResult = await callAccountCompletenessLLM({
@@ -1497,11 +1567,11 @@ export default async function handler(req, res) {
                   userId,
                   ok: !!llmResult?.ok,
                   rawPreview: String(
-                    llmResult?.rawStripped || llmResult?.raw || ""
+                    llmResult?.rawStripped || llmResult?.raw || "",
                   )
                     .slice(0, 500)
                     .trim(),
-                }
+                },
               );
               // Store error marker so frontend knows LLM failed
               const { error: upsertErr } = await supabase
@@ -1512,12 +1582,12 @@ export default async function handler(req, res) {
                     base_analysis: { error: "LLM_FAILED" },
                     updated_at: new Date().toISOString(),
                   },
-                  { onConflict: "id" }
+                  { onConflict: "id" },
                 );
               if (upsertErr) {
                 console.error(
                   "[TRANSACTIONS_SYNC] base_analysis: error marker upsert failed",
-                  upsertErr
+                  upsertErr,
                 );
               }
             } else {
@@ -1537,13 +1607,13 @@ export default async function handler(req, res) {
                     base_analysis: result,
                     updated_at: new Date().toISOString(),
                   },
-                  { onConflict: "id" }
+                  { onConflict: "id" },
                 );
 
               if (upsertErr) {
                 console.error(
                   "[TRANSACTIONS_SYNC] base_analysis: upsert failed",
-                  upsertErr
+                  upsertErr,
                 );
               } else {
                 console.log("✅ Stored profiles.base_analysis", {
@@ -1558,45 +1628,42 @@ export default async function handler(req, res) {
     } catch (err) {
       console.error(
         "[TRANSACTIONS_SYNC] base_analysis error (non-blocking)",
-        err
+        err,
       );
       // Store error marker on exception too
       try {
-        const { error: upsertErr } = await supabase
-          .from("profiles")
-          .upsert(
-            {
-              id: userId,
-              base_analysis: { error: "LLM_FAILED" },
-              updated_at: new Date().toISOString(),
-            },
-            { onConflict: "id" }
-          );
+        const { error: upsertErr } = await supabase.from("profiles").upsert(
+          {
+            id: userId,
+            base_analysis: { error: "LLM_FAILED" },
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "id" },
+        );
         if (upsertErr) {
           console.error(
             "[TRANSACTIONS_SYNC] base_analysis: error marker upsert failed (exception path)",
-            upsertErr
+            upsertErr,
           );
         }
       } catch (markerErr) {
         console.error(
           "[TRANSACTIONS_SYNC] Failed to store error marker",
-          markerErr
+          markerErr,
         );
       }
     }
 
     console.log(
-      `✅ Sync complete: ${added.length} added, ${modified.length} modified, ${removed.length} removed`
+      `✅ Sync complete: ${added.length} added, ${modified.length} modified, ${removed.length} removed`,
     );
 
     // 8) Detect notification patterns (fire and forget - don't block response)
     // Always run pattern detection, even if no new transactions - analyzes last 60 days
     (async () => {
       try {
-        const { detectNotificationPatterns } = await import(
-          "../lib/notificationPatternDetection.js"
-        );
+        const { detectNotificationPatterns } =
+          await import("../lib/notificationPatternDetection.js");
         await detectNotificationPatterns(userId, added);
       } catch (error) {
         console.error("[TRANSACTIONS_SYNC] Pattern detection error:", error);
@@ -1614,7 +1681,7 @@ export default async function handler(req, res) {
     });
   } catch (e) {
     console.error("transactions_sync error", e.response?.data || e);
-    
+
     // Handle specific Plaid errors
     const plaidError = e.response?.data;
     if (plaidError?.error_code === "ITEM_LOGIN_REQUIRED") {
@@ -1623,7 +1690,7 @@ export default async function handler(req, res) {
         requires_update_mode: true,
       });
     }
-    
+
     return res
       .status(500)
       .json({ error: plaidError?.error_message || e.message });
