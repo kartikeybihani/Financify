@@ -10,29 +10,22 @@ import {
 import { GlassView } from "expo-glass-effect";
 import { LinearGradient } from "expo-linear-gradient";
 
-type SectionKey =
-  | "investments"
-  | "spending"
-  | "budget"
-  | "transactions"
-  | "recurring"
-  | "cashflow";
+export type SectionConfig = {
+  key: string;
+  label: string;
+};
 
 interface TopChipsProps {
-  activeSection: SectionKey;
-  onChange: (section: SectionKey) => void;
+  sections: SectionConfig[];
+  activeIndex: number;
+  onChange: (index: number) => void;
 }
 
-const labels: { key: SectionKey; label: string }[] = [
-  { key: "recurring", label: "Recurring" },
-  { key: "transactions", label: "Transactions" },
-  { key: "spending", label: "Spending" },
-  { key: "budget", label: "Budget" },
-  { key: "investments", label: "Investments" },
-  { key: "cashflow", label: "Cash Flow" },
-];
-
-export default function TopChips({ activeSection, onChange }: TopChipsProps) {
+export default function TopChips({
+  sections,
+  activeIndex,
+  onChange,
+}: TopChipsProps) {
   // Check if we should use iOS 18+ liquid glass effect (matching RecurringSection)
   const isIOS = Platform.OS === "ios";
   const iosVersion = isIOS
@@ -46,7 +39,7 @@ export default function TopChips({ activeSection, onChange }: TopChipsProps) {
   const [viewportWidth, setViewportWidth] = React.useState(0);
   const hasAutoScrolledRef = React.useRef(false);
   const chipLayoutsRef = React.useRef<
-    Partial<Record<SectionKey, { x: number; width: number }>>
+    Partial<Record<number, { x: number; width: number }>>
   >({});
 
   React.useEffect(() => {
@@ -71,27 +64,27 @@ export default function TopChips({ activeSection, onChange }: TopChipsProps) {
   React.useEffect(() => {
     const scrollView = scrollRef.current;
     if (!scrollView || viewportWidth <= 0 || contentWidth <= 0) return;
-    const layout = chipLayoutsRef.current[activeSection];
+    const layout = chipLayoutsRef.current[activeIndex];
     if (!layout) return;
 
     const maxScrollableX = Math.max(0, contentWidth - viewportWidth);
     const centeredX = layout.x + layout.width / 2 - viewportWidth / 2;
     const targetX = Math.min(maxScrollableX, Math.max(0, centeredX));
     scrollView.scrollTo({ x: targetX, animated: true });
-  }, [activeSection, viewportWidth, contentWidth]);
+  }, [activeIndex, viewportWidth, contentWidth]);
 
-  const renderChip = (key: SectionKey, label: string) => {
+  const renderChip = (section: SectionConfig, index: number) => {
     const CardShell = shouldUseLiquidGlass ? GlassView : View;
-    const isActive = activeSection === key;
+    const isActive = activeIndex === index;
 
     return (
       <TouchableOpacity
-        key={key}
-        onPress={() => onChange(key)}
+        key={section.key}
+        onPress={() => onChange(index)}
         activeOpacity={0.85}
         style={styles.chipTouchable}
         onLayout={(e) => {
-          chipLayoutsRef.current[key] = {
+          chipLayoutsRef.current[index] = {
             x: e.nativeEvent.layout.x,
             width: e.nativeEvent.layout.width,
           };
@@ -105,7 +98,7 @@ export default function TopChips({ activeSection, onChange }: TopChipsProps) {
             style={styles.gradientChip}
           >
             <Text style={[styles.chipText, styles.chipTextActive]}>
-              {label}
+              {section.label}
             </Text>
           </LinearGradient>
         ) : (
@@ -118,7 +111,7 @@ export default function TopChips({ activeSection, onChange }: TopChipsProps) {
               : {})}
             style={styles.glassChip}
           >
-            <Text style={styles.chipText}>{label}</Text>
+            <Text style={styles.chipText}>{section.label}</Text>
           </CardShell>
         )}
       </TouchableOpacity>
@@ -135,7 +128,7 @@ export default function TopChips({ activeSection, onChange }: TopChipsProps) {
         onLayout={(e) => setViewportWidth(e.nativeEvent.layout.width)}
         contentContainerStyle={styles.chipsRow}
       >
-        {labels.map(({ key, label }) => renderChip(key, label))}
+        {sections.map((section, index) => renderChip(section, index))}
       </ScrollView>
     </View>
   );

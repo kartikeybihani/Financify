@@ -44,7 +44,7 @@ export default function RecurringSection({
   titleStyle,
 }: Props) {
   const [selectedStream, setSelectedStream] = useState<RecurringStream | null>(
-    null
+    null,
   );
   const [streamTransactions, setStreamTransactions] = useState<
     RecurringTransaction[]
@@ -54,10 +54,10 @@ export default function RecurringSection({
 
   // Cache for recurring transactions
   const transactionsCache = useRef<Map<string, RecurringTransaction[]>>(
-    new Map()
+    new Map(),
   );
   const [preloadingStreams, setPreloadingStreams] = useState<Set<string>>(
-    new Set()
+    new Set(),
   );
   const [removingRecurring, setRemovingRecurring] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
@@ -72,7 +72,7 @@ export default function RecurringSection({
   const horizontalPadding = 0; // No extra padding since parent container already has padding
   const interCardGap = 20;
   const cardWidth = Math.floor(
-    (width - 40 - horizontalPadding * 2 - interCardGap) / 2
+    (width - 40 - horizontalPadding * 2 - interCardGap) / 2,
   ); // 40px is the parent container padding (20px left + 20px right)
 
   // Fetch user ID on mount
@@ -117,7 +117,7 @@ export default function RecurringSection({
             .catch((error) => {
               console.error(
                 `Error pre-loading transactions for stream ${stream.stream_id}:`,
-                error
+                error,
               );
               transactionsCache.current.set(stream.stream_id, []);
             })
@@ -199,7 +199,7 @@ export default function RecurringSection({
     if (!last) return null;
 
     const frequency = (stream.frequency || "").toLowerCase();
-    
+
     // Skip if frequency is "user-marked" (will be null and won't show next date)
     if (frequency === "user-marked") {
       return null;
@@ -290,7 +290,10 @@ export default function RecurringSection({
 
   const handleRemoveRecurring = async () => {
     if (!selectedStream || !userId) {
-      Alert.alert("Error", "Unable to remove recurring status. Please try again.");
+      Alert.alert(
+        "Error",
+        "Unable to remove recurring status. Please try again.",
+      );
       return;
     }
 
@@ -308,20 +311,23 @@ export default function RecurringSection({
           onPress: async () => {
             try {
               setRemovingRecurring(true);
-              
+
               // Priority: Use stream_id if this is a Plaid stream (not user-marked)
               // User-marked streams have stream_id starting with "user-marked-"
-              const isPlaidStream = !selectedStream.stream_id.startsWith("user-marked-");
-              
+              const isPlaidStream =
+                !selectedStream.stream_id.startsWith("user-marked-");
+
               const result = await bulkUpdateRecurringStatus(
                 userId,
                 {
-                  recurring_stream_id: isPlaidStream ? selectedStream.stream_id : undefined,
+                  recurring_stream_id: isPlaidStream
+                    ? selectedStream.stream_id
+                    : undefined,
                   merchant_name: selectedStream.merchant_name || undefined,
                   name: selectedStream.description || undefined,
                 },
                 "no",
-                true // Clear recurring_stream_id
+                true, // Clear recurring_stream_id
               );
 
               if (result.updated > 0) {
@@ -336,20 +342,26 @@ export default function RecurringSection({
                         handleBackToGrid();
                       },
                     },
-                  ]
+                  ],
                 );
               } else {
-                Alert.alert("Error", "No transactions were updated. Please try again.");
+                Alert.alert(
+                  "Error",
+                  "No transactions were updated. Please try again.",
+                );
               }
             } catch (error) {
               console.error("Error removing recurring status:", error);
-              Alert.alert("Error", "Failed to remove recurring status. Please try again.");
+              Alert.alert(
+                "Error",
+                "Failed to remove recurring status. Please try again.",
+              );
             } finally {
               setRemovingRecurring(false);
             }
           },
         },
-      ]
+      ],
     );
   };
 
@@ -372,7 +384,7 @@ export default function RecurringSection({
     const stream = item as RecurringStream;
     const color = getStreamTypeColor(stream);
     const iconName = getStreamTypeIcon(
-      stream
+      stream,
     ) as keyof typeof Ionicons.glyphMap;
     const nextDate = getNextTransactionDate(stream);
     const showNextDate =
@@ -467,7 +479,7 @@ export default function RecurringSection({
 
     const color = getStreamTypeColor(selectedStream);
     const iconName = getStreamTypeIcon(
-      selectedStream
+      selectedStream,
     ) as keyof typeof Ionicons.glyphMap;
 
     return (
@@ -480,9 +492,12 @@ export default function RecurringSection({
                 {selectedStream.merchant_name || selectedStream.description}
               </Text>
               <Text style={styles.headerSubtitle}>
-                {selectedStream.frequency && selectedStream.frequency !== "user-marked"
-                  ? `${(selectedStream.frequency || "").charAt(0).toUpperCase() +
-                      (selectedStream.frequency || "").slice(1).toLowerCase()} • `
+                {selectedStream.frequency &&
+                selectedStream.frequency !== "user-marked"
+                  ? `${
+                      (selectedStream.frequency || "").charAt(0).toUpperCase() +
+                      (selectedStream.frequency || "").slice(1).toLowerCase()
+                    } • `
                   : ""}
                 {selectedStream.transaction_ids?.length || 0} transactions
               </Text>
@@ -561,7 +576,7 @@ export default function RecurringSection({
                           </Text>
                           <Text style={styles.historyTransactionDate}>
                             {formatDate(
-                              transaction.authorized_date || transaction.date
+                              transaction.authorized_date || transaction.date,
                             )}
                           </Text>
                           {transaction.accounts?.user_items
@@ -683,7 +698,7 @@ export default function RecurringSection({
   };
 
   return (
-    <View>
+    <View style={{ paddingHorizontal: 20, marginTop: 16 }}>
       <Text style={titleStyle}>Recurring Transactions</Text>
       <View
         style={{

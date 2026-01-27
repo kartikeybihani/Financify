@@ -85,7 +85,7 @@ export default function SpendingSection({
 
   return (
     <View style={styles.container}>
-      <Text style={titleStyle}>Your Spending Personality</Text>
+      {/* <Text style={titleStyle}>Your Spending Personality</Text> */}
 
       <PersonalityBadge personality={personality} showDetails={true} />
 
@@ -121,5 +121,6 @@ export default function SpendingSection({
 const styles = StyleSheet.create({
   container: {
     position: "relative",
+    paddingHorizontal: 20,
   },
 });

@@ -52,7 +52,8 @@ export const styles = StyleSheet.create({
       fontSize: 16,
       fontWeight: "600",
       color: "#ccc",
-      marginBottom: 14,
+      marginBottom: 5,
+      // marginTop: 14,
     },
     card: {
       backgroundColor: "#1f1f1f",

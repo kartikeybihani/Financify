@@ -187,5 +187,7 @@ export default function BudgetSection({
 const styles = StyleSheet.create({
   container: {
     position: "relative",
+    paddingHorizontal: 20,
+    marginTop: 16,
   },
 });

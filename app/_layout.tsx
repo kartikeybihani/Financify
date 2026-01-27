@@ -7,6 +7,7 @@ import React, { useEffect, useState } from "react";
 import "react-native-reanimated";
 import { Stack } from "expo-router";
 import * as Linking from "expo-linking";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
@@ -153,16 +154,18 @@ export default function RootLayout() {
 
   // Render app structure first, then wrap with PostHog after bridge is ready
   const appContent = (
-    <AuthNavigationProvider>
-      {postHogReady && <PostHogScreenTracker />}
-      <NavigationReadyTracker onReady={() => setNavigationReady(true)} />
-      <ActionSheetProvider>
-        <>
-          <RootLayoutNav />
-          <StatusBar style="light" backgroundColor="transparent" translucent />
-        </>
-      </ActionSheetProvider>
-    </AuthNavigationProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <AuthNavigationProvider>
+        {postHogReady && <PostHogScreenTracker />}
+        <NavigationReadyTracker onReady={() => setNavigationReady(true)} />
+        <ActionSheetProvider>
+          <>
+            <RootLayoutNav />
+            <StatusBar style="light" backgroundColor="transparent" translucent />
+          </>
+        </ActionSheetProvider>
+      </AuthNavigationProvider>
+    </GestureHandlerRootView>
   );
 
   // Only initialize PostHog after React Native bridge is ready

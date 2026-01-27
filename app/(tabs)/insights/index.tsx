@@ -15,11 +15,14 @@ import {
   RefreshControl,
   Animated,
   Alert,
+  Dimensions,
 } from "react-native";
 import { InteractionManager } from "react-native";
 import * as Haptics from "expo-haptics";
-import TopChips from "@/src/components/insights/components/TopChips";
-import RecurringSection from "@/src/components/insights/components/RecurringSection";
+import PagerView from "react-native-pager-view";
+import TopChips, {
+  SectionConfig,
+} from "@/src/components/insights/components/TopChips";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { styles } from "@/src/styles/insightsStyles";
 import {
@@ -74,7 +77,6 @@ import {
 import logger from "@/src/utils/core/logger";
 import { useCategories } from "@/src/hooks/useCategories";
 import { OptimisticUpdateManager } from "@/src/shared/utils/optimisticUpdates";
-import { InsightsAnimationManager } from "@/src/shared/utils/insightsAnimations";
 import { SmartPreloader } from "@/src/shared/utils/smartPreloader";
 import {
   loadRecurringFromCache,
@@ -142,6 +144,25 @@ import {
 } from "@/src/utils/insights";
 import CleanInsightsHeader from "@/src/components/insights/CleanInsightsHeader";
 import InsightsFAB from "@/src/components/insights/InsightsFAB";
+import RecurringPage from "@/src/components/insights/pages/RecurringPage";
+import TransactionsPage from "@/src/components/insights/pages/TransactionsPage";
+import SpendingPage from "@/src/components/insights/pages/SpendingPage";
+import BudgetPage from "@/src/components/insights/pages/BudgetPage";
+import InvestmentsPage from "@/src/components/insights/pages/InvestmentsPage";
+import CashFlowPage from "@/src/components/insights/pages/CashFlowPage";
+
+// Canonical sections model - single source of truth
+const SECTIONS: SectionConfig[] = [
+  { key: "recurring", label: "Recurring" },
+  { key: "transactions", label: "Transactions" },
+  { key: "spending", label: "Spending" },
+  { key: "budget", label: "Budget" },
+  { key: "investments", label: "Investments" },
+  { key: "cashflow", label: "Cash Flow" },
+] as const;
+
+// Default to "spending" section (index 2)
+const DEFAULT_SECTION_INDEX = 2;
 
 export default function InsightsScreen() {
   // Get userId synchronously for initial cache load
@@ -300,7 +321,6 @@ export default function InsightsScreen() {
   const [hasMoreTransactions, setHasMoreTransactions] = useState(true);
   const [mightHaveTransactions, setMightHaveTransactions] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const scrollViewRef = useRef<ScrollView>(null);
   const openAddCategoryModalRef = useRef<(() => void) | null>(null);
   const [hasOpenAddCategoryModal, setHasOpenAddCategoryModal] = useState(false);
   const refreshBudgetRef = useRef<(() => Promise<void>) | null>(null);
@@ -322,12 +342,6 @@ export default function InsightsScreen() {
     }, 0);
   }, []);
 
-  const scrollOffsetRef = useRef(0);
-  const contentHeightRef = useRef(0);
-  const scrollViewHeightRef = useRef(0);
-  const [isNearBottom, setIsNearBottom] = useState(false);
-  const lastLoadTriggerRef = useRef(0);
-
   // Investment data state
   // Initialize investment data with cached data if available
   const [investmentHoldings, setInvestmentHoldings] = useState<any[]>([]);
@@ -335,22 +349,14 @@ export default function InsightsScreen() {
   const [investmentBalances, setInvestmentBalances] = useState<any[]>([]);
   const [investmentConnections, setInvestmentConnections] = useState<any[]>([]);
 
-  // Top bar section state
-  const [activeSection, setActiveSection] =
-    useState<InsightsSection>("spending");
+  // Top bar section state - use index instead of string key
+  const [activeIndex, setActiveIndex] = useState<number>(DEFAULT_SECTION_INDEX);
+  const activeSectionKey = SECTIONS[activeIndex]?.key as
+    | InsightsSection
+    | undefined;
 
-  // Animation values for smooth transitions
-  const fadeAnim = useRef(new Animated.Value(1)).current;
-
-  // Section entrance animations
-  const [sectionAnimations, setSectionAnimations] = useState<{
-    spending: Animated.Value;
-    budget: Animated.Value;
-    transactions: Animated.Value;
-    recurring: Animated.Value;
-    investments: Animated.Value;
-    cashflow: Animated.Value;
-  } | null>(null);
+  // PagerView ref
+  const pagerRef = useRef<PagerView>(null);
 
   // Simple cache for filtered results
   const filterCache = useRef<
@@ -484,8 +490,10 @@ export default function InsightsScreen() {
 
   // Keep refs updated with latest values
   useEffect(() => {
-    activeSectionRef.current = activeSection;
-  }, [activeSection]);
+    if (activeSectionKey) {
+      activeSectionRef.current = activeSectionKey;
+    }
+  }, [activeSectionKey]);
 
   useEffect(() => {
     recurringDataRef.current = recurringData;
@@ -541,17 +549,8 @@ export default function InsightsScreen() {
     };
   }, []); // Empty deps - listener only set up once, uses refs for latest values
 
-  // Initialize section animations and preload tasks
+  // Initialize preload tasks
   useEffect(() => {
-    setSectionAnimations({
-      spending: InsightsAnimationManager.createSectionFadeIn(0),
-      budget: InsightsAnimationManager.createSectionFadeIn(50),
-      transactions: InsightsAnimationManager.createSectionFadeIn(100),
-      recurring: InsightsAnimationManager.createSectionFadeIn(200),
-      investments: InsightsAnimationManager.createSectionFadeIn(300),
-      cashflow: InsightsAnimationManager.createSectionFadeIn(400),
-    });
-
     // Register preload tasks for each section
     SmartPreloader.registerTask({
       id: "transactions",
@@ -598,7 +597,9 @@ export default function InsightsScreen() {
     });
 
     // Start preloading for current section
-    SmartPreloader.preloadForSection(activeSection);
+    if (activeSectionKey) {
+      SmartPreloader.preloadForSection(activeSectionKey);
+    }
   }, []);
 
   // Load cached data immediately on mount to prevent flinching and show instant UI
@@ -835,17 +836,17 @@ export default function InsightsScreen() {
   // Load filtered transactions when filter options change (only in Transactions section)
   useEffect(() => {
     if (
-      activeSection === "transactions" &&
+      activeSectionKey === "transactions" &&
       hasData.current &&
       !showEnhancedFilterModal
     ) {
       loadFilteredTransactions(filterOptions, true, searchQuery);
     }
-  }, [filterOptions, activeSection, showEnhancedFilterModal]);
+  }, [filterOptions, activeSectionKey, showEnhancedFilterModal]);
 
   // Load filtered transactions when search query changes (debounced with instant client-side filtering)
   useEffect(() => {
-    if (activeSection !== "transactions" || !hasData.current) return;
+    if (activeSectionKey !== "transactions" || !hasData.current) return;
 
     // If search query is empty, just reload normal filtered transactions
     if (!searchQuery.trim()) {
@@ -918,7 +919,7 @@ export default function InsightsScreen() {
     return () => {
       clearTimeout(timeoutId);
     };
-  }, [searchQuery, activeSection, filterOptions]);
+  }, [searchQuery, activeSectionKey, filterOptions]);
 
   // Check cache when transactions section is active and we have accounts but no filtered transactions yet
   useEffect(() => {
@@ -926,7 +927,7 @@ export default function InsightsScreen() {
 
     const checkCacheIfNeeded = async () => {
       if (
-        activeSection === "transactions" &&
+        activeSectionKey === "transactions" &&
         accounts.length > 0 &&
         filteredTransactions.length === 0
       ) {
@@ -967,7 +968,7 @@ export default function InsightsScreen() {
       isCancelled = true;
     };
   }, [
-    activeSection,
+    activeSectionKey,
     accounts.length,
     filteredTransactions.length,
     searchQuery,
@@ -978,16 +979,16 @@ export default function InsightsScreen() {
 
   // Gate data loads by active section and trigger smart preloading
   useEffect(() => {
-    if (activeSection === "transactions") {
+    if (activeSectionKey === "transactions") {
       loadFilteredTransactions(filterOptions, true, searchQuery);
-    } else if (activeSection === "recurring") {
+    } else if (activeSectionKey === "recurring") {
       // Only load recurring data if we don't have any data yet
       if (!recurringData) {
         loadRecurringTransactions();
       } else {
         logger.info("📦 Recurring data already loaded, skipping reload");
       }
-    } else if (activeSection === "investments") {
+    } else if (activeSectionKey === "investments") {
       // Only load investment data if we don't have any data yet
       const hasInvestmentData =
         investmentHoldings.length > 0 ||
@@ -1003,8 +1004,10 @@ export default function InsightsScreen() {
     }
 
     // Trigger smart preloading for likely next sections
-    SmartPreloader.preloadForSection(activeSection);
-  }, [activeSection]);
+    if (activeSectionKey) {
+      SmartPreloader.preloadForSection(activeSectionKey);
+    }
+  }, [activeSectionKey]);
 
   const loadData = async () => {
     try {
@@ -1685,12 +1688,12 @@ export default function InsightsScreen() {
       await fetchFreshData();
 
       // Refresh budget data if on budget section
-      if (activeSection === "budget" && refreshBudgetRef.current) {
+      if (activeSectionKey === "budget" && refreshBudgetRef.current) {
         await refreshBudgetRef.current();
       }
 
       // Only reload filtered transactions if on Transactions section
-      if (activeSection === "transactions") {
+      if (activeSectionKey === "transactions") {
         await loadFilteredTransactions(filterOptions, true, searchQuery);
       }
     } finally {
@@ -1717,48 +1720,33 @@ export default function InsightsScreen() {
     // No navigation needed - pure modal approach
   };
 
-  // Handle smooth section transitions
-  const handleSectionChange = (
-    newSection:
-      | "cashflow"
-      | "spending"
-      | "budget"
-      | "transactions"
-      | "recurring"
-      | "investments",
-  ) => {
-    if (newSection === activeSection) return;
+  // Handle section change (chip tap or pager swipe)
+  const handleSectionChange = useCallback(
+    (index: number) => {
+      if (index === activeIndex) return;
 
-    // Track user behavior
-    setUserBehavior((prev) => ({
-      sectionVisits: {
-        ...prev.sectionVisits,
-        [newSection]: (prev.sectionVisits[newSection] || 0) + 1,
-      },
-      lastVisited: newSection,
-      visitOrder: [...prev.visitOrder, newSection].slice(-5), // Keep last 5 visits
-    }));
+      const newSectionKey = SECTIONS[index]?.key;
+      if (!newSectionKey) return;
 
-    // Fade out current content
-    Animated.timing(fadeAnim, {
-      toValue: 0,
-      duration: 150,
-      useNativeDriver: true,
-    }).start(() => {
-      // Change section
-      setActiveSection(newSection);
+      // Track user behavior
+      setUserBehavior((prev) => ({
+        sectionVisits: {
+          ...prev.sectionVisits,
+          [newSectionKey]: (prev.sectionVisits[newSectionKey] || 0) + 1,
+        },
+        lastVisited: newSectionKey,
+        visitOrder: [...prev.visitOrder, newSectionKey].slice(-5), // Keep last 5 visits
+      }));
 
-      // Fade in new content
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 200,
-        useNativeDriver: true,
-      }).start();
-    });
+      // Update pager if called from chip tap
+      pagerRef.current?.setPage(index);
+      setActiveIndex(index);
 
-    // Light haptic feedback
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-  };
+      // Light haptic feedback
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    },
+    [activeIndex],
+  );
 
   // Load investment data with AsyncStorage cache
   const loadInvestmentData = async () => {
@@ -2047,6 +2035,222 @@ export default function InsightsScreen() {
     setReAuthItems,
   ]);
 
+  // Memoize props for page components to prevent unnecessary rerenders
+  const recurringPageProps = useMemo(
+    () => ({
+      recurringData,
+      isLoading: recurringLoading,
+      titleStyle: styles.sectionLabel,
+      refreshStatus,
+      reAuthItems,
+      onReAuth: handleReAuthWrapper,
+      onDismissReAuth: dismissReAuthBannerWrapper,
+      onRefresh,
+      refreshing,
+    }),
+    [
+      recurringData,
+      recurringLoading,
+      refreshStatus,
+      reAuthItems,
+      handleReAuthWrapper,
+      dismissReAuthBannerWrapper,
+      onRefresh,
+      refreshing,
+    ],
+  );
+
+  const transactionsPageProps = useMemo(
+    () => ({
+      filteredTransactions,
+      totalFilteredCount,
+      hasMoreTransactions,
+      loadingMore,
+      onPressLoadMore: loadMoreTransactions,
+      onPressRefreshAccounts: () => loadUserAccounts(true),
+      onPressOpenFilter: () => setShowEnhancedFilterModal(true),
+      getFilterDescription: getFilterDescriptionMemo,
+      onPressTransaction: handleTransactionPress,
+      formatDate,
+      formatCategoryName: formatCategoryFromHook,
+      onAddAccount: () => setShowCategoryModal(true),
+      hasAccounts: accounts.length > 0,
+      isLoadingTransactions: isLoading && activeSectionKey === "transactions",
+      mightHaveTransactions,
+      accounts,
+      filterOptions,
+      searchQuery,
+      onSearchQueryChange: setSearchQuery,
+      isSearching,
+      refreshStatus,
+      reAuthItems,
+      onReAuth: handleReAuthWrapper,
+      onDismissReAuth: dismissReAuthBannerWrapper,
+      onRefresh,
+      refreshing,
+    }),
+    [
+      filteredTransactions,
+      totalFilteredCount,
+      hasMoreTransactions,
+      loadingMore,
+      loadMoreTransactions,
+      loadUserAccounts,
+      getFilterDescriptionMemo,
+      handleTransactionPress,
+      formatDate,
+      formatCategoryFromHook,
+      accounts,
+      isLoading,
+      activeSectionKey,
+      mightHaveTransactions,
+      filterOptions,
+      searchQuery,
+      isSearching,
+      refreshStatus,
+      reAuthItems,
+      handleReAuthWrapper,
+      dismissReAuthBannerWrapper,
+      onRefresh,
+      refreshing,
+    ],
+  );
+
+  const spendingPageProps = useMemo(
+    () => ({
+      categoryBreakdown,
+      onCategoryPress: handleCategoryPress,
+      formatCategoryName: formatCategoryFromHook,
+      getCategoryIcon,
+      availableMonths,
+      selectedMonth,
+      selectedYear,
+      onMonthSelect: handleMonthSelect,
+      refreshStatus,
+      reAuthItems,
+      onReAuth: handleReAuthWrapper,
+      onDismissReAuth: dismissReAuthBannerWrapper,
+      onRefresh,
+      refreshing,
+    }),
+    [
+      categoryBreakdown,
+      handleCategoryPress,
+      formatCategoryFromHook,
+      getCategoryIcon,
+      availableMonths,
+      selectedMonth,
+      selectedYear,
+      handleMonthSelect,
+      refreshStatus,
+      reAuthItems,
+      handleReAuthWrapper,
+      dismissReAuthBannerWrapper,
+      onRefresh,
+      refreshing,
+    ],
+  );
+
+  const budgetPageProps = useMemo(
+    () => ({
+      categoryBreakdown,
+      onCategoryPress: handleCategoryPress,
+      formatCategoryName: formatCategoryFromHook,
+      onOpenAddCategoryModalRef: handleOpenAddCategoryModalRef,
+      onRefreshBudgetRef: (refreshFn: () => Promise<void>) => {
+        refreshBudgetRef.current = refreshFn;
+      },
+      refreshCategories,
+      refreshStatus,
+      reAuthItems,
+      onReAuth: handleReAuthWrapper,
+      onDismissReAuth: dismissReAuthBannerWrapper,
+      onRefresh,
+      refreshing,
+    }),
+    [
+      categoryBreakdown,
+      handleCategoryPress,
+      formatCategoryFromHook,
+      handleOpenAddCategoryModalRef,
+      refreshCategories,
+      refreshStatus,
+      reAuthItems,
+      handleReAuthWrapper,
+      dismissReAuthBannerWrapper,
+      onRefresh,
+      refreshing,
+    ],
+  );
+
+  const investmentsPageProps = useMemo(
+    () => ({
+      preloadedData: {
+        holdings: investmentHoldings,
+        options: investmentOptions,
+        balances: investmentBalances,
+        connections: investmentConnections,
+      },
+      refreshStatus,
+      reAuthItems,
+      onReAuth: handleReAuthWrapper,
+      onDismissReAuth: dismissReAuthBannerWrapper,
+      onRefresh,
+      refreshing,
+    }),
+    [
+      investmentHoldings,
+      investmentOptions,
+      investmentBalances,
+      investmentConnections,
+      refreshStatus,
+      reAuthItems,
+      handleReAuthWrapper,
+      dismissReAuthBannerWrapper,
+      onRefresh,
+      refreshing,
+    ],
+  );
+
+  const cashFlowPageProps = useMemo(
+    () => ({
+      refreshStatus,
+      reAuthItems,
+      onReAuth: handleReAuthWrapper,
+      onDismissReAuth: dismissReAuthBannerWrapper,
+      onRefresh,
+      refreshing,
+    }),
+    [
+      refreshStatus,
+      reAuthItems,
+      handleReAuthWrapper,
+      dismissReAuthBannerWrapper,
+      onRefresh,
+      refreshing,
+    ],
+  );
+
+  // Render page component based on section key
+  const renderPage = (sectionKey: string) => {
+    switch (sectionKey) {
+      case "recurring":
+        return <RecurringPage {...recurringPageProps} />;
+      case "transactions":
+        return <TransactionsPage {...transactionsPageProps} />;
+      case "spending":
+        return <SpendingPage {...spendingPageProps} />;
+      case "budget":
+        return <BudgetPage {...budgetPageProps} />;
+      case "investments":
+        return <InvestmentsPage {...investmentsPageProps} />;
+      case "cashflow":
+        return <CashFlowPage {...cashFlowPageProps} />;
+      default:
+        return null;
+    }
+  };
+
   return (
     <SafeAreaView style={styles.safeArea} edges={["left", "right", "bottom"]}>
       {/* Clean Header with Gradient */}
@@ -2058,397 +2262,154 @@ export default function InsightsScreen() {
 
       {/* Render chips immediately so first paint is instant */}
       <TopChips
-        activeSection={activeSection as any}
-        onChange={handleSectionChange as any}
+        sections={SECTIONS}
+        activeIndex={activeIndex}
+        onChange={handleSectionChange}
       />
 
       {isInitialLoad && !hasCachedData.current ? (
         <InsightsLoadingSkeleton />
       ) : (
-        <ScrollView
-          ref={scrollViewRef}
-          contentContainerStyle={styles.container}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-              tintColor="#4A90E2"
-              colors={["#4A90E2"]}
-              progressBackgroundColor="#1f1f1f"
-            />
-          }
-          onScroll={(event) => {
-            const { contentOffset, contentSize, layoutMeasurement } =
-              event.nativeEvent;
-            scrollOffsetRef.current = contentOffset.y;
-            contentHeightRef.current = contentSize.height;
-            scrollViewHeightRef.current = layoutMeasurement.height;
-
-            // Detect if user is near bottom (within 300px)
-            const distanceFromBottom =
-              contentSize.height - (contentOffset.y + layoutMeasurement.height);
-            const nearBottom = distanceFromBottom < 300;
-
-            setIsNearBottom(nearBottom);
-
-            // Auto-load when near bottom and has more transactions
-            // Add debounce to prevent multiple simultaneous loads
-            const now = Date.now();
-            if (
-              nearBottom &&
-              hasMoreTransactions &&
-              !loadingMore &&
-              activeSection === "transactions" &&
-              filteredTransactions.length > 0 &&
-              now - lastLoadTriggerRef.current > 1000 // Debounce: wait 1 second between loads
-            ) {
-              lastLoadTriggerRef.current = now;
-              loadMoreTransactions();
-            }
-          }}
-          scrollEventThrottle={400}
-          onContentSizeChange={(contentWidth, contentHeight) => {
-            contentHeightRef.current = contentHeight;
-          }}
-          onLayout={(event) => {
-            scrollViewHeightRef.current = event.nativeEvent.layout.height;
+        <PagerView
+          ref={pagerRef}
+          style={{ flex: 1 }}
+          initialPage={activeIndex}
+          onPageSelected={(e) => {
+            const newIndex = e.nativeEvent.position;
+            setActiveIndex(newIndex);
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
           }}
         >
-          {isLoading && !hasData.current && (
-            <LoadingIndicator
-              message="Loading your financial insights..."
-              style={{ marginTop: 20 }}
-            />
-          )}
-
-          {(!isLoading || hasData.current) && (
-            <>
-              {/* Refresh Status Indicator */}
-              {refreshStatus.type && (
-                <RefreshStatusComponent
-                  message={refreshStatus.message}
-                  type="loading"
+          {SECTIONS.map((section, index) => (
+            <View key={section.key} style={{ flex: 1 }}>
+              {isLoading && !hasData.current && index === activeIndex ? (
+                <LoadingIndicator
+                  message="Loading your financial insights..."
+                  style={{ marginTop: 20 }}
                 />
+              ) : (
+                renderPage(section.key)
               )}
-
-              {/* Re-auth and new accounts banners */}
-              {reAuthItems
-                .filter((item) => !item.dismissed)
-                .map((item) => (
-                  <ReAuthBanner
-                    key={item.item_id}
-                    institutionName={item.institution_name}
-                    onReAuth={() => handleReAuthWrapper(item.item_id)}
-                    onDismiss={() => dismissReAuthBannerWrapper(item.item_id)}
-                    type={item.type || "re_auth"}
-                  />
-                ))}
-
-              {/* Cash Flow Section */}
-              {activeSection === "cashflow" && (
-                <Animated.View
-                  style={[
-                    sectionContentStyles.container,
-                    {
-                      opacity: fadeAnim,
-                      ...(sectionAnimations?.cashflow
-                        ? InsightsAnimationManager.getInterpolatedStyles(
-                            sectionAnimations.cashflow,
-                          )
-                        : {}),
-                    },
-                  ]}
-                >
-                  <CashFlowSection />
-                </Animated.View>
-              )}
-
-              {/* Spending Section */}
-              {activeSection === "spending" && (
-                <Animated.View
-                  style={[
-                    sectionContentStyles.container,
-                    {
-                      opacity: fadeAnim,
-                      ...(sectionAnimations?.spending
-                        ? InsightsAnimationManager.getInterpolatedStyles(
-                            sectionAnimations.spending,
-                          )
-                        : {}),
-                    },
-                  ]}
-                >
-                  <SpendingSection
-                    titleStyle={styles.sectionLabel}
-                    categoryBreakdown={categoryBreakdown}
-                    onCategoryPress={handleCategoryPress}
-                    formatCategoryName={formatCategoryFromHook}
-                    getCategoryIcon={getCategoryIcon}
-                    availableMonths={availableMonths}
-                    selectedMonth={selectedMonth}
-                    selectedYear={selectedYear}
-                    onMonthSelect={handleMonthSelect}
-                  />
-                </Animated.View>
-              )}
-
-              {/* Budget Section */}
-              {activeSection === "budget" && (
-                <Animated.View
-                  style={[
-                    sectionContentStyles.container,
-                    {
-                      opacity: fadeAnim,
-                      ...(sectionAnimations?.budget
-                        ? InsightsAnimationManager.getInterpolatedStyles(
-                            sectionAnimations.budget,
-                          )
-                        : {}),
-                    },
-                  ]}
-                >
-                  <BudgetSection
-                    titleStyle={styles.sectionLabel}
-                    categoryBreakdown={categoryBreakdown}
-                    onCategoryPress={handleCategoryPress}
-                    formatCategoryName={formatCategoryFromHook}
-                    onOpenAddCategoryModalRef={handleOpenAddCategoryModalRef}
-                    onRefreshBudgetRef={(refreshFn) => {
-                      refreshBudgetRef.current = refreshFn;
-                    }}
-                    refreshCategories={refreshCategories}
-                  />
-                </Animated.View>
-              )}
-
-              {/* Transactions Section */}
-              {activeSection === "transactions" && (
-                <Animated.View
-                  style={[
-                    sectionContentStyles.container,
-                    {
-                      opacity: fadeAnim,
-                      ...(sectionAnimations?.transactions
-                        ? InsightsAnimationManager.getInterpolatedStyles(
-                            sectionAnimations.transactions,
-                          )
-                        : {}),
-                    },
-                  ]}
-                >
-                  <TransactionsSection
-                    key="transactions-section"
-                    titleStyle={styles.sectionLabel}
-                    sectionHeaderStyle={styles.sectionHeader}
-                    headerButtonsContainerStyle={styles.headerButtonsContainer}
-                    refreshAccountsButtonStyle={styles.refreshAccountsButton}
-                    filterButtonStyle={styles.filterButton}
-                    filterButtonTextStyle={styles.filterButtonText}
-                    dropdownArrowStyle={styles.dropdownArrow}
-                    transactionInfoContainerStyle={
-                      transactionInfoStyles.container
-                    }
-                    transactionInfoTextStyle={transactionInfoStyles.text}
-                    loadMoreStyles={loadMoreStyles as any}
-                    filteredTransactions={filteredTransactions}
-                    totalFilteredCount={totalFilteredCount}
-                    hasMoreTransactions={hasMoreTransactions}
-                    loadingMore={loadingMore}
-                    onPressLoadMore={loadMoreTransactions}
-                    onPressRefreshAccounts={() => loadUserAccounts(true)}
-                    onPressOpenFilter={() => setShowEnhancedFilterModal(true)}
-                    getFilterDescription={getFilterDescriptionMemo}
-                    onPressTransaction={handleTransactionPress}
-                    showTransactionDetail={(transactionId: string) => {
-                      // Modal is handled internally by TransactionsSection
-                    }}
-                    formatDate={formatDate}
-                    formatCategoryName={formatCategoryFromHook}
-                    onAddAccount={() => setShowCategoryModal(true)}
-                    hasAccounts={accounts.length > 0}
-                    isLoadingTransactions={
-                      isLoading && activeSection === "transactions"
-                    }
-                    mightHaveTransactions={mightHaveTransactions}
-                    accounts={accounts}
-                    filterOptions={filterOptions}
-                    searchQuery={searchQuery}
-                    onSearchQueryChange={setSearchQuery}
-                    isSearching={isSearching}
-                  />
-                </Animated.View>
-              )}
-
-              {/* Recurring Section */}
-              {activeSection === "recurring" && (
-                <Animated.View
-                  style={[
-                    sectionContentStyles.container,
-                    {
-                      opacity: fadeAnim,
-                      ...(sectionAnimations?.recurring
-                        ? InsightsAnimationManager.getInterpolatedStyles(
-                            sectionAnimations.recurring,
-                          )
-                        : {}),
-                    },
-                  ]}
-                >
-                  <RecurringSection
-                    recurringData={recurringData}
-                    isLoading={recurringLoading}
-                    titleStyle={styles.sectionLabel}
-                  />
-                </Animated.View>
-              )}
-
-              {/* Investments Section */}
-              {activeSection === "investments" && (
-                <Animated.View
-                  style={[
-                    sectionContentStyles.container,
-                    {
-                      opacity: fadeAnim,
-                      ...(sectionAnimations?.investments
-                        ? InsightsAnimationManager.getInterpolatedStyles(
-                            sectionAnimations.investments,
-                          )
-                        : {}),
-                    },
-                  ]}
-                >
-                  <InvestmentsScreen
-                    preloadedData={{
-                      holdings: investmentHoldings,
-                      options: investmentOptions,
-                      balances: investmentBalances,
-                      connections: investmentConnections,
-                    }}
-                  />
-                </Animated.View>
-              )}
-            </>
-          )}
-
-          <EnhancedFilterModal
-            key="enhanced-filter-modal"
-            visible={showEnhancedFilterModal}
-            onClose={() => setShowEnhancedFilterModal(false)}
-            accounts={accounts}
-            selectedFilters={filterOptions}
-            onFiltersChange={(newFilters) => {
-              // Clear cache when filters change to ensure fresh data
-              clearCache();
-              setFilterOptions(newFilters);
-            }}
-          />
-
-          {selectedCategoryDetail && (
-            <CategoryDetailModal
-              key="category-detail-modal"
-              visible={showCategoryDetail}
-              onClose={() => setShowCategoryDetail(false)}
-              category={selectedCategoryDetail.category}
-              data={selectedCategoryDetail.data}
-              transactions={currentMonthTransactions}
-              formatCategoryName={formatCategoryFromHook}
-              formatDate={formatDate}
-            />
-          )}
-
-          {/* Category Selection Modal */}
-          <CategorySelectionModal
-            visible={showCategoryModal}
-            onClose={() => setShowCategoryModal(false)}
-            onCategorySelect={(category) => {
-              setShowCategoryModal(false);
-              if (category === "cash_deposit") {
-                setShowCashModal(true);
-              } else if (category === "liabilities") {
-                setShowCreditModal(true);
-              } else if (category === "investments") {
-                setShowInvestmentModal(true);
-              } else if (category === "retirement") {
-                setShowInvestmentModal(true);
-              }
-            }}
-          />
-
-          {/* Cash Deposit Institution Modal */}
-          <CashDepositInstitutionModal
-            visible={showCashModal}
-            onClose={() => setShowCashModal(false)}
-            onInstitutionSelect={async (institutionId) => {
-              logger.info("Cash deposit institution selected:", institutionId);
-              try {
-                await addNewBankAccount(
-                  async (itemId) => {
-                    logger.info("Successfully added new cash account:", itemId);
-                    await fetchFreshData();
-                    await loadFilteredTransactions(
-                      filterOptions,
-                      true,
-                      searchQuery,
-                    );
-                  },
-                  (error) => {
-                    logger.error("Failed to add new cash account:", error);
-                  },
-                );
-              } catch (error) {
-                logger.error("Error adding cash account:", error);
-              }
-            }}
-          />
-
-          {/* Credit Card Institution Modal */}
-          <CreditCardInstitutionModal
-            visible={showCreditModal}
-            onClose={() => setShowCreditModal(false)}
-            onInstitutionSelect={async (institutionId) => {
-              logger.info("Credit card institution selected:", institutionId);
-              try {
-                await addNewBankAccount(
-                  async (itemId) => {
-                    logger.info(
-                      "Successfully added new credit card account:",
-                      itemId,
-                    );
-                    await fetchFreshData();
-                    await loadFilteredTransactions(
-                      filterOptions,
-                      true,
-                      searchQuery,
-                    );
-                  },
-                  (error) => {
-                    logger.error(
-                      "Failed to add new credit card account:",
-                      error,
-                    );
-                  },
-                );
-              } catch (error) {
-                logger.error("Error adding credit card account:", error);
-              }
-            }}
-          />
-
-          {/* Investment Institution Modal */}
-          <InstitutionSelectionModal
-            visible={showInvestmentModal}
-            onClose={() => setShowInvestmentModal(false)}
-            onInstitutionSelect={async (institutionId) => {
-              logger.info("Investment institution selected:", institutionId);
-              // Investment institutions are handled by the InstitutionSelectionModal itself
-              // which calls the Snaptrade connection logic
-            }}
-          />
-        </ScrollView>
+            </View>
+          ))}
+        </PagerView>
       )}
 
+      {/* Modals - rendered outside pager */}
+      <EnhancedFilterModal
+        key="enhanced-filter-modal"
+        visible={showEnhancedFilterModal}
+        onClose={() => setShowEnhancedFilterModal(false)}
+        accounts={accounts}
+        selectedFilters={filterOptions}
+        onFiltersChange={(newFilters) => {
+          // Clear cache when filters change to ensure fresh data
+          clearCache();
+          setFilterOptions(newFilters);
+        }}
+      />
+
+      {selectedCategoryDetail && (
+        <CategoryDetailModal
+          key="category-detail-modal"
+          visible={showCategoryDetail}
+          onClose={() => setShowCategoryDetail(false)}
+          category={selectedCategoryDetail.category}
+          data={selectedCategoryDetail.data}
+          transactions={currentMonthTransactions}
+          formatCategoryName={formatCategoryFromHook}
+          formatDate={formatDate}
+        />
+      )}
+
+      {/* Category Selection Modal */}
+      <CategorySelectionModal
+        visible={showCategoryModal}
+        onClose={() => setShowCategoryModal(false)}
+        onCategorySelect={(category) => {
+          setShowCategoryModal(false);
+          if (category === "cash_deposit") {
+            setShowCashModal(true);
+          } else if (category === "liabilities") {
+            setShowCreditModal(true);
+          } else if (category === "investments") {
+            setShowInvestmentModal(true);
+          } else if (category === "retirement") {
+            setShowInvestmentModal(true);
+          }
+        }}
+      />
+
+      {/* Cash Deposit Institution Modal */}
+      <CashDepositInstitutionModal
+        visible={showCashModal}
+        onClose={() => setShowCashModal(false)}
+        onInstitutionSelect={async (institutionId) => {
+          logger.info("Cash deposit institution selected:", institutionId);
+          try {
+            await addNewBankAccount(
+              async (itemId) => {
+                logger.info("Successfully added new cash account:", itemId);
+                await fetchFreshData();
+                await loadFilteredTransactions(
+                  filterOptions,
+                  true,
+                  searchQuery,
+                );
+              },
+              (error) => {
+                logger.error("Failed to add new cash account:", error);
+              },
+            );
+          } catch (error) {
+            logger.error("Error adding cash account:", error);
+          }
+        }}
+      />
+
+      {/* Credit Card Institution Modal */}
+      <CreditCardInstitutionModal
+        visible={showCreditModal}
+        onClose={() => setShowCreditModal(false)}
+        onInstitutionSelect={async (institutionId) => {
+          logger.info("Credit card institution selected:", institutionId);
+          try {
+            await addNewBankAccount(
+              async (itemId) => {
+                logger.info(
+                  "Successfully added new credit card account:",
+                  itemId,
+                );
+                await fetchFreshData();
+                await loadFilteredTransactions(
+                  filterOptions,
+                  true,
+                  searchQuery,
+                );
+              },
+              (error) => {
+                logger.error("Failed to add new credit card account:", error);
+              },
+            );
+          } catch (error) {
+            logger.error("Error adding credit card account:", error);
+          }
+        }}
+      />
+
+      {/* Investment Institution Modal */}
+      <InstitutionSelectionModal
+        visible={showInvestmentModal}
+        onClose={() => setShowInvestmentModal(false)}
+        onInstitutionSelect={async (institutionId) => {
+          logger.info("Investment institution selected:", institutionId);
+          // Investment institutions are handled by the InstitutionSelectionModal itself
+          // which calls the Snaptrade connection logic
+        }}
+      />
+
       {/* Floating Action Button for Adding Category - Fixed to screen, only visible in budget section */}
-      {activeSection === "budget" && hasOpenAddCategoryModal && (
+      {activeSectionKey === "budget" && hasOpenAddCategoryModal && (
         <InsightsFAB onPress={openAddCategoryModal} />
       )}
     </SafeAreaView>

@@ -181,7 +181,7 @@ function TransactionsSection(props: Props) {
   const displayedTransactions = filteredTransactions;
 
   return (
-    <View>
+    <View style={{ paddingHorizontal: 20, marginTop: 16 }}>
       {/* Filter Bar */}
       <View style={{ paddingHorizontal: 4, marginBottom: 12 }}>
         <TouchableOpacity
@@ -514,8 +514,9 @@ function TransactionsSection(props: Props) {
           }}
           renderItem={({ item: tx }) => {
             // Apply optimistic updates if any
-            const updatedTx = OptimisticUpdateManager.applyCategoryUpdateToTransaction(tx);
-            
+            const updatedTx =
+              OptimisticUpdateManager.applyCategoryUpdateToTransaction(tx);
+
             const amount = Math.abs(updatedTx.amount);
             const isIncome = updatedTx.amount < 0;
             // Psychology: use soft blue for expenses instead of red
@@ -649,7 +650,9 @@ function TransactionsSection(props: Props) {
                   (tx) => tx.id === selectedTransactionId,
                 );
                 // Apply optimistic updates if any
-                return tx ? OptimisticUpdateManager.applyCategoryUpdateToTransaction(tx) : null;
+                return tx
+                  ? OptimisticUpdateManager.applyCategoryUpdateToTransaction(tx)
+                  : null;
               })()
             : null
         }
