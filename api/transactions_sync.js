@@ -273,10 +273,14 @@ async function callLLM(prompt) {
       const rawContent =
         data.choices?.[0]?.message?.content || data.choices?.[0]?.text || "";
 
-      // Extract JSON from response (handle cases where LLM adds extra text)
-      const jsonMatch = rawContent.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        const parsedJson = JSON.parse(jsonMatch[0]);
+      // Log the raw LLM response for debugging
+      console.log(`[BUDGET_LLM] Raw response from ${model}:`, rawContent);
+      console.log(`[BUDGET_LLM] Raw response length: ${rawContent.length} characters`);
+
+      // Extract JSON from response using robust extraction (handles fenced blocks and extra text)
+      const parsedJson = extractFirstJsonObjectFromText(rawContent);
+      if (parsedJson && parsedJson.categories) {
+        console.log(`[BUDGET_LLM] Successfully parsed JSON. Found ${parsedJson.categories.length} categories`);
         // Return both parsed JSON and raw response
         return {
           categories: parsedJson.categories || [],
@@ -284,6 +288,9 @@ async function callLLM(prompt) {
         };
       }
 
+      // Log the raw content for debugging if extraction failed
+      console.error(`[BUDGET_LLM] Failed to extract JSON from ${model} response. Raw content (first 1000 chars):`, rawContent.substring(0, 1000));
+      console.error(`[BUDGET_LLM] Full raw content:`, rawContent);
       throw new Error("No valid JSON found in LLM response");
     } catch (error) {
       console.error(`Error with model ${model}:`, error);
@@ -872,7 +879,20 @@ async function handleBudgetCreation(req, res, userId) {
       const llmResponse = await callLLM(prompt);
 
       if (!llmResponse.categories || !Array.isArray(llmResponse.categories)) {
+        console.error("Invalid LLM response:", llmResponse);
         throw new Error("Invalid response format from LLM");
+      }
+
+      // Validate budget total matches constraint
+      const totalBudget = llmResponse.categories.reduce((sum, cat) => sum + (cat.limit || 0), 0);
+      const expectedTotal = Math.round(income - (savingsAmount || income * 0.2));
+      
+      if (Math.abs(totalBudget - expectedTotal) > 1) {
+        console.warn(
+          `Budget total mismatch: Expected $${expectedTotal}, got $${totalBudget}. Categories:`,
+          llmResponse.categories.map(c => `${c.name}: $${c.limit}`).join(", ")
+        );
+        // Log warning but don't fail - user can adjust in UI
       }
 
       const rawResponse = llmResponse.rawResponse || "";

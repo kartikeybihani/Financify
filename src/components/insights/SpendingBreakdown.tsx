@@ -34,7 +34,7 @@ const SpendingBreakdown: React.FC<SpendingBreakdownProps> = ({
 }) => {
   const totalSpent = categoryBreakdown.reduce(
     (sum, [_, data]) => sum + data.amount,
-    0
+    0,
   );
 
   // Get top 3 categories for the main display
@@ -494,7 +494,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   remainingSection: {
-    marginBottom: 16,
+    marginBottom: 65,
   },
   remainingList: {
     backgroundColor: "#1f1f1f",

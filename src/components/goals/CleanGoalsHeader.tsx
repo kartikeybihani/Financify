@@ -21,7 +21,7 @@ export default function CleanGoalsHeader() {
       style={[
         styles.gradientContainer,
         {
-          paddingTop: insets.top + (Platform.OS === "ios" ? 0 : 8),
+          paddingTop: insets.top + (Platform.OS === "ios" ? -10 : 8),
         },
       ]}
     >
@@ -80,7 +80,7 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 20,
-    fontWeight: "700",
+    fontWeight: "600",
     color: "#fff",
     letterSpacing: 0.3,
     fontFamily: Platform.OS === "ios" ? "System" : "sans-serif",

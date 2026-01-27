@@ -1,5 +1,12 @@
 import React from "react";
-import { View, Text, TouchableOpacity, StyleSheet, Platform, Animated } from "react-native";
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  Platform,
+  Animated,
+} from "react-native";
 import { FontAwesome6 } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -10,7 +17,10 @@ interface CleanChatHeaderProps {
   bounce?: Animated.AnimatedInterpolation<number>;
 }
 
-export default function CleanChatHeader({ rotate, bounce }: CleanChatHeaderProps) {
+export default function CleanChatHeader({
+  rotate,
+  bounce,
+}: CleanChatHeaderProps) {
   const insets = useSafeAreaInsets();
   const router = useRouter();
 
@@ -28,7 +38,7 @@ export default function CleanChatHeader({ rotate, bounce }: CleanChatHeaderProps
       style={[
         styles.gradientContainer,
         {
-          paddingTop: insets.top + (Platform.OS === "ios" ? 0 : 8),
+          paddingTop: insets.top + (Platform.OS === "ios" ? -10 : 8),
         },
       ]}
     >
@@ -124,7 +134,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontSize: 18,
-    fontWeight: "700",
+    fontWeight: "600",
     color: "#fff",
     letterSpacing: 0.3,
   },
