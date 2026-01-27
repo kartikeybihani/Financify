@@ -21,6 +21,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import {
   getOrCreateCurrentBudgetPeriod,
   upsertBudgetEntry,
+  updateBudgetPeriodMeta,
 } from "@/src/types/budget";
 import { CURATED_ICONS } from "@/src/components/shared/modal-constants";
 
@@ -92,7 +93,7 @@ const AddCategoryModal: React.FC<AddCategoryModalProps> = ({
       if (existingCategory && existingCategory.length > 0) {
         Alert.alert(
           "Duplicate Category",
-          `A category named "${categoryName.trim()}" already exists. Please choose a different name.`
+          `A category named "${categoryName.trim()}" already exists. Please choose a different name.`,
         );
         setLoading(false);
         return;
@@ -143,7 +144,7 @@ const AddCategoryModal: React.FC<AddCategoryModalProps> = ({
           const r = (Math.random() * 16) | 0;
           const v = c == "x" ? r : (r & 0x3) | 0x8;
           return v.toString(16);
-        }
+        },
       );
 
       const { error } = await supabase.from("categories").insert({
@@ -160,7 +161,9 @@ const AddCategoryModal: React.FC<AddCategoryModalProps> = ({
       if (error) throw error;
 
       // Log category creation
-      logger.info(`[CATEGORY] Created category: "${categoryName.trim()}" (${categoryId})${budgetAmount.trim() ? ` with budget $${budgetAmount.trim()}` : ''}`);
+      logger.info(
+        `[CATEGORY] Created category: "${categoryName.trim()}" (${categoryId})${budgetAmount.trim() ? ` with budget $${budgetAmount.trim()}` : ""}`,
+      );
 
       // Create budget entry if budget amount is provided
       if (budgetAmount.trim()) {
@@ -175,10 +178,21 @@ const AddCategoryModal: React.FC<AddCategoryModalProps> = ({
                 label: categoryName.trim(),
                 limit_amount: budgetValue,
               });
+
+              // Update period status to "active" if it's currently "draft"
+              // This ensures the budget shows up immediately after creation
+              if (period.status === "draft") {
+                await updateBudgetPeriodMeta(period.id, {
+                  status: "active",
+                });
+              }
             }
           } catch (budgetError) {
             // Log error but don't fail the category creation
-            logger.error("[BUDGET] Error creating budget entry for new category:", budgetError);
+            logger.error(
+              "[BUDGET] Error creating budget entry for new category:",
+              budgetError,
+            );
           }
         }
       }
@@ -254,181 +268,193 @@ const AddCategoryModal: React.FC<AddCategoryModalProps> = ({
               style={styles.keyboardAvoidingView}
               keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
             >
-              <LinearGradient colors={FAB_GRADIENT_COLORS} style={styles.content}>
-              <View style={styles.header}>
-                <View style={styles.headerTextContainer}>
-                  <Text style={styles.headerTitle}>Add New Category</Text>
-                </View>
-              </View>
-
-              <ScrollView
-                showsVerticalScrollIndicator={false}
-                contentContainerStyle={[
-                  styles.scrollContent,
-                  {
-                    paddingBottom:
-                      Math.max(20, SCREEN_HEIGHT * 0.025) +
-                      Math.max(insets.bottom, 20),
-                  },
-                ]}
-                keyboardShouldPersistTaps="handled"
-                keyboardDismissMode="interactive"
-                bounces={false}
-                nestedScrollEnabled={true}
+              <LinearGradient
+                colors={FAB_GRADIENT_COLORS}
+                style={styles.content}
               >
-                {/* Category Name Section */}
-                <View style={styles.nameSection}>
-                  <Text style={styles.sectionLabel}>CATEGORY NAME</Text>
-                  <View style={styles.topRow}>
-                    <TouchableOpacity
-                      style={[
-                        styles.iconBox,
-                        isIconSelected({
-                          type: "emoji",
-                          value: selectedIcon,
-                        }) ||
-                        CURATED_ICONS.some(
-                          (icon) => icon.value === selectedIcon
-                        )
-                          ? styles.iconBoxSelected
-                          : null,
-                      ]}
-                      activeOpacity={0.7}
-                      accessibilityLabel="Selected icon"
-                      accessibilityRole="button"
-                    >
-                      {renderSelectedIcon()}
-                    </TouchableOpacity>
-                    <TextInput
-                      style={styles.categoryInput}
-                      value={categoryName}
-                      onChangeText={setCategoryName}
-                      placeholder="Enter category name"
-                      placeholderTextColor="rgba(255,255,255,0.4)"
-                      autoFocus
-                      autoCapitalize="words"
-                      returnKeyType="done"
-                      onSubmitEditing={handleSave}
-                      accessibilityLabel="Category name input"
-                    />
+                <View style={styles.header}>
+                  <View style={styles.headerTextContainer}>
+                    <Text style={styles.headerTitle}>Add New Category</Text>
                   </View>
                 </View>
 
-                {/* Budget Section */}
-                <View style={styles.budgetSection}>
-                  <Text style={styles.sectionLabel}>BUDGET</Text>
-                  <View style={styles.budgetInputRow}>
-                    <Text style={styles.budgetPrefix}>$</Text>
-                    <TextInput
-                      style={styles.budgetInput}
-                      keyboardType="decimal-pad"
-                      value={budgetAmount}
-                      onChangeText={setBudgetAmount}
-                      placeholder="0"
-                      placeholderTextColor="rgba(255,255,255,0.4)"
-                      accessibilityLabel="Budget amount input"
-                    />
-                  </View>
-                  <Text style={styles.budgetHint}>
-                    Set a monthly budget limit for this category
-                  </Text>
-                </View>
-
-                {/* Icon Selection Section */}
-                <View style={styles.iconSection}>
-                  <Text style={styles.sectionLabel}>CHOOSE ICON</Text>
-                  <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    style={styles.iconScroll}
-                    contentContainerStyle={styles.iconScrollContent}
-                    bounces={false}
-                  >
-                    {CURATED_ICONS.map((icon, index) => (
+                <ScrollView
+                  showsVerticalScrollIndicator={false}
+                  contentContainerStyle={[
+                    styles.scrollContent,
+                    {
+                      paddingBottom:
+                        Math.max(20, SCREEN_HEIGHT * 0.025) +
+                        Math.max(insets.bottom, 20),
+                    },
+                  ]}
+                  keyboardShouldPersistTaps="handled"
+                  keyboardDismissMode="interactive"
+                  bounces={false}
+                  nestedScrollEnabled={true}
+                >
+                  {/* Category Name Section */}
+                  <View style={styles.nameSection}>
+                    <Text style={styles.sectionLabel}>CATEGORY NAME</Text>
+                    <View style={styles.topRow}>
                       <TouchableOpacity
-                        key={`${icon.type}-${icon.value}-${index}`}
                         style={[
-                          styles.iconOption,
-                          isIconSelected(icon) && styles.iconOptionSelected,
+                          styles.iconBox,
+                          isIconSelected({
+                            type: "emoji",
+                            value: selectedIcon,
+                          }) ||
+                          CURATED_ICONS.some(
+                            (icon) => icon.value === selectedIcon,
+                          )
+                            ? styles.iconBoxSelected
+                            : null,
                         ]}
-                        onPress={() => setSelectedIcon(icon.value)}
                         activeOpacity={0.7}
-                        accessibilityLabel={`Select ${icon.name} icon`}
+                        accessibilityLabel="Selected icon"
                         accessibilityRole="button"
-                        accessibilityState={{
-                          selected: isIconSelected(icon),
-                        }}
                       >
-                        {renderIcon(icon, true)}
+                        {renderSelectedIcon()}
                       </TouchableOpacity>
-                    ))}
-                  </ScrollView>
+                      <TextInput
+                        style={styles.categoryInput}
+                        value={categoryName}
+                        onChangeText={setCategoryName}
+                        placeholder="Enter category name"
+                        placeholderTextColor="rgba(255,255,255,0.4)"
+                        autoFocus
+                        autoCapitalize="words"
+                        returnKeyType="done"
+                        onSubmitEditing={handleSave}
+                        accessibilityLabel="Category name input"
+                      />
+                    </View>
+                  </View>
+
+                  {/* Budget Section */}
+                  <View style={styles.budgetSection}>
+                    <Text style={styles.sectionLabel}>BUDGET</Text>
+                    <View style={styles.budgetInputRow}>
+                      <Text style={styles.budgetPrefix}>$</Text>
+                      <TextInput
+                        style={styles.budgetInput}
+                        keyboardType="decimal-pad"
+                        value={budgetAmount}
+                        onChangeText={setBudgetAmount}
+                        placeholder="0"
+                        placeholderTextColor="rgba(255,255,255,0.4)"
+                        accessibilityLabel="Budget amount input"
+                      />
+                    </View>
+                    <Text style={styles.budgetHint}>
+                      Set a monthly budget limit for this category
+                    </Text>
+                  </View>
+
+                  {/* Icon Selection Section */}
+                  <View style={styles.iconSection}>
+                    <Text style={styles.sectionLabel}>CHOOSE ICON</Text>
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      style={styles.iconScroll}
+                      contentContainerStyle={styles.iconScrollContent}
+                      bounces={false}
+                    >
+                      {CURATED_ICONS.map((icon, index) => (
+                        <TouchableOpacity
+                          key={`${icon.type}-${icon.value}-${index}`}
+                          style={[
+                            styles.iconOption,
+                            isIconSelected(icon) && styles.iconOptionSelected,
+                          ]}
+                          onPress={() => setSelectedIcon(icon.value)}
+                          activeOpacity={0.7}
+                          accessibilityLabel={`Select ${icon.name} icon`}
+                          accessibilityRole="button"
+                          accessibilityState={{
+                            selected: isIconSelected(icon),
+                          }}
+                        >
+                          {renderIcon(icon, true)}
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                  </View>
+                </ScrollView>
+
+                {/* Bottom action buttons */}
+                <View style={styles.bottomButtonRow}>
+                  <TouchableOpacity
+                    style={[
+                      styles.bottomButtonContainer,
+                      styles.bottomCancelButtonContainer,
+                    ]}
+                    onPress={handleClose}
+                    disabled={loading}
+                    activeOpacity={0.7}
+                    accessibilityLabel="Cancel"
+                    accessibilityRole="button"
+                  >
+                    <LinearGradient
+                      colors={[
+                        "rgba(142, 142, 147, 0.15)",
+                        "rgba(142, 142, 147, 0.05)",
+                      ]}
+                      style={styles.bottomCancelButton}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                    >
+                      <Ionicons name="close-circle" size={16} color="#fff" />
+                      <Text
+                        style={[styles.bottomButtonText, { color: "#fff" }]}
+                      >
+                        Cancel
+                      </Text>
+                    </LinearGradient>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.bottomButtonContainer,
+                      styles.bottomSaveButtonContainer,
+                      (!categoryName.trim() || loading) &&
+                        styles.buttonDisabled,
+                    ]}
+                    onPress={handleSave}
+                    disabled={!categoryName.trim() || loading}
+                    activeOpacity={0.7}
+                    accessibilityLabel={
+                      loading ? "Adding category" : "Add category"
+                    }
+                    accessibilityRole="button"
+                    accessibilityState={{
+                      disabled: !categoryName.trim() || loading,
+                    }}
+                  >
+                    <LinearGradient
+                      colors={[
+                        "rgba(74, 144, 226, 0.15)",
+                        "rgba(74, 145, 226, 0.41)",
+                      ]}
+                      style={styles.bottomSaveButton}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                    >
+                      <Ionicons
+                        name="checkmark-circle"
+                        size={16}
+                        color="#fff"
+                      />
+                      <Text
+                        style={[styles.bottomButtonText, { color: "#fff" }]}
+                      >
+                        {loading ? "Adding..." : "Add Category"}
+                      </Text>
+                    </LinearGradient>
+                  </TouchableOpacity>
                 </View>
-              </ScrollView>
-
-              {/* Bottom action buttons */}
-              <View style={styles.bottomButtonRow}>
-                <TouchableOpacity
-                  style={[
-                    styles.bottomButtonContainer,
-                    styles.bottomCancelButtonContainer,
-                  ]}
-                  onPress={handleClose}
-                  disabled={loading}
-                  activeOpacity={0.7}
-                  accessibilityLabel="Cancel"
-                  accessibilityRole="button"
-                >
-                  <LinearGradient
-                    colors={[
-                      "rgba(142, 142, 147, 0.15)",
-                      "rgba(142, 142, 147, 0.05)",
-                    ]}
-                    style={styles.bottomCancelButton}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                  >
-                    <Ionicons name="close-circle" size={16} color="#fff" />
-                    <Text style={[styles.bottomButtonText, { color: "#fff" }]}>
-                      Cancel
-                    </Text>
-                  </LinearGradient>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[
-                    styles.bottomButtonContainer,
-                    styles.bottomSaveButtonContainer,
-                    (!categoryName.trim() || loading) && styles.buttonDisabled,
-                  ]}
-                  onPress={handleSave}
-                  disabled={!categoryName.trim() || loading}
-                  activeOpacity={0.7}
-                  accessibilityLabel={
-                    loading ? "Adding category" : "Add category"
-                  }
-                  accessibilityRole="button"
-                  accessibilityState={{
-                    disabled: !categoryName.trim() || loading,
-                  }}
-                >
-                  <LinearGradient
-                    colors={[
-                      "rgba(74, 144, 226, 0.15)",
-                      "rgba(74, 145, 226, 0.41)",
-                    ]}
-                    style={styles.bottomSaveButton}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                  >
-                    <Ionicons name="checkmark-circle" size={16} color="#fff" />
-                    <Text style={[styles.bottomButtonText, { color: "#fff" }]}>
-                      {loading ? "Adding..." : "Add Category"}
-                    </Text>
-                  </LinearGradient>
-                </TouchableOpacity>
-              </View>
-            </LinearGradient>
+              </LinearGradient>
             </KeyboardAvoidingView>
           </TouchableWithoutFeedback>
         </View>

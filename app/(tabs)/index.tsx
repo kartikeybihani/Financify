@@ -13,7 +13,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { useRouter, useFocusEffect } from "expo-router";
 import { supabase } from "@/src/lib/supabase/supabase";
 import { getPrimaryItemId, addNewBankAccount } from "@/src/utils/plaid/plaid";
 import { getAccountBalance } from "@/src/utils/accountBalance";
@@ -29,8 +29,9 @@ import { FinancialCards } from "@/src/components/home/FinancialCards";
 import { GoalsSection } from "@/src/components/home/GoalsSection";
 import { ActionButtons } from "@/src/components/home/ActionButtons";
 import { FinnyMessage } from "@/src/components/home/FinnyMessage";
-import { FinnyNudge } from "@/src/components/home/FinnyNudge";
+import { OnboardingProgressBox } from "@/src/components/home/OnboardingProgressBox";
 import { HomeScreenSkeleton } from "@/src/components/home/LoadingSkeletons";
+import OnboardingTimelineModal from "@/src/components/modals/OnboardingTimelineModal";
 import { useModalManager } from "@/src/components/modals/ModalFactory";
 
 // Legacy components (will be optimized in Phase 3)
@@ -48,6 +49,12 @@ import CashInputModal from "@/src/components/modals/CashInputModal";
 import { styles } from "@/src/styles/homeStyles";
 import AppStorage from "@/src/utils/storage/storage";
 import { CACHE_CONFIG } from "@/src/shared/constants/cacheConfig";
+import {
+  getOnboardingStatus,
+  dismissOnboardingProgress,
+  resetOnboardingDismissal,
+  OnboardingStatus,
+} from "@/src/utils/onboarding/onboardingProgress";
 
 if (Platform.OS === "android") {
   UIManager.setLayoutAnimationEnabledExperimental?.(true);
@@ -58,8 +65,10 @@ if (Platform.OS === "android") {
 const checkUnifiedCacheSync = (): boolean => {
   try {
     const cacheString = AppStorage.getItemSync("unified_financial_data");
-    const timestampString = AppStorage.getItemSync("unified_financial_data_timestamp");
-    
+    const timestampString = AppStorage.getItemSync(
+      "unified_financial_data_timestamp",
+    );
+
     if (!cacheString || !timestampString) {
       return false;
     }
@@ -67,7 +76,7 @@ const checkUnifiedCacheSync = (): boolean => {
     const timestamp = parseInt(timestampString, 10);
     const now = Date.now();
     const cacheAge = now - timestamp;
-    
+
     // Cache duration is 5 minutes (300000ms) - same as CACHE_CONFIG.DURATIONS.MEDIUM
     if (cacheAge > 300000) {
       return false;
@@ -75,11 +84,11 @@ const checkUnifiedCacheSync = (): boolean => {
 
     const cachedData = JSON.parse(cacheString);
     // Check if we have any meaningful data
-    const hasData = 
+    const hasData =
       (cachedData.accounts && cachedData.accounts.length > 0) ||
       (cachedData.goals && cachedData.goals.length > 0) ||
       (cachedData.cashEntries && cachedData.cashEntries.length > 0);
-    
+
     return hasData;
   } catch (error) {
     return false;
@@ -91,7 +100,9 @@ export default function HomeScreen() {
 
   // Check cache synchronously before first render
   const hasInitialCache = checkUnifiedCacheSync();
-  logger.info(`🏠 [HOME] Initial cache check: ${hasInitialCache ? 'HIT' : 'MISS'}`);
+  logger.info(
+    `🏠 [HOME] Initial cache check: ${hasInitialCache ? "HIT" : "MISS"}`,
+  );
 
   // Unified financial data hook - replaces 3 separate hooks
   const {
@@ -160,6 +171,11 @@ export default function HomeScreen() {
     loading: spendingLoading,
     refresh: refreshSpendingData,
   } = useSpendingData(totalBalance);
+
+  // Onboarding state
+  const [onboardingStatus, setOnboardingStatus] =
+    useState<OnboardingStatus | null>(null);
+  const [showOnboardingModal, setShowOnboardingModal] = useState(false);
 
   // Removed verbose logging
 
@@ -466,6 +482,9 @@ export default function HomeScreen() {
 
       // Load background data without blocking UI
       loadBackgroundData();
+
+      // Load onboarding status
+      loadOnboardingStatus(user.id);
     } catch (err) {
       logger.error("Error initializing app:", err);
       setLoadingError(true);
@@ -475,6 +494,60 @@ export default function HomeScreen() {
       if (!hasInitialCache) {
         setIsInitialLoad(false);
         setIsLoading(false);
+      }
+    }
+  };
+
+  // Load onboarding status
+  const loadOnboardingStatus = async (userId: string) => {
+    try {
+      // Reset dismissal on app start if incomplete
+      await resetOnboardingDismissal(userId);
+
+      // Get current status
+      const status = await getOnboardingStatus(userId);
+      setOnboardingStatus(status);
+    } catch (error) {
+      logger.error("Error loading onboarding status:", error);
+    }
+  };
+
+  // Handle onboarding step press
+  const handleOnboardingStepPress = (step: 1 | 2 | 3) => {
+    setShowOnboardingModal(false);
+
+    if (step === 1) {
+      // Already connected, do nothing or show message
+      return;
+    } else if (step === 2) {
+      // Navigate to Insights tab, scroll to budget section
+      router.push("/(tabs)/insights");
+      // Note: BudgetSection will handle showing empty state
+    } else if (step === 3) {
+      // Navigate to chat tab
+      router.push("/(tabs)/chat");
+    }
+  };
+
+  // Handle onboarding dismiss
+  const handleOnboardingDismiss = async () => {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (user?.id) {
+      await dismissOnboardingProgress(user.id);
+      // Update local state
+      if (onboardingStatus) {
+        setOnboardingStatus({
+          ...onboardingStatus,
+          progress: onboardingStatus.progress
+            ? {
+                ...onboardingStatus.progress,
+                dismissed: true,
+              }
+            : null,
+          shouldShow: false,
+        });
       }
     }
   };
@@ -494,6 +567,21 @@ export default function HomeScreen() {
       }
     }
   }, [financialInitialLoad, accounts.length]);
+
+  // Refresh onboarding status when screen comes into focus
+  useFocusEffect(
+    React.useCallback(() => {
+      const refreshOnboarding = async () => {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (user?.id) {
+          await loadOnboardingStatus(user.id);
+        }
+      };
+      refreshOnboarding();
+    }, []),
+  );
 
   useEffect(() => {
     initializeApp();
@@ -653,8 +741,11 @@ export default function HomeScreen() {
   // Only show skeleton if we have no cached data AND no user data
   // Use both initial cache check and current data to determine if we should show skeleton
   const hasCachedData =
-    hasInitialCache || accounts.length > 0 || goals.length > 0 || cashEntries.length > 0;
-  
+    hasInitialCache ||
+    accounts.length > 0 ||
+    goals.length > 0 ||
+    cashEntries.length > 0;
+
   // Skip skeleton if we have cached data (instant UI)
   if (isInitialLoad && !userData && !hasCachedData) {
     return <HomeScreenSkeleton showError={false} />;
@@ -711,6 +802,7 @@ export default function HomeScreen() {
             investmentsTotal={investmentsTotal}
             liabilitiesTotal={liabilitiesTotal}
             netWorthChange={spendingData.netWorthChange}
+            onboardingStatus={onboardingStatus}
           />
 
           {/* Net Worth Carousel */}
@@ -754,7 +846,14 @@ export default function HomeScreen() {
             }}
           />
 
-          <FinnyNudge />
+          {/* Onboarding Progress Box */}
+          {onboardingStatus && (
+            <OnboardingProgressBox
+              status={onboardingStatus}
+              onPress={() => setShowOnboardingModal(true)}
+              onDismiss={handleOnboardingDismiss}
+            />
+          )}
 
           {/* Goals Progress */}
           <GoalsSection
@@ -800,11 +899,10 @@ export default function HomeScreen() {
                     key={index}
                     name={account.name}
                     type={account.type}
-                    balance={formatCurrency(
-                      getAccountBalance(account),
-                      "USD",
-                      { decimals: 0, useKM: false },
-                    )}
+                    balance={formatCurrency(getAccountBalance(account), "USD", {
+                      decimals: 0,
+                      useKM: false,
+                    })}
                     icon="wallet-outline"
                     bankName={account.institution_name || "Unknown Bank"}
                     accountId={account.account_id}
@@ -823,11 +921,10 @@ export default function HomeScreen() {
                     key={index}
                     name={account.name}
                     type={account.type}
-                    balance={formatCurrency(
-                      getAccountBalance(account),
-                      "USD",
-                      { decimals: 0, useKM: false },
-                    )}
+                    balance={formatCurrency(getAccountBalance(account), "USD", {
+                      decimals: 0,
+                      useKM: false,
+                    })}
                     icon="trending-up"
                     bankName={account.institution_name || "Investment Broker"}
                     accountId={account.account_id}
@@ -1112,6 +1209,14 @@ export default function HomeScreen() {
                 throw error;
               }
             }}
+          />
+
+          {/* Onboarding Timeline Modal */}
+          <OnboardingTimelineModal
+            visible={showOnboardingModal}
+            progress={onboardingStatus?.progress || null}
+            onClose={() => setShowOnboardingModal(false)}
+            onStepPress={handleOnboardingStepPress}
           />
         </ScrollView>
       </>

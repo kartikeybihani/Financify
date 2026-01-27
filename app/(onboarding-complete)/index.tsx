@@ -54,7 +54,9 @@ type EarlyInsights = {
 export default function FinalScreen() {
   const router = useRouter();
   const { refreshNavigationState } = useAuthNavigation();
-  const [earlyInsights, setEarlyInsights] = useState<EarlyInsights | null>(null);
+  const [earlyInsights, setEarlyInsights] = useState<EarlyInsights | null>(
+    null,
+  );
   const [insights, setInsights] = useState<InsightCard[]>([]);
   const [isLoadingInsights, setIsLoadingInsights] = useState(true);
   const [isButtonEnabled, setIsButtonEnabled] = useState(false);
@@ -113,11 +115,9 @@ export default function FinalScreen() {
     ? { introLine: fallbackMessage, mirrorLine: "", planLine: "", hookLine: "" }
     : getFirstReadLines(earlyInsights);
   const firstReadIsLoading =
-    !llmFailed &&
-    !earlyInsights &&
-    (isLoadingInsights || showLoadingAnimation);
+    !llmFailed && !earlyInsights && (isLoadingInsights || showLoadingAnimation);
   const firstReadOrderedRevealLines = [mirrorLine, planLine, hookLine].filter(
-    Boolean
+    Boolean,
   );
 
   const [firstReadTypedIntro, setFirstReadTypedIntro] = useState("");
@@ -196,7 +196,14 @@ export default function FinalScreen() {
     return () => {
       cancelled = true;
     };
-  }, [firstReadIsLoading, introLine, mirrorLine, planLine, hookLine, llmFailed]);
+  }, [
+    firstReadIsLoading,
+    introLine,
+    mirrorLine,
+    planLine,
+    hookLine,
+    llmFailed,
+  ]);
 
   useEffect(() => {
     if (!firstReadIsTyping) return;
@@ -297,7 +304,12 @@ export default function FinalScreen() {
           />
           <Text style={styles.firstReadKicker}>FIRST READ</Text>
         </View>
-        <Text style={[styles.firstReadHero, isFallback && styles.firstReadHeroFallback]}>
+        <Text
+          style={[
+            styles.firstReadHero,
+            isFallback && styles.firstReadHeroFallback,
+          ]}
+        >
           {typedIntro}
           {isTyping && showCaret ? (
             <Text style={styles.firstReadCaret}>▍</Text>
@@ -323,13 +335,11 @@ export default function FinalScreen() {
               },
             ]}
           >
-            {orderedRevealLines
-              .slice(1, revealedCount)
-              .map((line, idx) => (
-                <Text key={idx} style={styles.firstReadBody}>
-                  {line}
-                </Text>
-              ))}
+            {orderedRevealLines.slice(1, revealedCount).map((line, idx) => (
+              <Text key={idx} style={styles.firstReadBody}>
+                {line}
+              </Text>
+            ))}
           </Animated.View>
         )}
       </View>
@@ -376,7 +386,7 @@ export default function FinalScreen() {
       const { data: transactions, error: txError } = await supabase
         .from("transactions")
         .select(
-          "date, amount, merchant_name, name, category, top_category, new_category, category_id, categories(id, name, icon)"
+          "date, amount, merchant_name, name, category, top_category, new_category, category_id, categories(id, name, icon)",
         )
         .eq("user_id", user.id)
         .gte("date", startDateStr)
@@ -446,7 +456,7 @@ export default function FinalScreen() {
       };
 
       const recentTransactions = (transactions || []).filter(
-        (tx: any) => !isPaymentTransaction(tx)
+        (tx: any) => !isPaymentTransaction(tx),
       );
 
       logger.info("📊 FinalScreen: Transaction filtering", {
@@ -603,13 +613,21 @@ export default function FinalScreen() {
         return plaidCategory
           .split("_")
           .map(
-            (word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+            (word) =>
+              word.charAt(0).toUpperCase() + word.slice(1).toLowerCase(),
           )
           .join(" ");
       };
 
       // Calculate category breakdown using user-friendly categories with icons from DB
-      const categoryMap: { [key: string]: { amount: number; count: number; icon?: string; categoryId?: string } } = {};
+      const categoryMap: {
+        [key: string]: {
+          amount: number;
+          count: number;
+          icon?: string;
+          categoryId?: string;
+        };
+      } = {};
       let totalSpent = 0;
 
       recentTransactions.forEach((tx: any) => {
@@ -618,11 +636,11 @@ export default function FinalScreen() {
         totalSpent += amount;
 
         if (!categoryMap[category]) {
-          categoryMap[category] = { 
-            amount: 0, 
+          categoryMap[category] = {
+            amount: 0,
             count: 0,
             icon: tx.categories?.icon,
-            categoryId: tx.categories?.id || tx.category_id
+            categoryId: tx.categories?.id || tx.category_id,
           };
         }
         categoryMap[category].amount += amount;
@@ -645,7 +663,7 @@ export default function FinalScreen() {
       newInsights.push({
         id: "pattern",
         type: "pattern",
-        title: "Your spending breakdown so far",
+        title: "Your spending breakdown of last 30 days",
         subtitle: "", // Empty subtitle - visual boxes show the info
         icon: "", // No icon - title will be centered
         color: "#00CED1",
@@ -683,8 +701,8 @@ export default function FinalScreen() {
               friction: 6,
               tension: 40,
               useNativeDriver: true,
-            })
-          )
+            }),
+          ),
         ).start();
       }
     } catch (error) {
@@ -722,7 +740,6 @@ export default function FinalScreen() {
     }
   };
 
-
   useEffect(() => {
     logOnboardingEvent({ stage: "final", action: "view" });
 
@@ -741,8 +758,8 @@ export default function FinalScreen() {
             duration: 600,
             useNativeDriver: true,
           }),
-        ])
-      )
+        ]),
+      ),
     );
     Animated.parallel(dotAnimations).start();
 
@@ -758,7 +775,7 @@ export default function FinalScreen() {
           duration: 1800,
           useNativeDriver: true,
         }),
-      ])
+      ]),
     );
     floatLoop.start();
 
@@ -810,7 +827,7 @@ export default function FinalScreen() {
             .single();
 
           const maybe = data?.early_insights;
-          
+
           // Check for error marker
           if (
             maybe &&
@@ -903,7 +920,7 @@ export default function FinalScreen() {
             duration: 600,
             useNativeDriver: true,
           }),
-        ])
+        ]),
       );
 
       Animated.loop(Animated.parallel(animations)).start();
@@ -1057,21 +1074,19 @@ export default function FinalScreen() {
                   // Use three distinct colors based on index
                   const boxColors = ["#6B8DD6", "#00D4AA", "#FF6B6B"];
                   const boxColor = boxColors[i] || "#607D8B";
-                  
+
                   // Helper to determine if icon is emoji or Ionicons
                   const isEmoji = (icon: string) => {
-                    const emojiRegex = /[\u{1F300}-\u{1F9FF}]|[\u{1F600}-\u{1F64F}]|[\u{1F680}-\u{1F6FF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF}]/u;
+                    const emojiRegex =
+                      /[\u{1F300}-\u{1F9FF}]|[\u{1F600}-\u{1F64F}]|[\u{1F680}-\u{1F6FF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF}]/u;
                     return emojiRegex.test(icon);
                   };
-                  
-                  const iconValue = cat.icon || '💳';
+
+                  const iconValue = cat.icon || "💳";
                   const isIconEmoji = isEmoji(iconValue);
-                  
+
                   return (
-                    <View
-                      key={i}
-                      style={styles.categoryBox}
-                    >
+                    <View key={i} style={styles.categoryBox}>
                       <View
                         style={[
                           styles.categoryBoxContent,
@@ -1203,13 +1218,15 @@ export default function FinalScreen() {
                         />
                       ))}
                     </View>
-                    <Text style={styles.loadingText}>Loading your snapshot…</Text>
+                    <Text style={styles.loadingText}>
+                      Loading your snapshot…
+                    </Text>
                   </View>
                 </View>
               ) : (
                 <View style={styles.insightsContent}>
                   {insights.map((insight, index) =>
-                    renderInsightCard(insight, index)
+                    renderInsightCard(insight, index),
                   )}
                 </View>
               )}
@@ -1327,8 +1344,8 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   firstReadMascot: {
-    width: 28,
-    height: 28,
+    width: 38,
+    height: 38,
     marginRight: 1,
     opacity: 0.95,
   },

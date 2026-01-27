@@ -2,6 +2,9 @@ import React, { useState, useCallback, useEffect, useRef } from "react";
 import { View, Text, StyleSheet } from "react-native";
 import BudgetView from "@/src/components/insights/BudgetView";
 import AddCategoryModal from "./AddCategoryModal";
+import BudgetEmptyState from "./BudgetEmptyState";
+import ManualBudgetCreationModal from "@/src/components/modals/ManualBudgetCreationModal";
+import BudgetCreationModal from "@/src/components/modals/BudgetCreationModal";
 import { useBudget } from "@/src/hooks/useBudget";
 import logger from "@/src/utils/core/logger";
 
@@ -14,7 +17,7 @@ interface Props {
       percentage: number;
       color: string;
       hasRecurringTransactions: boolean;
-    }
+    },
   ][];
   onCategoryPress: (
     category: string,
@@ -23,7 +26,7 @@ interface Props {
       percentage: number;
       color: string;
       hasRecurringTransactions: boolean;
-    }
+    },
   ) => void;
   formatCategoryName: (cat: string) => string;
   onOpenAddCategoryModalRef?: (openFn: () => void) => void;
@@ -41,6 +44,8 @@ export default function BudgetSection({
   refreshCategories,
 }: Props) {
   const [addCategoryModalVisible, setAddCategoryModalVisible] = useState(false);
+  const [showManualBudgetModal, setShowManualBudgetModal] = useState(false);
+  const [showFinnyBudgetModal, setShowFinnyBudgetModal] = useState(false);
 
   // Use budget hook to get real budget data
   // Pass categoryBreakdown so spent amounts use accurate data from spending breakdown
@@ -59,18 +64,16 @@ export default function BudgetSection({
     deleteCategory,
   } = useBudget(categoryBreakdown);
 
-  // Initialize budget on first mount if needed
-  useEffect(() => {
-    if (budgetData.length === 0 && !budgetLoading) {
-      // Try to initialize budget if user enters budget section and has no budgets
-      initializeBudget();
-    }
-  }, [budgetData.length, budgetLoading, initializeBudget]);
+  // Check if user has an active budget period with entries
+  const hasActiveBudget =
+    budgetSummary?.period?.status === "active" &&
+    budgetData.length > 0 &&
+    !budgetLoading;
 
   // Calculate total spent from category breakdown (fallback)
   const totalSpent = categoryBreakdown.reduce(
     (sum, [_, data]) => sum + data.amount,
-    0
+    0,
   );
 
   // Use budget total spent if available, otherwise use category breakdown total
@@ -105,28 +108,51 @@ export default function BudgetSection({
     }
   }, [onRefreshBudgetRef, refreshBudget]);
 
+  const handleCreateWithFinny = () => {
+    setShowFinnyBudgetModal(true);
+  };
+
+  const handleCreateManually = () => {
+    setShowManualBudgetModal(true);
+  };
+
+  const handleBudgetCreated = async () => {
+    // Refresh budget data after creating budget
+    if (refreshBudget) {
+      await refreshBudget();
+    }
+  };
+
   return (
     <View style={styles.container}>
-      <Text style={titleStyle}>Budget Overview</Text>
+      {/* <Text style={titleStyle}>Budget Overview</Text> */}
 
-      {/* Always show BudgetView immediately - never show loading spinner */}
-      {/* Cached/stale data is shown instantly, fresh data loads in background */}
-      <BudgetView
-        categoryBreakdown={categoryBreakdown}
-        onCategoryPress={onCategoryPress}
-        formatCategoryName={formatCategoryName}
-        budgets={budgetData}
-        totalBudget={totalBudget}
-        totalSpent={displayTotalSpent}
-        budgetSummary={budgetSummary}
-        onUpdateBudget={updateCategoryBudget}
-        onDeleteBudget={deleteCategoryBudget}
-        onGroupCategory={groupCategory}
-        onRemoveGrouping={ungroupCategory}
-        onDeleteCategory={deleteCategory}
-        refreshBudget={refreshBudget}
-        refreshCategories={refreshCategories}
-      />
+      {/* Show empty state if no active budget exists */}
+      {!hasActiveBudget && !budgetLoading ? (
+        <BudgetEmptyState
+          onCreateWithFinny={handleCreateWithFinny}
+          onCreateManually={handleCreateManually}
+        />
+      ) : (
+        /* Always show BudgetView immediately - never show loading spinner */
+        /* Cached/stale data is shown instantly, fresh data loads in background */
+        <BudgetView
+          categoryBreakdown={categoryBreakdown}
+          onCategoryPress={onCategoryPress}
+          formatCategoryName={formatCategoryName}
+          budgets={budgetData}
+          totalBudget={totalBudget}
+          totalSpent={displayTotalSpent}
+          budgetSummary={budgetSummary}
+          onUpdateBudget={updateCategoryBudget}
+          onDeleteBudget={deleteCategoryBudget}
+          onGroupCategory={groupCategory}
+          onRemoveGrouping={ungroupCategory}
+          onDeleteCategory={deleteCategory}
+          refreshBudget={refreshBudget}
+          refreshCategories={refreshCategories}
+        />
+      )}
 
       {/* Add Category Modal */}
       <AddCategoryModal
@@ -139,6 +165,20 @@ export default function BudgetSection({
           }
           setAddCategoryModalVisible(false);
         }}
+      />
+
+      {/* Manual Budget Creation Modal */}
+      <ManualBudgetCreationModal
+        visible={showManualBudgetModal}
+        onClose={() => setShowManualBudgetModal(false)}
+        onBudgetCreated={handleBudgetCreated}
+      />
+
+      {/* Finny Budget Creation Modal */}
+      <BudgetCreationModal
+        visible={showFinnyBudgetModal}
+        onClose={() => setShowFinnyBudgetModal(false)}
+        onBudgetCreated={handleBudgetCreated}
       />
     </View>
   );

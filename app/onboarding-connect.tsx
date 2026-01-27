@@ -9,6 +9,7 @@ import {
   Platform,
   ScrollView,
   Animated,
+  Image,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
@@ -222,6 +223,38 @@ export default function AccountConnectionScreen() {
           setConnectedAccounts(accounts);
           // If accounts already exist, this is not the first connection
           setIsFirstConnection(false);
+
+          // Load existing base_analysis if it exists
+          const { data: profile } = await supabase
+            .from("profiles")
+            .select("base_analysis")
+            .eq("id", user.id)
+            .maybeSingle();
+
+          if (profile?.base_analysis) {
+            const analysis = profile.base_analysis as any;
+            // Check if it's a valid result (not an error marker)
+            if (
+              typeof analysis === "object" &&
+              typeof analysis.should_ask_for_more_accounts === "boolean"
+            ) {
+              setAccountAnalysis(analysis);
+              // Animate Finny card in
+              Animated.timing(finnyCardOpacity, {
+                toValue: 1,
+                duration: 500,
+                useNativeDriver: true,
+              }).start();
+            } else if (analysis?.error) {
+              // Show error state if it exists
+              setAccountAnalysis({
+                should_ask_for_more_accounts: false,
+                message: null,
+                error: analysis.error,
+                error_message: analysis.error_message,
+              });
+            }
+          }
         }
       } catch (error) {
         logger.error("Error checking existing accounts:", error);
@@ -659,13 +692,10 @@ export default function AccountConnectionScreen() {
                     style={[styles.finnyCard, { opacity: finnyCardOpacity }]}
                   >
                     <View style={styles.finnyCardHeader}>
-                      <View style={styles.finnyAvatar}>
-                        <Ionicons
-                          name="chatbubble-ellipses"
-                          size={20}
-                          color="#4A90E2"
-                        />
-                      </View>
+                      <Image
+                        source={require("../assets/images/finnylap1.png")}
+                        style={styles.finnyAvatar}
+                      />
                       <Text style={styles.finnyLabel}>Finny</Text>
                     </View>
                     <Text style={styles.finnyMessage}>
@@ -708,7 +738,7 @@ export default function AccountConnectionScreen() {
                     <Text style={styles.finnyLabel}>Finny</Text>
                   </View>
                   <Text style={styles.finnyMessage}>
-                    Analyzing your transactions...
+                    Taking a quick look at your accounts...
                   </Text>
                 </View>
               )}
@@ -722,15 +752,9 @@ export default function AccountConnectionScreen() {
                     { opacity: finnyCardOpacity },
                   ]}
                 >
-                  <View style={styles.finnyCardHeader}>
-                    <View style={styles.finnyAvatar}>
-                      <Ionicons name="alert-circle" size={20} color="#FF6B6B" />
-                    </View>
-                    <Text style={styles.finnyLabel}>Finny</Text>
-                  </View>
+                  <Text style={styles.finnyLabel}>Finny</Text>
                   <Text style={styles.finnyMessage}>
-                    {accountAnalysis.error_message ||
-                      "Had trouble analyzing your account. You can continue anyway!"}
+                    {accountAnalysis.error_message}
                   </Text>
                 </Animated.View>
               )}
@@ -1118,7 +1142,7 @@ const styles = StyleSheet.create({
   finnyLabel: {
     fontSize: 12,
     fontFamily: "ManropeSemiBold",
-    color: "#4A90E2",
+    color: "#fff",
     letterSpacing: 1,
     textTransform: "uppercase",
   },

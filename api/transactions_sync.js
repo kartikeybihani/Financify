@@ -22,14 +22,436 @@ import {
   selectTopTwoPatternsForLLM,
   formatDate,
 } from "../lib/early_insights.js";
+import { buildBudgetGenerationPrompt } from "../lib/prompt_engine.js";
+import crypto from "crypto";
+
+// Budget creation helper functions
+const STANDARD_MODEL = "meta-llama/llama-3.2-3b-instruct";
+const REASONING_MODEL_PAID_SCOUT =
+  process.env.REASONING_MODEL_PAID_SCOUT || "meta-llama/llama-4-scout";
+
+function getOpenRouterKey() {
+  return process.env.OPENROUTER_API_KEY;
+}
+
+function generateUUID() {
+  return crypto.randomUUID();
+}
+
+function formatLocalDate(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+async function getOrCreateCurrentBudgetPeriod(userId) {
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = today.getMonth();
+  const periodStart = new Date(year, month, 1);
+  const periodEnd = new Date(year, month + 1, 0);
+
+  const periodStartStr = formatLocalDate(periodStart);
+  const periodEndStr = formatLocalDate(periodEnd);
+
+  // Try to find existing period
+  const { data: existing, error: fetchError } = await supabase
+    .from("budget_periods")
+    .select("*")
+    .eq("user_id", userId)
+    .eq("period_start", periodStartStr)
+    .eq("period_end", periodEndStr)
+    .maybeSingle();
+
+  if (fetchError && fetchError.code !== "PGRST116") {
+    console.error("Error fetching budget period:", fetchError);
+    return null;
+  }
+
+  if (existing) {
+    return existing;
+  }
+
+  // Create new period
+  const periodName =
+    periodStart.toLocaleDateString("en-US", {
+      month: "long",
+      year: "numeric",
+    }) + " Budget";
+
+  const { data: newPeriod, error: createError } = await supabase
+    .from("budget_periods")
+    .insert({
+      user_id: userId,
+      name: periodName,
+      period_start: periodStartStr,
+      period_end: periodEndStr,
+      period_type: "monthly",
+      status: "active", // Set as active when created via Finny
+    })
+    .select()
+    .single();
+
+  if (createError) {
+    console.error("Error creating budget period:", createError);
+    return null;
+  }
+
+  return newPeriod;
+}
+
+async function upsertBudgetEntry(budgetPeriodId, entry) {
+  // Check if entry exists (for category entries, check by category_id)
+  let existingId = null;
+
+  if (entry.scope_type === "category" && entry.category_id) {
+    const { data: existing } = await supabase
+      .from("budget_entries")
+      .select("id")
+      .eq("budget_period_id", budgetPeriodId)
+      .eq("scope_type", "category")
+      .eq("category_id", entry.category_id)
+      .maybeSingle();
+
+    existingId = existing?.id || null;
+  }
+
+  if (existingId) {
+    // Update existing
+    const { data, error } = await supabase
+      .from("budget_entries")
+      .update({
+        label: entry.label,
+        limit_amount: entry.limit_amount,
+        is_flexible: entry.is_flexible ?? false,
+      })
+      .eq("id", existingId)
+      .select()
+      .single();
+
+    if (error) {
+      console.error("Error updating budget entry:", error);
+      return null;
+    }
+
+    return data;
+  } else {
+    // Insert new
+    const { data, error } = await supabase
+      .from("budget_entries")
+      .insert({
+        budget_period_id: budgetPeriodId,
+        scope_type: entry.scope_type,
+        category_id: entry.category_id || null,
+        group_key: entry.group_key || null,
+        label: entry.label,
+        limit_amount: entry.limit_amount,
+        is_flexible: entry.is_flexible ?? false,
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error("Error creating budget entry:", error);
+      return null;
+    }
+
+    return data;
+  }
+}
+
+async function callLLM(prompt) {
+  const apiKey = getOpenRouterKey();
+  if (!apiKey) {
+    throw new Error("OPENROUTER_API_KEY not configured");
+  }
+
+  const models = [REASONING_MODEL_PAID_SCOUT, STANDARD_MODEL];
+
+  for (const model of models) {
+    try {
+      const resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model,
+          temperature: 0.7,
+          max_tokens: 2000,
+          messages: [
+            {
+              role: "system",
+              content:
+                "You are a financial coach assistant. Always return valid JSON only, no other text.",
+            },
+            {
+              role: "user",
+              content: prompt,
+            },
+          ],
+        }),
+      });
+
+      if (!resp.ok) {
+        const errorText = await resp.text();
+        console.error(`OpenRouter error ${resp.status}: ${errorText}`);
+        if (model === models[models.length - 1]) {
+          throw new Error(`OpenRouter error: ${errorText}`);
+        }
+        continue; // Try next model
+      }
+
+      const data = await resp.json();
+      const content =
+        data.choices?.[0]?.message?.content ||
+        data.choices?.[0]?.text ||
+        "";
+
+      // Extract JSON from response (handle cases where LLM adds extra text)
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        return JSON.parse(jsonMatch[0]);
+      }
+
+      throw new Error("No valid JSON found in LLM response");
+    } catch (error) {
+      console.error(`Error with model ${model}:`, error);
+      if (model === models[models.length - 1]) {
+        throw error;
+      }
+      // Try next model
+    }
+  }
+
+  throw new Error("All LLM models failed");
+}
+
+async function handleBudgetCreation(req, res, userId) {
+  try {
+    const { income, savingsAmount, categories, save } = req.body;
+
+    if (!income || income <= 0) {
+      return res.status(400).json({ error: "Valid income is required" });
+    }
+
+    // If categories are provided and save flag is true, save to database
+    if (categories && Array.isArray(categories) && save) {
+      try {
+        // Get or create budget period
+        let period = await getOrCreateCurrentBudgetPeriod(userId);
+        if (!period) {
+          return res.status(500).json({
+            error: "Failed to create budget period",
+          });
+        }
+
+        // Ensure period is set to active
+        if (period.status !== "active") {
+          const { data: updatedPeriod, error: updateError } = await supabase
+            .from("budget_periods")
+            .update({ status: "active" })
+            .eq("id", period.id)
+            .select()
+            .single();
+
+          if (!updateError && updatedPeriod) {
+            period = updatedPeriod;
+          }
+        }
+
+        // Create categories and budget entries
+        const createdCategories = [];
+        for (const cat of categories) {
+          // Check if category exists
+          const { data: existingCategory } = await supabase
+            .from("categories")
+            .select("id")
+            .eq("user_id", userId)
+            .eq("name", cat.name)
+            .maybeSingle();
+
+          let categoryId = existingCategory?.id;
+
+          if (!categoryId) {
+            // Create category
+            const newCategoryId = generateUUID();
+            const slug = cat.name
+              .toLowerCase()
+              .replace(/[^a-z0-9]+/g, "-")
+              .replace(/^-+|-+$/g, "");
+
+            const { error: categoryError } = await supabase
+              .from("categories")
+              .insert({
+                id: newCategoryId,
+                user_id: userId,
+                name: cat.name,
+                slug: slug,
+                icon: cat.icon || "📦",
+                color: "#4A90E2",
+                rank: 0,
+                is_active: true,
+              });
+
+            if (categoryError) {
+              console.error("Error creating category:", categoryError);
+              continue;
+            }
+
+            categoryId = newCategoryId;
+          }
+
+          // Create budget entry
+          await upsertBudgetEntry(period.id, {
+            scope_type: "category",
+            category_id: categoryId,
+            label: cat.name,
+            limit_amount: cat.limit,
+          });
+
+          createdCategories.push({ name: cat.name, limit: cat.limit });
+        }
+
+        // Update onboarding progress - mark budget_setup as complete
+        await supabase
+          .from("onboarding_progress")
+          .upsert(
+            {
+              user_id: userId,
+              budget_setup: true,
+            },
+            {
+              onConflict: "user_id",
+            }
+          )
+          .catch((error) => {
+            // Non-critical - log but don't fail
+            console.error("Error updating onboarding progress:", error);
+          });
+
+        return res.status(200).json({
+          success: true,
+          message: "Budget created successfully",
+          categories: createdCategories,
+        });
+      } catch (error) {
+        console.error("Error saving budget:", error);
+        return res.status(500).json({
+          error: "Failed to save budget",
+          message: error.message,
+        });
+      }
+    }
+
+    // Generate budget (if categories not provided)
+    try {
+      // Fetch user profile
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("age, occupation, location, first_name")
+        .eq("id", userId)
+        .maybeSingle();
+
+      // Fetch last 6 months of transactions
+      const sixMonthsAgo = new Date();
+      sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+      const startDate = sixMonthsAgo.toISOString().split("T")[0];
+
+      const { data: transactions, error: txError } = await supabase
+        .from("transactions")
+        .select("date, amount, merchant_name, name, category, top_category, new_category")
+        .eq("user_id", userId)
+        .gte("date", startDate)
+        .gt("amount", 0) // Only expenses
+        .order("date", { ascending: false })
+        .limit(500);
+
+      if (txError) {
+        console.error("Error fetching transactions:", txError);
+        // Continue with empty transactions array
+      }
+
+      // Build prompt
+      const prompt = buildBudgetGenerationPrompt({
+        userProfile: profile || {},
+        transactions: transactions || [],
+        income,
+        savingsAmount: savingsAmount || null,
+      });
+
+      // Call LLM
+      const llmResponse = await callLLM(prompt);
+
+      if (!llmResponse.categories || !Array.isArray(llmResponse.categories)) {
+        throw new Error("Invalid response format from LLM");
+      }
+
+      return res.status(200).json({
+        success: true,
+        categories: llmResponse.categories,
+      });
+    } catch (error) {
+      console.error("Error generating budget:", error);
+      return res.status(500).json({
+        error: "Failed to generate budget",
+        message: error.message,
+      });
+    }
+  } catch (error) {
+    console.error("Error in budget creation:", error);
+    return res.status(500).json({
+      error: "Internal server error",
+      message: error.message,
+    });
+  }
+}
 
 export default async function handler(req, res) {
   if (req.method !== "POST")
     return res.status(405).json({ error: "Method not allowed" });
 
   // Helpful for verifying which deployment is being hit.
-  const API_BUILD = "transactions_sync+early_insights@2026-01-19";
+  const API_BUILD = "transactions_sync+early_insights+budget@2026-01-26";
 
+  // Check if this is a budget creation request
+  const { action } = req.body;
+  if (action === "create_budget") {
+    try {
+      // Authenticate user
+      const authHeader =
+        req.headers["authorization"] || req.headers["Authorization"];
+      const token =
+        typeof authHeader === "string" && authHeader.startsWith("Bearer ")
+          ? authHeader.slice("Bearer ".length)
+          : null;
+
+      if (!token) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+
+      const {
+        data: { user },
+        error: authError,
+      } = await supabase.auth.getUser(token);
+
+      if (authError || !user?.id) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+
+      return await handleBudgetCreation(req, res, user.id);
+    } catch (error) {
+      console.error("Error in budget creation handler:", error);
+      return res.status(500).json({
+        error: "Internal server error",
+        message: error.message,
+      });
+    }
+  }
+
+  // Original transactions sync logic
   const { item_id, user_id } = req.body;
   if (!item_id) return res.status(400).json({ error: "Missing item_id" });
 

@@ -8,6 +8,7 @@ import { Goal } from "@/src/types/finny";
 import { SpendingData } from "@/src/hooks/useSpendingData";
 import { useHomeInsights } from "@/src/hooks/useHomeInsights";
 import AppStorage from "@/src/utils/storage/storage";
+import { OnboardingStatus } from "@/src/utils/onboarding/onboardingProgress";
 
 interface FinnyMessageProps {
   goals?: Goal[];
@@ -16,6 +17,7 @@ interface FinnyMessageProps {
   investmentsTotal?: number;
   liabilitiesTotal?: number;
   netWorthChange?: number;
+  onboardingStatus?: OnboardingStatus | null;
 }
 
 export const FinnyMessage: React.FC<FinnyMessageProps> = React.memo(
@@ -26,12 +28,45 @@ export const FinnyMessage: React.FC<FinnyMessageProps> = React.memo(
     investmentsTotal = 0,
     liabilitiesTotal = 0,
     netWorthChange = 0,
+    onboardingStatus,
   }) => {
     const router = useRouter();
     const { insight } = useHomeInsights();
 
-    // Generate context-aware questions that create curiosity
+    // Check if onboarding is complete
+    const isOnboardingComplete = onboardingStatus?.isComplete ?? true;
+    const progress = onboardingStatus?.progress;
+
+    // Generate onboarding-based messages if onboarding is not complete
+    const getOnboardingMessage = useMemo(() => {
+      if (isOnboardingComplete || !progress) {
+        return null;
+      }
+
+      // Priority: Step 2 (budget) over Step 3 (ask Finny)
+      if (!progress.budget_setup) {
+        return {
+          message: "Set up your budget to track spending and stay on track!",
+          linkTo: "insights" as const,
+        };
+      }
+
+      if (!progress.finny_asked) {
+        return {
+          message: "Ask Finny anything about your finances!",
+          linkTo: "chat" as const,
+        };
+      }
+
+      return null;
+    }, [isOnboardingComplete, progress]);
+
+    // Generate context-aware questions that create curiosity (only if onboarding is complete)
     const getContextualQuestion = useMemo(() => {
+      // If onboarding is not complete, return null (we'll use onboarding message instead)
+      if (!isOnboardingComplete) {
+        return null;
+      }
       const activeGoals = goals.filter(
         (goal) =>
           goal.status !== "completed" &&
@@ -135,13 +170,30 @@ export const FinnyMessage: React.FC<FinnyMessageProps> = React.memo(
       liabilitiesTotal,
       netWorthChange,
       insight,
+      isOnboardingComplete,
     ]);
 
+    // Determine the message and link destination
+    const displayMessage =
+      getOnboardingMessage?.message ||
+      getContextualQuestion ||
+      "Ask Finny anything!";
+    const linkDestination = getOnboardingMessage?.linkTo || "chat";
+
     const handlePress = () => {
-      // Set initial message based on current insight/question
-      const question = getContextualQuestion;
-      AppStorage.setItemSync("initialChatMessage", question);
-      router.push("/chat");
+      if (getOnboardingMessage) {
+        // Navigate to the appropriate tab based on onboarding step
+        if (linkDestination === "insights") {
+          router.push("/(tabs)/insights");
+        } else {
+          router.push("/(tabs)/chat");
+        }
+      } else {
+        // Set initial message based on current insight/question
+        const question = getContextualQuestion || displayMessage;
+        AppStorage.setItemSync("initialChatMessage", question);
+        router.push("/(tabs)/chat");
+      }
     };
 
     return (
@@ -164,7 +216,7 @@ export const FinnyMessage: React.FC<FinnyMessageProps> = React.memo(
           </View>
           <View style={styles.finnyMessageContent}>
             <Text style={styles.finnyMessageTitle}>Ask Finny</Text>
-            <Text style={styles.finnyMessageText}>{getContextualQuestion}</Text>
+            <Text style={styles.finnyMessageText}>{displayMessage}</Text>
           </View>
         </TouchableOpacity>
       </View>

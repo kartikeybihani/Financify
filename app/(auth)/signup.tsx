@@ -200,16 +200,8 @@ export default function SignupScreen() {
           lastName: lastName.trim(),
         });
 
-        // Seed default categories for new user
-        try {
-          const { seedDefaultCategories } = await import(
-            "@/src/utils/categories/seedDefaultCategories"
-          );
-          await seedDefaultCategories(data.user.id);
-        } catch (seedError) {
-          logger.error("Error seeding default categories:", seedError);
-          // Don't block signup if category seeding fails
-        }
+        // Category seeding removed - users will create categories through budget setup
+        // Categories will be created via LLM-driven budget creation or manual budget setup
       }
     } catch (profileError) {
       logger.error("Error creating profile: ", profileError);
@@ -413,15 +405,8 @@ export default function SignupScreen() {
 
       logger.info("✅ Profile created successfully");
 
-      // Seed default categories
-      try {
-        const { seedDefaultCategories } = await import(
-          "@/src/utils/categories/seedDefaultCategories"
-        );
-        await seedDefaultCategories(session.user.id);
-      } catch (seedError) {
-        logger.error("Error seeding default categories:", seedError);
-      }
+      // Category seeding removed - users will create categories through budget setup
+      // Categories will be created via LLM-driven budget creation or manual budget setup
 
       // Clear verification state
       setShowVerificationOverlay(false);
