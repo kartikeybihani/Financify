@@ -576,24 +576,13 @@ export function useBudget(categoryBreakdown?: CategoryBreakdown): UseBudgetRetur
             const categoryIcon = categoryMeta?.icon || entryInfo?.entry.category?.icon || null;
             const categoryId = entryInfo?.entry.category?.id || categoryMeta?.id || null;
 
-            // Calculate auto-budget if no budget entry exists
-            let autoBudget = 0;
-            if (!entryInfo?.entry.limit_amount) {
-              if (historicalData) {
-                if (historicalData.months > 1) {
-                  autoBudget = Math.round(historicalData.averageMonthly * 1.2);
-                } else {
-                  autoBudget = Math.round(historicalData.totalSpent * 1.2);
-                }
-              } else if (spent > 0) {
-                autoBudget = Math.round(spent * 1.2);
-              }
-            }
+            // No auto-budget calculation - if no budget entry exists, budget is 0
+            // User must manually create a budget entry to set a limit
 
             return {
               category: displayName,
               spent,
-              budget: entryInfo?.entry.limit_amount || autoBudget,
+              budget: entryInfo?.entry.limit_amount || 0,
               color: categoryColor,
               icon: categoryIcon,
               categoryId,
@@ -754,23 +743,13 @@ export function useBudget(categoryBreakdown?: CategoryBreakdown): UseBudgetRetur
             const parentActualData = actualsByKey.get(parentKey);
             
             const parentSpent = parentBreakdownData?.amount ?? parentActualData?.amount ?? 0;
-            let parentAutoBudget = 0;
-            if (!parentEntryInfo?.entry.limit_amount) {
-              if (parentHistoricalData) {
-                if (parentHistoricalData.months > 1) {
-                  parentAutoBudget = Math.round(parentHistoricalData.averageMonthly * 1.2);
-                } else {
-                  parentAutoBudget = Math.round(parentHistoricalData.totalSpent * 1.2);
-                }
-              } else if (parentSpent > 0) {
-                parentAutoBudget = Math.round(parentSpent * 1.2);
-              }
-            }
+            // No auto-budget calculation - if no budget entry exists, budget is 0
+            // User must manually create a budget entry to set a limit
             
             const newParent: BudgetData = {
               category: parentCat.name,
               spent: parentSpent,
-              budget: parentEntryInfo?.entry.limit_amount || parentAutoBudget,
+              budget: parentEntryInfo?.entry.limit_amount || 0,
               color: parentCat.color || "#607D8B",
               icon: parentCat.icon || null,
               categoryId: parentCat.id,

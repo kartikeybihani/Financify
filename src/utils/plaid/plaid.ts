@@ -1630,6 +1630,7 @@ export const getFilteredTransactions = async (
     
 
     // Build query
+    // NOTE: INTERNAL_TRANSFER transactions are NOT filtered here - they should be visible in transactions section
     let query = supabase
       .from("transactions")
       .select(`

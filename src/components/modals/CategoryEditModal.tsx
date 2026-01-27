@@ -52,10 +52,9 @@ interface Props {
     parentCategoryId: string
   ) => Promise<boolean>;
   onRemoveGrouping?: (childCategoryId: string) => Promise<boolean>;
-  // Callbacks for name/icon updates with loading state
+  // Callbacks for name/icon updates
   onNameUpdate?: (categoryId: string, newName: string) => Promise<boolean>;
   onIconUpdate?: (categoryId: string, newIcon: string) => Promise<boolean>;
-  setCategoryLoading?: (categoryId: string | null | undefined, entryId: string | null | undefined, isLoading: boolean) => void;
   refreshBudget?: () => Promise<void>;
 }
 
@@ -72,7 +71,6 @@ const CategoryEditModal: React.FC<Props> = ({
   onRemoveGrouping,
   onNameUpdate,
   onIconUpdate,
-  setCategoryLoading,
   refreshBudget,
 }) => {
   const [amount, setAmount] = useState<string>(
@@ -204,12 +202,7 @@ const CategoryEditModal: React.FC<Props> = ({
     const parsed = parseAmount();
     if (parsed === null) return;
 
-    // Set loading state
-    if (setCategoryLoading && category) {
-      setCategoryLoading(category.categoryId, category.entryId, true);
-    }
-
-    // Save budget
+    // Save budget (amount will animate smoothly via optimistic update)
     const success = await onSave(parsed).catch(() => {
       // parent handles rollback
       return false;
@@ -218,11 +211,6 @@ const CategoryEditModal: React.FC<Props> = ({
     if (success) {
       // Close modal after successful save
       handleClose();
-    } else {
-      // Clear loading state on error
-      if (setCategoryLoading && category) {
-        setCategoryLoading(category.categoryId, category.entryId, false);
-      }
     }
   };
 
@@ -270,11 +258,6 @@ const CategoryEditModal: React.FC<Props> = ({
       return;
     }
     
-    // Set loading state
-    if (setCategoryLoading) {
-      setCategoryLoading(category.categoryId, category.entryId, true);
-    }
-    
     try {
       // Use callback if provided (it handles DB update, refresh, and logging)
       if (onNameUpdate) {
@@ -316,11 +299,6 @@ const CategoryEditModal: React.FC<Props> = ({
       logger.error("[BUDGET] Error updating category name:", error);
       setEditingName(category?.category || "");
       setIsEditingName(false);
-    } finally {
-      // Clear loading state
-      if (setCategoryLoading) {
-        setCategoryLoading(category.categoryId, category.entryId, false);
-      }
     }
   };
   
@@ -336,11 +314,6 @@ const CategoryEditModal: React.FC<Props> = ({
     setCurrentIcon(newIcon);
     setCurrentCategory({ ...category, icon: newIcon });
     setShowIconPicker(false);
-    
-    // Set loading state
-    if (setCategoryLoading) {
-      setCategoryLoading(category.categoryId, category.entryId, true);
-    }
     
     // Update database in background
     (async () => {
@@ -374,11 +347,6 @@ const CategoryEditModal: React.FC<Props> = ({
         setCurrentIcon(previousIcon);
         setCurrentCategory({ ...category, icon: previousIcon });
         logger.error("[BUDGET] Error updating category icon, rolling back:", error);
-      } finally {
-        // Clear loading state
-        if (setCategoryLoading) {
-          setCategoryLoading(category.categoryId, category.entryId, false);
-        }
       }
     })();
   };

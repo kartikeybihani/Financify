@@ -1361,7 +1361,29 @@ export async function suggestInitialBudgetEntries(
     
     const { data: transactionsRaw, error: txError } = await supabase
       .from("transactions")
-      .select("amount, top_category, new_category, date, authorized_date, transaction_type, name, merchant_name")
+      .select(`
+        amount, 
+        top_category,
+        category,
+        new_category, 
+        date, 
+        authorized_date, 
+        transaction_type, 
+        name, 
+        merchant_name,
+        category_id,
+        recurring_stream_id,
+        categories:category_id (
+          id,
+          name,
+          slug
+        ),
+        recurring_streams:recurring_stream_id (
+          id,
+          stream_type,
+          is_active
+        )
+      `)
       .eq("user_id", userId)
       .gte("date", formatLocalDate(extendedLookbackStart)) // Use date for initial filter (wider range)
       .lte("date", formatLocalDate(extendedToday))
@@ -1422,16 +1444,45 @@ export async function suggestInitialBudgetEntries(
     transactions
       .filter((tx) => tx.transaction_type !== "transfer")
       .filter((tx) => tx.new_category !== "INTERNAL_TRANSFER" && tx.top_category !== "INTERNAL_TRANSFER")
-      .forEach((tx) => {
-      // Use same category logic as getDisplayCategory() - ensures consistency with spending breakdown
-      // Priority: new_category (user override) > top_category > "Other"
+      .forEach((tx: any) => {
+      // Use EXACT same category logic as getDisplayCategory() - ensures consistency with spending breakdown
       let displayCategory: string;
-      if (tx.new_category && tx.new_category !== "INTERNAL_TRANSFER") {
+      
+      // Priority 1: Use category_id -> categories.name if available (ALWAYS WINS)
+      if (tx.category_id && tx.categories?.name) {
+        displayCategory = tx.categories.name;
+      }
+      // Priority 2: User explicit override (but skip INTERNAL_TRANSFER)
+      else if (tx.new_category && tx.new_category !== "INTERNAL_TRANSFER") {
         displayCategory = tx.new_category;
-      } else if (tx.top_category && tx.top_category !== "INTERNAL_TRANSFER") {
-        displayCategory = tx.top_category;
-      } else {
-        displayCategory = "Other";
+      }
+      // Priority 3: Recurring stream-based category
+      else if (tx.recurring_stream_id && tx.recurring_streams) {
+        const stream = Array.isArray(tx.recurring_streams)
+          ? tx.recurring_streams[0]
+          : tx.recurring_streams;
+        
+        if (stream && stream.is_active && stream.stream_type) {
+          const streamType = stream.stream_type;
+          const STREAM_TYPE_TO_CATEGORY: Record<string, string> = {
+            subscription: 'Subscriptions',
+            income: 'Income',
+            bill: 'Housing',
+            other: 'Other',
+          };
+          const mappedCategory = STREAM_TYPE_TO_CATEGORY[streamType];
+          if (mappedCategory) {
+            displayCategory = mappedCategory;
+          } else {
+            displayCategory = tx.top_category || tx.category || "Other";
+          }
+        } else {
+          displayCategory = tx.top_category || tx.category || "Other";
+        }
+      }
+      // Priority 4: Plaid's original category
+      else {
+        displayCategory = tx.top_category || tx.category || "Other";
       }
       
       // Skip INTERNAL_TRANSFER
@@ -1842,10 +1893,34 @@ export async function getActualsForBudgetPeriod(
     const extendedEndStr = formatLocalDate(extendedEnd);
 
     // Query transactions in extended range (we'll filter by effective date in JavaScript)
+    // CRITICAL: Join categories table to get category names from category_id (matches getDisplayCategory logic)
     // We query by 'date' field with wide range, then filter by effective date (authorized_date || date)
     const { data: transactions, error } = await supabase
       .from("transactions")
-      .select("plaid_transaction_id, amount, new_category, top_category, date, authorized_date, transaction_type, name, merchant_name")
+      .select(`
+        plaid_transaction_id, 
+        amount, 
+        new_category, 
+        top_category, 
+        category,
+        date, 
+        authorized_date, 
+        transaction_type, 
+        name, 
+        merchant_name,
+        category_id,
+        recurring_stream_id,
+        categories:category_id (
+          id,
+          name,
+          slug
+        ),
+        recurring_streams:recurring_stream_id (
+          id,
+          stream_type,
+          is_active
+        )
+      `)
       .eq("user_id", userId)
       .gte("date", extendedStartStr) // Wide range on date field
       .lte("date", extendedEndStr)
@@ -1855,7 +1930,30 @@ export async function getActualsForBudgetPeriod(
     // Also query by authorized_date to catch transactions where date is outside range but authorized_date is in range
     const { data: transactionsByAuthDate } = await supabase
       .from("transactions")
-      .select("plaid_transaction_id, amount, new_category, top_category, date, authorized_date, transaction_type, name, merchant_name")
+      .select(`
+        plaid_transaction_id, 
+        amount, 
+        new_category, 
+        top_category,
+        category,
+        date, 
+        authorized_date, 
+        transaction_type, 
+        name, 
+        merchant_name,
+        category_id,
+        recurring_stream_id,
+        categories:category_id (
+          id,
+          name,
+          slug
+        ),
+        recurring_streams:recurring_stream_id (
+          id,
+          stream_type,
+          is_active
+        )
+      `)
       .eq("user_id", userId)
       .not("authorized_date", "is", null) // Only where authorized_date exists
       .gte("authorized_date", extendedStartStr)
@@ -1898,21 +1996,51 @@ export async function getActualsForBudgetPeriod(
     const byCategory = new Map<string, number>();
 
     // Now process current period transactions (already filtered by effective date)
-    // Use the same category logic as spending breakdown (getDisplayCategory equivalent)
-    // Priority: new_category (user override) > top_category > "Other"
-    filteredTransactions.forEach((tx) => {
+    // CRITICAL: Use EXACT same logic as getDisplayCategory() to ensure consistency
+    // Priority: 1. category_id -> categories.name, 2. new_category, 3. recurring_stream, 4. top_category
+    filteredTransactions.forEach((tx: any) => {
       const amount = Math.abs(parseFloat(tx.amount.toString()));
       overall += amount;
 
-      // Get category using same logic as getDisplayCategory() in spending breakdown
-      // This ensures categories match between spending breakdown and budget view
+      // Get category using EXACT same logic as getDisplayCategory() in spending breakdown
+      // This ensures categories match perfectly between spending breakdown and budget view
       let displayCategory: string;
-      if (tx.new_category && tx.new_category !== "INTERNAL_TRANSFER") {
+      
+      // Priority 1: Use category_id -> categories.name if available (ALWAYS WINS)
+      if (tx.category_id && tx.categories?.name) {
+        displayCategory = tx.categories.name;
+      }
+      // Priority 2: User explicit override (but skip INTERNAL_TRANSFER)
+      else if (tx.new_category && tx.new_category !== "INTERNAL_TRANSFER") {
         displayCategory = tx.new_category;
-      } else if (tx.top_category && tx.top_category !== "INTERNAL_TRANSFER") {
-        displayCategory = tx.top_category;
-      } else {
-        displayCategory = "Other";
+      }
+      // Priority 3: Recurring stream-based category
+      else if (tx.recurring_stream_id && tx.recurring_streams) {
+        const stream = Array.isArray(tx.recurring_streams)
+          ? tx.recurring_streams[0]
+          : tx.recurring_streams;
+        
+        if (stream && stream.is_active && stream.stream_type) {
+          const streamType = stream.stream_type;
+          const STREAM_TYPE_TO_CATEGORY: Record<string, string> = {
+            subscription: 'Subscriptions',
+            income: 'Income',
+            bill: 'Housing',
+            other: 'Other',
+          };
+          const mappedCategory = STREAM_TYPE_TO_CATEGORY[streamType];
+          if (mappedCategory) {
+            displayCategory = mappedCategory;
+          } else {
+            displayCategory = tx.top_category || tx.category || "Other";
+          }
+        } else {
+          displayCategory = tx.top_category || tx.category || "Other";
+        }
+      }
+      // Priority 4: Plaid's original category
+      else {
+        displayCategory = tx.top_category || tx.category || "Other";
       }
       
       // Skip INTERNAL_TRANSFER
@@ -1959,7 +2087,29 @@ export async function getHistoricalCategoryAverages(
 
     const { data: transactionsRaw } = await supabase
       .from("transactions")
-      .select("amount, new_category, top_category, date, authorized_date, transaction_type, name, merchant_name")
+      .select(`
+        amount, 
+        new_category, 
+        top_category,
+        category,
+        date, 
+        authorized_date, 
+        transaction_type, 
+        name, 
+        merchant_name,
+        category_id,
+        recurring_stream_id,
+        categories:category_id (
+          id,
+          name,
+          slug
+        ),
+        recurring_streams:recurring_stream_id (
+          id,
+          stream_type,
+          is_active
+        )
+      `)
       .eq("user_id", userId)
       .gte("date", extendedStartStr)
       .lte("date", todayStr)
@@ -1971,7 +2121,7 @@ export async function getHistoricalCategoryAverages(
     }
 
     // Filter by effective date
-    const transactions = transactionsRaw.filter((tx) => {
+    const transactions = transactionsRaw.filter((tx: any) => {
       if (isLikelyInternalTransfer(tx)) return false;
       const effectiveDate = tx.authorized_date || tx.date;
       return effectiveDate >= lookbackStartStr && effectiveDate <= todayStr;
@@ -1980,15 +2130,50 @@ export async function getHistoricalCategoryAverages(
     // Aggregate by category
     const categoryData = new Map<string, { total: number; months: Set<string> }>();
 
-    transactions.forEach((tx) => {
+    transactions.forEach((tx: any) => {
       if (isLikelyInternalTransfer(tx)) return;
-      // Use same category logic as getDisplayCategory()
+      // Use EXACT same category logic as getDisplayCategory() for consistency
       let displayCategory: string;
-      if (tx.new_category && tx.new_category !== "INTERNAL_TRANSFER") {
+      
+      // Priority 1: Use category_id -> categories.name if available (ALWAYS WINS)
+      if (tx.category_id && tx.categories?.name) {
+        displayCategory = tx.categories.name;
+      }
+      // Priority 2: User explicit override (but skip INTERNAL_TRANSFER)
+      else if (tx.new_category && tx.new_category !== "INTERNAL_TRANSFER") {
         displayCategory = tx.new_category;
-      } else if (tx.top_category && tx.top_category !== "INTERNAL_TRANSFER") {
-        displayCategory = tx.top_category;
-      } else {
+      }
+      // Priority 3: Recurring stream-based category
+      else if (tx.recurring_stream_id && tx.recurring_streams) {
+        const stream = Array.isArray(tx.recurring_streams)
+          ? tx.recurring_streams[0]
+          : tx.recurring_streams;
+        
+        if (stream && stream.is_active && stream.stream_type) {
+          const streamType = stream.stream_type;
+          const STREAM_TYPE_TO_CATEGORY: Record<string, string> = {
+            subscription: 'Subscriptions',
+            income: 'Income',
+            bill: 'Housing',
+            other: 'Other',
+          };
+          const mappedCategory = STREAM_TYPE_TO_CATEGORY[streamType];
+          if (mappedCategory) {
+            displayCategory = mappedCategory;
+          } else {
+            displayCategory = tx.top_category || tx.category || "Other";
+          }
+        } else {
+          displayCategory = tx.top_category || tx.category || "Other";
+        }
+      }
+      // Priority 4: Plaid's original category
+      else {
+        displayCategory = tx.top_category || tx.category || "Other";
+      }
+      
+      // Skip if no valid category
+      if (!displayCategory || displayCategory === "INTERNAL_TRANSFER") {
         return;
       }
 

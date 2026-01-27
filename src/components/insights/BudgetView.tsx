@@ -469,10 +469,6 @@ const BudgetView: React.FC<BudgetViewProps> = ({
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [editTarget, setEditTarget] = useState<BudgetData | null>(null);
   const [editParentLabel, setEditParentLabel] = useState<string | null>(null);
-  // Track which categories are currently loading (for per-row loading state)
-  const [loadingCategories, setLoadingCategories] = useState<Set<string>>(
-    new Set(),
-  );
 
   const openActions = (item: BudgetData, parentLabel?: string | null) => {
     setActionTarget({ item, parentLabel: parentLabel || null });
@@ -547,44 +543,6 @@ const BudgetView: React.FC<BudgetViewProps> = ({
     setEditParentLabel(null);
   };
 
-  // Helper to get loading key for a category (prefer categoryId, fallback to entryId)
-  const getLoadingKey = (
-    categoryId: string | null | undefined,
-    entryId?: string | null,
-  ): string | null => {
-    if (categoryId) return `category_${categoryId}`;
-    if (entryId) return `entry_${entryId}`;
-    return null;
-  };
-
-  // Helper to set loading state for a category
-  const setCategoryLoading = (
-    categoryId: string | null | undefined,
-    entryId: string | null | undefined,
-    isLoading: boolean,
-  ) => {
-    const key = getLoadingKey(categoryId, entryId);
-    if (!key) return;
-
-    setLoadingCategories((prev) => {
-      const next = new Set(prev);
-      if (isLoading) {
-        next.add(key);
-      } else {
-        next.delete(key);
-      }
-      return next;
-    });
-  };
-
-  // Helper to check if a category is loading
-  const isCategoryLoading = (
-    categoryId: string | null | undefined,
-    entryId?: string | null,
-  ): boolean => {
-    const key = getLoadingKey(categoryId, entryId);
-    return key ? loadingCategories.has(key) : false;
-  };
 
   return (
     <View>
@@ -681,10 +639,6 @@ const BudgetView: React.FC<BudgetViewProps> = ({
               const cardEntryId = budget.entryId || entryInfo?.entryId;
               const cardCategoryId = budget.categoryId || null;
               const children = budget.children || [];
-              const isLoadingCard = isCategoryLoading(
-                cardCategoryId,
-                cardEntryId,
-              );
 
               // Use stable key based on categoryId (or category name as fallback)
               // This ensures React can properly track components during re-sorts
@@ -718,7 +672,7 @@ const BudgetView: React.FC<BudgetViewProps> = ({
                     onDelete={undefined}
                     delay={index * 30}
                     onOpenActions={() => openTransactions(budget)}
-                    isLoading={isLoadingCard}
+                    isLoading={false}
                   />
                   {children.length > 0 &&
                     (() => {
@@ -734,10 +688,6 @@ const BudgetView: React.FC<BudgetViewProps> = ({
                                 : 0;
                             const childStatusColor =
                               getStatusColor(childProgress);
-                            const isLoadingChild = isCategoryLoading(
-                              child.categoryId,
-                              child.entryId,
-                            );
                             // Use stable key based on categoryId (or category name as fallback)
                             // Include parent categoryId to ensure uniqueness for children
                             const childUniqueKey = child.categoryId
@@ -752,7 +702,7 @@ const BudgetView: React.FC<BudgetViewProps> = ({
                                 onOpenActions={() =>
                                   openTransactions(child, budget.category)
                                 }
-                                isLoading={isLoadingChild}
+                                isLoading={false}
                               />
                             );
                           })}
@@ -817,7 +767,6 @@ const BudgetView: React.FC<BudgetViewProps> = ({
         category={editTarget}
         parentLabel={editParentLabel}
         onClose={closeEdit}
-        setCategoryLoading={setCategoryLoading}
         refreshBudget={refreshBudget}
         onNameUpdate={async (categoryId: string, newName: string) => {
           if (!categoryId) return false;
@@ -878,19 +827,13 @@ const BudgetView: React.FC<BudgetViewProps> = ({
               // Don't fail the whole operation
             }
 
-            // NOTE: Transactions don't need updating because they're linked via category_id.
-            // The category_id foreign key maintains the relationship even when the name changes.
-            // Queries should use category_id instead of name matching for better performance.
-
             // Refresh categories hook so formatCategoryName uses updated names
             if (refreshCategories) {
               refreshCategories();
             }
 
             // Refresh budget data to reflect changes
-            // Small delay to ensure database updates are committed
             if (refreshBudget) {
-              await new Promise((resolve) => setTimeout(resolve, 100));
               await refreshBudget();
             }
 
@@ -932,10 +875,7 @@ const BudgetView: React.FC<BudgetViewProps> = ({
           );
           const originalBudget = editTarget.budget;
 
-          // Set loading state for this category
-          setCategoryLoading(editTarget.categoryId, editTarget.entryId, true);
-
-          // OPTIMISTIC UPDATE: Update UI immediately
+          // OPTIMISTIC UPDATE: Update UI immediately (budget amount will animate smoothly)
           // Use the current finalBudgets to ensure we have the latest data
           const currentBudgets = optimisticBudgets || finalBudgets;
           const updatedBudgets = currentBudgets.map((budget) => {
@@ -966,16 +906,11 @@ const BudgetView: React.FC<BudgetViewProps> = ({
               });
 
               // Recalculate parent budget from children
-              // Note: Parent budgets should only include their own budget, not children's
-              // Children are shown separately, so we don't double-count
               const childrenTotal = updatedChildren.reduce(
                 (sum, child) => sum + (child.budget || 0),
                 0,
               );
 
-              // Get the parent's own budget (if it has one, separate from children)
-              // For now, we'll use the children total as the parent budget
-              // This matches the behavior where parent budgets are the sum of children
               return {
                 ...budget,
                 children: updatedChildren,
@@ -986,7 +921,7 @@ const BudgetView: React.FC<BudgetViewProps> = ({
             return budget;
           });
 
-          // Set optimistic state immediately
+          // Set optimistic state immediately (triggers smooth animation)
           setOptimisticBudgets(updatedBudgets);
 
           // Preserve position: track this category as recently edited
@@ -1039,15 +974,6 @@ const BudgetView: React.FC<BudgetViewProps> = ({
                 next.delete(categoryKey);
                 return next;
               });
-            } finally {
-              // Clear loading state after a short delay to show the update was successful
-              setTimeout(() => {
-                setCategoryLoading(
-                  editTarget.categoryId,
-                  editTarget.entryId,
-                  false,
-                );
-              }, 300);
             }
           })();
 
@@ -1062,9 +988,6 @@ const BudgetView: React.FC<BudgetViewProps> = ({
           }
 
           const categoryKey = editTarget.categoryId;
-
-          // Set loading state for this category immediately
-          setCategoryLoading(editTarget.categoryId, editTarget.entryId, true);
 
           // Close modal immediately for instant feedback
           closeEdit();
@@ -1090,13 +1013,6 @@ const BudgetView: React.FC<BudgetViewProps> = ({
               }
             } catch (error) {
               // Error handled silently
-            } finally {
-              // Clear loading state when done
-              setCategoryLoading(
-                editTarget.categoryId,
-                editTarget.entryId,
-                false,
-              );
             }
           })();
         }}
@@ -1330,63 +1246,6 @@ const SubcategoryRow: React.FC<SubcategoryRowProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [item.spent, item.budget]);
 
-  // Animate loading state with pulse effect instead of gray-out
-  const loadingScaleAnim = useRef(new Animated.Value(1)).current;
-  const loadingOpacityAnim = useRef(new Animated.Value(1)).current;
-
-  useEffect(() => {
-    if (isLoading) {
-      // Pulse animation when loading
-      Animated.loop(
-        Animated.sequence([
-          Animated.parallel([
-            Animated.timing(loadingScaleAnim, {
-              toValue: 0.98,
-              duration: 600,
-              easing: Easing.inOut(Easing.ease),
-              useNativeDriver: true,
-            }),
-            Animated.timing(loadingOpacityAnim, {
-              toValue: 0.7,
-              duration: 600,
-              easing: Easing.inOut(Easing.ease),
-              useNativeDriver: true,
-            }),
-          ]),
-          Animated.parallel([
-            Animated.timing(loadingScaleAnim, {
-              toValue: 1,
-              duration: 600,
-              easing: Easing.inOut(Easing.ease),
-              useNativeDriver: true,
-            }),
-            Animated.timing(loadingOpacityAnim, {
-              toValue: 1,
-              duration: 600,
-              easing: Easing.inOut(Easing.ease),
-              useNativeDriver: true,
-            }),
-          ]),
-        ]),
-      ).start();
-    } else {
-      // Reset to normal when not loading
-      Animated.parallel([
-        Animated.timing(loadingScaleAnim, {
-          toValue: 1,
-          duration: 200,
-          easing: Easing.out(Easing.cubic),
-          useNativeDriver: true,
-        }),
-        Animated.timing(loadingOpacityAnim, {
-          toValue: 1,
-          duration: 200,
-          easing: Easing.out(Easing.cubic),
-          useNativeDriver: true,
-        }),
-      ]).start();
-    }
-  }, [isLoading, loadingScaleAnim, loadingOpacityAnim]);
   const iconDisplay = (() => {
     if (item.icon) {
       const emojiRegex =
@@ -1403,19 +1262,10 @@ const SubcategoryRow: React.FC<SubcategoryRowProps> = ({
   })();
 
   return (
-    <Animated.View
-      style={[
-        styles.subcategoryCard,
-        {
-          opacity: loadingOpacityAnim,
-          transform: [{ scale: loadingScaleAnim }],
-        },
-      ]}
-    >
+    <View style={styles.subcategoryCard}>
       <TouchableOpacity
         activeOpacity={0.85}
         onPress={onOpenActions}
-        disabled={isLoading}
       >
         <View style={styles.subcategoryRow}>
           <View style={styles.subcategorySpacer}>
@@ -1464,7 +1314,7 @@ const SubcategoryRow: React.FC<SubcategoryRowProps> = ({
           </View>
         </View>
       </TouchableOpacity>
-    </Animated.View>
+    </View>
   );
 };
 
@@ -1921,78 +1771,18 @@ const CategoryBudgetCard: React.FC<CategoryBudgetCardProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [spent, budget, progress]);
 
-  // Animate loading state with pulse effect instead of gray-out
-  const loadingScaleAnim = useRef(new Animated.Value(1)).current;
-  const loadingOpacityAnim = useRef(new Animated.Value(1)).current;
-
-  useEffect(() => {
-    if (isLoading) {
-      // Pulse animation when loading
-      Animated.loop(
-        Animated.sequence([
-          Animated.parallel([
-            Animated.timing(loadingScaleAnim, {
-              toValue: 0.98,
-              duration: 600,
-              easing: Easing.inOut(Easing.ease),
-              useNativeDriver: true,
-            }),
-            Animated.timing(loadingOpacityAnim, {
-              toValue: 0.7,
-              duration: 600,
-              easing: Easing.inOut(Easing.ease),
-              useNativeDriver: true,
-            }),
-          ]),
-          Animated.parallel([
-            Animated.timing(loadingScaleAnim, {
-              toValue: 1,
-              duration: 600,
-              easing: Easing.inOut(Easing.ease),
-              useNativeDriver: true,
-            }),
-            Animated.timing(loadingOpacityAnim, {
-              toValue: 1,
-              duration: 600,
-              easing: Easing.inOut(Easing.ease),
-              useNativeDriver: true,
-            }),
-          ]),
-        ]),
-      ).start();
-    } else {
-      // Reset to normal when not loading
-      Animated.parallel([
-        Animated.timing(loadingScaleAnim, {
-          toValue: 1,
-          duration: 200,
-          easing: Easing.out(Easing.cubic),
-          useNativeDriver: true,
-        }),
-        Animated.timing(loadingOpacityAnim, {
-          toValue: 1,
-          duration: 200,
-          easing: Easing.out(Easing.cubic),
-          useNativeDriver: true,
-        }),
-      ]).start();
-    }
-  }, [isLoading, loadingScaleAnim, loadingOpacityAnim]);
-
   return (
     <Animated.View
       style={[
         styles.categoryCard,
         {
-          opacity: Animated.multiply(fadeAnim, loadingOpacityAnim),
-          transform: [{ scale: loadingScaleAnim }],
+          opacity: fadeAnim,
         },
       ]}
     >
       <TouchableOpacity
         activeOpacity={0.85}
         onPress={onOpenActions}
-        disabled={isLoading}
       >
         <View style={styles.categoryCardContent}>
           {/* Compact Row Layout */}
