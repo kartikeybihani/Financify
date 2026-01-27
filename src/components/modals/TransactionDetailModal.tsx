@@ -29,6 +29,7 @@ import {
   shouldShowRecurringChip,
 } from "@/src/utils/categories/transactionCategory";
 import { bulkUpdateRecurringStatus } from "@/src/utils/recurring/recurringBulkUpdate";
+import { generateUUID } from "@/src/utils/core/uuid";
 
 const getCategoryBackgroundColorForName = (categoryName: string): string => {
   const map: { [key: string]: string } = {
@@ -572,6 +573,11 @@ export default function TransactionDetailModal({
 
   const handleInternalTransferToggle = async () => {
     try {
+      if (!transaction || !userId) {
+        Alert.alert("Error", "Transaction or user information missing.");
+        return;
+      }
+
       // Use the same logic as the UI to determine current state
       const currentlyInternalTransfer =
         updatedCategory === "INTERNAL_TRANSFER" ||
@@ -594,6 +600,110 @@ export default function TransactionDetailModal({
         console.error("Error updating transaction category:", error);
         Alert.alert("Error", "Failed to update transaction. Please try again.");
         return;
+      }
+
+      // If marking as internal transfer (not removing), create a category rule for future transactions
+      if (!currentlyInternalTransfer) {
+        try {
+          const merchantName = transaction.merchant_name;
+          const transactionName = transaction.name;
+
+          // Determine which field to use for matching: merchant_name first, then transaction name
+          const useMerchantName = merchantName && merchantName.trim() !== "";
+          const useTransactionName =
+            !useMerchantName && transactionName && transactionName.trim() !== "";
+
+          if (useMerchantName || useTransactionName) {
+            // For internal transfers, we need to store the rule differently since INTERNAL_TRANSFER
+            // is not a real category. We'll use a special approach: store the rule with a marker.
+            // Since category_rules requires top_category_id, we'll need to handle this specially.
+            // For now, we'll insert a rule that we can identify later by checking if the category
+            // doesn't exist in the user's categories (which INTERNAL_TRANSFER won't).
+            
+            // Actually, a better approach: Check if there's an "Other" category and use that as a placeholder,
+            // but mark it specially. Or, we can check for rules where merchant_name/transaction_name matches
+            // and the transaction's new_category is INTERNAL_TRANSFER.
+            
+            // Simplest approach: Store the rule with merchant_name/transaction_name, and in the sync function,
+            // check if a rule matches and if the transaction should be marked as internal transfer.
+            // We'll use a special UUID or marker for internal transfer rules.
+            
+            // For now, let's create a rule entry that we can identify. Since we can't easily modify schema,
+            // we'll use a workaround: create the rule with a special marker category_id.
+            // But actually, the sync function already checks merchant rules first, so we just need to
+            // ensure that when a rule matches, if it's an internal transfer rule, we set new_category.
+            
+            // Let me use a simpler approach: Create a rule entry, and in sync, check if merchant_name/transaction_name
+            // matches AND if we should treat it as internal transfer. We can do this by checking existing
+            // transactions with the same merchant_name/transaction_name that are marked as INTERNAL_TRANSFER.
+            
+            // Actually, the cleanest solution: When creating the rule, we can check if there are other transactions
+            // with the same merchant_name/transaction_name that are INTERNAL_TRANSFER, and if so, treat future
+            // matches as internal transfer. But that's complex.
+            
+            // For now, let's create a simple rule: Insert into category_rules with merchant_name/transaction_name,
+            // and use a special approach in sync to detect internal transfer rules.
+            // Since INTERNAL_TRANSFER is not a category, we'll need to handle this differently.
+            
+            // Workaround: Create a rule with merchant_name/transaction_name, and in the sync function,
+            // check if merchant_name/transaction_name matches AND if there's a pattern indicating internal transfer.
+            // We can do this by checking if the matched rule's category_id doesn't exist in categories (special marker).
+            
+            // Actually, simplest solution: Don't create a category_rules entry for internal transfers.
+            // Instead, in the sync function, check if merchant_name/transaction_name matches any existing
+            // transactions that are marked as INTERNAL_TRANSFER, and if so, mark new transactions the same way.
+            
+            // But that's inefficient. Better: Create a special internal_transfer_rules table or use a marker.
+            
+            // For MVP: Let's create a rule entry with merchant_name/transaction_name, and use a special
+            // category_id that we can identify. We can use a UUID like "00000000-0000-0000-0000-000000000001"
+            // as a marker for internal transfers.
+            
+            const matchValue = useMerchantName ? merchantName : transactionName;
+            const matchField = useMerchantName ? "merchant_name" : "transaction_name";
+            
+            // Use a special marker UUID for internal transfer rules
+            // This UUID will be recognized in the sync function as a marker for internal transfers
+            const INTERNAL_TRANSFER_MARKER_UUID = "00000000-0000-0000-0000-000000000001";
+            
+            // Check if rule already exists
+            const { data: existingRule } = await supabase
+              .from("category_rules")
+              .select("id")
+              .eq("user_id", userId)
+              .eq("active", true)
+              .eq(matchField, matchValue)
+              .maybeSingle();
+            
+            if (!existingRule) {
+              // Create the rule with the special marker UUID
+              const { error: ruleError } = await supabase
+                .from("category_rules")
+                .insert({
+                  id: generateUUID(),
+                  user_id: userId,
+                  [matchField]: matchValue,
+                  top_category_id: INTERNAL_TRANSFER_MARKER_UUID, // Special marker
+                  sub_category_id: INTERNAL_TRANSFER_MARKER_UUID, // Special marker
+                  match_field: matchField,
+                  active: true,
+                });
+              
+              if (ruleError) {
+                console.error("Error creating internal transfer rule:", ruleError);
+                // Don't fail the whole operation if rule creation fails
+              } else {
+                console.log("✅ Created internal transfer rule for", matchField, matchValue);
+              }
+            }
+          }
+        } catch (ruleErr) {
+          console.error("Exception creating internal transfer rule:", ruleErr);
+          // Don't fail the whole operation
+        }
+      } else {
+        // If removing internal transfer marker, we could also remove the rule, but let's keep it
+        // in case the user wants to re-enable it later
       }
 
       // Update local state

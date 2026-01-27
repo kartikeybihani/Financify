@@ -189,6 +189,68 @@ serve(async (req: Request) => {
     }
     console.log(`✅ Loaded ${categoryIdMap.size / 2} categories for category_id lookup`);
 
+    // 4.5.5. Fetch active merchant rules (category_rules) for priority matching
+    console.log("📋 Fetching merchant rules...");
+    const { data: merchantRules, error: rulesError } = await supabase
+      .from("category_rules")
+      .select("merchant_name, transaction_name, top_category_id, match_field")
+      .eq("user_id", user_id)
+      .eq("active", true);
+
+    if (rulesError) {
+      console.error("⚠️ Error fetching merchant rules:", rulesError);
+    }
+
+    // Special marker UUID for internal transfer rules
+    const INTERNAL_TRANSFER_MARKER_UUID = "00000000-0000-0000-0000-000000000001";
+
+    // Build merchant rules lookup map
+    const merchantRulesMap = new Map<string, string>();
+    const transactionNameRulesMap = new Map<string, string>();
+    const merchantInternalTransferMap = new Map<string, boolean>();
+    const transactionNameInternalTransferMap = new Map<string, boolean>();
+    
+    if (merchantRules) {
+      merchantRules.forEach((rule: { merchant_name: string | null; transaction_name: string | null; top_category_id: string; match_field: string | null }) => {
+        // top_category_id is actually the category_id (despite the confusing name)
+        const categoryId = rule.top_category_id;
+        const matchField = rule.match_field || "merchant_name";
+        const isInternalTransferRule = categoryId === INTERNAL_TRANSFER_MARKER_UUID;
+
+        if (matchField === "merchant_name" && rule.merchant_name) {
+          // Normalize merchant name for matching (case-insensitive)
+          const key = rule.merchant_name.toLowerCase().trim();
+          if (isInternalTransferRule) {
+            merchantInternalTransferMap.set(key, true);
+          } else {
+            merchantRulesMap.set(key, categoryId);
+          }
+        } else if (
+          (matchField === "transaction_name" || !rule.merchant_name) &&
+          rule.transaction_name
+        ) {
+          // Normalize transaction name for matching (case-insensitive)
+          const key = rule.transaction_name.toLowerCase().trim();
+          if (isInternalTransferRule) {
+            transactionNameInternalTransferMap.set(key, true);
+          } else {
+            transactionNameRulesMap.set(key, categoryId);
+          }
+        }
+      });
+    }
+    console.log(`✅ Loaded ${merchantRulesMap.size + transactionNameRulesMap.size} merchant rules`);
+
+    // Get "Other" category ID for fallback
+    const { data: otherCategory } = await supabase
+      .from("categories")
+      .select("id")
+      .eq("user_id", user_id)
+      .eq("name", "Other")
+      .maybeSingle();
+
+    const otherCategoryId = otherCategory?.id || null;
+
     // 4.6. Get existing recurring streams for this user to check if transactions are recurring
     console.log("🔄 Fetching recurring streams...");
     const { data: recurringStreams, error: streamsError } = await supabase
@@ -279,21 +341,55 @@ serve(async (req: Request) => {
         const streamData = transactionToStreamMap.get(txn.transaction_id);
         const recurringStreamId = streamData?.streamId || null;
         
-        // Set new_category if internal transfer detected (mapper returns INTERNAL_TRANSFER)
-        let newCategory = detectedAsInternalTransfer || mappedCategory.top === "INTERNAL_TRANSFER" 
-          ? "INTERNAL_TRANSFER" 
-          : null;
-        
-        // Determine recurring status
+        // Check merchant rules and internal transfer rules
+        const merchantName = txn.merchant_name || null;
+        const transactionName = txn.name || null;
+        let ruleIndicatesInternalTransfer = false;
+        let categoryId: string | null = null;
+
+        // Priority 1: Check merchant rules (highest priority for new transactions)
+        // Also check for internal transfer rules (special marker UUID)
+        if (!detectedAsInternalTransfer) {
+          // Check merchant_name rules first
+          if (merchantName) {
+            const merchantKey = merchantName.toLowerCase().trim();
+            // Check for internal transfer rule first
+            if (merchantInternalTransferMap.get(merchantKey)) {
+              ruleIndicatesInternalTransfer = true;
+            } else {
+              const ruleCategoryId = merchantRulesMap.get(merchantKey);
+              if (ruleCategoryId) {
+                categoryId = ruleCategoryId;
+              }
+            }
+          }
+
+          // If no merchant rule match, check transaction_name rules
+          if (!categoryId && !ruleIndicatesInternalTransfer && transactionName) {
+            const transactionKey = transactionName.toLowerCase().trim();
+            // Check for internal transfer rule first
+            if (transactionNameInternalTransferMap.get(transactionKey)) {
+              ruleIndicatesInternalTransfer = true;
+            } else {
+              const ruleCategoryId = transactionNameRulesMap.get(transactionKey);
+              if (ruleCategoryId) {
+                categoryId = ruleCategoryId;
+              }
+            }
+          }
+        }
+
+        // Set new_category and determine if internal transfer
+        let newCategory: string | null = null;
         let ifRecurring: "yes" | "no" = "no"; // Default to 'no'
-        
-        // Priority 1: Internal transfer detection (highest priority)
-        if (detectedAsInternalTransfer) {
+
+        // Priority 2: Internal transfers (from rules or detection) don't get category_id
+        if (ruleIndicatesInternalTransfer || detectedAsInternalTransfer) {
           newCategory = "INTERNAL_TRANSFER";
-          // Internal transfers are not recurring (they're account movements)
-          ifRecurring = "no";
+          categoryId = null; // Explicitly null for internal transfers
+          ifRecurring = "no"; // Internal transfers are not recurring
         } else if (streamData) {
-          // Priority 2: Transaction is part of a recurring stream
+          // Priority 3: Transaction is part of a recurring stream
           ifRecurring = "yes";
 
           // Set category based on stream type (will be used as new_category)
@@ -307,24 +403,32 @@ serve(async (req: Request) => {
         // If category is "Subscriptions", automatically mark as recurring
         // (Subscriptions are inherently recurring, even if not in a Plaid stream)
         // But skip if it's an internal transfer
-        if (!detectedAsInternalTransfer) {
+        if (!ruleIndicatesInternalTransfer && !detectedAsInternalTransfer) {
           const finalCategory = newCategory || mappedCategory.top;
           if (finalCategory === "Subscriptions") {
             ifRecurring = "yes";
           }
         }
         
-        // Look up category_id from categories table
-        // Priority: newCategory (if set and not INTERNAL_TRANSFER) > top_category
-        let categoryId: string | null = null;
-        if (newCategory && newCategory !== "INTERNAL_TRANSFER") {
-          // Look up category_id for user-set category (from stream or override)
-          categoryId = categoryIdMap.get(newCategory) || categoryIdMap.get(newCategory.toLowerCase()) || null;
-        } else if (!newCategory && mappedCategory.top && mappedCategory.top !== "INTERNAL_TRANSFER") {
-          // Look up category_id for top_category (Plaid mapped category)
-          categoryId = categoryIdMap.get(mappedCategory.top) || categoryIdMap.get(mappedCategory.top.toLowerCase()) || null;
+        // Look up category_id from categories table if not already set by merchant rules
+        // Priority: Merchant Rules (already checked) > Stream Category > Plaid Category > Fallback to "Other"
+        if (!categoryId && !ruleIndicatesInternalTransfer && !detectedAsInternalTransfer) {
+          // Priority 3: Stream-based category (if no merchant rule matched)
+          if (newCategory && newCategory !== "INTERNAL_TRANSFER") {
+            // Look up category_id for user-set category (from stream or override)
+            categoryId = categoryIdMap.get(newCategory) || categoryIdMap.get(newCategory.toLowerCase()) || null;
+          }
+          // Priority 4: Plaid mapped category (if no merchant rule or stream match)
+          else if (!newCategory && mappedCategory.top && mappedCategory.top !== "INTERNAL_TRANSFER") {
+            // Look up category_id for top_category (Plaid mapped category)
+            categoryId = categoryIdMap.get(mappedCategory.top) || categoryIdMap.get(mappedCategory.top.toLowerCase()) || null;
+          }
+
+          // Priority 5: Fallback to "Other" if no match found
+          if (!categoryId && otherCategoryId) {
+            categoryId = otherCategoryId;
+          }
         }
-        // For INTERNAL_TRANSFER, categoryId stays null (not a real category)
         
         // Debug log for categories
         if (added.length <= 5) { // Only log first few to avoid spam
