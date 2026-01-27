@@ -182,6 +182,7 @@ export default function CategoryMappingModal({
             styles.modalContainer,
             {
               paddingBottom: insets.bottom + 20,
+              paddingTop: Math.max(insets.top, 20),
               transform: [{ translateY: slideAnim }],
             },
           ]}
@@ -237,11 +238,12 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 24,
     overflow: "hidden",
     backgroundColor: "#0f3460",
+    maxHeight: "80%",
   },
   gradient: {
-    flex: 1,
     paddingVertical: 24,
     paddingHorizontal: 20,
+    minHeight: 150,
   },
   content: {
     alignItems: "center",
@@ -264,5 +266,6 @@ const styles = StyleSheet.create({
     color: "#B0B0B0",
     textAlign: "center",
     lineHeight: 20,
+    paddingHorizontal: 8,
   },
 });

@@ -158,7 +158,7 @@ const SECTIONS: SectionConfig[] = [
   { key: "spending", label: "Spending" },
   { key: "budget", label: "Budget" },
   { key: "investments", label: "Investments" },
-  { key: "cashflow", label: "Cash Flow" },
+  // { key: "cashflow", label: "Cash Flow" },
 ] as const;
 
 // Default to "spending" section (index 2)

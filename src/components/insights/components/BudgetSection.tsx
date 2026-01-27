@@ -189,5 +189,6 @@ const styles = StyleSheet.create({
     position: "relative",
     paddingHorizontal: 20,
     marginTop: 16,
+    marginBottom: 65,
   },
 });
