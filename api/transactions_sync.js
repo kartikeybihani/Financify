@@ -857,8 +857,7 @@ async function handleBudgetCreation(req, res, userId) {
         .eq("user_id", userId)
         .gte("date", startDate)
         .gt("amount", 0) // Only expenses
-        .order("date", { ascending: false })
-        .limit(500);
+        .order("date", { ascending: false });
 
       if (txError) {
         console.error("Error fetching transactions:", txError);
@@ -883,16 +882,66 @@ async function handleBudgetCreation(req, res, userId) {
         throw new Error("Invalid response format from LLM");
       }
 
-      // Validate budget total matches constraint
+      // Validate and normalize budget total to match constraint exactly
       const totalBudget = llmResponse.categories.reduce((sum, cat) => sum + (cat.limit || 0), 0);
       const expectedTotal = Math.round(income - (savingsAmount || income * 0.2));
+      const difference = expectedTotal - totalBudget;
       
-      if (Math.abs(totalBudget - expectedTotal) > 1) {
+      if (Math.abs(difference) > 1) {
         console.warn(
-          `Budget total mismatch: Expected $${expectedTotal}, got $${totalBudget}. Categories:`,
+          `Budget total mismatch: Expected $${expectedTotal}, got $${totalBudget}. Difference: $${difference}. Normalizing...`
+        );
+        console.log(
+          `Categories before normalization:`,
           llmResponse.categories.map(c => `${c.name}: $${c.limit}`).join(", ")
         );
-        // Log warning but don't fail - user can adjust in UI
+        
+        // Normalize by adjusting the "Other" category if it exists, otherwise adjust the largest category
+        const otherCategoryIndex = llmResponse.categories.findIndex(
+          cat => cat.name.toLowerCase() === "other"
+        );
+        
+        if (otherCategoryIndex >= 0) {
+          // Adjust "Other" category
+          llmResponse.categories[otherCategoryIndex].limit = Math.max(0, 
+            (llmResponse.categories[otherCategoryIndex].limit || 0) + difference
+          );
+          console.log(
+            `Adjusted "Other" category to $${llmResponse.categories[otherCategoryIndex].limit} (was $${(llmResponse.categories[otherCategoryIndex].limit || 0) - difference})`
+          );
+        } else {
+          // Find the largest category and adjust it
+          let largestIndex = 0;
+          let largestAmount = llmResponse.categories[0]?.limit || 0;
+          for (let i = 1; i < llmResponse.categories.length; i++) {
+            if ((llmResponse.categories[i]?.limit || 0) > largestAmount) {
+              largestAmount = llmResponse.categories[i]?.limit || 0;
+              largestIndex = i;
+            }
+          }
+          llmResponse.categories[largestIndex].limit = Math.max(0, 
+            (llmResponse.categories[largestIndex].limit || 0) + difference
+          );
+          console.log(
+            `Adjusted "${llmResponse.categories[largestIndex].name}" category to $${llmResponse.categories[largestIndex].limit} (was $${(llmResponse.categories[largestIndex].limit || 0) - difference})`
+          );
+        }
+        
+        // Verify normalization worked
+        const newTotal = llmResponse.categories.reduce((sum, cat) => sum + (cat.limit || 0), 0);
+        if (Math.abs(newTotal - expectedTotal) > 1) {
+          console.error(
+            `Normalization failed: Expected $${expectedTotal}, got $${newTotal}. Difference: $${expectedTotal - newTotal}`
+          );
+        } else {
+          console.log(
+            `✅ Budget normalized successfully. New total: $${newTotal} (matches expected $${expectedTotal})`
+          );
+          console.log(
+            `Categories after normalization:`,
+            llmResponse.categories.map(c => `${c.name}: $${c.limit}`).join(", ")
+          );
+        }
       }
 
       const rawResponse = llmResponse.rawResponse || "";
