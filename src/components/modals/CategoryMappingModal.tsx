@@ -236,8 +236,10 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     overflow: "hidden",
+    backgroundColor: "#0f3460",
   },
   gradient: {
+    flex: 1,
     paddingVertical: 24,
     paddingHorizontal: 20,
   },

@@ -28,9 +28,10 @@ export function OnboardingProgressBox({
       >
         <LinearGradient
           colors={[
-            "rgba(74, 144, 226, 0.12)",
-            "rgba(78, 205, 196, 0.12)",
-            "rgba(74, 144, 226, 0.15)",
+            "#1f1f1f", // Dark gray/black
+            "#252525", // Slightly lighter gray
+            "#2a2a2a", // Medium gray
+            "#1f1f1f", // Back to dark
           ]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
@@ -39,12 +40,14 @@ export function OnboardingProgressBox({
           <View style={styles.content}>
             <View style={styles.leftSection}>
               <View style={styles.labelContainer}>
-                <Ionicons
-                  name="checkmark-circle-outline"
-                  size={20}
-                  color="rgba(74, 144, 226, 0.9)"
-                  style={styles.icon}
-                />
+                <View style={styles.iconWrapper}>
+                  <Ionicons
+                    name="checkmark-circle-outline"
+                    size={22}
+                    color="#4A90E2"
+                    style={styles.icon}
+                  />
+                </View>
                 <Text style={styles.label}>Onboarding</Text>
               </View>
             </View>
@@ -68,7 +71,10 @@ export function OnboardingProgressBox({
           </View>
           <View style={styles.progressBarContainer}>
             <View style={styles.progressBarBackground}>
-              <View
+              <LinearGradient
+                colors={["#4A90E2", "#357ABD", "#2E6BA8"]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
                 style={[
                   styles.progressBarFill,
                   { width: `${status.percentage}%` },
@@ -92,9 +98,9 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   gradientBox: {
-    borderRadius: 18,
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.15)",
+    borderColor: "rgba(74, 144, 226, 0.2)",
     paddingVertical: 20,
     paddingHorizontal: 20,
     shadowColor: "#000",
@@ -102,9 +108,9 @@ const styles = StyleSheet.create({
       width: 0,
       height: 4,
     },
-    shadowOpacity: 0.25,
-    shadowRadius: 10,
-    elevation: 5,
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
   },
   content: {
     flexDirection: "row",
@@ -118,17 +124,27 @@ const styles = StyleSheet.create({
   labelContainer: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
+    gap: 12,
+  },
+  iconWrapper: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "rgba(74, 144, 226, 0.15)",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "rgba(74, 144, 226, 0.2)",
   },
   icon: {
-    marginRight: 2,
+    marginRight: 0,
   },
   label: {
     fontSize: 19,
     fontWeight: "700",
     color: "#fff",
-    fontFamily: "Manrope",
-    letterSpacing: 0.4,
+    // fontFamily: "Manrope",
+    letterSpacing: 0.5,
   },
   rightSection: {
     flexDirection: "row",
@@ -139,7 +155,7 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: "800",
     color: "#4A90E2",
-    // fontFamily: "Manrope",
+    fontFamily: "Manrope",
     letterSpacing: 0.5,
   },
   closeButton: {
@@ -160,9 +176,8 @@ const styles = StyleSheet.create({
   },
   progressBarFill: {
     height: "100%",
-    backgroundColor: "#4ECDC4",
     borderRadius: 2,
-    shadowColor: "#4ECDC4",
+    shadowColor: "#4A90E2",
     shadowOffset: {
       width: 0,
       height: 0,

@@ -368,9 +368,6 @@ export const QuickStats: React.FC<QuickStatsProps> = React.memo(
           scrollEventThrottle={16}
           style={{ width: screenWidth - 40 }}
         >
-          {/* Insight Slide (Budget Progress / Category Alert / Spending Summary) */}
-          {renderInsightSlide()}
-
           {/* Net Worth Slide */}
           <View
             style={[
@@ -412,11 +409,14 @@ export const QuickStats: React.FC<QuickStatsProps> = React.memo(
               </Text>
             </View>
           </View>
+
+          {/* Insight Slide (Budget Progress / Category Alert / Spending Summary) */}
+          {/* {renderInsightSlide()} */}
         </ScrollView>
 
         {/* Carousel Dots */}
         <View style={styles.carouselDots}>
-          {[0, 1].map((index) => (
+          {[0].map((index) => (
             <View
               key={index}
               style={[

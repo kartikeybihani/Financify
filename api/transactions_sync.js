@@ -207,12 +207,13 @@ async function ensureOtherCategoryExists(userId, budgetPeriodId) {
       console.log("✅ Created 'Other' category for user:", userId);
     }
 
-    // Ensure "Other" has a budget entry (even if limit is null/unlimited)
+    // Ensure "Other" has a budget entry (set limit_amount to 0 to represent unlimited)
+    // Database constraint requires NOT NULL, so we use 0 which UI can interpret as "unlimited"
     await upsertBudgetEntry(budgetPeriodId, {
       scope_type: "category",
       category_id: otherCategoryId,
       label: "Other",
-      limit_amount: null, // User can set limit later or leave unlimited
+      limit_amount: 0, // 0 represents unlimited/no limit - user can set limit later
     });
 
     return otherCategoryId;
@@ -390,12 +391,8 @@ async function remapTransactionsToBudgetCategories(userId) {
     const today = new Date();
     const year = today.getFullYear();
     const month = today.getMonth();
-    const periodStartStr = formatLocalDate(
-      new Date(year, month, 1),
-    );
-    const periodEndStr = formatLocalDate(
-      new Date(year, month + 1, 0),
-    );
+    const periodStartStr = formatLocalDate(new Date(year, month, 1));
+    const periodEndStr = formatLocalDate(new Date(year, month + 1, 0));
 
     // Find active budget period
     const { data: activePeriod } = await supabase
@@ -437,10 +434,7 @@ async function remapTransactionsToBudgetCategories(userId) {
       .order("top_category, sub_category");
 
     if (txError) {
-      console.error(
-        "[CATEGORY_MAPPING] Error fetching transactions:",
-        txError,
-      );
+      console.error("[CATEGORY_MAPPING] Error fetching transactions:", txError);
       await supabase
         .from("budget_periods")
         .update({ category_mapping_status: "failed" })
@@ -500,9 +494,7 @@ async function remapTransactionsToBudgetCategories(userId) {
       .filter(Boolean);
 
     if (categoryIds.length === 0) {
-      console.log(
-        "[CATEGORY_MAPPING] No budget categories found, skipping",
-      );
+      console.log("[CATEGORY_MAPPING] No budget categories found, skipping");
       await supabase
         .from("budget_periods")
         .update({ category_mapping_status: "completed" })
@@ -530,9 +522,7 @@ async function remapTransactionsToBudgetCategories(userId) {
     }
 
     if (!budgetCategories || budgetCategories.length === 0) {
-      console.log(
-        "[CATEGORY_MAPPING] No budget categories found, skipping",
-      );
+      console.log("[CATEGORY_MAPPING] No budget categories found, skipping");
       await supabase
         .from("budget_periods")
         .update({ category_mapping_status: "completed" })
@@ -647,7 +637,9 @@ async function remapTransactionsToBudgetCategories(userId) {
       .update({ category_mapping_status: "completed" })
       .eq("id", activePeriod.id);
 
-    console.log(`[CATEGORY_MAPPING] Remapping completed for user: ${userId.substring(0, 8)}`);
+    console.log(
+      `[CATEGORY_MAPPING] Remapping completed for user: ${userId.substring(0, 8)}`,
+    );
   } catch (error) {
     console.error("[CATEGORY_MAPPING] Error during remapping:", error);
 
@@ -1546,7 +1538,11 @@ export default async function handler(req, res) {
           categoryId = null; // Explicitly null for internal transfers
         }
         // Priority 3: Stream-based category (if no merchant rule matched)
-        else if (!categoryId && newCategory && newCategory !== "INTERNAL_TRANSFER") {
+        else if (
+          !categoryId &&
+          newCategory &&
+          newCategory !== "INTERNAL_TRANSFER"
+        ) {
           // Look up category_id for user-set category (from stream or override)
           categoryId =
             categoryIdMap.get(newCategory) ||
