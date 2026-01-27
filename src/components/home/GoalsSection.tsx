@@ -113,7 +113,12 @@ export const GoalsSection: React.FC<GoalsSectionProps> = React.memo(
       <View style={styles.goalsSection}>
         <View style={styles.goalsSectionHeader}>
           <View style={styles.goalsTitleContainer}>
-            <Ionicons name="trophy" size={20} color="#4A90E2" />
+            <Ionicons
+              name="trophy"
+              size={18}
+              style={{ alignSelf: "center" }}
+              color="#4A90E2"
+            />
             <Text style={styles.sectionTitle}>Your Focus 🎯</Text>
           </View>
           <TouchableOpacity
@@ -126,60 +131,63 @@ export const GoalsSection: React.FC<GoalsSectionProps> = React.memo(
 
         {closestGoal && (
           <View style={styles.goalCard}>
-            <View style={styles.goalHeader}>
-              <Text style={styles.goalTitle}>{closestGoal.label}</Text>
-              <Text style={styles.goalAmount}>
-                {new Intl.NumberFormat("en-US", {
-                  style: "currency",
-                  currency: "USD",
-                  minimumFractionDigits: 0,
-                  maximumFractionDigits: 0,
-                }).format(closestGoal.current_amount || 0)}{" "}
-                of{" "}
-                {formatCurrency(closestGoal.target_amount || 0, "USD", {
-                  decimals: 0,
-                  useKM: true,
-                })}
-              </Text>
-            </View>
-            <View style={styles.progressBarBackground}>
-              <View
-                style={[
-                  styles.progressBarFill,
-                  {
-                    width: `${
-                      closestGoal.target_amount > 0
-                        ? Math.min(
-                            (closestGoal.current_amount /
-                              closestGoal.target_amount) *
+            <TouchableOpacity onPress={() => router.push("/goals")}>
+              <View style={styles.goalHeader}>
+                <Text style={styles.goalTitle}>{closestGoal.label}</Text>
+                <Text style={styles.goalAmount}>
+                  {new Intl.NumberFormat("en-US", {
+                    style: "currency",
+                    currency: "USD",
+                    minimumFractionDigits: 0,
+                    maximumFractionDigits: 0,
+                  }).format(closestGoal.current_amount || 0)}{" "}
+                  of{" "}
+                  {formatCurrency(closestGoal.target_amount || 0, "USD", {
+                    decimals: 0,
+                    useKM: true,
+                  })}
+                </Text>
+              </View>
+              <View style={styles.progressBarBackground}>
+                <View
+                  style={[
+                    styles.progressBarFill,
+                    {
+                      width: `${
+                        closestGoal.target_amount > 0
+                          ? Math.min(
+                              (closestGoal.current_amount /
+                                closestGoal.target_amount) *
+                                100,
                               100,
-                            100,
-                          )
-                        : 0
-                    }%`,
-                  },
-                ]}
-              />
-            </View>
-            <View style={styles.goalPercentContainer}>
-              <Ionicons name="trending-up" size={14} color="#4ECDC4" />
-              <Text
-                style={{
-                  fontWeight: "600",
-                  color: "#4ECDC4",
-                  fontSize: 12,
-                  marginLeft: 2,
-                }}
-              >
-                {closestGoal.target_amount > 0
-                  ? Math.round(
-                      (closestGoal.current_amount / closestGoal.target_amount) *
-                        100,
-                    )
-                  : 0}
-                % Progress
-              </Text>
-            </View>
+                            )
+                          : 0
+                      }%`,
+                    },
+                  ]}
+                />
+              </View>
+              <View style={styles.goalPercentContainer}>
+                <Ionicons name="trending-up" size={14} color="#4ECDC4" />
+                <Text
+                  style={{
+                    fontWeight: "600",
+                    color: "#4ECDC4",
+                    fontSize: 12,
+                    marginLeft: 2,
+                  }}
+                >
+                  {closestGoal.target_amount > 0
+                    ? Math.round(
+                        (closestGoal.current_amount /
+                          closestGoal.target_amount) *
+                          100,
+                      )
+                    : 0}
+                  % Progress
+                </Text>
+              </View>
+            </TouchableOpacity>
           </View>
         )}
       </View>

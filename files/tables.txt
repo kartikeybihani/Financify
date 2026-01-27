@@ -46,6 +46,7 @@ CREATE TABLE public.budget_periods (
   created_at timestamp with time zone DEFAULT now(),
   updated_at timestamp with time zone DEFAULT now(),
   budget_analysis text,
+  category_mapping_status text CHECK (category_mapping_status = ANY (ARRAY['in_progress'::text, 'completed'::text, 'failed'::text])),
   CONSTRAINT budget_periods_pkey PRIMARY KEY (id),
   CONSTRAINT budget_periods_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
 );
