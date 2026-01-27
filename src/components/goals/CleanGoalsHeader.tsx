@@ -21,7 +21,7 @@ export default function CleanGoalsHeader() {
       style={[
         styles.gradientContainer,
         {
-          paddingTop: insets.top + (Platform.OS === "ios" ? -10 : 8),
+          paddingTop: insets.top + (Platform.OS === "ios" ? 0 : 8),
         },
       ]}
     >
@@ -61,7 +61,7 @@ const styles = StyleSheet.create({
   },
   leftIconContainer: {
     position: "absolute",
-    left: 16,
+    left: 20,
     top: 0,
     bottom: 0,
     alignItems: "center",
@@ -87,7 +87,7 @@ const styles = StyleSheet.create({
   },
   rightSpacer: {
     position: "absolute",
-    right: 16,
+    right: 20,
     width: 40, // Match icon container width for balance
   },
 });

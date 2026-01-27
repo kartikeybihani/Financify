@@ -4,6 +4,7 @@
 import { supabase } from "../lib/api/supabase.js";
 import {
   fetchSupermemoryProfile,
+  fetchSupermemoryProfileWithTimeout,
   fetchSupermemoryMemoriesList,
   fetchSupermemoryMemories,
   deleteSupermemoryMemory,
@@ -138,7 +139,7 @@ export default async function handler(req, res) {
       const shouldFetchMemories = memoriesResult === null;
 
       const [profile, memories] = await Promise.allSettled([
-        fetchSupermemoryProfile(serverUserId),
+        fetchSupermemoryProfileWithTimeout(serverUserId, 5000), // 5s timeout (non-blocking)
         shouldFetchMemories
           ? fetchSupermemoryMemoriesList(serverUserId, 100) // Use list endpoint with summaries
           : Promise.resolve(memoriesResult),

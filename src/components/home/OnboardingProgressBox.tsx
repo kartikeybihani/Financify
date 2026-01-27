@@ -155,7 +155,7 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: "800",
     color: "#4A90E2",
-    fontFamily: "Manrope",
+    // fontFamily: "Manrope",
     letterSpacing: 0.5,
   },
   closeButton: {

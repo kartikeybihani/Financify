@@ -107,6 +107,8 @@ const EnhancedFilterModal: React.FC<EnhancedFilterModalProps> = ({
 
   const handleResetFilters = () => {
     setLocalFilters(getResetFilters());
+    onFiltersChange(getResetFilters());
+    onClose();
   };
 
   const getFilterStatusText = () => {

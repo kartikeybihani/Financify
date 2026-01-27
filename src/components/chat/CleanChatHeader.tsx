@@ -38,7 +38,7 @@ export default function CleanChatHeader({
       style={[
         styles.gradientContainer,
         {
-          paddingTop: insets.top + (Platform.OS === "ios" ? -10 : 8),
+          paddingTop: insets.top + (Platform.OS === "ios" ? 0 : 8),
         },
       ]}
     >

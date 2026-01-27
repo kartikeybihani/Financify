@@ -25,6 +25,8 @@ import {
   setPrebuildContextActive,
   clearPrebuildContextActive,
   fetchSupermemoryProfile,
+  loadUserMemoryWithTimeout,
+  fetchSupermemoryProfileWithTimeout,
   // saveMemoryCandidates removed - migrating to Supermemory
   // generateMemorySummary removed - migrating to Supermemory
   // validateMemoriesWithSmallModel removed - migrating to Supermemory
@@ -1391,18 +1393,18 @@ export default async function handler(req, res) {
           );
           return cachedMemory;
         } else {
-          // Load from Supermemory and cache the result
-          const loadedMemory = await loadUserMemory(finalUserId, message);
+          // Load from Supermemory with 5s timeout (non-blocking) and cache the result
+          const loadedMemory = await loadUserMemoryWithTimeout(finalUserId, message, 5000);
           // Always cache the result (even if empty) to avoid repeated API calls for same query
-          // loadUserMemory always returns { memories: [], totalCount: 0 } on error/null, so it's safe
+          // loadUserMemoryWithTimeout always returns { memories: [], totalCount: 0 } on error/timeout, so it's safe
           if (loadedMemory && typeof loadedMemory === "object") {
             setCachedMemory(finalUserId, message, loadedMemory);
           }
           return loadedMemory;
         }
       } else {
-        // No message provided, load empty memories
-        return await loadUserMemory(finalUserId, null);
+        // No message provided, load empty memories (no Supermemory call needed)
+        return { memories: [], totalCount: 0 };
       }
     })().catch((error) => {
       logError("❌ [MEMORY] Error loading memory:", error);
@@ -2589,9 +2591,9 @@ async function handleAsk(
         logDebug("🔍 [STOCK] Available packs:", Object.keys(packs));
 
         // Get user context for personalization
-        // Use cached memory from context if available, otherwise load (will use cache)
+        // Use cached memory from context if available, otherwise load with 5s timeout (non-blocking)
         const userMemory =
-          context.memory || (await loadUserMemory(userId, message || null));
+          context.memory || (await loadUserMemoryWithTimeout(userId, message || null, 5000));
         const userProfile = context.profile || { name: null, age: null };
 
         // Get investment holdings from context packs if available
@@ -6336,13 +6338,14 @@ async function handleOffTopic(
           userId,
         );
 
-        // Load memory and profile in parallel
+        // Load memory and profile in parallel with 5s timeout (non-blocking)
+        // Using wrapper functions that automatically fallback to defaults on timeout
         const [loadedMemory, loadedProfile] = await Promise.all([
-          loadUserMemory(userId, messageText).catch((error) => {
+          loadUserMemoryWithTimeout(userId, messageText, 5000).catch((error) => {
             console.log("⚠️ [OFF_TOPIC] Error loading memory:", error?.message);
             return { memories: [], totalCount: 0 };
           }),
-          fetchSupermemoryProfile(userId).catch((error) => {
+          fetchSupermemoryProfileWithTimeout(userId, 5000).catch((error) => {
             console.log(
               "⚠️ [OFF_TOPIC] Error loading profile:",
               error?.message,

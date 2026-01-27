@@ -378,8 +378,11 @@ function TransactionsSection(props: Props) {
             style={{ flex: 1, color: "#fff", fontSize: 15, paddingVertical: 2 }}
             autoCapitalize="none"
             autoCorrect={false}
-            returnKeyType="search"
-            blurOnSubmit={false}
+            returnKeyType="done"
+            blurOnSubmit={true}
+            onSubmitEditing={() => {
+              searchInputRef.current?.blur();
+            }}
           />
           {searchQuery.length > 0 && (
             <TouchableOpacity
