@@ -561,10 +561,10 @@ export function useBudget(categoryBreakdown?: CategoryBreakdown): UseBudgetRetur
               categoryMeta = categoriesByKey.get(categoryKey);
             }
 
-            // Use actuals from budgetSummary as source of truth for spent amounts (database source)
-            // This ensures cached data doesn't depend on categoryBreakdown prop which changes
-            // categoryBreakdown is only used for color fallback
-            const spent = actualData?.amount ?? breakdownData?.amount ?? 0;
+            // Use categoryBreakdown as source of truth for spent amounts (same as SpendingBreakdown)
+            // This ensures budget view stays in sync with spending breakdown view
+            // Fallback to actuals if categoryBreakdown not available
+            const spent = breakdownData?.amount ?? actualData?.amount ?? 0;
             
             // Use display name from breakdown if available, otherwise use other sources
             const displayName = breakdownData?.label || categoryMeta?.name || entryInfo?.label || actualData?.label || categoryKey;
@@ -966,9 +966,9 @@ export function useBudget(categoryBreakdown?: CategoryBreakdown): UseBudgetRetur
 
         return sortedRoots;
       })();
-  }, [budgetSummary, historicalAverages, allCategories, categoryGroupings, hiddenCategoryKeys]);
-  // NOTE: categoryBreakdown removed from dependencies - we use actuals from budgetSummary instead
-  // This ensures cached data doesn't become stale when categoryBreakdown prop changes
+  }, [budgetSummary, historicalAverages, allCategories, categoryGroupings, hiddenCategoryKeys, categoryBreakdown]);
+  // NOTE: categoryBreakdown is now the primary source for spent amounts (same as SpendingBreakdown)
+  // This ensures budget view stays in sync with spending breakdown view
 
   // Use cached budgetData immediately, fallback to computed when ready
   // This ensures instant UI like spending/investment sections
@@ -1049,7 +1049,14 @@ export function useBudget(categoryBreakdown?: CategoryBreakdown): UseBudgetRetur
   }, [hasFreshComputedData, budgetSummary, computedBudgetData, initialCachedBudget]);
 
   const totalSpent = useMemo(() => {
-    // If we have fresh computed data, use it
+    // Use categoryBreakdown as primary source (same as SpendingBreakdown)
+    if (categoryBreakdown && categoryBreakdown.length > 0) {
+      return categoryBreakdown.reduce(
+        (sum, [_, data]) => sum + data.amount,
+        0,
+      );
+    }
+    // Fallback to budgetSummary actuals if categoryBreakdown not available
     if (hasFreshComputedData) {
       return budgetSummary?.actuals.overall || 0;
     }
@@ -1058,7 +1065,7 @@ export function useBudget(categoryBreakdown?: CategoryBreakdown): UseBudgetRetur
       return initialCachedBudget.totalSpent;
     }
     return 0;
-  }, [hasFreshComputedData, budgetSummary, initialCachedBudget]);
+  }, [categoryBreakdown, hasFreshComputedData, budgetSummary, initialCachedBudget]);
 
   const totalRemaining = totalBudget - totalSpent;
 
