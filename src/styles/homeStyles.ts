@@ -62,7 +62,7 @@ export const styles = StyleSheet.create({
     justifyContent: "center",
   },
   greetingText: {
-    fontSize: FONTS.xl-1,
+    fontSize: 18,
     marginBottom: 2,
     fontWeight: "600",
     color: "#fff",

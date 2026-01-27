@@ -181,17 +181,23 @@ export default function CategoryMappingModal({
           style={[
             styles.modalContainer,
             {
-              paddingBottom: insets.bottom + 20,
-              paddingTop: Math.max(insets.top, 20),
               transform: [{ translateY: slideAnim }],
             },
           ]}
         >
           <LinearGradient
-            colors={["#1a1a2e", "#16213e", "#0f3460"]}
+            colors={["#16213e", "#0f3460"]}
             style={styles.gradient}
           >
-            <View style={styles.content}>
+            <View
+              style={[
+                styles.content,
+                {
+                  paddingBottom: insets.bottom + 20,
+                  paddingTop: Math.max(insets.top, 20),
+                },
+              ]}
+            >
               {!isComplete ? (
                 <Animated.View
                   style={[
@@ -237,17 +243,16 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     overflow: "hidden",
-    backgroundColor: "#0f3460",
     maxHeight: "80%",
   },
   gradient: {
-    paddingVertical: 24,
-    paddingHorizontal: 20,
-    minHeight: 150,
+    ...StyleSheet.absoluteFillObject,
   },
   content: {
+    flex: 1,
     alignItems: "center",
     justifyContent: "center",
+    paddingHorizontal: 20,
   },
   iconContainer: {
     marginBottom: 16,

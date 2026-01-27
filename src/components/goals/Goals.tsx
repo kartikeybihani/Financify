@@ -489,6 +489,9 @@ const Goals: React.FC<GoalsProps> = ({
           </View>
         ) : (
           <>
+            <Text style={styles.transactionLinkTipLabel}>
+              Tip: Link transactions to goals to automatically add to your goal amount
+            </Text>
             {sortedGoalsData.map((item, index) => (
               <GoalItem
                 key={item.id}

@@ -89,11 +89,12 @@ const BudgetView: React.FC<BudgetViewProps> = ({
   // Track previous budget order to enable smooth transitions
   const previousOrderRef = useRef<Map<string, number>>(new Map());
 
-  // Use provided totals if available (from real budget data), otherwise calculate from categoryBreakdown
-  const totalSpent =
-    providedTotalSpent !== undefined
-      ? providedTotalSpent
-      : categoryBreakdown.reduce((sum, [_, data]) => sum + data.amount, 0);
+  // Calculate total spent from category breakdown (same method as SpendingSection)
+  // This ensures consistency with the spending breakdown view
+  const totalSpent = categoryBreakdown.reduce(
+    (sum, [_, data]) => sum + data.amount,
+    0,
+  );
 
   // Use optimistic budgets if available, otherwise use provided budgets
   // Use useMemo to ensure stable calculation and prevent weird intermediate states

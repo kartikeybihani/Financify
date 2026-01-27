@@ -421,6 +421,15 @@ const styles = StyleSheet.create({
       marginTop: 4,
       fontStyle: "italic",
     },
+    transactionLinkTipLabel: {
+      fontSize: 12,
+      color: "rgba(255, 255, 255, 0.7)",
+      paddingHorizontal: 20,
+      paddingTop: 8,
+      paddingBottom: 12,
+      lineHeight: 16,
+      fontWeight: "400",
+    },
     timelineRow: {
       marginBottom: 12,
       position: "relative",
