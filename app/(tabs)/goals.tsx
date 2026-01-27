@@ -15,6 +15,7 @@ import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import Goals from "@/src/components/goals/Goals";
 import { useGoals } from "@/src/hooks/useGoals";
 import { notificationService } from "@/src/utils/core/notificationService";
+import CleanGoalsHeader from "@/src/components/goals/CleanGoalsHeader";
 
 const styles = StyleSheet.create({
   safeArea: {
@@ -99,7 +100,7 @@ const styles = StyleSheet.create({
 
 export default function GoalsScreen() {
   const { goalsData, loading, deleteGoal, updateGoal, refreshGoals } = useGoals(
-    () => {}
+    () => {},
   );
   // Use only initial-load header spinner; pull-to-refresh spinner is handled inside Goals via RefreshControl
   const [hasInitialData, setHasInitialData] = useState(false);
@@ -107,7 +108,7 @@ export default function GoalsScreen() {
   const goalsAnimations = React.useRef<Animated.Value[]>(
     Array(10)
       .fill(0)
-      .map(() => new Animated.Value(0))
+      .map(() => new Animated.Value(0)),
   ).current;
 
   React.useEffect(() => {
@@ -166,15 +167,9 @@ export default function GoalsScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <View style={styles.headerContainer}>
-        <View style={styles.titleContainer}>
-          <View style={styles.iconContainer}>
-            <MaterialCommunityIcons name="target" size={24} color="#4A90E2" />
-          </View>
-          <Text style={styles.headerTitle}>Goals</Text>
-        </View>
-      </View>
+    <SafeAreaView style={styles.safeArea} edges={["left", "right", "bottom"]}>
+      {/* Clean Header with Gradient */}
+      <CleanGoalsHeader />
       {loading && !hasInitialData && (
         <View style={styles.loadingContainer}>
           <ActivityIndicator color="#4A90E2" />

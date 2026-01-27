@@ -763,7 +763,8 @@ export default function HomeScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={styles.safeArea} edges={["left", "right", "bottom"]}>
+      {/* Clean Header with Gradient */}
       <HomeHeader
         userName={firstName || userData?.user_metadata?.full_name}
         onAddAccount={() => setShowCategoryModal(true)}

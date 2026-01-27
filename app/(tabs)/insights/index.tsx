@@ -21,10 +21,8 @@ import * as Haptics from "expo-haptics";
 import TopChips from "@/src/components/insights/components/TopChips";
 import RecurringSection from "@/src/components/insights/components/RecurringSection";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { styles } from "@/src/styles/insightsStyles";
 import {
-  headerRefreshStyles,
   transactionInfoStyles,
   loadMoreStyles,
   sectionContentStyles,
@@ -142,7 +140,7 @@ import {
   handleReAuth,
   dismissReAuthBanner,
 } from "@/src/utils/insights";
-import InsightsHeader from "@/src/components/insights/InsightsHeader";
+import CleanInsightsHeader from "@/src/components/insights/CleanInsightsHeader";
 import InsightsFAB from "@/src/components/insights/InsightsFAB";
 
 export default function InsightsScreen() {
@@ -2050,8 +2048,9 @@ export default function InsightsScreen() {
   ]);
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <InsightsHeader
+    <SafeAreaView style={styles.safeArea} edges={["left", "right", "bottom"]}>
+      {/* Clean Header with Gradient */}
+      <CleanInsightsHeader
         isSyncing={isSyncing}
         syncStatus={syncStatus}
         onRefresh={handleRefreshLatestDataWrapper}
