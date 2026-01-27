@@ -864,6 +864,7 @@ function ChatScreenContent() {
                   value={userInput}
                   onChangeText={setUserInput}
                   multiline
+                  returnKeyLabel="return"
                   textAlignVertical="top"
                   onContentSizeChange={(event) => {
                     const nextHeight = Math.min(

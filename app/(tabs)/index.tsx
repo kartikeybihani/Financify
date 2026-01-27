@@ -55,6 +55,8 @@ import {
   resetOnboardingDismissal,
   OnboardingStatus,
 } from "@/src/utils/onboarding/onboardingProgress";
+import { getUserIdSync } from "@/src/utils/insights/cacheUtils";
+import { loadOnboardingFromCache } from "@/src/shared/utils/onboardingCache";
 
 if (Platform.OS === "android") {
   UIManager.setLayoutAnimationEnabledExperimental?.(true);
@@ -174,9 +176,19 @@ export default function HomeScreen() {
     refresh: refreshSpendingData,
   } = useSpendingData(totalBalance);
 
-  // Onboarding state
+  // Onboarding state - load cache synchronously for instant UI
+  const initialOnboardingCache = (() => {
+    try {
+      const userId = getUserIdSync();
+      if (!userId) return null;
+      return loadOnboardingFromCache(userId);
+    } catch (error) {
+      return null;
+    }
+  })();
+
   const [onboardingStatus, setOnboardingStatus] =
-    useState<OnboardingStatus | null>(null);
+    useState<OnboardingStatus | null>(initialOnboardingCache);
   const [showOnboardingModal, setShowOnboardingModal] = useState(false);
 
   // Removed verbose logging
@@ -500,22 +512,35 @@ export default function HomeScreen() {
     }
   };
 
-  // Load onboarding status
+  // Load onboarding status with caching
+  // Note: Cache is already loaded synchronously in useState initialization above
+  // This function only refreshes from server in background
   const loadOnboardingStatus = async (userId: string) => {
     try {
-      // Reset dismissal on app start if incomplete
-      await resetOnboardingDismissal(userId);
+      // Refresh in background without blocking UI
+      // Cache was already loaded synchronously on mount
+      Promise.resolve().then(async () => {
+        try {
+          // Reset dismissal on app start if incomplete
+          await resetOnboardingDismissal(userId);
 
-      // Get current status
-      const status = await getOnboardingStatus(userId);
-      setOnboardingStatus(status);
+          // Get fresh status
+          const freshStatus = await getOnboardingStatus(userId);
+          setOnboardingStatus(freshStatus);
+        } catch (error) {
+          logger.error(
+            "Error refreshing onboarding status in background:",
+            error,
+          );
+        }
+      });
     } catch (error) {
       logger.error("Error loading onboarding status:", error);
     }
   };
 
   // Handle onboarding step press
-  const handleOnboardingStepPress = (step: 1 | 2 | 3) => {
+  const handleOnboardingStepPress = (step: 1 | 2 | 3 | 4) => {
     setShowOnboardingModal(false);
 
     if (step === 1) {
@@ -528,6 +553,9 @@ export default function HomeScreen() {
     } else if (step === 3) {
       // Navigate to chat tab
       router.push("/(tabs)/chat");
+    } else if (step === 4) {
+      // Navigate to goals tab
+      router.push("/(tabs)/goals");
     }
   };
 
@@ -584,6 +612,46 @@ export default function HomeScreen() {
       refreshOnboarding();
     }, []),
   );
+
+  // Listen for events that should invalidate onboarding cache
+  useEffect(() => {
+    const financialSubscription = DeviceEventEmitter.addListener(
+      "financialDataRefreshed",
+      async () => {
+        // Account connected - invalidate onboarding cache
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (user?.id) {
+          const { invalidateOnboardingCache } =
+            await import("@/src/shared/utils/cacheInvalidation");
+          await invalidateOnboardingCache(user.id);
+          await loadOnboardingStatus(user.id);
+        }
+      },
+    );
+
+    const goalsSubscription = DeviceEventEmitter.addListener(
+      "goalsUpdated",
+      async () => {
+        // Goal created - invalidate onboarding cache
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (user?.id) {
+          const { invalidateOnboardingCache } =
+            await import("@/src/shared/utils/cacheInvalidation");
+          await invalidateOnboardingCache(user.id);
+          await loadOnboardingStatus(user.id);
+        }
+      },
+    );
+
+    return () => {
+      financialSubscription.remove();
+      goalsSubscription.remove();
+    };
+  }, []);
 
   useEffect(() => {
     initializeApp();

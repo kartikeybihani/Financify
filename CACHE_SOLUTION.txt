@@ -119,6 +119,7 @@ Cache Strategies:
 - Investment Data: VERY_LONG (7 days)
 - Recurring Transactions: VERY_LONG (7 days)
 - Goals: VERY_LONG (7 days)
+- Onboarding Progress: VERY_LONG (7 days)
 - Account Balances: MEDIUM (5 minutes) - TODO: Consider updating
 - Spending Data: MEDIUM (5 minutes) - TODO: Consider updating
 
@@ -155,8 +156,14 @@ Cache Loading Strategy:
 
 Data Changes (Event-Based Invalidation):
 - Goals created/updated/deleted → invalidateGoalsCache() ✅
+- Onboarding step completed → invalidateOnboardingCache() ✅
+  * Account connected → invalidateOnboardingCache() ✅
+  * Budget created/updated → invalidateOnboardingCache() ✅
+  * Finny asked (chat message sent) → invalidateOnboardingCache() ✅
+  * Goal created → invalidateOnboardingCache() ✅
+  * Onboarding dismissed → invalidateOnboardingCache() ✅
 - Transaction syncs → should call invalidateTransactionsCache() (TODO)
-- Budget changes → should call invalidateBudgetCache() (TODO)
+- Budget changes → invalidateBudgetCache() + invalidateOnboardingCache() ✅
 - Account updates → should call invalidateUnifiedCache() (TODO)
 - Category updates → should call invalidateSpendingCache() (TODO)
 
@@ -205,6 +212,27 @@ FILES MODIFIED
 
 7. src/shared/utils/cacheInvalidation.ts (NEW)
    - Created comprehensive cache invalidation helpers
+   - Added invalidateOnboardingCache() helper
+
+8. src/shared/utils/onboardingCache.ts (NEW)
+   - Created onboarding progress cache utility
+   - Synchronous cache reads for instant UI
+   - 7-day cache duration (event-based invalidation)
+
+9. src/utils/onboarding/onboardingProgress.ts
+   - Updated getOnboardingStatus() to use cache
+   - Returns cached data immediately, refreshes in background
+   - Updated dismissOnboardingProgress() to invalidate cache
+
+10. src/hooks/useBudget.ts
+    - Added onboarding cache invalidation on budget update
+
+11. src/hooks/useChat.ts
+    - Added onboarding cache invalidation when user sends message (finny asked)
+
+12. app/(tabs)/index.tsx
+    - Updated loadOnboardingStatus() to load from cache synchronously
+    - Added event listeners for financialDataRefreshed and goalsUpdated to invalidate onboarding cache
 
 
 REMAINING WORK (OPTIONAL IMPROVEMENTS)

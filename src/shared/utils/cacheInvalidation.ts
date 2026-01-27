@@ -9,6 +9,7 @@ import { clearSpendingCache } from "./spendingCache";
 import { clearBudgetCache } from "./budgetCache";
 import { clearInvestmentCache } from "./investmentCache";
 import { clearRecurringCache } from "./recurringCache";
+import { clearOnboardingCache } from "./onboardingCache";
 
 /**
  * Invalidate unified financial data cache
@@ -146,6 +147,19 @@ export const invalidateGoalsCache = async (userId?: string): Promise<void> => {
 };
 
 /**
+ * Invalidate onboarding progress cache
+ * Call when: onboarding step completed, dismissed, or reset
+ */
+export const invalidateOnboardingCache = async (userId: string): Promise<void> => {
+  try {
+    clearOnboardingCache(userId);
+    logger.info(`🗑️ [CACHE] Invalidated onboarding cache for user: ${userId.substring(0, 8)}`);
+  } catch (error) {
+    logger.error("❌ [CACHE] Failed to invalidate onboarding cache:", error);
+  }
+};
+
+/**
  * Invalidate all caches for a user (use on logout or data reset)
  */
 export const invalidateAllCaches = async (userId: string): Promise<void> => {
@@ -157,6 +171,7 @@ export const invalidateAllCaches = async (userId: string): Promise<void> => {
       invalidateInvestmentCache(userId),
       invalidateRecurringCache(userId),
       invalidateGoalsCache(userId),
+      invalidateOnboardingCache(userId),
     ]);
     logger.info(`🗑️ [CACHE] Invalidated all caches for user: ${userId.substring(0, 8)}`);
   } catch (error) {
@@ -173,5 +188,6 @@ export default {
   invalidateInvestmentCache,
   invalidateRecurringCache,
   invalidateGoalsCache,
+  invalidateOnboardingCache,
   invalidateAllCaches,
 };

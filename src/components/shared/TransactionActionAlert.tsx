@@ -105,31 +105,33 @@ export default function TransactionActionAlert({
         <View style={styles.overlay}>
           <TouchableWithoutFeedback onPress={() => {}}>
             <View style={styles.container}>
-              {/* Close Button */}
-              <TouchableOpacity
-                style={styles.closeButton}
-                onPress={onClose}
-                activeOpacity={0.7}
-              >
-                <LinearGradient
-                  colors={[
-                    "rgba(255, 255, 255, 0.15)",
-                    "rgba(255, 255, 255, 0.05)",
-                  ]}
-                  style={styles.closeButtonGradient}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                >
-                  <Ionicons
-                    name="close"
-                    size={20}
-                    color="rgba(255, 255, 255, 0.8)"
-                  />
-                </LinearGradient>
-              </TouchableOpacity>
-
               {mode === "actions" ? (
                 <View style={styles.actionsContainer}>
+                  {/* Header with Title and Close Button */}
+                  <View style={styles.headerRow}>
+                    <Text style={styles.headerTitle}>Transaction Actions</Text>
+                    <TouchableOpacity
+                      style={styles.closeButton}
+                      onPress={onClose}
+                      activeOpacity={0.7}
+                    >
+                      <LinearGradient
+                        colors={[
+                          "rgba(255, 255, 255, 0.15)",
+                          "rgba(255, 255, 255, 0.05)",
+                        ]}
+                        style={styles.closeButtonGradient}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                      >
+                        <Ionicons
+                          name="close"
+                          size={18}
+                          color="rgba(255, 255, 255, 0.8)"
+                        />
+                      </LinearGradient>
+                    </TouchableOpacity>
+                  </View>
                   {/* Internal Transfer Button */}
                   <TouchableOpacity
                     style={styles.actionButton}
@@ -277,13 +279,35 @@ export default function TransactionActionAlert({
                 </View>
               ) : (
                 <View style={styles.actionsContainer}>
-                  <View style={{ paddingHorizontal: 4, marginBottom: 8 }}>
-                    <Text style={{ color: "#ffffff", fontWeight: "600", fontSize: 16 }}>
-                      Choose a goal
-                    </Text>
-                    <Text style={{ color: "rgba(255,255,255,0.6)", marginTop: 4, fontSize: 12 }}>
-                      We'll add this transaction amount to the goal's progress
-                    </Text>
+                  {/* Header with Title and Close Button */}
+                  <View style={styles.headerRow}>
+                    <View style={styles.headerTitleContainer}>
+                      <Text style={styles.headerTitle}>Choose a goal</Text>
+                      <Text style={styles.headerSubtitle}>
+                        We'll add this transaction amount to the goal's progress
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      style={styles.closeButton}
+                      onPress={onClose}
+                      activeOpacity={0.7}
+                    >
+                      <LinearGradient
+                        colors={[
+                          "rgba(255, 255, 255, 0.15)",
+                          "rgba(255, 255, 255, 0.05)",
+                        ]}
+                        style={styles.closeButtonGradient}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                      >
+                        <Ionicons
+                          name="close"
+                          size={18}
+                          color="rgba(255, 255, 255, 0.8)"
+                        />
+                      </LinearGradient>
+                    </TouchableOpacity>
                   </View>
                   {loadingGoals ? (
                     <View style={{ paddingVertical: 20, alignItems: "center" }}>
@@ -291,7 +315,9 @@ export default function TransactionActionAlert({
                     </View>
                   ) : goals.length === 0 ? (
                     <View style={{ paddingVertical: 20, alignItems: "center" }}>
-                      <Text style={{ color: "#fff" }}>No active goals found</Text>
+                      <Text style={{ color: "#fff" }}>
+                        No active goals found
+                      </Text>
                     </View>
                   ) : (
                     goals.map((g) => (
@@ -312,14 +338,24 @@ export default function TransactionActionAlert({
                         >
                           <View style={styles.actionButtonContent}>
                             <View style={[styles.iconContainer]}>
-                              <Ionicons name="flag" size={22} color={"#4A90E2"} />
+                              <Ionicons
+                                name="flag"
+                                size={22}
+                                color={"#4A90E2"}
+                              />
                             </View>
                             <View style={styles.actionTextContainer}>
                               <Text style={styles.actionTitle}>{g.label}</Text>
-                              <Text style={styles.actionSubtitle}>Add this transaction</Text>
+                              <Text style={styles.actionSubtitle}>
+                                Add this transaction
+                              </Text>
                             </View>
                             <View style={styles.checkmarkContainer}>
-                              <Ionicons name="chevron-forward" size={20} color="#4A90E2" />
+                              <Ionicons
+                                name="chevron-forward"
+                                size={20}
+                                color="#4A90E2"
+                              />
                             </View>
                           </View>
                         </LinearGradient>
@@ -356,14 +392,32 @@ const styles = StyleSheet.create({
     elevation: 20,
     position: "relative",
   },
+  headerRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    marginBottom: 24,
+    gap: 12,
+  },
+  headerTitleContainer: {
+    flex: 1,
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#ffffff",
+    marginBottom: 4,
+  },
+  headerSubtitle: {
+    fontSize: 13,
+    color: "rgba(255, 255, 255, 0.6)",
+    lineHeight: 18,
+  },
   closeButton: {
-    position: "absolute",
-    top: 16,
-    right: 16,
     width: 35,
     height: 35,
     borderRadius: 20,
-    zIndex: 1,
+    flexShrink: 0,
   },
   closeButtonGradient: {
     width: 35,
@@ -376,7 +430,6 @@ const styles = StyleSheet.create({
   },
   actionsContainer: {
     padding: 24,
-    paddingTop: 70,
     gap: 16,
   },
   actionButton: {

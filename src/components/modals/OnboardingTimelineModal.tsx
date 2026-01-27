@@ -19,7 +19,7 @@ interface OnboardingTimelineModalProps {
   visible: boolean;
   progress: OnboardingProgress | null;
   onClose: () => void;
-  onStepPress: (step: 1 | 2 | 3) => void;
+  onStepPress: (step: 1 | 2 | 3 | 4) => void;
 }
 
 interface TimelineStepProps {
@@ -55,7 +55,7 @@ function TimelineStep({
               <View style={styles.stepDotEmpty} />
             )}
           </View>
-          {step < 3 && (
+          {step < 4 && (
             <View
               style={[styles.stepLine, completed && styles.stepLineCompleted]}
             />
@@ -136,13 +136,20 @@ export default function OnboardingTimelineModal({
       description: "Start a conversation with Finny",
       completed: progress.finny_asked,
     },
+    {
+      step: 4,
+      title: "Create Your First Goal",
+      description: "Set a financial goal to work towards",
+      completed: progress.goal_created,
+    },
   ];
 
   const percentage = Math.round(
     (((progress.accounts_connected ? 1 : 0) +
       (progress.budget_setup ? 1 : 0) +
-      (progress.finny_asked ? 1 : 0)) /
-      3) *
+      (progress.finny_asked ? 1 : 0) +
+      (progress.goal_created ? 1 : 0)) /
+      4) *
       100,
   );
 
@@ -202,7 +209,7 @@ export default function OnboardingTimelineModal({
                         completed={stepData.completed}
                         onPress={() => {
                           if (!stepData.completed) {
-                            onStepPress(stepData.step as 1 | 2 | 3);
+                            onStepPress(stepData.step as 1 | 2 | 3 | 4);
                           }
                         }}
                       />

@@ -1378,6 +1378,20 @@ export const useChat = (userName?: string | null) => {
   // Backend always sends full message strings, frontend splits intelligently for consistent behavior
 
   const handleUserMessage = async (messageText: string, startTime?: number) => {
+    // Invalidate onboarding cache when user sends a message (finny asked)
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user?.id) {
+        const { invalidateOnboardingCache } = await import("@/src/shared/utils/cacheInvalidation");
+        // Don't await - fire and forget to avoid blocking message send
+        invalidateOnboardingCache(user.id).catch((err) => {
+          logger.error("Failed to invalidate onboarding cache:", err);
+        });
+      }
+    } catch (error) {
+      // Don't block message send if cache invalidation fails
+      logger.error("Error invalidating onboarding cache:", error);
+    }
     setIsTyping(true); // Start typing indicator immediately
     await handleFinnyResponse(messageText, startTime);
     // Note: setIsTyping(false) is now handled within handleFinnyResponse for streaming

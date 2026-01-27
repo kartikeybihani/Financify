@@ -1128,6 +1128,14 @@ export function useBudget(categoryBreakdown?: CategoryBreakdown): UseBudgetRetur
 
         if (entry) {
           await refreshBudget();
+          
+          // Invalidate onboarding cache when budget is updated
+          const authResult = await getAuthenticatedUser();
+          if (authResult?.user?.id) {
+            const { invalidateOnboardingCache } = await import("@/src/shared/utils/cacheInvalidation");
+            await invalidateOnboardingCache(authResult.user.id);
+          }
+          
           return true;
         }
         return false;

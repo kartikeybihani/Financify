@@ -1,5 +1,10 @@
 import { supabase } from "@/src/lib/supabase/supabase";
 import logger from "@/src/utils/core/logger";
+import {
+  saveOnboardingToCache,
+  loadOnboardingFromCache,
+  clearOnboardingCache,
+} from "@/src/shared/utils/onboardingCache";
 
 export interface OnboardingProgress {
   id: string;
@@ -7,6 +12,7 @@ export interface OnboardingProgress {
   accounts_connected: boolean;
   budget_setup: boolean;
   finny_asked: boolean;
+  goal_created: boolean;
   dismissed: boolean;
   dismissed_at: string | null;
   created_at: string;
@@ -60,6 +66,7 @@ export async function createOnboardingProgress(
         accounts_connected: false,
         budget_setup: false,
         finny_asked: false,
+        goal_created: false,
         dismissed: false,
       })
       .select()
@@ -165,18 +172,42 @@ export async function checkFinnyAsked(userId: string): Promise<boolean> {
 }
 
 /**
+ * Check if user has created a goal
+ */
+export async function checkGoalCreated(userId: string): Promise<boolean> {
+  try {
+    const { data, error } = await supabase
+      .from("goals")
+      .select("id")
+      .eq("user_id", userId)
+      .limit(1);
+
+    if (error) {
+      logger.error("Error checking goals:", error);
+      return false;
+    }
+
+    return (data?.length || 0) > 0;
+  } catch (error) {
+    logger.error("Error in checkGoalCreated:", error);
+    return false;
+  }
+}
+
+/**
  * Update onboarding progress with current status
- * Automatically checks all three steps and updates the record
+ * Automatically checks all four steps and updates the record
  */
 export async function updateOnboardingProgress(
   userId: string
 ): Promise<OnboardingProgress | null> {
   try {
-    // Check all three steps
-    const [accountsConnected, budgetSetup, finnyAsked] = await Promise.all([
+    // Check all four steps
+    const [accountsConnected, budgetSetup, finnyAsked, goalCreated] = await Promise.all([
       checkAccountsConnected(userId),
       checkBudgetSetup(userId),
       checkFinnyAsked(userId),
+      checkGoalCreated(userId),
     ]);
 
     // Get or create progress record
@@ -195,6 +226,7 @@ export async function updateOnboardingProgress(
         accounts_connected: accountsConnected,
         budget_setup: budgetSetup,
         finny_asked: finnyAsked,
+        goal_created: goalCreated,
         updated_at: new Date().toISOString(),
       })
       .eq("user_id", userId)
@@ -233,6 +265,9 @@ export async function dismissOnboardingProgress(
       return false;
     }
 
+    // Invalidate cache so it refreshes with dismissed status
+    clearOnboardingCache(userId);
+
     return true;
   } catch (error) {
     logger.error("Error in dismissOnboardingProgress:", error);
@@ -256,7 +291,8 @@ export async function resetOnboardingDismissal(
     const isComplete =
       progress.accounts_connected &&
       progress.budget_setup &&
-      progress.finny_asked;
+      progress.finny_asked &&
+      progress.goal_created;
 
     if (!isComplete) {
       const { error } = await supabase
@@ -294,25 +330,63 @@ export function calculateOnboardingPercentage(
     progress.accounts_connected,
     progress.budget_setup,
     progress.finny_asked,
+    progress.goal_created,
   ];
 
   const completedSteps = steps.filter(Boolean).length;
 
   if (completedSteps === 0) return 0;
-  if (completedSteps === 1) return 33;
-  if (completedSteps === 2) return 66;
-  if (completedSteps === 3) return 100;
+  if (completedSteps === 1) return 25;
+  if (completedSteps === 2) return 50;
+  if (completedSteps === 3) return 75;
+  if (completedSteps === 4) return 100;
 
   return 0;
 }
 
 /**
- * Get complete onboarding status
+ * Get complete onboarding status with caching
  */
 export async function getOnboardingStatus(
-  userId: string
+  userId: string,
+  useCache: boolean = true
 ): Promise<OnboardingStatus> {
   try {
+    // Try to load from cache first for instant UI
+    if (useCache) {
+      const cachedStatus = loadOnboardingFromCache(userId);
+      if (cachedStatus) {
+        // Return cached status immediately, but refresh in background
+        // Refresh in background without blocking
+        updateOnboardingProgress(userId).then((updatedProgress) => {
+          if (updatedProgress) {
+            const percentage = calculateOnboardingPercentage(updatedProgress);
+            const isComplete =
+              updatedProgress.accounts_connected &&
+              updatedProgress.budget_setup &&
+              updatedProgress.finny_asked &&
+              updatedProgress.goal_created;
+            const shouldShow = !isComplete && !updatedProgress.dismissed;
+
+            const freshStatus: OnboardingStatus = {
+              progress: updatedProgress,
+              percentage,
+              isComplete,
+              shouldShow,
+            };
+
+            // Save updated status to cache
+            saveOnboardingToCache(userId, freshStatus);
+          }
+        }).catch((error) => {
+          logger.error("Error refreshing onboarding status in background:", error);
+        });
+
+        return cachedStatus;
+      }
+    }
+
+    // No cache or cache disabled - fetch fresh data
     // Get or create progress
     let progress = await getOnboardingProgress(userId);
     if (!progress) {
@@ -325,31 +399,40 @@ export async function getOnboardingStatus(
     }
 
     if (!progress) {
-      return {
+      const status: OnboardingStatus = {
         progress: null,
         percentage: 0,
         isComplete: false,
         shouldShow: true,
       };
+      return status;
     }
 
     const percentage = calculateOnboardingPercentage(progress);
     const isComplete =
       progress.accounts_connected &&
       progress.budget_setup &&
-      progress.finny_asked;
+      progress.finny_asked &&
+      progress.goal_created;
 
     // Should show if:
     // - Not complete AND
     // - Not dismissed OR dismissed but it's a new session (we'll reset dismissal on app start)
     const shouldShow = !isComplete && !progress.dismissed;
 
-    return {
+    const status: OnboardingStatus = {
       progress,
       percentage,
       isComplete,
       shouldShow,
     };
+
+    // Save to cache for next time
+    if (useCache) {
+      await saveOnboardingToCache(userId, status);
+    }
+
+    return status;
   } catch (error) {
     logger.error("Error in getOnboardingStatus:", error);
     return {
