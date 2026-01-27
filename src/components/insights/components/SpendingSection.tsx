@@ -122,5 +122,6 @@ const styles = StyleSheet.create({
   container: {
     position: "relative",
     paddingHorizontal: 20,
+    marginTop: 8,
   },
 });

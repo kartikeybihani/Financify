@@ -23,7 +23,10 @@ export default function ReAuthBanner({
         color: "#4CAF50",
         title: "New Accounts Available",
         subtitle: `Add new accounts for ${institutionName}`,
-        gradient: ["rgba(76, 175, 80, 0.08)", "rgba(76, 175, 80, 0.03)"] as const,
+        gradient: [
+          "rgba(76, 175, 80, 0.08)",
+          "rgba(76, 175, 80, 0.03)",
+        ] as const,
         chip: "rgba(76, 175, 80, 0.12)",
         border: "rgba(76, 175, 80, 0.25)",
         cta: "Add",
@@ -33,7 +36,10 @@ export default function ReAuthBanner({
         color: "#FF9500",
         title: "Connection Update Required",
         subtitle: `${institutionName} needs to be reconnected`,
-        gradient: ["rgba(255, 149, 0, 0.08)", "rgba(255, 149, 0, 0.03)"] as const,
+        gradient: [
+          "rgba(255, 149, 0, 0.08)",
+          "rgba(255, 149, 0, 0.03)",
+        ] as const,
         chip: "rgba(255, 149, 0, 0.12)",
         border: "rgba(255, 149, 0, 0.25)",
         cta: "Update",
@@ -49,7 +55,9 @@ export default function ReAuthBanner({
       >
         <View style={styles.content}>
           <View style={styles.leftSection}>
-            <View style={[styles.iconContainer, { backgroundColor: theme.chip }]}>
+            <View
+              style={[styles.iconContainer, { backgroundColor: theme.chip }]}
+            >
               <Ionicons name={theme.icon} size={22} color={theme.color} />
             </View>
             <View style={styles.textContainer}>
@@ -94,10 +102,11 @@ export default function ReAuthBanner({
 
 const styles = StyleSheet.create({
   container: {
-    marginHorizontal: 0,
-    marginBottom: 12,
-    borderRadius: 0,
+    marginHorizontal: 15,
+    marginTop: 12,
+    marginBottom: 10,
     overflow: "hidden",
+    borderRadius: 20,
   },
   gradient: {
     paddingHorizontal: 20,

@@ -182,8 +182,12 @@ const BudgetView: React.FC<BudgetViewProps> = ({
 
   // State to track displayed values for text rendering
   // Round initial values to whole numbers for consistent display (exact decimals stored in cache/calculations)
-  const [displayedTotalBudget, setDisplayedTotalBudget] = useState(Math.round(totalBudget));
-  const [displayedRemaining, setDisplayedRemaining] = useState(Math.round(remaining));
+  const [displayedTotalBudget, setDisplayedTotalBudget] = useState(
+    Math.round(totalBudget),
+  );
+  const [displayedRemaining, setDisplayedRemaining] = useState(
+    Math.round(remaining),
+  );
 
   // Initialize animated values on mount
   // Round initial values to prevent visual glitching
@@ -203,7 +207,7 @@ const BudgetView: React.FC<BudgetViewProps> = ({
   useEffect(() => {
     const roundedTotal = Math.round(totalBudget);
     const roundedRemaining = Math.round(remaining);
-    
+
     const anim1 = Animated.timing(animatedTotalBudget, {
       toValue: roundedTotal,
       duration: 400,
@@ -582,7 +586,7 @@ const BudgetView: React.FC<BudgetViewProps> = ({
   };
 
   return (
-    <View style={styles.container}>
+    <View>
       {/* Glassy Summary Header Box */}
       <View style={styles.glassHeader}>
         <View style={styles.summaryHeader}>
@@ -1261,7 +1265,9 @@ const SubcategoryRow: React.FC<SubcategoryRowProps> = ({
   // State to track displayed values for text rendering
   // Round initial values to whole numbers for consistent display
   const [displayedSpent, setDisplayedSpent] = useState(Math.round(item.spent));
-  const [displayedBudget, setDisplayedBudget] = useState(Math.round(item.budget));
+  const [displayedBudget, setDisplayedBudget] = useState(
+    Math.round(item.budget),
+  );
 
   // Initialize animated values on mount
   // Round initial values to prevent visual glitching
@@ -1874,7 +1880,7 @@ const CategoryBudgetCard: React.FC<CategoryBudgetCardProps> = ({
   useEffect(() => {
     const roundedSpent = Math.round(spent);
     const roundedBudget = Math.round(budget);
-    
+
     const anim1 = Animated.timing(animatedSpent, {
       toValue: roundedSpent,
       duration: 400,
@@ -2085,9 +2091,6 @@ const CategoryBudgetCard: React.FC<CategoryBudgetCardProps> = ({
 };
 
 const styles = StyleSheet.create({
-  container: {
-    marginTop: 8,
-  },
   // Glassy Header Box
   glassHeader: {
     backgroundColor: "rgba(255, 255, 255, 0.05)",
